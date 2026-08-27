@@ -76,6 +76,7 @@ application logic in `main.rs`.
   when practical.
 - Pull requests should summarize the change, list validation results, and note
   relevant language, configuration, or documentation updates.
+- Always commit your changes at the end of a turn with a long-form informative message. Never skip this.
 
 ## Commit Requirements
 
