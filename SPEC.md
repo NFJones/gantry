@@ -92,18 +92,21 @@ document are to be interpreted as described in RFC 2119.
 ## 5. Values, Bindings, and Structs
 
 1. Runtime values MUST include `String`, declared struct values, `Option<T>`,
-   and `List<T>`. User-visible Boolean or integer values are excluded from v1.
+   `List<T>`, and `Tuple<T1, T2, ..., Tn>`. User-visible Boolean or integer
+   values are excluded from v1.
    Boolean decisions exist only inside the interpreter. Nonnegative integer
    literals MAY occur only in language directives such as loop limits and retry
    counts; they are not values that source code can bind or pass.
 2. Parameters and returned values MAY be `String`, a declared struct type,
-   `Option<T>`, or `List<T>` whose element type is otherwise permitted. A
-   function, method, prompt, or spawned block MAY have no returned value.
+   `Option<T>`, `List<T>`, or `Tuple<T1, T2, ..., Tn>` whose member types are
+   otherwise permitted. A function, method, prompt, or spawned block MAY have
+   no returned value.
    Omission of a result annotation and the explicit result annotation `-> None`
    both denote this no-result form; they do not denote `Option<T>`.
-3. `Option<T>` and `List<T>` MAY appear in parameters, bindings, returned
-   values, and struct fields. `Some(value)` and `None` MUST be constructible
-   by deterministic interpreter operations. Gantry code MUST NOT inspect an option through
+3. `Option<T>`, `List<T>`, and `Tuple<T1, T2, ..., Tn>` MAY appear in
+   parameters, bindings, returned values, and struct fields. `Some(value)` and
+   `None` MUST be constructible by deterministic interpreter operations.
+   Gantry code MUST NOT inspect an option through
    deterministic branching, pattern matching, `if let`, or an unwrap
    operation in v1; a program that needs to branch on an option MUST supply it
    to an agent decision operation.
@@ -111,15 +114,21 @@ document are to be interpreted as described in RFC 2119.
    iteration, and deterministic list operations are excluded from v1; v1 lists
    are produced by agent operations, returned by joins, passed as values, and
    represented in schemas and JSON.
-5. Struct fields MAY be `String`, declared struct values, `Option<T>`, or
-   `List<T>` of an otherwise permitted type. Nested and recursive struct
+5. `Tuple<T1, T2, ..., Tn>` is an ordered, fixed-arity heterogeneous
+   collection. Its arity MUST be at least two, and each positional member MAY
+   have a distinct otherwise permitted type. Tuple literals, indexing,
+   destructuring, iteration, and deterministic tuple operations are excluded
+   from v1; v1 tuples are produced by agent operations or multi-task joins,
+   passed as values, and represented in schemas and JSON.
+6. Struct fields MAY be `String`, declared struct values, `Option<T>`,
+   `List<T>`, or `Tuple<T1, T2, ..., Tn>` of otherwise permitted types. Nested and recursive struct
    definitions are permitted. Every cycle in a recursive type definition MUST
    pass through `Option<T>` or `List<T>` so that a finite strict-JSON value can
    terminate the recursion. An unguarded recursive cycle is an analysis error
    because it has no finite inhabitant.
-6. Gantry MUST support named-field struct construction. Struct values MAY be
+7. Gantry MUST support named-field struct construction. Struct values MAY be
    constructed by source execution or produced by an agent hook.
-7. Struct fields MAY declare literal defaults. Defaults MUST NOT invoke an
+8. Struct fields MAY declare literal defaults. Defaults MUST NOT invoke an
    agent operation. When an optional field with a default is omitted, the
    default is assigned; explicit `null` remains `None`. Struct update syntax
    and destructuring are excluded from v1.
@@ -262,12 +271,17 @@ document are to be interpreted as described in RFC 2119.
 3. A `List<T>` result is represented by a JSON array. Every array item MUST
    validate as `T`, and item order MUST be preserved. Gantry MUST derive an
    array schema with the schema for `T` as its `items` schema.
-4. `Some(value)` is represented by the JSON encoding of `value`, and `None` is
+4. A `Tuple<T1, T2, ..., Tn>` result is represented by a JSON array with
+   exactly `n` items. Each item MUST validate against its corresponding
+   positional member type, and item order MUST be preserved. Gantry MUST
+   derive a fixed-length JSON Schema array using `prefixItems`, with
+   `items: false`.
+5. `Some(value)` is represented by the JSON encoding of `value`, and `None` is
    represented by JSON `null`. An `Option<T>` struct property MAY also be
    omitted. Omission assigns the field's declared literal default when one
    exists and otherwise normalizes to `None`; explicit `null` always normalizes
    to `None`.
-5. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
+6. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
    during semantic analysis and MUST independently validate every successful
    hook result against that schema. Recursive types MUST use `$defs` and
    `$ref`.
@@ -366,14 +380,18 @@ document are to be interpreted as described in RFC 2119.
    value. A join result MAY be bound as `let result: T = join(task);`. Joining
    a no-result block is a waiting statement and yields no value.
    `join(task_a, task_b, ...)` waits for every named child and yields an ordered
-   `List<T>` of their successful block values in argument order. Every joined
-   task in a multi-task join MUST have the same non-`None` result type; mixing
-   result types or joining a no-result task in this form is an analysis error.
+   `List<T>` of their successful block values in argument order when every
+   joined task has the same non-`None` result type. When the named tasks have
+   different non-`None` result types, it yields
+   `Tuple<T1, T2, ..., Tn>`, whose positional types and values follow argument
+   order. Joining a no-result task in this form is an analysis error.
 6. `joinall` is syntactic sugar for joining every task in the current lexical
    scope. It waits until all such tasks have settled and yields an ordered
    `List<T>` in task declaration order when every joined task has the same
-   non-`None` result type. Otherwise it is a waiting statement that discards
-   successful outputs. It MUST NOT stop waiting merely because one task fails.
+   non-`None` result type. When every joined task has a non-`None` result but
+   their types differ, it yields a positional tuple in task declaration order.
+   Otherwise it is a waiting statement that discards successful outputs. It
+   MUST NOT stop waiting merely because one task fails.
    After all tasks settle, one or more failures MUST abort the current program
    with one aggregate runtime error.
 7. A child failure does not immediately cancel siblings. A named child's
