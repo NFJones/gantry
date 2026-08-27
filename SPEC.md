@@ -10,7 +10,13 @@ directs the work below.
 This initial specification is a scaffold. It establishes the intended scope;
 later revisions will define concrete syntax and execution semantics.
 
-## 2. Design Goals
+## 2. Normative Language
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+document are to be interpreted as described in RFC 2119.
+
+## 3. Design Goals
 
 Gantry programs SHOULD make agent work readable, explicit, and reviewable.
 The language will provide:
@@ -21,7 +27,7 @@ The language will provide:
 - structured values and inspectable operation results; and
 - semantics that fit Mezzanine's visible action and approval model.
 
-## 3. Terminology
+## 4. Terminology
 
 **Station**: a named model-backed agent operation.
 
@@ -33,7 +39,7 @@ The language will provide:
 
 **Shift**: a bounded phase of work, including retries or refinement.
 
-## 4. Open Design Work
+## 5. Open Design Work
 
 The first language-design milestone must define lexical syntax, data types,
 prompt interpolation, control-flow forms, error behavior, model-operation
