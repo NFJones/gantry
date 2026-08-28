@@ -11,9 +11,9 @@ assumed runtime or part of the language contract. An integration supplies the
 agents, models, tools, transport, credentials, resource policy, and any
 provider-specific behavior.
 
-This document records the settled version 1 (v1) requirements. Sections
-marked as open design work identify decisions required before syntax and full
-operational semantics can become normative.
+This document records the settled version 1 (v1) language and operational
+requirements. Concrete Rust type signatures may remain implementation-defined
+where the semantic contract is fully specified here.
 
 ## 2. Normative Language
 
@@ -56,7 +56,16 @@ document are to be interpreted as described in RFC 2119.
 
 1. Gantry source files MUST use the `.gnt` extension.
 2. A package entry point is `main.gnt`, and its selected entry function is
-   `fn main()`. The directory containing `main.gnt` is the package root.
+   the root module's `fn main`. The directory containing `main.gnt` is the
+   package root. `main` MUST have either no parameters or exactly one typed
+   parameter and MAY return any v1 result type or no result. When `main` has a
+   parameter, the embedding application MUST supply one strict-JSON entry
+   value, which Gantry MUST validate against the parameter's generated schema
+   before execution begins. When `main` has no parameter, supplying an entry
+   value is an error. Gantry MUST return a successful entry result to the
+   embedder as strict JSON together with a host-level indication of whether the
+   function returned a value; this indication distinguishes a no-result
+   `main` from an `Option<T>` result whose JSON value is `null`.
 3. Gantry MUST support comments and SHOULD adopt Rust lexical conventions
    where they fit the v1 feature set. Rust likeness is primarily a syntactic
    and readability goal; Gantry does not inherit Rust semantics by default.
@@ -88,6 +97,19 @@ document are to be interpreted as described in RFC 2119.
 13. Top-level package and module contents MUST be declarations. Executable
     statements are permitted only within function, method, decision, spawn, or
     other executable block bodies.
+14. Gantry MUST collect all module declarations and package-wide agent names
+    before resolving item bodies. This collection pass is the only exception
+    to declared-before-use ordering; it does not make functions, types, or
+    imports usable before their declarations. Within one module, item names
+    MUST be unique across structs, functions, decisions, and modules. An
+    imported name MUST NOT collide with another import or local item.
+15. Struct field names, parameter names, and method names for one receiver type
+    MUST each be unique. A local binding or task handle MUST NOT duplicate or
+    shadow any parameter, binding, or task handle visible at its declaration
+    point. Fields and methods occupy their receiver's member namespace and MAY
+    reuse names that exist in unrelated lexical scopes. These rules deliberately
+    exclude source-level shadowing in v1 so references remain unambiguous to
+    both readers and static analysis.
 
 ## 5. Values, Bindings, and Structs
 
@@ -109,7 +131,9 @@ document are to be interpreted as described in RFC 2119.
    Gantry code MUST NOT inspect an option through
    deterministic branching, pattern matching, `if let`, or an unwrap
    operation in v1; a program that needs to branch on an option MUST supply it
-   to an agent decision operation.
+   to an agent decision operation. `Option<Option<T>>` is excluded from v1
+   because the untagged strict-JSON encoding cannot distinguish `None` from
+   `Some(None)`.
 4. `List<T>` is an ordered, homogeneous collection. List literals, indexing,
    iteration, and deterministic list operations are excluded from v1; v1 lists
    are produced by agent operations, returned by joins, passed as values, and
@@ -127,17 +151,27 @@ document are to be interpreted as described in RFC 2119.
    terminate the recursion. An unguarded recursive cycle is an analysis error
    because it has no finite inhabitant.
 7. Gantry MUST support named-field struct construction. Struct values MAY be
-   constructed by source execution or produced by an agent hook.
+   constructed by source execution or produced by an agent hook. A source
+   constructor MUST reject unknown and duplicate fields during analysis.
+   Constructor field expressions are evaluated once in source order. Omitted
+   required fields are analysis errors; an omitted field with a default uses
+   that default, and an omitted `Option<T>` field without a default becomes
+   `None`. A constructed value becomes visible only after every supplied field
+   expression completes successfully. Earlier hook side effects are not
+   reversible if a later field expression fails.
 8. Struct fields MAY declare literal defaults. Defaults MUST NOT invoke an
    agent operation. When an optional field with a default is omitted, the
    default is assigned; explicit `null` remains `None`. Struct update syntax
    and destructuring are excluded from v1.
-8. Bindings are immutable by default. `mut` enables rebinding and field
+9. Bindings are immutable by default. `mut` enables rebinding and field
    mutation. Assignments MUST preserve type, and v1 permits no implicit type
    coercion.
-9. `const` is excluded from v1. Runtime initialization of immutable bindings
+10. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
-10. Built-in deterministic string and list operations are excluded from v1.
+11. Built-in deterministic string and list operations are excluded from v1.
+    Lists and tuples are typed transport aggregates in v1: source may pass,
+    return, interpolate, or submit them to an agent operation, but cannot
+    inspect their members deterministically.
 
 ## 6. Functions and Methods
 
@@ -153,6 +187,11 @@ document are to be interpreted as described in RFC 2119.
 4. Functions and methods are interpreter-managed workflows. Calling one MUST
    create an interpreter call frame and execute its body; the call itself MUST
    NOT invoke an agent hook.
+   Arguments and receivers use deep-copy value semantics. There are no aliases,
+   references, moves, or borrowed values in v1. A `self` or `mut self` receiver
+   is therefore a local receiver copy. `mut self` permits mutation of that copy
+   but never changes the caller's value implicitly; callers MUST assign a
+   returned value explicitly when they intend to retain receiver changes.
 5. A workflow body MAY contain one or more `prompt` expressions. Each `prompt`
    expression, and each conditional or loop decision, MUST invoke exactly one
    agent operation hook. Struct construction, field access, assignment,
@@ -182,6 +221,10 @@ document are to be interpreted as described in RFC 2119.
 9. A method MAY return `self`; the returned value is a deep value copy and does
    not consume the receiver. Duplicate inherent methods for the same struct are
    analysis errors.
+10. `return` exits the nearest enclosing function, method, or decision workflow.
+    `break` and `continue` target the nearest enclosing loop even when they
+    occur inside a nested `with` block. A `with` block changes agent selection
+    only; it does not intercept or retarget control transfer.
 
 ## 7. Agents, Hooks, and Sessions
 
@@ -223,18 +266,32 @@ document are to be interpreted as described in RFC 2119.
    backoff. Gantry MUST retain its own cancellation semantics rather than
    treating executor abortion as cooperative hook cancellation.
 5. Every operation hook request MUST contain at least:
+   - a protocol major and minor version;
    - stable operation, execution, and parent-operation IDs;
    - an operation kind and selected agent name;
    - the original prompt template and interpolated prompt;
    - JSON-serialized typed arguments;
+   - the expected result kind;
    - the expected JSON Schema;
+   - generated operation guidance describing the input contract, output
+     contract, and required strict-JSON response;
    - the source location;
    - the logical session ID and session directive;
    - the attempt number; and
    - validation errors from the immediately preceding invalid attempt, when
      applicable.
-   The operation ID MUST remain stable across validation retries and resume.
-   Each attempt MUST have a distinct attempt identity.
+   The v1 operation kinds are `prompt` and `decision`. The result kind is
+   `value`, `no-result`, or `decision`. Typed arguments MUST be an ordered
+   vector containing one record for each interpolation island in source order;
+   each record contains the source expression, its static type, and its strict-
+   JSON value. A repeated interpolation appears repeatedly so the request
+   preserves the template's operation inputs exactly. Source locations MUST
+   identify the package-relative UTF-8 file and half-open byte span. The
+   operation ID MUST remain stable across validation retries and resume. Each
+   dispatch attempt MUST have a distinct attempt identity and a zero-based
+   attempt number. Validation errors MUST identify the failing JSON instance
+   location with JSON Pointer, the violated schema location, and a
+   human-readable message; they MUST NOT contain raw model output.
 6. A hook request MUST also contain a finite ordered execution-context vector.
    It MUST contain the active workflow call chain and the control-chain entries
    needed to interpret the current operation; it MUST NOT contain the entire
@@ -290,11 +347,41 @@ document are to be interpreted as described in RFC 2119.
    remain integration concerns.
 14. Agent operations may have side effects. Gantry does not require retries to
     be idempotent or prevent duplicate external effects.
+15. `prompt` and decision evaluation are the only v1 source constructs that
+    directly dispatch an `OperationHook`. Tools, approvals, shell commands,
+    network calls, and other harness actions MAY occur while the integration
+    fulfills that hook, but they are not separately expressed or interpreted
+    by Gantry v1. Gantry observes such work only through the hook outcome and
+    integration-supplied events. This boundary keeps the language focused on
+    agent control flow without prescribing a harness action vocabulary.
+16. Every dynamic operation identity MUST correspond to a logical execution
+    path consisting of the execution ID, task path, workflow-call path, source
+    operation location, branch arm, and enclosing loop iteration counters.
+    Recursive calls and repeated calls from the same call site MUST receive
+    distinct call-frame occurrences; distinct loop iterations and spawned
+    task occurrences MUST likewise receive distinct identities. Validation
+    retries and recovery of one indeterminate dispatch retain that identity.
+    Implementations MAY encode or hash the path opaquely, but MUST journal
+    enough of it to reconstruct the same identity on resume and MUST NOT reuse
+    an identity for another dynamic invocation.
+17. Hook outcomes and interpreter failures are separate domains. A hook
+    outcome is exactly `Completed(JSON)`, `Declined(reason)`, or
+    `Failed(message)`. Gantry runtime errors MUST at least distinguish entry-
+    input validation, syntax, analysis, hook creation, hook failure, decline of
+    a required result, structured-output exhaustion, cancellation, journal
+    failure, required-event-delivery failure, task/join failure, and internal
+    invariant failure. Concrete Rust error types are implementation-defined,
+    but embedders MUST be able to distinguish these categories without parsing
+    display text.
 
 ## 8. Structured Output and Validation
 
 1. A successful agent hook outcome MUST contain strict JSON for its operation
-   result.
+   result. For a no-result prompt, the expected schema is exactly
+   `{ "type": "null" }` and `Completed` MUST contain JSON `null`. This wire
+   value confirms successful completion but does not create a Gantry value;
+   `Declined` and `Failed` retain their ordinary fatal behavior for no-result
+   operations.
 2. A `String` result is represented by a JSON string. A struct result is a
    JSON object whose property names directly match its declared field names.
 3. A `List<T>` result is represented by a JSON array. Every array item MUST
@@ -314,23 +401,23 @@ document are to be interpreted as described in RFC 2119.
    during semantic analysis and MUST independently validate every successful
    hook result against that schema. Recursive types MUST use `$defs` and
    `$ref`.
-6. Struct results MUST reject unknown properties. Declared fields are required
+7. Struct results MUST reject unknown properties. Declared fields are required
    unless represented by `Option<T>`.
-7. v1 validation MUST check JSON shape and types. Constraints such as length,
+8. v1 validation MUST check JSON shape and types. Constraints such as length,
    patterns, enums, and semantic validity are conveyed through prompt guidance
    rather than enforced by Gantry.
-8. Malformed JSON and schema-invalid output MUST be returned to the agent as
+9. Malformed JSON and schema-invalid output MUST be returned to the agent as
    validation guidance and retried up to the configured retry limit. A retry
    request MUST include the preceding validation errors but MUST NOT require
    Gantry to return the preceding raw output to the hook.
-8. The retry limit is configured per interpreter and MAY be overridden per
+10. The retry limit is configured per interpreter and MAY be overridden per
    operation. It counts retries after the initial attempt; zero permits exactly
    one attempt. Retry backoff MUST be configurable with sensible defaults.
-9. When retries are exhausted, the operation and program MUST fail. Gantry has
+11. When retries are exhausted, the operation and program MUST fail. Gantry has
    no language-level error recovery in v1.
-10. Transport failures and their retry policy are integration concerns, not
+12. Transport failures and their retry policy are integration concerns, not
    Gantry structured-output retries.
-11. Source snippets MAY be included in validation diagnostics. Raw agent
+13. Source snippets MAY be included in validation diagnostics. Raw agent
     output MUST NOT be included in validation diagnostics.
 
 ## 9. Control Flow
@@ -372,6 +459,15 @@ document are to be interpreted as described in RFC 2119.
    maximum supported integer. It counts body executions. Zero always means
    unlimited and MUST NOT be reinterpreted by interpreter configuration.
    Reaching a positive limit completes the loop normally rather than failing.
+   `inline` uses the enclosing session for both the condition and body. `fork`
+   creates one child session for each prospective iteration; a `while`
+   condition and the body it admits share that child, while an `until` body and
+   its following condition share it. A final false `while` condition therefore
+   has a child session with no body execution. `new` creates one fresh session
+   on loop entry and uses it for every condition and body execution. A session
+   modifier on the decision's final `prompt` overrides the loop session only
+   for that prompt. Validation retries always retain the logical session of
+   the operation being retried.
 7. Gantry MUST support `break`, `continue`, and `return` in loops. Unlabeled
    `break` and `continue` target the nearest enclosing loop. Labeled loop
    control is excluded from v1.
@@ -388,7 +484,8 @@ document are to be interpreted as described in RFC 2119.
     interpreter-only decision schema in item 2. A decision workflow MAY contain
     multiple ordinary prompts, nested decisions, and other executable blocks.
     `return` MAY exit it early, but the returned expression MUST be a direct
-    decision prompt or a call to another decision workflow. Each completed
+    decision prompt, a call to another decision workflow, or a `with` context
+    whose trailing expression is one of those forms. Each completed
     evaluation MUST ultimately obtain its decision from exactly one prompt hook
    result with the decision schema in item 2. A decision call is valid only as
    the condition of `if`, `else if`, `while`, or `until`, or as the returned
@@ -400,7 +497,8 @@ document are to be interpreted as described in RFC 2119.
 
 1. Gantry MUST support annotated spawn declarations of the form
    `spawn <name> -> <type> { ... }`, joins of the form
-   `join(<task-name>, ...)`, and `joinall`.
+   `join(<task-name>, ...)`, `joinall`, and explicit detachment of the form
+   `detach(<task-name>);`.
 2. A spawn creates an arbitrary child program block running in parallel. The
    spawn name declares a new, lexically scoped, unique, interpreter-owned task
    handle. A task handle is not a `String`, is not agent-visible structured
@@ -428,7 +526,7 @@ document are to be interpreted as described in RFC 2119.
    order. Joining a no-result task in this form is an analysis error.
 6. `joinall` is syntactic sugar for joining every unconsumed, attached task
    declared directly in the current lexical scope. It excludes tasks declared
-   in nested scopes and tasks already detached by scope exit. It consumes all
+   in nested scopes and tasks explicitly detached before the join. It consumes all
    included handles, waits until all included tasks have settled, and yields an
    ordered `List<T>` in task declaration order when every joined task has the
    same non-`None` result type. When every joined task has a non-`None` result
@@ -441,9 +539,14 @@ document are to be interpreted as described in RFC 2119.
 7. A child failure does not immediately cancel siblings. A named child's
    failure is deferred until `join`; a scoped failure is deferred until
    `joinall`.
-8. Unjoined tasks detach on scope exit. Detached tasks and nested spawns are
-   permitted. The interpreter instance owns detached tasks, and a top-level
-   execution MAY report success while they continue to run.
+8. `detach(task)` consumes one attached task handle and transfers ownership of
+   that task to the interpreter instance without waiting for it. Detaching an
+   already consumed handle is an analysis error. An attached, unconsumed task
+   at lexical scope exit is an analysis error; v1 never detaches work
+   implicitly. Detached tasks and nested spawns are permitted, and a top-level
+   execution MAY report foreground success while detached tasks continue.
+   Requiring an explicit `detach` keeps background execution visible to humans,
+   agents, analysis, and recovery tooling.
 9. A detached-task failure MUST be journaled and emitted as a failure event. It
    MUST NOT retroactively change an already returned top-level success into a
    failure. If execution is still awaiting that task through `join` or
@@ -481,8 +584,13 @@ document are to be interpreted as described in RFC 2119.
    sequence number that increases monotonically within that journal.
    `flush(sequence)` MUST establish that every successfully appended record
    through that sequence is durable before it returns.
-3. A hook dispatch MUST be recorded and flushed before the hook is invoked, and
-   its outcome MUST be committed atomically before execution consumes it.
+3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
+   After a hook returns, Gantry MUST append the outcome and flush through that
+   outcome record's sequence number before the interpreter validates, assigns,
+   branches on, returns, or otherwise consumes it. A successfully flushed
+   outcome is committed. This ordering ensures recovery either reuses the
+   committed outcome or treats the dispatch as indeterminate; program state
+   MUST NOT advance using an outcome that is not yet durable.
 4. If execution is interrupted after dispatch but before an outcome is
    committed, the operation is indeterminate. On resume, Gantry MUST
    automatically invoke that operation again with the same operation ID and a
@@ -499,8 +607,24 @@ document are to be interpreted as described in RFC 2119.
    block MUST restart at the top of that block while reusing every committed
    operation result recorded for it. Uncommitted operations are retried under
    item 4.
-8. These resume guarantees do not create a deterministic-replay guarantee for
-   a new execution.
+8. A detached task remains part of its originating execution and journal after
+   foreground `main` returns. Foreground completion, detachment, detached-task
+   completion, and detached-task failure MUST each be durable states. Resuming
+   an execution with unfinished detached tasks MUST recover them under the
+   same rules as other in-flight spawned blocks. An execution reaches its
+   terminal durable state only after its foreground and every detached task
+   have completed, failed, or been cancelled during shutdown.
+9. A v1 journal envelope MUST identify its protocol version, journal and
+   execution IDs, monotonically increasing sequence number, record ID, record
+   kind, causal parent record when one exists, task and operation identities
+   when applicable, and a kind-specific payload. The required record kinds are
+   execution state, operation dispatch, operation outcome, validation attempt,
+   interpreter checkpoint, task state, event, event-delivery state, and
+   terminal failure. Concrete serialization and Rust types are implementation-
+   defined, but all required information and durability boundaries are
+   normative.
+10. These resume guarantees do not create a deterministic-replay guarantee for
+    a new execution.
 
 ## 12. Observability and Validation Modes
 
@@ -537,10 +661,23 @@ document are to be interpreted as described in RFC 2119.
    exhaustion for a best-effort sink MUST be journaled and execution MUST
    continue. Successful completion and orderly shutdown MUST flush all required
    sink deliveries for the applicable execution before returning.
-7. A dry-run performs syntax validation only and MUST NOT invoke agent hooks.
+   An event describing sink-delivery failure MUST NOT be delivered to the same
+   failing sink. Required-sink exhaustion MUST append and flush one terminal
+   failure record directly to the journal without requiring event delivery;
+   failure of that journal write is returned to the embedder as a journal
+   failure. These rules prevent recursive failure-event generation.
+7. Every event envelope MUST identify its protocol version, event and
+   execution IDs, event kind, source location when source-backed, task and
+   operation identities when applicable, causal parent IDs, per-task sequence,
+   timestamp, payload reference, and redaction state. The canonical v1 event
+   kinds are parse, analysis, workflow start, workflow end, operation dispatch,
+   operation completion, schema validation failure, retry, branch decision,
+   spawn, join, detach, mutation, cancellation, execution completion, and
+   failure. Concrete serialization is implementation-defined.
+8. A dry-run performs syntax validation only and MUST NOT invoke agent hooks.
    Gantry MUST separately provide an analysis mode that performs name, type,
    module, and schema validation without invoking hooks.
-8. Normal execution MUST complete semantic analysis successfully before its
+9. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
 
 ## 13. Formal Lexical and Syntactic Grammar
@@ -601,6 +738,18 @@ Unicode scalar value and contain one through six hexadecimal digits. A normal
 string may contain a literal newline. The lexer preserves its bytes after
 escape decoding and performs no indentation normalization.
 
+`string_character` is any Unicode scalar value other than `"` or `\`; newline
+characters are included. `block_comment_character` consumes one scalar value
+that does not begin the nested opener `/*` or closing delimiter `*/`.
+`raw_string_body` is the shortest sequence ending immediately before a quote
+followed by exactly `matching_raw_hashes`. Lexing uses maximal munch for
+identifiers, directive integers, `::`, and `->`. A raw-string token takes
+precedence over an identifier only when `r` is immediately followed by zero or
+more `#` characters and a quote. Reserved-word classification occurs after an
+identifier token is scanned. Comments are recognized only outside string
+tokens, and interpolation islands are recognized only by the contextual prompt
+scan described in Section 13.7.
+
 For a raw string, `matching_raw_hashes` means exactly the same number of `#`
 characters as `raw_hashes`. Backslashes have no special meaning in a raw
 string. The variable-hash delimiter rule is lexical and is intentionally
@@ -610,12 +759,12 @@ The reserved words are:
 
 ```text
 agent      agents     as          break       continue    decision
-default    else       fn          if          impl        inline
-join       joinall    let         limit       loop        mod
-mut        new        None        Option      List        prompt
-return     retry_limit self        session     Some        spawn
-String     struct     Tuple       until       use         while
-with       fork
+default    detach     else        fn           fork        if
+impl       inline     join        joinall      let         limit
+List       loop       mod         mut          new         None
+Option     prompt     return      retry_limit  self        session
+Some       spawn      String      struct       Tuple       until
+use        while      with
 ```
 
 `as` is reserved for future compatible extension even though v1 has no alias
@@ -715,6 +864,7 @@ statement               = let_statement
                         | break_statement
                         | continue_statement
                         | spawn_statement
+                        | detach_statement
                         | if_statement
                         | loop_statement
                         | while_statement
@@ -775,6 +925,13 @@ accesses a field or begins a method call. Gantry has no arithmetic, Boolean,
 comparison, indexing, tuple projection, list literal, or tuple literal syntax
 in v1. Parentheses group one expression; they do not construct tuples.
 
+An unqualified primary path used as a value MUST resolve to a visible parameter
+or binding. A qualified item path is valid in an expression only as the callee
+of a workflow call or as the type path beginning a struct constructor. Because
+v1 has no module, type, function, decision, or method values, semantic analysis
+MUST reject a bare path that resolves to any such item. Task handles are legal
+only in `join`, `joinall`, and `detach`, never as primary expressions.
+
 A `with` expression yields its block's trailing value, if any, which permits a
 lexically selected agent to produce the enclosing workflow's result. If its
 block has no trailing value, the `with` expression has no result.
@@ -818,6 +975,15 @@ an interpolation unless its `$` was consumed by `$$`. `$$` emits one literal
 to normal and raw prompt strings. In non-prompt string expressions, `$` and
 `${...}` are ordinary string contents and are not interpolated.
 
+The scan proceeds left to right after ordinary-string escape decoding. Thus
+`$$${name}` emits one literal `$` followed by the interpolation of `name`, and
+an ordinary-string Unicode escape that decodes to `$` immediately before `{`
+begins interpolation. Authors SHOULD use `$$` rather than Unicode spelling when
+they intend a literal dollar sign. Raw strings skip escape decoding but use the
+same left-to-right interpolation and `$$` rules. A closing `}` ends an island
+only when all nested constructor braces and parentheses inside it are balanced;
+an unclosed or syntactically invalid island is a syntax error.
+
 Interpolation permits only the restricted grammar above. In particular, it
 does not admit function or method calls, prompts, decisions, joins, mutation,
 or control flow. Nested braces belonging to a struct initializer are balanced
@@ -834,9 +1000,13 @@ if_statement            = "if", decision_expression, block,
 
 decision_expression     = decision_prompt
                         | decision_call
+                        | decision_with_expression
                         | "(", decision_expression, ")" ;
 decision_prompt         = "prompt", [ prompt_modifiers ], prompt_template ;
 decision_call           = qualified_path, "(", [ argument_list ], ")" ;
+decision_with_expression
+                        = "with", identifier_token, "{",
+                          { statement }, decision_tail, "}" ;
 
 loop_statement          = "loop", [ loop_modifiers ], block ;
 loop_modifiers          = "(", loop_modifier,
@@ -870,6 +1040,7 @@ to the enclosing `while` or `until`. A `decision_call` MUST resolve to a
 
 ```ebnf
 spawn_statement         = "spawn", identifier_token, result_annotation, block ;
+detach_statement        = "detach", "(", identifier_token, ")", ";" ;
 join_expression         = "join", "(", identifier_token,
                           { ",", identifier_token }, [ "," ], ")" ;
 joinall_expression      = "joinall" ;
@@ -877,6 +1048,8 @@ joinall_expression      = "joinall" ;
 
 Every spawn has an explicit result annotation, including `-> None`. `join`
 requires at least one handle. `joinall` takes no parentheses or arguments.
+`detach` consumes exactly one attached task handle and is a statement rather
+than a value-producing expression.
 Static result typing follows Section 10: one value for one task, `List<T>` for
 multiple homogeneous results, and `Tuple<T1, ..., Tn>` for multiple
 heterogeneous results.
@@ -1232,8 +1405,8 @@ fn audit_in_parallel(report: Report) {
 }
 ```
 
-Leaving the following inner scope without joining detaches `background` from
-that scope; the interpreter continues to own it:
+Background work is explicit. `detach(background)` consumes the scoped handle
+and transfers the task to the interpreter instance:
 
 ```gantry
 fn launch_background(report: Report) {
@@ -1241,6 +1414,8 @@ fn launch_background(report: Report) {
         spawn background -> None {
             prompt "Audit ${report} in the background.";
         }
+
+        detach(background);
     }
 }
 ```
@@ -1274,15 +1449,56 @@ fn run_imported_check(text: String) -> Finding {
 }
 ```
 
-## 15. Remaining Open Implementation Contracts
+## 15. Required Embedding Interfaces
 
-The v1 source grammar is defined above. The following embedding and persistence
-contracts remain intentionally open and do not change the accepted source
-syntax:
+Concrete Rust names and signatures MAY evolve during implementation, but a v1
+embedding API MUST expose the following semantic interfaces without requiring
+provider-specific or executor-specific types in Gantry programs:
 
-- the concrete Rust signatures and error types for the hook factory, executor,
-  cancellation token, journal storage, and event sinks;
-- the canonical field-level schemas for versioned journal and event envelopes;
-  and
-- the concrete shutdown timeout defaults and bounded post-cancellation drain
-  duration exposed by the embedding API.
+1. An `Interpreter` accepts a package root, interpreter configuration, a hook
+   factory, executor adapter, journal storage, and zero or more event sinks. It
+   MUST expose syntax-only validation, semantic analysis, execution, resume,
+   and terminal asynchronous shutdown operations. Execution accepts either no
+   entry value or one strict-JSON entry value as required by `main`, and returns
+   a typed execution outcome that distinguishes a value, no result, and every
+   runtime-error category defined in Section 7.
+2. A `HookFactory` asynchronously creates one `OperationHook` for a supplied
+   task context. `OperationHook` asynchronously accepts the versioned request
+   defined in Section 7 and a Gantry-owned cancellation token, and returns
+   exactly one `Completed`, `Declined`, or `Failed` outcome. Hook futures MUST
+   be `Send`; one hook instance is used serially for one Gantry task.
+3. A cancellation token is cloneable, safe to observe from multiple threads,
+   and transitions monotonically from active to cancelled. Cancellation does
+   not itself constitute a hook outcome; an integration that stops work after
+   observing cancellation returns `Failed` or lets Gantry surface cancellation
+   according to the runtime state.
+4. An executor adapter provides asynchronous task spawn, join, abort, and sleep
+   capabilities. Gantry MUST use those capabilities rather than constructing a
+   hidden Tokio or other provider runtime. Executor handles and errors MUST be
+   wrapped so no specific executor type appears in the language-facing API.
+5. Journal storage asynchronously provides atomic `append(record)` and
+   `flush(sequence)` operations with the behavior in Section 11. An append
+   returns the stable record ID and monotonically increasing sequence number
+   assigned to the record. Storage errors are never retried as model-output
+   failures and MUST surface as journal runtime errors.
+6. Each event sink declares its required/best-effort class, raw-output
+   capability, enabled redaction policy, and retry policy. Its asynchronous
+   delivery operation receives a versioned event envelope and returns success,
+   a retriable error, or a terminal error. Gantry owns delivery attempt IDs,
+   retry timing, journaling, and required-sink failure semantics.
+7. Interpreter configuration MUST include the default agent-output retry
+   limit and backoff, event-delivery defaults, executor adapter, maximum
+   supported directive integer, graceful-shutdown timeout, and post-
+   cancellation drain duration. The v1 defaults are 30 seconds for graceful
+   shutdown and 5 seconds for post-cancellation drain. Embedders MAY override
+   both with finite nonnegative durations; zero requests immediate cancellation
+   or immediate return after cancellation, respectively.
+8. All public protocol envelopes MUST carry a major and minor version. A major
+   mismatch is incompatible and MUST be rejected. An implementation MAY accept
+   a newer minor version only when it ignores unknown optional fields without
+   changing the meaning of known fields; unknown required fields or enum
+   variants MUST be rejected.
+
+The canonical serialization format and concrete Rust data-type layout are
+implementation choices. They MUST preserve every field, category, ordering,
+durability boundary, and compatibility rule made normative by this document.
