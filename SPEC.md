@@ -1289,9 +1289,11 @@ defined here and in Section 7 cross the integration boundary.
    expressions composed from other permitted interpolation expressions.
    Workflow calls, source-defined method calls, `prompt`, `decide`, `action`,
    assignment, `join`, and other expressions that can invoke a hook, alter
-   control flow, or mutate state are prohibited inside interpolation. A call
-   inside interpolation MUST resolve to a sealed deterministic built-in whose
-   receiver and arguments are themselves valid interpolation expressions.
+   control flow, or mutate state are prohibited inside interpolation. A
+   postfix call inside interpolation MUST resolve either to a declared enum
+   payload constructor or to a sealed deterministic built-in. Its payload,
+   receiver, and arguments, as applicable, MUST themselves be valid
+   interpolation expressions.
    Interpolations are evaluated in
    source order. If any interpolation cannot be evaluated or encoded, the
    containing prompt MUST remain undispatched and execution MUST fail. The
