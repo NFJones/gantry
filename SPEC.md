@@ -798,7 +798,12 @@ document are to be interpreted as described in RFC 2119.
    operation request MUST include one `optional-decline` entry for every
    distinct decline provenance reachable from its interpolation inputs,
    ordered by interpolation-input order and then depth-first value traversal;
-   repeated references to the same declined value produce one entry. The
+   repeated references to the same declined value produce one entry. Depth-first
+   value traversal is preorder: a struct visits fields in declaration order, a
+   `List<T>` or tuple visits members in ascending index order, and a present
+   `Option<T>` visits its contained value. A `None` has no child value. When the
+   same provenance is reachable by more than one path, its first encounter in
+   this total order determines the entry position. The
    metadata is not part of Gantry's JSON value and MUST NOT change schema
    validation or interpolation, which still emits `null`. The integration MUST
    make every supplied entry
@@ -873,8 +878,13 @@ document are to be interpreted as described in RFC 2119.
    resume.
    Every session created by `fork` or `new` MUST receive a fresh logical ID
    that is unique within the execution and stable across retry and resume.
-   Gantry MUST journal the creating construct's dynamic identity and the
-   enclosing session ID. A `fork` request identifies that enclosing session as
+   Before a hook dispatch, child-task submission, or other durable state may
+   refer to that ID, Gantry MUST append and flush a session-state record that
+   contains the ID, creation directive, creating construct's dynamic identity,
+   enclosing session ID, and creator task ID. Replaying the same dynamic
+   construct MUST recover that record and reuse its ID rather than allocate a
+   second session. `inline` creates no session-state record because it reuses an
+   existing ID. A `fork` request identifies that enclosing session as
    the context source the integration MUST copy. A `new` request includes the
    enclosing session only for causality and the integration MUST NOT inherit
    its conversational context. An `inline` request uses the enclosing session
@@ -1697,9 +1707,11 @@ document are to be interpreted as described in RFC 2119.
    execution IDs, monotonically increasing sequence number, record ID, record
    kind, causal parent record when one exists, task and operation identities
    when applicable, and a kind-specific payload. The required record kinds are
-   execution state, operation dispatch, operation outcome, validation attempt,
-   operation result, interpreter checkpoint, task state, event,
-   event-delivery state, and terminal execution. An execution-state record MUST
+   execution state, session state, operation dispatch, operation outcome,
+   validation attempt, operation result, interpreter checkpoint, task state,
+   event, event-delivery state, and terminal execution. A session-state record
+   MUST contain the logical-session creation fields and obey the durability and
+   replay rules in Section 7. An execution-state record MUST
    identify its state-transition subtype, including execution start, agent-
    mapping revision, or best-effort-sink configuration change when applicable.
    A terminal-execution record MUST use one of the terminal categories defined
@@ -2164,18 +2176,22 @@ before an unescaped `"""` delimiter and uses the same escape sequences as an
 ordinary string. One or two consecutive unescaped quote characters are block-
 prompt content; only three begin the closing delimiter. Escaping at least one
 quote permits a literal three-quote sequence in the decoded content. A block
-prompt MUST begin with a newline immediately after
-its opening delimiter; that required opening newline is structural and is not
-part of the resulting template. Its closing delimiter MUST appear on a line
-containing only indentation and the delimiter. The line break immediately
-before that closing-delimiter line and the delimiter line's indentation are
-structural and are not part of the resulting template. Authors who need a
-trailing newline MUST include one additional blank content line. The closing
-indentation is the exact dedent prefix: it MUST prefix every nonblank content
-line and is removed once from each such line. A whitespace-only content line
-becomes an empty line when its whitespace is no longer than the dedent prefix;
-any excess whitespace remains. Relative indentation and explicitly authored
-leading or trailing blank content lines remain significant. This symmetric
+prompt MUST begin with a `line_terminator` immediately after its opening
+delimiter; that required terminator is structural and is not part of the
+resulting template. Its closing delimiter MUST appear on a line containing
+only indentation followed by the delimiter. Block-prompt indentation consists
+only of ASCII space and horizontal-tab characters. The line terminator
+immediately before that closing-delimiter line and the delimiter line's
+indentation are structural and are not part of the resulting template. Authors
+who need a trailing newline MUST include one additional blank content line.
+The closing indentation is the exact dedent prefix: every nonblank content line
+MUST begin with that same sequence of spaces and tabs, and Gantry removes it
+once from each such line. A whitespace-only content line becomes an empty line
+regardless of its authored indentation. Dedentation operates on authored
+characters before escape decoding and interpolation replacement; it never
+removes whitespace produced by an escape or an interpolated value. Relative
+indentation and explicitly authored leading or trailing blank content lines
+remain significant. This symmetric
 structural-newline rule keeps multiline prompts readable without silently
 adding a trailing newline. Ordinary and raw strings continue to preserve exact
 whitespace. `block_comment_character` consumes one scalar value that does not
