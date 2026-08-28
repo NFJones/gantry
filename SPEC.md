@@ -6,6 +6,7 @@
     - [1.2 Reading the surface syntax](#12-reading-the-surface-syntax)
     - [1.3 V1 design boundary](#13-v1-design-boundary)
     - [1.4 Authoring conventions](#14-authoring-conventions)
+    - [1.5 Core terminology](#15-core-terminology)
   - [2. Normative Language](#2-normative-language)
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
   - [4. Source Organization](#4-source-organization)
@@ -210,6 +211,39 @@ valid:
 
 Section 14 follows these conventions and serves as the canonical source-style
 reference for v1 examples.
+
+### 1.5 Core terminology
+
+The following terms distinguish source constructs from runtime and integration
+activity throughout this specification:
+
+- A **workflow** is a source `fn`, inherent method, or `decision`
+  declaration. Calling a workflow creates an interpreter frame; the call is
+  not itself model-backed work.
+- A **logical operation** is one dynamic execution of a source `prompt` or
+  terminal `decide`. It has one stable operation ID and produces at most one
+  consumable operation result.
+- A **physical dispatch** is one invocation of `OperationHook` for a logical
+  operation. Validation repair and recovery may cause several physical
+  dispatches for one logical operation, each with a distinct dispatch ID.
+- A **hook outcome** is `Completed(raw_output)`, `Declined(reason)`, or
+  `Failed(message)`. An **operation result** is the validated and normalized
+  value, no-result acceptance, optional decline, or interpreter-only decision
+  that Gantry durably derives from an outcome and may consume.
+- A **Gantry task** is an interpreter execution lane: the root task or one
+  child created by `spawn`. A task is not an agent, model, provider request,
+  or executor thread.
+- An **agent** is a logical source-declared name selected by `with` or by the
+  package default. The integration maps that name to its model or agent
+  implementation.
+- A **harness action** is provider, tool, approval, shell, network, or other
+  integration-internal work performed while fulfilling a hook. It is not a
+  separate Gantry v1 source operation and cannot mutate Gantry state except
+  through the hook outcome.
+- A **foreground outcome** is the completion of root `main`. A **terminal
+  execution outcome** is known only after foreground and detached work have
+  settled and required terminal state is durable. Foreground success can
+  therefore precede a terminal detached-task failure.
 
 ## 2. Normative Language
 
@@ -812,31 +846,44 @@ document are to be interpreted as described in RFC 2119.
    It MUST contain the active workflow call chain and the control-chain entries
    needed to interpret the current operation; it MUST NOT contain the entire
    event history or all events since session creation. Each context entry MUST
-   identify its kind, source operation when applicable, and associated
-   structured data. The canonical v1 context kinds and payloads are:
-   - `workflow-frame`: workflow path, call-site location, and frame occurrence;
-   - `decision-frame`: decision workflow path and frame occurrence;
-   - `conditional-arm`: conditional-chain ID, zero-based arm index, decision,
-     and nonempty rationale for an already evaluated arm;
-   - `loop-iteration`: loop operation ID, zero-based body-execution index,
-     phase (`condition` or `body`), and the most recently settled condition's
-     associated index, decision, and nonempty rationale when one exists; and
+   identify its kind, dynamic source-construct identity when applicable, and
+   associated structured data. The canonical v1 context kinds and payloads
+   are:
+   - `workflow-frame`: canonical workflow path, call-site location, and
+     zero-based frame occurrence within its immediate dynamic caller;
+   - `decision-frame`: canonical decision-workflow path, call-site location,
+     and zero-based frame occurrence within its immediate dynamic caller;
+   - `conditional-arm`: conditional-chain dynamic identity, zero-based arm
+     index, decision, and nonempty rationale for an already evaluated arm;
+   - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
+     index, phase (`condition` or `body`), and the most recently settled
+     condition's associated index, decision, and nonempty rationale when one
+     exists; and
    - `optional-decline`: declined operation ID, selected agent, source location,
      and decline reason when a decline normalized to `None`.
+   A prospective-iteration index identifies the condition/body pair described
+   by Section 9: a `while` condition and the body it admits share an index, as
+   do an `until` body and its following condition. A final false `while`
+   condition may therefore have an index for which no body executes.
+   Conditional-chain and loop dynamic identities MUST use the same execution,
+   task, workflow-call, branch, loop-counter, and source-span components that
+   item 16 requires for dynamic operation identity. They identify the
+   controlling source construct rather than any one `decide` operation within
+   it and MUST remain stable across retry and resume.
    A context entry's protocol representation MUST preserve one entry boundary,
-   its canonical kind, the listed payload fields, and the source operation and
-   location when the kind requires them. The structured vector MUST remain
-   intact at the Gantry hook boundary: an integration MUST NOT discard or
-   reorder entries before presenting them to the selected agent. A harness MAY
-   render the entries into provider messages or prompt text when its model API
-   has no structured-context channel, but that rendering MUST preserve vector
-   order, visibly distinguish entry boundaries and kinds, and make every
-   required field available to the selected agent. Such rendering and any
-   provider-specific presentation metadata are integration behavior and MUST
-   NOT replace or mutate the canonical request vector. An unknown context kind
-   is incompatible with protocol major version 1 and MUST be rejected; a newer
-   minor version may add only optional fields to a known kind under the
-   compatibility rule in Section 15.
+   its canonical kind, the listed payload fields, and the source-construct
+   identity and location when the kind requires them. The structured vector
+   MUST remain intact at the Gantry hook boundary: an integration MUST NOT
+   discard or reorder entries before presenting them to the selected agent. A
+   harness MAY render the entries into provider messages or prompt text when
+   its model API has no structured-context channel, but that rendering MUST
+   preserve vector order, visibly distinguish entry boundaries and kinds, and
+   make every required field available to the selected agent. Such rendering
+   and any provider-specific presentation metadata are integration behavior
+   and MUST NOT replace or mutate the canonical request vector. An unknown
+   context kind is incompatible with protocol major version 1 and MUST be
+   rejected; a newer minor version may add only optional fields to a known kind
+   under the compatibility rule in Section 15.
    Structural entries (`workflow-frame`, `decision-frame`, `conditional-arm`,
    and `loop-iteration`) MUST appear first, ordered from outermost to
    innermost scope, with repeated entries in execution order within one scope.
@@ -896,13 +943,14 @@ document are to be interpreted as described in RFC 2119.
 9. Hooks MUST receive the expected output schema as a separate
    machine-readable value. Gantry MUST provide guidance that clearly states
    the operation's input and output contract. At minimum, the guidance MUST
-   state that `Completed` output is exactly one JSON text with no surrounding
-   prose, Markdown fence, or additional value; identify the expected result
-   kind; explain that unknown struct properties are rejected; identify fields
-   that may be omitted and the defaults or `None` values omission supplies;
-   and explain the no-result or decision shape when applicable. The wording and
-   provider-specific presentation MAY evolve, but those semantic instructions
-   MUST remain present on every initial dispatch and repair retry.
+   state that the raw model output returned through `Completed` must contain
+   exactly one JSON text with no surrounding prose, Markdown fence, or
+   additional value; identify the expected result kind; explain that unknown
+   struct properties are rejected; identify fields that may be omitted and the
+   defaults or `None` values omission supplies; and explain the no-result or
+   decision shape when applicable. The wording and provider-specific
+   presentation MAY evolve, but those semantic instructions MUST remain
+   present on every initial dispatch and repair retry.
 10. The only v1 operation-selection knob is the agent name. System/user/
    assistant roles, model choice, tools, sampling settings, streaming,
    progress reporting, operation-level timeouts, and provider-specific
@@ -1191,10 +1239,14 @@ document are to be interpreted as described in RFC 2119.
    exponential backoff: for the one-based retry number `r`, the delay ceiling
    is `min(100 ms * 2^(r - 1), 2 s)`, and the selected delay is sampled
    uniformly from the inclusive range of whole microseconds from zero through
-   that ceiling. An implementation MUST record the selected delay in the
-   validation-attempt record before sleeping. If execution is interrupted
-   before the corresponding retry dispatch is durably recorded, resume MUST
-   wait the complete recorded delay again; it MUST NOT sample another delay.
+   that ceiling. This formula uses saturating arithmetic: once doubling the
+   initial delay would meet or exceed the cap, the ceiling is the cap for that
+   and every later retry. An implementation MUST NOT construct an unbounded
+   power or overflow an integer when `retry_limit` is large. An implementation
+   MUST record the selected delay in the validation-attempt record before
+   sleeping. If execution is interrupted before the corresponding retry
+   dispatch is durably recorded, resume MUST wait the complete recorded delay
+   again; it MUST NOT sample another delay.
    The effective retry limit, initial delay, cap, and jitter mode are bound to
    resumable execution as specified in Section 11. A configured policy MAY
    choose no jitter, but it MUST still identify its initial delay, cap, and
@@ -1322,11 +1374,12 @@ document are to be interpreted as described in RFC 2119.
     `decide` expression, a call to another decision workflow, or a `with` or
     `session` context whose trailing expression is one of those forms. Each
     completed evaluation MUST ultimately obtain its decision from exactly one
-    prompt hook result with the decision schema in item 2. A decision call is
-    valid only as the condition of `if`, `else if`, `while`, or `until`, or as the returned
-   expression of another decision workflow. Its result cannot be bound,
-   returned by an ordinary workflow, interpolated, or discarded as a
-    standalone statement. Decision workflows are free module items in v1;
+    decision-operation hook result with the decision schema in item 2. A
+    decision call is valid only as the condition of `if`, `else if`, `while`,
+    or `until`, or as the returned expression of another decision workflow.
+    Its result cannot be bound, returned by an ordinary workflow,
+    interpolated, or discarded as a standalone statement. Decision workflows
+    are free module items in v1;
     decision methods and decision-valued first-class values are excluded.
     Semantic analysis MUST prove that every reachable
     normal completion of a decision workflow yields a decision expression and
