@@ -371,6 +371,11 @@ in later sections:
   user-defined generics, traits, general exception handling, regular
   expressions, or locale-sensitive text processing. Semantic judgments remain
   agent-mediated.
+- Raw entry input and raw hook output are subject to explicit byte limits, and
+  every value is subject to explicit nesting-depth and total-node limits,
+  before it can consume unbounded parser or interpreter resources. These
+  limits are part of resumable execution identity rather than implementation-
+  dependent hidden policy.
 - Lists and tuples are typed aggregates. Source can construct, pass, return,
   interpolate, and project them. Tuples additionally support pattern
   destructuring. Lists expose deterministic `len()` and dynamic `Int`
@@ -600,9 +605,12 @@ document are to be interpreted as described in RFC 2119.
    that needs to import or export a judgment MUST use an ordinary declared
    struct containing the required data rather than `Decision` itself.
    When `main` has a parameter, the embedding application MUST supply one raw
-   byte sequence containing the entry JSON. Gantry MUST own UTF-8 decoding and RFC 8259 JSON
-   parsing and MUST apply the same empty-input, trailing-data, duplicate-member,
-   and Unicode-scalar rejection rules that Section 8 applies to hook output.
+   byte sequence containing the entry JSON. Gantry MUST reject that sequence
+   with an entry-input resource-limit failure before UTF-8 decoding when its
+   byte length exceeds `maximum_entry_input_bytes`. Gantry MUST own UTF-8
+   decoding and RFC 8259 JSON parsing and MUST apply the same empty-input,
+   trailing-data, duplicate-member, Unicode-scalar, and value-nesting-depth
+   rejection rules that Section 8 applies to hook output.
    Gantry MUST then validate the parsed value against the parameter's generated
    schema before execution begins. After validation, Gantry MUST normalize the
    entry value exactly as it normalizes hook output: omitted optional struct
@@ -924,7 +932,12 @@ document are to be interpreted as described in RFC 2119.
 14. Gantry MUST provide the deterministic primitive operations in this item.
     There is no truthiness or implicit numeric or String coercion.
     - `!` accepts `Bool`. `&&` and `||` accept `Bool`, evaluate left to right,
-      short-circuit, and return `Bool`.
+      short-circuit, and return `Bool`. When the left operand determines the
+      result, Gantry MUST NOT evaluate the right operand. A skipped operand
+      creates no workflow frame, operation or dispatch identity, hook request,
+      task, journal transition, or event. If execution later reaches the same
+      source expression under a different dynamic path, identities are
+      assigned only to the operations actually evaluated on that path.
     - Unary `-` accepts `Int` or `Float` and preserves its operand type.
     - `+`, `-`, `*`, and `/` accept two values of the same numeric type and
       return that type. `%` accepts two `Int` values and returns `Int`.
@@ -1438,9 +1451,10 @@ document are to be interpreted as described in RFC 2119.
    stable across validation retries and resume. Each physical hook invocation
    MUST have a distinct dispatch ID. The zero-based
    validation-attempt number advances only after Gantry receives output that
-   fails UTF-8 decoding, JSON parsing, schema validation, or the effective
-   String or List resource limits; it is bounded by the operation's structured-
-   output retry limit. The zero-based recovery-dispatch number advances when
+   fails UTF-8 decoding, JSON parsing, schema validation, or an effective raw-
+   byte, value-depth, value-node, String, or List resource limit; it is bounded
+   by the operation's structured-output retry limit. The zero-based recovery-
+   dispatch number advances when
    an indeterminate invocation is repeated after resume and does not consume
    that retry budget. Validation errors MUST identify the failing JSON
    instance location with JSON Pointer when one exists, the violated schema
@@ -1789,16 +1803,31 @@ document are to be interpreted as described in RFC 2119.
 ## 8. Structured Output and Validation
 
 1. A successful operation-hook outcome provides raw bytes in
-   `Completed(raw_output)`. Gantry MUST decode those bytes as UTF-8 and parse
-   exactly one RFC 8259 JSON text, allowing only JSON whitespace after the
-   value. Gantry owns this parsing step and MUST reject non-UTF-8, malformed,
-   empty, or trailing-data output as structured-output validation failures.
+   `Completed(raw_output)`. Gantry MUST reject the outcome in the
+   `resource-limit` validation category before UTF-8 decoding when its byte
+   length exceeds `maximum_hook_output_bytes`. Gantry MUST decode an admitted
+   outcome as UTF-8 and parse exactly one RFC 8259 JSON text, allowing only
+   JSON whitespace after the value. Gantry owns this parsing step and MUST
+   reject non-UTF-8, malformed, empty, trailing-data, or excessively nested
+   output as structured-output validation failures.
    Duplicate member names in any JSON object MUST also be rejected as a
    structured-output validation failure rather than normalized by a JSON
    library's first-member or last-member behavior.
    JSON strings and object member names MUST decode to sequences of Unicode
    scalar values; valid escaped surrogate pairs are combined, and unpaired
    surrogates MUST be rejected.
+   During parsing, Gantry MUST enforce `maximum_value_nesting_depth` and
+   `maximum_value_nodes` without first constructing a deeper or larger in-
+   memory value. JSON root depth is one. Each array member or object-property
+   value has its containing array or object's depth plus one; an object
+   property name does not add depth. Empty arrays and objects therefore have
+   depth one. The root is also one value node. Each array member and each
+   object-property value contributes one additional node, recursively; object
+   property names do not contribute nodes. A scalar root therefore has one
+   node, and an empty array or object also has one node. Exceeding either limit
+   is a `resource-limit` validation failure. The same depth and node-count
+   definitions apply to entry input and to the JSON encoding of every source-
+   constructed, deterministic, journal-restored, or normalized Gantry value.
    For any no-result operation, the expected schema is exactly the following schema
    object, and the parsed value MUST be JSON `null`:
 
@@ -1841,6 +1870,14 @@ document are to be interpreted as described in RFC 2119.
    evaluation that exceeds a limit is a deterministic-evaluation runtime
    error. These contexts MUST NOT be conflated merely because they enforce the
    same effective limits.
+   Every decoded, computed, restored, or normalized value MUST likewise
+   satisfy `maximum_value_nesting_depth` and `maximum_value_nodes` under the
+   JSON-tree definitions in item 1 before it becomes observable. A source
+   construction or deterministic evaluation that exceeds either limit is a
+   deterministic-evaluation runtime error; entry input fails entry validation;
+   hook output enters structured-output repair; and an incompatible or corrupt
+   restored value fails resume. Implementations MUST enforce both limits with
+   bounded traversal rather than recursive native-stack growth.
    JSON decoding does not normalize String contents. Deterministic String
    methods operate on the decoded Unicode scalar sequence and serialize their
    results through the same ordinary JSON String representation; they add no
@@ -1994,9 +2031,10 @@ document are to be interpreted as described in RFC 2119.
    validity are conveyed through operation guidance rather than enforced by
    Gantry.
 9. UTF-8 decoding failures, malformed JSON, schema-invalid output, and output
-   exceeding the effective String or List resource limits MUST be returned to
-   the integration as validation guidance and retried up to the configured
-   retry limit. A retry request MUST include the preceding
+   exceeding the effective raw-byte, value-depth, value-node, String, or List
+   resource limits MUST be returned to the integration as validation guidance
+   and retried up to the configured retry limit. A retry request MUST include
+   the preceding
    validation errors but MUST NOT return the preceding raw output to the hook.
    A validation retry is another physical dispatch of the same logical
    operation, not a reevaluation of the source expression. Gantry MUST reuse
@@ -2820,6 +2858,10 @@ document are to be interpreted as described in RFC 2119.
         }
       },
       "deterministic_values": {
+        "maximum_entry_input_bytes": "16777216",
+        "maximum_hook_output_bytes": "16777216",
+        "maximum_value_nesting_depth": "256",
+        "maximum_value_nodes": "1048576",
         "maximum_string_scalars": "1048576",
         "maximum_list_items": "65536"
       },
@@ -2842,13 +2884,20 @@ document are to be interpreted as described in RFC 2119.
     ```
 
     The displayed values illustrate the v1 defaults; the identity MUST encode
-    the effective configured values. `maximum_string_scalars` limits each
-    normalized or computed String by Unicode-scalar count, and
+    the effective configured values. `maximum_entry_input_bytes` limits the
+    raw entry-input byte sequence before UTF-8 decoding, and
+    `maximum_hook_output_bytes` limits each raw `Completed` outcome before
+    UTF-8 decoding. `maximum_value_nesting_depth` and `maximum_value_nodes`
+    limit every strict-JSON tree under Section 8's depth and node-count
+    definitions. `maximum_string_scalars` limits each normalized or computed
+    String by Unicode-scalar count, and
     `maximum_list_items` limits each normalized or computed List by item count.
-    Both limits MUST be positive and no greater than Gantry's maximum `Int`,
-    `9007199254740991`, because `String.len()` and `List<T>.len()` return
-    `Int`. They are checked recursively at entry, operation, construction,
-    parsing, resume, and deterministic-evaluation boundaries. `model_retry_limit`
+    All six limits MUST be positive. The byte, nesting, and node limits MUST be
+    no greater than `2^63 - 1`; the String and List limits MUST be no greater
+    than Gantry's maximum `Int`, `9007199254740991`, because `String.len()` and
+    `List<T>.len()` return `Int`. They are checked at their applicable entry,
+    operation, construction, parsing, resume, and deterministic-evaluation
+    boundaries. `model_retry_limit`
     applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
     retries after the initial attempt. `source_language` MUST equal the version
@@ -5054,10 +5103,11 @@ provider-specific or executor-specific types in Gantry programs:
    retry limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
    executor adapter, graceful-shutdown timeout, post-cancellation drain
-   duration, maximum String scalar count, maximum List item count, and the
-   finite nonzero deterministic-transition yield quantum required by Section
-   3. The two deterministic-value limits MUST be positive and no greater than
-   `9007199254740991`, as required by Sections 5 and 11. Implementations
+   duration, maximum entry-input bytes, maximum hook-output bytes, maximum
+   value nesting depth, maximum value nodes, maximum String scalar count,
+   maximum List item count, and the finite nonzero deterministic-transition
+   yield quantum required by Section 3. These deterministic-value limits MUST
+   satisfy Sections 5, 8, and 11. Implementations
    MUST accept directive integers through `2^63 - 1` and MAY reject larger
    directive tokens during analysis. First-class `Int` values used for list
    projection retain the exact range in Section 5; tuple projection requires
