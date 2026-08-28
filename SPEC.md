@@ -554,6 +554,15 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
 (RFC 2119 and RFC 8174) when, and only when, they appear in all capitals as
 shown here.
 
+Normativity is determined first by section scope: passages identified as
+normative define the contract, including lowercase declarative statements.
+The capitalized BCP 14 terms express requirement strength within that
+contract; their absence does not make a normative statement merely
+informative. Non-normative examples and authoring guidance do not add or
+override requirements. When an example conflicts with normative prose or the
+grammar, the normative prose and grammar govern and the example is a defect in
+this document.
+
 ## 3. Implementation and Execution Model
 
 1. A conforming Gantry v1 implementation MUST recognize as source-valid every
@@ -575,10 +584,13 @@ shown here.
    embedders to supply source in another language or expose an additional
    language layer whose behavior changes Gantry semantics.
 3. Gantry MUST be available as an embeddable Rust library with an asynchronous
-   execution API. It does not implement an agent, model provider, transport, or
-   hidden asynchronous runtime itself. The embedding application MUST supply
-   the executor used to poll Gantry futures. Gantry MUST permit its task
-   scheduler or executor adapter to be replaced through library configuration,
+   execution API. This is the required v1 embedding profile; “portable” in this
+   specification describes Gantry source and runtime semantics across
+   conforming integrations, not a requirement to expose a language-neutral ABI.
+   Gantry does not implement an agent, model provider, transport, or hidden
+   asynchronous runtime itself. Gantry schedules logical tasks through an
+   embedder-supplied executor adapter; it neither creates nor owns an async
+   executor. The adapter MUST be replaceable through library configuration,
    not through Gantry source syntax.
 4. The interpreter MUST control program flow, hook invocation, result
    validation, retry handling, and state transitions.
@@ -595,8 +607,9 @@ shown here.
    language-level execution, task-ownership, and cancellation state
    transitions defined in Sections 10 and 15 and MUST provide Gantry-owned
    cancellation tokens to integrations. The integration makes a best effort
-   to stop provider work when those tokens are signalled. Gantry MUST provide
-   the asynchronous task scheduling needed to execute parallel Gantry blocks.
+   to stop provider work when those tokens are signalled. Gantry MUST control
+   asynchronous Gantry task scheduling through the embedder-supplied executor
+   adapter so parallel blocks retain the semantics in Section 10.
    Interpreter-only work MUST remain cooperatively cancellable even when it
    executes no hook or spawned task. Gantry MUST observe cancellation before a
    hook dispatch, child-task submission, workflow or decision frame entry, and
@@ -625,10 +638,10 @@ shown here.
    configured interpreter resource limit MUST surface as a structured
    deterministic-evaluation runtime error, never a panic or silent process
    termination.
-7. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
-   journal, or an equivalent durable execution record, sufficient to continue
-   an interrupted execution from its recorded state. Section 11 defines the
-   required recovery behavior.
+7. Gantry execution state MUST be serializable and resumable. Gantry MUST
+   provide a journal, or an equivalent durable execution record, sufficient to
+   continue an interrupted execution from its recorded state. Section 11
+   defines the required recovery behavior.
 8. Gantry does not promise deterministic replay. Re-execution of the same
    source and inputs MAY produce different integration results. Resumption MUST,
    however, reuse every committed physical hook outcome and MUST reuse every
@@ -748,10 +761,12 @@ shown here.
     current module, and each leading `super::` moves outward by one module.
     Escaping above the package root is an analysis error. `use` follows the
     same path rules and does not change item visibility.
-12. Module filenames and identifiers MUST be valid UTF-8 and MAY use
-    `snake_case`, `camelCase`, or `PascalCase`. All source identifiers MUST be
-    in Unicode Normalization Form C (NFC); an implementation MUST reject rather
-    than silently normalize a non-NFC identifier. Gantry v1 identifier
+12. Module filenames and identifiers MUST be valid UTF-8. Identifiers MAY use
+    any NFC spelling admitted by the Unicode XID rule below; `snake_case`,
+    `camelCase`, and `PascalCase` are style conventions rather than the
+    validity grammar. All source identifiers MUST be in Unicode Normalization
+    Form C (NFC); an implementation MUST reject rather than silently normalize
+    a non-NFC identifier. Gantry v1 identifier
     classification and normalization MUST use Unicode Standard version 16.0.0,
     the same pinned release used by the deterministic String operations in
     Section 5.
@@ -1255,9 +1270,10 @@ defined here and in Section 7 cross the integration boundary.
    prompt places its result annotation after the template, as in
    `prompt(retry_limit = 2, session = fork) "..." -> Report`. A prompt with no
    result annotation, or with `-> None`, has no result. A prompt or `decide`
-   expression MAY contain one `using { ... }` clause after its template and
-   before the prompt result annotation. Each entry is either shorthand `name`,
-   equivalent to `name: name`, or `name: expression`. Entry names MUST be
+   expression MAY contain one `using { ... }` clause after its template. For a
+   prompt, that clause precedes the result annotation when one is present.
+   Each entry is either shorthand `name`, equivalent to `name: name`, or
+   `name: expression`. Entry names MUST be
    unique. Expressions use the same deterministic, side-effect-free subset as
    interpolation. Gantry MUST first evaluate and capture interpolations in
    source order, then evaluate and capture named inputs once from left to
@@ -1908,9 +1924,13 @@ operation identity, failure categories, and propagation.
    For a loop, `fork` creates a separate child session for each prospective
    iteration under the condition/body rules in Section 9, while `new` creates
    one fresh session on loop entry and reuses it for every condition and body
-   execution. Outside a loop or lexical session context, an explicit `fork` or
-   `new` modifier creates one session on entry to the prompt, decision
-   condition, or other construct carrying that modifier.
+   execution. A prospective `fork` iteration session is allocated and its
+   session-state record is flushed before that iteration's condition or body
+   begins, even when deterministic evaluation later proves that no model
+   operation uses it. This preserves one portable session identity and journal
+   history for the prospective iteration. Outside loop and lexical-session
+   contexts, an operation-local `session = fork` or `session = new` modifier
+   on a `prompt` or `decide` creates one session for that operation.
 13. The integration MUST preserve the conversational continuity denoted by a
    reused logical session ID. Provider-specific session storage and mapping
    remain integration concerns. This obligation applies across interpreter
@@ -2929,6 +2949,22 @@ that are immutable or durably revisable across resume.
    replay deterministic interpreter steps after the latest durable checkpoint,
    but such replay MUST reuse committed hook outcomes and reconstruct the same
    dynamic operation and task identities.
+   Every interpreter transition that requires a durable event under Section 12
+   MUST have a durable causal record. Gantry MUST use an `interpreter-transition`
+   record for workflow-frame entry and exit, branch selection, spawn, join,
+   detach, mutation, cancellation, task completion, and foreground completion.
+   Terminal execution retains its dedicated record. The transition record MUST
+   contain an exact transition subtype; execution and task identities when
+   applicable; the source location and dynamic construct identity when source-
+   backed; the causal predecessor; and the subtype-specific semantic payload.
+   That payload MUST include result, failure, child-task, ownership-transfer,
+   or committed-value references needed by the corresponding event. A mutation
+   payload, for example, contains the target path, static type, and a stable
+   reference to the complete committed post-assignment value. The record MUST
+   be appended and flushed after the transition commits but before later source
+   execution or an execution waiter can observe or depend on it. Recovery MUST
+   reuse an existing transition record and MUST NOT commit or report the same
+   transition a second time.
 2. Gantry MUST expose a journal-storage trait through which an integration
    provides durable storage. The trait MUST expose durable record reading,
    exclusive owner acquisition and release, plus atomic append and flush
@@ -3000,6 +3036,14 @@ that are immutable or durably revisable across resume.
    result and leave later acquisition to the storage's fencing rules. These
    ownership operations coordinate access and do not add a mutation primitive
    for journal records themselves.
+   If release fails after a terminal result has already been returned, the
+   durable language outcome and its delivery-barrier status remain unchanged.
+   Gantry MUST retain the owner as unreleased, report the failure through the
+   execution's journal-owner status and the shutdown report, and MAY invoke the
+   bounded emergency diagnostic callback from Section 15. It MUST NOT emit an
+   undurable standard event or claim successful orderly shutdown. A later owner
+   can proceed only through the storage fencing and recovery rules above;
+   Gantry MUST NOT assume that a failed release invalidated the token.
 3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
    Its dispatch record MUST preserve the complete versioned semantic request,
    including the operation-specific body, operation and result kinds, captured
@@ -3154,10 +3198,12 @@ that are immutable or durably revisable across resume.
    kind, causal parent record when one exists, task and operation identities
    when applicable, and a kind-specific payload. The required record kinds are
    execution state, session state, operation dispatch, operation outcome,
-   validation attempt, operation result, interpreter checkpoint, task state,
-   event, event-delivery state, and terminal execution. A session-state record
-   MUST contain the logical-session creation fields and obey the durability and
-   replay rules in Section 7. An execution-state record MUST
+   validation attempt, operation result, interpreter transition, interpreter
+   checkpoint, task state, event, event-delivery state, and terminal execution.
+   The exact interpreter-transition subtypes and minimum payload are defined in
+   item 1. A session-state record MUST contain the logical-session creation
+   fields and obey the durability and replay rules in Section 7. An
+   execution-state record MUST
    identify its state-transition subtype, including execution start, agent-
    mapping revision, action-mapping revision, best-effort-sink configuration
    change, or shutdown-policy revision when applicable.
@@ -3627,7 +3673,9 @@ an operation hook.
    exhaustion is reported in the shutdown result without changing task or
    execution outcomes already fixed there; best-effort exhaustion is included
    in that result under Section 10. Exhaustion for a required sink MUST abort
-   any other standalone activity.
+   the affected standalone activity. It MUST NOT cancel an independent
+   validation, analysis, or shutdown activity merely because both use the same
+   interpreter or sink configuration.
    For an execution whose terminal-execution record is not yet durable, it
    MUST abort the execution as specified below. For an execution whose
    terminal-execution record is already durable, it MUST produce only the
@@ -4636,7 +4684,9 @@ tasks, or one or more exclusively no-result tasks, produce no source value.
 ## 14. Authoring Examples and Common Errors
 
 *This section is non-normative. It illustrates the contract but does not add
-or override language requirements.*
+or override language requirements. Section 2 defines how normative prose,
+grammar, and examples relate; Sections 5, 6, 9, 10, and 13 govern when a form
+shown here is source-valid.*
 
 The examples in this section are either complete programs when explicitly
 introduced with package files, or focused fragments. A focused fragment
@@ -4645,6 +4695,25 @@ declared elsewhere in the package; it is not necessarily pasteable as a
 standalone `main.gnt`. Except for snippets explicitly labeled invalid in
 Section 14.13, all shown forms use only v1 syntax. Comments beginning with
 `//` explain the example and are valid Gantry comments.
+
+The following matrix highlights the result-position rules most likely to be
+missed when reading Rust-inspired braces. It is a navigation aid, not a second
+grammar:
+
+| Source context | Body form | Trailing value | Semicolon after closing brace |
+| --- | --- | --- | --- |
+| Function, method, decision, or spawned block | ordinary block | Optional, but required on each reachable normal completion of a value-returning body | No |
+| `if`, loop, or effect-only `match` arm | statement-only block | Prohibited | No |
+| Value-producing `match` arm | value block | Required | Only after the complete `match` when its value is intentionally discarded |
+| Statement-only `with` or `session` | statement-only block | Prohibited | No |
+| Value-producing `with` or `session` | value block | Required | Only when the produced value is intentionally discarded |
+
+Only the outer expression forms listed in Section 6 may be expression
+statements. A no-result operation or workflow call therefore ends in `;`,
+whereas a statement-only braced control construct does not. Section 13.6 also
+requires a struct constructor at an `if`, `while`, `if let`, or `match`
+boundary to be parenthesized where specified. Section 14.13 gives paired
+invalid and valid forms for these less-obvious rules.
 
 ### 14.1 Minimal package entry point
 
@@ -5634,7 +5703,17 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    `session-use = create` redispatch is resolved by that idempotent request,
    not by this preflight; any enclosing or root session on which it depends
    remains in the preflight set. Resume MUST dispatch no hook when this
-   preflight fails. Starting a new execution MUST return either a
+   preflight fails. The same harness-preflight operation MUST receive and
+   resolve an embedder-supplied root-session descriptor for a new execution.
+   That descriptor contains the execution candidate's root logical session ID,
+   `embedder-supplied` provenance, and the opaque integration lookup material
+   supplied by the embedder. Resolution MUST be idempotent, MUST return a
+   structured resolved or unresolved result, and MUST reattach the identified
+   context rather than create an empty replacement. An unresolved new root is
+   an `integration-preflight` start failure; an unresolved reusable session on
+   resume is an `unresolved-logical-session` resume-start failure. Neither
+   result creates a hook or dispatches an operation. Starting a new execution
+   MUST return either a
    structured start failure with no execution ID, or an execution ID after the
    execution-start record is durably flushed. Syntax, analysis, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
@@ -5670,7 +5749,13 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    `run-failed-nondurably(journal_error)`. The last state is returned by an
    in-process await when journal failure aborts the current run; it is not a
    durable execution state and a later query observes only the authoritative
-   durable prefix. A terminal language outcome MUST distinguish success,
+   durable prefix. Separately from language outcome, the API MUST expose the
+   in-process journal-owner status as `held`, `released`, or
+   `release-failed(journal_error)`. This status is operational rather than a
+   durable execution state: a release failure does not rewrite a terminal
+   outcome or delivery-barrier result, and a later process determines ownership
+   only through the storage fencing rules in Section 11. A terminal language
+   outcome MUST distinguish success,
    detached-task failure, cancellation, and every runtime-error category that
    Sections 7 through 12 permit to be durably recorded as terminal. Journal
    failure is excluded because Sections 10 and 11 prohibit claiming a new
@@ -5684,6 +5769,10 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    by the same integration, MUST also validate the complete nonempty merged
    agent-name set and every declared canonical action signature, and MUST
    supply each corresponding mapping revision before a new execution begins.
+   That preflight interface MUST also implement the structured logical-session
+   resolution operation required by Section 15.1. For a new execution it
+   resolves the optional embedder-supplied root descriptor; for resume it
+   resolves the complete reusable-session descriptor set enumerated by Gantry.
    An empty agent or action declaration set requires no mapping or revision for
    that family. Before resume continues, that preflight MUST resolve every
    applicable active mapping and every reusable logical session descriptor
