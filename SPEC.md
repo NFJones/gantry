@@ -48,6 +48,16 @@ assumed runtime or part of the language contract. An integration supplies the
 agents, models, tools, transport, credentials, resource policy, and any
 provider-specific behavior.
 
+The v1 language deliberately separates deterministic orchestration from
+model-backed work. Bindings, construction, workflow dispatch, assignment,
+projection, modules, joins, and task ownership are interpreter operations.
+Every direct model invocation is visibly introduced by `prompt` or `decide`;
+an ordinary function or method call does not itself dispatch a hook, although
+the called workflow may contain explicit model operations. Interpolation never
+dispatches a hook. Typed strict-JSON results are the boundary between the
+interpreter and model-backed work. This explicitness is a core readability
+requirement for both human and model authors.
+
 This document records the settled version 1 (v1) language and operational
 requirements. Concrete Rust type signatures may remain implementation-defined
 where the semantic contract is fully specified here.
@@ -130,9 +140,11 @@ document are to be interpreted as described in RFC 2119.
 9. `mod` declarations MUST precede references to their namespace. Module cycles,
    duplicate declarations, and duplicate module resolutions are analysis
    errors. Visibility constraints are excluded from v1.
-10. A function MAY call itself and a struct MAY refer to its own type even
-    though names otherwise must be declared before use. Mutual recursion
-    between distinct functions or types is excluded from v1.
+10. A function, method, or decision workflow MAY call itself, and a struct MAY
+    refer to its own declared name subject to the guarded-recursion rule in
+    Section 5, even though names otherwise must be declared before use. Mutual
+    recursion between distinct workflow declarations or between distinct
+    struct declarations is excluded from v1.
 11. Gantry MUST support Rust-inspired `use` declarations as well as qualified
     item paths. An unprefixed path begins in the current module's lexical
     namespace. `crate::` begins at the package root, `self::` begins at the
@@ -140,11 +152,16 @@ document are to be interpreted as described in RFC 2119.
     Escaping above the package root is an analysis error. `use` follows the
     same path rules and does not change item visibility.
 12. Module filenames and identifiers MUST be valid UTF-8 and MAY use
-    `snake_case`, `camelCase`, or `PascalCase`. A `mod foo;` declaration MUST
+    `snake_case`, `camelCase`, or `PascalCase`. All source identifiers MUST be
+    in Unicode Normalization Form C (NFC); an implementation MUST reject rather
+    than silently normalize a non-NFC identifier. Authors SHOULD use
+    `PascalCase` for struct types and `snake_case` for modules, agents,
+    workflows, methods, fields, parameters, bindings, and task handles. These
+    case forms are readability conventions rather than analysis requirements.
+    A `mod foo;` declaration MUST
     match either the `foo` stem in `foo.gnt` or the `foo` directory in
     `foo/mod.gnt` exactly, including case. Module path components MUST be
-    Unicode Normalization Form C (NFC); an implementation MUST reject a
-    non-NFC component rather than silently normalize it.
+    NFC under the general identifier rule.
 13. Top-level package and module contents MUST be declarations. Executable
     statements are permitted only within function, method, decision, spawn, or
     other executable block bodies.
@@ -203,11 +220,13 @@ document are to be interpreted as described in RFC 2119.
    by agent operations or multi-task joins, passed as values, and represented
    in schemas and JSON.
 6. Struct fields MAY be `String`, declared struct values, `Option<T>`,
-   `List<T>`, or `Tuple<T1, T2, ..., Tn>` of otherwise permitted types. Nested and recursive struct
-   definitions are permitted. Every cycle in a recursive type definition MUST
-   pass through `Option<T>` or `List<T>` so that a finite strict-JSON value can
-   terminate the recursion. An unguarded recursive cycle is an analysis error
-   because it has no finite inhabitant.
+   `List<T>`, or `Tuple<T1, T2, ..., Tn>` of otherwise permitted types. Nested
+   and directly self-recursive struct definitions are permitted. In accordance
+   with Section 4, a cycle through two or more distinct struct declarations is
+   excluded from v1. Every permitted self-recursive cycle MUST pass through
+   `Option<T>` or `List<T>` so that a finite strict-JSON value can terminate the
+   recursion. An unguarded recursive cycle is an analysis error because it has
+   no finite inhabitant.
 7. Gantry MUST support named-field struct construction. Struct values MAY be
    constructed by source execution or produced by an agent hook. A source
    constructor MUST reject unknown and duplicate fields during analysis.
@@ -280,11 +299,17 @@ document are to be interpreted as described in RFC 2119.
    decoding, raw-string delimiter removal, and block-prompt dedentation, but
    before interpolation. It is not the original source token spelling.
 8. A trailing expression in a function, method, or spawned block implicitly
-   yields its value. An explicit `return` MAY yield earlier from a function or
-   method. Every explicit or implicit returned expression MUST exactly match
-   the declared result type. A workflow whose signature omits a result type
-   implicitly returns no result. Values of standalone `prompt` expressions,
-   assignments, and `spawn` statements MAY be discarded. Semantic analysis
+   yields its value. An explicit `return` MAY yield earlier from a function,
+   method, or spawned block. An explicit `return` in a decision workflow is
+   governed by Section 9. Every explicit or implicit returned expression MUST exactly match the
+   declared result type. A workflow whose signature omits a result type
+   implicitly returns no result. A value-producing prompt MAY be discarded by
+   writing it as an expression statement. A workflow or method call, `with`
+   expression, or `join` expression MAY likewise be used as an expression
+   statement when its result is intentionally discarded. A standalone literal,
+   constructor, field access, projection, `Some`, or `None` expression has no
+   execution effect and MUST be rejected as an expression statement.
+   Assignment and `spawn` statements do not themselves produce values. Semantic analysis
    MUST prove that every reachable normal completion of a value-returning
    function, method, or spawned block yields the declared type. Falling through
    a value-returning body is an analysis error; it MUST NOT be deferred to a
@@ -292,10 +317,13 @@ document are to be interpreted as described in RFC 2119.
 9. A method MAY return `self`; the returned value is a deep value copy and does
    not consume the receiver. Duplicate inherent methods for the same struct are
    analysis errors.
-10. `return` exits the nearest enclosing function, method, or decision workflow.
-    `break` and `continue` target the nearest enclosing loop even when they
-    occur inside a nested `with` block. A `with` block changes agent selection
-    only; it does not intercept or retarget control transfer.
+10. `return` exits the nearest enclosing function, method, decision workflow,
+    or spawned block. A spawned block is therefore a return target before any
+    workflow that lexically encloses the `spawn`. `break` and `continue` target
+    the nearest enclosing loop even when they occur inside a nested `with`
+    block, but they MUST NOT cross a spawned-block boundary. A `with` block
+    changes agent selection only; it does not intercept or retarget control
+    transfer.
 
 ## 7. Agents, Hooks, and Sessions
 
@@ -341,7 +369,8 @@ document are to be interpreted as described in RFC 2119.
    treating executor abortion as cooperative hook cancellation.
 5. Every operation hook request MUST contain at least:
    - a protocol major and minor version;
-   - stable operation, execution, and parent-operation IDs;
+   - stable operation, execution, and task IDs, plus the parent-task ID when
+     the task was spawned;
    - an operation kind and selected agent name;
    - the semantic source prompt template defined in Section 6 and the
      interpolated prompt;
@@ -456,9 +485,12 @@ document are to be interpreted as described in RFC 2119.
     directly dispatch an `OperationHook`. Tools, approvals, shell commands,
     network calls, and other harness actions MAY occur while the integration
     fulfills that hook, but they are not separately expressed or interpreted
-    by Gantry v1. Gantry observes such work only through the hook outcome and
-    integration-supplied events. This boundary keeps the language focused on
-    agent control flow without prescribing a harness action vocabulary.
+    by Gantry v1. Gantry observes that internal work only through the hook
+    outcome; an integration MAY expose additional telemetry through its own
+    harness-specific facilities. This boundary keeps the language focused on
+    agent control flow without prescribing a harness action vocabulary or
+    implying that harness-internal actions alter Gantry state independently of
+    their hook outcome.
 16. Every dynamic operation identity MUST correspond to a logical execution
     path consisting of the execution ID, task path, workflow-call path, source
     operation location, branch arm, and enclosing loop iteration counters.
@@ -607,13 +639,17 @@ document are to be interpreted as described in RFC 2119.
 7. Gantry MUST support `break`, `continue`, and `return` in loops. Unlabeled
    `break` and `continue` target the nearest enclosing loop. Labeled loop
    control is excluded from v1. A body execution is counted when control enters
-   the body. After a body completes normally or through `continue`, Gantry
-   checks the positive `limit` before performing another condition operation.
-   Reaching the limit completes the loop without another decision call. If the
-   limit is not reached, `continue` in a `while` advances to its next pre-test,
-   `continue` in an `until` advances to that iteration's post-test, and
-   `continue` in `loop` advances to its next body execution. `break` completes
-   any loop immediately without another decision call.
+   the body. After a `loop` or `while` body completes normally or through
+   `continue`, Gantry checks the positive `limit` before starting another body
+   execution or `while` pre-test. Reaching the limit completes that loop
+   without another decision call. After an `until` body completes normally or
+   through `continue`, Gantry MUST always evaluate that body's post-test. A
+   true decision completes the loop. After a false decision, Gantry checks the
+   positive `limit`; reaching it completes the loop normally, and otherwise
+   the next body execution begins. Thus every entered `until` body has exactly
+   one following post-test unless it exits through `break`, `return`, failure,
+   or cancellation. `break` completes any loop immediately without another
+   decision call.
 8. `for`, `match`, and deterministic `if let` are excluded from v1.
 9. Control decisions MUST use the same schema-validation and retry policy as
    other structured agent results.
@@ -634,7 +670,11 @@ document are to be interpreted as described in RFC 2119.
    the condition of `if`, `else if`, `while`, or `until`, or as the returned
    expression of another decision workflow. Its result cannot be bound,
    returned by an ordinary workflow, interpolated, or discarded as a
-   standalone statement.
+    standalone statement. Semantic analysis MUST prove that every reachable
+    normal completion of a decision workflow reaches a decision tail and that
+    every reachable explicit `return` in that workflow returns a decision
+    expression. A no-result `return;`, an ordinary value return, or fallthrough
+    from a decision workflow is an analysis error.
 
 ## 10. Parallel Execution
 
@@ -654,13 +694,15 @@ document are to be interpreted as described in RFC 2119.
    inside the child without affecting the parent. A child MAY initialize a new
    mutable local binding from any captured value.
 4. A spawned block MUST declare the type of its yielded value with `-> T`, or
-   declare `-> None` when it yields no value. Its trailing expression MUST
-   exactly match that annotation. `spawn` declares the named handle but does
-   not itself yield the handle as a value. A spawn boundary is also a control-
-   transfer boundary: `return`, `break`, or `continue` inside a spawned block
-   MUST NOT target a workflow or loop outside that block. Such a transfer is an
-   analysis error. Transfers wholly contained in a workflow or loop entered
-   within the child remain valid.
+   declare `-> None` when it yields no value. Every reachable normal completion
+   of a value-yielding block MUST produce exactly `T` through its trailing
+   expression or a task-local `return`. A no-result block MAY fall through or
+   use `return;` but MUST NOT return a value. `spawn` declares the named handle
+   but does not itself yield the handle as a value. A spawn boundary is also a
+   control-transfer boundary: a `return` whose nearest return target is the
+   spawned block completes only that child task. `break` or `continue` inside a
+   spawned block MUST NOT target a loop outside that block. Transfers wholly
+   contained in a workflow or loop entered within the child remain valid.
 5. `join(task)` waits for one named child and yields that child's typed block
    value. A join result MAY be bound as `let result: T = join(task);`. Joining
    a no-result block is a waiting statement and yields no value. A successful
@@ -736,10 +778,12 @@ document are to be interpreted as described in RFC 2119.
     active when shutdown began. An interpreter cannot be reused after shutdown
     begins. Embedders MUST complete shutdown before dropping the interpreter.
 13. Because Rust destruction cannot await, dropping an interpreter without
-    shutdown MUST reject new work, signal cancellation, abort or detach
-    remaining executor handles without blocking, and emit a best-effort
-    diagnostic event when a sink is still usable. The drop path MUST NOT retry
-    event delivery or claim that detached work completed.
+    shutdown MUST reject new work, signal cancellation, request abortion of
+    every remaining owned executor task, relinquish its executor handles
+    without blocking, and emit a best-effort diagnostic event when a sink is
+    still usable. The drop path cannot guarantee that integrations observed
+    cancellation before handles were relinquished. It MUST NOT retry event
+    delivery or claim that foreground or detached work completed.
 
 ## 11. Journal and Resume Semantics
 
@@ -788,7 +832,14 @@ document are to be interpreted as described in RFC 2119.
    integer, and every path is encoded as UTF-8. This length-prefix encoding is
    unambiguous even when source contains arbitrary delimiters. Gantry MUST
    reject resume when this identity differs or the journal format is
-   unsupported.
+   unsupported. The package-relative path of the root module is exactly
+   `main.gnt`. Every other manifest path is the path of the source file selected
+   by module resolution, relative to the package root; inline modules add no
+   manifest entry of their own because their bytes are already present in the
+   containing source file. Each resolved module path is encoded as its
+   `crate::`-rooted sequence of NFC identifier segments joined by `::`, with the
+   root module encoded as `crate`. These rules make the digest independent of
+   module-discovery order and host path syntax.
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
    counters, task relationships, and committed values. An in-flight spawned
    block MUST restart at the top of that block while reusing every committed
@@ -921,9 +972,8 @@ The grammar uses extended Backus-Naur form (EBNF):
 - productions ending in `_token` are emitted by the lexer.
 
 Whitespace and comments separate tokens and are otherwise insignificant,
-except inside string and raw-string tokens. A trailing comma is accepted in
-every comma-separated declaration, parameter, argument, field, and modifier
-list.
+except inside string, raw-string, and block-prompt tokens. A trailing comma is
+accepted only where the productions below include an optional final comma.
 
 ### 13.2 Lexical grammar
 
@@ -1119,7 +1169,8 @@ assignment_target       = identifier_token, { ".", identifier_token }
                         | "self", ".", identifier_token,
                           { ".", identifier_token } ;
 expression_statement    = expression, ";" ;
-return_statement        = "return", [ expression ], ";" ;
+return_statement        = "return", [ return_expression ], ";" ;
+return_expression       = expression | decision_expression ;
 break_statement         = "break", ";" ;
 continue_statement      = "continue", ";" ;
 trailing_expression     = expression ;
@@ -1131,7 +1182,10 @@ closing brace. `return;` is valid only in a no-result function or method.
 `break` and `continue` are valid only in a loop body. A `decision_block` MUST
 end in a direct `decide` expression or decision-workflow call, whether trailing
 or returned; an earlier `return` in its statement sequence is subject to the
-same restriction. Assignment to `self` as a whole is not v1 syntax; a
+same restriction. The broader `return_expression` production permits a parser
+to recognize early decision returns inside nested ordinary blocks; semantic
+analysis MUST reject decision expressions returned from ordinary workflows and
+ordinary values returned from decision workflows. Assignment to `self` as a whole is not v1 syntax; a
 `mut self` method may assign its receiver fields and may return the resulting
 receiver value.
 
@@ -1608,8 +1662,10 @@ fn converge(mut draft: String) -> String {
 
 `until` places the body before its `when` decision because it runs that body
 before its first decision. A `continue` in this body proceeds to the post-test.
-Reaching either positive limit completes normally without another decision;
-`limit = 0` would mean unlimited execution.
+A positive `loop` or `while` limit completes normally without another
+decision after its final body. An `until` body always performs its matching
+post-test; if that decision is false at the positive limit, the loop then
+completes normally. `limit = 0` means unlimited execution.
 
 ### 14.8 Parallel homogeneous work and `List<T>` joins
 
@@ -1755,6 +1811,12 @@ provider-specific or executor-specific types in Gantry programs:
    outcome. `raw_output` is an uninterpreted byte sequence; Gantry owns UTF-8
    decoding, JSON parsing, schema validation, and repair retries. Hook futures
    MUST be `Send`; one hook instance is used serially for one Gantry task.
+   Returning `Completed(raw_output)` means the integration considers the model
+   operation complete even when the bytes later fail Gantry validation.
+   Provider transport failures, timeouts, and integration-internal retry
+   exhaustion MUST instead be represented as `Failed(message)`; they MUST NOT
+   be encoded as synthetic malformed model output merely to enter Gantry's
+   structured-output retry path.
 3. A cancellation token is cloneable, safe to observe from multiple threads,
    and transitions monotonically from active to cancelled. Cancellation does
    not itself constitute a hook outcome; an integration that stops work after
