@@ -43,9 +43,9 @@
 
 ## 1. Status and Scope
 
-Gantry is a proposed, Rust-inspired control language for coordinating
-model-backed agents. It is named for the elevated structure spanning a factory
-floor: a Gantry program directs and observes the work performed below it.
+Gantry is a Rust-inspired control language for coordinating model-backed
+agents. It is named for the elevated structure spanning a factory floor: a
+Gantry program directs and observes the work performed below it.
 
 Gantry is harness-neutral. Mezzanine may integrate Gantry, but it is not an
 assumed runtime or part of the language contract. An integration supplies the
@@ -55,12 +55,15 @@ provider-specific behavior.
 The v1 language deliberately separates deterministic orchestration from
 model-backed work. Bindings, construction, workflow dispatch, assignment,
 projection, modules, joins, and task ownership are interpreter operations.
-Every direct model invocation is visibly introduced by `prompt` or `decide`;
-an ordinary function or method call does not itself dispatch a hook, although
-the called workflow may contain explicit model operations. Interpolation never
-dispatches a hook. Typed strict-JSON results are the boundary between the
-interpreter and model-backed work. This explicitness is a core readability
-requirement for both human and model authors.
+Every source-level request for model-backed work is visibly introduced by
+`prompt` or `decide`; an ordinary function or method call does not itself
+dispatch a hook, although the called workflow may contain explicit model
+operations. An integration may perform provider-internal work while fulfilling
+one such request, as defined in Section 7, but that work does not create hidden
+Gantry operations. Interpolation never dispatches a hook. Typed strict-JSON
+results are the boundary between the interpreter and model-backed work. This
+explicitness is a core readability requirement for both human and model
+authors.
 
 This document records the settled version 1 (v1) language and operational
 requirements. Concrete Rust type signatures may remain implementation-defined
@@ -120,7 +123,8 @@ fn main(topic: String) -> Report {
 ```
 
 Section 14 provides focused examples of each language construct. Sections 3
-through 13 define the normative behavior behind this surface syntax.
+through 13 define the normative language and runtime behavior behind this
+surface syntax, and Section 15 defines the required embedding boundary.
 
 ### 1.2 Reading the surface syntax
 
@@ -636,13 +640,18 @@ document are to be interpreted as described in RFC 2119.
    record that revision in the durably flushed execution-start record required
    by Section 11. A later resume MAY change the mapping only by supplying and
    durably recording a new revision in an execution-state record before
-   recovered interpretation or dispatch continues; the new mapping then
-   applies consistently to subsequent uncommitted dispatches, while committed
-   outcomes remain unchanged. Failure to resolve the complete set MUST occur
-   before any hook dispatch. For a new execution it is an integration-preflight
-   start failure; for a resume invocation it is the nonterminal resume-start
-   failure defined in item 17. It is not a task-local hook-creation error,
-   because no `OperationHook` creation or task execution has begun.
+   recovered interpretation or dispatch continues. The new revision then
+   applies consistently to every physical hook dispatch made by that resume
+   run, including a validation retry or recovery redispatch of an operation
+   whose logical agent name was selected earlier. Such a redispatch MUST retain
+   the selected logical agent name but MUST carry the newly recorded mapping
+   revision. A previously committed hook outcome or logical operation result
+   remains unchanged and MUST NOT be redispatched merely because the mapping
+   changed. Failure to resolve the complete set MUST occur before any hook
+   dispatch. For a new execution it is an integration-preflight start failure;
+   for a resume invocation it is the nonterminal resume-start failure defined
+   in item 17. It is not a task-local hook-creation error, because no
+   `OperationHook` creation or task execution has begun.
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
 3. Agent selection is established by lexical `with <name> { ... }` blocks and
@@ -959,11 +968,11 @@ document are to be interpreted as described in RFC 2119.
     source or effective-configuration incompatibility, unresolved agent
     mapping, unresolved logical session, and unavailable required event sink.
     Such a failure means recovered interpretation never began: Gantry MUST NOT
-    append an execution-state or terminal record, consume a retry budget, or
-    change the execution's durable terminal status. If journal ownership was
-    acquired before the failure, Gantry MUST release it under Section 11. The
-    embedder MAY correct the dependency or configuration and attempt resume
-    again.
+    append an execution-state or terminal-execution record, consume a retry
+    budget, or change the execution's durable terminal status. If journal
+    ownership was acquired before the failure, Gantry MUST release it under
+    Section 11. The embedder MAY correct the dependency or configuration and
+    attempt resume again.
 
     Once a new execution has a durably flushed execution-start record, or a
     resume invocation has completed compatibility and dependency preflight and
@@ -1469,15 +1478,17 @@ document are to be interpreted as described in RFC 2119.
     begins. Embedders MUST complete shutdown before dropping the interpreter.
 13. Because Rust destruction cannot await, dropping an interpreter without
     shutdown MUST reject new work, signal cancellation, request abortion of
-    every remaining owned executor task, relinquish its executor handles
-    without blocking, and emit a best-effort diagnostic event when a sink is
-    still usable. The drop path cannot guarantee that integrations observed
-    cancellation before handles were relinquished. It MUST NOT retry event
-    delivery or claim that foreground or detached work completed. Unless a
-    cancellation or completion was already durably recorded, this path is an
-    unclean interruption rather than a durable cancellation: a later resume
-    MUST follow the authoritative journal prefix and MAY recover tasks or
-    redispatch indeterminate operations under Section 11.
+    every remaining owned executor task, and relinquish its executor handles
+    without blocking. When configured, it SHOULD invoke the non-durable
+    emergency diagnostic callback defined in Section 12; that callback is not
+    a Gantry event and MUST NOT use `EventSink` delivery. The drop path cannot
+    guarantee that integrations observed cancellation before handles were
+    relinquished. It MUST NOT create or retry standard event delivery or claim
+    that foreground or detached work completed. Unless a cancellation or
+    completion was already durably recorded, this path is an unclean
+    interruption rather than a durable cancellation: a later resume MUST
+    follow the authoritative journal prefix and MAY recover tasks or redispatch
+    indeterminate operations under Section 11.
 14. The embedding application MUST be able to request cancellation of one
     execution without shutting down the interpreter. Execution cancellation
     targets the foreground task plus every attached and detached descendant
@@ -1574,10 +1585,14 @@ document are to be interpreted as described in RFC 2119.
    interpolated inputs, schema, guidance, source location, session fields,
    ordered execution context, validation state, and logical identities.
    Protected or repeated payloads MAY be stored by stable reference, but those
-   references MUST resolve from the same durable journal. A recovery redispatch
-   MUST reuse those committed semantic fields exactly; only fields that identify
-   the new physical invocation, including the dispatch ID and incremented
-   recovery-dispatch number, may differ.
+   references MUST resolve from the same durable journal. A recovery
+   redispatch MUST reuse those committed semantic fields except for the
+   physical-dispatch fields and the agent-mapping revision explicitly allowed
+   to change by Section 7. It MUST retain the committed logical agent name,
+   operation inputs, session, schema, guidance, source location, context, and
+   validation state. The new dispatch ID and incremented recovery-dispatch
+   number MUST differ, and the request MUST carry the mapping revision recorded
+   for the resume run. No other semantic request field may change.
    After a hook returns, Gantry MUST append the outcome and flush through that
    outcome record's sequence number before the interpreter validates, assigns,
    branches on, returns, or otherwise consumes it. A successfully flushed
@@ -1665,17 +1680,33 @@ document are to be interpreted as described in RFC 2119.
    same rules as other in-flight spawned blocks. An execution reaches its
    terminal durable state only after its foreground and every detached task
    have completed, failed, or been cancelled during shutdown. Before returning
-   a foreground result or reporting terminal execution state, Gantry MUST
-   append and flush an interpreter checkpoint that makes the corresponding
-   scopes, instruction positions, task ownership, and completed values durable.
+   a foreground result, Gantry MUST append and flush an interpreter checkpoint
+   that makes the corresponding scopes, instruction positions, task ownership,
+   and completed values durable. Once all foreground and detached work has
+   settled, Gantry MUST append and flush exactly one terminal-execution record
+   containing the final category and references to its foreground result,
+   detached-task outcomes, cancellation, and primary and secondary failures
+   when applicable. That record, not an earlier checkpoint or event,
+   establishes terminal durable state. Gantry MUST then create the terminal-
+   execution event that references this record and satisfy the required-event
+   barrier in Section 12 before returning an orderly terminal result. Failure
+   to deliver that event cannot rewrite the already durable language outcome;
+   Section 12 defines the separate delivery-barrier failure returned to the
+   embedder.
 9. A v1 journal envelope MUST identify its protocol version, journal and
    execution IDs, monotonically increasing sequence number, record ID, record
    kind, causal parent record when one exists, task and operation identities
    when applicable, and a kind-specific payload. The required record kinds are
    execution state, operation dispatch, operation outcome, validation attempt,
    operation result, interpreter checkpoint, task state, event,
-   event-delivery state, and terminal failure. Concrete serialization and Rust
-   types are implementation-defined, but all required information and durability boundaries are
+   event-delivery state, and terminal execution. An execution-state record MUST
+   identify its state-transition subtype, including execution start, agent-
+   mapping revision, or best-effort-sink configuration change when applicable.
+   A terminal-execution record MUST use one of the terminal categories defined
+   in Sections 7, 10, and 15 and MUST be the final record that changes language
+   execution state. Later event-delivery records and ownership release do not
+   alter that state. Concrete serialization and Rust types are implementation-
+   defined, but all required information and durability boundaries are
    normative. Before append, Gantry constructs an unfinalized record body that
    omits the record ID and sequence number. The storage append operation MUST
    atomically assign both fields and store the resulting finalized envelope;
@@ -1940,17 +1971,29 @@ document are to be interpreted as described in RFC 2119.
    completed activity through its final event. These barriers do not require
    waiting for events that the activity has not yet produced.
    An event describing sink-delivery failure MUST NOT be delivered to the same
-   failing sink. For a resumable execution, required-sink exhaustion MUST append
-   and flush one terminal failure record directly to the journal without
-   requiring event delivery; failure of that journal write is returned to the
-   embedder as a journal failure. A standalone activity without a journal MUST
-   return the required-event-delivery failure directly. These rules prevent
-   recursive failure-event generation. Required-sink exhaustion for an
-   execution is execution-wide rather than task-local: Gantry MUST reject new
-   work for that execution, signal cancellation to its foreground, attached,
-   and detached tasks, and apply the configured cancellation drain before
-   returning the required-event-delivery failure. No event produced during
-   that cancellation is delivered to the exhausted sink.
+   failing sink. Required-sink exhaustion while an execution is nonterminal is
+   execution-wide rather than task-local: Gantry MUST reject new work for that
+   execution, signal cancellation to its foreground, attached, and detached
+   tasks, and apply the configured cancellation drain. It MUST then append and
+   flush the execution's terminal-execution record with the `required-event-
+   delivery failure` category, without making that record depend on another
+   event. That record MUST identify the exhausted sink, failed event, delivery
+   attempt, and cancellation outcome. Failure of the terminal-record write is
+   returned to the embedder as a journal failure.
+
+   Exhaustion while delivering the terminal-execution event occurs after the
+   terminal-execution record is durable and MUST NOT append a second terminal
+   record or replace the recorded language outcome. Gantry MUST durably settle
+   the failed delivery obligation and return a structured required-event-
+   delivery barrier failure that includes the existing terminal outcome. A
+   later query still observes that durable terminal outcome, while delivery
+   state shows that its required terminal event was not delivered. A
+   standalone activity without a journal MUST return the required-event-
+   delivery failure directly. No event produced during cancellation is
+   delivered to the exhausted sink, and an implementation MUST NOT recursively
+   require that sink to acknowledge its own failure. These rules override the
+   general failure-event requirement for that exhausted sink and prevent
+   recursive failure-event generation.
 7. Every event envelope MUST identify its protocol version, event and activity
    IDs, optional execution ID, event kind, source location when source-backed,
    task and operation identities when applicable, causal parent IDs, per-task
@@ -2001,9 +2044,12 @@ document are to be interpreted as described in RFC 2119.
      and committed-value reference, without requiring the value inline;
    - `cancellation`: target activity, execution, or task; cancellation reason;
      and whether cancellation is requested or terminal;
-   - `foreground completion`, `task completion`, and `terminal execution`:
-     the applicable identity, completion category, and typed result or failure
-     reference when one exists; and
+   - `foreground completion` and `task completion`: the applicable identity,
+     completion category, and typed result or failure reference when one
+     exists;
+   - `terminal execution`: the execution identity, completion category,
+     terminal-execution record reference, and typed foreground result or
+     primary failure reference when one exists; and
    - `failure`: the runtime-error category, structured causal identities, and
      redacted diagnostic details.
    An implementation MAY add optional fields under the minor-version rules,
@@ -3195,6 +3241,13 @@ provider-specific or executor-specific types in Gantry programs:
    handled as the terminal best-effort delivery error defined in Section 12;
    neither case permits the obligation or protected payload references to be
    dropped silently.
+   The embedding API MAY additionally accept one non-durable emergency
+   diagnostic callback. That callback is not an event sink, receives no
+   protected payload by default, and has no delivery, retry, ordering,
+   journaling, or at-least-once guarantee. It exists only for best-effort
+   reporting when journal-first standard events cannot be created, including
+   journal failure and unclean interpreter drop. Failure of this callback MUST
+   be ignored after a bounded, nonblocking invocation attempt.
 7. Interpreter configuration MUST include the default agent-output retry
    limit and backoff, event-delivery defaults, executor adapter, graceful-
    shutdown timeout, and post-cancellation drain duration. Implementations
