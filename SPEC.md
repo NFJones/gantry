@@ -23,8 +23,8 @@
   - [8. Structured Output and Validation](#8-structured-output-and-validation)
   - [9. Control Flow](#9-control-flow)
   - [10. Parallel Execution](#10-parallel-execution)
-  - [11. Journal and Resume Semantics](#11-journal-and-resume-semantics)
-  - [12. Observability and Validation Modes](#12-observability-and-validation-modes)
+  - [11. Durable Execution and Resume](#11-durable-execution-and-resume)
+  - [12. Observability and Tooling Modes](#12-observability-and-tooling-modes)
   - [13. Formal Lexical and Syntactic Grammar](#13-formal-lexical-and-syntactic-grammar)
     - [13.1 Grammar notation](#131-grammar-notation)
     - [13.2 Lexical grammar](#132-lexical-grammar)
@@ -352,7 +352,7 @@ most important when humans or models author Gantry source:
 | Invoke a harness capability | `action path(...)` | Performs one logical action operation against a declared action signature. |
 | Select an agent | `with agent_name { ... }` | Sets the active agent for model operations dynamically reached from the block, including through workflow calls and spawned children, unless overridden. |
 | Select conversational continuity | `session(fork) { ... }` | Establishes the active logical session for model operations dynamically reached from the block; nested unmodified operations use it inline. |
-| Run work concurrently | `spawn task -> T { ... }` | Creates an owned child task that must later be joined or detached. |
+| Run work concurrently | `spawn task { ... }`, `spawn task -> T { ... }` | Creates an owned child task; omit `-> T` only for a Unit task. The handle must later be joined or detached. |
 
 These forms are intentionally visually distinct. In particular, an ordinary
 workflow call never stands in for `prompt`, `decide`, or `action`, and none of
@@ -1938,10 +1938,12 @@ Task handles are governed by Section 10 and are not source values.
    operation can originate a new sealed `Decision`; an ordinary workflow,
    method, or spawned block may return or forward a `Decision` obtained from a
    valid source without creating another one.
-   Omission of a result annotation and the explicit result annotation `-> Unit`
-   both denote `Unit`. `()` may be bound, passed, returned, and discarded like
-   another value, but it carries no information and encodes as JSON `null` at
-   an external boundary. `return;` is sugar for `return ();`. `return None;`
+   Where the grammar permits omission, an omitted result annotation and the
+   explicit result annotation `-> Unit` both denote `Unit`. This applies to
+   functions, methods, prompts, action declarations, and spawned blocks. `()`
+   may be bound, passed, returned, and discarded like another value, but it
+   carries no information and encodes as JSON `null` at an external boundary.
+   `return;` is sugar for `return ();`. `return None;`
    is valid only when an expected `Option<T>` return type gives that expression
    a type; it is never a spelling of `Unit`.
 <a id="GNT-5.3"></a>
@@ -2047,11 +2049,13 @@ Task handles are governed by Section 10 and are not source values.
    `action` expression. If the operation accepts a value of type `T`, the
    result is `Ok(value): Result<T, OperationError>`. If it encounters a
    decline, structured-output exhaustion, categorized provider failure,
-   timeout, policy denial, cancellation before result consumption, or an
-   unknown non-idempotent action outcome, the result is the corresponding
-   `Err`. Cancellation remains monotonic: catching it does not reactivate the
-   cancelled task, so the resulting value is observable only when cancellation
-   was scoped to the operation rather than the containing Gantry task.
+   timeout, policy denial, a hook-reported operation cancellation received
+   while the containing Gantry task is still active, or an unknown non-
+   idempotent action outcome, the result is the corresponding `Err`. Gantry
+   task cancellation is different: it is monotonic, bypasses `attempt`, and
+   prevents the cancelled task from consuming an `Err` or any other later
+   operation result. `OperationError::Cancelled` therefore represents only an
+   operation-level integration outcome, never recovery from task cancellation.
    Journal, event-persistence, executor, deterministic-evaluation, and
    internal-invariant failures bypass `attempt`. An unattempted operation
    failure retains the runtime-error propagation in Section 7.
@@ -2408,11 +2412,11 @@ defined here and in Section 7 cross the integration boundary.
 
 6. Each `prompt` expression MUST contain an explicit prompt template and MAY
    contain parenthesized operation modifiers before that template. A typed
-   prompt places its result annotation after the template, as in
+   prompt places its result annotation after the template and any `using`
+   clause, as in
    `prompt(retry_limit = 2, session = fork) "..." -> Report`. A prompt with no
    result annotation, or with `-> Unit`, returns `Unit`. A prompt or `decide`
-   expression MAY contain one `using { ... }` clause after its template. For a
-   prompt, that clause precedes the result annotation when one is present.
+   expression MAY contain one `using { ... }` clause after its template.
    Each entry is either shorthand `name`, equivalent to `name: name`, or
    `name: expression`. Entry names MUST be
    unique. Expressions use the same deterministic, side-effect-free subset as
@@ -2662,7 +2666,7 @@ operation identity, failure categories, and propagation.
    nested workflow calls and validation retries, and MUST NOT be invoked
    concurrently with itself. A spawned child receives a distinct hook instance
    if it reaches an operation. `HookFactory::create` MUST receive a
-   `TaskContext` containing task, execution, and parent-task identity; the
+   `TaskContext` containing task and execution identity; the
    task's base logical session ID; the root logical session ID and provenance;
    the enclosing session ID and fork provenance when the task was spawned; and
    the inherited agent selection. Workflow frames, branch history, task
@@ -2702,8 +2706,7 @@ operation identity, failure categories, and propagation.
    explicitly described as conditional below, every listed v1 field is
    required. The common header MUST contain:
    - a protocol major and minor version;
-   - stable operation, execution, and task IDs, plus a parent-task ID exactly
-     when the task was spawned;
+   - stable operation, execution, and task IDs;
    - an operation kind;
    - the expected result kind;
    - the expected canonical result-type descriptor from Section 5;
@@ -2791,20 +2794,38 @@ operation identity, failure categories, and propagation.
 <a id="GNT-7.6"></a>
 
 6. A hook request MUST NOT contain an implicit logical trace. Workflow and
-   decision frames, branch outcomes, loop history, task ancestry,
-   source locations, operation provenance, decline evidence, and telemetry
-   are nonsemantic observability data. They MAY appear in protected journal or
-   event payloads, but an integration MUST NOT present them to an operation
-   fulfiller or use them to choose fulfillment behavior. A value carries only
-   its source-visible type and content. In particular, a `Decision` carries its
-   visible Boolean and rationale, and every `None` of one `Option<T>` type is
-   semantically identical regardless of how it arose. Model-visible input is
-   exactly the authored and rendered prompt, ordered interpolation arguments,
-   ordered `using` inputs, selected agent, explicit logical-session transcript,
-   expected output contract, and operation modifiers. Action-visible input is
-   exactly the canonical action signature, recovery class, stable operation
-   ID, and ordered typed arguments. Adding any other behavior-affecting input
-   requires a source-language and hook-protocol major version change.
+   decision frames, branch outcomes, loop history, parent-task identity or
+   task ancestry, source locations, value or operation provenance, decline
+   evidence, and telemetry are nonsemantic observability data. They MAY appear
+   in protected journal or event payloads, but MUST NOT appear in
+   `TaskContext` or be presented to a selected model or action implementation
+   as semantic fulfillment input. Operational metadata required by the hook
+   envelope is governed by the following paragraph.
+
+   The versioned hook envelope necessarily contains operational metadata such
+   as protocol, execution, task, operation, site, dispatch, attempt, recovery,
+   and mapping-revision identifiers. Integration infrastructure MAY use those
+   fields only for routing, capability lookup, lifecycle management,
+   cancellation, required deduplication, validation, journaling, and
+   correlation. Except for the stable operation ID supplied to an action for
+   its declared recovery behavior, the integration MUST NOT present that
+   metadata to the selected model or action implementation or let it alter the
+   fulfilled result.
+
+   The common semantic fulfillment input is exactly the operation and result
+   kinds, expected canonical type and schema, effective output limits,
+   generated output guidance, and structured validation errors on a repair
+   dispatch. Model fulfillment additionally receives exactly the authored and
+   rendered prompt, ordered interpolation arguments, ordered `using` inputs,
+   selected agent, and explicit canonical logical-session transcript. Action
+   fulfillment additionally receives exactly the canonical action path and
+   signature, recovery class, stable operation ID, and ordered typed
+   arguments. Source modifiers affect fulfillment only through those listed
+   fields. A value carries only its source-visible type and content: a
+   `Decision` carries its visible Boolean and rationale, and every `None` of
+   one `Option<T>` type is semantically identical regardless of how it arose.
+   Adding another behavior-affecting fulfiller input requires a source-language
+   and hook-protocol major version change.
 <a id="GNT-7.7"></a>
 
 7. Prompt interpolation MUST use `${expression}`. An unescaped `$` followed by
@@ -2877,12 +2898,17 @@ operation identity, failure categories, and propagation.
    `Option<T>` and `Unit`; it never manufactures `None`. An enclosing `attempt`
    converts it to `OperationError::Declined`. `Failed` maps its category to the
    corresponding `OperationError` under `attempt`, or otherwise fails the task
-   in the applicable runtime category. Structured-output repair applies only
-   to `Completed` bytes, never to decline or failure.
+   in the applicable runtime category. `Failed(cancelled, message)` is
+   catchable only when it is a hook-reported operation outcome received while
+   the containing Gantry task remains active. Once Gantry task cancellation is
+   signalled, the cancellation rules in Sections 3 and 10 win: the task cannot
+   consume that outcome and `attempt` cannot convert it. Structured-output
+   repair applies only to `Completed` bytes, never to decline or failure.
 <a id="GNT-7.12"></a>
 
-12. Gantry MUST assign a stable logical session ID to every `prompt` and
-   `decide`; actions have no session. Every session owns a Gantry-defined
+12. Every `prompt` and `decide` MUST use exactly one stable logical session ID;
+   several operations may intentionally reuse that session. Actions have no
+   session. Every session owns a Gantry-defined
    canonical transcript consisting only of accepted model exchanges. Each turn
    contains operation kind, authored and rendered prompt, ordered typed
    interpolation and `using` inputs, selected logical agent, and accepted
@@ -3520,7 +3546,15 @@ finite iteration, explicit source limits, and mandatory execution budgets.
     execute zero bodies, `until` executes at least one, and `for` may execute
     zero or more because list length is not generally a compile-time fact.
     Budget exhaustion is abnormal and cannot satisfy definite-return or linear
-    handle analysis.
+    handle analysis. Every syntactic branch or match arm is still analyzed for
+    local name, type, control-flow, ownership, schema, and modifier validity,
+    even when a compile-time fact excludes it from the enclosing completion
+    merge. Such an arm is not rejected merely because the fact excludes it.
+    Within one block, however, a statement or trailing expression that follows
+    an unconditional `return`, `break`, `continue`, or another command with no
+    reachable normal completion is an unreachable-source analysis error. This
+    is the reachability rule used by `GNT-3-T-SEQUENCE`; Gantry performs no
+    broader dead-code inference in v1.
 
 <a id="GNT-9.12"></a>
 
@@ -3543,8 +3577,9 @@ MUST NOT be described as a structured child after transfer.
 
 <a id="GNT-10.1"></a>
 
-1. Gantry MUST support annotated spawn declarations of the form `spawn <name>
-   -> <type> { ... }`, joins of the form
+1. Gantry MUST support Unit spawn declarations of the form `spawn <name> {
+   ... }`, value-producing spawn declarations of the form `spawn <name> ->
+   <type> { ... }`, joins of the form
    `join(<task-name>, ...)`, `joinall()`, and explicit detachment of the form
    `detach(<task-name>);`.
 <a id="GNT-10.2"></a>
@@ -3612,11 +3647,12 @@ MUST NOT be described as a structured child after transfer.
    observe a mixture of parent values from before and after child submission.
 <a id="GNT-10.4"></a>
 
-4. A spawned block MUST declare the type of its yielded value with `-> T`, or
-   declare `-> Unit` when it yields `()`. Every reachable normal completion
-   of a value-yielding block MUST produce exactly `T` through its trailing
-   expression or a task-local `return`. A Unit block MAY fall through, return
-   `()`, or use `return;`, but MUST NOT return a non-Unit value. `spawn` declares the named handle
+4. A spawned block that yields information MUST declare its result type with
+   `-> T`. Omitting the annotation declares a Unit block; writing `-> Unit` is
+   the explicit equivalent. Every reachable normal completion of a value-
+   yielding block MUST produce exactly `T` through its trailing expression or
+   a task-local `return`. A Unit block MAY fall through, return `()`, or use
+   `return;`, but MUST NOT return a non-Unit value. `spawn` declares the named handle
    but does not itself yield the handle as a value. A spawn boundary is also a
    control-transfer boundary: a `return` whose nearest return target is the
    spawned block completes only that child task. `break` or `continue` inside a
@@ -3883,7 +3919,7 @@ MUST NOT be described as a structured child after transfer.
     precedence and is reported under Section 11. Cancellation of one execution
     MUST NOT cancel unrelated executions owned by the same interpreter.
 
-## 11. Journal and Resume Semantics
+## 11. Durable Execution and Resume
 
 <a id="GNT-11.0"></a>
 
@@ -4355,7 +4391,7 @@ Item 11 clarifies the boundary between resumption and replay.
 11. These resume guarantees do not create a deterministic-replay guarantee for a
    new execution.
 
-## 12. Observability and Validation Modes
+## 12. Observability and Tooling Modes
 
 <a id="GNT-12.0"></a>
 
@@ -4368,10 +4404,12 @@ Gantry exposes four strictly separated observation layers: (1) source-visible
 values and errors, (2) one logical trace over abstract machine labels, (3) a
 physical trace of dispatch, retry, recovery, persistence, and delivery
 attempts, and (4) nonsemantic telemetry such as timing and provider metrics.
-Only layer 1 affects source evaluation. Layer 2 explains logical causality;
-layer 3 explains at-least-once physical activity; layer 4 may be sampled or
-dropped. Layers 2 through 4 MUST NOT be injected into hook input or alter
-fulfillment, and every event schema MUST identify its layer.
+Only layer 1 is readable by Gantry source. Layers 2 and 3 are durable evidence
+used to enforce causality, recovery, deduplication, and delivery guarantees;
+they MUST refine, rather than add behavior to, the abstract source semantics.
+Layer 4 may be sampled or dropped. Layers 2 through 4 MUST NOT be injected
+into fulfiller input or otherwise alter fulfillment, and every event schema
+MUST identify its layer.
 
 <a id="GNT-12.1"></a>
 
@@ -5679,15 +5717,17 @@ its post-test.
 <a id="GNT-13.9"></a>
 
 ```ebnf
-spawn_statement         = "spawn", identifier_token, result_annotation, block ;
+spawn_statement         = "spawn", identifier_token,
+                          [ result_annotation ], block ;
 detach_statement        = "detach", "(", identifier_token, ")", ";" ;
 join_expression         = "join", "(", identifier_token,
                           { ",", identifier_token }, [ "," ], ")" ;
 joinall_expression      = "joinall", "(", ")" ;
 ```
 
-Every spawn has an explicit result annotation, including `-> Unit`. Named
-`join` requires at least one handle. `joinall()` takes no arguments; its
+Omitting a spawn result annotation declares a Unit task; a non-Unit task must
+write its result annotation explicitly. Named `join` requires at least one
+handle. `joinall()` takes no arguments; its
 statically determined member set may contain zero, one, or several handles.
 `detach` consumes exactly one attached task handle and is a statement rather
 than a value-producing expression. Static result typing follows Section 10:
@@ -6310,11 +6350,11 @@ fn collect_all(topic: String) -> List<Report> {
 
 ```gantry
 fn audit_in_parallel(report: Report) {
-    spawn security_audit -> Unit {
+    spawn security_audit {
         prompt "Perform a security audit of ${report}.";
     }
 
-    spawn style_audit -> Unit {
+    spawn style_audit {
         prompt "Perform a style audit of ${report}.";
     }
 
@@ -6326,11 +6366,11 @@ Named joins can wait for a selected set of Unit tasks and return `()`:
 
 ```gantry
 fn audit_selected(report: Report) {
-    spawn security_audit -> Unit {
+    spawn security_audit {
         prompt "Perform a security audit of ${report}.";
     }
 
-    spawn style_audit -> Unit {
+    spawn style_audit {
         prompt "Perform a style audit of ${report}.";
     }
 
@@ -6346,7 +6386,7 @@ journal until terminal execution:
 ```gantry
 fn launch_background(report: Report) {
     if decide "Should a background audit be launched for ${report}?" {
-        spawn background -> Unit {
+        spawn background {
             prompt "Audit ${report} in the background.";
         }
 
@@ -6361,7 +6401,7 @@ the conditional even though the durable consumption mode differs by path:
 
 ```gantry
 fn launch_or_wait(report: Report) {
-    spawn audit -> Unit {
+    spawn audit {
         prompt "Audit ${report}.";
     }
 
@@ -6620,14 +6660,14 @@ normal path leaving their scope must visibly join or detach them:
 ```gantry
 // Invalid: `audit` remains attached when the function returns.
 fn start_invalid(report: Report) {
-    spawn audit -> Unit {
+    spawn audit {
         prompt "Audit ${report}.";
     }
 }
 
 // Valid: background ownership is transferred explicitly.
 fn start_background(report: Report) {
-    spawn audit -> Unit {
+    spawn audit {
         prompt "Audit ${report}.";
     }
     detach(audit);
