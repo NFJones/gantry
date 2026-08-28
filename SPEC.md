@@ -425,10 +425,11 @@ document are to be interpreted as described in RFC 2119.
    either no parameters or exactly one typed parameter and MAY return any v1
    result type or no result. Neither the entry parameter nor the result type
    MAY be `Decision` or contain `Decision` at any nesting depth. Entry and
-   result JSON encode the visible `decision` and `rationale` fields but cannot
-   carry the interpreter-only operation provenance that makes a `Decision`
-   sealed. A workflow that needs to export a judgment MUST project those
-   fields into an ordinary declared struct before returning it from `main`.
+   result JSON cannot carry the interpreter-only operation provenance that
+   makes a `Decision` sealed, even though the ordinary JSON representation of
+   a `Decision` contains visible `decision` and `rationale` fields. A workflow
+   that needs to import or export a judgment MUST use an ordinary declared
+   struct containing the required data rather than `Decision` itself.
    When `main` has a parameter, the embedding application MUST supply one raw
    byte sequence containing the entry JSON. Gantry MUST own UTF-8 decoding and RFC 8259 JSON
    parsing and MUST apply the same empty-input, trailing-data, duplicate-member,
@@ -705,7 +706,11 @@ document are to be interpreted as described in RFC 2119.
 10. Gantry MUST support named-field struct construction. Struct values MAY be
    constructed by source execution or produced by an operation hook. A source
    constructor MUST reject unknown and duplicate fields during analysis.
-   Constructor field expressions are evaluated once in source order. For
+   A source field initializer MAY use the explicit `name: expression` form or
+   the shorthand `name` form. Shorthand is exactly equivalent to
+   `name: name`; the name MUST resolve to a visible binding of exactly the
+   field's declared type. Constructor field expressions are evaluated once in
+   source order. For
    source construction, a field is required only when it has neither a
    declared default nor an `Option<T>` type. Omitting such a field is an
    analysis error; an omitted field with a default uses that default, and an
@@ -1823,8 +1828,9 @@ document are to be interpreted as described in RFC 2119.
 
 ## 9. Control Flow
 
-1. Gantry MUST support `if`, `else if`, and `else`. Each `if` or `else if`
-   condition MUST have type `Bool` or `Decision`. A `Decision` condition uses
+1. Gantry MUST support `if`, `else if`, `else if let`, and `else`. Each
+   expression condition in an `if` or `else if` MUST have type `Bool` or
+   `Decision`. A `Decision` condition uses
    its sealed `decision` field. A direct model judgment uses the
    visually distinct `decide` expression; an ordinary unannotated `prompt`
    always remains a no-result prompt. A condition MAY reuse a bound
@@ -1863,9 +1869,12 @@ document are to be interpreted as described in RFC 2119.
    operation provenance for observability. The complete object is the sealed
    first-class `Decision` value defined in Section 5. Its read-only
    `.decision` and `.rationale` projections yield `Bool` and `String`.
-3. Each `else if` evaluates its own condition. A newly evaluated `decide`
-   expression performs a separate decision operation; a reused `Decision` or
-   `Bool` expression performs no new dispatch. A later model-operation hook
+3. Each `else if` or `else if let` evaluates its own condition or scrutinee.
+   An `else if let` scrutinee is evaluated exactly once when control reaches
+   that arm, and its pattern bindings exist only in that selected arm. A newly
+   evaluated `decide` expression performs a separate decision operation; a
+   reused `Decision`, `Bool` expression, or structural pattern test performs
+   no new dispatch. A later model-operation hook
    request MUST include the outcomes of preceding arms in the same conditional
    chain through the ordered execution-context vector. Decision entries carry
    their rationales, while structural entries identify their condition kind
@@ -1924,8 +1933,10 @@ document are to be interpreted as described in RFC 2119.
    evaluation reaches an explicitly written workflow containing an operation;
    primitive operators themselves never dispatch.
    An `if let PATTERN = EXPRESSION` evaluates its scrutinee exactly once. A
-   successful match enters the first arm with fresh immutable bindings; a
-   failed match enters `else` when present and otherwise continues normally.
+   successful match enters the corresponding arm with fresh immutable
+   bindings; a failed match proceeds to the next `else if` or `else if let`
+   arm when present, then to `else` when present, and otherwise continues
+   normally.
    Pattern bindings exist only in the selected arm. An `if let` MAY omit
    `else`.
 
@@ -3096,10 +3107,14 @@ identifier_token    = xid_start_or_underscore,
 directive_integer_token
                     = "0" | nonzero_decimal_digit, { decimal_digit } ;
 integer_literal_token
-                    = decimal_digits ;
-float_literal_token = decimal_digits, ".", decimal_digits,
+                    = unsigned_integer_digits ;
+float_literal_token = unsigned_integer_digits, ".", decimal_digits,
                       [ exponent_part ]
-                    | decimal_digits, exponent_part ;
+                    | unsigned_integer_digits, exponent_part ;
+unsigned_integer_digits
+                    = "0"
+                    | nonzero_decimal_digit,
+                      { [ "_" ], decimal_digit } ;
 decimal_digits      = decimal_digit, { [ "_" ], decimal_digit } ;
 exponent_part       = ( "e" | "E" ), [ "+" | "-" ], decimal_digits ;
 decimal_digit       = "0" | "1" | "2" | "3" | "4"
@@ -3133,13 +3148,16 @@ syntax error. An identifier MUST NOT equal a reserved word. Decimal directive
 integers have no sign, separator, or radix prefix.
 
 An integer literal has decimal digits with optional `_` separators only
-between digits. A float literal has either a decimal point with at least one
-digit on each side or an exponent; its exponent may have a leading `+` or `-`.
-The spellings `.5`, `1.`, radix-prefixed values, type suffixes, `NaN`, and
-infinities are invalid. A leading `-` is the unary operator, not part of either
-numeric token. Maximal munch classifies a digit sequence followed by `.` or an
-exponent as one `float_literal_token`; otherwise it is an
-`integer_literal_token`. Semantic analysis enforces the ranges in Section 5.
+between digits. Its integral part is exactly `0` or begins with a nonzero
+digit; leading-zero spellings such as `00`, `01`, and `0_1` are invalid. A
+float literal has either a decimal point with at least one digit on each side
+or an exponent and follows the same integral-part rule; its exponent may have
+a leading `+` or `-`. The spellings `.5`, `1.`, `01.0`, radix-prefixed values,
+type suffixes, `NaN`, and infinities are invalid. A leading `-` is the unary
+operator, not part of either numeric token. Maximal munch classifies a valid
+integral part followed by `.` or an exponent as one `float_literal_token`;
+otherwise it is an `integer_literal_token`. Semantic analysis enforces the
+ranges in Section 5.
 
 `end_of_file` is the zero-width lexical boundary after the final source scalar.
 `line_comment_character` is any Unicode scalar other than U+000A or U+000D.
@@ -3380,7 +3398,6 @@ statement               = let_statement
                         | with_statement
                         | session_statement
                         | if_statement
-                        | if_let_statement
                         | loop_statement
                         | while_statement
                         | until_statement ;
@@ -3473,7 +3490,7 @@ primary_expression      = boolean_literal
 struct_expression       = qualified_path, "{", [ field_initializer_list ], "}" ;
 field_initializer_list  = field_initializer, { ",", field_initializer },
                           [ "," ] ;
-field_initializer       = identifier_token, ":", expression ;
+field_initializer       = identifier_token, [ ":", expression ] ;
 argument_list           = expression, { ",", expression }, [ "," ] ;
 
 enum_expression         = qualified_path, "::", identifier_token,
@@ -3488,8 +3505,8 @@ action_modifiers        = "(", "retry_limit", "=",
                           directive_integer_token, ")" ;
 
 match_expression        = "match", expression, "{",
-                          match_arm, { match_arm }, "}" ;
-match_arm               = pattern, "=>", match_arm_body, "," ;
+                          match_arm, { ",", match_arm }, [ "," ], "}" ;
+match_arm               = pattern, "=>", match_arm_body ;
 match_arm_body          = expression | block ;
 
 pattern                 = "_"
@@ -3629,8 +3646,8 @@ interpolation_struct    = qualified_path, "{",
 interpolation_field_list
                         = interpolation_field,
                           { ",", interpolation_field }, [ "," ] ;
-interpolation_field     = identifier_token, ":",
-                          interpolation_expression ;
+interpolation_field     = identifier_token,
+                          [ ":", interpolation_expression ] ;
 interpolation_list      = "[", [ interpolation_expression,
                           { ",", interpolation_expression }, [ "," ] ], "]" ;
 interpolation_tuple     = "(", interpolation_expression, ",",
@@ -3699,13 +3716,12 @@ errors. `retry_limit` counts retries after the initial attempt.
 ### 13.8 Decisions and sequential control flow
 
 ```ebnf
-if_statement            = "if", condition_expression, statement_block,
+if_statement            = "if", conditional_head, statement_block,
                           { "else", "if",
-                            condition_expression, statement_block },
+                            conditional_head, statement_block },
                           [ "else", statement_block ] ;
-
-if_let_statement        = "if", "let", pattern, "=", expression,
-                          statement_block, [ "else", statement_block ] ;
+conditional_head        = condition_expression
+                        | "let", pattern, "=", expression ;
 
 condition_expression    = expression ;
 decide_expression       = "decide", [ prompt_modifiers ], prompt_template,
@@ -3746,7 +3762,10 @@ places its body before `when` and the post-test condition.
 Semantic analysis MUST require every `condition_expression` to have type
 `Bool` or `Decision`. Ordinary and decision workflow calls share one
 Rust-inspired call syntax and are distinguished by their resolved result type
-rather than by parser guessing.
+rather than by parser guessing. The unified `conditional_head` permits a
+chain to mix ordinary conditions and `if let` pattern tests without adding
+another nesting level; pattern bindings remain scoped only to their selected
+arm.
 
 ### 13.9 Parallel control flow
 
@@ -3930,11 +3949,22 @@ fn compare_titles(left: Draft, right: Draft) -> String {
         return "different";
     }
 }
+
+fn describe_optional(outcome: Option<ReviewOutcome>) -> String {
+    if let Some(ReviewOutcome::Approved(_)) = outcome {
+        return "approved";
+    } else if let Some(ReviewOutcome::NeedsRevision(feedback)) = outcome {
+        return feedback;
+    } else {
+        return "cancelled or absent";
+    }
+}
 ```
 
 Primitive operators are deterministic and checked. List elements have one
 exact type, tuple positions may differ, and pattern bindings are immutable deep
-copies. `if let`, `match`, Boolean algebra, and equality do not dispatch hooks;
+copies. Conditional chains may mix `if`, `else if`, and `else if let` without
+extra nesting. `if let`, `match`, Boolean algebra, and equality do not dispatch hooks;
 the visible `prompt` operations still perform the semantic classification and
 revision work.
 
@@ -4445,20 +4475,20 @@ action web_search(request: SearchRequest)
     -> Result<List<Source>, SearchFailure>;
 action publish(report: Report) -> None;
 
-fn research(topic: String) -> Report {
-    let request: SearchRequest = SearchRequest { query: topic };
+fn research(query: String) -> Report {
+    let request: SearchRequest = SearchRequest { query };
     let search: Result<List<Source>, SearchFailure> =
         action web_search(request);
 
     let sources: List<Source> = match search {
         Ok(value) => value,
         Err(error) => prompt "Recover source material after the search failure."
-            using { error, topic }
+            using { error, query }
             -> List<Source>,
     };
 
     let report: Report = prompt "Write a sourced report." using {
-        topic,
+        query,
         sources,
     } -> Report;
 
@@ -4748,8 +4778,10 @@ provider-specific or executor-specific types in Gantry programs:
    finite nonzero deterministic-transition yield quantum required by Section
    3. The two deterministic-value limits MUST be positive and no greater than
    `9007199254740991`, as required by Sections 5 and 11. Implementations
-   MUST accept directive and projection integers through `2^63 - 1` and MAY
-   reject larger tokens during analysis. The v1 defaults are 30 seconds for
+   MUST accept directive integers through `2^63 - 1` and MAY reject larger
+   directive tokens during analysis. First-class `Int` values used for list
+   projection retain the exact range in Section 5; tuple projection requires
+   an in-bounds nonnegative `Int` literal. The v1 defaults are 30 seconds for
    each event-delivery attempt, 30 seconds for graceful shutdown, and 5 seconds
    for post-cancellation drain. Event-delivery attempt timeouts MUST remain
    finite and positive. Embedders MAY override shutdown and drain with finite
