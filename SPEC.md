@@ -5,6 +5,7 @@
     - [1.1 Language at a glance](#11-language-at-a-glance)
     - [1.2 Reading the surface syntax](#12-reading-the-surface-syntax)
     - [1.3 V1 design boundary](#13-v1-design-boundary)
+    - [1.4 Authoring conventions](#14-authoring-conventions)
   - [2. Normative Language](#2-normative-language)
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
   - [4. Source Organization](#4-source-organization)
@@ -171,6 +172,33 @@ in later sections:
 - Concurrency is structured and ownership-visible. A spawned task must be
   joined, joined through `joinall()`, or explicitly detached on every normal
   path before its handle leaves scope.
+
+### 1.4 Authoring conventions
+
+The following non-normative conventions define the clearest portable Gantry
+style for both human and model authors. They do not change which programs are
+valid:
+
+- Keep each `prompt` or `decide` visually prominent. Bind an intermediate
+  model result before passing it to another workflow when nesting would make
+  operation order difficult to scan.
+- Use triple-quoted block prompts for multiline instructions and ordinary or
+  raw quoted prompts for short text. Keep result annotations on the same
+  visual operation, even when the template spans several lines.
+- Use `with` and `session` blocks when several operations deliberately share
+  an agent or session policy; use operation-local modifiers for one-off
+  overrides.
+- Give decision workflows question-like names and ordinary workflows
+  action- or result-oriented names. Prefer a direct `decide` for a condition
+  that does not need reusable preparation.
+- Place `join`, `joinall()`, or `detach` near the corresponding spawns when
+  practical. A distant ownership transfer is valid but makes parallel flow
+  harder to audit.
+- Prefer imported or `crate::`-rooted item paths when the unqualified lookup
+  would not be obvious from the surrounding module.
+
+Section 14 follows these conventions and serves as the canonical source-style
+reference for v1 examples.
 
 ## 2. Normative Language
 
@@ -1325,6 +1353,14 @@ document are to be interpreted as described in RFC 2119.
     observed, Gantry MUST durably record cancellation of the indeterminate
     dispatch rather than redispatch it on resume. These rules make cancellation
     win deterministically over a racing hook completion.
+    The append-and-flush requirements in this paragraph apply only while the
+    journal remains usable. When journal failure is the initiating error,
+    Gantry MUST NOT attempt additional journal appends through the failed
+    storage path. It MUST discard late in-process hook outcomes after making a
+    best effort to stop the work, MUST NOT consume them, and MUST NOT claim
+    that the affected tasks are durably cancelled. A later owner recovers only
+    the authoritative durable prefix and may consequently redispatch an
+    invocation that remained indeterminate there, as required by Section 11.
 11. Gantry MUST schedule spawned blocks through the executor supplied by the
     embedding application. The integration determines operation-level resource
     limits and queueing policy.
@@ -1399,12 +1435,18 @@ document are to be interpreted as described in RFC 2119.
    recovery, storage MUST discard or otherwise make unreachable every
    physically present record beyond the durability watermark, and the next
    append MUST receive the watermark plus one. A journal failure aborts the
-   affected execution: Gantry MUST reject further state transitions, signal
+   affected in-process execution or resume run: Gantry MUST reject further
+   state transitions, signal
    cancellation to all foreground, attached, and detached tasks owned by that
    execution, apply the configured cancellation drain, and return the journal
    failure directly to the embedder because durability can no longer be
-   assumed. Exactly one interpreter execution owner MAY advance a journal at a
-   time. Before execution or resume advances durable state, storage MUST grant
+   assumed. Gantry MUST NOT claim a new durable terminal state after storage
+   has failed. A later owner MAY resume from the last authoritative durable
+   prefix after storage recovery and fencing, so operations whose outcomes did
+   not reach that prefix remain indeterminate under item 4. Section 12 defines
+   the corresponding limit on standard event delivery after journal failure.
+   Exactly one interpreter execution owner MAY advance a journal at a time.
+   Before execution or resume advances durable state, storage MUST grant
    that owner an opaque fencing token or equivalent monotonically ordered
    ownership generation. Every append and flush MUST be authorized by the
    current token, and storage MUST reject an operation from a superseded owner.
@@ -1587,7 +1629,8 @@ document are to be interpreted as described in RFC 2119.
     Resume MUST reject changes to those fields. Executor implementation,
     worker count, operation timeouts, shutdown timing, best-effort sinks, and
     logical-agent-to-provider mappings MAY change on resume; such changes MUST
-    be journaled before further work. Allowing agent mappings to change is
+    be journaled before further work and MUST obey the per-event delivery-
+    obligation rules in Section 12. Allowing agent mappings to change is
     intentional because Gantry promises resumability, not deterministic model
     replay. Source operation modifiers remain bound through the package source
     identity rather than being duplicated into this configuration identity.
@@ -1601,6 +1644,11 @@ document are to be interpreted as described in RFC 2119.
    decision, spawn, join, detach, mutation, cancellation, foreground
    completion, task completion, terminal execution, and failure. Foreground
    completion is distinct from terminal execution when detached tasks remain.
+   This event requirement applies while the event's required durability
+   boundary is available. A journal failure that makes a resumable execution's
+   event stream unwritable is reported through the structured embedding error
+   required by Sections 11 and 15 rather than by fabricating an undurable
+   standard event.
    Operation-dispatch events MUST reference the applicable prompt and schema
    payloads. Event and journal envelopes MUST be explicitly versioned from the
    first public release, and consumers MUST reject unsupported major versions.
@@ -1641,6 +1689,19 @@ document are to be interpreted as described in RFC 2119.
    execution MAY be delivered without a journal. Event delivery MAY use
    bounded asynchronous queues, but queue backpressure MUST prevent silent
    event loss and preserve per-task order.
+   Parsing and semantic analysis performed as preflight for a requested new
+   execution remain activity-scoped until the execution-start record in
+   Section 11 is durable. Their events MAY therefore omit an execution ID and
+   be delivered without that execution's journal; an analysis failure creates
+   no resumable execution. Once the execution-start record is durable, every
+   event associated with that execution is subject to the journal-first rule.
+   If journal storage subsequently fails, the authoritative standard event
+   stream ends with its last durably flushed event. Gantry MUST NOT deliver a
+   newly created standard event for that journal failure because doing so
+   would violate the journal-first rule. An implementation MAY invoke a
+   separately configured, non-durable emergency diagnostic callback, but that
+   callback is not an `EventSink`, carries no at-least-once guarantee, and MUST
+   be identified as out-of-band reporting rather than a Gantry event.
 4. Canonical protected event records for completed agent operations MUST make
    raw agent output available. A sink receives raw output only when it
    explicitly declares that capability and the embedder enables it for that
@@ -1690,6 +1751,21 @@ document are to be interpreted as described in RFC 2119.
    resume MUST wait that complete recorded delay again and then use the next
    retry number. These rules give event delivery at-least-once semantics while
    making retry accounting and crash recovery unambiguous.
+
+   Each journaled event MUST freeze its delivery obligations at creation by
+   recording the active sink IDs and, for each sink, its required/best-effort
+   class, raw-output permission, retry-policy revision, retry limit, initial
+   delay, cap, and jitter mode. A retry or recovery redelivery MUST use that
+   captured class and effective retry policy rather than a later interpreter
+   default. Adding a sink after an event was created MUST NOT retroactively
+   deliver the older event to that sink. Removing or replacing a sink MUST NOT
+   silently abandon an unsettled captured obligation: on resume, an absent
+   sink adapter is treated as an immediate terminal delivery error under the
+   captured class. Raw-output access at delivery time requires both the
+   event's captured permission and the sink's current enabled capability, so a
+   later configuration may reduce but MUST NOT retroactively broaden access to
+   protected output. Configuration changes apply to events created after the
+   corresponding execution-state record becomes durable.
 6. Event delivery is at least once. Sinks MUST deduplicate using the stable
    event ID. Exhaustion for a required sink MUST abort the affected activity
    and its execution when one exists; exhaustion for a best-effort sink MUST
@@ -2882,7 +2958,14 @@ provider-specific or executor-specific types in Gantry programs:
    capability-filtered referenced-payload bundle defined in Section 12, and
    returns success, a retriable error, or a terminal error. Gantry owns delivery
    attempt IDs, retry timing, payload retention, journaling, and required-sink
-   failure semantics.
+   failure semantics. The embedding API MUST expose a stable retry-policy
+   revision for each sink. Gantry journals the effective policy values with
+   each event obligation, so recovery does not depend on an embedder retaining
+   historical defaults. The embedder MUST resolve every sink identity attached
+   to an unsettled journaled delivery obligation during resume. Failure to
+   resolve a captured sink is handled as the terminal sink error defined in
+   Section 12; it MUST NOT cause the obligation or protected payload
+   references to be dropped silently.
 7. Interpreter configuration MUST include the default agent-output retry
    limit and backoff, event-delivery defaults, executor adapter, graceful-
    shutdown timeout, and post-cancellation drain duration. Implementations
