@@ -489,13 +489,13 @@ shown here.
    represented as portable Gantry v1 source. Conformance requires all v1
    `MUST` and `MUST NOT` requirements; implementing only the parser or only a
    subset of runtime constructs is not full v1 conformance.
-2. Gantry MUST provide its own grammar, lexer, parser, and abstract syntax
-   tree (AST).
-3. Gantry MUST execute source directly. It MUST NOT require compilation to a
-   different language or runtime as its execution model. An implementation
-   MAY lower the AST to a private interpreter representation or bytecode,
-   provided that representation is not a portable artifact or an externally
-   observable additional language and preserves every Gantry semantic rule.
+2. An implementation MUST parse Gantry source according to Section 13 and
+   preserve every semantic rule in this document. It MAY use handwritten or
+   generated parsing, an AST, another private intermediate representation,
+   bytecode, or native compilation. No such internal representation is a
+   portable Gantry artifact, and an implementation MUST NOT require authors or
+   embedders to supply source in another language or expose an additional
+   language layer whose behavior changes Gantry semantics.
 4. Gantry MUST be available as an embeddable Rust library with an asynchronous
    execution API. It does not implement an agent, model provider, transport, or
    hidden asynchronous runtime itself. The embedding application MUST supply
@@ -611,9 +611,9 @@ shown here.
    `None` for a no-result `main`, or the declared return type for a
    value-returning `main`. Embedders therefore never need to infer type or
    no-result semantics from JSON shape.
-3. Gantry MUST support comments and SHOULD adopt Rust lexical conventions
-   where they fit the v1 feature set. Rust likeness is primarily a syntactic
-   and readability goal; Gantry does not inherit Rust semantics by default.
+3. Gantry MUST support the comments and lexical forms defined in Section 13.
+   Gantry resembles Rust only where this specification explicitly says so; it
+   does not inherit unstated Rust lexical or semantic rules.
 4. Except for the self-reference and package-wide collection rules in items 10
    and 14, names MUST be declared before use. Gantry uses lexical scope.
    Declaration order is evaluated within each module's source order. A child
@@ -1053,9 +1053,9 @@ shown here.
 1. Gantry MUST support free functions and inherent methods declared in
    Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
    declared in the same Gantry package. Because the grammar accepts only a
-   qualified path after `impl`, built-in and constructed types such as
-   `Bool`, `Int`, `Float`, `String`, `Option<T>`, `List<T>`, `Tuple<...>`, and no-result `None` cannot
-   be written as `impl` targets in v1. A qualified path that resolves to a
+   qualified path after `impl`, built-in types, constructed types such as
+   `Option<T>`, `List<T>`, and `Tuple<...>`, and the no-result annotation
+   `None` cannot be written as `impl` targets in v1. A qualified path that resolves to a
    function, decision, module, or other non-struct item is an analysis error.
    A package MAY split one struct's methods across multiple `impl` blocks,
    subject to the package-wide duplicate-method rule below. Traits are
@@ -1128,8 +1128,9 @@ shown here.
      canonical callee path;
    - the direct `prompt`, `decide`, `action`, `spawn`, `join`, `joinall()`, and
      `detach` sites in that workflow, identified by kind and source location;
-   - five transitive flags indicating whether execution of the workflow may
-     reach a `prompt`, `decide`, `action`, `spawn`, or `detach`, respectively.
+   - seven transitive flags indicating whether execution of the workflow may
+     reach a `prompt`, `decide`, `action`, `spawn`, `join`, `joinall()`, or
+     `detach`, respectively.
    The transitive flags MUST be the least fixed point of the package call
    graph, including permitted self-recursion and method calls. These summaries
    are analysis metadata rather than source-level effects or additional hook
@@ -1273,8 +1274,9 @@ shown here.
    declaration. Conflicting default bindings or selection of an undeclared
    agent are analysis errors. This conditional rule permits packages that
    declare no agents, including deterministic-only and action-only packages,
-   to omit fictitious model configuration. Within one
-   uninterrupted execution or resume run,
+   to omit fictitious model configuration. The grammar intentionally does not
+   admit `agents {}`; a package with no agents omits agent declarations
+   entirely. Within one uninterrupted execution or resume run,
    integrations MUST resolve every occurrence of the same logical name
    consistently across all tasks. Before a new execution or resume begins,
    the integration MUST attest that it can resolve every name in a nonempty
@@ -1342,12 +1344,13 @@ shown here.
    cannot honor cross-agent reuse for the package's declared mappings MUST
    reject the execution during integration preflight rather than fail after a
    partially executed session.
-4. The Rust hook contract MUST be asynchronous and executor-neutral. Its
-   futures MUST be `Send` so Gantry tasks can execute on a multithreaded
-   executor, and Gantry's public API MUST NOT expose Tokio- or provider-specific
-   types. A future returned by an extension method MAY borrow that method's
-   receiver or arguments and therefore need not be `'static`; only an owned
-   Gantry task future submitted to the executor MUST be `Send + 'static`. Each
+4. The Rust hook contract MUST be asynchronous and independent of any specific
+   executor implementation within v1's multithreaded Rust embedding profile.
+   Its futures MUST be `Send`, and Gantry's public API MUST NOT expose Tokio-
+   or provider-specific types. A future returned by an extension method MAY
+   borrow that method's receiver or arguments and therefore need not be
+   `'static`; only an owned Gantry task future submitted to the executor MUST
+   be `Send + 'static`. Each
    individual operation awaits one hook outcome before it advances and is
    therefore logically synchronous. Gantry MUST lazily obtain at most one
    independently usable `OperationHook` instance for each Gantry task from an
@@ -1378,7 +1381,7 @@ shown here.
    task-failure rules. Hook creation MUST NOT dispatch a model operation.
    Gantry MUST give every hook a Gantry-owned cancellation token whose signal
    the integration MUST make a best effort to honor.
-   Public asynchronous extension traits MUST use executor-neutral boxed
+   Public asynchronous extension traits MUST use executor-independent boxed
    futures or equivalent stable abstractions. The executor adapter MUST provide
    task spawning, task joining, task abortion, and asynchronous sleeping for
    backoff. Gantry MUST retain its own cancellation semantics rather than
@@ -1521,6 +1524,13 @@ shown here.
    - `optional-decline`: declined operation ID, operation kind, selected agent
      or canonical action path as applicable, source location, and decline
      reason when a decline normalized to `None`.
+   Decision rationales and decline reasons are protected model or integration
+   content. They MUST be present in prompt and decision request contexts where
+   listed above, but MUST be absent from action request contexts. Action
+   contexts retain the corresponding operation IDs, source locations,
+   controlling outcomes, and other structural fields. An action receives
+   protected text only when the program passes that text explicitly through a
+   declared typed action argument.
    The root `crate::main` frame has no source call site and MUST encode that
    field as absent rather than inventing a location. It has frame occurrence
    zero and is always the first structural context entry. Every non-root
@@ -1543,7 +1553,7 @@ shown here.
    controlling source construct rather than any one `decide` operation within
    it and MUST remain stable across retry and resume.
    A context entry's protocol representation MUST preserve one entry boundary,
-   its canonical kind, the listed payload fields, and the source-construct
+   its canonical kind, the applicable listed payload fields, and the source-construct
    identity and location when the kind requires them. The structured vector
    MUST remain intact at the Gantry hook boundary: an integration MUST NOT
    discard or reorder entries before presenting them to the operation
@@ -1553,7 +1563,7 @@ shown here.
    when its model API has no structured-context channel, but that rendering MUST
    preserve vector order, visibly distinguish entry boundaries and kinds, and
    make every required field available to the selected agent. An action
-   handler MUST likewise receive the canonical vector without loss or
+   handler MUST likewise receive its operation-specific vector without loss or
    reordering, although its capability API may expose the entries as
    structured metadata rather than model-facing text. Such presentation
    and any provider-specific presentation metadata are integration behavior
@@ -1606,8 +1616,8 @@ shown here.
    is not part of Gantry's JSON value and MUST NOT change schema validation or
    interpolation; an optional decline still emits `null`, and a `Decision`
    still emits only its `decision` and `rationale` fields. The integration MUST
-   make every supplied entry
-   available to the applicable selected agent or action handler in order,
+   make every operation-specific supplied entry available to the applicable
+   selected agent or action handler in order,
    although its provider-specific presentation is implementation-defined.
 7. Prompt interpolation MUST use `${expression}`. An unescaped `$` followed by
    `{` begins interpolation. `$$` consumes exactly those two dollar signs and
@@ -1849,15 +1859,21 @@ shown here.
     Once a new execution has a durably flushed execution-start record, or a
     resume invocation has completed compatibility and dependency preflight and
     begins advancing recovered state, failures are runtime errors. Runtime
-    errors MUST at least distinguish logical-session setup, hook creation,
-    hook failure, decline of a required result, structured-output exhaustion,
-    deterministic evaluation failure, executor failure, cancellation, journal
-    failure, required-event-delivery failure, task/join failure, and internal
-    invariant failure.
-    Projection bounds failures are deterministic evaluation failures. Concrete
-    Rust error types are implementation-defined, but embedders MUST be able to
-    distinguish start, resume-start, and runtime categories without parsing
-    display text.
+    errors MUST expose a stable category and MAY expose a more specific stable
+    code plus structured details. Runtime errors MUST at least distinguish the
+    following categories: logical-session setup, hook creation, hook failure,
+    decline of a required result, structured-output exhaustion, deterministic
+    evaluation failure, executor failure, cancellation, journal failure,
+    required-event-delivery failure, task/join failure, and internal invariant
+    failure.
+    Backticked limit names such as `workflow-call-depth-limit`,
+    `string-size-limit`, `list-size-limit`, and `task-count-limit` are codes
+    within the `deterministic evaluation failure` category, not additional
+    categories. Task failures, foreground outcomes, terminal records, and
+    events MUST preserve the category and any specified code. Projection bounds
+    failures are deterministic evaluation failures. Concrete Rust error types
+    are implementation-defined, but embedders MUST be able to distinguish
+    start, resume-start, and runtime categories without parsing display text.
 18. Unless a more specific rule states otherwise, a fatal operation or
     interpreter error terminates the current Gantry task rather than silently
     terminating unrelated parallel work. Failure of the root foreground task
@@ -2941,7 +2957,7 @@ shown here.
    and MUST be the final record that changes language execution state. Later
    event-delivery records and ownership release do not alter that state.
    Concrete serialization and Rust types are implementation-defined, but the
-   journal protocol MUST publish a versioned canonical field schema for every
+   journal protocol MUST publish a versioned stable field schema for every
    required record kind. Each schema MUST identify its required and optional
    fields, field types, causal-reference rules, and canonical encoding and
    decoding rules. A conforming durable reader MUST reject a record with a
@@ -4051,6 +4067,10 @@ pattern                 = "_"
                         | tuple_pattern ;
 enum_variant_pattern    = path_segment, "::", path_segment,
                           { "::", path_segment },
+                          [ "(", pattern, ")" ]
+                        | ( "crate" | "self" ), "::", relative_path,
+                          [ "(", pattern, ")" ]
+                        | "super", "::", { "super", "::" }, relative_path,
                           [ "(", pattern, ")" ] ;
 path_segment            = identifier_token ;
 tuple_pattern           = "(", pattern, ",", pattern,
@@ -4103,6 +4123,16 @@ analysis MUST reject a bare path that resolves to any such item other than a
 unit enum variant. Task handles are legal only in `join`,
 `joinall()`, and `detach`, never as primary expressions.
 
+Path interpretation follows the next source token. A path followed by `{`
+MUST resolve to a struct type and begins a struct constructor. A path followed
+by `(` MUST resolve to exactly one callable workflow, declared enum payload
+variant, or permitted built-in. A path with no such suffix in value position
+MUST resolve to a visible binding when it has one unqualified segment, or to a
+declared unit enum variant. Enum patterns use the same root and module lookup
+rules as `qualified_path` and MUST resolve to an enum variant. Failure to find
+the required item kind, or finding more than one valid interpretation, is an
+analysis error.
+
 A value-producing `with` or `session` expression requires its block's trailing
 expression and yields that value. These forms permit a lexical agent or session
 context to produce the enclosing workflow's result. Their statement-only forms
@@ -4137,12 +4167,14 @@ another type, or continuing a postfix chain after a no-result expression is an
 analysis error.
 
 As a semantic disambiguation rule applied after parsing, a struct constructor
-used anywhere in the condition immediately before an `if` or `while` body, in
-an `if let` scrutinee, or in a `match` scrutinee MUST be enclosed in
-parentheses. For example, `if (Policy { enabled: true }).enabled { ... }` is
-valid, while the same condition without those parentheses is rejected. This
-rule gives parsers, human readers, and model authors one deterministic
-interpretation of a path followed by `{` at a control-flow boundary.
+used anywhere in the condition immediately before an `if` (including an
+`else if`) or `while` body, in an `if let` scrutinee, or in a `match` scrutinee
+MUST be enclosed in parentheses. For example,
+`if (Policy { enabled: true }).enabled { ... }` is valid, while the same
+condition without those parentheses is rejected. An `until` condition is not
+subject to this rule because it follows the body and ends at `;`. This rule
+gives parsers, human readers, and model authors one deterministic interpretation
+of a path followed by `{` at a control-flow boundary.
 
 ### 13.7 Prompts and interpolation
 
@@ -4354,10 +4386,13 @@ heterogeneous results.
 *This section is non-normative. It illustrates the contract but does not add
 or override language requirements.*
 
-The examples in this section are illustrative complete programs or focused
-fragments. Except for snippets explicitly labeled invalid in Section 14.13,
-they use only v1 syntax. Comments beginning with `//` explain the example and
-are valid Gantry comments.
+The examples in this section are either complete programs when explicitly
+introduced with package files, or focused fragments. A focused fragment
+assumes that referenced types, agents, defaults, and helper workflows are
+declared elsewhere in the package; it is not necessarily pasteable as a
+standalone `main.gnt`. Except for snippets explicitly labeled invalid in
+Section 14.13, all shown forms use only v1 syntax. Comments beginning with
+`//` explain the example and are valid Gantry comments.
 
 ### 14.1 Minimal package entry point
 
@@ -5068,6 +5103,12 @@ struct Source {
     url: String,
 }
 
+struct Report {
+    title: String,
+    summary: String,
+    sources: List<Source>,
+}
+
 action web_search(request: SearchRequest)
     -> Result<List<Source>, SearchFailure>;
 action publish(report: Report) -> None;
@@ -5517,6 +5558,10 @@ provider-specific or executor-specific types in Gantry programs:
     records for an embedder to enforce those policies without parsing free-form
     text.
 
-The canonical serialization format and concrete Rust data-type layout are
-implementation choices. They MUST preserve every field, category, ordering,
-durability boundary, and compatibility rule made normative by this document.
+The serialization format and concrete Rust data-type layout are implementation
+choices. An implementation MUST publish the selected format with its versioned
+protocol schemas and MUST preserve every field, category, ordering, durability
+boundary, and compatibility rule made normative by this document. Independent
+implementations are byte-interoperable only when they explicitly implement the
+same published format and schemas; semantic v1 conformance alone does not make
+their serialized artifacts interchangeable.
