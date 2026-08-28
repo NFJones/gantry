@@ -688,8 +688,11 @@ block and inherits that block's stable identifier. A numbered normative item
 is one block, including its subordinate paragraphs, lists, tables, and code
 fences. An unnumbered normative section introduction is its section's `.0`
 block. Each unnumbered grammar or embedding subsection is one block. Each
-named formal rule is its own block. Non-normative Sections 1.1 through 1.4 and
-14 have no requirement identifiers.
+bracketed, anchored formal-rule heading such as `[GNT-3-T-VALUE]` is one named
+formal-rule block. Labels inside its inference figure, such as `T-Value`,
+`T-Name`, and `T-None`, are subrules of that block and inherit its identifier;
+they are not independently registered blocks. Non-normative Sections 1.1
+through 1.4 and 14 have no requirement identifiers.
 
 Every block begins with an inline HTML anchor whose `id` is its requirement
 identifier. The anchors, rather than mutable line numbers or Markdown heading
@@ -1023,7 +1026,7 @@ e ::= v | x | aggregate(e...) | project(e,k) | prim(e...)
     | with-agent(a,e) | with-session(d,e) | join(h...)
     | join-all(h...)
 
-c ::= skip | let x:τ=e | assign p=e | discard e | return e
+c ::= skip | let pat:τ=e | assign p=e | discard e | return e
     | break | continue | c;c | if e then c else c
     | match e with pat=>c... | loop[L,d] c
     | while[L,d] e do c | until[L,d] c when e
@@ -1038,6 +1041,11 @@ trailing expressions, operation modifiers, and implicit Unit returns lower to
 these terms while preserving Section 6's evaluation order. Lowering MUST
 retain a distinct core site for every operation, spawn, join, detachment,
 branch, loop, return target, and cancellation point.
+For `let pat:τ=e`, the frontend evaluates `e` exactly once and then applies
+the irrefutable binding pattern atomically. If evaluation completes, every
+name in `pat` becomes visible with its projected value at the same sequence
+boundary; if evaluation fails, none becomes visible. A single-name binding is
+the special case where `pat` is one identifier.
 
 <a id="GNT-3-F-AUX"></a>
 
@@ -1251,7 +1259,7 @@ means that completion is unreachable.
 
 Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
 ────────────────────────────── T-Let/T-Discard
-Σ;Γ;Ω ⊢ let x:τ=e ! ε ⇒ {N↦Ω'}
+Σ;Γ;Ω ⊢ let pat:τ=e ! ε ⇒ {N↦Ω'}
 Σ;Γ;Ω ⊢ discard e ! ε ⇒ {N↦Ω'}
 
 Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
@@ -1264,11 +1272,13 @@ means that completion is unreachable.
 Σ;Γ;Ω ⊢ continue ! ∅ ⇒ {Co↦Ω}
 ```
 
-`let` additionally requires a fresh binding and the declared exact type; its
-scope extension applies to the following command in the enclosing sequence.
-Pattern `let` uses `bind` and must be irrefutable. `_` may ignore selected
-members inside a tuple pattern, but whole-value discard uses the explicit
-`discard` command. Bare expression statements are `discard e` only when
+`let` additionally requires every name bound by `pat` to be fresh and the
+declared exact type to equal the type of `e`; its scope extension applies to
+the following command in the enclosing sequence. `bind(Σ,τ,pat)` determines
+the bindings and requires `pat` to be irrefutable. The value is evaluated once
+before those bindings become visible. `_` may ignore selected members inside
+a tuple pattern, but whole-value discard uses the explicit `discard` command.
+Bare expression statements are `discard e` only when
 `τ=Unit`; otherwise only the explicit source `discard` lowers to this command.
 `return`, `break`, and `continue` must have a valid nearest target, and every
 handle whose lexical scope they exit must be consumed in its output
@@ -2111,6 +2121,14 @@ Task handles are governed by Section 10 and are not source values.
    expression under item 9. Journal failure, internal invariant failure, and
    deterministic evaluation failure are never converted. V1 has no `?`
    operator or implicit result propagation.
+   When an operation's declared output type is `Result<T,E>`, an accepted,
+   validated `Err(E)` hook output is an ordinary successful operation value.
+   It does not represent a hook decline or failure, does not consume an
+   operation-failure retry, and does not propagate a runtime error. Conversely,
+   `Declined`, `Failed`, structured-output exhaustion, and unknown action
+   outcomes never synthesize that declared `Err(E)` value. Only an explicit
+   `attempt` converts the operation-failure categories listed in item 9 into
+   `Err(OperationError)`.
 <a id="GNT-5.9"></a>
 
 9. `OperationError` is a sealed built-in tagged type with the variants
@@ -2737,7 +2755,9 @@ operation identity, failure categories, and propagation.
 <a id="GNT-7.4"></a>
 
 4. The Rust hook contract MUST be asynchronous and independent of any specific
-   executor implementation within v1's multithreaded Rust embedding profile.
+   executor implementation. Every Rust embedding-profile implementation uses
+   the multithread-safe baseline in Section 15.9; this is not a separate
+   conformance profile.
    Its futures MUST be `Send`, and Gantry's public API MUST NOT expose Tokio-
    or provider-specific types. A future returned by an extension method MAY
    borrow that method's receiver or arguments and therefore need not be
@@ -3183,8 +3203,10 @@ operation modifiers defined in Sections 6 and 13.
    `Completed(raw_output)`. Gantry MUST reject the outcome in the
    `resource-limit` validation category before UTF-8 decoding when its byte
    length exceeds `maximum_hook_output_bytes`. Gantry MUST decode an admitted
-   outcome as UTF-8 and parse exactly one RFC 8259 JSON text, allowing only
-   JSON whitespace after the value. Gantry owns this parsing step and MUST
+   outcome as UTF-8 and parse exactly one RFC 8259 JSON text. RFC 8259
+   whitespace is allowed before and after the single value; every other byte
+   before or after it is trailing data and MUST be rejected. Gantry owns this
+   parsing step and MUST
    reject non-UTF-8, malformed, empty, trailing-data, or excessively nested
    output as structured-output validation failures.
    Duplicate member names in any JSON object MUST also be rejected as a
@@ -5239,7 +5261,11 @@ adding a trailing newline. Ordinary and raw strings continue to preserve exact
 whitespace. `block_comment_character` consumes one scalar value that does not
 begin the nested opener `/*` or closing delimiter `*/`.
 `raw_string_body` is the shortest sequence ending immediately before a quote
-followed by exactly `matching_raw_hashes`. Lexing uses maximal munch for
+followed by `matching_raw_hashes`. The lexer consumes that quote and exactly
+the opening delimiter's number of `#` characters as the close; any immediately
+following additional `#` characters are outside the raw-string token. Thus
+`r#"x"##` tokenizes as the raw string `r#"x"#` followed by `#`, which is an
+error unless another surrounding production admits that token. Lexing uses maximal munch for
 identifiers, directive integers, `::`, and `->`. A raw-string token takes
 precedence over an identifier only when `r` is immediately followed by zero or
 more `#` characters and a quote. A block-prompt token takes precedence over an
@@ -5336,6 +5362,7 @@ field_default           = boolean_literal
                         | [ "-" ], float_literal_token
                         | string_token
                         | raw_string_token
+                        | "(", ")"
                         | "None" ;
 
 enum_declaration        = "enum", identifier_token, "{",
@@ -5371,8 +5398,9 @@ The built-in type alternatives take precedence over `qualified_path`. A
 `Tuple` has at least two member types by grammar. An enum has at least one
 variant, and an action declaration has no body and exactly one recovery class.
 `Unit` is the result type for no-information work; `None` is only the absent
-value of an expected `Option<T>`. Field defaults are deliberately limited to primitive
-literals, optionally negated numeric literals, strings, and `None` in v1.
+value of an expected `Option<T>`. Field defaults are deliberately limited to
+primitive literals (including `()`), optionally negated numeric literals,
+strings, and `None` in v1.
 Their declared field type MUST accept the default without coercion.
 
 A `use` declaration imports the item named by the final path segment into the
@@ -5696,17 +5724,18 @@ indexing another type is an analysis error. `Unit` has no fields, methods, or
 index operation, so an attempted postfix suffix on `()` is rejected by those
 ordinary rules.
 
-As a semantic disambiguation rule applied after parsing, every struct
-constructor expression nested at any depth within an `if` (including an
-`else if`) or `while` condition, an `if let` scrutinee, or a `match` scrutinee
-MUST have its own enclosing parentheses. For example,
-`if (Policy { enabled: true }).enabled { ... }` is valid, while the same
-condition without those parentheses is rejected; nested source such as
-`if check((Policy { enabled: true })) { ... }` follows the same rule. An
-`until` condition is not subject to this rule because it follows the body and
-ends at `;`. This rule gives parsers, human readers, and model authors one
-deterministic interpretation of a path followed by `{` at a control-flow
-boundary.
+As a semantic disambiguation rule applied after parsing, a struct constructor
+in an `if` (including an `else if`) or `while` condition, an `if let`
+scrutinee, or a `match` scrutinee MUST occur inside an already-opened delimiter
+pair: parentheses, call arguments, an index, or an aggregate. For example,
+`if (Policy { enabled: true }).enabled { ... }` and
+`if check(Policy { enabled: true }) { ... }` are valid, while
+`if Policy { enabled: true }.enabled { ... }` is rejected. A constructor
+nested in one of those delimited expressions needs no additional parentheses.
+An `until` condition is not subject to this rule because it follows the body
+and ends at `;`. This local rule gives parsers and readers one interpretation
+of a path followed immediately by `{` at a control-flow boundary without
+imposing recursive punctuation on otherwise unambiguous expressions.
 
 ### 13.7 Prompts and interpolation
 
@@ -5764,6 +5793,7 @@ interpolation_primary   = boolean_literal
                         | float_literal_token
                         | string_token
                         | raw_string_token
+                        | "(", ")"
                         | "None"
                         | "Some", "(", interpolation_expression, ")"
                         | "Ok", "(", interpolation_expression, ")"
@@ -5961,6 +5991,34 @@ fn main() -> Unit {
     prompt "Inspect the current assignment and carry it out." -> Unit;
 }
 ```
+
+An entry point may instead accept one typed strict-JSON value and return one
+typed value:
+
+```gantry
+struct Request {
+    topic: String,
+    audience: Option<String>,
+    dry_run: Bool = false,
+}
+
+struct Report {
+    text: String,
+}
+
+fn main(request: Request) -> Report {
+    prompt "Write about ${request.topic} for ${request.audience}."
+        using { dry_run: request.dry_run }
+        -> Report
+}
+```
+
+For example, `{"topic":"task ownership"}` supplies `audience = None` and
+the declared `dry_run = false` default. Gantry, not the embedder, parses and
+normalizes those raw bytes. A `main` parameter or result containing `Decision`
+or `OperationError` at any nesting depth is invalid; authors must copy any
+data they intend to export into an ordinary declared type. Sections 4.2 and
+15.1 define this boundary normatively.
 
 ### 14.2 Modules, imports, and package-wide agents
 
@@ -6954,6 +7012,19 @@ Concrete Rust names and signatures MAY evolve during implementation, but a v1
 embedding API MUST expose the following semantic interfaces without requiring
 provider-specific or executor-specific types in Gantry programs:
 
+The public operations named in this section are protocol operations, not
+prescribed Rust method names. Their request and result envelopes belong to the
+`gantry.embedding` protocol artifact defined in Section 15.8. That artifact
+MUST define the required and optional fields and stable discriminants for
+`ValidatePackage`, `AnalyzePackage`, `StartExecution`, `ResumeExecution`,
+`CancelExecution`, `AwaitForeground`, `AwaitTerminal`, `QueryExecution`, and
+`Shutdown`; the `IntegrationPreflight` operations `ResolveMappings`,
+`ResolveSessions`, and `EstablishSession`; `CreateHook` and
+`DispatchOperation`; journal ownership, read, commit, payload-resolution, and
+release operations; and `DeliverEvent`. The prose below defines their
+behavior. A publication that omits this artifact is a draft design and is not
+independently sufficient for an embedding-profile interoperability claim.
+
 ### 15.1 Interpreter lifecycle
 
 <a id="GNT-15.1"></a>
@@ -6962,10 +7033,10 @@ provider-specific or executor-specific types in Gantry programs:
 
 An `Interpreter` accepts a package root, an explicitly selected supported
    source-language version, interpreter configuration (which includes the
-   executor adapter), a hook factory, a harness-preflight integration surface,
+   executor adapter), a hook factory, an `IntegrationPreflight` implementation,
    zero or more event sinks, and, for a durable embedding, journal storage. The
    hook factory MAY also
-   implement the harness-preflight surface, but the interpreter MUST have an
+   implement `IntegrationPreflight`, but the interpreter MUST have an
    explicit reference through which it can invoke the mapping, root-session,
    and reusable-session operations in Section 15.2. Every evaluator embedding
    MUST expose syntax-only validation, semantic analysis, execution, execution
@@ -6974,7 +7045,7 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    execution MUST use the selected source-language version. Resume MUST use
    the version stored in the execution-start record and MUST reject an
    incompatible caller selection as a resume-start compatibility failure.
-   Execution cancellation accepts an execution ID and a structured reason, is
+   Execution cancellation accepts an execution ID and a `CancellationReason`, is
    idempotent, and implements Section 10 rather than requiring the embedder to
    manipulate executor handles directly. A resume request MUST identify the
    execution or journal to load
@@ -7036,7 +7107,7 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    `session-use = create` redispatch is resolved by that idempotent request,
    not by this preflight; any enclosing or root session on which it depends
    remains in the preflight set. Resume MUST dispatch no hook when this
-   preflight fails. The same harness-preflight operation MUST receive and
+   preflight fails. The same `ResolveSessions` operation MUST receive and
    resolve an embedder-supplied root-session descriptor for a new execution.
    That descriptor contains the execution candidate's root logical session ID,
    `embedder-supplied` provenance, normalized canonical transcript, and the
@@ -7057,10 +7128,12 @@ An `Interpreter` accepts a package root, an explicitly selected supported
 
 **Start and resume outcomes.**
 
-   Starting a new execution
-   MUST return either a
-   structured start failure with no execution ID, or an execution ID after the
-   applicable acceptance boundary above. For a durable execution, that
+   `StartExecution` MUST return a `StartResult`. Its nondurable form is either
+   `accepted(execution_id, handle)` or `rejected(start_failure)` and carries no
+   journal ID. Its durable form always carries the caller-supplied stable
+   journal ID and an acceptance union that is either
+   `accepted(execution_id, handle)` or `rejected(start_failure)`; the rejected
+   variant carries no execution ID. For a durable execution, the acceptance
    boundary is the committed execution-start evidence; for a nondurable
    execution, it is successful preflight. Syntax, analysis, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
@@ -7071,9 +7144,11 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    `main` has completed. The API MUST let the embedder asynchronously await or
    query the foreground outcome through that handle while detached work, when
    any, continues toward terminal execution state.
-   Resume MUST likewise return a structured
-   resume-start failure when Section 7 preflight fails, without changing the
-   execution's durable state, and MUST permit a later corrected resume attempt.
+   `ResumeExecution` MUST likewise return either
+   `accepted(execution_id, handle)` or `rejected(resume_start_failure)`. It
+   returns the existing execution ID rather than allocating another. A
+   resume-start failure under Section 7 leaves the execution's durable state
+   unchanged and MUST permit a later corrected resume attempt.
    Once recovered interpretation begins, resume returns the same execution
    handle and foreground-outcome categories as a new execution. If foreground
    completion is already durable, resume MUST expose that preserved outcome
@@ -7120,12 +7195,13 @@ An `Interpreter` accepts a package root, an explicitly selected supported
 <a id="GNT-15.2"></a>
 
 A `HookFactory` asynchronously creates an `OperationHook` for a supplied
-   task context. The factory, or a companion harness-preflight interface owned
+   task context. The factory, or an `IntegrationPreflight` implementation owned
    by the same integration, MUST also validate the complete nonempty merged
    agent-name set and every declared canonical action signature, and MUST
    supply each corresponding mapping revision before a new execution begins.
-   That preflight interface MUST also implement the structured logical-session
-   resolution operation required by Section 15.1. For a new execution it
+   Its `ResolveMappings` operation performs that mapping validation. Its
+   `ResolveSessions` operation MUST implement the structured logical-session
+   resolution required by Section 15.1. For a new execution it
    resolves the optional embedder-supplied root descriptor, including its
    normalized canonical transcript; for resume it
    resolves the complete reusable-session descriptor set enumerated by Gantry.
@@ -7142,8 +7218,8 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    occur before `main` evaluation or recovered work. Successful preflight does
    not itself dispatch an operation.
 
-   For a `gantry-created` root session, this integration surface MUST also let
-   Gantry request establishment of one fresh empty integration-side
+   For a `gantry-created` root session, `EstablishSession` MUST let Gantry
+   request establishment of one fresh empty integration-side
    conversational context for the generated logical session ID before that
    root or a session derived from it is first used. That request is session
    setup, not hook creation or model dispatch. Repeating it for the same
@@ -7152,10 +7228,10 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    MUST be safe to retry for the same execution and root ID. Gantry invokes it
    only after the execution-start record is durable; failure prevents hook
    creation and is the `logical-session-setup` runtime error defined in
-   Section 7. An `embedder-supplied` root instead uses the preflight resolution
-   required by Section 7.
+   Section 7. An `embedder-supplied` root instead uses `ResolveSessions` as
+   required by Section 15.1.
 
-   The same companion integration surface MUST establish every non-root
+   `EstablishSession` MUST also establish every non-root
    logical session created outside an operation request, including lexical-
    block, loop, and automatic spawned-task sessions. Gantry supplies the
    durable session descriptor: execution and session IDs, `new` or `fork`,
@@ -7198,13 +7274,22 @@ A cancellation token is cloneable, safe to observe from multiple threads,
    and transitions monotonically from active to cancelled. Cancellation does
    not itself constitute a hook outcome; an integration that stops work after
    observing cancellation returns `Failed` or lets Gantry surface cancellation
-   according to the runtime state.
+   according to the runtime state. `CancellationReason` is a versioned record
+   containing a stable category (`caller`, `deadline`, `shutdown`, or
+   `runtime`), an optional diagnostic message subject to the configured maximum
+   String scalar count, and an optional causal identity discriminated as an
+   operation ID or task ID. Gantry MUST use the same canonical record in the
+   cancellation request and resulting journal and event evidence. Protected
+   content MUST be carried by a protected reference rather than copied into
+   the diagnostic message.
 ### 15.4 Executor services
 
 <a id="GNT-15.4"></a>
 
-An executor adapter provides asynchronous task spawn, join, abort, sleep,
-   and explicit scheduler-yield capabilities. It MUST also provide a
+Every evaluator embedding's executor adapter provides asynchronous sleep and
+   explicit scheduler-yield capabilities. An embedding claiming the
+   concurrent-evaluator profile MUST additionally provide task spawn, join,
+   and abort. Every evaluator adapter MUST also provide a
    cancellation-aware race against a monotonic deadline. Completion wins when
    the raced future completes no later than the deadline; otherwise timeout
    wins, the adapter stops polling the losing future, and Gantry may invoke an
@@ -7360,6 +7445,23 @@ cut, idempotency and unknown outcomes, Unicode security, workflow migration,
 and property/model tests for linear task ownership and single result
 consumption. A profile claim maps every applicable requirement ID to at least
 one corpus test and publishes the results.
+
+The publication index MUST expose at least these stable artifact IDs and one
+versioned URI for each:
+
+| Artifact ID | Required contents |
+| --- | --- |
+| `gantry.embedding` | Lifecycle, preflight, hook, cancellation, executor, journal, event-delivery, and observation request/result envelopes from Sections 15.1 through 15.7 |
+| `gantry.values` | Canonical value, transcript, diagnostic, event, configuration, and protected-reference schemas |
+| `gantry.ir` | Canonical core IR and source-map schemas and desugaring fixtures |
+| `gantry.journal` | Logical evidence, migration, ownership, and commit schemas |
+| `gantry.conformance` | Requirement-ID registry, manifest schema, corpus index, and published results |
+
+Each artifact MUST identify its protocol major and minor version, applicable
+profiles and requirement IDs, canonical JSON Schemas, and golden encodings.
+Sections 15.1 through 15.7 refer to these logical IDs; repository paths and
+transport URLs may change only through a new publication index that preserves
+their versioned identities.
 ### 15.9 Thread safety
 
 <a id="GNT-15.9"></a>
