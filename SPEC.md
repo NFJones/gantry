@@ -8,7 +8,14 @@
     - [1.4 Authoring conventions](#14-authoring-conventions)
     - [1.5 Core terminology](#15-core-terminology)
   - [2. Normative Language](#2-normative-language)
+    - [2.1 Requirement identifier registry](#21-requirement-identifier-registry)
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
+    - [3.1 Formal domains and core language](#31-formal-domains-and-core-language)
+    - [3.2 Static semantics](#32-static-semantics)
+    - [3.3 Control-flow, ownership, and package validity](#33-control-flow-ownership-and-package-validity)
+    - [3.4 Dynamic semantics](#34-dynamic-semantics)
+    - [3.5 Operations, tasks, cancellation, and failure](#35-operations-tasks-cancellation-and-failure)
+    - [3.6 Durability refinement and semantic properties](#36-durability-refinement-and-semantic-properties)
   - [4. Source Organization](#4-source-organization)
   - [5. Values, Bindings, Structs, and Tagged Types](#5-values-bindings-structs-and-tagged-types)
   - [6. Workflows, Methods, and Actions](#6-workflows-methods-and-actions)
@@ -55,6 +62,8 @@
     - [15.10 Protected data](#1510-protected-data)
 
 ## 1. Status and Scope
+
+<a id="GNT-1.0"></a>
 
 Gantry is a Rust-inspired control language for coordinating model-backed
 agents. It is named for the elevated structure spanning a factory floor: a
@@ -529,6 +538,8 @@ preferred source-style reference for v1. They remain non-normative: Sections
 
 ### 1.5 Core terminology
 
+<a id="GNT-1.5"></a>
+
 The following terms distinguish source constructs from runtime and integration
 activity throughout this specification:
 
@@ -606,6 +617,8 @@ activity throughout this specification:
 
 ## 2. Normative Language
 
+<a id="GNT-2.0"></a>
+
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
 "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
 "OPTIONAL" in this document are to be interpreted as described in BCP 14
@@ -621,7 +634,58 @@ override requirements. When an example conflicts with normative prose or the
 grammar, the normative prose and grammar govern and the example is a defect in
 this document.
 
+### 2.1 Requirement identifier registry
+
+<a id="GNT-2.1"></a>
+
+A **requirement block** is the smallest independently anchored normative unit
+in this document. Every normative statement belongs to exactly one requirement
+block and inherits that block's stable identifier. A numbered normative item
+is one block, including its subordinate paragraphs, lists, tables, and code
+fences. An unnumbered normative section introduction is its section's `.0`
+block. Each unnumbered grammar or embedding subsection is one block. Each
+named formal rule is its own block. Non-normative Sections 1.1 through 1.4 and
+14 have no requirement identifiers.
+
+Every block begins with an inline HTML anchor whose `id` is its requirement
+identifier. The anchors, rather than mutable line numbers or Markdown heading
+slugs, are the authoritative registry. A range below expands inclusively; each
+expanded identifier and each named formal-rule identifier MUST occur exactly
+once as an `id` attribute in this document. An edition MUST fail its
+publication check if an identifier is missing, duplicated, or attached to more
+than one block.
+
+| Normative scope | Registered identifiers |
+| --- | --- |
+| Status, terminology, and normativity | `GNT-1.0`, `GNT-1.5`, `GNT-2.0`, `GNT-2.1` |
+| Implementation summary items | `GNT-3.0`, `GNT-3.1` through `GNT-3.15` |
+| Formal kernel | Every named `GNT-3-F-*`, `GNT-3-T-*`, `GNT-3-M-*`, and `GNT-3-D-*` rule in Sections 3.1 through 3.6 |
+| Source organization | `GNT-4.0`, `GNT-4.1` through `GNT-4.17` |
+| Values and types | `GNT-5.0`, `GNT-5.1` through `GNT-5.20` |
+| Workflows and actions | `GNT-6.0`, `GNT-6.1` through `GNT-6.12` |
+| Integration operations | `GNT-7.0`, `GNT-7.1` through `GNT-7.18` |
+| Structured output | `GNT-8.0`, `GNT-8.1` through `GNT-8.13` |
+| Control flow | `GNT-9.0`, `GNT-9.1` through `GNT-9.12` |
+| Parallel execution | `GNT-10.0`, `GNT-10.1` through `GNT-10.14` |
+| Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11` |
+| Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11` |
+| Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
+| Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10` |
+
+Adding an independently testable obligation to an existing block SHOULD add a
+descriptive child identifier such as `GNT-7.5-request-header`; moving existing
+text without changing its meaning preserves its identifier. Splitting a block
+retires the parent or retains it as an umbrella while assigning new child
+identifiers. Merging blocks retires all but one identifier. Retired identifiers
+MUST remain reserved in the publication manifest and MUST NOT acquire a new
+meaning within source-language major version 1. Conformance tests and the
+machine-readable manifest cite these anchors directly.
+
 ## 3. Implementation and Execution Model
+
+<a id="GNT-3.0"></a>
+
+<a id="GNT-3.1"></a>
 
 1. A conforming Gantry v1 implementation claiming the analyzer profile MUST
    recognize as source-valid every
@@ -637,6 +701,8 @@ this document.
    additionally requires the integration obligations defined above. A parser,
    analyzer, or nondurable evaluator may therefore make a precise profile
    claim without claiming the complete durable runtime.
+<a id="GNT-3.2"></a>
+
 2. An implementation MUST parse Gantry source according to Section 13 and
    preserve every semantic rule in this document. It MAY use handwritten or
    generated parsing, an AST, another private intermediate representation,
@@ -644,6 +710,8 @@ this document.
    portable Gantry artifact, and an implementation MUST NOT require authors or
    embedders to supply source in another language or expose an additional
    language layer whose behavior changes Gantry semantics.
+<a id="GNT-3.3"></a>
+
 3. Gantry MUST be available as an embeddable Rust library with an asynchronous
    execution API. This is the required v1 embedding profile; “portable” in this
    specification describes Gantry source and runtime semantics across
@@ -653,14 +721,20 @@ this document.
    embedder-supplied executor adapter; it neither creates nor owns an async
    executor. The adapter MUST be replaceable through library configuration,
    not through Gantry source syntax.
+<a id="GNT-3.4"></a>
+
 4. The interpreter MUST control program flow, hook invocation, result
    validation, retry handling, and state transitions.
+<a id="GNT-3.5"></a>
+
 5. An integration MUST implement the hooks needed to perform model operations
    and declared harness actions. It is responsible for mapping Gantry agent
    names to its own agents or models and canonical action signatures to its
    own capabilities.
-6. Model selection, tool access, approvals, authentication, persistence
-   backend selection, logging backend selection, operation-level timeouts,
+<a id="GNT-3.6"></a>
+
+6. Model selection, tool access, approvals, authentication, persistence backend
+   selection, logging backend selection, operation-level timeouts,
    and provider-specific cancellation mechanics belong to the integration.
    The integration also chooses the configurable resource-limit values that
    Section 15 requires, while Gantry MUST enforce those values at the language
@@ -699,18 +773,25 @@ this document.
    configured interpreter resource limit MUST surface as a structured
    deterministic-evaluation runtime error, never a panic or silent process
    termination.
+<a id="GNT-3.7"></a>
+
 7. Gantry execution state MUST be serializable and resumable. Gantry MUST
    provide a journal, or an equivalent durable execution record, sufficient to
    continue an interrupted execution from its recorded state. Section 11
    defines the required recovery behavior.
+<a id="GNT-3.8"></a>
+
 8. Gantry does not promise deterministic replay. Re-execution of the same
-   source and inputs MAY produce different integration results. Resumption MUST,
+   source and inputs MAY produce different integration results. Resumption
+   MUST,
    however, reuse every committed physical hook outcome and MUST reuse every
    validated operation result already derived from committed journal state.
    A committed raw `Completed` outcome that has not yet passed validation is
    durable input to resumed validation, not yet a successful operation result.
+<a id="GNT-3.9"></a>
+
 9. The Gantry v1 source-language version is major `1`, minor `0`. The initial
-    public protocol version for hook requests, journal envelopes, event
+   public protocol version for hook requests, journal envelopes, event
     envelopes, and the configuration identity is likewise major `1`, minor
     `0`, but source-language and protocol versions are distinct fields and
     MUST NOT be inferred from one another. A document reference to “v1”
@@ -718,15 +799,19 @@ this document.
     different protocol major version. Every new execution and resume request
     MUST explicitly select a supported source-language version through the
     embedding API; v1 source contains no in-file version pragma.
+<a id="GNT-3.10"></a>
+
 10. v1 makes no backward-compatibility promise for source syntax or the
-    concrete Rust hook API. Public hook, journal, event, and configuration
+   concrete Rust hook API. Public hook, journal, event, and configuration
     envelopes remain subject to the explicit major/minor compatibility rules
     in item 9 and Section 15. That protocol obligation preserves the meaning
     of a supported envelope; it does not require a later implementation to
     accept source written for another language version or preserve concrete
     Rust type signatures.
+<a id="GNT-3.11"></a>
+
 11. The normative semantics are defined over a desugared core language. A
-    frontend MUST lower surface source to the following core constructs while
+   frontend MUST lower surface source to the following core constructs while
     retaining source spans: typed literals and variables; immutable aggregate
     construction and projection; mutable-root assignment; workflow-frame
     entry and return; ordered sequencing; Boolean and tagged-pattern branch;
@@ -739,18 +824,27 @@ this document.
     an integration operation. The canonical core IR schema, desugaring rules,
     and source-map schema are versioned public artifacts of the source-language
     major version rather than implementation-private bytecode.
-12. Static semantics use judgments of the forms `Γ; Ω ⊢ e : T ! ε`,
-    `Γ; Ω ⊢ s ⇒ Ω' ! ε`, and `Σ ⊢ package ok`. `Γ` maps source names to types
-    and mutability, `Ω` maps task handles to their linear ownership states,
-    `T` is a source type, and `ε` is the least inferred effect set. Expression
-    evaluation MUST preserve types; statement evaluation MUST produce the
-    stated ownership environment on every normal outgoing path; and package
-    validity MUST include name resolution, schema construction, control-flow
-    completion, and the least fixed-point effect analysis in Section 6.
+<a id="GNT-3.12"></a>
+
+12. Static semantics use judgments of the forms `Σ; Γ; Ω ⊢ e : T ! ε ⇒ Ω'`, `Σ;
+   Γ; Ω ⊢ s ! ε ⇒ Φ`, and
+    `Σ ⊢ package ok`. `Σ` is the resolved package signature, `Γ` maps source
+    names to types and mutability, `Ω` maps task handles to their linear
+    ownership states, `T` is a source type, `ε` is the least inferred effect
+    set, and `Φ` maps each reachable completion kind to its outgoing ownership
+    environment. The output `Ω'` is necessary because `join` and `joinall()`
+    are expressions that consume handles. Expression evaluation MUST preserve
+    types and produce the stated ownership environment; statement evaluation
+    MUST produce the stated ownership environment for every reachable normal
+    or transferring completion; and package validity MUST include name
+    resolution, schema construction, control-flow completion, and the least
+    fixed-point effect analysis in Section 6.
     Implementations MAY use another algorithm only when it accepts and rejects
     exactly the same packages and emits equivalent canonical types and effects.
-13. Dynamic semantics use labelled configurations
-    `⟨P, C, K, H, S, Q, B⟩`, containing the immutable package IR `P`, task
+<a id="GNT-3.13"></a>
+
+13. Dynamic semantics use labelled configurations `⟨P, C, K, H, S, Q, B⟩`,
+   containing the immutable package IR `P`, task
     configuration `C`, continuation/frame state `K`, linear handle state `H`,
     logical-session state `S`, pending logical operations `Q`, and remaining
     deterministic budgets `B`. One abstract transition is written
@@ -763,8 +857,10 @@ this document.
     transition order. No telemetry, wall-clock value, provider identity, or
     implementation object may affect a transition unless this specification
     places it explicitly in `P`, `S`, `Q`, or `B`.
-14. The durable runtime is a refinement of that labelled transition system,
-    not a second language semantics. A durable implementation MAY combine,
+<a id="GNT-3.14"></a>
+
+14. The durable runtime is a refinement of that labelled transition system, not
+   a second language semantics. A durable implementation MAY combine,
     split, batch, snapshot, or compact physical storage records provided that
     every externally observable committed prefix corresponds to a prefix of
     abstract labels; no accepted operation result or ownership transition is
@@ -772,8 +868,10 @@ this document.
     causally closed prefix; and a committed logical result is consumed at most
     once. Section 11 defines the required crash cuts and evidence, not one
     mandatory database layout.
+<a id="GNT-3.15"></a>
+
 15. Conforming implementations MUST test and document the following semantic
-    properties for every applicable profile: progress or a specified runtime
+   properties for every applicable profile: progress or a specified runtime
     error for a well-typed nonterminal configuration; preservation of source
     types across deterministic and accepted-operation transitions; linear task
     handles are never joined or transferred twice; one logical operation
@@ -783,11 +881,788 @@ this document.
     obligations even though provider outcomes and cross-task schedules remain
     nondeterministic.
 
+### 3.1 Formal domains and core language
+
+<a id="GNT-3-F-META"></a>
+
+**[GNT-3-F-META] Formal scope and metavariables.**
+
+This section is normative. It completes the definitions summarized by items
+11 through 15 above. The named rules are the authoritative
+construct-by-construct static and dynamic semantics. Later sections define the
+primitive signatures, protocol fields, limits, error codes, and predicates
+referenced by these rules. A later rule that specializes a named premise is
+part of that premise; prose does not otherwise create an additional typing or
+transition rule.
+
+The metavariables are:
+
+- `τ` for a canonical value type and `v` for a normalized value of that type;
+- `x` for a value binding, `h` for a lexical task-handle name, `t` for a
+  stable dynamic task identity, `o` for a stable logical-operation identity,
+  and `q` for a physical dispatch identity;
+- `Σ` for the resolved package signature, `Γ` for value bindings of the form
+  `x : (mutability, τ)`, `Ω` for task handles, and `ε` for effects;
+- `ρ` for a task-local environment from names to store roots, `μ` for the
+  task-local value store, `a` for active agent selection, and `s` for active
+  logical-session identity; and
+- `N`, `R`, `Br`, and `Co` for normal, return, break, and continue completion.
+
+<a id="GNT-3-F-DOMAINS"></a>
+
+**[GNT-3-F-DOMAINS] Core domains.** Canonical types are exactly:
+
+```text
+τ ::= Unit | Bool | Int | Float | String | D
+    | Option<τ> | Result<τ,τ> | List<τ> | Tuple<τ,...,τ>
+    | Decision | OperationError
+```
+
+`D` is a resolved declared struct or enum path, and every type satisfies
+Section 5's well-formedness restrictions. Values are exactly the finite,
+normalized inhabitants described by Section 5. A task handle is not a value.
+The ownership environment maps each handle visible to the current task to one
+of `attached(κ, τ)`, `joined(κ, τ)`, `detached(κ, τ)`, or
+`discharged(κ, τ)`, where `κ` is the canonical static spawn site. Only
+`attached` is available for a source use. `joined` and `detached` retain a
+path's exact disposition; `discharged` is the analysis-only merge of paths
+whose handles were consumed in different valid ways. Those states remain until
+scope exit so a merge can distinguish a discharged obligation from an
+available handle. Dynamic task identities are created only by `M-Spawn` and
+are tracked in `H`, not in static `Ω`.
+
+The effect domain is the powerset of:
+
+```text
+E = { prompt, decide,
+      action(read_only), action(idempotent), action(non_idempotent),
+      spawn, join, background, session, recover }
+```
+
+It is ordered by subset, with union as join and the empty set as bottom.
+Effects describe possible execution, not guaranteed execution. A construct's
+inferred effect is the union of its evaluated subterms, its direct effect
+specified below, and the least-fixed-point summary of every callable body it
+can enter.
+
+<a id="GNT-3-F-CORE"></a>
+
+**[GNT-3-F-CORE] Core terms.** Surface syntax lowers to these typed core
+categories. `prim` is one sealed deterministic primitive whose domain and
+result are fixed by Section 5, `pat` is a pattern, `m` is an operation
+descriptor containing all static modifiers, and `d` is `inline`, `fork`, or
+`new`.
+
+```text
+e ::= v | x | aggregate(e...) | project(e,k) | prim(e...)
+    | call(f,e...) | method(e,f,e...) | prompt(m,e...) | decide(m,e...)
+    | action(m,e...) | attempt(e) | match(e,pat=>e...)
+    | with-agent(a,e) | with-session(d,e) | join(h...)
+    | join-all(h...)
+
+c ::= skip | let x:τ=e | assign p=e | discard e | return e
+    | break | continue | c;c | if e then c else c
+    | match e with pat=>c... | loop[L,d] c
+    | while[L,d] e do c | until[L,d] c when e
+    | for x in e do c | with-agent(a,c) | with-session(d,c)
+    | spawn h:τ c | detach h | yield e
+```
+
+`join-all(h...)` contains the handles computed statically in declaration
+order; runtime timing cannot change that set. `for` retains its list snapshot
+and current index. Compound assignment, short-circuit operators, `if let`,
+trailing expressions, operation modifiers, and implicit Unit returns lower to
+these terms while preserving Section 6's evaluation order. Lowering MUST
+retain a distinct core site for every operation, spawn, join, detachment,
+branch, loop, return target, and cancellation point.
+
+<a id="GNT-3-F-AUX"></a>
+
+**[GNT-3-F-AUX] Auxiliary functions.** The following partial functions and
+predicates are deterministic for one `Σ`: `type(v)`, exact type equality,
+`wf(τ)`, canonical `copy(v)`, primitive application `δprim`, static pattern
+bindings `bind(Σ,τ,pat)`, runtime pattern matching `match(v,pat)`,
+`join_type`, `joinall_type`, canonical schema generation `schema(Σ,τ)`,
+canonical effect ordering, and core-site and dynamic-identity construction.
+Their domains, successful results, and named analysis or runtime failures are
+exactly those in Sections 4 through 10 and 13. No conforming v1 implementation
+may extend one of these domains.
+
+### 3.2 Static semantics
+
+<a id="GNT-3-T-JUDGMENTS"></a>
+
+**[GNT-3-T-JUDGMENTS] Expression judgments.**
+
+An expression judgment `Σ; Γ; Ω ⊢ e : τ ! ε ⇒ Ω'` means that normal
+completion yields type `τ`, may perform effects `ε`, and changes ownership
+from `Ω` to `Ω'`. Expression failure has no normal output. Premises are
+evaluated top to bottom and indexed premises from left to right. `expected τ`
+is a bidirectional checking premise supplied only by the positions enumerated
+in Section 5.
+
+<a id="GNT-3-T-VALUE"></a>
+
+**[GNT-3-T-VALUE] Values and names.**
+
+```text
+type(v)=τ
+────────────────────────────── T-Value
+Σ;Γ;Ω ⊢ v : τ ! ∅ ⇒ Ω
+
+Γ(x)=(m,τ)
+────────────────────────────── T-Name
+Σ;Γ;Ω ⊢ x : τ ! ∅ ⇒ Ω
+
+expected Option<τ>
+────────────────────────────── T-None
+Σ;Γ;Ω ⊢ None : Option<τ> ! ∅ ⇒ Ω
+```
+
+There is no derivation for an unresolved name, a task handle in value
+position, or `None` without an expected option type.
+
+<a id="GNT-3-T-AGGREGATE"></a>
+
+**[GNT-3-T-AGGREGATE] Constructors.** Analyze list, tuple, struct, enum,
+`Some`, `Ok`, and `Err` members in source order:
+
+```text
+Ω0=Ω    Σ;Γ;Ωi-1 ⊢ ei : τi ! εi ⇒ Ωi
+constructor_ok(Σ,K,τ1...τn,expected τ)
+────────────────────────────────────────────── T-Aggregate
+Σ;Γ;Ω ⊢ K(e1...en) : τ ! ⋃i εi ⇒ Ωn
+```
+
+`constructor_ok` applies Section 5's exact member types, arity, source field
+order, omission and default rules, homogeneous-list rule, fixed tuple shape,
+guarded recursion, and expected-type requirements. Empty lists and `None`,
+`Ok`, or `Err` without sufficient expected type have no derivation. Source
+constructors for `Decision` and `OperationError` have no derivation.
+
+<a id="GNT-3-T-PRIMITIVE"></a>
+
+**[GNT-3-T-PRIMITIVE] Projection and deterministic primitives.**
+
+```text
+Ω0=Ω    Σ;Γ;Ωi-1 ⊢ ei:τi ! εi ⇒ Ωi
+primitive_signature(prim,τ1...τn)=τ
+────────────────────────────────────────────── T-Primitive
+Σ;Γ;Ω ⊢ prim(e1...en):τ ! ⋃i εi ⇒ Ωn
+```
+
+Field, list, and tuple projections are instances of this rule. Section 5
+defines all signatures. Exact types are required, equality has no signature
+for a non-equatable type, and this rule cannot produce a mutable assignment
+target.
+
+<a id="GNT-3-T-CALL"></a>
+
+**[GNT-3-T-CALL] Workflow and method calls.** Let `Σ(f)` contain the ordered
+parameter types, result type `τ`, receiver requirements when applicable, and
+the least-fixed-point effect summary `effects(f)`:
+
+```text
+Ω0=Ω    Σ;Γ;Ωi-1 ⊢ ei:τi ! εi ⇒ Ωi
+Σ(f)=(τ1...τn)->τ ! εf
+────────────────────────────────────────────── T-Call
+Σ;Γ;Ω ⊢ call(f,e1...en):τ ! (⋃i εi)∪εf ⇒ Ωn
+```
+
+Method calls use the same rule with the receiver as `e1`; its type must be the
+declared receiver type, and receiver mutability affects only the callee's deep
+copy. Callee and member resolution occurs before operand analysis. The rule
+has no direct integration effect: all effects of executing the body are in
+`εf`. There is no derivation for an action path used as an ordinary call,
+wrong arity, a non-callable value, or a type mismatch.
+
+<a id="GNT-3-T-OPERATION"></a>
+
+**[GNT-3-T-OPERATION] Integration operations and recovery.** Operation inputs
+are analyzed left to right in the order specified by Sections 6 and 7. Let
+`op_result(prompt,τ)=τ`, `op_result(decide)=Decision`, and
+`op_result(action f)=result(Σ(f))`; let `direct(m)` be `prompt`, `decide`, or
+the action's declared class:
+
+```text
+Ω0=Ω    Σ;Γ;Ωi-1 ⊢ ei:τi ! εi ⇒ Ωi
+operation_ok(Σ,m,τ1...τn)    op_result(m)=τ
+──────────────────────────────────────────────── T-Operation
+Σ;Γ;Ω ⊢ operation(m,e1...en):τ ! (⋃i εi)∪{direct(m)} ⇒ Ωn
+
+Σ;Γ;Ω ⊢ operation(m,e...):τ ! ε ⇒ Ω'
+──────────────────────────────────────────────── T-Attempt
+Σ;Γ;Ω ⊢ attempt(operation(m,e...))
+       :Result<τ,OperationError> ! ε∪{recover} ⇒ Ω'
+```
+
+`operation_ok` enforces agent availability, action resolution and class,
+modifier validity, interpolation and `using` restrictions, exact argument
+types, output restrictions, and retry constraints. `attempt` has no derivation
+for any operand other than one syntactic operation expression. It changes only
+the operation-failure result described in Sections 5 and 7; it does not remove
+the operation's effects or catch another failure category.
+
+<a id="GNT-3-T-CONTEXT"></a>
+
+**[GNT-3-T-CONTEXT] Agent and session contexts.**
+
+```text
+a∈agents(Σ)    Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
+──────────────────────────────────────── T-With-Agent
+Σ;Γ;Ω ⊢ with-agent(a,e):τ ! ε ⇒ Ω'
+
+d∈{inline,fork,new}    Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
+──────────────────────────────────────── T-With-Session
+Σ;Γ;Ω ⊢ with-session(d,e):τ ! ε∪{session} ⇒ Ω'
+```
+
+The command forms use the corresponding rules. Selecting an agent is not
+itself an effect; creating or dynamically selecting a session is. The rules
+change dynamic context only for evaluation of the body and restore it on every
+completion.
+
+<a id="GNT-3-T-MATCH"></a>
+
+**[GNT-3-T-MATCH] Value-producing pattern routing.** Analyze the scrutinee
+once, require ordered nonredundant exhaustive patterns, and require every arm
+to have one result type and ownership output:
+
+```text
+Σ;Γ;Ω ⊢ e:τs ! ε0 ⇒ Ω0
+bind(Σ,τs,pati)=Γi    Σ;Γ,Γi;Ω0 ⊢ ei:τ ! εi ⇒ Ωi
+exhaustive(τs,pat1...patn)    all_equal(Ω1...Ωn)=Ω'
+──────────────────────────────────────────────────── T-Match
+Σ;Γ;Ω ⊢ match(e,pati=>ei...):τ ! ε0∪⋃i εi ⇒ Ω'
+```
+
+`all_equal` compares handle names and whether each is attached or discharged.
+Equal `joined` states remain joined and equal `detached` states remain
+detached; a mixture of joined, detached, or already discharged incoming states
+becomes `discharged`, while path-specific evidence remains available to the
+runtime and diagnostics. A redundant, nonexhaustive, ill-typed, or
+ownership-inconsistent match has no derivation.
+
+<a id="GNT-3-T-JOIN"></a>
+
+**[GNT-3-T-JOIN] Join expressions.** For a nonempty ordered handle vector,
+all handles must be distinct and attached in the input environment:
+
+```text
+∀i. Ω(hi)=attached(κi,τi)    distinct(h1...hn)
+join_type(τ1...τn)=τ    Ω'=Ω[hi↦joined(κi,τi)]i
+──────────────────────────────────────────────── T-Join
+Σ;Γ;Ω ⊢ join(h1...hn):τ ! {join} ⇒ Ω'
+```
+
+`join-all(h1...hn)` uses the same rule and `joinall_type`; its ordered vector
+is exactly the statically computed set for that program point. For an empty
+vector it has type `Unit`, effect `{join}`, and leaves `Ω` unchanged. The
+partial result functions enforce the Unit/value and homogeneous/heterogeneous
+rules in Section 10. A discharged, repeated, foreign, or path-dependent
+handle has no derivation.
+
+### 3.3 Control-flow, ownership, and package validity
+
+<a id="GNT-3-T-COMMANDS"></a>
+
+**[GNT-3-T-COMMANDS] Command judgments.**
+
+A command judgment `Σ; Γ; Ω ⊢ c ! ε ⇒ Φ` maps each reachable completion to
+one ownership environment. `Φ(N)`, when present, is ordinary fallthrough;
+`Φ(R(τ))` is return or yield of type `τ`; and `Φ(Br)` and `Φ(Co)` are loop
+transfers. Combining the same completion from alternatives requires the
+ownership environments to satisfy the merge rule below. A missing map entry
+means that completion is unreachable.
+
+<a id="GNT-3-T-BASIC-COMMAND"></a>
+
+**[GNT-3-T-BASIC-COMMAND] Basic commands.**
+
+```text
+────────────────────────────── T-Skip
+Σ;Γ;Ω ⊢ skip ! ∅ ⇒ {N↦Ω}
+
+Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
+────────────────────────────── T-Let/T-Discard
+Σ;Γ;Ω ⊢ let x:τ=e ! ε ⇒ {N↦Ω'}
+Σ;Γ;Ω ⊢ discard e ! ε ⇒ {N↦Ω'}
+
+Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
+────────────────────────────── T-Return/T-Yield
+Σ;Γ;Ω ⊢ return e ! ε ⇒ {R(τ)↦Ω'}
+Σ;Γ;Ω ⊢ yield e ! ε ⇒ {R(τ)↦Ω'}
+
+────────────────────────────── T-Break/T-Continue
+Σ;Γ;Ω ⊢ break ! ∅ ⇒ {Br↦Ω}
+Σ;Γ;Ω ⊢ continue ! ∅ ⇒ {Co↦Ω}
+```
+
+`let` additionally requires a fresh binding and the declared exact type; its
+scope extension applies to the following command in the enclosing sequence.
+`let _` introduces no name. Pattern `let` uses `bind` and must be irrefutable.
+Bare expression statements are `discard e` only when `τ=Unit`; otherwise only
+the explicit source `discard` lowers to this command. `return`, `break`, and
+`continue` must have a valid nearest target, and every handle whose lexical
+scope they exit must be discharged in their output environment.
+
+<a id="GNT-3-T-ASSIGN"></a>
+
+**[GNT-3-T-ASSIGN] Assignment.** If `place(Γ,p)=(mutable,τ)`, then:
+
+```text
+Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'    place(Γ,p)=(mutable,τ)
+────────────────────────────────────────────── T-Assign
+Σ;Γ;Ω ⊢ assign p=e ! ε ⇒ {N↦Ω'}
+```
+
+The place predicate implements Section 6's mutable-root and `mut self` rules.
+Compound assignment first types its single target read and primitive
+application. No rule permits mutation through an immutable root or changes a
+target before the right operand has completed.
+
+<a id="GNT-3-T-SEQUENCE"></a>
+
+**[GNT-3-T-SEQUENCE] Sequencing and completion composition.**
+
+```text
+Σ;Γ;Ω ⊢ c1 ! ε1 ⇒ Φ1
+Φ1(N)=Ω1    Σ;Γ';Ω1 ⊢ c2 ! ε2 ⇒ Φ2
+────────────────────────────────────────────── T-Sequence
+Σ;Γ;Ω ⊢ c1;c2 ! ε1∪ε2 ⇒ (Φ1\{N}) ⊔ Φ2
+```
+
+`Γ'` adds only bindings whose declarations in `c1` scope over `c2`.
+Alternative maps are combined by `⊔`: for each common completion, every
+visible handle must be attached on all incoming paths or discharged on all
+incoming paths; an attached/discharged mixture is undefined. Joined and
+detached paths remain exact when all incoming paths agree and otherwise merge
+to `discharged`, retaining their path-specific action for runtime evidence. A
+completion present on only one reachable alternative is retained. If `Φ1` has
+no `N`, `c2` is unreachable and is rejected under Section 9's reachability
+rule rather than analyzed as executing code.
+
+<a id="GNT-3-T-BRANCH"></a>
+
+**[GNT-3-T-BRANCH] Conditional and statement-match commands.**
+
+```text
+Σ;Γ;Ω ⊢ e:τc ! ε0 ⇒ Ω0    τc∈{Bool,Decision}
+Σ;Γ;Ω0 ⊢ c1 ! ε1 ⇒ Φ1    Σ;Γ;Ω0 ⊢ c2 ! ε2 ⇒ Φ2
+──────────────────────────────────────────────── T-If
+Σ;Γ;Ω ⊢ if e then c1 else c2 ! ε0∪ε1∪ε2 ⇒ Φ1⊔Φ2
+```
+
+An omitted `else` is `skip`. `if let` is a two-arm pattern match. Statement
+`match` uses the scrutinee and pattern premises of `T-Match`, analyzes each arm
+as a command, and merges all completion maps with `⊔`. Only the literal facts
+listed in Section 9 remove an arm from the merge.
+
+<a id="GNT-3-T-LOOP"></a>
+
+**[GNT-3-T-LOOP] Loops and finite iteration.** A loop body is analyzed from
+one invariant ownership environment `ΩI`. Every reachable `Co` and every
+normal back edge must equal `ΩI`; every reachable `Br` becomes normal loop
+completion. For `while`, zero iterations contributes `{N↦ΩI}`. For `until`,
+the body runs once before its test. An unbroken `loop` has no normal
+completion. Conditions have type `Bool` or `Decision`, and their ownership
+output must equal `ΩI`. Effects are the union of condition, body, and
+`{session}` when a non-inline loop session is selected.
+
+For `for x in e do c`, first derive `e:List<τ> ⇒ ΩI`; analyze `c` under a
+fresh immutable `x:τ` from `ΩI`; require normal and continue outputs to equal
+`ΩI`; and convert breaks to normal completion. The empty-list path also
+contributes `N↦ΩI`. Loop limits and budgets affect dynamic failure only and do
+not create a static normal path.
+
+<a id="GNT-3-T-SPAWN"></a>
+
+**[GNT-3-T-SPAWN] Spawn and detachment.**
+
+```text
+h∉dom(Ω)    spawn_site(c)=κ    captures(c)=Γc    Σ;Γc;∅ ⊢ c ! ε ⇒ Φ
+normal_result(Φ)=τ    no_escaping_handles(Φ)
+──────────────────────────────────────────────── T-Spawn
+Σ;Γ;Ω ⊢ spawn h:τ c ! ε∪{spawn} ⇒ {N↦Ω[h↦attached(κ,τ)]}
+
+Ω(h)=attached(κ,τ)
+──────────────────────────────────────────────── T-Detach
+Σ;Γ;Ω ⊢ detach h ! {background} ⇒ {N↦Ω[h↦detached(κ,τ)]}
+```
+
+`captures` contains exactly the copied bindings and receiver permitted by
+Section 10 and never a foreign handle. The child is analyzed with an empty
+handle environment because it can own only handles it spawns. Its every normal
+completion must yield exactly the declared `τ`, and every child-local handle
+must be discharged on every completion that exits its scope. A scope may
+complete normally or transfer control outward only when all handles declared
+in that scope are discharged.
+
+<a id="GNT-3-T-COMPLETION"></a>
+
+**[GNT-3-T-COMPLETION] Callable completion.** A function or method with
+declared result `τ` is valid only if its body has no reachable normal
+fallthrough when `τ≠Unit`, every `R` completion is `R(τ)`, and every handle is
+discharged at each body-exiting completion. Unit bodies lower normal
+fallthrough and `return;` to `R(Unit)`. Spawned blocks use the same check with
+their declared result. Decision workflows require `τ=Decision`. A loop body
+may expose `Br` or `Co` only to its immediately enclosing loop; no completion
+may cross a spawned-block boundary.
+
+<a id="GNT-3-T-EFFECTS"></a>
+
+**[GNT-3-T-EFFECTS] Effects and package validity.** For each callable `f`, let
+`direct(f)` be the effects introduced by its typed core body excluding call
+summaries and let `calls(f)` be its resolved call edges. Its unique summary is
+the least solution of:
+
+```text
+effects(f) = direct(f) ∪ ⋃g∈calls(f) effects(g)
+```
+
+The finite powerset lattice guarantees termination, including self-recursion.
+A `pure` declaration is valid exactly when this set is empty. `Σ ⊢ package ok`
+holds exactly when module loading and declarations satisfy Section 4; every
+type is well formed; every schema and canonical identity is constructible;
+every callable body derives under the rules above with valid completion;
+effects equal this least fixed point; every grammar-adjacent rule in Section
+13 holds; and every required entry, agent, action, and package-wide condition
+holds. Failure of any premise is an analysis error. There is no other route to
+the package-valid judgment.
+
+### 3.4 Dynamic semantics
+
+<a id="GNT-3-M-STATE"></a>
+
+**[GNT-3-M-STATE] Machine state.**
+
+The dynamic semantics is a small-step relation over
+`M = ⟨P,C,K,H,S,Q,B⟩`. `P` is immutable typed core IR. `C(t)` is one task's
+control, environment `ρ`, value store `μ`, active agent `a`, active session
+`s`, cancellation state, and status. `K(t)` is its stack of evaluation,
+workflow-return, dynamic-context, loop, and task-result frames. `H` maps each
+dynamic handle to its task, owner, result type, and ownership state. `S` maps
+session IDs to parent, root, creation mode, and canonical transcript. `Q`
+maps operation IDs to the lifecycle below. `B` contains the remaining
+execution and per-task budgets. Values in `ρ` and `μ` are normalized deep
+values; no machine component contains a source-visible alias.
+
+<a id="GNT-3-M-LABELS"></a>
+
+**[GNT-3-M-LABELS] Labels and scheduler.** A transition is
+`M --ℓ--> M'`, where `ℓ` is exactly one of:
+
+```text
+deterministic(t,site,kind)
+operation-prepared(t,o,q,attempt,recovery)
+operation-outcome(t,o,q,outcome)
+operation-accepted(t,o,result-kind)
+task-created(t,parent,spawn-site)
+task-settled(t,status)
+ownership-transferred(owner,t,join|detach)
+cancellation(t,reason)
+failure(t,category,code?)
+foreground-completion(result)
+terminal-completion(category)
+```
+
+Payloads are the canonical identities and values required by later sections;
+the notation above omits those fields only for readability. The scheduler
+chooses any runnable task, but only the selected task takes the next rule and
+each task's transitions remain ordered. `operation-outcome` is the only rule
+whose payload is selected by integration code. Runnable-task selection,
+integration outcomes, retry jitter already recorded in `Q`, and order among
+independent tasks are the complete v1 nondeterminism. Every other applicable
+rule and its resulting state are unique.
+
+<a id="GNT-3-M-CONTEXT"></a>
+
+**[GNT-3-M-CONTEXT] Evaluation contexts.** `E[e]` denotes the unique next
+expression under these left-to-right contexts:
+
+```text
+E ::= [] | aggregate(v*,E,e*) | project(E,k) | prim(v*,E,e*)
+    | call(f,v*,E,e*) | method(E,f,e*) | method(v,f,v*,E,e*)
+    | operation(m,v*,E,e*) | attempt(E) | match(E,pat=>e*)
+    | with-agent(a,E) | with-session(d,E)
+```
+
+Short-circuit Boolean operators lower to branches and therefore have no
+right-operand context until the left value requires it. Constructor fields,
+interpolations, named inputs, call arguments, receivers, and action arguments
+occur in their mandated source order. A failure in `E` removes every frame
+for later operands, so no later operand executes. Command evaluation similarly
+places exactly one expression in an evaluation frame before applying the
+command rule that consumes its value.
+
+<a id="GNT-3-M-VALUES"></a>
+
+**[GNT-3-M-VALUES] Values, aggregates, and primitives.** For a runnable task
+whose next redex is shown, these are deterministic transitions:
+
+```text
+ρ(x)=r   μ(r)=v
+──────────────────────────── M-Name
+E[x] ↦ E[copy(v)]
+
+v=construct(K,v1...vn)
+──────────────────────────── M-Aggregate
+E[K(v1...vn)] ↦ E[v]
+
+δprim(prim,v1...vn)=v
+──────────────────────────── M-Primitive
+E[prim(v1...vn)] ↦ E[v]
+```
+
+Each successful rule emits `deterministic` and decrements the deterministic
+transition budget before publishing its result. If the applicable size,
+bounds, arithmetic, conversion, or other partial primitive condition fails,
+`M-Primitive` is replaced by `M-Fail` with the exact Section 5 code and no
+value is produced. Construction copies every member and becomes visible only
+as one completed result.
+
+<a id="GNT-3-M-CALL"></a>
+
+**[GNT-3-M-CALL] Calls and returns.** `call(f,v1...vn)` allocates fresh local
+roots containing copies of the arguments, pushes a return frame containing
+the caller control and destination context, and starts the typed core body of
+`f`. Method calls additionally copy the receiver into `self`. Frame entry
+first checks cancellation and workflow-depth budget. A `return v` or trailing
+`yield v` copies `v`, discards the callee's locals, restores the return frame,
+and plugs the copy into its destination context. Returning from the root emits
+`foreground-completion`; returning from a spawned block invokes
+`M-Task-Settle`. These steps emit `deterministic`; a depth-limit failure uses
+`M-Fail`. No call or return rule dispatches a hook.
+
+<a id="GNT-3-M-STORE"></a>
+
+**[GNT-3-M-STORE] Bindings, assignment, discard, and sequence.** `let`
+allocates a fresh root only after its initializer is a value and stores a
+copy; tuple-pattern bindings are allocated together or not at all. `assign`
+evaluates its right operand to a value before replacing one complete mutable
+root with the copied and path-updated value. `discard v` drops only that copy.
+`skip;c` advances to `c`; `return`, `break`, and `continue` unwind to the
+nearest statically valid frame. Every successful step emits `deterministic`.
+Failure before the binding or root replacement leaves the old environment and
+store unchanged.
+
+<a id="GNT-3-M-BRANCH"></a>
+
+**[GNT-3-M-BRANCH] Branches and patterns.** `if true` selects its first arm,
+`if false` its second, and a `Decision` selects by its `decision` field.
+`match(v,pat=>c...)` chooses the first matching arm, atomically installs copies
+of that pattern's bindings, and starts that arm. Exhaustiveness guarantees one
+arm. Loop control lowers as follows: `while` tests before each body; `until`
+runs the body before each test; `loop` repeats after each normal body; and
+`for` evaluates and copies its list once, then installs one copied item at each
+ascending index. `continue` reaches the applicable test or next item and
+`break` exits. A source limit is checked before body entry. Cancellation and
+the loop-entry budget are checked at every condition, item binding, body
+entry, and back edge. Successful selection emits `deterministic`; exhausted
+limits use `M-Fail` and never synthesize normal completion.
+
+<a id="GNT-3-M-CONTEXT-SCOPE"></a>
+
+**[GNT-3-M-CONTEXT-SCOPE] Agent and session scopes.** Entering
+`with-agent(a,body)` pushes the old agent, evaluates under `a`, and restores
+the old agent on value, transfer, or failure. Entering an inline session scope
+does the analogous operation with the existing session. Entering `fork` or
+`new` deterministically allocates its stable session identity and `S` entry
+before body evaluation: `fork` copies the parent's committed transcript and
+`new` uses the empty transcript. Exit restores the prior session. Session
+creation is part of the transition's semantic state and must satisfy the
+commit rule in Section 3.6 before an operation can use it.
+
+### 3.5 Operations, tasks, cancellation, and failure
+
+<a id="GNT-3-M-LIFECYCLES"></a>
+
+**[GNT-3-M-LIFECYCLES] External and concurrent lifecycles.**
+
+<a id="GNT-3-M-OPERATION"></a>
+
+**[GNT-3-M-OPERATION] Operation lifecycle.** The operation state is exactly:
+
+```text
+absent
+prepared(request,q,validation-attempt,recovery-dispatch,retries-left)
+outcome(request,q,host-outcome,retries-left)
+accepted(request,v)
+failed(request,error)
+```
+
+After all explicit inputs are values, `M-Prepare` checks cancellation and the
+operation budget, captures and copies the complete semantic request, derives
+`o` and fresh `q`, decrements that budget, inserts `prepared`, and emits
+`operation-prepared`. A hook may be invoked only for this state. For exactly
+one matching prepared dispatch, `M-Outcome` accepts one well-formed host
+outcome from Section 7, changes the state to `outcome`, and emits
+`operation-outcome`. No other rule introduces a host outcome.
+
+For `Completed(bytes)`, `M-Validate` applies Section 8's ordered decoding,
+resource, schema, and normalization functions. Success changes `Q(o)` to
+`accepted`, emits `operation-accepted`, and only then plugs a copy of `v` into
+the suspended expression. A prompt or decision acceptance extends its active
+session with exactly one canonical transcript turn in the same transition.
+Validation failure with retries remaining records the canonical errors and
+delay, decrements the retry count, creates a fresh `q`, increments only the
+validation-attempt number, returns to `prepared`, and emits another
+`operation-prepared`. Exhaustion applies `M-Operation-Fail`.
+
+`Declined` and `Failed` apply `M-Operation-Fail` without validation. In an
+`attempt` frame, that rule changes `Q(o)` to `failed`, constructs the exact
+`OperationError`, and returns `Err(error)` to source. Without that frame it
+uses `M-Fail`. A successful operation in an `attempt` frame returns `Ok(v)`.
+No journal, executor, deterministic, event-persistence, or invariant failure
+enters this conversion. A completed or failed operation state has no rule that
+dispatches it again during uninterrupted execution.
+
+<a id="GNT-3-M-SPAWN"></a>
+
+**[GNT-3-M-SPAWN] Task creation.** After cancellation and task-count checks,
+`spawn h:τ c` derives a stable child identity, copies the statically determined
+captures and mutability, forks the active session, creates `C(child)` with an
+empty dynamic-handle set, inserts `H(h)=attached(child,owner,τ)`, increments
+the cumulative execution task count, and emits `task-created`. The parent
+advances only after this transition; the child may then be scheduled
+independently. Failure of executor submission settles that same child as
+failed and never creates a replacement identity.
+
+<a id="GNT-3-M-TASK-SETTLE"></a>
+
+**[GNT-3-M-TASK-SETTLE] Settlement and all-settled join.** Returning `v` from
+a spawned block, uncaught failure, or durable cancellation changes that task
+exactly once from running to `succeeded(v)`, `failed(error)`, or `cancelled`
+and emits `task-settled`. A named `join` atomically changes every selected
+attached handle to joined and emits one `ownership-transferred(...,join)` per
+handle in argument order before waiting. `join-all` does the same for its
+static vector. The owner then blocks until every selected task is settled.
+If all succeed, one deterministic step constructs the Section 10 result in
+argument or declaration order. Otherwise one `M-Fail` produces the ordered
+aggregate `task-join-failure`. Timing never changes either ordering. Joined
+handles have no later source transition.
+
+<a id="GNT-3-M-DETACH"></a>
+
+**[GNT-3-M-DETACH] Background ownership.** `detach h` changes exactly one
+attached handle to detached execution-owned work, emits
+`ownership-transferred(...,detach)`, and advances the parent without waiting.
+The detached result is never returned to source. Its settlement still uses
+`M-Task-Settle` and contributes to terminal outcome according to Section 10.
+A joined or detached handle has no join or detach rule.
+
+<a id="GNT-3-M-CANCEL"></a>
+
+**[GNT-3-M-CANCEL] Cancellation.** A cancellation request monotonically marks
+its target and the descendants selected by Section 10 and emits one
+`cancellation` label per newly marked task. A marked task has no
+`M-Prepare`, `M-Spawn`, frame-entry, condition, body-entry, or back-edge
+transition. It may only drain an already prepared dispatch, settle attached
+descendants, or take `M-Task-Settle(cancelled)`. A later host outcome may be
+retained as nonconsumable audit evidence but has no `M-Validate` transition.
+No rule clears a cancellation mark.
+
+<a id="GNT-3-M-FAIL"></a>
+
+**[GNT-3-M-FAIL] Failure and propagation.** `M-Fail(t,category,code,details)`
+removes the failing redex and its ordinary continuations, stores the pending
+failure, emits `failure`, and cancels and drains its attached descendants.
+After that drain, `M-Task-Settle` changes the still-running task exactly once
+to `failed(error)`. It does not cancel siblings or detached work. A failed
+attached task is observed only by its owner's all-settled join; a failed root
+fixes the foreground failure; a failed detached task contributes the stable
+terminal category. Execution-wide journal and required-delivery failures
+follow their explicit Section 10 precedence instead of this task-local rule.
+When root and every detached task are settled, exactly one transition computes
+the precedence in Section 10 and emits `terminal-completion`. No transition
+may change that category afterward.
+
+### 3.6 Durability refinement and semantic properties
+
+<a id="GNT-3-D-REFINEMENT"></a>
+
+**[GNT-3-D-REFINEMENT] Refinement relation.**
+
+Let `A = ℓ1…ℓn` be an abstract trace and let durable state `D` contain an
+authoritative committed logical-evidence prefix, its causal graph, and a
+recovery projection `recover(D)`. Write `D ≈ M` when replaying that evidence
+through the published recovery projection reconstructs `M`, modulo physical
+storage layout, integration resources, and telemetry.
+
+<a id="GNT-3-D-SIMULATION"></a>
+
+**[GNT-3-D-SIMULATION] Forward simulation.** If `D ≈ M` and
+`M --ℓ--> M'`, the durable runtime must either make no externally observable
+semantic progress, or atomically commit a finite nonempty evidence batch to
+`D'` such that `D' ≈ M'` and the batch records `ℓ` with all causal
+predecessors. One physical batch may represent several adjacent labels only
+when no hook, task submission, source consumption, event obligation, or
+external observer can occur between them. Splitting one label across records
+is permitted only when none of those records alone advances `recover(D)`.
+
+<a id="GNT-3-D-COMMIT-ORDER"></a>
+
+**[GNT-3-D-COMMIT-ORDER] Required semantic commit points.** The state produced
+by `M-Prepare` is committed before hook entry; `M-Outcome` before validation or
+failure conversion; `M-Validate` before source consumption or transcript use;
+`M-Spawn` before executor submission or handle visibility; join and detach
+ownership transitions before parent continuation; cancellation before tokens
+are signalled; task settlement before a join or terminal computation observes
+it; foreground completion before its result is returned; and terminal
+completion before a terminal outcome is reported. These are semantic ordering
+constraints, not required physical record boundaries.
+
+<a id="GNT-3-D-CRASH"></a>
+
+**[GNT-3-D-CRASH] Crash and recovery.** A crash may occur before or after any
+physical write and at every boundary above. Recovery discards or ignores every
+uncommitted physical tail, acquires fenced ownership, reconstructs exactly
+`recover(D)`, and continues with the next applicable abstract rule. A committed
+outcome is never redispatched; a committed accepted result is never validated
+or consumed twice. A committed prepared dispatch without outcome is
+indeterminate: recovery creates a new dispatch and increments only its
+recovery-dispatch number for prompts, decisions, and read-only or idempotent
+actions. For a non-idempotent action it instead applies the exact unknown-
+outcome operation failure. Task creation, ownership transfer, session creation,
+budget decrement, foreground completion, and terminal completion are never
+reapplied when their label is already in the recovered prefix.
+
+<a id="GNT-3-D-EQUIVALENCE"></a>
+
+**[GNT-3-D-EQUIVALENCE] Permitted storage implementations.** Append logs,
+transactions, atomic batches, group commit, snapshots, compaction, and
+snapshot-plus-log designs conform exactly when their authoritative reads
+produce the same logical evidence and recovery projection and satisfy
+`GNT-3-D-SIMULATION`, `GNT-3-D-COMMIT-ORDER`, and `GNT-3-D-CRASH`. Terms such
+as record, envelope, checkpoint, and evidence elsewhere name logical protocol
+objects; they do not require one physical row, append, file write, or flush.
+
+<a id="GNT-3-D-PROPERTIES"></a>
+
+**[GNT-3-D-PROPERTIES] Proof and conformance obligations.** For the static and
+dynamic relations above, a conforming implementation must document a proof or
+machine-checked model argument and map executable conformance cases to each of
+these properties: (1) progress to a rule or specified runtime error for a
+well-typed nonterminal configuration; (2) preservation of expression types,
+store typing, and ownership consistency after every transition; (3) one
+attached handle has at most one join or detach transition; (4) one logical
+operation has at most one source-consumable accepted result; (5) a cancelled
+task consumes no later operation outcome; (6) every recovered state simulates
+one causally closed prefix; and (7) terminal completion is unique. Provider
+outcomes and cross-task scheduling are quantified nondeterministically; they
+are not assumptions of deterministic replay.
+
 ## 4. Source Organization
 
+<a id="GNT-4.0"></a>
+
+<a id="GNT-4.1"></a>
+
 1. Gantry source files MUST use the `.gnt` extension.
-2. A package entry point is `main.gnt`, and its selected entry function is
-   the root module's `fn main`. The root module MUST declare exactly one
+<a id="GNT-4.2"></a>
+
+2. A package entry point is `main.gnt`, and its selected entry function is the
+   root module's `fn main`. The root module MUST declare exactly one
    function named `main`; a missing `main`, a `main` declared only in a child
    module, or any non-function root item named `main` is an analysis error.
    The directory containing `main.gnt` is the package root. `main` MUST have
@@ -823,9 +1698,13 @@ this document.
    `Option<T>::None` is also encoded as JSON `null` but retains descriptor
    `Option<T>`. Embedders therefore determine semantics from the required type
    descriptor rather than guessing from JSON shape.
+<a id="GNT-4.3"></a>
+
 3. Gantry MUST support the comments and lexical forms defined in Section 13.
    Gantry resembles Rust only where this specification explicitly says so; it
    does not inherit unstated Rust lexical or semantic rules.
+<a id="GNT-4.4"></a>
+
 4. Except for the self-reference and package-wide collection rules in items 10
    and 14, names MUST be declared before use. Gantry uses lexical scope.
    Declaration order is evaluated within each module's source order. A child
@@ -833,16 +1712,22 @@ this document.
    names inside that child are then resolved according to the child's own
    source order. Analysis MUST NOT depend on filesystem enumeration order or
    the order in which an implementation happens to parse module files.
+<a id="GNT-4.5"></a>
+
 5. Gantry MUST support namespaces and module declaration or loading through a
    Rust-inspired `mod` form. A file selected by `mod` is parsed as an
    independent module, not textually inserted into the caller's scope.
    Rust-inspired `use` declarations import item names as defined in item 11;
    `mod` itself is not an import statement.
+<a id="GNT-4.6"></a>
+
 6. Module paths MUST be local, relative paths and MUST remain inside the same
    package. Remote paths, absolute paths, environment expansion, and package
    resolution are excluded from v1. Module resolution MUST reject `.` and `..`
    path components and symbolic links. Rejecting symbolic links keeps package
    containment and source identity independent of host filesystem aliasing.
+<a id="GNT-4.7"></a>
+
 7. A file module declaration `mod foo;` resolves in the declaring module's
    module directory as either `foo.gnt` or `foo/mod.gnt`. The root module's
    module directory is the package root. A module loaded from `foo.gnt` or
@@ -852,29 +1737,39 @@ this document.
    declarations. If both file candidates exist, analysis MUST fail as
    ambiguous. The package root is a containment boundary, not an alternate
    lookup directory for nested modules.
+<a id="GNT-4.8"></a>
+
 8. Inline modules of the form `mod foo { ... }` MUST be supported. Module items
    are addressable package-wide in v1, but an item is not automatically added
    to another module's unqualified lexical namespace. Code in another module
    MUST use a `use` declaration or a Rust-inspired qualified `module::item`
    path.
+<a id="GNT-4.9"></a>
+
 9. `mod` declarations MUST precede references to their namespace. Module
    cycles, duplicate ordinary item or module declarations, and duplicate
    module resolutions are analysis errors. Repeated logical agent names remain
    the explicit idempotent exception defined in Section 7. Visibility
    constraints are excluded from v1.
+<a id="GNT-4.10"></a>
+
 10. A function, method, or decision workflow MAY call itself, and a struct MAY
-    refer to its own declared name subject to the guarded-recursion rule in
+   refer to its own declared name subject to the guarded-recursion rule in
     Section 5, even though names otherwise must be declared before use. Mutual
     recursion between distinct workflow declarations or between distinct
     struct declarations is excluded from v1.
+<a id="GNT-4.11"></a>
+
 11. Gantry MUST support Rust-inspired `use` declarations as well as qualified
-    item paths. An unprefixed path begins in the current module's lexical
+   item paths. An unprefixed path begins in the current module's lexical
     namespace. `crate::` begins at the package root, `self::` begins at the
     current module, and each leading `super::` moves outward by one module.
     Escaping above the package root is an analysis error. `use` follows the
     same path rules and does not change item visibility.
+<a id="GNT-4.12"></a>
+
 12. Module filenames and identifiers MUST be valid UTF-8. Identifiers MAY use
-    any NFC spelling admitted by the Unicode XID rule below; `snake_case`,
+   any NFC spelling admitted by the Unicode XID rule below; `snake_case`,
     `camelCase`, and `PascalCase` are style conventions rather than the
     validity grammar. All source identifiers MUST be in Unicode Normalization
     Form C (NFC); an implementation MUST reject rather than silently normalize
@@ -894,11 +1789,15 @@ this document.
     match either the `foo` stem in `foo.gnt` or the `foo` directory in
     `foo/mod.gnt` exactly, including case. Module path components MUST be
     NFC under the general identifier rule.
+<a id="GNT-4.13"></a>
+
 13. Top-level package and module contents MUST be declarations. Executable
-    statements are permitted only within function, method, decision, spawn, or
+   statements are permitted only within function, method, decision, spawn, or
     other executable block bodies.
+<a id="GNT-4.14"></a>
+
 14. Gantry MUST discover the complete module graph and collect package-wide
-    agent names before resolving item bodies. After declarations, type names,
+   agent names before resolving item bodies. After declarations, type names,
     and `impl` targets have been resolved under the ordinary source-order
     rules, Gantry MUST also collect every valid inherent-method signature
     before resolving executable bodies. Agent-name collection and
@@ -914,8 +1813,10 @@ this document.
     item names MUST be unique across structs, enums, functions, decisions,
     actions, and modules. An imported name MUST NOT collide with another
     import or local item.
+<a id="GNT-4.15"></a>
+
 15. Struct field names, parameter names, and method names for one receiver type
-    MUST each be unique. A local binding or task handle MUST NOT duplicate or
+   MUST each be unique. A local binding or task handle MUST NOT duplicate or
     shadow any parameter, binding, or task handle visible at its declaration
     point. A parameter, local binding, or task handle also MUST NOT reuse the
     unqualified name of a module item or import visible at its declaration
@@ -933,8 +1834,10 @@ this document.
     one ordinary namespace without creating a name-resolution conflict,
     although Section 1.4 recommends distinct spellings when coexistence would
     make source harder to read.
+<a id="GNT-4.16"></a>
+
 16. Every protocol, journal, event, or diagnostic field that requires a
-    canonical item or workflow path MUST use a `crate::`-rooted path after
+   canonical item or workflow path MUST use a `crate::`-rooted path after
     resolving `use`, `self`, and `super`. The root function `main` is therefore
     `crate::main`; an item `inspect` in nested modules `quality::checks` is
     `crate::quality::checks::inspect`. A free function or decision workflow
@@ -961,8 +1864,10 @@ this document.
     and
     `fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report`.
     This format is metadata rather than source syntax.
+<a id="GNT-4.17"></a>
+
 17. Package loading MUST operate on one immutable source snapshot per dry-run,
-    analysis, new-execution, or resume activity. For each selected file, module
+   analysis, new-execution, or resume activity. For each selected file, module
     resolution, UTF-8 decoding, lexing, parsing, source spans, diagnostics, and
     the package-source manifest in Section 11 MUST all use the same exact byte
     buffer and package-relative path observation. An implementation MUST NOT
@@ -977,6 +1882,10 @@ this document.
     internally inconsistent source text and identity.
 
 ## 5. Values, Bindings, Structs, and Tagged Types
+
+<a id="GNT-5.0"></a>
+
+<a id="GNT-5.1"></a>
 
 1. Runtime values MUST include `Unit`, `Bool`, `Int`, `Float`, `String`,
    declared struct and enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
@@ -993,8 +1902,11 @@ this document.
    finite IEEE 754 binary64 value. Directive integers used for limits and retry
    counts remain a separate nonnegative syntax domain through `2^63 - 1` and
    are not implicitly `Int` values.
-2. Parameters and returned values MAY be `Unit`, `Bool`, `Int`, `Float`, `String`, a
-   declared struct or enum type, `Option<T>`, `Result<T, E>`, `List<T>`,
+<a id="GNT-5.2"></a>
+
+2. Parameters and returned values MAY be `Unit`, `Bool`, `Int`, `Float`,
+   `String`, a declared struct or enum type, `Option<T>`, `Result<T, E>`,
+   `List<T>`,
    `Tuple<T1, T2, ..., Tn>`, `Decision`, or `OperationError`. Every member of a constructed type
    MUST itself be a permitted value type. A function, method, prompt, action,
    or spawned block that returns no information has result type `Unit`. An ordinary function, method,
@@ -1011,8 +1923,10 @@ this document.
    an external boundary. `return;` is sugar for `return ();`. `return None;`
    is valid only when an expected `Option<T>` return type gives that expression
    a type; it is never a spelling of `Unit`.
-3. `Option<T>`, `Result<T, E>`, `List<T>`, and
-   `Tuple<T1, T2, ..., Tn>` MAY appear in
+<a id="GNT-5.3"></a>
+
+3. `Option<T>`, `Result<T, E>`, `List<T>`, and `Tuple<T1, T2, ..., Tn>` MAY
+   appear in
    parameters, bindings, returned values, and struct fields. `Some(value)` and
    `None` MUST be constructible by deterministic interpreter operations.
    Gantry code MAY inspect an option through the deterministic `match` and
@@ -1031,6 +1945,8 @@ this document.
    in a position without such an expected type, including a top-level prompt
    interpolation island, is an analysis error; authors can interpolate a typed
    option binding instead. Gantry performs no other implicit option wrapping.
+<a id="GNT-5.4"></a>
+
 4. `List<T>` is an ordered, homogeneous collection. V1 supports list literals
    and zero-based deterministic projection with `value[index]`, where `index`
    is an `Int` expression. Projection yields `T`; a negative or out-of-bounds
@@ -1041,6 +1957,8 @@ this document.
    `List<T>.len()` is defined in item 15, and `List<String>.join(separator)` is
    defined in item 16. Iteration, mutation, and other deterministic list
    operations are excluded from v1.
+<a id="GNT-5.5"></a>
+
 5. `Tuple<T1, T2, ..., Tn>` is an ordered, fixed-arity heterogeneous
    collection. Its arity MUST be at least two, and each positional member MAY
    have a distinct otherwise permitted type. v1 supports zero-based
@@ -1051,6 +1969,8 @@ this document.
    right and the tuple becomes visible atomically after all members succeed.
    A tuple pattern MAY destructure a tuple in `let`, `if let`, or `match`.
    Iteration and mutation of tuple members are excluded from v1.
+<a id="GNT-5.6"></a>
+
 6. Struct fields MAY be `Unit`, `Bool`, `Int`, `Float`, `String`, declared
    struct or enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
    `Tuple<T1, T2, ..., Tn>`, `Decision`, or `OperationError`. Every member of a
@@ -1061,6 +1981,8 @@ this document.
    self-recursive struct cycle MUST pass through `Option<T>` or `List<T>` so
    that a finite strict-JSON value can terminate the recursion. An unguarded
    recursive cycle is an analysis error because it has no finite inhabitant.
+<a id="GNT-5.7"></a>
+
 7. Gantry MUST support declared enums as closed tagged unions. An enum MUST
    contain at least one variant. Each variant is either unit-like or carries
    exactly one otherwise permitted payload type; authors MUST use a struct
@@ -1073,6 +1995,8 @@ this document.
    enum pattern or equality expression; a payload becomes available through
    the binding introduced by a matching payload pattern. Directly or
    transitively recursive enum payloads are excluded from v1.
+<a id="GNT-5.8"></a>
+
 8. `Result<T, E>` is a built-in tagged union with source constructors
    `Ok(value)` and `Err(error)`. Their types are `Result<T, E>` when the
    expected type and argument type identify the other member. A constructor
@@ -1083,6 +2007,8 @@ this document.
    expression under item 9. Journal failure, internal invariant failure, and
    deterministic evaluation failure are never converted. V1 has no `?`
    operator or implicit result propagation.
+<a id="GNT-5.9"></a>
+
 9. `OperationError` is a sealed built-in tagged type with the variants
    `Declined(String)`, `InvalidOutput(String)`, `ProviderFailure(String)`,
    `Timeout(String)`, `PolicyDenied(String)`, `Cancelled(String)`, and
@@ -1105,8 +2031,10 @@ this document.
    Journal, event-persistence, executor, deterministic-evaluation, and
    internal-invariant failures bypass `attempt`. An unattempted operation
    failure retains the runtime-error propagation in Section 7.
-10. `Decision` is a sealed first-class value with read-only fields
-   `decision: Bool` and `rationale: String`, where the rationale is nonempty.
+<a id="GNT-5.10"></a>
+
+10. `Decision` is a sealed first-class value with read-only fields `decision:
+   Bool` and `rationale: String`, where the rationale is nonempty.
    Only `decide` creates a new `Decision`; a decision workflow returns a
    `Decision` obtained from an executed `decide` or from another valid source.
    Source MAY bind, pass, return, capture, store, interpolate, and consume a
@@ -1121,6 +2049,8 @@ this document.
    `Decision` equality remains unavailable, but two decisions with equal
    visible fields MUST be indistinguishable to later integration operations
    unless source explicitly supplies different surrounding values.
+<a id="GNT-5.11"></a>
+
 11. Gantry MUST support named-field struct construction. Struct values MAY be
    constructed by source execution or produced by an operation hook. A source
    constructor MUST reject unknown and duplicate fields during analysis.
@@ -1138,6 +2068,8 @@ this document.
    output. A constructed value becomes visible only after every supplied field
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
+<a id="GNT-5.12"></a>
+
 12. Struct fields MAY declare `Bool`, `Int`, `Float`, `String`, or `None`
    defaults, which are the only field-default forms in v1. A scalar default
    MUST exactly match the field's declared scalar type or the member type of
@@ -1146,6 +2078,8 @@ this document.
    Defaults MUST NOT invoke an integration operation. When an optional field
    with a default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
+<a id="GNT-5.13"></a>
+
 13. Every first-class Gantry value has deep, nonaliasing value semantics.
    Binding initialization, assignment, argument and return passing, field and
    aggregate projection, construction, task capture, and join-result delivery
@@ -1170,10 +2104,14 @@ this document.
    but then explicitly discards the resulting first-class value. Initializer
    failure introduces no binding, although integration side effects produced
    while evaluating the initializer are not rolled back.
-14. `const` is excluded from v1. Runtime initialization of immutable bindings
-   is permitted.
+<a id="GNT-5.14"></a>
+
+14. `const` is excluded from v1. Runtime initialization of immutable bindings is
+   permitted.
+<a id="GNT-5.15"></a>
+
 15. Gantry MUST provide the deterministic primitive operations in this item.
-    There is no truthiness or implicit numeric or String coercion.
+   There is no truthiness or implicit numeric or String coercion.
     - `!` accepts `Bool`. `&&` and `||` accept `Bool`, evaluate left to right,
       short-circuit, and return `Bool`. When the left operand determines the
       result, Gantry MUST NOT evaluate the right operand. A skipped operand
@@ -1216,8 +2154,10 @@ this document.
     Lists and tuples MAY otherwise be constructed, passed, returned,
     interpolated, and projected. Tuple patterns provide deterministic tuple
     destructuring; list patterns and list destructuring are excluded from v1.
+<a id="GNT-5.16"></a>
+
 16. `String` is an immutable valid-UTF-8 sequence of Unicode scalar values.
-    Gantry performs no implicit Unicode normalization. A `mut String` binding
+   Gantry performs no implicit Unicode normalization. A `mut String` binding
     permits atomic replacement of the complete value, not observable in-place
     mutation of backing storage. String equality is exact scalar-sequence
     equality. Gantry MUST provide the following sealed, deterministic methods;
@@ -1266,8 +2206,10 @@ this document.
     slicing, characters, bytes, regexes, normalization, locale-aware behavior,
     case-insensitive comparison, ordering, repetition, and mutable String
     methods are excluded from v1.
+<a id="GNT-5.17"></a>
+
 17. Every String result and every List result produced by a deterministic
-    operation MUST satisfy the effective limits in Section 11 before it is
+   operation MUST satisfy the effective limits in Section 11 before it is
     published. A rendered prompt, including its literal template segments and
     interpolation replacements, MUST satisfy `maximum_string_scalars` before
     hook dispatch; exceeding that limit is a `string-size-limit` deterministic-
@@ -1278,8 +2220,10 @@ this document.
     apply recursively to source construction, entry input, hook output, and
     resumed values. Deterministic String operations dispatch no hook, create no
     model rationale or operation event, and consume no validation-retry budget.
+<a id="GNT-5.18"></a>
+
 18. Patterns are deterministic structural operations over an already evaluated
-    value. V1 patterns are `_`, an identifier binding, `Some(pattern)`,
+   value. V1 patterns are `_`, an identifier binding, `Some(pattern)`,
     `None`, `Ok(pattern)`, `Err(pattern)`, a unit or payload enum variant, and
     a fixed-arity tuple pattern. `_` matches without binding. An identifier
     pattern matches and deep-copies the complete value into a new immutable
@@ -1288,8 +2232,10 @@ this document.
     irrefutable for its static type; v1 therefore permits only identifier
     bindings, `_`, and tuple patterns recursively composed from those forms in
     `let`. `if let` and `match` admit refutable patterns under Section 9.
+<a id="GNT-5.19"></a>
+
 19. Every protocol field that identifies a Gantry type MUST use one canonical
-    UTF-8 type descriptor. `Unit`, `Bool`, `Int`, `Float`, `String`,
+   UTF-8 type descriptor. `Unit`, `Bool`, `Int`, `Float`, `String`,
     `Decision`, and `OperationError` are
     encoded exactly as their source names; a declared struct or enum is encoded as its
     `crate::`-rooted qualified path; and constructed types are encoded as
@@ -1300,8 +2246,10 @@ this document.
     are metadata rather than source values, but they ensure that hooks,
     journals, events, and diagnostics identify the same type independently of
     the spelling visible at a call site.
+<a id="GNT-5.20"></a>
+
 20. Boolean literals are `true` and `false`. Integer and float literals follow
-    Section 13.2. An `integer_literal_token` has type `Int`, and a
+   Section 13.2. An `integer_literal_token` has type `Int`, and a
     `float_literal_token` has type `Float`; surrounding expected type does not
     change that classification. A numeric literal MUST be representable by its
     token's primitive type; out-of-range literals are analysis errors. Gantry
@@ -1311,10 +2259,14 @@ this document.
 
 ## 6. Workflows, Methods, and Actions
 
+<a id="GNT-6.0"></a>
+
 This section defines callable source workflows, their evaluation order and
 effect summaries, prompt construction, and declared harness actions. Ordinary
 workflow dispatch is interpreter work; only the explicit operation forms
 defined here and in Section 7 cross the integration boundary.
+
+<a id="GNT-6.1"></a>
 
 1. Gantry MUST support free functions and inherent methods declared in
    Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
@@ -1326,7 +2278,11 @@ defined here and in Section 7 cross the integration boundary.
    A package MAY split one struct's methods across multiple `impl` blocks,
    subject to the package-wide duplicate-method rule below. Traits are
    excluded from v1.
+<a id="GNT-6.2"></a>
+
 2. Methods MUST support `self` and `mut self` receivers.
+<a id="GNT-6.3"></a>
+
 3. A method may mutate its receiver only through interpreter-executed field
    assignments in its body. For every assignment, Gantry MUST evaluate the
    complete right-hand side before changing the target and MUST commit the new
@@ -1346,6 +2302,8 @@ defined here and in Section 7 cross the integration boundary.
    except that receiver-field assignment is permitted through `mut self`.
    Assigning a nested field constructs and commits one updated root value; it
    does not create aliases to intermediate structs.
+<a id="GNT-6.4"></a>
+
 4. Functions and methods are interpreter-managed workflows. Calling one MUST
    create an interpreter call frame and execute its body; the call itself MUST
    NOT invoke an operation hook.
@@ -1359,6 +2317,8 @@ defined here and in Section 7 cross the integration boundary.
    type MUST exactly equal its parameter type. A method call additionally
    requires a receiver of the `impl` target type. Gantry has no default,
    variadic, named, coerced, or overloaded call arguments in v1.
+<a id="GNT-6.5"></a>
+
 5. A workflow body MAY contain one or more integration-operation expressions.
    Each executed `prompt`, `decide`, or `action` expression MUST create exactly
    one logical operation. That logical operation MAY require multiple physical hook
@@ -1421,6 +2381,8 @@ defined here and in Section 7 cross the integration boundary.
    workflow call; and `join` are interpreter operations and MUST NOT directly
    invoke an operation hook. Executing the called workflow body may still
    reach an explicit integration operation, as specified above.
+<a id="GNT-6.6"></a>
+
 6. Each `prompt` expression MUST contain an explicit prompt template and MAY
    contain parenthesized operation modifiers before that template. A typed
    prompt places its result annotation after the template, as in
@@ -1437,6 +2399,8 @@ defined here and in Section 7 cross the integration boundary.
    evaluate entries in a later phase or dispatch the operation. Validation
    retries and recovery redispatches MUST reuse the captured values rather
    than reevaluate them.
+<a id="GNT-6.7"></a>
+
 7. Template expressions MUST be interpolated before hook dispatch. To keep
    agent invocation explicit, an interpolation MAY contain only bindings,
    field paths, list or tuple projections, primitive literals, deterministic
@@ -1470,6 +2434,8 @@ defined here and in Section 7 cross the integration boundary.
    defined in Section 7. An integration MUST make every named input available
    to the selected agent, even when it must render that structured vector into
    provider text.
+<a id="GNT-6.8"></a>
+
 8. A trailing expression in a function, method, or spawned block implicitly
    yields its value. An explicit `return` MAY yield earlier from a function,
    method, or spawned block. An explicit `return` in a decision workflow is
@@ -1496,11 +2462,15 @@ defined here and in Section 7 cross the integration boundary.
    value-returning function, method, or spawned block yields the declared type.
    Falling through a value-returning body is an analysis error; it MUST NOT be
    deferred to a runtime missing-value failure.
+<a id="GNT-6.9"></a>
+
 9. A method MAY return `self`; the returned value is a deep value copy and does
    not consume the receiver. Duplicate inherent methods for the same struct are
    analysis errors.
+<a id="GNT-6.10"></a>
+
 10. `return` exits the nearest enclosing function, method, decision workflow,
-    or spawned block. A spawned block is therefore a return target before any
+   or spawned block. A spawned block is therefore a return target before any
     workflow that lexically encloses the `spawn`. `break` and `continue` target
     the nearest enclosing loop even when they occur inside a nested `with` or
     `session` block, but they MUST NOT cross a spawned-block boundary. An
@@ -1510,8 +2480,10 @@ defined here and in Section 7 cross the integration boundary.
     A `with` or `session` block that yields `Decision` remains an ordinary
     value-producing block; its result type does not create a special control-
     transfer boundary.
-11. Except for explicitly parallel spawned blocks, expression evaluation MUST
-    be deterministic and left to right. A workflow call resolves its callee
+<a id="GNT-6.11"></a>
+
+11. Except for explicitly parallel spawned blocks, expression evaluation MUST be
+   deterministic and left to right. A workflow call resolves its callee
     before evaluating its arguments in source order; resolving the callee does
     not produce a runtime value or execute the workflow. A method call
     evaluates its receiver before its arguments, and a postfix chain applies
@@ -1524,8 +2496,10 @@ defined here and in Section 7 cross the integration boundary.
     before its body begins; entering a `session` expression establishes its
     active logical session before its body begins. These rules make the order
     of external operations visible even when calls or constructors are nested.
-12. An action declaration is a package item with a canonical path, one
-    mandatory recovery class, typed positional parameters, an optional result
+<a id="GNT-6.12"></a>
+
+12. An action declaration is a package item with a canonical path, one mandatory
+   recovery class, typed positional parameters, an optional result
     type, and no Gantry body. The recovery class is exactly `read_only`,
     `idempotent`, or `non_idempotent`. An
     action invocation MUST use the `action` keyword and MUST resolve to one
@@ -1546,14 +2520,18 @@ defined here and in Section 7 cross the integration boundary.
 
 ## 7. Integration Operations, Agents, Hooks, and Sessions
 
+<a id="GNT-7.0"></a>
+
 This section defines the runtime side of the three visible integration
 operations. Items 1 through 3 cover package-level resolution and dynamic agent
 selection; items 4 through 11 define hook requests and outcomes; items 12 and
 13 define logical sessions; and items 14 through 18 define side effects,
 operation identity, failure categories, and propagation.
 
-1. A Gantry package MAY declare permitted agent names in one or more
-   `agents { ... }` declarations. Declarations from all package modules are
+<a id="GNT-7.1"></a>
+
+1. A Gantry package MAY declare permitted agent names in one or more `agents {
+   ... }` declarations. Declarations from all package modules are
    merged into one package-wide set; repeating the same logical name is
    idempotent rather than an error. A package containing any `prompt` or
    `decide` operation site MUST have a nonempty merged agent set. When that set
@@ -1575,9 +2553,9 @@ operation identity, failure categories, and propagation.
    revision. When present, the ID identifies the complete logical-name mapping
    for that run without requiring
    Gantry to inspect provider configuration. For a new execution, Gantry MUST
-   record that revision in the durably flushed execution-start record required
-   by Section 11. A later resume MAY change the mapping only by supplying and
-   durably recording a new revision in an execution-state record before
+   include that revision in the committed execution-start evidence required by
+   Section 11. A later resume MAY change the mapping only by supplying and
+   committing a new revision in execution-state evidence before
    recovered interpretation or dispatch continues. The new revision then
    applies consistently to every physical hook dispatch made by that resume
    run, including a validation retry or recovery redispatch of an operation
@@ -1590,6 +2568,8 @@ operation identity, failure categories, and propagation.
    for a resume invocation it is the nonterminal resume-start failure defined
    in item 17. It is not a task-local hook-creation error, because no
    `OperationHook` creation or task execution has begun.
+<a id="GNT-7.2"></a>
+
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
    Action declarations likewise identify logical harness capabilities rather
@@ -1601,8 +2581,8 @@ operation identity, failure categories, and propagation.
    action-mapping revision. An unresolved action is an integration-
    preflight start or resume-start failure, even when no reachable execution
    path is expected to invoke it. When present, the execution-start record MUST
-   contain the initial revision. A resume MAY change the mapping only after Gantry appends
-   and flushes an execution-state record containing the replacement revision;
+   contain the initial revision. A resume MAY change the mapping only after
+   Gantry commits execution-state evidence containing the replacement revision;
    that revision applies to every later action dispatch in the resume run.
    Previously committed outcomes and results remain unchanged. Recovery of an
    indeterminate action retains its canonical action path, signature, recovery
@@ -1610,8 +2590,10 @@ operation identity, failure categories, and propagation.
    recorded action-mapping revision. The integration MUST map one canonical
    signature and recovery class consistently for the complete run and MUST
    reject conflicting or ambiguous capability registrations during preflight.
-3. Agent selection is established by lexically delimited
-   `with <name> { ... }` blocks and dynamically inherited by model-backed work
+<a id="GNT-7.3"></a>
+
+3. Agent selection is established by lexically delimited `with <name> { ... }`
+   blocks and dynamically inherited by model-backed work
    reached from them. The selected name applies to
    `prompt` and `decide` operations written directly in the block, model
    operations reached through workflow or decision calls made from it, and
@@ -1639,6 +2621,8 @@ operation identity, failure categories, and propagation.
    portable authority. Reusing a session across `with` blocks therefore gives
    every selected agent the same transcript; an integration unable to do so
    MUST reject the mapping during preflight.
+<a id="GNT-7.4"></a>
+
 4. The Rust hook contract MUST be asynchronous and independent of any specific
    executor implementation within v1's multithreaded Rust embedding profile.
    Its futures MUST be `Send`, and Gantry's public API MUST NOT expose Tokio-
@@ -1689,6 +2673,8 @@ operation identity, failure categories, and propagation.
    task that reaches another hook dispatch, then continue that logical task
    with its restored task and session IDs. A recovered task that completes by
    deterministic interpreter work alone does not require a hook instance.
+<a id="GNT-7.5"></a>
+
 5. Every operation hook request MUST be a versioned tagged envelope with a
    common header and exactly one operation-specific body. Except for fields
    explicitly described as conditional below, every listed v1 field is
@@ -1780,8 +2766,10 @@ operation identity, failure categories, and propagation.
    array members in index order, for schema and resource-limit errors. This
    canonical shape and order allow independent harnesses to render equivalent
    repair guidance without parsing diagnostic prose.
-6. A hook request MUST NOT contain an implicit logical trace.
-   Workflow and decision frames, branch outcomes, loop history, task ancestry,
+<a id="GNT-7.6"></a>
+
+6. A hook request MUST NOT contain an implicit logical trace. Workflow and
+   decision frames, branch outcomes, loop history, task ancestry,
    source locations, operation provenance, decline evidence, and telemetry
    are nonsemantic observability data. They MAY appear in protected journal or
    event payloads, but an integration MUST NOT present them to an operation
@@ -1795,6 +2783,8 @@ operation identity, failure categories, and propagation.
    exactly the canonical action signature, recovery class, stable operation
    ID, and ordered typed arguments. Adding any other behavior-affecting input
    requires a source-language and hook-protocol major version change.
+<a id="GNT-7.7"></a>
+
 7. Prompt interpolation MUST use `${expression}`. An unescaped `$` followed by
    `{` begins interpolation. `$$` consumes exactly those two dollar signs and
    produces one literal dollar sign, so `$${name}` renders the literal text
@@ -1812,8 +2802,10 @@ operation identity, failure categories, and propagation.
    `${...}` or `$$`; interpolation is a single-pass template operation rather
    than recursive template evaluation. Invalid references and values that
    cannot be encoded are analysis or runtime errors, respectively.
-8. Ordinary quoted strings MUST support `\\`, `\"`, `\n`, `\r`, `\t`, `\0`,
-   and Rust-style Unicode scalar escapes of the form `\u{HEX}`. Unknown,
+<a id="GNT-7.8"></a>
+
+8. Ordinary quoted strings MUST support `\\`, `\"`, `\n`, `\r`, `\t`, `\0`, and
+   Rust-style Unicode scalar escapes of the form `\u{HEX}`. Unknown,
    incomplete, or invalid escapes are syntax errors. A quoted prompt literal
    MAY contain literal newline characters. Literal newlines and all indentation
    MUST be preserved exactly; Gantry performs no implicit indentation
@@ -1821,8 +2813,10 @@ operation identity, failure categories, and propagation.
    hash-delimited forms such as `r#"..."#`. Raw strings disable backslash
    escape processing but do not disable `${...}` interpolation or `$$`
    escaping.
-9. Hooks MUST receive the expected output schema as a separate
-   machine-readable value. Gantry MUST provide guidance that clearly states
+<a id="GNT-7.9"></a>
+
+9. Hooks MUST receive the expected output schema as a separate machine-readable
+   value. Gantry MUST provide guidance that clearly states
    the operation's input and output contract. At minimum, the guidance MUST
    state that the raw operation output returned through `Completed` must contain
    exactly one JSON text with no surrounding prose, Markdown fence, or
@@ -1837,14 +2831,18 @@ operation identity, failure categories, and propagation.
    wording and provider-specific
    presentation MAY evolve, but those semantic instructions MUST remain
    present on every initial dispatch and repair retry.
+<a id="GNT-7.10"></a>
+
 10. The only v1 source-level model-selection knob is the agent name. Action
-    selection is instead the canonical path of a declared action. System/user/
+   selection is instead the canonical path of a declared action. System/user/
     assistant roles, model choice, tool implementation, sampling settings,
     streaming, progress reporting, operation-level timeouts, and provider-
     specific cancellation mechanisms are integration concerns. Those
     mechanisms MUST still observe the Gantry-owned cancellation token and the
     language-level cancellation state transitions required by Sections 10 and
     15.
+<a id="GNT-7.11"></a>
+
 11. A hook MUST return one of three host-level outcomes:
    `Completed(raw_output)`, `Declined(reason)`, or
    `Failed(category, message)`. `category` is exactly `provider-failure`,
@@ -1859,6 +2857,8 @@ operation identity, failure categories, and propagation.
    corresponding `OperationError` under `attempt`, or otherwise fails the task
    in the applicable runtime category. Structured-output repair applies only
    to `Completed` bytes, never to decline or failure.
+<a id="GNT-7.12"></a>
+
 12. Gantry MUST assign a stable logical session ID to every `prompt` and
    `decide`; actions have no session. Every session owns a Gantry-defined
    canonical transcript consisting only of accepted model exchanges. Each turn
@@ -1866,8 +2866,8 @@ operation identity, failure categories, and propagation.
    interpolation and `using` inputs, selected logical agent, and accepted
    canonical result. Failed dispatches, validation diagnostics, actions,
    workflow frames, branch or loop history, task ancestry, and telemetry are
-   excluded. Gantry MUST durably append a turn before a later inline operation
-   can observe it.
+   excluded. Gantry MUST commit a turn before a later inline operation can
+   observe it.
 
    `inline` reuses the active session. `fork` allocates a stable child ID and
    snapshots the complete committed transcript prefix of its parent at the
@@ -1880,6 +2880,8 @@ operation identity, failure categories, and propagation.
    creates one session on loop entry. Every allocated ID and its transcript
    basis MUST be durable before dispatch or child submission can depend on it.
 
+<a id="GNT-7.13"></a>
+
 13. Gantry is the transcript authority across retry, agent changes, process
    restart, and resume. A hook request carries the active canonical transcript
    before the current operation. An integration MAY cache provider session
@@ -1890,16 +2892,20 @@ operation identity, failure categories, and propagation.
    unfinished work; inability to do so is `unresolved-logical-session`, never
    permission to substitute an empty conversation. Cross-agent reuse presents
    the same canonical transcript to each selected agent.
-14. Model operations are externally read-only in v1: their fulfillment MAY
-    read provider state and use pure or read-only tools, but MUST NOT mutate an
+<a id="GNT-7.14"></a>
+
+14. Model operations are externally read-only in v1: their fulfillment MAY read
+   provider state and use pure or read-only tools, but MUST NOT mutate an
     external system, obtain approval, publish data, execute a state-changing
     command, or perform another externally visible side effect. Such work MUST
     be declared and invoked as an `action`, so its recovery class and operation
     ID are visible. Provider caching, billing, and append-only audit telemetry
     are not source-visible effects, but they MUST NOT alter Gantry semantics.
 
+<a id="GNT-7.15"></a>
+
 15. An action's declared recovery class governs retries and interruption.
-    `read_only` promises no externally visible mutation. `idempotent` promises
+   `read_only` promises no externally visible mutation. `idempotent` promises
     that repeating the same stable operation ID has the effect of one
     successful invocation; the handler MUST deduplicate with that ID.
     `non_idempotent` makes no repetition promise. Structured-output repair and
@@ -1910,8 +2916,10 @@ operation identity, failure categories, and propagation.
     redispatched automatically. Prompt and decide repair remains safe because
     item 14 prohibits external mutation. A dispatch ID identifies one physical
     attempt for audit and is never the deduplication key.
-16. Every dynamic operation identity MUST correspond to a logical execution
-    path consisting of the execution ID, task path, workflow-call path, canonical
+<a id="GNT-7.16"></a>
+
+16. Every dynamic operation identity MUST correspond to a logical execution path
+   consisting of the execution ID, task path, workflow-call path, canonical
     core operation-site ID, branch arm, and enclosing loop iteration counters.
     A core site ID is derived from canonical module and workflow paths plus the
     construct's structural position in canonical IR; comments, whitespace,
@@ -1932,8 +2940,10 @@ operation identity, failure categories, and propagation.
     positions required by Section 9. These counters are logical interpreter
     state and MUST be checkpointed or reconstructible from the durable prefix;
     wall-clock order and executor completion order MUST NOT influence them.
+<a id="GNT-7.17"></a>
+
 17. Hook outcomes and Gantry failures are separate domains. A hook outcome is
-    exactly `Completed(raw_output)`, `Declined(reason)`, or
+   exactly `Completed(raw_output)`, `Declined(reason)`, or
     `Failed(category, message)` with a category from item 11.
     Before a new execution is accepted and its execution ID is returned to the
     embedder, structured start failures MUST use one of the following exact
@@ -1953,13 +2963,13 @@ operation identity, failure categories, and propagation.
     `unresolved-agent-mapping`, `unresolved-action-mapping`,
     `unresolved-logical-session`, or `unavailable-required-event-sink`.
     Such a failure means recovered interpretation never began: Gantry MUST NOT
-    append an execution-state or terminal-execution record, consume a retry
+    commit execution-state or terminal-execution evidence, consume a retry
     budget, or change the execution's durable terminal status. If journal
     ownership was acquired before the failure, Gantry MUST release it under
     Section 11. The embedder MAY correct the dependency or configuration and
     attempt resume again.
 
-    Once a new execution has a durably flushed execution-start record, or a
+    Once a new execution has committed execution-start evidence, or a
     resume invocation has completed compatibility and dependency preflight and
     begins advancing recovered state, failures are runtime errors. Runtime
     errors MUST expose a stable category and MAY expose a more specific stable
@@ -1989,8 +2999,10 @@ operation identity, failure categories, and propagation.
     exact category values. Concrete Rust error types are implementation-defined,
     but embedders MUST be able to distinguish start, resume-start, and runtime
     categories without parsing display text.
+<a id="GNT-7.18"></a>
+
 18. Unless a more specific rule states otherwise, a fatal operation or
-    interpreter error terminates the current Gantry task rather than silently
+   interpreter error terminates the current Gantry task rather than silently
     terminating unrelated parallel work. Failure of the root foreground task
     fails the foreground execution and applies the attached-descendant
     cancellation rules in Section 10. Failure of an attached spawned task
@@ -2004,11 +3016,15 @@ operation identity, failure categories, and propagation.
 
 ## 8. Structured Output and Validation
 
+<a id="GNT-8.0"></a>
+
 Items 1 through 8 define strict-JSON decoding, normalization, and generated
 schemas. Items 9 through 12 define repair retries and exhaustion. Item 13
 limits source disclosure in diagnostics. These rules validate integration
 output; they do not add source syntax beyond the result annotations and
 operation modifiers defined in Sections 6 and 13.
+
+<a id="GNT-8.1"></a>
 
 1. A successful operation-hook outcome provides raw bytes in
    `Completed(raw_output)`. Gantry MUST reject the outcome in the
@@ -2049,6 +3065,8 @@ operation modifiers defined in Sections 6 and 13.
    This wire value creates the sole `Unit` value `()`. `Declined` and `Failed`
    retain their operation-failure behavior. Including `$schema` gives `Unit`
    the same explicit output contract as every other result type.
+<a id="GNT-8.2"></a>
+
 2. A `Bool` result is represented by a JSON Boolean. An `Int` result is a JSON
    number whose exact mathematical value is integral and in Gantry's exact
    range. RFC 8259 has one number grammar rather than distinct integer and
@@ -2105,14 +3123,20 @@ operation modifiers defined in Sections 6 and 13.
    at every nesting depth. A hook result becomes available to source execution
    only after the entire value has validated and normalized successfully; no
    partially normalized value may be observed.
+<a id="GNT-8.3"></a>
+
 3. A `List<T>` result is represented by a JSON array. Every array item MUST
    validate as `T`, and item order MUST be preserved. Gantry MUST derive an
    array schema with the schema for `T` as its `items` schema.
+<a id="GNT-8.4"></a>
+
 4. A `Tuple<T1, T2, ..., Tn>` result is represented by a JSON array with
    exactly `n` items. Each item MUST validate against its corresponding
    positional member type, and item order MUST be preserved. Gantry MUST
    derive a fixed-length JSON Schema array using `prefixItems`, `items: false`,
    and `minItems` and `maxItems` both equal to `n`.
+<a id="GNT-8.5"></a>
+
 5. `Some(value)` is represented by the JSON encoding of `value`, and `None` is
    represented by JSON `null`. An `Option<T>` struct property MAY also be
    omitted. Omission assigns the field's declared literal default when one
@@ -2148,6 +3172,8 @@ operation modifiers defined in Sections 6 and 13.
    ID and message. Because operation and entry result contracts cannot contain
    `OperationError`, this encoding is used only for source values, explicit
    operation inputs, journals, events, and diagnostics.
+<a id="GNT-8.6"></a>
+
 6. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
    during semantic analysis and MUST independently validate every successful
    hook result against that schema. Every schema root MUST identify that
@@ -2233,6 +3259,8 @@ operation modifiers defined in Sections 6 and 13.
    may be added to the expected protocol schema. The sole annotations are the
    field defaults required by item 7. These rules make the expected schema and
    its identity stable across conforming Gantry implementations.
+<a id="GNT-8.7"></a>
+
 7. Every struct schema MUST set `additionalProperties` to `false`. Declared
    fields are required unless represented by `Option<T>`. Literal field
    defaults affect source construction; they do not make a non-optional field
@@ -2258,6 +3286,8 @@ operation modifiers defined in Sections 6 and 13.
    assembly in item 6, are the complete portable generated-schema shape.
    Gantry MUST still perform the normalization in item 2 because the annotation
    does not itself insert a value during JSON Schema validation.
+<a id="GNT-8.8"></a>
+
 8. v1 validation MUST check JSON shape and types, including enum and result
    discriminators, closed variant sets, fixed tuple arity, and the nonempty
    `Decision` rationale. It MUST also enforce the effective String and List
@@ -2265,6 +3295,8 @@ operation modifiers defined in Sections 6 and 13.
    Additional constraints such as regular-expression patterns and semantic
    validity are conveyed through operation guidance rather than enforced by
    Gantry.
+<a id="GNT-8.9"></a>
+
 9. UTF-8 decoding failures, malformed JSON, schema-invalid output, and output
    exceeding the effective raw-byte, value-depth, value-node, String, or List
    resource limits MUST be returned to the integration as validation guidance
@@ -2292,6 +3324,8 @@ operation modifiers defined in Sections 6 and 13.
    understandable as repairs of one visible operation rather than hidden
    additional program evaluations while preserving the explicit mapping-
    replacement contract for resumed work.
+<a id="GNT-8.10"></a>
+
 10. Interpreter configuration supplies separate default retry limits for model
    and action operations, and an operation MAY override its applicable default.
    A retry limit counts retries after the initial attempt; zero permits exactly
@@ -2318,34 +3352,48 @@ operation modifiers defined in Sections 6 and 13.
    again; it MUST NOT sample another delay.
    The effective retry limit, initial delay, cap, and jitter mode are bound to
    resumable execution as specified in Section 11.
+<a id="GNT-8.11"></a>
+
 11. When retries are exhausted, an enclosing `attempt` yields
-    `OperationError::InvalidOutput`; without `attempt`, the current task fails
+   `OperationError::InvalidOutput`; without `attempt`, the current task fails
     with `structured-output-exhaustion`. `attempt` does not catch journal,
     executor, deterministic-evaluation, event-persistence, or invariant
     failures. Parallel propagation follows Section 10.
+<a id="GNT-8.12"></a>
+
 12. Transport failures and their retry policy are integration concerns, not
    Gantry structured-output retries.
+<a id="GNT-8.13"></a>
+
 13. Source snippets MAY be included in validation diagnostics only when the
-    embedder's diagnostic-disclosure policy explicitly permits source text for
+   embedder's diagnostic-disclosure policy explicitly permits source text for
     that consumer. The default policy MUST report source spans without copying
     source snippets. Raw integration output MUST NOT be included in validation
     diagnostics under any disclosure policy.
 
 ## 9. Control Flow
 
+<a id="GNT-9.0"></a>
+
 This section separates deterministic routing from model judgment and defines
 finite iteration, explicit source limits, and mandatory execution budgets.
+
+<a id="GNT-9.1"></a>
 
 1. `if` and `else if` conditions MUST have type `Bool` or `Decision`; a
    `Decision` uses its visible `decision` field. `if let` and `match` inspect
    tagged structure deterministically. Conditions and scrutinees are evaluated
    once, left to right, and only explicit operation sites dispatch hooks.
 
+<a id="GNT-9.2"></a>
+
 2. A successful `decide` returns exactly
    `{"decision":BOOL,"rationale":STRING}`, with a nonempty rationale and no
    additional properties. Its schema is the closed Draft 2020-12 object schema
    defined in Section 8. `Decision` values carry only those visible fields;
    their originating operation identity belongs to logical-trace observability.
+
+<a id="GNT-9.3"></a>
 
 3. Conditional and match arm selection is deterministic after the controlling
    value is available. Analysis MUST reject unreachable or duplicate match arms
@@ -2354,8 +3402,10 @@ finite iteration, explicit source limits, and mandatory execution budgets.
    outcomes and rationales MAY be journaled and emitted as protected logical
    trace, but MUST NOT become implicit input to a later hook.
 
-4. Gantry supports `loop`, pre-test `while`, post-test `until`, and finite
-   `for NAME in EXPRESSION`. `until { BODY } when CONDITION;` executes its body
+<a id="GNT-9.4"></a>
+
+4. Gantry supports `loop`, pre-test `while`, post-test `until`, and finite `for
+   NAME in EXPRESSION`. `until { BODY } when CONDITION;` executes its body
    before the first condition. A `for` expression is evaluated once, MUST have
    type `List<T>`, and iterates a deep snapshot in ascending index order with a
    fresh immutable `NAME: T` binding per item. Empty lists execute no body.
@@ -2363,8 +3413,11 @@ finite iteration, explicit source limits, and mandatory execution budgets.
    `continue` in `until` proceeds to its post-test and in `for` proceeds to the
    next snapshot item.
 
-5. `loop`, `while`, and `until` accept `session` and optional `limit` modifiers.
-   Omission means no source-level limit; authors MAY write `limit = unbounded`
+<a id="GNT-9.5"></a>
+
+5. `loop`, `while`, and `until` accept `session` and optional `limit`
+   modifiers. Omission means no source-level limit; authors MAY write `limit =
+   unbounded`
    explicitly. A numeric limit MUST be positive and no greater than `2^63-1`;
    `limit = 0` is an analysis error. The limit counts body entries. Attempting
    another body after the limit is exhausted fails with deterministic code
@@ -2372,10 +3425,14 @@ finite iteration, explicit source limits, and mandatory execution budgets.
    normal completion. `for` needs no source limit because its snapshotted list
    is finite, but it still consumes the mandatory execution budgets.
 
+<a id="GNT-9.6"></a>
+
 6. Loop session behavior is `inline` by default. `fork` creates one transcript
    snapshot per prospective iteration; a condition and admitted body share that
    iteration session. `new` creates one empty session on loop entry and reuses
    it. Operation-local session modifiers override only that operation.
+
+<a id="GNT-9.7"></a>
 
 7. Every execution MUST enforce identity-bound positive budgets for
    deterministic transitions, logical operations, and loop body entries. A
@@ -2387,23 +3444,31 @@ finite iteration, explicit source limits, and mandatory execution budgets.
    marked `unbounded`, are restored exactly on resume, and MUST NOT be converted
    into normal loop completion or caught by `attempt`.
 
+<a id="GNT-9.8"></a>
+
 8. Routing operators do not dispatch hooks. `==` and `!=` require identical
    equatable types and perform exact deep equality. `Decision` and aggregates
    containing it are non-equatable. A statement-form `match` has statement
    blocks; discarding a value-producing `match` requires explicit `discard`.
+
+<a id="GNT-9.9"></a>
 
 9. Model decisions use the ordinary structured-output retry and recovery rules.
    Deterministic `Bool` conditions have no schema, rationale, retry budget, or
    model-visible context unless their evaluation explicitly executes an
    operation.
 
+<a id="GNT-9.10"></a>
+
 10. A decision workflow always returns `Decision`. Every reachable normal path
-    MUST yield or explicitly return one, and only `decide` can originate one.
+   MUST yield or explicitly return one, and only `decide` can originate one.
     Discarding a newly evaluated decision requires `discard decide ...;` or
     `discard decision_workflow(...);`; a retained value performs no operation.
 
+<a id="GNT-9.11"></a>
+
 11. Static control-flow analysis treats every model-produced decision and every
-    nonliteral `Bool` as capable of both outcomes. Only `true`, `false`,
+   nonliteral `Bool` as capable of both outcomes. Only `true`, `false`,
     parentheses, and `!`, `&&`, or `||` composed solely from those literals are
     compile-time Boolean facts. Pattern irrefutability and ordered coverage are
     the only compile-time basis for removing structural paths. A `while` may
@@ -2412,11 +3477,15 @@ finite iteration, explicit source limits, and mandatory execution budgets.
     Budget exhaustion is abnormal and cannot satisfy definite-return or linear
     handle analysis.
 
+<a id="GNT-9.12"></a>
+
 12. Evaluation observes cancellation before every condition, body entry, for
-    item binding, and back edge. Deterministic budgets complement cancellation;
+   item binding, and back edge. Deterministic budgets complement cancellation;
     they do not weaken cooperative yield or task-cleanup requirements.
 
 ## 10. Parallel Execution
+
+<a id="GNT-10.0"></a>
 
 This section defines attached structured tasks and explicit durable background
 work. `spawn` creates one owned attached handle. `join` and `joinall()` are
@@ -2427,10 +3496,14 @@ failure ownership to execution-scoped background work. Detached work may
 outlive lexical parents, foreground completion, and an interpreter process and
 MUST NOT be described as a structured child after transfer.
 
-1. Gantry MUST support annotated spawn declarations of the form
-   `spawn <name> -> <type> { ... }`, joins of the form
+<a id="GNT-10.1"></a>
+
+1. Gantry MUST support annotated spawn declarations of the form `spawn <name>
+   -> <type> { ... }`, joins of the form
    `join(<task-name>, ...)`, `joinall()`, and explicit detachment of the form
    `detach(<task-name>);`.
+<a id="GNT-10.2"></a>
+
 2. A spawn creates an arbitrary child program block running in parallel. The
    spawn name declares a new, lexically scoped, unique, interpreter-owned task
    handle. A task handle is not a `String`, is not agent-visible structured
@@ -2451,7 +3524,7 @@ MUST NOT be described as a structured child after transfer.
    exceed the limit. No task identity, session, hook, task-state record, or
    executor submission is created for that rejected child. Before submitting
    an admitted child to the executor or invoking its `HookFactory`, Gantry MUST
-   append and flush a task-state record containing
+   commit task-creation evidence containing
    the child's stable task identity, parent identity, source spawn occurrence,
    copied captures, inherited agent selection, and forked-session identity. The
    record MAY also contain structural ancestry for protected observability,
@@ -2459,13 +3532,15 @@ MUST NOT be described as a structured child after transfer.
    handle becomes visible to the parent only after that record is durable. This
    ordering prevents a child from performing model-backed work that recovery
    cannot identify. If executor submission then fails, the child MUST settle as
-   failed with an executor error; Gantry MUST append and flush that settlement
+   failed with an executor error; Gantry MUST commit that settlement
    before the parent can observe it. The handle remains attached and visible,
    and its owner MUST still consume it through `join`, `joinall()`, or `detach`
    on every normal path. Recovery MUST reuse the durable failed settlement and
    MUST NOT submit a second child for the same spawn occurrence. If Gantry
    cannot durably record the submission failure, the execution instead fails
    with the journal error under Section 11.
+<a id="GNT-10.3"></a>
+
 3. A spawned block captures outer variables by copy and MUST NOT mutate outer
    variables. The captured values form a deep, isolated snapshot taken when
    `spawn` executes; “snapshot” describes isolation, not universal read-only
@@ -2490,6 +3565,8 @@ MUST NOT be described as a structured child after transfer.
    the child becomes runnable, and the durable task-state record in item 2 MUST
    contain that complete snapshot. Evaluation of a `spawn` therefore cannot
    observe a mixture of parent values from before and after child submission.
+<a id="GNT-10.4"></a>
+
 4. A spawned block MUST declare the type of its yielded value with `-> T`, or
    declare `-> Unit` when it yields `()`. Every reachable normal completion
    of a value-yielding block MUST produce exactly `T` through its trailing
@@ -2500,6 +3577,8 @@ MUST NOT be described as a structured child after transfer.
    spawned block completes only that child task. `break` or `continue` inside a
    spawned block MUST NOT target a loop outside that block. Transfers wholly
    contained in a workflow or loop entered within the child remain valid.
+<a id="GNT-10.5"></a>
+
 5. `join(task)` waits for one named child and yields that child's typed block
    value. A join result MAY be bound as `let result: T = join(task);`. Joining
    a Unit block is a waiting statement and yields `()`. A successful
@@ -2517,13 +3596,13 @@ MUST NOT be described as a structured child after transfer.
    named join is an analysis error; Gantry MUST NOT silently discard selected
    values merely because another named task returns `Unit`. Every named join
    waits until every named task settles even after a failure. Before waiting,
-   Gantry MUST append and flush one task-state record that identifies
+   Gantry MUST commit task-ownership evidence that identifies
    the join form, source location, named handles in argument order, and their
    transition from attached to consumed-by-join. Only then are the handles
    consumed. This transition includes handles for successful tasks in a join
-   where another task fails. After settlement, Gantry MUST append and flush the
-   ordered result, successful Unit settlement, or aggregate failure before
-   returning it to source execution.
+   where another task fails. After settlement, Gantry MUST commit the ordered
+   result, successful Unit settlement, or aggregate failure before returning
+   it to source execution.
    Consuming a handle for a join changes its source-level ownership state but
    does not detach the child: until it settles, the child remains an attached
    descendant for cancellation and cleanup under items 10 and 14.
@@ -2533,8 +3612,11 @@ MUST NOT be described as a structured child after transfer.
    join likewise consumes its handle durably and fails the current Gantry task
    with `task-join-failure`. Propagation beyond that task follows Section 7
    rather than implicitly aborting unrelated parallel work.
-6. `joinall()` is the scope-oriented form for joining every unconsumed, attached
-   task handle that is owned by the current Gantry task, declared directly in
+<a id="GNT-10.6"></a>
+
+6. `joinall()` is the scope-oriented form for joining every unconsumed,
+   attached task handle that is owned by the current Gantry task, declared
+   directly in
    the current lexical scope, and definitely available at the `joinall()`
    expression's program point. It excludes later declarations, tasks declared
    in nested scopes, tasks owned by another Gantry task, and tasks explicitly
@@ -2563,14 +3645,18 @@ MUST NOT be described as a structured child after transfer.
    state on all incoming control-flow paths. A handle that is consumed or
    detached on only some incoming paths is an analysis error rather than a
    conditionally included `joinall()` member.
-   Before waiting, a nonempty `joinall()` MUST append and flush the same
-   consumed-by-join task-state transition required for a named join, listing
-   included handles in declaration order. Its ordered result or aggregate
-   failure MUST likewise be appended and flushed before source execution
-   consumes it. A zero-task `joinall()` requires no ownership record.
+   Before waiting, a nonempty `joinall()` MUST commit the same consumed-by-join
+   task-state transition required for a named join, listing included handles
+   in declaration order. Its ordered result or aggregate failure MUST likewise
+   be committed before source execution consumes it. A zero-task `joinall()`
+   requires no ownership evidence.
+<a id="GNT-10.7"></a>
+
 7. A child failure does not immediately cancel siblings. A named child's
    failure is deferred until `join`; a scoped failure is deferred until
    `joinall()`.
+<a id="GNT-10.8"></a>
+
 8. `detach(task)` consumes one attached task handle and transfers foreground
    ownership to Gantry on behalf of the task's originating execution and
    journal, without waiting for it. That ownership is durable execution state,
@@ -2584,11 +3670,11 @@ MUST NOT be described as a structured child after transfer.
    Requiring an explicit `detach` keeps background execution visible to humans,
    agents, analysis, and recovery tooling.
    Before releasing the child from parent cancellation constraints or allowing
-   the enclosing scope to continue, Gantry MUST append and flush a task-state
-   record that identifies the source `detach`, child task, previous owner, and
-   transition to interpreter-owned detached work. Failure to make that transfer
-   durable is a journal failure; the task remains attached for cancellation and
-   cleanup purposes.
+   the enclosing scope to continue, Gantry MUST commit task-ownership evidence
+   that identifies the source `detach`, child task, previous owner, and
+   transition to interpreter-owned detached work. Failure to commit that
+   transfer is a journal failure; the task remains attached for cancellation
+   and cleanup purposes.
    Detaching a value-producing task intentionally discards its eventual value;
    completion, failure, and observability remain governed by items 9 and 10.
    Semantic analysis MUST model each handle on every reachable path as exactly
@@ -2606,6 +3692,8 @@ MUST NOT be described as a structured child after transfer.
    items 9 through 13 define their cleanup and ownership consequences. These
    linear-state rules apply even when the consuming operation appears inside a
    nested `with` or `session` block.
+<a id="GNT-10.9"></a>
+
 9. A detached-task failure MUST be journaled and emitted as a failure event. It
    MUST NOT abort foreground execution or change an already returned foreground
    outcome, regardless of whether it settles before or after that outcome is
@@ -2618,8 +3706,8 @@ MUST NOT be described as a structured child after transfer.
    ordinary hook, structured-output, deterministic-evaluation, executor, and
    `task-join-failure` errors remain task-local unless a more specific rule
    propagates them. Journal failure aborts the current in-process run but is
-   not a durable terminal category: after storage fails, Gantry cannot append
-   the terminal record that would establish one. It is returned separately to
+   not a durable terminal category: after storage fails, Gantry cannot commit
+   the terminal evidence that would establish one. It is returned separately to
    the embedder, and a later owner may resume from the authoritative durable
    prefix under Section 11.
    A detached task cannot subsequently be joined because `detach` consumes its
@@ -2643,6 +3731,8 @@ MUST NOT be described as a structured child after transfer.
    `success`. Multiple detached failures MUST be reported in stable task-path
    order, using source spawn location and dynamic spawn occurrence rather than
    completion time.
+<a id="GNT-10.10"></a>
+
 10. Cancellation constraints inherited from a parent apply while a child
    remains attached and propagate through its attached descendants. Detachment
    releases the task from those parent cancellation constraints. Integration-
@@ -2661,7 +3751,7 @@ MUST NOT be described as a structured child after transfer.
     order but MUST NOT replace the initiating runtime-error category.
     Once cancellation is signalled to a task, Gantry MUST dispatch no new
     operation for that task. If an already-dispatched hook returns during the
-    cancellation drain, Gantry MUST append and flush the outcome for audit but
+    cancellation drain, Gantry MUST commit the outcome for audit but
     mark it cancelled and non-consumable; it MUST NOT validate-retry, assign,
     branch on, return, or reuse that outcome to continue the cancelled task.
     A durably cancelled task is terminal and MUST NOT later be resumed as an
@@ -2669,26 +3759,31 @@ MUST NOT be described as a structured child after transfer.
     observed, Gantry MUST durably record cancellation of the indeterminate
     dispatch rather than redispatch it on resume. These rules make cancellation
     win deterministically over a racing hook completion.
-    The append-and-flush requirements in this paragraph apply only while the
-    journal remains usable. When journal failure is the initiating error,
-    Gantry MUST NOT attempt additional journal appends through the failed
+    The commit requirements in this paragraph apply only while the journal
+    remains usable. When journal failure is the initiating error, Gantry MUST
+    NOT attempt additional commits through the failed
     storage path. It MUST discard late in-process hook outcomes after making a
     best effort to stop the work, MUST NOT consume them, and MUST NOT claim
     that the affected tasks are durably cancelled. A later owner recovers only
     the authoritative durable prefix and may consequently redispatch an
     invocation that remained indeterminate there, as required by Section 11.
+<a id="GNT-10.11"></a>
+
 11. Gantry MUST schedule spawned blocks through the executor supplied by the
-    embedding application. The integration determines executor queueing and
+   embedding application. The integration determines executor queueing and
     provider-internal limits, including operation timeouts. Gantry's configured
     language and protocol resource limits remain governed by Sections 3, 8,
     10, 11, and 15 and MUST still be enforced at their specified boundaries.
+<a id="GNT-10.12"></a>
+
 12. The embedding API MUST provide a terminal asynchronous shutdown operation.
-    The embedder MUST configure a finite graceful-shutdown timeout; indefinite
+   The embedder MUST configure a finite graceful-shutdown timeout; indefinite
     shutdown is not the v1 default. Shutdown MUST reject new executions and
     allow every interpreter-owned foreground execution and detached task to
     finish naturally until the timeout expires. It MUST then signal
     cancellation to all remaining work, abort tasks that do not finish within
-    a bounded drain period, flush journal and required event state, and return
+    a bounded drain period, commit pending journal and required event state,
+    and return
     a shutdown report covering every execution and detached task that was
     active when shutdown began. After that report's task and journal content is
     fixed, and while the executor adapter and event sinks remain available,
@@ -2709,8 +3804,10 @@ MUST NOT be described as a structured child after transfer.
     is reported separately from the task and execution outcomes already fixed
     in the shutdown report. An interpreter cannot be reused after shutdown
     begins. Embedders MUST complete shutdown before dropping the interpreter.
+<a id="GNT-10.13"></a>
+
 13. Because Rust destruction cannot await, dropping an interpreter without
-    shutdown MUST reject new work, signal cancellation, request abortion of
+   shutdown MUST reject new work, signal cancellation, request abortion of
     every remaining owned executor task, and relinquish its executor handles
     without blocking. When configured, it SHOULD invoke the non-durable
     emergency diagnostic callback defined in Section 12; that callback is not
@@ -2722,11 +3819,13 @@ MUST NOT be described as a structured child after transfer.
     interruption rather than a durable cancellation: a later resume MUST
     follow the authoritative journal prefix and MAY recover tasks or redispatch
     indeterminate operations under Section 11.
+<a id="GNT-10.14"></a>
+
 14. The embedding application MUST be able to request cancellation of one
-    execution without shutting down the interpreter. Execution cancellation
+   execution without shutting down the interpreter. Execution cancellation
     targets the foreground task plus every attached and detached descendant
     owned by that execution. When the journal remains usable, Gantry MUST
-    append and flush the cancellation request before signalling task tokens,
+    commit the cancellation request before signalling task tokens,
     reject new task and hook dispatch for the execution, apply the configured
     post-cancellation drain and abortion behavior from item 10, and durably
     record the resulting terminal state before reporting completion. The
@@ -2741,13 +3840,18 @@ MUST NOT be described as a structured child after transfer.
 
 ## 11. Journal and Resume Semantics
 
+<a id="GNT-11.0"></a>
+
 Items 1 through 5 define durable commit boundaries for interpreter and hook
 state. Items 6 through 9 define source identity, recovery, and journal
 envelopes. Item 10 defines execution-start state and the configuration fields
 that are immutable or durably revisable across resume.
 
+<a id="GNT-11.1"></a>
+
 1. The durable profile MUST commit a causally closed prefix of the abstract
-   transitions in Section 3. Before source execution or an external observer can
+   transitions in Section 3. Before source execution or an external observer
+   can
    depend on a transition, durable state MUST establish its label, identities,
    continuation, values, linear handle state, session transcripts, remaining
    budgets, and causal predecessor. A transition and its canonical event MAY be
@@ -2759,16 +3863,17 @@ that are immutable or durably revisable across resume.
    resolvable. Recovery MUST reconstruct exactly one causally closed prefix,
    never consume an uncommitted operation result, and never apply one logical
    ownership or mutation transition twice.
+<a id="GNT-11.2"></a>
+
 2. Gantry MUST expose durable-prefix reading, exclusive fenced ownership,
    atomic commit, and owner release. `commit(batch)` atomically assigns a
    contiguous sequence range and stable evidence IDs, stores one or more
    logical evidence envelopes, and establishes durability before returning.
-   A storage adapter MAY implement this as append plus flush, one transaction,
-   a snapshot-plus-log update, or an equivalent primitive. References elsewhere
-   to “append and flush” mean this semantic commit boundary and MAY share one
-   physical batch with causally related evidence. Concurrent commits are
+   A storage adapter MAY implement this as an append log with a durability
+   barrier, one transaction, a snapshot-plus-log update, or an equivalent
+   primitive. Concurrent commits are
    linearizable; the first sequence is one and there are no committed gaps.
-   A durable read MUST identify a journal and return its authoritative flushed
+   A durable read MUST identify a journal and return its authoritative committed
    prefix in strictly increasing sequence order, optionally beginning after a
    caller-supplied sequence number. It MUST also report the greatest sequence
    known durable. Records physically present beyond that durability watermark
@@ -2776,10 +3881,10 @@ that are immutable or durably revisable across resume.
    sequence, a gap within the returned durable prefix, a changed record for an
    already observed sequence, or a record whose envelope identifies another
    journal is a journal failure. These read semantics are required for resume;
-   they do not add another storage mutation primitive. Before appending after
+   they do not add another storage mutation primitive. Before committing after
    recovery, storage MUST discard or otherwise make unreachable every
    physically present record beyond the durability watermark, and the next
-   append MUST receive the watermark plus one. This reconciliation is an
+   committed sequence MUST be the watermark plus one. This reconciliation is an
    internal storage-recovery obligation completed before a new owner receives
    its fencing token; it is not an additional journal-record mutation exposed
    through `JournalStorage`. A store that cannot reconcile its non-durable tail
@@ -2798,17 +3903,17 @@ that are immutable or durably revisable across resume.
    Exactly one interpreter execution owner MAY advance a journal at a time.
    Before execution or resume advances durable state, storage MUST grant
    that owner an opaque fencing token or equivalent monotonically ordered
-   ownership generation. Every append and flush MUST be authorized by the
-   current token, and storage MUST reject an operation from a superseded owner.
-   Concurrent tasks belonging to the current owner MAY append through the
+   ownership generation. Every commit MUST be authorized by the current token,
+   and storage MUST reject an operation from a superseded owner. Concurrent
+   tasks belonging to the current owner MAY commit through the
    storage's linearizable ordering, but starting or resuming a second owner for
    the same journal while the first is active MUST be rejected before hook or
    task dispatch. After an unclean process loss, the embedder and storage MAY
    reclaim ownership only after establishing that the preceding owner can no
-   longer successfully append or flush; granting the new fencing token MUST
+   longer successfully commit; granting the new fencing token MUST
    make that guarantee atomic. Read-only inspection MAY remain concurrent.
    An orderly owner release MUST atomically invalidate that owner's token so
-   every later append or flush using it fails. Gantry MUST release ownership
+   every later commit using it fails. Gantry MUST release ownership
    after an execution reaches terminal durable state and every required and
    best-effort event-delivery obligation created through its terminal event has
    settled durably. Returning a terminal result waits only for the required
@@ -2833,8 +3938,10 @@ that are immutable or durably revisable across resume.
    undurable standard event or claim successful orderly shutdown. A later owner
    can proceed only through the storage fencing and recovery rules above;
    Gantry MUST NOT assume that a failed release invalidated the token.
-3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
-   Its dispatch record MUST preserve the complete versioned semantic request,
+<a id="GNT-11.3"></a>
+
+3. A hook dispatch MUST be committed before the hook is invoked. Its dispatch
+   record MUST preserve the complete versioned semantic request,
    including the operation-specific body, operation and result kinds, captured
    inputs, schema, guidance, source location, canonical transcript,
    validation state, and logical identities. Prompt and decision records MUST
@@ -2860,13 +3967,13 @@ that are immutable or durably revisable across resume.
    attempt with no committed outcome is indeterminate under item 4 even when
    interruption may have happened before the hook began.
    After a hook returns a valid host-level outcome under Section 7, item 11,
-   Gantry MUST append the outcome and flush through that outcome record's
-   sequence number before the interpreter validates, assigns, branches on,
+   Gantry MUST commit the outcome before the interpreter validates, assigns,
+   branches on,
    returns, or otherwise consumes it. An invalid `Declined` reason or `Failed`
    message is a hook-contract violation rather than an operation outcome and
-   follows the bounded hook-failure rule in Section 7, item 11. A successfully
-   flushed outcome is committed. Commitment at this boundary means that the
-   physical hook outcome is durable; it does not mean that
+   follows the bounded hook-failure rule in Section 7, item 11. Commitment at
+   this boundary means that the physical hook outcome is durable; it does not
+   mean that
    `Completed(raw_output)` has passed UTF-8 decoding, JSON parsing, schema
    validation, or normalization.
    On resume, Gantry MUST continue deterministic processing of that committed
@@ -2875,6 +3982,8 @@ that are immutable or durably revisable across resume.
    recovery either reuses the committed outcome or treats the dispatch as
    indeterminate; program state MUST NOT advance using an outcome that is not
    yet durable.
+<a id="GNT-11.4"></a>
+
 4. A prepared dispatch with no committed outcome is indeterminate. On resume,
    `prompt`, `decide`, and `read_only` or `idempotent` actions are redispatched
    with the same operation ID, captured semantic request, validation-attempt
@@ -2884,6 +3993,8 @@ that are immutable or durably revisable across resume.
    redispatched: it becomes `OperationError::UnknownOutcome` under `attempt` or
    fails with `unknown-action-outcome`. This distinction is durable and cannot
    be changed by a later integration mapping.
+<a id="GNT-11.5"></a>
+
 5. A consumable logical result derived from a committed `Completed` outcome
    MUST be committed before source execution may assign, branch on, return, or
    otherwise consume it. The logical evidence identifies the operation,
@@ -2893,6 +4004,8 @@ that are immutable or durably revisable across resume.
    value; `attempt` instead commits its explicit `OperationError` result.
    Committed logical results and committed failed validation attempts are
    reused on resume and never consume a retry budget twice.
+<a id="GNT-11.6"></a>
+
 6. An execution MUST identify a versioned canonical core IR, its source map,
    and the journal schema version. The execution package identity is the
    SHA-256 digest of canonical core IR bytes under the published IR schema.
@@ -2913,6 +4026,8 @@ that are immutable or durably revisable across resume.
    resurrect consumed handles, reset budgets, or map an indeterminate
    non-idempotent action to a redispatchable state. Failure leaves the old
    execution prefix unchanged and is `source-or-configuration-incompatibility`.
+<a id="GNT-11.7"></a>
+
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
    counters, task relationships, and committed values. Each task, including an
    in-flight spawned block, MUST resume from its latest durable instruction
@@ -2928,6 +4043,8 @@ that are immutable or durably revisable across resume.
    result or failure rather than consume the handle again. Task identities and
    lifecycle records MUST therefore be keyed by the same logical task and
    canonical core-occurrence path used by dynamic operation identity.
+<a id="GNT-11.8"></a>
+
 8. A detached task remains part of its originating execution and journal after
    foreground `main` returns. Foreground completion, detachment, detached-task
    completion, and detached-task failure MUST each be durable states. Resuming
@@ -2936,10 +4053,10 @@ that are immutable or durably revisable across resume.
    terminal durable state only after its foreground and every detached task
    have completed, failed, or reached durable cancellation under Section 10.
    Before returning
-   a foreground result, Gantry MUST append and flush an interpreter checkpoint
+   a foreground result, Gantry MUST commit interpreter checkpoint evidence
    that makes the corresponding scopes, instruction positions, task ownership,
    and completed values durable. Once all foreground and detached work has
-   settled, Gantry MUST append and flush exactly one terminal-execution record
+   settled, Gantry MUST commit exactly one terminal-execution evidence envelope
    containing the final category and references to its foreground result,
    detached-task outcomes, cancellation, and primary and secondary failures
    when applicable. That record, not an earlier checkpoint or event,
@@ -2964,6 +4081,8 @@ that are immutable or durably revisable across resume.
    NOT call `main` again or emit another foreground-completion event. The
    embedding API MAY expose the preserved foreground outcome immediately while
    the resumed execution continues toward terminal state.
+<a id="GNT-11.9"></a>
+
 9. The journal protocol MUST publish stable versioned schemas for the logical
    evidence kinds: execution and migration state, session transcript state,
    operation dispatch/outcome/validation/result, abstract interpreter
@@ -2976,13 +4095,15 @@ that are immutable or durably revisable across resume.
    storage MAY combine logical envelopes in an atomic batch or materialized
    snapshot; it MUST reproduce the same authoritative logical prefix to a
    durable reader.
+<a id="GNT-11.10"></a>
+
 10. A new-execution request MUST identify a fresh journal target through an
-    embedder-supplied stable journal ID. Allocation and naming of that target
+   embedder-supplied stable journal ID. Allocation and naming of that target
     are integration concerns outside the `JournalStorage` mutation interface.
     After exclusive ownership is acquired, the target's authoritative durable
     prefix MUST be empty, its durability watermark MUST be zero, and its next
-    append sequence MUST be one. A nonempty target is an initial-
-    journal-ownership start failure; Gantry MUST NOT overwrite it, append a
+    committed sequence MUST be one. A nonempty target is an initial-
+    journal-ownership start failure; Gantry MUST NOT overwrite it, commit a
     second execution start, or reinterpret it as the requested new execution.
     The embedder retains the journal target identity even when startup fails so
     it can inspect an uncertain storage outcome or resume by journal identity
@@ -2990,8 +4111,8 @@ that are immutable or durably revisable across resume.
 
     For each new execution, after entry validation and integration preflight
     succeed but before evaluating `main`, creating a child task, or dispatching
-    a hook, Gantry MUST allocate a fresh execution ID and append and flush
-    exactly one execution-start record as the journal's first record. That
+    a hook, Gantry MUST allocate a fresh execution ID and commit exactly one
+    execution-start evidence envelope as the journal's first logical item. That
     record MUST have sequence number one and MUST contain the package source
     identity, the selected source-language major and minor version, the
     effective-configuration identity and fields defined below, the selected
@@ -3001,10 +4122,10 @@ that are immutable or durably revisable across resume.
     either a no-entry-input marker or the validated and normalized canonical
     entry value with its type descriptor.
     Resume MUST verify and reuse the existing execution-start record, restore
-    its entry value, and MUST NOT append a second execution-start record or
+    its entry value, and MUST NOT commit a second execution-start record or
     accept replacement entry input. An agent- or action-mapping revision
-    changed during resume MUST instead be appended and flushed as an
-    execution-state record before recovered interpretation or dispatch
+    changed during resume MUST instead be committed as execution-state
+    evidence before recovered interpretation or dispatch
     continues.
 
     The effective-configuration identity is the SHA-256 digest of the RFC 8785
@@ -3148,8 +4269,8 @@ that are immutable or durably revisable across resume.
     later compatible execution-state revisions in journal sequence order. A
     resume caller MUST NOT silently replace that baseline through ordinary
     interpreter configuration. A requested compatible change becomes active
-    only after the execution-state record described below is appended and
-    flushed. This separation keeps mutable operational policy recoverable
+    only after the execution-state evidence described below is committed. This
+    separation keeps mutable operational policy recoverable
     without pretending that it is immutable execution identity.
     Resume MUST reject a change to any identity-bound field in the canonical
     configuration object above. The mutable baseline fields in the preceding
@@ -3159,8 +4280,8 @@ that are immutable or durably revisable across resume.
     resume without changing this identity; they affect scheduling or
     integration behavior rather than the meaning of already committed Gantry
     state. Shutdown timing, best-effort sinks, and logical-agent-to-provider
-    mappings and action mappings MAY change only after Gantry appends and flushes the applicable
-    execution-state record before further work. That record MUST contain the
+    mappings and action mappings MAY change only after Gantry commits the
+    applicable execution-state evidence before further work. That evidence MUST contain the
     effective graceful-shutdown and post-cancellation-drain durations when
     shutdown timing changes; a best-effort-sink revision MUST contain the
     complete replacement set in the canonical order and descriptor shape
@@ -3178,10 +4299,14 @@ that are immutable or durably revisable across resume.
     intentional because Gantry promises resumability, not deterministic model
     replay. Source operation modifiers remain bound through the package source
     identity rather than being duplicated into this configuration identity.
-11. These resume guarantees do not create a deterministic-replay guarantee for
-    a new execution.
+<a id="GNT-11.11"></a>
+
+11. These resume guarantees do not create a deterministic-replay guarantee for a
+   new execution.
 
 ## 12. Observability and Validation Modes
+
+<a id="GNT-12.0"></a>
 
 Items 1 through 8 define event creation, protected payloads, delivery, and
 failure behavior. Items 9 through 11 define syntax-only validation, semantic
@@ -3196,6 +4321,8 @@ Only layer 1 affects source evaluation. Layer 2 explains logical causality;
 layer 3 explains at-least-once physical activity; layer 4 may be sampled or
 dropped. Layers 2 through 4 MUST NOT be injected into hook input or alter
 fulfillment, and every event schema MUST identify its layer.
+
+<a id="GNT-12.1"></a>
 
 1. Gantry MUST expose events for parsing and analysis, workflow start and end,
    operation dispatch, completion, and result acceptance, structured output
@@ -3241,14 +4368,14 @@ fulfillment, and every event schema MUST identify its layer.
    result that execution may consume.
    For a resumable execution, causal event creation has the following mandatory
    ordering. After the operation-dispatch record is durable and before invoking
-   the hook, Gantry MUST append and flush the corresponding operation-dispatch
-   event record. After an operation outcome is durable and before decoding,
+   the hook, Gantry MUST commit the corresponding operation-dispatch event
+   evidence. After an operation outcome is durable and before decoding,
    validation, decline handling, or failure propagation consumes that outcome,
-   Gantry MUST append and flush its operation-completion event record. A
-   structured-output-validation-failure event and any retry event MUST be appended and flushed
-   before the next dispatch record. After an operation-result record is durable
-   and before source execution consumes that result, Gantry MUST append and
-   flush the operation-result event record. Delivery MAY remain asynchronous
+   Gantry MUST commit its operation-completion event evidence. A
+   structured-output-validation-failure event and any retry event MUST be
+   committed before the next dispatch record. After an operation-result record
+   is durable and before source execution consumes that result, Gantry MUST
+   commit the operation-result event evidence. Delivery MAY remain asynchronous
    under item 3; these requirements order durable event creation, not sink
    acknowledgement. They ensure that a journal can never expose a consumed
    operation transition without its canonical event occurrence.
@@ -3259,14 +4386,16 @@ fulfillment, and every event schema MUST identify its layer.
    the final operation-specific event; the resulting task failure is observed
    separately and does not manufacture an operation-result event.
    For every other required event kind that represents a durable interpreter
-   transition, Gantry MUST append and flush the event record after its causal
-   journal record is durable and before later source execution, an execution
+   transition, Gantry MUST commit the event evidence after its causal journal
+   evidence is durable and before later source execution, an execution
    waiter, or an event sink observes or depends on that transition. The event
    MUST reference the causal record. This rule applies to workflow, branch,
    spawn, join, detach, mutation, cancellation, task-completion, foreground-
    completion, and terminal-execution events. If recovery finds such a causal
-   transition without its event record, Gantry MUST append and flush exactly
-   one replacement event under item 2 before work depends on the transition.
+   transition without its event record, Gantry MUST commit exactly one
+   replacement event under item 2 before work depends on the transition.
+<a id="GNT-12.2"></a>
+
 2. Each event MUST have a stable event ID and activity ID. An activity is one
    syntax-validation, semantic-analysis, execution/resume, or shutdown
    invocation. An event associated with a program execution MUST also include
@@ -3284,7 +4413,7 @@ fulfillment, and every event schema MUST identify its layer.
    event record is the point at which that protocol-visible occurrence is
    created. Gantry MUST reuse its event ID, original activity ID, and timestamp
    whenever deterministic replay encounters an event already present in the
-   authoritative journal prefix; it MUST NOT append a second event for that
+   authoritative journal prefix; it MUST NOT commit a second event for that
    occurrence. If a causal interpreter transition is durable but interruption
    occurred before its required event record became durable, no event from that
    transition could have been delivered under item 3. Recovery MUST create
@@ -3292,11 +4421,13 @@ fulfillment, and every event schema MUST identify its layer.
    transition. The replacement uses the resume activity ID and its actual
    creation timestamp, identifies the durable causal record, and thereafter has
    the same stable recovery and deduplication behavior as any other event. An
-   unflushed event record is not authoritative and MUST NOT reserve an event ID
+   uncommitted event record is not authoritative and MUST NOT reserve an event ID
    or timestamp across recovery. Events for genuinely new work performed by the
    resume likewise use the resume activity ID. These rules make sink
    deduplication effective without requiring recovery to reproduce metadata that
    was never durable or externally visible.
+<a id="GNT-12.3"></a>
+
 3. Events from a resumable execution MUST be durably journaled before their
    first delivery. Parse and analysis events produced without a resumable
    execution MAY be delivered without a journal. Event delivery MAY use
@@ -3309,7 +4440,7 @@ fulfillment, and every event schema MUST identify its layer.
    no resumable execution. Once the execution-start record is durable, every
    event associated with that execution is subject to the journal-first rule.
    Every required-sink obligation created by new-execution preflight MUST
-   settle successfully before Gantry appends the execution-start record.
+   settle successfully before Gantry commits the execution-start evidence.
    Exhaustion is a structured start failure, and Gantry MUST NOT create the
    resumable execution merely to report it.
 
@@ -3323,12 +4454,14 @@ fulfillment, and every event schema MUST identify its layer.
    events. These rules prevent asynchronous preflight delivery failure from
    changing category after an execution or resume has already begun.
    If journal storage subsequently fails, the authoritative standard event
-   stream ends with its last durably flushed event. Gantry MUST NOT deliver a
+   stream ends with its last committed event. Gantry MUST NOT deliver a
    newly created standard event for that journal failure because doing so
    would violate the journal-first rule. An implementation MAY invoke a
    separately configured, non-durable emergency diagnostic callback, but that
    callback is not an `EventSink`, carries no at-least-once guarantee, and MUST
    be identified as out-of-band reporting rather than a Gantry event.
+<a id="GNT-12.4"></a>
+
 4. Canonical protected event records for completed operations MUST make raw
    integration output available. A sink receives raw output only when it
    explicitly declares that capability and the embedder enables it for that
@@ -3363,8 +4496,10 @@ fulfillment, and every event schema MUST identify its layer.
    but MUST NOT leave a retained durable record with a dangling protected
    reference. This makes reference-based events usable without placing
    sensitive or repeated payloads directly in each event envelope.
-5. Event sinks MUST be configured independently as `required` or
-   `best-effort`, with interpreter defaults overridable per sink. Gantry MUST
+<a id="GNT-12.5"></a>
+
+5. Event sinks MUST be configured independently as `required` or `best-effort`,
+   with interpreter defaults overridable per sink. Gantry MUST
    retry only errors the sink classifies as retriable. A non-retriable error
    exhausts delivery immediately. The retry limit counts known retriable
    failures after the initial delivery; recovery of an indeterminate delivery
@@ -3384,9 +4519,9 @@ fulfillment, and every event schema MUST identify its layer.
 
    For a resumable execution, every physical sink invocation MUST use two
    durable event-delivery state transitions. Before invoking the sink, Gantry
-   MUST append and flush a `dispatched` state containing the sink ID, stable
-   event ID, distinct delivery-attempt ID, and zero-based retry number. After
-   the sink returns, Gantry MUST append and flush a `settled` state containing
+   MUST commit a `dispatched` state containing the sink ID, stable event ID,
+   distinct delivery-attempt ID, and zero-based retry number. After the sink
+   returns, Gantry MUST commit a `settled` state containing
    the same identities, an outcome classification of `success`, `retriable`,
    or `terminal`, and the remaining retry budget. A `retriable` settlement is
    valid only when at least one retry remains and MUST also contain the selected
@@ -3434,9 +4569,11 @@ fulfillment, and every event schema MUST identify its layer.
    policy fields MUST remain exactly those in the execution-start
    configuration identity; adding, removing, or changing a required sink is a
    resume-compatibility error. Best-effort sinks MAY be added, removed, or
-   reconfigured after Gantry appends and flushes an execution-state record
-   describing the new effective set. Such a change affects only later events
+   reconfigured after Gantry commits execution-state evidence describing the
+   new effective set. Such a change affects only later events
    and never alters an already frozen delivery obligation.
+<a id="GNT-12.6"></a>
+
 6. Delivery of a journaled event is durably at least once across process
    interruption and resume. Sinks MUST deduplicate using the stable event ID.
    For a standalone validation or analysis activity without a journal, Gantry
@@ -3459,11 +4596,11 @@ fulfillment, and every event schema MUST identify its layer.
    the durable language outcome. Exhaustion for a best-effort sink MUST be
    journaled when a journal exists, otherwise included in the activity result,
    and the activity MUST continue. Before returning a foreground
-   outcome, Gantry MUST flush required-sink delivery through that execution's
+   outcome, Gantry MUST await required-sink settlements through that execution's
    foreground-completion event; events from detached work remain eligible for
    later delivery through the same execution. Before returning a terminal
    execution result, validation or analysis result, or orderly shutdown
-   report, Gantry MUST flush all required-sink deliveries produced by that
+   report, Gantry MUST await all required-sink deliveries produced by that
    completed activity through its final event. These barriers do not require
    waiting for events that the activity has not yet produced. The terminal
    interpreter shutdown rule in Section 10 additionally requires every finite
@@ -3480,8 +4617,8 @@ fulfillment, and every event schema MUST identify its layer.
    Required-sink exhaustion while an execution is nonterminal is
    execution-wide rather than task-local: Gantry MUST reject new work for that
    execution, signal cancellation to its foreground, attached, and detached
-   tasks, and apply the configured cancellation drain. It MUST then append and
-   flush the execution's terminal-execution record with the
+   tasks, and apply the configured cancellation drain. It MUST then commit the
+   execution's terminal-execution evidence with the
    `required-event-delivery-failure` category, without making that record
    depend on another event. That record MUST identify the exhausted sink,
    failed event, delivery attempt, and cancellation outcome. Failure of the
@@ -3498,7 +4635,7 @@ fulfillment, and every event schema MUST identify its layer.
 
    Exhaustion of any required delivery obligation after the terminal-execution
    record is durable—including an older queued event or the terminal-execution
-   event itself—MUST NOT append a second terminal record or replace the
+   event itself—MUST NOT commit a second terminal record or replace the
    recorded language outcome. Gantry MUST durably settle the failed delivery
    obligation and return a structured required-event-delivery barrier failure
    that includes the existing terminal outcome. A later query still observes
@@ -3509,6 +4646,8 @@ fulfillment, and every event schema MUST identify its layer.
    implementation MUST NOT recursively require that sink to acknowledge its
    own failure. These rules override the general failure-event requirement for
    that exhausted sink and prevent recursive failure-event generation.
+<a id="GNT-12.7"></a>
+
 7. Every event envelope MUST identify its protocol version, event and activity
    IDs, optional execution ID, event kind, source location when source-backed,
    task and operation identities when applicable, causal parent IDs, per-task
@@ -3527,6 +4666,8 @@ fulfillment, and every event schema MUST identify its layer.
    `shutdown`, and `failure`. These kebab-case spellings are exact protocol
    values; headings and prose MAY use spaces for readability. Concrete
    serialization is implementation-defined.
+<a id="GNT-12.8"></a>
+
 8. Event kind payloads MUST expose enough structured information for a harness
    to interpret an execution without parsing diagnostic text. The canonical
    minimum payloads are:
@@ -3579,15 +4720,18 @@ fulfillment, and every event schema MUST identify its layer.
      primary failure reference when one exists;
    - `shutdown`: the shutdown activity identity, configured graceful and drain
      durations, counts of executions and tasks observed at shutdown start,
-     counts completed naturally, cancelled, and aborted, required-state flush
+     counts completed naturally, cancelled, and aborted, required-state commit
      status, and a shutdown-report reference;
    - `failure`: the runtime-error category, structured causal identities, and
      redacted diagnostic details.
    An implementation MAY add optional fields under the minor-version rules,
    but it MUST NOT omit these applicable fields or encode their only usable
    representation in human-readable text.
-9. A dry-run performs syntax validation only and MUST NOT invoke operation hooks.
-   Starting from `main.gnt`, it MUST discover every file module reachable
+<a id="GNT-12.9"></a>
+
+9. A dry-run performs syntax validation only and MUST NOT invoke operation
+   hooks. Starting from `main.gnt`, it MUST discover every file module
+   reachable
    through syntactically valid `mod` declarations and lex and parse every
    selected source file. Missing or ambiguous module files, containment
    violations, invalid UTF-8, lexical errors, and syntax errors are therefore
@@ -3604,10 +4748,14 @@ fulfillment, and every event schema MUST identify its layer.
    direct integration-operation and task-control sites, canonical inferred
    effect sets with contributing action paths, and checked `pure` assertions
    required by Section 6.
+<a id="GNT-12.10"></a>
+
 10. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
-11. Diagnostics MUST be usable by both human authors and automated repair
-    agents without parsing display text. Every syntax or analysis diagnostic
+<a id="GNT-12.11"></a>
+
+11. Diagnostics MUST be usable by both human authors and automated repair agents
+   without parsing display text. Every syntax or analysis diagnostic
     MUST contain a canonical phase, severity, machine-readable category, a
     documented code stable within the protocol major version, a human-readable
     message, and a primary package-relative source span when the problem is
@@ -3632,6 +4780,8 @@ fulfillment, and every event schema MUST identify its layer.
 
 ## 13. Formal Lexical and Syntactic Grammar
 
+<a id="GNT-13.0"></a>
+
 This section defines the normative v1 source grammar. Semantic restrictions in
 the preceding sections still apply when the grammar admits a construct in a
 broader syntactic position. This section also states a small number of
@@ -3643,6 +4793,8 @@ task-handle consumption, modifier validity, interpolation restrictions, and
 the control-boundary constructor rule are semantic-analysis concerns.
 
 ### 13.1 Grammar notation
+
+<a id="GNT-13.1"></a>
 
 The grammar uses extended Backus-Naur form (EBNF):
 
@@ -3676,6 +4828,8 @@ byte-order mark. The `module_source` production applies independently to
 `main.gnt` and every source file selected by a `mod` declaration.
 
 ### 13.2 Lexical grammar
+
+<a id="GNT-13.2"></a>
 
 ```ebnf
 module_source       = { item }, end_of_file ;
@@ -3890,6 +5044,8 @@ split one of those terminals.
 
 ### 13.3 Package declarations and types
 
+<a id="GNT-13.3"></a>
+
 ```ebnf
 item                    = agents_declaration
                         | default_agent_declaration
@@ -3979,6 +5135,8 @@ receiver.
 
 ### 13.4 Workflows and methods
 
+<a id="GNT-13.4"></a>
+
 ```ebnf
 function_declaration    = [ "pure" ], "fn", identifier_token, "(",
                           [ parameter_list ], ")",
@@ -4014,6 +5172,8 @@ The root module's function named `main` is additionally restricted by Section
 semantic constraint rather than a separate function grammar.
 
 ### 13.5 Blocks and statements
+
+<a id="GNT-13.5"></a>
 
 ```ebnf
 block                   = "{", { statement }, [ trailing_expression ], "}" ;
@@ -4081,6 +5241,8 @@ Assignment to `self` as a whole is not v1 syntax; a
 receiver value.
 
 ### 13.6 Expressions
+
+<a id="GNT-13.6"></a>
 
 ```ebnf
 expression              = logical_or_expression ;
@@ -4294,6 +5456,8 @@ of a path followed by `{` at a control-flow boundary.
 
 ### 13.7 Prompts and interpolation
 
+<a id="GNT-13.7"></a>
+
 ```ebnf
 prompt_expression       = "prompt", [ prompt_modifiers ], prompt_template,
                           [ using_clause ], [ result_annotation ] ;
@@ -4427,6 +5591,8 @@ errors. `retry_limit` counts retries after the initial attempt.
 
 ### 13.8 Decisions and sequential control flow
 
+<a id="GNT-13.8"></a>
+
 ```ebnf
 if_statement            = "if", conditional_head, statement_block,
                           { "else", "if", conditional_head, statement_block },
@@ -4460,6 +5626,8 @@ their selected body. The `until` grammar deliberately places its body before
 its post-test.
 
 ### 13.9 Parallel control flow
+
+<a id="GNT-13.9"></a>
 
 ```ebnf
 spawn_statement         = "spawn", identifier_token, result_annotation, block ;
@@ -5437,6 +6605,8 @@ semantic requirements in Sections 5, 6, 9, 10, and 13 determine rejection.
 
 ## 15. Required Embedding Interfaces
 
+<a id="GNT-15.0"></a>
+
 *This section is normative.*
 
 This section collects the host capabilities implied by the runtime contract:
@@ -5450,6 +6620,8 @@ embedding API MUST expose the following semantic interfaces without requiring
 provider-specific or executor-specific types in Gantry programs:
 
 ### 15.1 Interpreter lifecycle
+
+<a id="GNT-15.1"></a>
 
 An `Interpreter` accepts a package root, an explicitly selected supported
    source-language version, interpreter configuration (which includes the
@@ -5508,7 +6680,7 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    result creates a hook or dispatches an operation. Starting a new execution
    MUST return either a
    structured start failure with no execution ID, or an execution ID after the
-   execution-start record is durably flushed. Syntax, analysis, entry-input,
+   execution-start evidence is committed. Syntax, analysis, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
    and required-event-delivery failures during pre-execution validation or
    analysis are start failures. Returning the execution ID establishes an
@@ -5557,6 +6729,8 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    are exactly `success` and `detached-task-failure`; all other durable failure
    outcomes use the applicable exact runtime-error category from Section 7.
 ### 15.2 Hooks and session integration
+
+<a id="GNT-15.2"></a>
 
 A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    task context. The factory, or a companion harness-preflight interface owned
@@ -5630,12 +6804,16 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    structured-output retry path.
 ### 15.3 Cancellation
 
+<a id="GNT-15.3"></a>
+
 A cancellation token is cloneable, safe to observe from multiple threads,
    and transitions monotonically from active to cancelled. Cancellation does
    not itself constitute a hook outcome; an integration that stops work after
    observing cancellation returns `Failed` or lets Gantry surface cancellation
    according to the runtime state.
 ### 15.4 Executor services
+
+<a id="GNT-15.4"></a>
 
 An executor adapter provides asynchronous task spawn, join, abort, sleep,
    and explicit scheduler-yield capabilities. It MUST also provide a
@@ -5659,27 +6837,32 @@ An executor adapter provides asynchronous task spawn, join, abort, sleep,
    regenerated during recovery.
 ### 15.5 Journal storage
 
+<a id="GNT-15.5"></a>
+
 Journal storage asynchronously provides durable-prefix reads, exclusive
    owner acquisition and release with fencing, and atomic `commit(batch)` with
-   the behavior in Section 11. An adapter MAY expose append and flush as its
-   implementation of commit, or use transactions and snapshots. Every mutation call MUST be
-   associated with the current opaque ownership token so a superseded process
-   cannot advance the journal. The `record` accepted by `append` is an
-   unfinalized versioned body without a record ID or sequence number. Append
-   atomically assigns both fields, stores the finalized immutable envelope, and
-   returns an append receipt containing the assigned stable record ID and the
-   assigned contiguous sequence number from the per-journal linearizable
-   ordering. A read returns those finalized immutable versioned records in
-   sequence order together with the durable-through sequence and supports
+   the behavior in Section 11. An adapter MAY implement commit with an append
+   log and durability barrier, transactions, snapshots, group commit, or an
+   equivalent primitive; the physical mechanism is not part of the embedding
+   contract. Every commit MUST be associated with the current opaque ownership
+   token so a superseded process cannot advance the journal. A batch contains
+   one or more unfinalized versioned logical evidence bodies without evidence
+   IDs or sequence numbers. Commit atomically assigns those fields, stores the
+   finalized immutable envelopes, and returns a receipt containing the assigned
+   stable evidence IDs and contiguous sequence range from the per-journal
+   linearizable ordering. A read returns those finalized immutable envelopes
+   in sequence order together with the committed-through sequence and supports
    continuation after a supplied sequence. Owner release invalidates the
-   supplied fencing token atomically and MUST NOT append, update, or delete a
-   journal record.
+   supplied fencing token atomically and MUST NOT commit, update, or delete
+   logical evidence.
    Storage errors and malformed or noncontiguous durable histories are never
    retried as model-output failures and MUST surface as journal failures.
    Sections 11 and 15.1 classify them as start or resume-start failures before
    interpretation begins and as journal runtime errors afterward.
 
 ### 15.6 Event delivery
+
+<a id="GNT-15.6"></a>
 
 Each event sink declares a stable identity, its required/best-effort class,
    raw-output capability, enabled redaction policy, and retry policy. The v1
@@ -5719,6 +6902,8 @@ Each event sink declares a stable identity, its required/best-effort class,
    be ignored after a bounded, nonblocking invocation attempt.
 ### 15.7 Configuration
 
+<a id="GNT-15.7"></a>
+
 Interpreter configuration MUST include the default model-output
    retry limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
@@ -5746,6 +6931,8 @@ Interpreter configuration MUST include the default model-output
    Section 3.
 ### 15.8 Protocol versioning
 
+<a id="GNT-15.8"></a>
+
 All public protocol envelopes MUST carry a major and minor version. A major
    mismatch is incompatible and MUST be rejected. Every protocol definition
    MUST identify which fields are required and which are optional. An
@@ -5766,6 +6953,8 @@ consumption. A profile claim maps every applicable requirement ID to at least
 one corpus test and publishes the results.
 ### 15.9 Thread safety
 
+<a id="GNT-15.9"></a>
+
 Integration-provided hook factories, executor adapters, journal stores, and
    event sinks MUST be `Send + Sync` and safe for Gantry to access from its
    multithreaded tasks. An individual `OperationHook` MUST be `Send` but need
@@ -5774,6 +6963,8 @@ Integration-provided hook factories, executor adapters, journal stores, and
    lifetime of their borrows. Gantry MUST package all borrowed state into owned
    task state before submitting a `Send + 'static` future to the executor.
 ### 15.10 Protected data
+
+<a id="GNT-15.10"></a>
 
 Source, entry input, interpolation arguments, named inputs, action
     arguments, rendered prompts, session identifiers, raw hook output,
