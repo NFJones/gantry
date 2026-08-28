@@ -2637,8 +2637,11 @@ defined here and in Section 7 cross the integration boundary.
     of external operations visible even when calls or constructors are nested.
 <a id="GNT-6.12"></a>
 
-12. An action declaration is a package item with a canonical path, one mandatory
-   recovery class, typed positional parameters, an optional result
+12. An action declaration introduces one named item in its containing module.
+   Its canonical path is the containing module's canonical path followed by
+   the declared identifier; a declaration therefore uses an identifier, while
+   an invocation may use a qualified path to reach that item. An action has one
+   mandatory recovery class, typed positional parameters, an optional result
     type, and no Gantry body. The recovery class is exactly `read_only`,
     `idempotent`, or `non_idempotent`. An
     action invocation MUST use the `action` keyword and MUST resolve to one
@@ -5595,8 +5598,7 @@ tuple_expression        = "(", expression, ",", expression,
 
 action_expression       = "action", [ action_modifiers ], qualified_path,
                           "(", [ argument_list ], ")" ;
-action_modifiers        = "(", "retry_limit", "=",
-                          directive_integer_token, ")" ;
+action_modifiers        = "(", retry_modifier, ")" ;
 
 match_expression        = "match", expression, "{",
                           match_arm, { ",", match_arm }, [ "," ], "}" ;
@@ -5700,7 +5702,8 @@ analysis error.
 A value-producing `with` or `session` expression requires its block's trailing
 expression and yields that value. These forms permit a lexical agent or session
 context to produce the enclosing workflow's result. Their statement-only forms
-in Section 13.5 return `Unit` and take no semicolon after the closing brace. A
+in Section 13.5 execute their blocks for effects, produce no expression value,
+and take no semicolon after the closing brace. A
 non-`Unit` context value is ignored only through `discard with ...` or
 `discard session(...) ...`; a bare trailing semicolon is valid only when the
 context expression has type `Unit`.
@@ -5754,7 +5757,8 @@ prompt_expression       = "prompt", [ prompt_modifiers ], prompt_template,
 prompt_modifiers        = "(", prompt_modifier,
                           { ",", prompt_modifier }, [ "," ], ")" ;
 prompt_modifier         = "session", "=", session_directive
-                        | "retry_limit", "=", directive_integer_token ;
+                        | retry_modifier ;
+retry_modifier          = "retry_limit", "=", directive_integer_token ;
 session_directive       = "inline" | "fork" | "new" ;
 prompt_template         = string_token | raw_string_token
                         | block_prompt_token ;
