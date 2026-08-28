@@ -167,8 +167,8 @@ The core authoring model is deliberately small:
    compute.
 3. Use `prompt` for model-generated values, `decide` for model judgment, and
    `action` for harness capabilities.
-4. Use `spawn` only when work should overlap, then visibly `join` or `detach`
-   every task.
+4. Use `spawn` only when work should overlap, then visibly consume every task
+   with `join`, `joinall()`, or `detach`.
 
 The source surface is organized around these families:
 
@@ -1136,7 +1136,7 @@ shown here.
    expose this transitive effect to authors without representing the call
    itself as an integration operation.
    Each `decide` executed through a decision-workflow call is its own logical
-   decision operation; the call expression and each intermediate decision-
+   decide operation; the call expression and each intermediate decision-
    workflow frame are not additional operations. Its source location and
    static operation site are those of the executed `decide`, while its dynamic
    identity also records the complete workflow-call path that reached it. A
@@ -1548,19 +1548,19 @@ shown here.
      index, phase (`condition` or `body`), and the most recently settled
      condition's associated index, decision, and nonempty rationale when one
      exists;
-   - `decision-value`: originating decision operation ID, source location,
+   - `decision-value`: originating `decide` operation ID, source location,
      controlling Boolean, and nonempty rationale for a sealed `Decision`
      reachable from a captured operation input; and
    - `optional-decline`: declined operation ID, operation kind, selected agent
      or canonical action path as applicable, source location, and decline
      reason when a decline normalized to `None`.
    Decision rationales and decline reasons are protected model or integration
-   content. They MUST be present in prompt and decision request contexts where
-   listed above, but MUST be absent from action request contexts. Action
-   contexts retain the corresponding operation IDs, source locations,
-   controlling outcomes, and other structural fields. An action receives
-   protected text only when the program passes that text explicitly through a
-   declared typed action argument.
+   content. They MUST be present in request contexts for `prompt` and `decide`
+   operations where listed above, but MUST be absent from action request
+   contexts. Action contexts retain the corresponding operation IDs, source
+   locations, controlling outcomes, and other structural fields. An action
+   receives protected text only when the program passes that text explicitly
+   through a declared typed action argument.
    The root `crate::main` frame has no source call site and MUST encode that
    field as absent rather than inventing a location. It has frame occurrence
    zero and is always the first structural context entry. Every non-root
@@ -1587,9 +1587,9 @@ shown here.
    identity and location when the kind requires them. The structured vector
    MUST remain intact at the Gantry hook boundary: an integration MUST NOT
    discard or reorder entries before presenting them to the operation
-   fulfiller. For a prompt or decision, the fulfiller is the selected agent;
-   for an action, it is the integration-side action handler. A harness MAY
-   render prompt or decision entries into provider messages or prompt text
+   fulfiller. For a prompt or decide operation, the fulfiller is the selected
+   agent; for an action, it is the integration-side action handler. A harness
+   MAY render prompt or decide entries into provider messages or prompt text
    when its model API has no structured-context channel, but that rendering MUST
    preserve vector order, visibly distinguish entry boundaries and kinds, and
    make every required field available to the selected agent. An action
@@ -1632,12 +1632,12 @@ shown here.
    struct or aggregate containment, capture, and other deep copies. An
    operation request MUST include one `decision-value` entry for every distinct
    sealed-Decision provenance and one `optional-decline` entry for every
-   distinct decline provenance reachable from its captured inputs. Prompt and
-   decision requests traverse interpolation arguments followed by named inputs;
-   action requests traverse action arguments. Within each vector, entries are
-   ordered by source order and then depth-first value traversal; repeated
-   references to the same provenance produce one entry. Depth-first value
-   traversal is preorder: a `Decision` visits its provenance before its visible
+   distinct decline provenance reachable from its captured inputs. `prompt`
+   and `decide` requests traverse interpolation arguments followed by named
+   inputs; action requests traverse action arguments. Within each vector,
+   entries are ordered by source order and then depth-first value traversal;
+   repeated references to the same provenance produce one entry. Depth-first
+   value traversal is preorder: a `Decision` visits its provenance before its visible
    fields; a struct visits fields in declaration order; an enum, result, or
    present option visits its payload; and a list or tuple visits members in
    ascending index order. A `None` or unit enum variant has no child value.
@@ -1720,7 +1720,7 @@ shown here.
    likewise fails the current Gantry task and is not a structured-output
    validation failure. Item 18 defines how task failure propagates through
    foreground, attached, and detached work.
-12. Gantry MUST assign a logical session ID to each `prompt` and `decision`
+12. Gantry MUST assign a logical session ID to each `prompt` and `decide`
    operation. Action operations have no conversational session. Model-operation
    session IDs MUST remain stable across validation retries and resume. An
    integration MUST
@@ -2175,7 +2175,7 @@ shown here.
    the selected agent, logical session, authored template, interpolated
    operation-specific request body, expected type and schema, base guidance,
    source location, and ordered execution context from the initial dispatch.
-   For a prompt or decision this includes the logical agent, session,
+   For a prompt or decide operation this includes the logical agent, session,
    template, interpolation arguments, and named inputs; for an action it
    includes its canonical path, signature, and typed arguments. Gantry MUST
    NOT reevaluate any captured input expression or observe intervening source
@@ -2270,7 +2270,7 @@ shown here.
 3. Each `else if` or `else if let` evaluates its own condition or scrutinee.
    An `else if let` scrutinee is evaluated exactly once when control reaches
    that arm, and its pattern bindings exist only in that selected arm. A newly
-   evaluated `decide` expression performs a separate decision operation; a
+   evaluated `decide` expression performs a separate decide operation; a
    reused `Decision`, `Bool` expression, or structural pattern test performs
    no new dispatch. A later model-operation hook
    request MUST include the outcomes of preceding arms in the same conditional
@@ -2310,8 +2310,8 @@ shown here.
    `until`, a body and its following condition share it. A final false `while`
    condition therefore has a child session with no body execution. `new`
    creates one fresh session on loop entry and uses it for every condition and
-   body execution. A session modifier on the decision's final `decide`
-   overrides the loop session only for that decision operation. Validation
+   body execution. A session modifier on the condition's final `decide`
+   overrides the loop session only for that decide operation. Validation
    retries always retain the logical session of the operation being retried.
 7. Gantry MUST support `break`, `continue`, and `return` in loops. Unlabeled
    `break` and `continue` target the nearest enclosing loop. Labeled loop
@@ -2396,7 +2396,7 @@ shown here.
     multiple ordinary prompts, nested decisions, and other executable blocks.
     `return` MAY exit it early with any `Decision` expression. Each completed
     evaluation MUST ultimately obtain its value from a previously evaluated or
-    newly dispatched decision operation; source cannot construct one.
+    newly dispatched decide operation; source cannot construct one.
     Decision workflows are free module items in v1; decision methods remain
     excluded. Their results may be bound, passed, returned by ordinary
     workflows, stored in aggregates, interpolated as strict JSON, or consumed
@@ -3515,8 +3515,8 @@ shown here.
    - `operation dispatch`: operation and dispatch IDs, dispatch state
      (`prepared` in v1), operation and result kinds, validation-attempt number,
      recovery-dispatch number, and schema and operation-body references. A
-     prompt or decision additionally identifies its selected agent, active
-     agent-mapping revision, logical session, request session directive,
+     prompt or decide operation additionally identifies its selected agent,
+     active agent-mapping revision, logical session, request session directive,
      active-session creation directive and parent session when applicable, and
      prompt reference. An action instead identifies its canonical path and
      signature and active action-mapping revision;
@@ -3535,7 +3535,7 @@ shown here.
      selected delay;
    - `branch decision`: conditional, match, or loop identity; condition kind
      (`decision`, `bool`, or `pattern`); outcome; and selected arm or loop
-     transition, plus the decision operation and protected rationale references
+     transition, plus the decide operation and protected rationale references
      when the condition used `Decision`;
    - `spawn`: parent and child task IDs, spawn occurrence, declared result
      type, and attachment state;
@@ -3552,11 +3552,11 @@ shown here.
      exists;
    - `terminal execution`: the execution identity, completion category,
      terminal-execution record reference, and typed foreground result or
-     primary failure reference when one exists; and
+     primary failure reference when one exists;
    - `shutdown`: the shutdown activity identity, configured graceful and drain
      durations, counts of executions and tasks observed at shutdown start,
      counts completed naturally, cancelled, and aborted, required-state flush
-     status, and a shutdown-report reference; and
+     status, and a shutdown-report reference;
    - `failure`: the runtime-error category, structured causal identities, and
      redacted diagnostic details.
    An implementation MAY add optional fields under the minor-version rules,
@@ -3619,7 +3619,7 @@ The grammar uses extended Backus-Naur form (EBNF):
 - `A | B` selects one alternative;
 - `[ A ]` makes `A` optional;
 - `{ A }` repeats `A` zero or more times;
-- `( A )` groups terms; and
+- `( A )` groups terms;
 - productions ending in `_token` describe lexical token classes; where a
   production is explicitly contextual, the parser MAY reclassify a token with
   the same boundaries after ordinary lexing; and
@@ -5587,7 +5587,7 @@ provider-specific or executor-specific types in Gantry programs:
    reporting when journal-first standard events cannot be created, including
    journal failure and unclean interpreter drop. Failure of this callback MUST
    be ignored after a bounded, nonblocking invocation attempt.
-7. Interpreter configuration MUST include the default prompt/decision-output
+7. Interpreter configuration MUST include the default model-output
    retry limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
    executor adapter, graceful-shutdown timeout, post-cancellation drain
