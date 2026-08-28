@@ -562,13 +562,15 @@ shown here.
    own capabilities.
 7. Model selection, tool access, approvals, authentication, persistence
    backend selection, logging backend selection, operation-level timeouts,
-   provider-specific cancellation mechanics, and resource limits belong to
-   the integration. Gantry owns the language-level execution, task-ownership,
-   and cancellation state transitions defined in Sections 10 and 15 and MUST
-   provide Gantry-owned cancellation tokens to integrations. The integration
-   chooses applicable policy values and makes a best effort to stop provider
-   work when those tokens are signalled. Gantry MUST provide the asynchronous
-   task scheduling needed to execute parallel Gantry blocks.
+   and provider-specific cancellation mechanics belong to the integration.
+   The integration also chooses the configurable resource-limit values that
+   Section 15 requires, while Gantry MUST enforce those values at the language
+   and protocol boundaries defined in this specification. Gantry owns the
+   language-level execution, task-ownership, and cancellation state
+   transitions defined in Sections 10 and 15 and MUST provide Gantry-owned
+   cancellation tokens to integrations. The integration makes a best effort
+   to stop provider work when those tokens are signalled. Gantry MUST provide
+   the asynchronous task scheduling needed to execute parallel Gantry blocks.
    Interpreter-only work MUST remain cooperatively cancellable even when it
    executes no hook or spawned task. Gantry MUST observe cancellation before a
    hook dispatch, child-task submission, workflow or decision frame entry, and
@@ -1037,10 +1039,10 @@ shown here.
       exactly the RFC 8259 JSON number grammar, including integer-looking
       spellings such as `1`. It returns the normalized finite binary64 value
       only when the parsed exact mathematical value lies within the inclusive
-      decimal bounds defined for `Float` in Section 8.6 and rounds to a finite
-      binary64 value; it otherwise returns `None`, including when parsing,
-      range checking, or normalization fails. These parsers do not trim and
-      never fail the task for invalid input.
+      decimal bounds defined for `Float` in Section 8, item 6, and rounds to a
+      finite binary64 value; it otherwise returns `None`, including when
+      parsing, range checking, or normalization fails. These parsers do not
+      trim and never fail the task for invalid input.
     `List<String>.join(separator) -> String` joins items in list order with the
     exact separator only between adjacent items. It returns the empty String
     for an empty list and the sole item unchanged for a one-item list. `join`
@@ -1166,8 +1168,8 @@ shown here.
    structured analysis result MUST contain:
    - every direct workflow-call edge, identified by call-site location and
      canonical callee path;
-   - the direct `prompt`, `decide`, `action`, `spawn`, and `detach` sites in that
-     workflow, identified by kind and source location; and
+   - the direct `prompt`, `decide`, `action`, `spawn`, `join`, `joinall()`, and
+     `detach` sites in that workflow, identified by kind and source location;
    - five transitive flags indicating whether execution of the workflow may
      reach a `prompt`, `decide`, `action`, `spawn`, or `detach`, respectively.
    The transitive flags MUST be the least fixed point of the package call
@@ -2860,10 +2862,11 @@ shown here.
    identify its state-transition subtype, including execution start, agent-
    mapping revision, action-mapping revision, best-effort-sink configuration
    change, or shutdown-policy revision when applicable.
-   A terminal-execution record MUST use one of the terminal categories defined
-   in Sections 7, 10, and 15 and MUST be the final record that changes language
-   execution state. Later event-delivery records and ownership release do not
-   alter that state. Concrete serialization and Rust types are implementation-
+   A terminal-execution record MUST use the category and precedence rules in
+   Section 10, including the runtime-error categories defined in Section 7,
+   and MUST be the final record that changes language execution state. Later
+   event-delivery records and ownership release do not alter that state.
+   Concrete serialization and Rust types are implementation-
    defined, but all required information and durability boundaries are
    normative. Before append, Gantry constructs an unfinalized record body that
    omits the record ID and sequence number. The storage append operation MUST
@@ -5268,10 +5271,12 @@ provider-specific or executor-specific types in Gantry programs:
    nonnegative durations; zero requests immediate cancellation or immediate
    return after cancellation, respectively.
 8. All public protocol envelopes MUST carry a major and minor version. A major
-   mismatch is incompatible and MUST be rejected. An implementation MAY accept
-   a newer minor version only when it ignores unknown optional fields without
-   changing the meaning of known fields; unknown required fields or enum
-   variants MUST be rejected.
+   mismatch is incompatible and MUST be rejected. Every protocol definition
+   MUST identify which fields are required and which are optional. An
+   implementation MAY accept a newer minor version only when every unknown
+   field is marked optional by that version's protocol definition and ignoring
+   it does not change the meaning of known fields. Unknown required fields and
+   unknown enum variants MUST be rejected.
 9. Integration-provided hook factories, executor adapters, journal stores, and
    event sinks MUST be `Send + Sync` and safe for Gantry to access from its
    multithreaded tasks. An individual `OperationHook` MUST be `Send` but need
