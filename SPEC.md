@@ -3,6 +3,7 @@
 - [Gantry Specification](#gantry-specification)
   - [1. Status and Scope](#1-status-and-scope)
     - [1.1 Language at a glance](#11-language-at-a-glance)
+    - [1.2 Reading the surface syntax](#12-reading-the-surface-syntax)
   - [2. Normative Language](#2-normative-language)
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
   - [4. Source Organization](#4-source-organization)
@@ -119,6 +120,30 @@ fn main(topic: String) -> Report {
 Section 14 provides focused examples of each language construct. Sections 3
 through 13 define the normative behavior behind this surface syntax.
 
+### 1.2 Reading the surface syntax
+
+The following non-normative reading rules summarize the distinctions that are
+most important when humans or models author Gantry source:
+
+- `prompt` visibly performs model-backed work and optionally returns the type
+  written after `->`. An omitted annotation or `-> None` means that the
+  operation returns no source value.
+- `decide` visibly performs the model-backed work that controls `if`, `while`,
+  and `until`. Its Boolean decision and rationale are interpreter-only and do
+  not introduce a source-level Boolean value.
+- `${...}` computes deterministic prompt input. It can read and construct
+  values, but cannot hide another model call, mutation, join, or control-flow
+  transfer.
+- `with <agent> { ... }` selects an agent lexically, while
+  `session(<directive>) { ... }` selects conversational continuity. Neither
+  construct hides the `prompt` and `decide` sites inside it.
+- `spawn` makes concurrency explicit. Every spawned handle must be consumed
+  visibly by `join`, `joinall`, or `detach` on every normal path that leaves
+  its scope.
+- Ordinary calls, assignments, construction, projection, and joins are
+  deterministic interpreter work. If source does not contain `prompt` or
+  `decide` at a dynamic call path, that path dispatches no model operation.
+
 ## 2. Normative Language
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
@@ -160,7 +185,10 @@ document are to be interpreted as described in RFC 2119.
    required recovery behavior.
 9. Gantry does not promise deterministic replay. Re-execution of the same
    source and inputs MAY produce different agent results. Resumption MUST,
-   however, reuse operation results already committed to the journal.
+   however, reuse every committed physical hook outcome and MUST reuse every
+   validated operation result already derived from committed journal state.
+   A committed raw `Completed` outcome that has not yet passed validation is
+   durable input to resumed validation, not yet a successful operation result.
 10. The initial public protocol version for hook requests, journal envelopes,
     event envelopes, and the configuration identity is major `1`, minor `0`.
     A document reference to “v1” identifies source-language version 1 and does
@@ -640,7 +668,12 @@ document are to be interpreted as described in RFC 2119.
    Entries MUST be ordered from outermost to innermost scope, with repeated
    entries in execution order within one scope. An `else if` request MUST
    include the `conditional-arm` entries from preceding arms in the same
-   chain. A `None` produced by `Declined` MUST carry interpreter-only decline
+   chain. While a selected conditional arm executes, its active control-chain
+   context MUST include every preceding false arm followed by the controlling
+   true arm, each with its decision and rationale. An `else` arm MUST include
+   every preceding false arm. These entries leave the active context when the
+   conditional chain completes; they are not unbounded execution history. A
+   `None` produced by `Declined` MUST carry interpreter-only decline
    provenance distinct from a `None` produced by `Completed(null)` or source.
    That provenance MUST survive assignment, argument and return passing,
    struct or aggregate containment, capture, and other deep copies. An
@@ -1118,7 +1151,7 @@ document are to be interpreted as described in RFC 2119.
    `join(task_a, task_b, ...)` waits for every named child and yields an ordered
    `List<T>` of their successful block values in argument order when every
    joined task has the same non-`None` result type. When the named tasks have
-   different non-`None` result types, it yields
+   non-`None` result types that are not all exactly equal, it yields
    `Tuple<T1, T2, ..., Tn>`, whose positional types and values follow argument
    order. Joining a no-result task in this form is an analysis error. A multi-
    task join waits until every named task settles even after a failure. Before
@@ -1128,6 +1161,9 @@ document are to be interpreted as described in RFC 2119.
    consumed. This transition includes handles for successful tasks in a join
    where another task fails. After settlement, Gantry MUST append and flush the
    ordered result or aggregate failure before returning it to source execution.
+   Consuming a handle for a join changes its source-level ownership state but
+   does not detach the child: until it settles, the child remains an attached
+   descendant for cancellation and cleanup under items 10 and 14.
    Failures abort the current Gantry task as one aggregate task/join error
    ordered by join argument, never by completion time. A failed single-task
    join likewise consumes its handle durably and fails the current Gantry task
@@ -1142,9 +1178,10 @@ document are to be interpreted as described in RFC 2119.
    included tasks have settled, and yields an ordered `List<T>` in task
    declaration order when every joined task has the
    same non-`None` result type. When every joined task has a non-`None` result
-   but their types differ, it yields a positional tuple in task declaration
-   order. Otherwise it is a waiting statement that discards successful
-   outputs. With zero included tasks, `joinall` is a no-result no-op. It MUST
+   but those types are not all exactly equal, it yields a positional tuple in
+   task declaration order. Otherwise it is a waiting statement that discards
+   successful outputs. With zero included tasks, `joinall` is a no-result
+   no-op. It MUST
    NOT stop waiting merely because one task fails.
    After all tasks settle, one or more failures MUST fail the current Gantry
    task with one aggregate task/join error. That error MUST report failed tasks
@@ -1332,9 +1369,15 @@ document are to be interpreted as described in RFC 2119.
    After a hook returns, Gantry MUST append the outcome and flush through that
    outcome record's sequence number before the interpreter validates, assigns,
    branches on, returns, or otherwise consumes it. A successfully flushed
-   outcome is committed. This ordering ensures recovery either reuses the
-   committed outcome or treats the dispatch as indeterminate; program state
-   MUST NOT advance using an outcome that is not yet durable.
+   outcome is committed. Commitment at this boundary means that the physical
+   hook outcome is durable; it does not mean that `Completed(raw_output)` has
+   passed UTF-8 decoding, JSON parsing, schema validation, or normalization.
+   On resume, Gantry MUST continue deterministic processing of that committed
+   outcome and MUST NOT redispatch it solely because validation or
+   normalization had not completed before interruption. This ordering ensures
+   recovery either reuses the committed outcome or treats the dispatch as
+   indeterminate; program state MUST NOT advance using an outcome that is not
+   yet durable.
 4. If execution is interrupted after dispatch but before an outcome is
    committed, the operation is indeterminate. On resume, Gantry MUST
    automatically invoke that operation again with the same operation ID and a
@@ -1342,9 +1385,12 @@ document are to be interpreted as described in RFC 2119.
    attempt number and remaining structured-output retry budget MUST NOT change
    merely because of recovery redispatch. Integrations MUST therefore assume
    at-least-once invocation and possible duplicate external side effects.
-5. Committed results MUST be reused during resume and MUST NOT consume the
-   remaining validation-retry budget again. Invalid attempts and retry counts
-   MUST also be journaled. Gantry MUST append and flush a validation-attempt
+5. A validated result derived from a committed outcome MUST be reused during
+   resume and MUST NOT consume the remaining validation-retry budget again.
+   A committed but invalid `Completed` outcome MUST likewise be reused as the
+   cause of its validation failure; Gantry MUST NOT invoke the hook again for
+   that same validation attempt. Invalid attempts and retry counts MUST also
+   be journaled. Gantry MUST append and flush a validation-attempt
    record before dispatching its repair retry, so recovery preserves both the
    preceding errors and the exact remaining budget.
 6. Journals MUST identify the exact package source and journal format version.
@@ -2105,11 +2151,17 @@ present; empty `prompt()`, `decide()`, `if()`, `else if()`, `loop()`,
 `while()`, and `until()` modifiers are not v1 syntax. Bare `loop` uses
 `session = inline` and `limit = 0`. Duplicate modifiers are analysis errors.
 
-A condition-level `session` on `if`, `else if`, `while`, or `until` takes effect
-before evaluation of the decision expression. It therefore establishes the
-inherited session for prompt operations used to compute decision-call
-arguments as well as for the complete decision-workflow evaluation. A
-condition-level `retry_limit` applies only to the ultimate decision operation;
+A condition-level `session` on `if` or `else if` takes effect before evaluation
+of the decision expression. It therefore establishes the inherited session for
+prompt operations used to compute decision-call arguments as well as for the
+complete decision-workflow evaluation. That session context ends when the
+decision expression completes and does not automatically extend into the
+selected arm. Authors who want a decision and its arm operations to share one
+explicit session should wrap the complete conditional in
+`session(<directive>) { ... }`. On `while` and `until`, the same modifier
+position instead declares the loop session whose condition/body lifetime is
+defined normatively in Section 9; it is not condition-only. A condition-level
+`retry_limit` applies only to the ultimate decision operation;
 prompts used in arguments or inside a decision workflow use their own modifier
 or the interpreter default. A modifier written directly on a `decide`
 expression is more local and overrides the corresponding inherited value.
@@ -2503,7 +2555,8 @@ fn parallel_research(topic: String) -> List<Report> {
 The returned list follows join argument order, not task completion order. Each
 spawned task begins in its own forked child session, so its default `inline`
 prompt preserves inherited context without sharing one mutable conversation
-with its sibling.
+with its sibling. The result can be projected deterministically when a known
+position is needed, for example `let primary_report: Report = reports[0];`.
 
 ### 14.9 Parallel heterogeneous work and `Tuple<...>` joins
 
@@ -2524,8 +2577,9 @@ fn research_pair(topic: String) -> Tuple<String, Report> {
 
 Tuple positions follow the explicit join argument order. v1 code can pass or
 return `pair`, project `pair[0]` or `pair[1]`, but cannot destructure it. For
-example, `let headline_text: String = pair[0];` is a deterministic projection
-and does not invoke an agent hook.
+example, `let headline_text: String = pair[0];` and
+`let full_report: Report = pair[1];` are deterministic projections and do not
+invoke an agent hook.
 
 ### 14.10 `joinall`, no-result tasks, and detachment
 
