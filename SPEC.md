@@ -189,6 +189,16 @@ most important when humans or models author Gantry source:
   `prompt`, `decide`, or `action` at a dynamic call path, that path dispatches
   no integration operation.
 
+The following non-normative table summarizes the visible execution boundary.
+It is a reading aid; Sections 6 through 8 define the normative contracts:
+
+| Source form | Work requested | Source result | Agent/session applies | Default output retries |
+| --- | --- | --- | --- | --- |
+| `prompt "..." -> T` | Model-backed generation | Declared `T`, or no result when omitted | Yes | 2 |
+| `decide "..."` | Model-backed judgment | Sealed `Decision` | Yes | 2 |
+| `action path(...)` | Declared harness capability | Declared type, or no result | No | 0 |
+| `workflow(...)` | Interpreter-managed workflow call | Workflow's declared result | Only to explicit operations reached in the body | Not applicable |
+
 ### 1.3 V1 design boundary
 
 The following non-normative summary makes deliberate v1 omissions visible.
@@ -209,9 +219,10 @@ in later sections:
   expressions, or locale-sensitive text processing. Semantic judgments remain
   agent-mediated.
 - Lists and tuples are typed aggregates. Source can construct, pass, return,
-  interpolate, project, and pattern-destructure them. Lists additionally
-  expose deterministic `len()` and dynamic `Int` indexing, enabling explicit
-  bounded traversal with `while`; aggregate mutation remains excluded.
+  interpolate, and project them. Tuples additionally support pattern
+  destructuring. Lists expose deterministic `len()` and dynamic `Int`
+  indexing, enabling explicit bounded traversal with `while`; list-pattern
+  destructuring and aggregate mutation remain excluded.
 - `Result<T, E>` represents a declared, expected source-level outcome. Hook
   failure, invalid structured output, cancellation, journal failure, and retry
   exhaustion remain runtime failures and are never implicitly converted to
@@ -241,7 +252,7 @@ valid:
 - Keep each `action` invocation equally prominent. An ordinary call is always
   an interpreter-managed workflow call; the `action` keyword is the visible
   indication that execution crosses into a harness capability.
-- Treat each visible model operation as logically singular but physically
+- Treat each visible integration operation as logically singular but physically
   repeatable. Validation repair and interruption recovery can dispatch the
   same operation more than once, so harness actions with external side effects
   should use the stable operation and dispatch identities for deduplication or
@@ -270,6 +281,9 @@ valid:
 - Keep numeric expressions short. Bind intermediate values when checked
   arithmetic, conversion, or list indexing would otherwise obscure operation
   inputs or control-flow intent.
+- Treat `Float` equality as exact normalized binary64 equality. Use explicit
+  bounds or a model-backed `decide` when the intended comparison is
+  approximate or semantic rather than bit-for-bit numeric equality.
 - Use triple-quoted block prompts for multiline instructions and ordinary or
   raw quoted prompts for short text. Keep result annotations on the same
   visual operation, even when the template spans several lines.
@@ -325,8 +339,9 @@ activity throughout this specification:
 - A **tagged value** is an enum or `Result<T, E>` value whose strict-JSON
   representation carries an explicit variant discriminator.
 - A **deterministic condition** is a `Bool` expression evaluated over already
-  validated values. Pattern tests and exact equality are interpreter work and
-  never invoke a hook.
+  validated values. Primitive arithmetic, Boolean and String operations,
+  pattern tests, and exact equality are interpreter work and never invoke a
+  hook by themselves.
 - A **named input** is one ordered, typed `using` entry supplied separately
   from rendered prompt text.
 - A **foreground outcome** is the completion of root `main`. A **terminal
@@ -466,9 +481,11 @@ document are to be interpreted as described in RFC 2119.
    child are then resolved according to the child's own source order. Analysis
    MUST NOT depend on filesystem enumeration order or the order in which an
    implementation happens to parse module files.
-5. Gantry MUST support namespaces and whole-module imports through a
-   Rust-inspired `mod` form. Included files are parsed as independent modules,
-   not textual insertion into the caller's scope.
+5. Gantry MUST support namespaces and module declaration or loading through a
+   Rust-inspired `mod` form. A file selected by `mod` is parsed as an
+   independent module, not textually inserted into the caller's scope.
+   Rust-inspired `use` declarations import item names as defined in item 11;
+   `mod` itself is not an import statement.
 6. Module paths MUST be local, relative paths and MUST remain inside the same
    package. Remote paths, absolute paths, environment expansion, and package
    resolution are excluded from v1. Module resolution MUST reject `.` and `..`
@@ -488,9 +505,11 @@ document are to be interpreted as described in RFC 2119.
    to another module's unqualified lexical namespace. Code in another module
    MUST use a `use` declaration or a Rust-inspired qualified `module::item`
    path.
-9. `mod` declarations MUST precede references to their namespace. Module cycles,
-   duplicate declarations, and duplicate module resolutions are analysis
-   errors. Visibility constraints are excluded from v1.
+9. `mod` declarations MUST precede references to their namespace. Module
+   cycles, duplicate ordinary item or module declarations, and duplicate
+   module resolutions are analysis errors. Repeated logical agent names remain
+   the explicit idempotent exception defined in Section 7. Visibility
+   constraints are excluded from v1.
 10. A function, method, or decision workflow MAY call itself, and a struct MAY
     refer to its own declared name subject to the guarded-recursion rule in
     Section 5, even though names otherwise must be declared before use. Mutual
@@ -785,7 +804,8 @@ document are to be interpreted as described in RFC 2119.
     Power, floating remainder, rounding and transcendental functions, String
     repetition, list mutation, and other built-ins are excluded.
     Lists and tuples MAY otherwise be constructed, passed, returned,
-    interpolated, projected, and pattern-destructured.
+    interpolated, and projected. Tuple patterns provide deterministic tuple
+    destructuring; list patterns and list destructuring are excluded from v1.
 15. `String` is an immutable valid-UTF-8 sequence of Unicode scalar values.
     Gantry performs no implicit Unicode normalization. A `mut String` binding
     permits atomic replacement of the complete value, not observable in-place
@@ -1301,7 +1321,7 @@ document are to be interpreted as described in RFC 2119.
    - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
      index, phase (`condition` or `body`), and the most recently settled
      condition's associated index, decision, and nonempty rationale when one
-     exists; and
+     exists;
    - `decision-value`: originating decision operation ID, source location,
      controlling Boolean, and nonempty rationale for a sealed `Decision`
      reachable from a captured operation input; and
@@ -1529,8 +1549,11 @@ document are to be interpreted as described in RFC 2119.
     to be idempotent or prevent duplicate external effects. Integrations SHOULD
     use the stable operation and dispatch identities to deduplicate action
     effects when the underlying capability permits it.
-15. `prompt`, decision evaluation, and `action` invocation are the only v1
-    source constructs that directly dispatch an `OperationHook`. Tools,
+15. Evaluation of an explicit `prompt`, evaluation of an explicit `decide`,
+    and invocation of an explicit `action` are the only v1 source constructs
+    that directly dispatch an `OperationHook`. Reusing a `Decision` value or
+    calling a workflow dispatches no hook by itself, although execution of the
+    called body may reach one of those explicit operation sites. Tools,
     approvals, shell commands, network calls, and other provider-internal work
     MAY still occur while an integration fulfills any hook, but such work is
     not a second Gantry operation. A source-visible harness capability MUST be
