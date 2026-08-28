@@ -172,7 +172,9 @@ document are to be interpreted as described in RFC 2119.
    value is an error. Gantry MUST return a successful entry result to the
    embedder as strict JSON together with a host-level indication of whether the
    function returned a value; this indication distinguishes a no-result
-   `main` from an `Option<T>` result whose JSON value is `null`.
+   `main` from an `Option<T>` result whose JSON value is `null`. A no-result
+   `main` returns JSON `null` with the host-level no-result indication; a
+   value-returning `main` uses the Section 8 encoding of its declared type.
 3. Gantry MUST support comments and SHOULD adopt Rust lexical conventions
    where they fit the v1 feature set. Rust likeness is primarily a syntactic
    and readability goal; Gantry does not inherit Rust semantics by default.
@@ -234,11 +236,15 @@ document are to be interpreted as described in RFC 2119.
 15. Struct field names, parameter names, and method names for one receiver type
     MUST each be unique. A local binding or task handle MUST NOT duplicate or
     shadow any parameter, binding, or task handle visible at its declaration
-    point. Fields and methods occupy one shared namespace for their receiver, so
-    a field and an inherent method on the same struct MUST NOT have the same
-    name. Members MAY reuse names that exist in unrelated lexical scopes. These
-    rules deliberately exclude source-level shadowing in v1 so references
-    remain unambiguous to both readers and static analysis.
+    point. A parameter, local binding, or task handle also MUST NOT reuse the
+    unqualified name of a module item or import visible at its declaration
+    point. Authors MAY use an explicit qualified path when they need an item
+    whose final segment is reused in a nested, unrelated scope. Fields and
+    methods occupy one shared namespace for their receiver, so a field and an
+    inherent method on the same struct MUST NOT have the same name. Members MAY
+    reuse names that exist in unrelated lexical scopes. These rules deliberately
+    exclude source-level shadowing in v1 so references remain unambiguous to
+    both readers and static analysis.
 
 ## 5. Values, Bindings, and Structs
 
@@ -424,13 +430,15 @@ document are to be interpreted as described in RFC 2119.
    merged into one package-wide set; repeating the same logical name is
    idempotent rather than an error. Exactly one dedicated
    `default agent = <name>;` binding MUST appear in `main.gnt`, and its name
-   MUST belong to the merged set. Conflicting default bindings or selection of
-   an undeclared agent are analysis errors. Within one uninterrupted execution
-   or resume run, integrations MUST resolve every occurrence of the same
-   logical name consistently across all tasks. A later resume MAY change that
-   mapping only as permitted by Section 11; the new mapping then applies
-   consistently to subsequent uncommitted dispatches, while committed outcomes
-   remain unchanged.
+   MUST belong to the merged set. A `default agent` declaration in any child
+   module is an analysis error, even when it repeats the root declaration.
+   Conflicting default bindings or selection of an undeclared agent are
+   analysis errors. Within one uninterrupted execution or resume run,
+   integrations MUST resolve every occurrence of the same logical name
+   consistently across all tasks. A later resume MAY change that mapping only
+   as permitted by Section 11; the new mapping then applies consistently to
+   subsequent uncommitted dispatches, while committed outcomes remain
+   unchanged.
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
 3. Agent selection is established by lexical `with <name> { ... }` blocks and
@@ -544,9 +552,11 @@ document are to be interpreted as described in RFC 2119.
    contents; a struct, `Option<T>`, `List<T>`, or tuple is interpolated as
    compact strict JSON, with `None` rendered as `null`. This compact encoding
    MUST use the RFC 8785 JSON Canonicalization Scheme so equivalent Gantry
-   values produce the same interpolated prompt across implementations. Invalid
-   references and values that cannot be encoded are analysis or runtime errors,
-   respectively.
+   values produce the same interpolated prompt across implementations.
+   Replacement text is inserted verbatim and MUST NOT be scanned again for
+   `${...}` or `$$`; interpolation is a single-pass template operation rather
+   than recursive template evaluation. Invalid references and values that
+   cannot be encoded are analysis or runtime errors, respectively.
 8. Ordinary quoted strings MUST support `\\`, `\"`, `\n`, `\r`, `\t`, `\0`,
    and Rust-style Unicode scalar escapes of the form `\u{HEX}`. Unknown,
    incomplete, or invalid escapes are syntax errors. A quoted prompt literal
@@ -630,11 +640,12 @@ document are to be interpreted as described in RFC 2119.
     outcome is exactly `Completed(raw_output)`, `Declined(reason)`, or
     `Failed(message)`. Gantry runtime errors MUST at least distinguish entry-
     input validation, syntax, analysis, hook creation, hook failure, decline of
-    a required result, structured-output exhaustion, cancellation, journal
-    failure, required-event-delivery failure, task/join failure, and internal
-    invariant failure. Concrete Rust error types are implementation-defined,
-    but embedders MUST be able to distinguish these categories without parsing
-    display text.
+    a required result, structured-output exhaustion, deterministic evaluation
+    failure, executor failure, cancellation, journal failure, required-event-
+    delivery failure, task/join failure, and internal invariant failure.
+    Projection bounds failures are deterministic evaluation failures. Concrete
+    Rust error types are implementation-defined, but embedders MUST be able to
+    distinguish these categories without parsing display text.
 
 ## 8. Structured Output and Validation
 
@@ -731,11 +742,25 @@ document are to be interpreted as described in RFC 2119.
    ```
 
    `decision` MUST be a JSON Boolean and `rationale` MUST be a nonempty JSON
-   string. The generated decision schema MUST enforce this with
-   `minLength: 1`, in addition to requiring both properties and setting
-   `additionalProperties` to `false`. Gantry uses only `decision` to select
-   control flow and retains the rationale for observability. A decision is
-   interpreter-only and cannot be bound as a user-visible Boolean value.
+   string. The generated decision schema MUST be the following JSON Schema
+   Draft 2020-12 schema:
+
+   ```json
+   {
+     "$schema": "https://json-schema.org/draft/2020-12/schema",
+     "type": "object",
+     "properties": {
+       "decision": { "type": "boolean" },
+       "rationale": { "type": "string", "minLength": 1 }
+     },
+     "required": ["decision", "rationale"],
+     "additionalProperties": false
+   }
+   ```
+
+   Gantry uses only `decision` to select control flow and retains the rationale
+   for observability. A decision is interpreter-only and cannot be bound as a
+   user-visible Boolean value.
 3. Each `else if` performs a separate decision operation. Its hook request MUST
    include the decisions and rationales produced by preceding arms in the same
    conditional chain through the ordered execution-context vector.
@@ -884,7 +909,11 @@ document are to be interpreted as described in RFC 2119.
    NOT stop waiting merely because one task fails.
    After all tasks settle, one or more failures MUST abort the current program
    with one aggregate runtime error. That error MUST report failed tasks in
-   source declaration order, not completion order.
+   source declaration order, not completion order. At a `joinall`, every task
+   handle declared directly in that scope MUST have one definite ownership
+   state on all incoming control-flow paths. A handle that is consumed or
+   detached on only some incoming paths is an analysis error rather than a
+   conditionally included `joinall` member.
 7. A child failure does not immediately cancel siblings. A named child's
    failure is deferred until `join`; a scoped failure is deferred until
    `joinall`.
@@ -953,12 +982,39 @@ document are to be interpreted as described in RFC 2119.
    but such replay MUST reuse committed hook outcomes and reconstruct the same
    dynamic operation and task identities.
 2. Gantry MUST expose a journal-storage trait through which an integration
-   provides durable storage. The trait MUST expose atomic append and flush
-   operations only; Gantry defines the transaction and commit boundaries built
-   from those operations. Each append MUST return a stable record ID and a
-   sequence number that increases monotonically within that journal.
-   `flush(sequence)` MUST establish that every successfully appended record
-   through that sequence is durable before it returns.
+   provides durable storage. The trait MUST expose durable record reading plus
+   atomic append and flush operations. Append and flush are the only mutation
+   primitives; Gantry defines the transaction and commit boundaries built from
+   them, and v1 requires no storage-level update, delete, or general transaction
+   operation. Each append MUST return a stable record ID and a sequence number
+   from one contiguous sequence within that journal. The first record has
+   sequence number 1, and each successful append is linearizable and receives
+   exactly the preceding sequence number plus one, including when concurrent
+   Gantry tasks append to the same journal. `flush(sequence)` MUST establish
+   that every successfully appended record through that sequence is durable
+   before it returns.
+   A durable read MUST identify a journal and return its authoritative flushed
+   prefix in strictly increasing sequence order, optionally beginning after a
+   caller-supplied sequence number. It MUST also report the greatest sequence
+   known durable. Records physically present beyond that durability watermark
+   MUST NOT be returned as committed state or used during resume. A duplicate
+   sequence, a gap within the returned durable prefix, a changed record for an
+   already observed sequence, or a record whose envelope identifies another
+   journal is a journal failure. These read semantics are required for resume;
+   they do not add another storage mutation primitive. Before appending after
+   recovery, storage MUST discard or otherwise make unreachable every
+   physically present record beyond the durability watermark, and the next
+   append MUST receive the watermark plus one. A journal failure aborts the
+   affected execution: Gantry MUST reject further state transitions, signal
+   cancellation to all foreground, attached, and detached tasks owned by that
+   execution, apply the configured cancellation drain, and return the journal
+   failure directly to the embedder because durability can no longer be
+   assumed. Exactly one interpreter execution owner MAY advance a journal at a
+   time. Concurrent tasks belonging to that owner MAY append through the
+   storage's linearizable ordering, but starting or resuming a second owner for
+   the same journal while the first is active MUST be rejected before hook or
+   task dispatch. The embedder and storage capability together MUST enforce
+   this exclusive ownership; read-only inspection MAY remain concurrent.
 3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
    After a hook returns, Gantry MUST append the outcome and flush through that
    outcome record's sequence number before the interpreter validates, assigns,
@@ -1076,7 +1132,15 @@ document are to be interpreted as described in RFC 2119.
    redacted. Prompts and schemas MUST be observable through journal or event
    IDs referenced from events rather than duplicated in every event. Raw output
    MUST remain omitted from default human-readable diagnostics and validation
-   error text.
+   error text. For delivery, Gantry MUST resolve an event's protected references
+   into a capability-filtered payload bundle supplied alongside, but not inside,
+   the ordinary event envelope. The bundle MUST preserve the stable reference
+   keys used by the envelope. It MUST omit or explicitly redact raw output for
+   a sink that lacks raw-output access. Gantry MUST retain referenced payloads
+   until every required delivery has succeeded or terminally failed and every
+   best-effort delivery has either succeeded or exhausted its policy. This
+   makes reference-based events usable without placing sensitive or repeated
+   payloads directly in each event envelope.
 5. Event sinks MUST be configured independently as `required` or
    `best-effort`, with interpreter defaults overridable per sink. Gantry MUST
    retry only errors the sink classifies as retriable. A non-retriable error
@@ -1101,7 +1165,12 @@ document are to be interpreted as described in RFC 2119.
    requiring event delivery; failure of that journal write is returned to the
    embedder as a journal failure. A standalone activity without a journal MUST
    return the required-event-delivery failure directly. These rules prevent
-   recursive failure-event generation.
+   recursive failure-event generation. Required-sink exhaustion for an
+   execution is execution-wide rather than task-local: Gantry MUST reject new
+   work for that execution, signal cancellation to its foreground, attached,
+   and detached tasks, and apply the configured cancellation drain before
+   returning the required-event-delivery failure. No event produced during
+   that cancellation is delivered to the exhausted sink.
 7. Every event envelope MUST identify its protocol version, event and activity
    IDs, optional execution ID, event kind, source location when source-backed,
    task and operation identities when applicable, causal parent IDs, per-task
@@ -1705,10 +1774,18 @@ impl Report {
         };
     }
 }
+
+fn apply_revision(mut report: Report, instruction: String) -> Report {
+    // Receivers are copied. Retaining the revised copy requires assignment.
+    report = report.revise(instruction);
+    report
+}
 ```
 
 `with` is an expression and may yield its block's trailing value. A nested
 `with` would override `writer` or `reviewer` only inside the nested block.
+The `apply_revision` assignment makes the by-value receiver rule visible: a
+`mut self` method never updates the caller's binding implicitly.
 
 ### 14.5 Prompt strings, interpolation, and escaping
 
@@ -1955,20 +2032,39 @@ fn launch_background(report: Report) {
 ### 14.11 Nested modules and qualified paths
 
 ```gantry
+struct Input {
+    text: String,
+}
+
 mod quality {
+    use crate::Input;
+
     struct Finding {
         summary: String,
     }
 
-    fn inspect(text: String) -> Finding {
-        prompt "Inspect ${text}." -> Finding
+    mod formatting {
+        use super::Finding;
+
+        fn normalize(finding: Finding) -> Finding {
+            prompt "Normalize ${finding}." -> Finding
+        }
+    }
+
+    fn inspect(input: Input) -> Finding {
+        let finding: self::Finding = prompt "Inspect ${input}." -> Finding;
+        formatting::normalize(finding)
     }
 }
 
-fn run_check(text: String) -> quality::Finding {
-    quality::inspect(text)
+fn run_check(input: Input) -> quality::Finding {
+    quality::inspect(input)
 }
 ```
+
+`crate::` begins at the package root, `self::` begins at the current module,
+and `super::` moves to the parent module. Unprefixed paths such as
+`formatting::normalize` begin in the current module.
 
 The equivalent imported form is:
 
@@ -1990,14 +2086,22 @@ provider-specific or executor-specific types in Gantry programs:
 1. An `Interpreter` accepts a package root, interpreter configuration (which
    includes the executor adapter), a hook factory, journal storage, and zero or
    more event sinks. It MUST expose syntax-only validation, semantic analysis,
-   execution, resume, and terminal asynchronous shutdown operations. Execution
-   accepts either no
+   execution, resume, and terminal asynchronous shutdown operations. Resume
+   MUST identify the execution or journal to load and reconstruct state only
+   from the authoritative durable record prefix returned by journal storage,
+   and MUST obtain the exclusive execution ownership required by Section 11
+   before advancing it.
+   Execution accepts either no
    entry value or one strict-JSON entry value as required by `main`, and returns
    an execution ID and a typed foreground outcome that distinguishes a value,
    no result, and every runtime-error category defined in Section 7. A
    foreground outcome MAY be returned while explicitly detached tasks remain;
    the execution ID allows the embedder to correlate their later events and
-   terminal durable state.
+   terminal durable state. Because event sinks are optional, the API MUST also
+   permit the embedder to query an execution's latest durable foreground and
+   terminal states and to asynchronously wait for terminal state by execution
+   ID. A terminal result MUST distinguish success, detached-task failure,
+   cancellation, and the runtime-error categories defined in Section 7.
 2. A `HookFactory` asynchronously creates one `OperationHook` for a supplied
    task context. `OperationHook` asynchronously accepts the versioned request
    defined in Section 7 and a Gantry-owned cancellation token, and returns
@@ -2020,17 +2124,23 @@ provider-specific or executor-specific types in Gantry programs:
    capabilities. Gantry MUST use those capabilities rather than constructing a
    hidden Tokio or other provider runtime. Executor handles and errors MUST be
    wrapped so no specific executor type appears in the language-facing API.
-5. Journal storage asynchronously provides atomic `append(record)` and
-   `flush(sequence)` operations with the behavior in Section 11. An append
-   returns the stable record ID and monotonically increasing sequence number
-   assigned to the record. Storage errors are never retried as model-output
-   failures and MUST surface as journal runtime errors.
+5. Journal storage asynchronously provides durable-prefix reads plus atomic
+   `append(record)` and `flush(sequence)` operations with the behavior in
+   Section 11. Append and flush are its only mutation primitives. An append
+   returns the stable record ID and next contiguous sequence number assigned to
+   the record through a per-journal linearizable ordering. A read returns
+   immutable versioned records in sequence order together with the durable-
+   through sequence and supports continuation after a supplied sequence.
+   Storage errors and malformed or noncontiguous durable histories are never
+   retried as model-output failures and MUST surface as journal runtime errors.
 6. Each event sink declares a stable identity, its required/best-effort class,
    raw-output capability, enabled redaction policy, and retry policy. Stable
    sink identities MUST be unique within one interpreter configuration. Its
-   asynchronous delivery operation receives a versioned event envelope and
+   asynchronous delivery operation receives a versioned event envelope and the
+   capability-filtered referenced-payload bundle defined in Section 12, and
    returns success, a retriable error, or a terminal error. Gantry owns delivery
-   attempt IDs, retry timing, journaling, and required-sink failure semantics.
+   attempt IDs, retry timing, payload retention, journaling, and required-sink
+   failure semantics.
 7. Interpreter configuration MUST include the default agent-output retry
    limit and backoff, event-delivery defaults, executor adapter, graceful-
    shutdown timeout, and post-cancellation drain duration. Implementations
