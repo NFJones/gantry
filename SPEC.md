@@ -192,9 +192,10 @@ governs. A conformance manifest MUST map every requirement identifier to each
 applicable claimed profile, or record a profile-based `not-applicable`
 justification.
 
-Every normative requirement has a stable identifier formed from its section,
-item, and optional local label, for example `GNT-7.5-request-header`. Published
-editions MUST preserve an identifier's meaning within one source-language
+Every normative requirement has a stable identifier formed from its section
+and item, with an optional local label:
+`GNT-<section>.<item>[-<label>]`. Published editions MUST preserve an
+identifier's meaning within one source-language
 major version and MUST NOT reuse a retired identifier. The machine-readable
 conformance manifest required by Section 15 maps each claimed profile and
 requirement identifier to one or more executable tests or an explicit
@@ -435,7 +436,9 @@ It is a reading aid; Sections 6 through 8 define the normative contracts:
 
 The retry counts are defaults, not fixed operation behavior. Interpreter
 configuration may replace them, and an operation-local `retry_limit` replaces
-the applicable configured default; Section 8 defines the normative rules.
+the applicable configured default. A `non_idempotent` action must always have
+an effective retry limit of zero; a positive source override is invalid.
+Section 8 defines the normative rules.
 Wrapping an operation in `attempt` does not change its retry policy or make it
 effect-free; it changes only the narrow operation failures listed in Section 5
 into an explicit `Result<T, OperationError>`.
@@ -703,8 +706,9 @@ than one block.
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10` |
 
 Adding an independently testable obligation to an existing block SHOULD add a
-descriptive child identifier such as `GNT-7.5-request-header`; moving existing
-text without changing its meaning preserves its identifier. Splitting a block
+descriptive child identifier by appending a suffix such as `-request-header`
+to its parent identifier; moving existing text without changing its meaning
+preserves its identifier. Splitting a block
 retires the parent or retains it as an umbrella while assigning new child
 identifiers. Merging blocks retires all but one identifier. Retired identifiers
 MUST remain reserved in the publication manifest and MUST NOT acquire a new
@@ -1737,9 +1741,9 @@ identifier policy, canonical paths, and immutable source snapshots.
    module, or any non-function root item named `main` is an analysis error.
    The directory containing `main.gnt` is the package root. `main` MUST have
    either no parameters or exactly one typed parameter. It MAY return `Unit`
-   or any v1 value type that does not contain `Decision` at any nesting depth.
-   The entry parameter and result likewise MUST NOT be `Decision`,
-   `OperationError`, or contain either sealed type. Entry and result JSON cannot
+   or any v1 value type that contains neither `Decision` nor `OperationError`
+   at any nesting depth. The entry parameter has the same restriction. Entry
+   and result JSON cannot
    originate a sealed judgment or operation failure. A workflow
    that needs to import or export a judgment MUST use an ordinary declared
    struct containing the required data rather than `Decision` itself.
@@ -2002,8 +2006,9 @@ Task handles are governed by Section 10 and are not source values.
    `None` MUST be constructible by deterministic interpreter operations.
    Gantry code MAY inspect an option through the deterministic `match` and
    `if let` forms in Section 9. An unwrap operation remains excluded.
-   The immediate member of `Option<T>` MUST NOT be `Unit` or another
-   `Option<U>`, at any nesting depth. For example, `Option<Unit>`,
+   For every `Option<T>` occurrence, its immediate member `T` MUST NOT be
+   `Unit` or another `Option<U>`. This rule applies recursively to option
+   occurrences inside every constructed type. For example, `Option<Unit>`,
    `Option<Option<String>>`, `List<Option<Unit>>`, and
    `List<Option<Option<String>>>` are invalid. The untagged strict-JSON
    encoding uses `null` for `None`, `Unit`, and an inner `None`, so it cannot
@@ -3428,7 +3433,8 @@ operation modifiers defined in Sections 6 and 13.
 <a id="GNT-8.10"></a>
 
 10. Interpreter configuration supplies separate default retry limits for model
-   and action operations, and an operation MAY override its applicable default.
+   and action operations, and, subject to the non-idempotent-action restriction
+   in item 9, an operation MAY override its applicable default.
    A retry limit counts retries after the initial attempt; zero permits exactly
    one attempt. Unless the embedder configures replacements, the v1 defaults are
    two retries for `prompt` and `decide`, and zero retries for `action`. An
@@ -5488,6 +5494,10 @@ session_expression      = "session", "(", session_directive, ")",
                           value_block ;
 boolean_literal         = "true" | "false" ;
 ```
+
+An action `retry_limit` counts validation retries after the initial dispatch.
+Under Section 8, item 9, a `non_idempotent` action must have an effective limit
+of zero, so a positive source override on such an action is an analysis error.
 
 The grammar admits `self` as a primary expression so the same expression
 productions can parse method bodies and their nested blocks. Semantic analysis
