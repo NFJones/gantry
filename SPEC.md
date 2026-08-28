@@ -3967,6 +3967,7 @@ statement               = let_statement
 let_statement           = "let", let_binding, ":",
                           value_type, "=", expression, ";" ;
 let_binding             = [ "mut" ], identifier_token
+                        | "_"
                         | let_tuple_pattern ;
 let_pattern             = "_" | identifier_token | let_tuple_pattern ;
 let_tuple_pattern       = "(", let_pattern, ",", let_pattern,
@@ -3989,7 +3990,8 @@ trailing_expression     = expression ;
 ```
 
 Bindings require explicit types in v1. `mut` is valid only on a single-name
-binding; tuple destructuring introduces immutable bindings. A trailing expression is distinguished
+binding; `_` discards the initialized value, and tuple destructuring introduces
+immutable bindings. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
 closing brace. A trailing expression MUST produce a first-class value; a
 no-result operation must instead be an expression statement ending in `;`.
