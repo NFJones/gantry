@@ -319,10 +319,15 @@ document are to be interpreted as described in RFC 2119.
    validated operation result already derived from committed journal state.
    A committed raw `Completed` outcome that has not yet passed validation is
    durable input to resumed validation, not yet a successful operation result.
-10. The initial public protocol version for hook requests, journal envelopes,
-    event envelopes, and the configuration identity is major `1`, minor `0`.
-    A document reference to “v1” identifies source-language version 1 and does
-    not by itself permit a different protocol major version.
+10. The Gantry v1 source-language version is major `1`, minor `0`. The initial
+    public protocol version for hook requests, journal envelopes, event
+    envelopes, and the configuration identity is likewise major `1`, minor
+    `0`, but source-language and protocol versions are distinct fields and
+    MUST NOT be inferred from one another. A document reference to “v1”
+    identifies source-language major version 1 and does not by itself permit a
+    different protocol major version. Every new execution and resume request
+    MUST explicitly select a supported source-language version through the
+    embedding API; v1 source contains no in-file version pragma.
 11. v1 makes no backward-compatibility promise for source, serialized state,
    or the Rust hook API.
 
@@ -566,10 +571,14 @@ document are to be interpreted as described in RFC 2119.
 7. Gantry MUST support named-field struct construction. Struct values MAY be
    constructed by source execution or produced by an agent hook. A source
    constructor MUST reject unknown and duplicate fields during analysis.
-   Constructor field expressions are evaluated once in source order. Omitted
-   required fields are analysis errors; an omitted field with a default uses
-   that default, and an omitted `Option<T>` field without a default becomes
-   `None`. A constructed value becomes visible only after every supplied field
+   Constructor field expressions are evaluated once in source order. For
+   source construction, a field is required only when it has neither a
+   declared default nor an `Option<T>` type. Omitting such a field is an
+   analysis error; an omitted field with a default uses that default, and an
+   omitted `Option<T>` field without a default becomes `None`. A non-optional
+   field with a source default may therefore be omitted from a source
+   constructor even though Section 8 still requires that field in agent hook
+   output. A constructed value becomes visible only after every supplied field
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
 8. Struct fields MAY declare string-literal or `None` defaults, which are the
@@ -2006,11 +2015,12 @@ document are to be interpreted as described in RFC 2119.
     a hook, Gantry MUST allocate a fresh execution ID and append and flush
     exactly one execution-start record as the journal's first record. That
     record MUST have sequence number one and MUST contain the package source
-    identity, the effective-configuration identity and fields defined below,
-    the selected root-session identity and provenance, the agent-mapping
-    revision from Section 7, the canonical signature of `main` defined in
-    Section 4, and either a no-entry-input marker or the validated and
-    normalized canonical entry value with its type descriptor.
+    identity, the selected source-language major and minor version, the
+    effective-configuration identity and fields defined below, the selected
+    root-session identity and provenance, the agent-mapping revision from
+    Section 7, the canonical signature of `main` defined in Section 4, and
+    either a no-entry-input marker or the validated and normalized canonical
+    entry value with its type descriptor.
     Resume MUST verify and reuse the existing execution-start record, restore
     its entry value, and MUST NOT append a second execution-start record or
     accept replacement entry input. A mapping revision changed during resume
@@ -2030,6 +2040,7 @@ document are to be interpreted as described in RFC 2119.
     ```json
     {
       "configuration_protocol": { "major": 1, "minor": 0 },
+      "source_language": { "major": 1, "minor": 0 },
       "hook_protocol_major": 1,
       "journal_protocol_major": 1,
       "event_protocol_major": 1,
@@ -2064,15 +2075,17 @@ document are to be interpreted as described in RFC 2119.
     ```
 
     The displayed values illustrate the v1 defaults; the identity MUST encode
-    the effective configured values. `root_session.provenance` is exactly
-    `embedder-supplied` or `gantry-created`. `jitter` is exactly `none` or
-    `full`; a future mode requires a protocol change. Required sinks MUST be
-    ordered by the unsigned UTF-8 bytes of `id` before canonicalization, and
-    their IDs and redaction-policy IDs MUST be valid UTF-8. The root-session ID
-    and every required-sink ID MUST use the same stable string representation
-    that their embedding interfaces expose. This exact object definition makes
-    independently produced identities comparable rather than leaving property
-    spelling or nesting to an implementation.
+    the effective configured values. `source_language` MUST equal the version
+    selected for the execution and MUST match the execution-start record.
+    `root_session.provenance` is exactly `embedder-supplied` or
+    `gantry-created`. `jitter` is exactly `none` or `full`; a future mode
+    requires a protocol change. Required sinks MUST be ordered by the unsigned
+    UTF-8 bytes of `id` before canonicalization, and their IDs and redaction-
+    policy IDs MUST be valid UTF-8. The root-session ID and every required-sink
+    ID MUST use the same stable string representation that their embedding
+    interfaces expose. This exact object definition makes independently
+    produced identities comparable rather than leaving property spelling or
+    nesting to an implementation.
     Resume MUST reject changes to those fields. Executor implementation,
     worker count, and integration-owned operation-timeout policy MAY change on
     resume without changing this identity; they affect scheduling or
@@ -2340,19 +2353,19 @@ document are to be interpreted as described in RFC 2119.
    execution record are its canonical notification; Gantry MUST NOT attempt to
    make it acknowledge consequences of its own failure.
 
-   Exhaustion while delivering the terminal-execution event occurs after the
-   terminal-execution record is durable and MUST NOT append a second terminal
-   record or replace the recorded language outcome. Gantry MUST durably settle
-   the failed delivery obligation and return a structured required-event-
-   delivery barrier failure that includes the existing terminal outcome. A
-   later query still observes that durable terminal outcome, while delivery
-   state shows that its required terminal event was not delivered. A
-   standalone activity without a journal MUST return the required-event-
-   delivery failure directly. No event produced during cancellation is
-   delivered to the exhausted sink, and an implementation MUST NOT recursively
-   require that sink to acknowledge its own failure. These rules override the
-   general failure-event requirement for that exhausted sink and prevent
-   recursive failure-event generation.
+   Exhaustion of any required delivery obligation after the terminal-execution
+   record is durable—including an older queued event or the terminal-execution
+   event itself—MUST NOT append a second terminal record or replace the
+   recorded language outcome. Gantry MUST durably settle the failed delivery
+   obligation and return a structured required-event-delivery barrier failure
+   that includes the existing terminal outcome. A later query still observes
+   that durable terminal outcome, while delivery state identifies every
+   required event that was not delivered. A standalone activity without a
+   journal MUST return the required-event-delivery failure directly. No event
+   produced during cancellation is delivered to the exhausted sink, and an
+   implementation MUST NOT recursively require that sink to acknowledge its
+   own failure. These rules override the general failure-event requirement for
+   that exhausted sink and prevent recursive failure-event generation.
 7. Every event envelope MUST identify its protocol version, event and activity
    IDs, optional execution ID, event kind, source location when source-backed,
    task and operation identities when applicable, causal parent IDs, per-task
@@ -3567,13 +3580,18 @@ Concrete Rust names and signatures MAY evolve during implementation, but a v1
 embedding API MUST expose the following semantic interfaces without requiring
 provider-specific or executor-specific types in Gantry programs:
 
-1. An `Interpreter` accepts a package root, interpreter configuration (which
-   includes the executor adapter), a hook factory, journal storage, and zero or
-   more event sinks. It MUST expose syntax-only validation, semantic analysis,
-   execution, resume, execution cancellation, and terminal asynchronous
-   shutdown operations. Execution cancellation accepts an execution ID and a
-   structured reason, is idempotent, and implements Section 10 rather than
-   requiring the embedder to manipulate executor handles directly. Resume
+1. An `Interpreter` accepts a package root, an explicitly selected supported
+   source-language version, interpreter configuration (which includes the
+   executor adapter), a hook factory, journal storage, and zero or more event
+   sinks. It MUST expose syntax-only validation, semantic analysis, execution,
+   resume, execution cancellation, and terminal asynchronous shutdown
+   operations. Dry-run, analysis, and new execution MUST use the selected
+   source-language version. Resume MUST use the version stored in the
+   execution-start record and MUST reject an incompatible caller selection as
+   a resume-start compatibility failure. Execution cancellation accepts an
+   execution ID and a structured reason, is idempotent, and implements Section
+   10 rather than requiring the embedder to manipulate executor handles
+   directly. Resume
    MUST identify the execution or journal to load and reconstruct state only
    from the authoritative durable record prefix returned by journal storage,
    and MUST obtain the exclusive execution ownership required by Section 11
@@ -3630,8 +3648,12 @@ provider-specific or executor-specific types in Gantry programs:
    terminal durable state. Because event sinks are optional, the API MUST also
    permit the embedder to query an execution's latest durable foreground and
    terminal states and to asynchronously wait for terminal state by execution
-   ID. A terminal result MUST distinguish success, detached-task failure,
-   cancellation, and the runtime-error categories defined in Section 7.
+   ID. Foreground-await and terminal-await results MUST represent the Gantry
+   language outcome separately from the required-event-delivery barrier
+   status. A delivery-barrier failure MUST NOT masquerade as, replace, or erase
+   a durable foreground or terminal language outcome. A terminal language
+   result MUST distinguish success, detached-task failure, cancellation, and
+   the runtime-error categories defined in Section 7.
 2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    task context. The factory, or a companion harness-preflight interface owned
    by the same integration, MUST also validate the complete merged agent-name
