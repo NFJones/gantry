@@ -142,7 +142,7 @@ fn main(topic: String) -> Report {
         -> Report;
 
     loop(limit = 3) {
-        if(retry_limit = 1) needs_revision(report) {
+        if needs_revision(report) {
             report = prompt "Revise this report: ${report}" -> Report;
         } else {
             break;
@@ -310,7 +310,7 @@ activity throughout this specification:
   dispatches for one logical operation, each with a distinct dispatch ID.
 - A **hook outcome** is `Completed(raw_output)`, `Declined(reason)`, or
   `Failed(message)`. An **operation result** is the validated and normalized
-  value, no-result acceptance, optional decline, or opaque `Decision`
+  value, no-result acceptance, optional decline, or sealed `Decision`
   that Gantry durably derives from an outcome and may consume.
 - A **Gantry task** is an interpreter execution lane: the root task or one
   child created by `spawn`. A task is not an agent, model, provider request,
@@ -423,7 +423,11 @@ document are to be interpreted as described in RFC 2119.
    module, or any non-function root item named `main` is an analysis error.
    The directory containing `main.gnt` is the package root. `main` MUST have
    either no parameters or exactly one typed parameter and MAY return any v1
-   result type or no result. When `main` has a
+   result type or no result. The entry parameter type MUST NOT be `Decision`
+   or contain `Decision` at any nesting depth, because entry JSON has no
+   model-operation provenance and only `decide` or a decision workflow may
+   create that sealed type. A `main` result MAY contain `Decision` because it
+   was produced during Gantry execution with provenance intact. When `main` has a
    parameter, the embedding application MUST supply one raw byte sequence
    containing the entry JSON. Gantry MUST own UTF-8 decoding and RFC 8259 JSON
    parsing and MUST apply the same empty-input, trailing-data, duplicate-member,
@@ -617,7 +621,7 @@ document are to be interpreted as described in RFC 2119.
    returned value. An ordinary function, method, binding, aggregate, or struct
    MAY carry `Decision`, but an expected `prompt` or `action` output type MUST
    NOT contain `Decision` at any nesting depth. Only `decide` or a decision
-   workflow can produce that opaque type.
+   workflow can produce that sealed type.
    Omission of a result annotation and the explicit result annotation `-> None`
    both denote this no-result form; they do not denote `Option<T>`. No-result
    is not a first-class value and cannot be bound, passed, interpolated, or
@@ -675,7 +679,7 @@ document are to be interpreted as described in RFC 2119.
    unique within the enum. A unit variant is constructed as
    `Type::Variant`; a payload variant is constructed as
    `Type::Variant(value)`. The payload type MUST match exactly. Enum values
-   MAY be inspected only by patterns, equality conditions, projection from a
+   MAY be inspected only by patterns, equality expressions, projection from a
    bound payload, or by supplying the complete value to an operation.
    Directly or transitively recursive enum payloads are excluded from v1.
 8. `Result<T, E>` is a built-in tagged union with source constructors
@@ -710,11 +714,11 @@ document are to be interpreted as described in RFC 2119.
    output. A constructed value becomes visible only after every supplied field
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
-11. Struct fields MAY declare `Bool`, `Int`, `Float`, string-literal, or `None`
-   defaults, which are the only field-default forms in v1. A primitive default
-   MUST exactly match its declared primitive type. A string default is valid for `String` and
-   `Option<String>` fields; for `Option<String>` it normalizes to
-   `Some(default)`. A `None` default is valid only for an `Option<T>` field.
+11. Struct fields MAY declare `Bool`, `Int`, `Float`, `String`, or `None`
+   defaults, which are the only field-default forms in v1. A scalar default
+   MUST exactly match the field's declared scalar type or the member type of
+   an `Option` around that scalar. A scalar default on `Option<T>` normalizes
+   to `Some(default)`. A `None` default is valid only for an `Option<T>` field.
    Defaults MUST NOT invoke an agent operation. When an optional field with a
    default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
@@ -1867,14 +1871,16 @@ document are to be interpreted as described in RFC 2119.
    performs no new dispatch.
 5. The general loop form is `loop(session = inline, limit = 0) { ... }`.
    `loop { ... }` is equivalent to the form with all defaults. `while`
-   places parenthesized modifiers before its decision expression, as
+   places parenthesized loop modifiers before its condition expression, as
    in `while(session = fork, limit = 10) decide(retry_limit = 2) "..." { ... }`.
    `until` places the same loop modifiers before its body and operation
-   modifiers on the `decide` expression after `when`.
-   `loop` MUST accept `session` and `limit`; `while` and `until` MUST also
-   accept `retry_limit` for their decision operation. Agent selection is
-   inherited from a lexical `with` context rather than specified as a loop
-   modifier. `retry_limit` counts retries after the initial attempt.
+   modifiers on the explicit `decide` expression after `when`.
+   `loop`, `while`, and `until` accept `session` and `limit`. A structured-
+   output retry override MUST appear on the explicit `decide` operation it
+   configures; a loop whose condition calls a decision workflow uses the
+   modifiers written on the `decide` operations in that workflow or the
+   interpreter default. Agent selection is inherited from a lexical `with`
+   context rather than specified as a loop modifier.
 6. A loop session is `new`, `fork`, or `inline`, with `inline` as the default.
    A loop limit is a nonnegative integer no greater than `2^63 - 1`; every v1
    implementation MUST support that full range. It counts body executions.
@@ -2393,7 +2399,7 @@ document are to be interpreted as described in RFC 2119.
    `Declined` outcome that produces `None` for an expected `Option<T>`. The
    record MUST identify the operation and committed outcome, outcome variant,
    result kind, canonical type descriptor, normalized canonical JSON when the
-   operation returns a value, and the opaque decision value, provenance, and
+   operation returns a value, and the sealed decision value, provenance, and
    rationale when the operation returns a decision. An optional decline records JSON
    `null` together with its decline provenance. A no-result operation records
    successful acceptance without creating a source value. A logical result
@@ -3683,19 +3689,13 @@ errors. `retry_limit` counts retries after the initial attempt.
 ### 13.8 Decisions and sequential control flow
 
 ```ebnf
-if_statement            = "if", [ decision_modifiers ],
-                          condition_expression, statement_block,
-                          { "else", "if", [ decision_modifiers ],
+if_statement            = "if", condition_expression, statement_block,
+                          { "else", "if",
                             condition_expression, statement_block },
                           [ "else", statement_block ] ;
 
 if_let_statement        = "if", "let", pattern, "=", expression,
                           statement_block, [ "else", statement_block ] ;
-
-decision_modifiers      = "(", decision_modifier,
-                          { ",", decision_modifier }, [ "," ], ")" ;
-decision_modifier       = "session", "=", session_directive
-                        | "retry_limit", "=", directive_integer_token ;
 
 condition_expression    = expression ;
 decide_expression       = "decide", [ prompt_modifiers ], prompt_template,
@@ -3716,38 +3716,27 @@ loop_condition_modifiers
                         = "(", loop_condition_modifier,
                           { ",", loop_condition_modifier }, [ "," ], ")" ;
 loop_condition_modifier = "session", "=", session_directive
-                        | "limit", "=", directive_integer_token
-                        | "retry_limit", "=", directive_integer_token ;
+                        | "limit", "=", directive_integer_token ;
 ```
 
 The optional modifier forms require at least one modifier when parentheses are
-present; empty `prompt()`, `decide()`, `if()`, `else if()`, `loop()`,
-`while()`, and `until()` modifiers are not v1 syntax. Bare `loop` uses
+present; empty `prompt()`, `decide()`, `loop()`, `while()`, and `until()`
+modifiers are not v1 syntax. Bare `loop` uses
 `session = inline` and `limit = 0`. Duplicate modifiers are analysis errors.
 
-A condition-level `session` on `if` or `else if` takes effect before evaluation
-of the decision expression. It therefore establishes the inherited session for
-prompt operations used to compute decision-call arguments as well as for the
-complete decision-workflow evaluation. That session context ends when the
-decision expression completes and does not automatically extend into the
-selected arm. Authors who want a decision and its arm operations to share one
-explicit session should wrap the complete conditional in
-`session(<directive>) { ... }`. On `while` and `until`, the same modifier
-position instead declares the loop session whose condition/body lifetime is
-defined normatively in Section 9; its scope is the loop rather than only the
-condition. A condition-level
-`retry_limit` applies only to the ultimate decision operation;
-prompts used in arguments or inside a decision workflow use their own modifier
-or the interpreter default. A modifier written directly on a `decide`
-expression is more local and overrides the corresponding inherited value.
-`limit` belongs only to the enclosing `while` or `until`. The `until` grammar
-deliberately places its body before `when` and the post-test condition.
+`if` and `else if` have no condition-level modifiers. An author who wants a
+condition and its selected arm to share one explicit session wraps the complete
+conditional in `session(<directive>) { ... }`; an author who wants to configure
+one model judgment places modifiers directly on its visible `decide` expression.
+On `while` and `until`, the modifier position declares the loop session and
+limit whose condition/body lifetime is defined normatively in Section 9.
+`limit` belongs only to the enclosing loop. A modifier written directly on a
+`decide` expression affects only that operation. The `until` grammar deliberately
+places its body before `when` and the post-test condition.
 Semantic analysis MUST require every `condition_expression` to have type
-`Bool` or `Decision`. Condition-level `session` and `retry_limit` modifiers are
-valid only when the complete condition has type `Decision`; deterministic
-`Bool` conditions have no operation to configure. Ordinary and decision
-workflow calls share one Rust-inspired call syntax and are distinguished by
-their resolved result type rather than by parser guessing.
+`Bool` or `Decision`. Ordinary and decision workflow calls share one
+Rust-inspired call syntax and are distinguished by their resolved result type
+rather than by parser guessing.
 
 ### 13.9 Parallel control flow
 
