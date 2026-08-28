@@ -1580,9 +1580,13 @@ document are to be interpreted as described in RFC 2119.
    make that guarantee atomic. Read-only inspection MAY remain concurrent.
    An orderly owner release MUST atomically invalidate that owner's token so
    every later append or flush using it fails. Gantry MUST release ownership
-   after an execution reaches terminal durable state and all required event
-   obligations through that state have settled, and after a start or resume-
-   start failure when ownership was acquired but interpretation never began.
+   after an execution reaches terminal durable state and every required and
+   best-effort event-delivery obligation created through its terminal event has
+   settled durably. Returning a terminal result waits only for the required
+   delivery barrier in Section 12; finite best-effort delivery MAY continue
+   afterward while the current interpreter retains journal ownership. Gantry
+   MUST also release ownership after a start or resume-start failure when
+   ownership was acquired but interpretation never began.
    Release failure is a journal failure after execution has begun. A start or
    resume-start invocation that has not advanced durable execution state MUST
    instead include ownership-release failure in its structured pre-execution
@@ -1702,7 +1706,9 @@ document are to be interpreted as described in RFC 2119.
    barrier in Section 12 before returning an orderly terminal result. Failure
    to deliver that event cannot rewrite the already durable language outcome;
    Section 12 defines the separate delivery-barrier failure returned to the
-   embedder.
+   embedder. Unsettled best-effort obligations MAY continue after that result
+   is returned, but they MUST settle under their captured finite policies
+   before journal ownership is released.
 9. A v1 journal envelope MUST identify its protocol version, journal and
    execution IDs, monotonically increasing sequence number, record ID, record
    kind, causal parent record when one exists, task and operation identities
@@ -1809,7 +1815,8 @@ document are to be interpreted as described in RFC 2119.
    operation dispatch, completion, and result acceptance, schema validation
    failure, retry, branch decision, spawn, join, detach, mutation,
    cancellation, foreground completion, task completion, terminal execution,
-   and failure. Foreground
+   and failure, except that sink-delivery failures use the nonrecursive
+   representation defined in item 6. Foreground
    completion is distinct from terminal execution when detached tasks remain.
    This event requirement applies while the event's required durability
    boundary is available. A journal failure that makes a resumable execution's
@@ -1879,6 +1886,20 @@ document are to be interpreted as described in RFC 2119.
    be delivered without that execution's journal; an analysis failure creates
    no resumable execution. Once the execution-start record is durable, every
    event associated with that execution is subject to the journal-first rule.
+   Every required-sink obligation created by new-execution preflight MUST
+   settle successfully before Gantry appends the execution-start record.
+   Exhaustion is a structured start failure, and Gantry MUST NOT create the
+   resumable execution merely to report it.
+
+   Compatibility and dependency preflight for resume follows the same
+   activity boundary. Because a resume-start failure MUST NOT modify the
+   existing journal, events created before recovered interpretation begins are
+   unjournaled activity events even when they carry the existing execution ID
+   for correlation. Their required-sink obligations MUST settle successfully
+   before Gantry advances recovered state. After recovered interpretation or
+   delivery recovery begins, newly created events are journal-first execution
+   events. These rules prevent asynchronous preflight delivery failure from
+   changing category after an execution or resume has already begun.
    If journal storage subsequently fails, the authoritative standard event
    stream ends with its last durably flushed event. Gantry MUST NOT deliver a
    newly created standard event for that journal failure because doing so
@@ -1982,8 +2003,14 @@ document are to be interpreted as described in RFC 2119.
    report, Gantry MUST flush all required-sink deliveries produced by that
    completed activity through its final event. These barriers do not require
    waiting for events that the activity has not yet produced.
-   An event describing sink-delivery failure MUST NOT be delivered to the same
-   failing sink. Required-sink exhaustion while an execution is nonterminal is
+   A sink-delivery failure MUST NOT itself create a standard Gantry event.
+   Its durable event-delivery settlement, the affected activity result, and
+   the structured barrier or runtime error are its canonical observability
+   records. An implementation MAY additionally use the non-durable emergency
+   diagnostic callback, but MUST NOT create another event-delivery obligation
+   from that callback. This rule prevents one failing sink, or a cycle of
+   failing sinks, from recursively generating more failure events.
+   Required-sink exhaustion while an execution is nonterminal is
    execution-wide rather than task-local: Gantry MUST reject new work for that
    execution, signal cancellation to its foreground, attached, and detached
    tasks, and apply the configured cancellation drain. It MUST then append and
@@ -2178,12 +2205,14 @@ prompt content; only three begin the closing delimiter. Escaping at least one
 quote permits a literal three-quote sequence in the decoded content. A block
 prompt MUST begin with a `line_terminator` immediately after its opening
 delimiter; that required terminator is structural and is not part of the
-resulting template. Its closing delimiter MUST appear on a line containing
-only indentation followed by the delimiter. Block-prompt indentation consists
-only of ASCII space and horizontal-tab characters. The line terminator
-immediately before that closing-delimiter line and the delimiter line's
-indentation are structural and are not part of the resulting template. Authors
-who need a trailing newline MUST include one additional blank content line.
+resulting template. Its closing delimiter MUST be the first non-indentation
+sequence on its line. Source text after the delimiter is outside the block-
+prompt token and is lexed normally as a continuation of the enclosing
+expression. Block-prompt indentation consists only of ASCII space and
+horizontal-tab characters. The line terminator immediately before that
+closing-delimiter line and the indentation before its delimiter are structural
+and are not part of the resulting template. Authors who need a trailing
+newline MUST include one additional blank content line.
 The closing indentation is the exact dedent prefix: every nonblank content line
 MUST begin with that same sequence of spaces and tabs, and Gantry removes it
 once from each such line. A whitespace-only content line becomes an empty line
