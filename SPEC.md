@@ -3332,7 +3332,8 @@ that are immutable or durably revisable across resume.
           "raw_output_enabled": false,
           "redaction_policy_id": "policy-id",
           "redaction_capabilities": {
-            "model_result_content": false,
+            "operation_request_content": false,
+            "operation_result_content": false,
             "integration_diagnostics": false,
             "source_snippets": false
           },
@@ -3361,7 +3362,7 @@ that are immutable or durably revisable across resume.
     strings are placeholders, and `required_event_sinks` illustrates a
     nonempty configured set rather than prescribing a default sink. The
     identity MUST encode the effective configured values. Each required sink's
-    `redaction_capabilities` object contains exactly the three Boolean
+    `redaction_capabilities` object contains exactly the four Boolean
     properties shown; these resolved values, rather than the policy ID alone,
     govern protected-data delivery and are frozen into event obligations under
     Sections 12 and 15.
@@ -3589,26 +3590,33 @@ an operation hook.
    integration output available. A sink receives raw output only when it
    explicitly declares that capability and the embedder enables it for that
    sink. Other sinks receive the same event identity with the raw field
-   redacted. Prompts and schemas MUST be observable through journal or event
-   IDs referenced from events rather than duplicated in every event. Raw output
-   MUST remain omitted from default human-readable diagnostics and validation
-   error text. A decision rationale is normalized model-derived output and
-   MUST likewise be stored as a protected payload referenced by operation-
-   result and branch-decision events; it MUST NOT be copied into an ordinary
-   event envelope. A sink receives the rationale text only when its frozen
-   `model_result_content` capability is true. Integration diagnostics and
-   source snippets are likewise delivered only when the corresponding frozen
-   `integration_diagnostics` or `source_snippets` capability is true. For
-   delivery, Gantry MUST resolve an event's protected references into a capability-filtered
-   payload bundle supplied alongside, but not inside, the ordinary event
-   envelope. The bundle MUST preserve the stable reference keys used by the
-   envelope. It MUST omit or explicitly redact raw output for a sink that lacks
-   raw-output access and MUST omit or explicitly redact a rationale when the
-   sink's redaction policy disallows model-derived result content. A protected
-   payload referenced by a durable journal or event record MUST remain
-   resolvable for as long as that record is retained. Gantry MUST additionally
-   retain it until every required delivery has succeeded or terminally failed
-   and every best-effort delivery has either succeeded or exhausted its policy.
+   redacted. Operation request content includes authored and rendered prompts,
+   expected schemas, interpolation arguments, named inputs, action arguments,
+   logical-session identifiers, and protected context text such as prior
+   decision rationales or decline reasons. A sink receives that content only
+   when its frozen `operation_request_content` capability is true. Operation
+   result content includes normalized values from every operation kind and
+   both visible fields of a sealed `Decision`; a sink receives that content
+   only when its frozen `operation_result_content` capability is true.
+   Integration diagnostics and source snippets are likewise delivered only
+   when the corresponding frozen `integration_diagnostics` or
+   `source_snippets` capability is true.
+
+   Prompts, schemas, normalized operation values, decision rationales, and
+   other protected content MUST be stored as protected payloads referenced by
+   journal or event IDs rather than copied into ordinary event envelopes. Raw
+   output MUST remain omitted from default human-readable diagnostics and
+   validation error text. For delivery, Gantry MUST resolve an event's
+   protected references into a capability-filtered payload bundle supplied
+   alongside, but not inside, the ordinary event envelope. The bundle MUST
+   preserve the stable reference keys used by the envelope and MUST omit or
+   explicitly redact each payload whose applicable frozen capability is
+   false. Raw-output access remains independent of the four redaction-policy
+   capabilities. A protected payload referenced by a durable journal or event
+   record MUST remain resolvable for as long as that record is retained.
+   Gantry MUST additionally retain it until every required delivery has
+   succeeded or terminally failed and every best-effort delivery has either
+   succeeded or exhausted its policy.
    Retention or deletion policy MAY remove a complete journal and its payloads,
    but MUST NOT leave a retained durable record with a dangling protected
    reference. This makes reference-based events usable without placing
@@ -3659,9 +3667,10 @@ an operation hook.
    Each journaled event MUST freeze its delivery obligations at creation by
    recording the active sink IDs and, for each sink, its required/best-effort
    class, raw-output permission, redaction-policy ID, resolved Boolean
-   capabilities for `model_result_content`, `integration_diagnostics`, and
-   `source_snippets`, retry-policy revision, attempt timeout, retry limit,
-   initial delay, cap, and jitter mode. A retry or recovery redelivery
+   capabilities for `operation_request_content`, `operation_result_content`,
+   `integration_diagnostics`, and `source_snippets`, retry-policy revision,
+   attempt timeout, retry limit, initial delay, cap, and jitter mode. A retry
+   or recovery redelivery
    MUST use that captured class and effective retry policy rather than a later
    interpreter default. Adding a sink after an event was created MUST NOT
    retroactively deliver the older event to that sink. Removing or replacing a
@@ -3798,17 +3807,19 @@ an operation hook.
    - `operation-result`: operation ID, committed outcome and operation-result
      record references, outcome variant, result kind, canonical type
      descriptor, and a protected normalized-value reference for a value result
-     or the decision and protected rationale reference for a decision result;
-     an optional decline additionally identifies its decline provenance;
+     or a protected normalized-decision reference for a decision result; an
+     optional decline additionally identifies its decline provenance;
    - `structured-output-validation-failure`: operation and dispatch IDs plus
      the structured validation errors defined in Section 8;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
      validation-attempt and recovery-dispatch numbers, retry class, and
      selected delay;
    - `branch-decision`: conditional, match, or loop identity; condition kind
-     (`decision`, `bool`, or `pattern`); outcome; and selected arm or loop
-     transition, plus the decide operation and protected rationale references
-     when the condition used `Decision`;
+     (`decision`, `bool`, or `pattern`); selected arm or loop transition; and
+     the inline outcome for a `bool` or `pattern` condition. When the condition
+     used `Decision`, the payload instead contains the decide operation ID and
+     a protected normalized-decision reference; neither visible `Decision`
+     field is copied into the ordinary event envelope;
    - `spawn`: parent and child task IDs, spawn occurrence, declared result
      type, and attachment state;
    - `join`: joining task ID, joined task IDs in source order, join form,
@@ -5911,14 +5922,16 @@ Journal storage asynchronously provides durable-prefix reads, exclusive
 Each event sink declares a stable identity, its required/best-effort class,
    raw-output capability, enabled redaction policy, and retry policy. The v1
    redaction policy resolves to explicit Boolean capabilities for
-   `model_result_content`, `integration_diagnostics`, and `source_snippets`;
-   raw integration output remains governed by the separate raw-output
-   capability. The sink configuration MUST expose both its policy ID and these
-   resolved values. Gantry MUST freeze the resolved capability values, together
-   with the policy ID, in every event obligation. Recovery and delivery use
-   the frozen values rather than reinterpreting the policy ID under current
-   host configuration. The policy ID is audit metadata and MUST NOT be the
-   sole semantic representation of protected-data access. Stable
+   `operation_request_content`, `operation_result_content`,
+   `integration_diagnostics`, and `source_snippets`; raw integration output
+   remains governed by the separate raw-output capability. Their protected
+   payload classes are defined in Section 12, item 4. The sink configuration
+   MUST expose both its policy ID and these resolved values. Gantry MUST freeze
+   the resolved capability values, together with the policy ID, in every event
+   obligation. Recovery and delivery use the frozen values rather than
+   reinterpreting the policy ID under current host configuration. The policy
+   ID is audit metadata and MUST NOT be the sole semantic representation of
+   protected-data access. Stable
    sink identities MUST be unique within one interpreter configuration. Its
    asynchronous delivery operation receives a versioned event envelope and the
    capability-filtered referenced-payload bundle defined in Section 12, and
@@ -5993,7 +6006,8 @@ Source, entry input, interpolation arguments, named inputs, action
     messages, journals, and protected event payloads MUST be treated as
     potentially sensitive integration data. Gantry MUST NOT copy protected
     payloads into default diagnostics, display strings, or sinks that lack the
-    applicable capability. An embedder MUST control access to
+    applicable capability defined in Section 12, item 4. An embedder MUST
+    control access to
     journal storage and payload references and MUST define retention and
     deletion policy for them. It MUST also control whether a diagnostic
     consumer may receive source snippets; absent an explicit source-disclosure
