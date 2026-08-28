@@ -160,9 +160,12 @@ document are to be interpreted as described in RFC 2119.
 
 1. Gantry source files MUST use the `.gnt` extension.
 2. A package entry point is `main.gnt`, and its selected entry function is
-   the root module's `fn main`. The directory containing `main.gnt` is the
-   package root. `main` MUST have either no parameters or exactly one typed
-   parameter and MAY return any v1 result type or no result. When `main` has a
+   the root module's `fn main`. The root module MUST declare exactly one
+   function named `main`; a missing `main`, a `main` declared only in a child
+   module, or any non-function root item named `main` is an analysis error.
+   The directory containing `main.gnt` is the package root. `main` MUST have
+   either no parameters or exactly one typed parameter and MAY return any v1
+   result type or no result. When `main` has a
    parameter, the embedding application MUST supply one strict-JSON entry
    value, which Gantry MUST validate against the parameter's generated schema
    before execution begins. When `main` has no parameter, supplying an entry
@@ -334,7 +337,11 @@ document are to be interpreted as described in RFC 2119.
    result MUST commit atomically only after that operation completes and its
    output validates. A failed operation MUST leave the assignment target
    unchanged; external hook side effects are not rolled back. This operation-
-   level atomicity is the v1 transaction boundary.
+   level atomicity is the v1 transaction boundary. The root binding of any
+   assignment target MUST be declared `mut`, except that receiver-field
+   assignment is permitted through `mut self`. Assigning a nested field
+   constructs and commits one updated root value; it does not create aliases
+   to intermediate structs.
 4. Functions and methods are interpreter-managed workflows. Calling one MUST
    create an interpreter call frame and execute its body; the call itself MUST
    NOT invoke an agent hook.
@@ -426,11 +433,18 @@ document are to be interpreted as described in RFC 2119.
    remain unchanged.
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
-3. Agent selection is lexical. A `with <name> { ... }` context selects the named
-   agent for all nested operations unless a nested `with` context overrides it.
-   `<name>` MUST be a literal name from the merged agent declarations, not a
-   runtime binding. `with` contexts MAY occur at any block scope. Operations
-   outside such a context use the declared default agent.
+3. Agent selection is established by lexical `with <name> { ... }` blocks and
+   inherited by their dynamic work. The selected name applies to operations
+   written directly in the block, operations reached through workflow or
+   decision calls made from it, and child tasks spawned from it, unless a
+   nested `with` block overrides the selection. A workflow call therefore
+   inherits the caller's active selection rather than resetting to the default,
+   and a spawned child snapshots the selection that is active when `spawn`
+   executes. Exiting `with` restores the previous selection for its caller;
+   an already spawned child retains its snapshot. `<name>` MUST be a literal
+   name from the merged agent declarations, not a runtime binding. `with`
+   contexts MAY occur at any block scope. Operations with no active selection
+   use the declared default agent.
 4. The Rust hook contract MUST be asynchronous and executor-neutral. Its
    futures MUST be `Send` so Gantry tasks can execute on a multithreaded
    executor, and Gantry's public API MUST NOT expose Tokio- or provider-specific
@@ -444,8 +458,10 @@ document are to be interpreted as described in RFC 2119.
    task's entire lifetime, including nested workflow calls and validation
    retries, and MUST NOT be invoked concurrently with itself. A spawned child
    receives a distinct hook instance. `HookFactory::create` MUST receive a
-   `TaskContext` containing task, execution, parent-task, and inherited logical
-   session identity. Agent selection MUST remain part of each operation
+   `TaskContext` containing task, execution, and parent-task identity; the
+   task's active logical session ID; the enclosing session ID and fork
+   provenance when the task was spawned; and the inherited agent selection.
+   Agent selection MUST remain part of each operation
    request because a task can enter different lexical `with` contexts. Hook
    creation may fail but cannot decline; failure aborts creation of the task.
    Gantry MUST give every hook a Gantry-owned cancellation token whose signal
@@ -508,9 +524,17 @@ document are to be interpreted as described in RFC 2119.
    Entries MUST be ordered from outermost to innermost scope, with repeated
    entries in execution order within one scope. An `else if` request MUST
    include the `conditional-arm` entries from preceding arms in the same
-   chain. A decline that becomes `None` MUST remain available to subsequent
-   operations in the active workflow/control chain through an
-   `optional-decline` entry. The integration MUST make every supplied entry
+   chain. A `None` produced by `Declined` MUST carry interpreter-only decline
+   provenance distinct from a `None` produced by `Completed(null)` or source.
+   That provenance MUST survive assignment, argument and return passing,
+   struct or aggregate containment, capture, and other deep copies. An
+   operation request MUST include one `optional-decline` entry for every
+   distinct decline provenance reachable from its interpolation inputs,
+   ordered by interpolation-input order and then depth-first value traversal;
+   repeated references to the same declined value produce one entry. The
+   metadata is not part of Gantry's JSON value and MUST NOT change schema
+   validation or interpolation, which still emits `null`. The integration MUST
+   make every supplied entry
    available to the selected agent in order, although its provider-specific
    presentation is implementation-defined.
 7. Prompt interpolation MUST use `${expression}`. An unescaped `$` followed by
@@ -768,8 +792,12 @@ document are to be interpreted as described in RFC 2119.
     language meaning of `limit = 0`.
 11. A direct prompted condition uses `if decide "..." { ... }`. Gantry MUST
     also support declarations of the form
-    `decision is_complete(report: Report) { ... }`. A completed decision
-    workflow MUST end in a `decide` expression, whose result schema is the
+    `decision is_complete(report: Report) { ... }`. Each reachable normal
+    completion of a decision workflow MUST yield a trailing `decide`
+    expression, decision-workflow call, or decision-valued `with` expression;
+    alternatively, every reachable path MAY exit through an explicit valid
+    decision `return`. This permits a fully returning `if`/`else` decision
+    workflow without an artificial unreachable tail. The result schema is the
     interpreter-only decision schema in item 2. A decision workflow MAY contain
     multiple ordinary prompts, nested decisions, and other executable blocks.
     `return` MAY exit it early, but the returned expression MUST be a direct
@@ -781,8 +809,8 @@ document are to be interpreted as described in RFC 2119.
    expression of another decision workflow. Its result cannot be bound,
    returned by an ordinary workflow, interpolated, or discarded as a
     standalone statement. Semantic analysis MUST prove that every reachable
-    normal completion of a decision workflow reaches a decision tail and that
-    every reachable explicit `return` in that workflow returns a decision
+    normal completion of a decision workflow yields a decision expression and
+    that every reachable explicit `return` in that workflow returns a decision
     expression. A no-result `return;`, an ordinary value return, or fallthrough
     from a decision workflow is an analysis error.
 
@@ -795,7 +823,13 @@ document are to be interpreted as described in RFC 2119.
 2. A spawn creates an arbitrary child program block running in parallel. The
    spawn name declares a new, lexically scoped, unique, interpreter-owned task
    handle. A task handle is not a `String`, is not agent-visible structured
-   data, and is not otherwise a first-class runtime value.
+   data, and is not otherwise a first-class runtime value. Before submitting
+   the child to the executor or invoking its `HookFactory`, Gantry MUST append
+   and flush a task-state record containing the child's stable task identity,
+   parent identity, source spawn occurrence, copied captures, inherited agent
+   selection, and forked-session identity. The handle becomes visible to the
+   parent only after that record is durable. This ordering prevents a child
+   from performing model-backed work that recovery cannot identify.
 3. A spawned block captures outer variables by copy and MUST NOT mutate outer
    variables. The captured values form a deep, isolated snapshot taken when
    `spawn` executes; “snapshot” describes isolation, not universal read-only
@@ -947,8 +981,9 @@ document are to be interpreted as described in RFC 2119.
 6. Journals MUST identify the exact package source and journal format version.
    The package source identity is the SHA-256 digest of a canonical manifest
    containing every resolved source module exactly once. Manifest entries are
-   sorted by package-relative UTF-8 path, use `/` as their path separator, and
-   contain the path, the exact source-file bytes, and the resolved module path.
+   sorted in ascending lexicographic order by the unsigned UTF-8 bytes of their
+   package-relative path, use `/` as their path separator, and contain the
+   path, the exact source-file bytes, and the resolved module path.
    Paths use the NFC spelling already required by Section 4; source bytes and
    line endings MUST NOT otherwise be normalized. The manifest byte stream is
    the ASCII domain tag `gantry-source-v1\0`, followed by the entry count and,
@@ -1052,9 +1087,14 @@ document are to be interpreted as described in RFC 2119.
    event ID. Exhaustion for a required sink MUST abort the affected activity
    and its execution when one exists; exhaustion for a best-effort sink MUST
    be journaled when a journal exists, otherwise included in the activity
-   result, and the activity MUST continue. Successful completion and orderly
-   shutdown MUST flush all required sink deliveries for the applicable
-   activity before returning.
+   result, and the activity MUST continue. Before returning a foreground
+   outcome, Gantry MUST flush required-sink delivery through that execution's
+   foreground-completion event; events from detached work remain eligible for
+   later delivery through the same execution. Before returning a terminal
+   execution result, validation or analysis result, or orderly shutdown
+   report, Gantry MUST flush all required-sink deliveries produced by that
+   completed activity through its final event. These barriers do not require
+   waiting for events that the activity has not yet produced.
    An event describing sink-delivery failure MUST NOT be delivered to the same
    failing sink. For a resumable execution, required-sink exhaustion MUST append
    and flush one terminal failure record directly to the journal without
@@ -1111,8 +1151,9 @@ accepted only where the productions below include an optional final comma.
 source              = { item }, end_of_file ;
 
 whitespace          = " " | "\t" | "\r" | "\n" ;
-line_comment        = "//", { any_character_except_newline },
-                      ( "\n" | end_of_file ) ;
+line_terminator     = "\r\n" | "\n" | "\r" ;
+line_comment        = "//", { any_character_except_line_terminator },
+                      ( line_terminator | end_of_file ) ;
 block_comment       = "/*", { block_comment | block_comment_character }, "*/" ;
 
 identifier_token    = xid_start_or_underscore,
@@ -1139,7 +1180,11 @@ Block comments nest. An unterminated block comment, quoted string, raw string,
 escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
 Unicode scalar value and contain one through six hexadecimal digits. A normal
 string may contain a literal newline. The lexer preserves its bytes after
-escape decoding and performs no indentation normalization.
+escape decoding and performs no indentation normalization. Outside string
+tokens, `\r\n` is one line terminator rather than two. Inside ordinary, raw,
+and block prompt strings, authored line-ending scalars are content and are
+preserved exactly except for the structural block-prompt delimiters described
+below.
 
 `string_character` is any Unicode scalar value other than `"` or `\`; newline
 characters are included. `block_prompt_body` is the shortest sequence ending
@@ -1279,9 +1324,8 @@ schema is implied by the declaration.
 
 ```ebnf
 block                   = "{", { statement }, [ trailing_expression ], "}" ;
-decision_block          = "{", { statement }, decision_tail, "}" ;
-decision_tail           = decision_expression
-                        | "return", decision_expression, ";" ;
+decision_block          = "{", { statement }, [ decision_tail ], "}" ;
+decision_tail           = decision_expression ;
 
 statement               = let_statement
                         | assignment_statement
@@ -1313,14 +1357,18 @@ trailing_expression     = expression ;
 Bindings require explicit types in v1. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
 closing brace. `return;` is valid only in a no-result function, method, or
-spawned block. `break` and `continue` are valid only in a loop body. A
-`decision_block` MUST
-end in a direct `decide` expression or decision-workflow call, whether trailing
-or returned; an earlier `return` in its statement sequence is subject to the
+spawned block. `break` and `continue` are valid only in a loop body. When a
+`decision_block` has a reachable normal completion, it MUST end in a direct
+`decide` expression, decision-workflow call, or decision-valued `with`
+expression. The optional grammar tail permits a
+block whose static control-flow analysis proves that every reachable path has
+already exited through a valid decision `return`; it does not permit decision
+fallthrough. An earlier `return` in the statement sequence is subject to the
 same restriction. The broader `return_expression` production permits a parser
 to recognize early decision returns inside nested ordinary blocks; semantic
 analysis MUST reject decision expressions returned from ordinary workflows and
-ordinary values returned from decision workflows. Assignment to `self` as a whole is not v1 syntax; a
+ordinary values returned from decision workflows. Assignment to `self` as a
+whole is not v1 syntax; a
 `mut self` method may assign its receiver fields and may return the resulting
 receiver value.
 
