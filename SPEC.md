@@ -527,13 +527,19 @@ document are to be interpreted as described in RFC 2119.
    Defaults MUST NOT invoke an agent operation. When an optional field with a
    default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
-9. Bindings, including function, method, and decision-workflow parameters
-   other than the receiver, are immutable by default. `mut` on a local
-   declaration or parameter enables rebinding and field mutation of that local
-   value. Parameter mutability is local to the called workflow because
-   arguments use the deep-copy semantics in Section 6; it never permits
-   mutation of the caller's value. Assignments MUST preserve type, and v1
-   permits no implicit type coercion.
+9. Every first-class Gantry value has deep, nonaliasing value semantics.
+   Binding initialization, assignment, argument and return passing, field and
+   aggregate projection, construction, task capture, and join-result delivery
+   each produce an independent logical value. An implementation MAY share
+   immutable backing storage or use copy-on-write internally, but that sharing
+   MUST NOT be observable through mutation, failure, cancellation, journaling,
+   or resume. Interpreter-only optional-decline provenance is copied with its
+   value under Section 7. Bindings, including function, method, and
+   decision-workflow parameters other than the receiver, are immutable by
+   default. `mut` on a local declaration or parameter enables rebinding and
+   field mutation of that local value. Parameter mutability is local to the
+   called workflow and never permits mutation of the caller's value.
+   Assignments MUST preserve type, and v1 permits no implicit type coercion.
 10. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
 11. Built-in deterministic string operations and list operations other than
@@ -1073,11 +1079,13 @@ document are to be interpreted as described in RFC 2119.
     wall-clock order and executor completion order MUST NOT influence them.
 17. Hook outcomes and Gantry failures are separate domains. A hook outcome is
     exactly `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
-    Before an execution ID exists, structured start failures MUST at least
-    distinguish syntax, analysis, entry-input validation, integration
-    preflight, initial journal ownership, execution-start persistence, and
-    required-event-delivery failure during pre-execution validation or
-    analysis.
+    Before a new execution is accepted and its execution ID is returned to the
+    embedder, structured start failures MUST at least distinguish syntax,
+    analysis, entry-input validation, integration preflight, initial journal
+    ownership, execution-start persistence, and required-event-delivery
+    failure during pre-execution validation or analysis. Gantry MAY allocate a
+    candidate execution ID while constructing the execution-start record, but
+    that ID is not an accepted execution handle until the record is durable.
 
     Resume has a distinct pre-execution failure boundary even though the
     execution ID already exists. A resume-start failure MUST at least
@@ -1193,13 +1201,15 @@ document are to be interpreted as described in RFC 2119.
    schema rules: `String` uses `{"type":"string"}`; `List<T>` uses an array
    with the schema for `T` in `items`; tuples use the exact fixed-array form in
    item 4; options use `anyOf` with `{"type":"null"}` first and the schema
-   for `T` second; and structs use the object rules in item 7 with properties
-   in declaration order and required-field names in declaration order.
+   for `T` second; and structs use the object rules in item 7. A struct's
+   `properties` object is keyed by exact field name, while its `required` array
+   lists required fields in declaration order. RFC 8785 canonicalization, not
+   source declaration order, determines serialized JSON object-member order.
    Every reachable declared struct MUST have exactly one `$defs` entry. Its
    definition key is the lowercase hexadecimal SHA-256 digest of the UTF-8
    canonical type descriptor from Section 5, and every occurrence of that
-   struct type uses a local `$ref` to that entry. `$defs` entries are ordered
-   by their definition-key bytes before canonical serialization. The root
+   struct type uses a local `$ref` to that entry. RFC 8785 canonicalization
+   determines `$defs` object-member order from those definition keys. The root
    adds `$schema`, the complete reachable `$defs` object when nonempty, and
    either its own non-struct schema keywords or a `$ref` for a struct result.
    No implementation-specific title, description, identifier, or annotation
@@ -1887,14 +1897,28 @@ document are to be interpreted as described in RFC 2119.
    omits the record ID and sequence number. The storage append operation MUST
    atomically assign both fields and store the resulting finalized envelope;
    only that finalized envelope is a journal record returned by durable reads.
-10. For each new execution, after entry validation and integration preflight
+10. A new-execution request MUST identify a fresh journal target through an
+    embedder-supplied stable journal ID. Allocation and naming of that target
+    are integration concerns outside the `JournalStorage` mutation interface.
+    After exclusive ownership is acquired, the target's authoritative durable
+    prefix MUST be empty, its durability watermark MUST be zero, and its next
+    append sequence MUST be one. A nonempty target is an initial-
+    journal-ownership start failure; Gantry MUST NOT overwrite it, append a
+    second execution start, or reinterpret it as the requested new execution.
+    The embedder retains the journal target identity even when startup fails so
+    it can inspect an uncertain storage outcome or resume by journal identity
+    if an execution-start record became durable before an error was observed.
+
+    For each new execution, after entry validation and integration preflight
     succeed but before evaluating `main`, creating a child task, or dispatching
-    a hook, Gantry MUST append and flush exactly one execution-start record.
-    That record MUST contain the package source identity, the effective-
-    configuration identity and fields defined below, the selected root-session
-    identity and provenance, the agent-mapping revision from Section 7, the
-    canonical signature of `main`, and either a no-entry-input marker or the
-    validated and normalized canonical entry value with its type descriptor.
+    a hook, Gantry MUST allocate a fresh execution ID and append and flush
+    exactly one execution-start record as the journal's first record. That
+    record MUST have sequence number one and MUST contain the package source
+    identity, the effective-configuration identity and fields defined below,
+    the selected root-session identity and provenance, the agent-mapping
+    revision from Section 7, the canonical signature of `main`, and either a
+    no-entry-input marker or the validated and normalized canonical entry value
+    with its type descriptor.
     Resume MUST verify and reuse the existing execution-start record, restore
     its entry value, and MUST NOT append a second execution-start record or
     accept replacement entry input. A mapping revision changed during resume
@@ -2471,16 +2495,19 @@ The reserved words are:
 ```text
 agent      agents     as          break       continue    crate
 decision   decide     default     detach       else        fn
-fork       if         impl        inline       join        joinall
-let        limit      List        loop         mod         mut
-new        None       Option      prompt      return      retry_limit
-self       session    Some        spawn       String      struct
-super      Tuple      until       use          when        while
-with
+false      fork       if          impl         inline      join
+joinall    let        limit       List         loop        mod
+mut        new        None        null         Option      prompt
+return     retry_limit self       session      Some        spawn
+String     struct     super       true         Tuple       until
+use        when       while       with
 ```
 
 `as` is reserved for future compatible extension even though v1 has no alias
-form for `use`. Reserved type and constructor names are case-sensitive.
+form for `use`. `true`, `false`, and `null` are reserved because they are JSON
+spellings but are not Gantry source values in v1; reserving them prevents code
+that visually resembles deterministic Boolean or null-valued source logic.
+Reserved type and constructor names are case-sensitive.
 
 ### 13.3 Package declarations and types
 
@@ -3397,10 +3424,18 @@ provider-specific or executor-specific types in Gantry programs:
    from the authoritative durable record prefix returned by journal storage,
    and MUST obtain the exclusive execution ownership required by Section 11
    before advancing it.
-   Execution accepts either no entry input or one raw byte sequence containing
-   strict JSON as required by `main`; Gantry, rather than the embedder, performs
-   the decoding, parsing, duplicate-member rejection, and schema validation
-   defined in Section 4. It MUST also accept an optional root-session
+   A new-execution request MUST identify a fresh journal target through an
+   embedder-supplied stable journal ID. Allocation of that ID and its storage
+   target is an integration concern completed before calling Gantry. The API
+   MUST return that journal identity even when startup fails, while it MUST
+   return an accepted execution ID only after the execution-start record is
+   durable. This distinction permits inspection or resume after an uncertain
+   storage response without presenting an uncommitted candidate execution as
+   accepted. Execution accepts either no entry input or one raw byte sequence
+   containing strict JSON as required by `main`; Gantry, rather than the
+   embedder, performs the decoding, parsing, duplicate-member rejection, and
+   schema validation defined in Section 4. It MUST also accept an optional
+   root-session
    specification containing an embedder-chosen logical session ID. When that
    specification is present, the embedder MUST arrange for the hook integration
    to resolve the ID to its integration-owned conversational context; Gantry
