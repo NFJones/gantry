@@ -279,6 +279,10 @@ document are to be interpreted as described in RFC 2119.
    API MUST NOT require callers to preparse the entry input through a JSON
    representation that can erase those errors. When `main` has no parameter,
    supplying entry bytes is an error.
+   Entry decoding, validation, and normalization are pre-execution work. A
+   failure in that work MUST be returned as a structured start failure and
+   MUST NOT create a resumable Gantry execution or an execution-start journal
+   record. Section 15 defines the corresponding embedding result boundary.
    Gantry MUST return a successful entry result to the embedder as the
    canonical strict JSON defined in Section 8
    together with a host-level indication of whether the function returned a
@@ -694,7 +698,8 @@ document are to be interpreted as described in RFC 2119.
    - a protocol major and minor version;
    - stable operation, execution, and task IDs, plus the parent-task ID when
      the task was spawned;
-   - an operation kind and selected agent name;
+   - an operation kind, selected agent name, and the agent-mapping revision ID
+     active for this dispatch;
    - the authored source prompt template defined in Section 6 and the
      interpolated prompt;
    - JSON-serialized typed arguments;
@@ -935,16 +940,19 @@ document are to be interpreted as described in RFC 2119.
     positions required by Section 9. These counters are logical interpreter
     state and MUST be checkpointed or reconstructible from the durable prefix;
     wall-clock order and executor completion order MUST NOT influence them.
-17. Hook outcomes and interpreter failures are separate domains. A hook
-    outcome is exactly `Completed(raw_output)`, `Declined(reason)`, or
-    `Failed(message)`. Gantry runtime errors MUST at least distinguish entry-
-    input validation, syntax, analysis, hook creation, hook failure, decline of
-    a required result, structured-output exhaustion, deterministic evaluation
-    failure, executor failure, cancellation, journal failure, required-event-
-    delivery failure, task/join failure, and internal invariant failure.
-    Projection bounds failures are deterministic evaluation failures. Concrete
-    Rust error types are implementation-defined, but embedders MUST be able to
-    distinguish these categories without parsing display text.
+17. Hook outcomes and Gantry failures are separate domains. A hook outcome is
+    exactly `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
+    Before an execution ID exists, structured start failures MUST at least
+    distinguish syntax, analysis, entry-input validation, integration
+    preflight, initial journal ownership, and execution-start persistence.
+    Runtime errors for an existing execution MUST at least distinguish hook
+    creation, hook failure, decline of a required result, structured-output
+    exhaustion, deterministic evaluation failure, executor failure,
+    cancellation, journal failure, required-event-delivery failure, task/join
+    failure, and internal invariant failure. Projection bounds failures are
+    deterministic evaluation failures. Concrete Rust error types are
+    implementation-defined, but embedders MUST be able to distinguish these
+    categories and the start/runtime boundary without parsing display text.
 18. Unless a more specific rule states otherwise, a fatal operation or
     interpreter error terminates the current Gantry task rather than silently
     terminating unrelated parallel work. Failure of the root foreground task
@@ -1311,11 +1319,13 @@ document are to be interpreted as described in RFC 2119.
    expression's program point. It excludes later declarations, tasks declared
    in nested scopes, tasks owned by another Gantry task, and tasks explicitly
    detached before the join. It consumes all included handles, waits until all
-   included tasks have settled, and yields an ordered `List<T>` in task
-   declaration order when every joined task has the
-   same non-`None` result type. When every joined task has a non-`None` result
-   but those types are not all exactly equal, it yields a positional tuple in
-   task declaration order. Otherwise it is a waiting statement that discards
+   included tasks have settled, and yields the task's declared result type
+   when exactly one included task has a non-`None` result. With two or more
+   included tasks, it yields an ordered `List<T>` in task declaration order
+   when every joined task has the same non-`None` result type. When two or more
+   joined tasks all have non-`None` result types that are not exactly equal, it
+   yields a positional tuple in task declaration order. Otherwise it is a
+   waiting statement that discards
    successful outputs and has no result. In particular, if any included task
    has no result, the complete `joinall()` has no result. With zero included
    tasks, `joinall()` is likewise a no-result no-op. Semantic analysis MUST
@@ -1494,8 +1504,13 @@ document are to be interpreted as described in RFC 2119.
    they do not add another storage mutation primitive. Before appending after
    recovery, storage MUST discard or otherwise make unreachable every
    physically present record beyond the durability watermark, and the next
-   append MUST receive the watermark plus one. A journal failure aborts the
-   affected in-process execution or resume run: Gantry MUST reject further
+   append MUST receive the watermark plus one. This reconciliation is an
+   internal storage-recovery obligation completed before a new owner receives
+   its fencing token; it is not an additional journal-record mutation exposed
+   through `JournalStorage`. A store that cannot reconcile its non-durable tail
+   MUST fail owner acquisition rather than expose an ambiguous prefix. A
+   journal failure aborts the affected in-process execution or resume run:
+   Gantry MUST reject further
    state transitions, signal
    cancellation to all foreground, attached, and detached tasks owned by that
    execution, apply the configured cancellation drain, and return the journal
@@ -1865,8 +1880,14 @@ document are to be interpreted as described in RFC 2119.
    reconfigured after Gantry appends and flushes an execution-state record
    describing the new effective set. Such a change affects only later events
    and never alters an already frozen delivery obligation.
-6. Event delivery is at least once. Sinks MUST deduplicate using the stable
-   event ID. Exhaustion for a required sink MUST abort the affected activity
+6. Delivery of a journaled event is durably at least once across process
+   interruption and resume. Sinks MUST deduplicate using the stable event ID.
+   For a standalone validation or analysis activity without a journal, Gantry
+   MUST apply the configured delivery attempts while that activity remains
+   alive, but process interruption MAY lose an unsettled event and v1 provides
+   no recovery source from which to redeliver it. An implementation MUST NOT
+   describe that weaker standalone guarantee as durable at-least-once
+   delivery. Exhaustion for a required sink MUST abort the affected activity
    and its execution when one exists; exhaustion for a best-effort sink MUST
    be journaled when a journal exists, otherwise included in the activity
    result, and the activity MUST continue. Before returning a foreground
@@ -1911,8 +1932,9 @@ document are to be interpreted as described in RFC 2119.
    - `workflow start` and `workflow end`: workflow path, frame occurrence, and
      completion status, plus a typed result reference when one exists;
    - `operation dispatch`: operation and dispatch IDs, operation and result
-     kinds, selected agent, logical session ID, validation-attempt number,
-     recovery-dispatch number, and prompt and schema references;
+     kinds, selected agent, active agent-mapping revision ID, logical session
+     ID, validation-attempt number, recovery-dispatch number, and prompt and
+     schema references;
    - `operation completion`: operation and dispatch IDs, outcome variant, and
      a protected raw-output reference for `Completed`, or the decline/failure
      reason under the sink's redaction policy;
@@ -3043,9 +3065,13 @@ provider-specific or executor-specific types in Gantry programs:
    every journaled logical session needed by unfinished work, including its
    parent and creation provenance, and require the integration to resolve the
    complete set as specified in Section 7. Resume MUST dispatch no hook when
-   this preflight fails. Execution returns an execution ID and a typed
-   foreground outcome that distinguishes a value, no result, and every
-   runtime-error category defined in Section 7. A
+   this preflight fails. Starting a new execution MUST return either a
+   structured start failure with no execution ID, or an execution ID after the
+   execution-start record is durably flushed. Syntax, analysis, entry-input,
+   integration-preflight, initial journal-ownership, and execution-start write
+   failures are start failures. Once the execution ID is returned, execution
+   produces a typed foreground outcome that distinguishes a value, no result,
+   and every runtime-error category defined in Section 7. A
    foreground outcome MAY be returned while explicitly detached tasks remain;
    the execution ID allows the embedder to correlate their later events and
    terminal durable state. Because event sinks are optional, the API MUST also
