@@ -2296,7 +2296,7 @@ shown here.
    decision or calling a workflow does not itself add a hook invocation,
    although evaluating the workflow body may reach explicit operations.
    There is no truthiness: every other value type is invalid as a condition.
-2. A conditional decision MUST return this strict JSON shape, with no
+2. A successful `decide` operation MUST return this strict JSON shape, with no
    additional properties:
 
    ```json
@@ -2695,8 +2695,10 @@ shown here.
    the first one in durable journal-sequence order is primary and later errors
    are secondary. A failure after the terminal-execution record is durable
    MUST NOT replace its category; in particular, Section 12 reports later
-   required-delivery exhaustion as a separate barrier failure. Otherwise, one
-   or more detached failures produce the
+   required-delivery exhaustion as a separate barrier failure. Otherwise, a
+   failed foreground task produces its runtime-error category as the terminal
+   category and includes detached failures as secondary details. Otherwise,
+   one or more detached failures produce the
    `detached-task failure` terminal category; otherwise, a cancellation
    produces the `cancellation` category; and only then is the terminal category
    `success`. Multiple detached failures MUST be reported in stable task-path
@@ -2981,7 +2983,8 @@ shown here.
    an execution with unfinished detached tasks MUST recover them under the
    same rules as other in-flight spawned blocks. An execution reaches its
    terminal durable state only after its foreground and every detached task
-   have completed, failed, or been cancelled during shutdown. Before returning
+   have completed, failed, or reached durable cancellation under Section 10.
+   Before returning
    a foreground result, Gantry MUST append and flush an interpreter checkpoint
    that makes the corresponding scopes, instruction positions, task ownership,
    and completed values durable. Once all foreground and detached work has
