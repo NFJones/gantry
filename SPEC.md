@@ -886,7 +886,7 @@ defined in Sections 3.1 through 3.6.
 <a id="GNT-3.12"></a>
 
 12. Static semantics use judgments of the forms `Σ; Γ; Ω ⊢ e : T ! ε ⇒ Ω'`, `Σ;
-   Γ; Ω ⊢ s ! ε ⇒ Φ`, and
+   Γ; Ω ⊢ c ! ε ⇒ Φ`, and
     `Σ ⊢ package ok`. `Σ` is the resolved package signature, `Γ` maps source
     names to types and mutability, `Ω` maps task handles to their linear
     ownership states, `T` is a source type, `ε` is the least inferred effect
@@ -964,7 +964,8 @@ The metavariables are:
   stable dynamic task identity, `o` for a stable logical-operation identity,
   and `q` for a physical dispatch identity;
 - `Σ` for the resolved package signature, `Γ` for value bindings of the form
-  `x : (mutability, τ)`, `Ω` for task handles, and `ε` for effects;
+  `x : (b, τ)`, `b` for binding mutability (`immutable` or `mutable`), `Ω` for
+  task handles, and `ε` for effects;
 - `ρ` for a task-local environment from names to store roots, `μ` for the
   task-local value store, `a` for active agent selection, and `s` for active
   logical-session identity; and
@@ -1027,7 +1028,7 @@ e ::= v | x | aggregate(e...) | project(e,k) | prim(e...)
     | with-agent(a,e) | with-session(d,e) | join(h...)
     | join-all(h...)
 
-c ::= skip | let pat:τ=e | assign p=e | discard e | return e
+c ::= skip | let b pat:τ=e | assign p=e | discard e | return e
     | break | continue | c;c | if e then c else c
     | match e with pat=>c... | loop[L,d] c
     | while[L,d] e do c | until[L,d] c when e
@@ -1042,11 +1043,13 @@ trailing expressions, operation modifiers, and implicit Unit returns lower to
 these terms while preserving Section 6's evaluation order. Lowering MUST
 retain a distinct core site for every operation, spawn, join, detachment,
 branch, loop, return target, and cancellation point.
-For `let pat:τ=e`, the frontend evaluates `e` exactly once and then applies
-the irrefutable binding pattern atomically. If evaluation completes, every
-name in `pat` becomes visible with its projected value at the same sequence
-boundary; if evaluation fails, none becomes visible. A single-name binding is
-the special case where `pat` is one identifier.
+For `let b pat:τ=e`, `b` is `mutable` exactly when the surface declaration is
+the single-name form `let mut`; every other binding is `immutable`. The
+frontend evaluates `e` exactly once and then applies the irrefutable binding
+pattern atomically. If evaluation completes, every name in `pat` becomes
+visible with its projected value and mutability `b` at the same sequence
+boundary; if evaluation fails, none becomes visible. A mutable tuple pattern
+has no lowering because Section 13.5 prohibits that surface form.
 
 <a id="GNT-3-F-AUX"></a>
 
@@ -1082,7 +1085,7 @@ type(v)=τ
 ────────────────────────────── T-Value
 Σ;Γ;Ω ⊢ v : τ ! ∅ ⇒ Ω
 
-Γ(x)=(m,τ)
+Γ(x)=(b,τ)
 ────────────────────────────── T-Name
 Σ;Γ;Ω ⊢ x : τ ! ∅ ⇒ Ω
 
@@ -1260,7 +1263,7 @@ means that completion is unreachable.
 
 Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
 ────────────────────────────── T-Let/T-Discard
-Σ;Γ;Ω ⊢ let pat:τ=e ! ε ⇒ {N↦Ω'}
+Σ;Γ;Ω ⊢ let b pat:τ=e ! ε ⇒ {N↦Ω'}
 Σ;Γ;Ω ⊢ discard e ! ε ⇒ {N↦Ω'}
 
 Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
@@ -1276,9 +1279,11 @@ means that completion is unreachable.
 `let` additionally requires every name bound by `pat` to be fresh and the
 declared exact type to equal the type of `e`; its scope extension applies to
 the following command in the enclosing sequence. `bind(Σ,τ,pat)` determines
-the bindings and requires `pat` to be irrefutable. The value is evaluated once
-before those bindings become visible. `_` may ignore selected members inside
-a tuple pattern, but whole-value discard uses the explicit `discard` command.
+the names and projected types and requires `pat` to be irrefutable. The scope
+extension records mutability `b` for every resulting binding. `b=mutable` is
+valid only when `pat` is one identifier. The value is evaluated once before
+those bindings become visible. `_` may ignore selected members inside a tuple
+pattern, but whole-value discard uses the explicit `discard` command.
 Bare expression statements are `discard e` only when
 `τ=Unit`; otherwise only the explicit source `discard` lowers to this command.
 `return`, `break`, and `continue` must have a valid nearest target, and every
