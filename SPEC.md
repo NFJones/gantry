@@ -1917,6 +1917,15 @@ shown here.
     `deterministic-evaluation-failure`, `executor-failure`, `cancellation`,
     `journal-failure`, `required-event-delivery-failure`, `task-join-failure`,
     and `internal-invariant-failure`.
+    `success` and `detached-task-failure` are terminal-execution outcome
+    categories, not runtime-error categories. A terminal-execution record uses
+    one of those terminal-only categories or the exact runtime-error category
+    that determines the terminal outcome under Section 10. `journal-failure`
+    cannot become a durable terminal category because journal failure prevents
+    the required terminal record from being committed. After a terminal record
+    is durable, `required-event-delivery-failure` is reported separately as a
+    delivery-barrier status and MUST NOT replace the recorded terminal
+    category.
     Backticked limit names such as `workflow-call-depth-limit`,
     `string-size-limit`, `list-size-limit`, and `task-count-limit` are codes
     within the `deterministic-evaluation-failure` category, not additional
@@ -2578,11 +2587,12 @@ shown here.
    Consuming a handle for a join changes its source-level ownership state but
    does not detach the child: until it settles, the child remains an attached
    descendant for cancellation and cleanup under items 10 and 14.
-   Failures abort the current Gantry task as one aggregate task/join error
+   Failures abort the current Gantry task with one aggregate
+   `task-join-failure` runtime error
    ordered by join argument, never by completion time. A failed single-task
    join likewise consumes its handle durably and fails the current Gantry task
-   with a task/join error. Propagation beyond that task follows Section 7 rather
-   than implicitly aborting unrelated parallel work.
+   with `task-join-failure`. Propagation beyond that task follows Section 7
+   rather than implicitly aborting unrelated parallel work.
 6. `joinall()` is the scope-oriented form for joining every unconsumed, attached
    task handle that is owned by the current Gantry task, declared directly in
    the current lexical scope, and definitely available at the `joinall()`
@@ -2605,9 +2615,9 @@ shown here.
    a no-result `joinall()` cannot be bound or used as a trailing expression.
    `joinall()` MUST NOT stop waiting merely because one task fails.
    After all tasks settle, one or more failures MUST fail the current Gantry
-   task with one aggregate task/join error. That error MUST report failed tasks
-   in source declaration order, not completion order. Propagation beyond the
-   current task follows Section 7. At a `joinall()`, every task
+   task with one aggregate `task-join-failure` runtime error. That error MUST
+   report failed tasks in source declaration order, not completion order.
+   Propagation beyond the current task follows Section 7. At a `joinall()`, every task
    handle declared directly in that scope MUST have one definite ownership
    state on all incoming control-flow paths. A handle that is consumed or
    detached on only some incoming paths is an analysis error rather than a
@@ -2663,14 +2673,14 @@ shown here.
    error takes precedence under this item. For this rule, an
    **execution-wide runtime error** is one that another normative requirement
    applies to the complete execution rather than to one Gantry task. In v1,
-   journal failure and required-event-delivery failure are execution-wide;
+   `journal-failure` and `required-event-delivery-failure` are execution-wide;
    ordinary hook, structured-output, deterministic-evaluation, executor, and
-   task/join failures remain task-local unless a more specific rule propagates
-   them. Journal failure aborts the current in-process run but is not a durable
-   terminal category: after storage fails, Gantry cannot append the terminal
-   record that would establish one. It is returned separately to the embedder,
-   and a later owner may resume from the authoritative durable prefix under
-   Section 11.
+   `task-join-failure` errors remain task-local unless a more specific rule
+   propagates them. Journal failure aborts the current in-process run but is
+   not a durable terminal category: after storage fails, Gantry cannot append
+   the terminal record that would establish one. It is returned separately to
+   the embedder, and a later owner may resume from the authoritative durable
+   prefix under Section 11.
    A detached task cannot subsequently be joined because `detach` consumes its
    handle. These rules make explicit detachment a deliberate transfer of both
    lifetime and failure ownership to the originating execution.
@@ -3506,11 +3516,11 @@ shown here.
    execution-wide rather than task-local: Gantry MUST reject new work for that
    execution, signal cancellation to its foreground, attached, and detached
    tasks, and apply the configured cancellation drain. It MUST then append and
-   flush the execution's terminal-execution record with the `required-event-
-   delivery failure` category, without making that record depend on another
-   event. That record MUST identify the exhausted sink, failed event, delivery
-   attempt, and cancellation outcome. Failure of the terminal-record write is
-   returned to the embedder as a journal failure.
+   flush the execution's terminal-execution record with the
+   `required-event-delivery-failure` category, without making that record
+   depend on another event. That record MUST identify the exhausted sink,
+   failed event, delivery attempt, and cancellation outcome. Failure of the
+   terminal-record write is returned to the embedder as a journal failure.
 
    After a sink has exhausted, Gantry MUST exclude that sink from every new
    cancellation, failure, foreground-completion, task-completion, and terminal-
@@ -5488,10 +5498,11 @@ provider-specific or executor-specific types in Gantry programs:
    permit the embedder to query an execution's latest durable foreground and
    terminal states and to asynchronously wait for terminal state by execution
    ID. Foreground-await and terminal-await results MUST represent the Gantry
-   language outcome separately from the required-event-delivery barrier
-   status. A delivery-barrier failure MUST NOT masquerade as, replace, or erase
-   a durable foreground or terminal language outcome. Execution observation
-   MUST distinguish `not-terminal`, `terminal(outcome, barrier_status)`, and
+   language outcome separately from the `required-event-delivery-failure`
+   barrier status. A delivery-barrier failure MUST NOT masquerade as, replace,
+   or erase a durable foreground or terminal language outcome. Execution
+   observation MUST distinguish `not-terminal`,
+   `terminal(outcome, barrier_status)`, and
    `run-failed-nondurably(journal_error)`. The last state is returned by an
    in-process await when journal failure aborts the current run; it is not a
    durable execution state and a later query observes only the authoritative
@@ -5499,7 +5510,9 @@ provider-specific or executor-specific types in Gantry programs:
    detached-task failure, cancellation, and every runtime-error category that
    Sections 7 through 12 permit to be durably recorded as terminal. Journal
    failure is excluded because Sections 10 and 11 prohibit claiming a new
-   durable terminal state after storage fails.
+   durable terminal state after storage fails. The terminal-only categories
+   are exactly `success` and `detached-task-failure`; all other durable failure
+   outcomes use the applicable exact runtime-error category from Section 7.
 2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    task context. The factory, or a companion harness-preflight interface owned
    by the same integration, MUST also validate the complete nonempty merged
