@@ -1417,8 +1417,8 @@ shown here.
      site;
    - a dispatch ID, validation-attempt number, and recovery-dispatch number;
      and
-   - validation errors exactly when an immediately preceding invalid attempt
-     exists.
+   - validation errors exactly when the dispatch is a structured-output repair
+     attempt, including a recovery redispatch of such an attempt.
    The v1 operation kinds are `prompt`, `decision`, and `action`. The result
    kind is `value`, `no-result`, or `decision`. The expected result descriptor
    is the declared value type for `value`, `None` for `no-result`, and
@@ -2490,10 +2490,10 @@ shown here.
    repeated handles in one join, joins of already consumed handles, and uses of
    handles that may have been consumed on an incoming control-flow path are
    analysis errors. `join()` with no task names is invalid.
-   `join(task_a, task_b, ...)` waits for every named child and yields an ordered
-   `List<T>` of their successful block values in argument order when every
-   joined task has the same non-`None` result type. When the named tasks have
-   non-`None` result types that are not all exactly equal, it yields
+   A join of two or more named children waits for every named child and yields
+   an ordered `List<T>` of their successful block values in argument order when
+   every joined task has the same non-`None` result type. When two or more named
+   tasks have non-`None` result types that are not all exactly equal, it yields
    `Tuple<T1, T2, ..., Tn>`, whose positional types and values follow argument
    order. When every named task has no result, the join is a waiting statement
    with no source value. Mixing value-producing and no-result tasks in one
