@@ -144,6 +144,20 @@ interpolation, and `prompt ... -> String` is the one visible model operation
 and its output contract. Deterministic-only and action-only packages need no
 agent declarations.
 
+The core authoring model is deliberately small:
+
+1. Declare typed data and workflows.
+2. Use ordinary expressions and control flow for facts the interpreter can
+   compute.
+3. Use `prompt` for model-generated values, `decide` for model judgment, and
+   `action` for harness capabilities.
+4. Use `spawn` only when work should overlap, then visibly `join` or `detach`
+   every task.
+
+The rest of the specification primarily makes those operations portable under
+validation, cancellation, observation, and resume; it does not add hidden
+source-language effects.
+
 The following non-normative package tour shows the meaningful v1 language
 families together in one source file. It is intentionally broader than a
 typical program and is a reference feature map, not the minimum syntax and not
@@ -402,7 +416,9 @@ most important when humans or models author Gantry source:
   values, but cannot hide another external operation, mutation, join, or
   control-flow transfer.
 - `Bool` expressions, `match`, and `if let` route validated structure
-  deterministically. Semantic judgment remains explicit through `decide`.
+  deterministically. Use them when the answer follows mechanically from
+  available values. Use `decide` when the answer requires interpretation,
+  quality assessment, intent, or policy judgment.
 - `with <agent> { ... }` selects an agent lexically, while
   `session(<directive>) { ... }` selects conversational continuity. Neither
   construct hides the `prompt` and `decide` sites inside it.
@@ -2054,7 +2070,13 @@ shown here.
    any otherwise valid RFC 8259 spelling and are canonicalized only after
    successful parsing, validation, and normalization. Plain `String`
    interpolation remains the deliberate exception because it inserts string
-   contents rather than a JSON value.
+   contents rather than a JSON value. RFC 8785 determines object-member order
+   and number spelling at every canonical boundary; source declaration order
+   remains semantically relevant only where this specification states it, such
+   as struct traversal, schema `required` arrays, and ordered argument vectors.
+   “Canonical strict JSON” elsewhere in this document means exactly the
+   normalized Gantry value encoded by these RFC 8785 rules, not a second JSON
+   format.
 
    A declared enum uses a strict tagged JSON object. A unit variant is
    `{"variant":"NAME"}`. A payload variant is
@@ -2309,14 +2331,15 @@ shown here.
    configuration.
    Reaching a positive limit completes the loop normally rather than failing.
    `inline` uses the enclosing session for both the condition and body. `fork`
-   creates one child session for each prospective iteration; a `while`
-   condition and the body it admits share that child, while an `until` body and
-   its following condition share it. A final false `while` condition therefore
-   has a child session with no body execution. `new` creates one fresh session
-   on loop entry and uses it for every condition and body execution. A session
-   modifier on the decision's final `decide` overrides the loop session only
-   for that decision operation. Validation retries always retain the logical
-   session of the operation being retried.
+   creates one child session for each prospective iteration. For `loop`, each
+   body execution is one prospective iteration and uses its own child session.
+   For `while`, a condition and the body it admits share that child; for
+   `until`, a body and its following condition share it. A final false `while`
+   condition therefore has a child session with no body execution. `new`
+   creates one fresh session on loop entry and uses it for every condition and
+   body execution. A session modifier on the decision's final `decide`
+   overrides the loop session only for that decision operation. Validation
+   retries always retain the logical session of the operation being retried.
 7. Gantry MUST support `break`, `continue`, and `return` in loops. Unlabeled
    `break` and `continue` target the nearest enclosing loop. Labeled loop
    control is excluded from v1. A body execution is counted when control enters
@@ -3072,10 +3095,13 @@ shown here.
     and event-delivery values are the v1 defaults defined elsewhere in this
     specification. The six values inside `deterministic_values` are
     illustrative effective values, not language defaults; the integration MUST
-    choose them within the bounds below. Identity strings are placeholders,
-    and `required_event_sinks` illustrates a nonempty configured set rather
-    than prescribing a default sink. The identity MUST encode the effective
-    configured values. `maximum_entry_input_bytes` limits the
+    choose them within the bounds below. `maximum_directive_integer` is the
+    fixed v1 language maximum, not an integration setting; including it makes
+    that parser capability explicit in the configuration identity. Identity
+    strings are placeholders, and `required_event_sinks` illustrates a
+    nonempty configured set rather than prescribing a default sink. The
+    identity MUST encode the effective configured values.
+    `maximum_entry_input_bytes` limits the
     raw entry-input byte sequence before UTF-8 decoding, and
     `maximum_hook_output_bytes` limits each raw `Completed` outcome before
     UTF-8 decoding. `maximum_value_nesting_depth` and `maximum_value_nodes`
