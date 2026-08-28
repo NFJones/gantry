@@ -322,7 +322,12 @@ document are to be interpreted as described in RFC 2119.
 ## 6. Functions and Methods
 
 1. Gantry MUST support free functions and inherent methods declared in
-   Rust-inspired `impl` blocks. Traits are excluded from v1.
+   Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
+   declared in the same Gantry package. Implementations for `String`,
+   `Option<T>`, `List<T>`, `Tuple<...>`, no-result `None`, or any other
+   built-in type are analysis errors. A package MAY split one struct's methods
+   across multiple `impl` blocks, subject to the package-wide duplicate-method
+   rule below. Traits are excluded from v1.
 2. Methods MUST support `self` and `mut self` receivers.
 3. A method may mutate its receiver only through interpreter-executed field
    assignments in its body. An assignment that consumes an agent operation
@@ -413,9 +418,12 @@ document are to be interpreted as described in RFC 2119.
    idempotent rather than an error. Exactly one dedicated
    `default agent = <name>;` binding MUST appear in `main.gnt`, and its name
    MUST belong to the merged set. Conflicting default bindings or selection of
-   an undeclared agent are analysis errors. Integrations MUST resolve every
-   occurrence of the same logical name to the same integration-side agent
-   configuration.
+   an undeclared agent are analysis errors. Within one uninterrupted execution
+   or resume run, integrations MUST resolve every occurrence of the same
+   logical name consistently across all tasks. A later resume MAY change that
+   mapping only as permitted by Section 11; the new mapping then applies
+   consistently to subsequent uncommitted dispatches, while committed outcomes
+   remain unchanged.
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
 3. Agent selection is lexical. A `with <name> { ... }` context selects the named
@@ -460,7 +468,8 @@ document are to be interpreted as described in RFC 2119.
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
    - the source location;
-   - the logical session ID and session directive;
+   - the active logical session ID, root logical session ID, session directive,
+     and enclosing logical session ID when one exists;
    - a dispatch ID, validation-attempt number, and recovery-dispatch number;
      and
    - validation errors from the immediately preceding invalid attempt, when
@@ -551,11 +560,23 @@ document are to be interpreted as described in RFC 2119.
    `inline` operations use this root session. The selected root identity and
    whether it was supplied or generated MUST be journaled and restored on
    resume.
+   Every session created by `fork` or `new` MUST receive a fresh logical ID
+   that is unique within the execution and stable across retry and resume.
+   Gantry MUST journal the creating construct's dynamic identity and the
+   enclosing session ID. A `fork` request identifies that enclosing session as
+   the context source the integration MUST copy. A `new` request includes the
+   enclosing session only for causality and the integration MUST NOT inherit
+   its conversational context. An `inline` request uses the enclosing session
+   as its active session rather than creating another ID. A root operation has
+   no enclosing session. These fields make the `new`, `fork`, and `inline`
+   obligations implementable without relying on provider-specific hidden
+   state.
    Nested constructs inherit the active directive unless they override it. For
-   a loop, `fork` creates a separate child session for each body execution,
-   while `new` creates one fresh session on loop entry and reuses it for every
-   body execution. Outside a loop, `fork` and `new` each create one session on
-   entry to their annotated construct.
+   a loop, `fork` creates a separate child session for each prospective
+   iteration under the condition/body rules in Section 9, while `new` creates
+   one fresh session on loop entry and reuses it for every condition and body
+   execution. Outside a loop, `fork` and `new` each create one session on entry
+   to their annotated construct.
 13. The integration MUST preserve the conversational continuity denoted by a
    reused logical session ID. Provider-specific session storage and mapping
    remain integration concerns.
@@ -604,11 +625,20 @@ document are to be interpreted as described in RFC 2119.
    JSON strings and object member names MUST decode to sequences of Unicode
    scalar values; valid escaped surrogate pairs are combined, and unpaired
    surrogates MUST be rejected.
-   For a no-result prompt, the expected schema is exactly
-   `{ "type": "null" }`, and the parsed value MUST be JSON `null`. This wire
-   value confirms successful completion but does not create a Gantry value;
-   `Declined` and `Failed` retain their ordinary fatal behavior for no-result
-   operations.
+   For a no-result prompt, the expected schema is exactly the following schema
+   object, and the parsed value MUST be JSON `null`:
+
+   ```json
+   {
+     "$schema": "https://json-schema.org/draft/2020-12/schema",
+     "type": "null"
+   }
+   ```
+
+   This wire value confirms successful completion but does not create a Gantry
+   value; `Declined` and `Failed` retain their ordinary fatal behavior for
+   no-result operations. Including `$schema` resolves the no-result case under
+   the same root-schema rule as every value-producing operation.
 2. A `String` result is represented by a JSON string. A struct result is a
    JSON object whose property names directly match its declared field names.
 3. A `List<T>` result is represented by a JSON array. Every array item MUST
@@ -849,6 +879,16 @@ document are to be interpreted as described in RFC 2119.
     tasks are not cancelled by that parent failure. Secondary attached-task
     failures MUST be recorded in the parent failure details in source task
     order but MUST NOT replace the initiating runtime-error category.
+    Once cancellation is signalled to a task, Gantry MUST dispatch no new
+    operation for that task. If an already-dispatched hook returns during the
+    cancellation drain, Gantry MUST append and flush the outcome for audit but
+    mark it cancelled and non-consumable; it MUST NOT validate-retry, assign,
+    branch on, return, or reuse that outcome to continue the cancelled task.
+    A durably cancelled task is terminal and MUST NOT later be resumed as an
+    interrupted task. If executor abortion prevents a hook outcome from being
+    observed, Gantry MUST durably record cancellation of the indeterminate
+    dispatch rather than redispatch it on resume. These rules make cancellation
+    win deterministically over a racing hook completion.
 11. Gantry MUST schedule spawned blocks through the executor supplied by the
     embedding application. The integration determines operation-level resource
     limits and queueing policy.
@@ -1025,8 +1065,13 @@ document are to be interpreted as described in RFC 2119.
 7. Every event envelope MUST identify its protocol version, event and activity
    IDs, optional execution ID, event kind, source location when source-backed,
    task and operation identities when applicable, causal parent IDs, per-task
-   sequence when task-backed, timestamp, payload reference, and redaction
-   state. The canonical v1 event kinds are parse, analysis, workflow start,
+   sequence when task-backed, timestamp, a kind-specific payload or stable
+   payload reference, and redaction state. A timestamp MUST be the event's
+   creation time encoded as an RFC 3339 UTC string and MUST remain unchanged
+   across delivery retries. Prompt templates, schemas, and raw model output
+   MUST use protected stable references rather than being copied into ordinary
+   event payloads; diagnostics and other nonsensitive standalone activity data
+   MAY be carried inline. The canonical v1 event kinds are parse, analysis, workflow start,
    workflow end, operation dispatch, operation completion, schema validation
    failure, retry, branch decision, spawn, join, detach, mutation,
    cancellation, foreground completion, task completion, terminal execution,
@@ -1102,13 +1147,17 @@ before an unescaped `"""` delimiter and uses the same escape sequences as an
 ordinary string. A block prompt MUST begin with a newline immediately after
 its opening delimiter; that required opening newline is structural and is not
 part of the resulting template. Its closing delimiter MUST appear on a line
-containing only indentation and the delimiter. That indentation is the exact
-dedent prefix: it MUST prefix every nonblank content line and is removed once
-from each such line. A whitespace-only content line becomes an empty line when
-its whitespace is no longer than the dedent prefix; any excess whitespace
-remains. Relative indentation and trailing newlines before the closing
-delimiter remain significant. This explicit dedent form keeps multiline
-prompts readable while ordinary and raw strings continue to preserve exact
+containing only indentation and the delimiter. The line break immediately
+before that closing-delimiter line and the delimiter line's indentation are
+structural and are not part of the resulting template. Authors who need a
+trailing newline MUST include one additional blank content line. The closing
+indentation is the exact dedent prefix: it MUST prefix every nonblank content
+line and is removed once from each such line. A whitespace-only content line
+becomes an empty line when its whitespace is no longer than the dedent prefix;
+any excess whitespace remains. Relative indentation and explicitly authored
+leading or trailing blank content lines remain significant. This symmetric
+structural-newline rule keeps multiline prompts readable without silently
+adding a trailing newline. Ordinary and raw strings continue to preserve exact
 whitespace. `block_comment_character` consumes one scalar value that does not
 begin the nested opener `/*` or closing delimiter `*/`.
 `raw_string_body` is the shortest sequence ending immediately before a quote
@@ -1638,7 +1687,7 @@ fn explain(report: Report) -> String {
 Triple-quoted block prompts provide explicit dedentation for clean source
 layout. The following sends `Explain this report:`, the compact JSON report,
 and `Keep the answer concise.` without the source indentation before those
-lines:
+lines and without adding structural leading or trailing newlines:
 
 ```gantry
 fn explain_cleanly(report: Report) -> String {
