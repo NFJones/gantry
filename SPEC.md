@@ -1523,6 +1523,11 @@ shown here.
    strict-JSON value. A shorthand entry and its expanded `name: name` form have
    the same protocol value but retain their own authored source span.
 
+   Comments and whitespace inside an interpolation island remain part of that
+   island's source-text field even though they do not affect evaluation. A
+   repeated interpolation appears repeatedly so the request preserves the
+   template's operation inputs exactly.
+
    An `action` body MUST instead contain the action's canonical item path and
    canonical signature; the action-mapping revision active for the dispatch;
    and an ordered argument vector containing each parameter name, argument
@@ -1530,10 +1535,7 @@ shown here.
    strict-JSON value. It MUST NOT contain a selected agent, prompt template,
    interpolated prompt, named model input, or conversational-session directive.
    Lexical `with` and `session` contexts do not change an action request.
-   Comments and whitespace inside the island remain part of that source-text
-   field even though they do not affect evaluation. A repeated
-   interpolation appears repeatedly so the request
-   preserves the template's operation inputs exactly. Source locations MUST
+   Source locations MUST
    identify the package-relative UTF-8 file and a zero-based, end-exclusive
    byte span into that file's exact source bytes. A permitted UTF-8 byte-order
    mark is part of those bytes and therefore contributes three bytes to later
@@ -1873,7 +1875,8 @@ shown here.
     execution ID already exists. A resume-start failure MUST at least
     distinguish journal read or format failure, ownership acquisition failure,
     source or effective-configuration incompatibility, unresolved agent
-    mapping, unresolved logical session, and unavailable required event sink.
+    mapping, unresolved action mapping, unresolved logical session, and
+    unavailable required event sink.
     Such a failure means recovered interpretation never began: Gantry MUST NOT
     append an execution-state or terminal-execution record, consume a retry
     budget, or change the execution's durable terminal status. If journal
@@ -2584,7 +2587,12 @@ shown here.
    outcome, regardless of whether it settles before or after that outcome is
    returned. It does, however, make the eventual terminal execution category
    `detached-task failure` unless an execution-wide runtime error takes
-   precedence under this item.
+   precedence under this item. For this rule, an **execution-wide runtime
+   error** is one that another normative requirement applies to the complete
+   execution rather than to one Gantry task. In v1, journal failure and
+   required-event-delivery failure are execution-wide; ordinary hook,
+   structured-output, deterministic-evaluation, executor, and task/join
+   failures remain task-local unless a more specific rule propagates them.
    A detached task cannot subsequently be joined because `detach` consumes its
    handle. These rules make explicit detachment a deliberate transfer of both
    lifetime and failure ownership to the interpreter instance.
@@ -3023,8 +3031,11 @@ shown here.
     }
     ```
 
-    The displayed values illustrate the v1 defaults; the identity MUST encode
-    the effective configured values. `maximum_entry_input_bytes` limits the
+    Numeric policy and resource-limit values in this example are the v1
+    defaults where this specification defines one. Identity strings are
+    placeholders, and `required_event_sinks` illustrates a nonempty configured
+    set rather than prescribing a default sink. The identity MUST encode the
+    effective configured values. `maximum_entry_input_bytes` limits the
     raw entry-input byte sequence before UTF-8 decoding, and
     `maximum_hook_output_bytes` limits each raw `Completed` outcome before
     UTF-8 decoding. `maximum_value_nesting_depth` and `maximum_value_nodes`
@@ -4168,13 +4179,12 @@ have been recognized, escapes are decoded independently in the intervening
 literal segments and block-prompt dedentation is applied without changing the
 authored source text retained for an island. Raw strings skip escape decoding
 but use the same left-to-right interpolation and `$$` rules. A closing `}` ends
-an island only when all nested constructor braces and parentheses inside it are
-balanced.
+an island only when every nested `()`, `[]`, and `{}` delimiter opened by the
+island's token stream has been closed.
 The contextual scanner MUST tokenize the island using the ordinary Gantry
-lexical rules, so braces or parentheses inside nested quoted or raw string
-tokens do not affect that balance and comment delimiters inside those strings
-remain literal text. An unclosed or syntactically invalid island is a syntax
-error.
+lexical rules, so delimiters inside quoted or raw string tokens or comments do
+not affect that balance. Comment delimiters inside strings remain literal text.
+An unclosed, mismatched, or syntactically invalid island is a syntax error.
 
 Interpolation and named inputs permit only the restricted grammar above. A
 postfix call is legal only for a declared enum payload constructor or a sealed
@@ -4189,9 +4199,7 @@ precedence, short-circuiting, checked arithmetic, and deterministic-failure
 rules as ordinary expressions. Plain `String` interpolation of a computed
 String still inserts its unquoted contents. A deterministic built-in failure,
 including an empty split or replacement pattern or a size-limit failure,
-prevents the containing operation from being dispatched. Nested braces
-belonging to a constructor are
-balanced before the interpolation's closing `}` is recognized.
+prevents the containing operation from being dispatched.
 Duplicate prompt modifiers and duplicate named-input names are analysis
 errors. `retry_limit` counts retries after the initial attempt.
 
