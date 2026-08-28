@@ -771,8 +771,10 @@ shown here.
    permitted. A function, method, prompt, action, or spawned block MAY have no
    returned value. An ordinary function, method, binding, aggregate, or struct
    MAY carry `Decision`, but an expected `prompt` or `action` output type MUST
-   NOT contain `Decision` at any nesting depth. Only `decide` or a decision
-   workflow can produce that sealed type.
+   NOT contain `Decision` at any nesting depth. Only an executed `decide`
+   operation can originate a new sealed `Decision`; an ordinary workflow,
+   method, decision workflow, or spawned block may return or forward a
+   `Decision` obtained from a valid source without creating another one.
    Omission of a result annotation and the explicit result annotation `-> None`
    both denote this no-result form; they do not denote `Option<T>`. No-result
    is not a first-class value and cannot be bound, passed, interpolated, or
@@ -1639,9 +1641,16 @@ shown here.
    owns UTF-8 decoding, strict-JSON parsing, schema validation, and repair
    retries. Non-UTF-8 or malformed-JSON output is therefore a structured-output
    validation failure rather than a transport failure. A decline reason or
-   failure message MUST be a nonempty sequence of Unicode scalar values; it is
-   diagnostic integration data, not model output, and MUST follow the
-   redaction rules in Section 12. `Declined` produces `None` only when the
+   failure message MUST be a nonempty sequence of Unicode scalar values whose
+   UTF-8 encoding does not exceed `maximum_hook_output_bytes` and whose scalar
+   count does not exceed `maximum_string_scalars`. It is diagnostic integration
+   data, not model output, and MUST follow the redaction rules in Section 12.
+   Gantry MUST check these bounds before journaling or emitting the integration-
+   supplied text. An empty or oversized reason or message violates the hook
+   contract and MUST fail the current task in the `hook failure` category with
+   a Gantry-generated bounded diagnostic; it MUST NOT enter structured-output
+   repair, and the invalid integration-supplied text MUST NOT be copied into a
+   journal, event, or diagnostic. `Declined` produces `None` only when the
    operation's expected type is `Option<T>`; for every other result type,
    including a control decision, it fails the current Gantry task. `Failed`
    likewise fails the current Gantry task and is not a structured-output
@@ -2018,8 +2027,12 @@ shown here.
    control flow, or whether a workflow that mentions the type can execute. Its
    definition key is the lowercase hexadecimal SHA-256 digest of the UTF-8
    canonical type descriptor from Section 5, and every occurrence of that
-   declared type uses a local `$ref` to that entry. RFC 8785 canonicalization
-   determines `$defs` object-member order from those definition keys. The root
+   declared type uses a local `$ref` to that entry. If two distinct canonical
+   type descriptors reachable from one schema produce the same definition key,
+   schema generation MUST fail with a `schema-identity-collision` analysis
+   error rather than merge definitions, choose an implementation-specific key,
+   or emit an ambiguous `$ref`. RFC 8785 canonicalization determines `$defs`
+   object-member order from those definition keys. The root
    adds `$schema`, the complete reachable `$defs` object when nonempty, and
    either its own non-declared-type schema keywords or a `$ref` for a declared
    struct or enum result.
@@ -2736,12 +2749,16 @@ shown here.
    preparation and entry into integration code. Consequently, a prepared
    attempt with no committed outcome is indeterminate under item 4 even when
    interruption may have happened before the hook began.
-   After a hook returns, Gantry MUST append the outcome and flush through that
-   outcome record's sequence number before the interpreter validates, assigns,
-   branches on, returns, or otherwise consumes it. A successfully flushed
-   outcome is committed. Commitment at this boundary means that the physical
-   hook outcome is durable; it does not mean that `Completed(raw_output)` has
-   passed UTF-8 decoding, JSON parsing, schema validation, or normalization.
+   After a hook returns a valid host-level outcome under Section 7, item 11,
+   Gantry MUST append the outcome and flush through that outcome record's
+   sequence number before the interpreter validates, assigns, branches on,
+   returns, or otherwise consumes it. An invalid `Declined` reason or `Failed`
+   message is a hook-contract violation rather than an operation outcome and
+   follows the bounded hook-failure rule in Section 7, item 11. A successfully
+   flushed outcome is committed. Commitment at this boundary means that the
+   physical hook outcome is durable; it does not mean that
+   `Completed(raw_output)` has passed UTF-8 decoding, JSON parsing, schema
+   validation, or normalization.
    On resume, Gantry MUST continue deterministic processing of that committed
    outcome and MUST NOT redispatch it solely because validation or
    normalization had not completed before interruption. This ordering ensures
@@ -2984,9 +3001,12 @@ shown here.
     nonempty configured set rather than prescribing a default sink. The
     identity MUST encode the effective configured values.
     `maximum_entry_input_bytes` limits the
-    raw entry-input byte sequence before UTF-8 decoding, and
+    raw entry-input byte sequence before UTF-8 decoding.
     `maximum_hook_output_bytes` limits each raw `Completed` outcome before
-    UTF-8 decoding. `maximum_value_nesting_depth` and `maximum_value_nodes`
+    UTF-8 decoding and the UTF-8 encoding of each `Declined` reason or `Failed`
+    message before that diagnostic text is accepted. A reason or message is
+    additionally subject to `maximum_string_scalars` under Section 7.
+    `maximum_value_nesting_depth` and `maximum_value_nodes`
     limit every strict-JSON tree under Section 8's depth and node-count
     definitions. `maximum_string_scalars` limits each normalized or computed
     String by Unicode-scalar count, and
@@ -3081,9 +3101,11 @@ shown here.
    the integration observed the request. Process interruption MAY therefore
    leave a dispatch event with no corresponding hook entry or outcome; sinks
    MUST treat the attempt as indeterminate rather than infer that provider work
-   occurred. One operation-completion event MUST be emitted for each host-level
-   outcome actually returned by a hook, including a `Completed` outcome that
-   subsequently fails parsing or schema validation. Those events retain the
+   occurred. One operation-completion event MUST be emitted for each valid host-
+   level outcome accepted under Section 7, item 11, including a `Completed`
+   outcome that subsequently fails parsing or schema validation. An invalid
+   decline reason or failure message instead produces the bounded hook-failure
+   reporting required by that item. Those events retain the
    logical operation ID and carry the distinct dispatch ID and applicable
    validation-attempt and recovery-dispatch numbers. A structured-output-
    validation-failure event and, when another attempt is permitted, a retry
