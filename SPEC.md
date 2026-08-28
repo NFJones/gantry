@@ -1,6 +1,6 @@
-# Gantry Specification
+# Gantry Language and Runtime Specification
 
-- [Gantry Specification](#gantry-specification)
+- [Gantry Language and Runtime Specification](#gantry-language-and-runtime-specification)
   - [1. Status and Scope](#1-status-and-scope)
     - [1.1 Language at a glance](#11-language-at-a-glance)
     - [1.2 Reading the surface syntax](#12-reading-the-surface-syntax)
@@ -50,11 +50,15 @@ Gantry is a Rust-inspired control language for coordinating model-backed
 agents. It is named for the elevated structure spanning a factory floor: a
 Gantry program directs and observes the work performed below it.
 
-This document is the draft design contract for Gantry v1.0. It specifies the
-portable language and embedding behavior, but its publication does not imply
-that the current implementation is complete or conforming. The repository
-README reports implementation status. Until v1.0 is declared stable there,
-the contract may still change without a source-language version change. A
+This document is the draft design contract for Gantry v1.0. It combines the
+portable source-language contract with the runtime and embedding contract
+needed to execute, observe, interrupt, and resume that language consistently.
+It is therefore broader than an authoring guide: source authors can follow the
+focused reading paths below, while implementers and integrators must account
+for the operational sections. Publication does not imply that the current
+implementation is complete or conforming; the repository README reports
+implementation status. Until v1.0 is declared stable there, the contract may
+still change without a source-language version change. A
 pre-stable conformance claim MUST therefore identify both source-language
 version 1.0 and one immutable revision of this document, expressed as either
 the repository commit containing `SPEC.md` or the lowercase hexadecimal
@@ -115,16 +119,15 @@ alone admits a value into source execution after decoding, validation,
 normalization, and durable acceptance. This explicitness is a core readability
 requirement for both human and model authors.
 
-The contract is organized by concern:
+The contract is organized into layers:
 
-| Concern | Primary sections |
-| --- | --- |
-| Execution and package structure | Sections 3 and 4 |
-| Source values, workflows, operations, and control flow | Sections 5 through 10 |
-| Durability and observability | Sections 11 and 12 |
-| Normative lexical and syntactic grammar | Section 13 |
-| Non-normative authoring examples | Section 14 |
-| Required host interfaces | Section 15 |
+| Layer | What it specifies | Primary sections |
+| --- | --- | --- |
+| Language surface | Packages, values, workflows, visible operations, and control flow | Sections 4 through 10 |
+| Portable execution | Interpretation, validation, concurrency, durability, and observability | Sections 3 and 7 through 12 |
+| Formal syntax | Normative lexical and syntactic grammar | Section 13 |
+| Authoring guide | Non-normative focused examples and corrections | Section 14 |
+| Host contract | Required embedding interfaces | Section 15 |
 
 Concrete Rust type signatures may remain implementation-defined only where
 the semantic contract is fully specified here. Section 14 cannot override a
@@ -169,6 +172,7 @@ The source surface is organized around these families:
 | Typed data | `struct`, `enum`, `Option`, `Result`, `List`, `Tuple` | Section 5 | Section 14.3 |
 | Reusable orchestration | `fn`, `impl`, `decision` | Sections 6 and 9 | Sections 14.4 and 14.6 |
 | Integration-backed work | `prompt`, `decide`, `action` | Sections 6 through 8 | Sections 14.1, 14.6, and 14.12 |
+| Model context | `with`, `session` | Section 7 | Sections 14.4 through 14.7 |
 | Sequential routing | `if`, `if let`, `match` | Section 9 | Sections 14.3 and 14.6 |
 | Repetition | `loop`, `while`, `until` | Section 9 | Section 14.7 |
 | Parallel work | `spawn`, `join`, `joinall`, `detach` | Section 10 | Sections 14.8 through 14.10 |
@@ -263,9 +267,10 @@ or concurrency syntax.
   deterministically. Use them when the answer follows mechanically from
   available values. Use `decide` when the answer requires interpretation,
   quality assessment, intent, or policy judgment.
-- `with <agent> { ... }` selects an agent lexically, while
-  `session(<directive>) { ... }` selects conversational continuity. Neither
-  construct hides the `prompt` and `decide` sites inside it.
+- `with <agent> { ... }` is lexically delimited and dynamically inherited by
+  model operations reached from its block. `session(<directive>) { ... }`
+  similarly delimits conversational continuity. Neither construct hides the
+  `prompt` and `decide` sites inside it.
 - `spawn` makes concurrency explicit. Every spawned handle must be consumed
   visibly by `join`, `joinall()`, or `detach` on every normal path that leaves
   its scope.
@@ -1313,8 +1318,9 @@ shown here.
    action-mapping revision. The integration MUST map one canonical signature
    consistently for the complete run and MUST reject conflicting or ambiguous
    capability registrations during preflight.
-3. Agent selection is established by lexical `with <name> { ... }` blocks and
-   inherited by their dynamic model-backed work. The selected name applies to
+3. Agent selection is established by lexically delimited
+   `with <name> { ... }` blocks and dynamically inherited by model-backed work
+   reached from them. The selected name applies to
    `prompt` and `decide` operations written directly in the block, model
    operations reached through workflow or decision calls made from it, and
    child tasks spawned from it, unless a nested `with` block overrides the
@@ -1421,8 +1427,11 @@ shown here.
    session and contains no creation payload. It is `create` only when this
    request creates a `fork` or `new` session and then contains that directive,
    the new session ID, its parent ID and root ID, and the creation provenance
-   required by this section. An `inline` request MUST NOT cause creation of a
-   Gantry or provider session. Typed interpolation arguments MUST be an ordered
+   required by this section. A session created earlier by a lexical session
+   block, loop, or spawned task uses `inline` only after the runtime session-
+   establishment interface has established its integration-side context under
+   item 12. An `inline` request MUST NOT itself cause creation of a Gantry or
+   provider session. Typed interpolation arguments MUST be an ordered
    vector containing one record for each interpolation island in source order;
    each record contains the exact UTF-8 source text between that island's
    `${` and matching `}` delimiters, its package-relative source file and
@@ -1710,6 +1719,28 @@ shown here.
    root as both its enclosing and active session without creating another ID.
    These fields make the `new`, `fork`, and `inline` obligations implementable
    without relying on provider-specific hidden state.
+
+   A non-root session created by a lexical `session` block, a loop, or the
+   automatic fork for a spawned task is not created by one operation request.
+   Before such a session is first used by a model operation or as the parent
+   of another session, Gantry MUST use the runtime session-establishment
+   interface in Section 15 to establish its integration-side context from its
+   durable session-state descriptor. Gantry MUST establish a `new` session
+   with no inherited conversation and a `fork` session from the identified
+   enclosing session. Establishment MUST occur before a child that inherits or
+   forks that session is submitted, so concurrent parent progress cannot
+   change the fork point. The establishment call MUST be idempotent for the
+   same execution and logical session ID, including after interruption. Gantry
+   MAY omit establishment when the session is never used by model work and
+   never becomes another session's parent. Failure is a `logical-session
+   setup` runtime error in the task attempting the use or child creation; it
+   is not a hook dispatch or structured-output failure.
+
+   An operation-local `fork` or `new` modifier remains the complementary case:
+   its first operation request carries `session-use = create`, and validation
+   retries or recovery redispatches repeat that request with the same logical
+   session ID. The integration MUST treat repeated creation for that ID as
+   resolution of the same context, not creation of another conversation.
    Entering a construct with an explicit session modifier establishes the
    active logical session for that construct's dynamic extent. Nested
    operations or constructs without their own session modifier reuse that
@@ -4320,6 +4351,9 @@ heterogeneous results.
 
 ## 14. Authoring Examples and Common Errors
 
+*This section is non-normative. It illustrates the contract but does not add
+or override language requirements.*
+
 The examples in this section are illustrative complete programs or focused
 fragments. Except for snippets explicitly labeled invalid in Section 14.13,
 they use only v1 syntax. Comments beginning with `//` explain the example and
@@ -5213,6 +5247,8 @@ semantic requirements in Sections 5, 6, 9, 10, and 13 determine rejection.
 
 ## 15. Required Embedding Interfaces
 
+*This section is normative.*
+
 Concrete Rust names and signatures MAY evolve during implementation, but a v1
 embedding API MUST expose the following semantic interfaces without requiring
 provider-specific or executor-specific types in Gantry programs:
@@ -5325,6 +5361,22 @@ provider-specific or executor-specific types in Gantry programs:
    creation and is the `logical-session setup` runtime error defined in
    Section 7. An `embedder-supplied` root instead uses the preflight resolution
    required by Section 7.
+
+   The same companion integration surface MUST establish every non-root
+   logical session created outside an operation request, including lexical-
+   block, loop, and automatic spawned-task sessions. Gantry supplies the
+   durable session descriptor: execution and session IDs, `new` or `fork`,
+   enclosing and root session IDs, creator task ID, and creation provenance.
+   The integration MUST establish an empty conversation for `new` or a child
+   conversation initialized from the identified enclosing session for `fork`.
+   The call MUST be safe to repeat for the same execution and session ID and
+   MUST resolve the same context across retry or process restart. Gantry makes
+   the call only after the session-state record is durable and before the
+   session's first model use or use as another session's parent. Operation-
+   local `new` and `fork` sessions are instead established by the
+   `session-use = create` operation request defined in Section 7; the companion
+   call MUST NOT create a second context for them. Session establishment is
+   not `OperationHook` creation and dispatches no Gantry operation.
 
    Gantry MUST call the factory lazily, at most once per Gantry task in one
    in-process run, immediately before that task's first hook dispatch; a task
