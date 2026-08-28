@@ -538,13 +538,21 @@ shown here.
    Interpreter-only work MUST remain cooperatively cancellable even when it
    executes no hook or spawned task. Gantry MUST observe cancellation before a
    hook dispatch, child-task submission, workflow or decision frame entry, and
-   every loop condition or back edge. It MUST also yield to the embedding
-   executor after a finite configured number of consecutive deterministic
-   interpreter transitions. That yield quantum MUST be nonzero and finite;
-   changing it affects scheduling only and MUST NOT alter language results,
-   dynamic identities, journal state, or retry accounting. Recursion MUST use
-   interpreter-managed frames rather than rely on unbounded native Rust stack
-   growth. Each task MUST enforce the configured
+   every loop condition or back edge. Each task MUST also yield to the
+   embedding executor after a finite configured number of its own consecutive
+   deterministic interpreter transitions. One transition is one completed
+   interpreter step that advances evaluation state without awaiting a hook,
+   executor task, timer, journal operation, event delivery, or another host
+   future. Checking cancellation does not itself consume a transition. The
+   per-task counter resets after any such await or explicit scheduler yield.
+   The yield quantum MUST be nonzero and finite, and Gantry MUST observe
+   cancellation immediately before and after the yield. Changing the quantum
+   affects scheduling only: it MUST NOT alter deterministic single-task
+   computation, dynamic operation or task identities, or retry accounting,
+   but it MAY alter timestamps and the permitted cross-task interleaving of
+   journal records and events. Recursion MUST use interpreter-managed frames
+   rather than rely on unbounded native Rust stack growth. Each task MUST
+   enforce the configured
    `maximum_workflow_call_depth`: the root `main` frame counts as depth one,
    and entering a function, method, or decision-workflow frame increases the
    active task's depth by one. A spawned block is a task body rather than a
@@ -2651,10 +2659,11 @@ shown here.
    `success`. Multiple detached failures MUST be reported in stable task-path
    order, using source spawn location and dynamic spawn occurrence rather than
    completion time.
-10. Parent timeout and cancellation constraints apply while a child remains
-   attached and propagate through its attached descendants. Detachment releases
-   the task from those parent constraints. Integration-specific operation
-   timeouts and provider-specific cancellation policy MAY still apply, but
+10. Cancellation constraints inherited from a parent apply while a child
+   remains attached and propagate through its attached descendants. Detachment
+   releases the task from those parent cancellation constraints. Integration-
+   specific operation timeouts and provider-specific cancellation policy MAY
+   still apply, but
    they MUST NOT override Gantry's durable task-ownership or cancellation state.
    An integration MAY stop provider work earlier than Gantry's outer task
    policy requires; it MUST report that outcome through the hook contract and
