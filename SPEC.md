@@ -28,7 +28,7 @@
     - [13.7 Prompts and interpolation](#137-prompts-and-interpolation)
     - [13.8 Decisions and sequential control flow](#138-decisions-and-sequential-control-flow)
     - [13.9 Parallel control flow](#139-parallel-control-flow)
-  - [14. Syntax Examples](#14-syntax-examples)
+  - [14. Authoring Examples and Common Errors](#14-authoring-examples-and-common-errors)
     - [14.1 Minimal package entry point](#141-minimal-package-entry-point)
     - [14.2 Modules, imports, and package-wide agents](#142-modules-imports-and-package-wide-agents)
     - [14.3 Primitive values, structs, tagged values, and structural routing](#143-primitive-values-structs-tagged-values-and-structural-routing)
@@ -402,6 +402,21 @@ the shortest reading paths for source authors and implementers.
 The following non-normative reading rules summarize the distinctions that are
 most important when humans or models author Gantry source:
 
+| Author intent | Canonical source shape | What it does |
+| --- | --- | --- |
+| Define deterministic orchestration | `fn name(...) -> T { ... }` | Creates an interpreter-managed workflow; only explicit operations reached in its body cross the integration boundary. |
+| Request a model-produced value | `prompt "..." -> T` | Performs one logical model operation and validates its output as `T`. |
+| Request model judgment | `decide "..."` | Performs one logical model operation and returns a sealed `Decision`. |
+| Invoke a harness capability | `action path(...)` | Performs one logical action operation against a declared action signature. |
+| Select an agent | `with agent_name { ... }` | Changes the agent inherited by model operations in the lexical block. |
+| Select conversational continuity | `session(fork) { ... }` | Establishes one logical session for model operations in the lexical block. |
+| Run work concurrently | `spawn task -> T { ... }` | Creates an owned child task that must later be joined or detached. |
+
+These forms are intentionally visually distinct. In particular, an ordinary
+workflow call never stands in for `prompt`, `decide`, or `action`, and none of
+those three operation forms is implicit in assignment, interpolation, routing,
+or concurrency syntax.
+
 - `prompt` visibly performs model-backed work and optionally returns the type
   written after `->`. An omitted annotation or `-> None` means that the
   operation returns no source value.
@@ -761,12 +776,13 @@ shown here.
 3. Gantry MUST support comments and SHOULD adopt Rust lexical conventions
    where they fit the v1 feature set. Rust likeness is primarily a syntactic
    and readability goal; Gantry does not inherit Rust semantics by default.
-4. Names MUST be declared before use. Gantry uses lexical scope. Declaration
-   order is evaluated within each module's source order. A child module becomes
-   available when its enclosing `mod` declaration is reached; names inside that
-   child are then resolved according to the child's own source order. Analysis
-   MUST NOT depend on filesystem enumeration order or the order in which an
-   implementation happens to parse module files.
+4. Except for the self-reference and package-wide collection rules in items 10
+   and 14, names MUST be declared before use. Gantry uses lexical scope.
+   Declaration order is evaluated within each module's source order. A child
+   module becomes available when its enclosing `mod` declaration is reached;
+   names inside that child are then resolved according to the child's own
+   source order. Analysis MUST NOT depend on filesystem enumeration order or
+   the order in which an implementation happens to parse module files.
 5. Gantry MUST support namespaces and module declaration or loading through a
    Rust-inspired `mod` form. A file selected by `mod` is parsed as an
    independent module, not textually inserted into the caller's scope.
@@ -1235,7 +1251,7 @@ shown here.
    type MUST exactly equal its parameter type. A method call additionally
    requires a receiver of the `impl` target type. Gantry has no default,
    variadic, named, coerced, or overloaded call arguments in v1.
-5. A workflow body MAY contain one or more external-operation expressions.
+5. A workflow body MAY contain one or more integration-operation expressions.
    Each executed `prompt`, `decide`, or `action` expression MUST create exactly
    one logical operation. That logical operation MAY require multiple physical hook
    dispatches because of structured-output validation retries or recovery of
@@ -1279,8 +1295,10 @@ shown here.
    deterministic calls from calls that may eventually perform integration-
    backed or parallel work without adding annotations to the source language.
    Struct, enum, option, result, list, and tuple construction; field access;
-   assignment; pattern routing; module lookup; workflow dispatch; and `join`
-   are interpreter operations and MUST NOT invoke an operation hook.
+   assignment; pattern routing; module lookup; the act of dispatching a
+   workflow call; and `join` are interpreter operations and MUST NOT directly
+   invoke an operation hook. Executing the called workflow body may still
+   reach an explicit integration operation, as specified above.
 6. Each `prompt` expression MUST contain an explicit prompt template and MAY
    contain parenthesized operation modifiers before that template. A typed
    prompt places its result annotation after the template, as in
@@ -3107,8 +3125,9 @@ shown here.
     ```
 
     The displayed model/action retry, retry-backoff, workflow-depth, task-count,
-    and event-delivery values are the v1 defaults defined elsewhere in this
-    specification. The six values inside `deterministic_values` are
+    and event-delivery values are the normative v1 defaults. Their behavior is
+    defined in Sections 3, 8, 10, and 12. The six values inside
+    `deterministic_values` are
     illustrative effective values, not language defaults; the integration MUST
     choose them within the bounds below. `maximum_directive_integer` is the
     fixed v1 language maximum, not an integration setting; including it makes
@@ -3609,6 +3628,12 @@ All EBNF fences in Sections 13.2 through 13.9 form one grammar; a production
 MAY refer forward to a production in a later fence. Names explicitly described
 as lexical metavariables in Section 13.2 constrain token characters and are not
 missing parser productions.
+
+The lexical skip productions `whitespace`, `line_comment`, `block_comment`,
+and `trivia` describe tokenization and are intentionally not referenced from
+the parser entry production `source`. A conforming lexer removes that trivia
+between tokens under Section 13.2 before the parser applies the remaining
+productions.
 
 ### 13.2 Lexical grammar
 
@@ -4356,7 +4381,7 @@ Static result typing follows Section 10: one value for one task, `List<T>` for
 multiple homogeneous results, and `Tuple<T1, ..., Tn>` for multiple
 heterogeneous results.
 
-## 14. Syntax Examples
+## 14. Authoring Examples and Common Errors
 
 The examples in this section are illustrative complete programs or focused
 fragments. Except for snippets explicitly labeled invalid in Section 14.13,
