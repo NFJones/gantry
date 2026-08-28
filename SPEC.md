@@ -95,9 +95,10 @@ projection, pattern routing, modules, joins, and task ownership are
 interpreter operations. Executing a called workflow may still reach explicit
 integration operations in that workflow's body. Every source-level request
 that crosses the integration boundary is visibly introduced by `prompt`,
-`decide`, or `action`; an ordinary function or method call does not itself
-dispatch a hook, although the called workflow may contain explicit external
-operations. `prompt` and `decide` request model-backed work. `action` requests
+`decide`, or `action` at the operation site; an ordinary function or method
+call site does not itself dispatch a hook, although executing the called body
+may reach explicit external operations. `prompt` and `decide` request
+model-backed work. `action` requests
 a named, typed harness
 capability without implying that a model must fulfill it. An integration may
 perform provider-internal work while fulfilling an operation, as defined in
@@ -657,7 +658,10 @@ shown here.
 2. Gantry MUST provide its own grammar, lexer, parser, and abstract syntax
    tree (AST).
 3. Gantry MUST execute source directly. It MUST NOT require compilation to a
-   different language or runtime as its execution model.
+   different language or runtime as its execution model. An implementation
+   MAY lower the AST to a private interpreter representation or bytecode,
+   provided that representation is not a portable artifact or an externally
+   observable additional language and preserves every Gantry semantic rule.
 4. Gantry MUST be available as an embeddable Rust library with an asynchronous
    execution API. It does not implement an agent, model provider, transport, or
    hidden asynchronous runtime itself. The embedding application MUST supply
@@ -1626,12 +1630,16 @@ shown here.
    machine-readable category: `utf8`, `json-syntax`, `json-duplicate-key`,
    `json-unicode`, `schema`, or `resource-limit`. JSON Pointer and schema-
    location fields are absent rather than fabricated when the applicable
-   validation stage cannot produce them. Error ordering MUST follow raw-output
-   byte position for decoding and parsing errors and depth-first instance
-   traversal, with object properties in unsigned UTF-8 name order and array
-   members in index order, for schema and resource-limit errors. This canonical
-   shape and order allow independent harnesses to render equivalent repair
-   guidance without parsing diagnostic prose.
+   validation stage cannot produce them. Gantry validates in this order:
+   raw-byte limit, UTF-8, JSON syntax and scalar validity (including duplicate
+   member rejection), parser-enforced depth and node limits, schema, and then
+   recursive String and List limits. Failure at a stage prevents later stages
+   from running. Within the failing stage, error ordering MUST follow
+   raw-output byte position for decoding and parsing errors and depth-first
+   instance traversal, with object properties in unsigned UTF-8 name order and
+   array members in index order, for schema and resource-limit errors. This
+   canonical shape and order allow independent harnesses to render equivalent
+   repair guidance without parsing diagnostic prose.
 6. A hook request MUST also contain a finite ordered execution-context vector.
    It MUST contain the task's immutable structural ancestry, its active
    workflow call chain, and the control-chain entries needed to interpret the
@@ -2431,9 +2439,13 @@ shown here.
    conditions do not have a schema, retry budget, rationale, or hook context
    entry unless their evaluation explicitly performs an operation.
 10. Gantry imposes no mandatory loop-iteration, cost, or operation-call limit.
-    Integrations MAY impose their own limits, except that such policy does not
-    alter the language meaning of `limit = 0`. The workflow-depth, task-count,
-    and value-size limits elsewhere in this specification still apply.
+    An integration MAY enforce external budget policy through hook failure or
+    execution cancellation, but it MUST NOT present budget exhaustion as
+    normal loop completion or reinterpret `limit = 0`. An interpreter-enforced
+    cost, operation-call, or loop-iteration limit that can terminate otherwise
+    valid execution is not a v1 extension point. The workflow-depth,
+    task-count, and value-size limits elsewhere in this specification still
+    apply.
     Unlimited language execution does not mean uninterruptible execution:
     every loop transition and deterministic transition quantum remains a
     cancellation and executor-yield safe point under Section 3. Cancellation
@@ -5458,7 +5470,7 @@ provider-specific or executor-specific types in Gantry programs:
    execution, and the finite nonzero deterministic-transition yield quantum
    required by Section 3. These value and interpreter limits MUST satisfy
    Sections 3, 5, 8, 10, and 11. Implementations
-   MUST accept directive integers through `2^63 - 1` and MAY reject larger
+   MUST accept directive integers through `2^63 - 1` and MUST reject larger
    directive tokens during analysis. First-class `Int` values used for list
    projection retain the exact range in Section 5; tuple projection requires
    an in-bounds nonnegative `Int` literal. The v1 defaults are 30 seconds for
