@@ -1728,7 +1728,7 @@ shown here.
    data, not model output, and MUST follow the redaction rules in Section 12.
    Gantry MUST check these bounds before journaling or emitting the integration-
    supplied text. An empty or oversized reason or message violates the hook
-   contract and MUST fail the current task in the `hook failure` category with
+   contract and MUST fail the current task in the `hook-failure` category with
    a Gantry-generated bounded diagnostic; it MUST NOT enter structured-output
    repair, and the invalid integration-supplied text MUST NOT be copied into a
    journal, event, or diagnostic. `Declined` produces `None` only when the
@@ -1789,9 +1789,9 @@ shown here.
    change the fork point. The establishment call MUST be idempotent for the
    same execution and logical session ID, including after interruption. Gantry
    MAY omit establishment when the session is never used by model work and
-   never becomes another session's parent. Failure is a `logical-session
-   setup` runtime error in the task attempting the use or child creation; it
-   is not a hook dispatch or structured-output failure.
+   never becomes another session's parent. Failure is a
+   `logical-session-setup` runtime error in the task attempting the use or
+   child creation; it is not a hook dispatch or structured-output failure.
 
    An operation-local `fork` or `new` modifier remains the complementary case:
    its first operation request carries `session-use = create`, and validation
@@ -1884,19 +1884,22 @@ shown here.
 17. Hook outcomes and Gantry failures are separate domains. A hook outcome is
     exactly `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
     Before a new execution is accepted and its execution ID is returned to the
-    embedder, structured start failures MUST at least distinguish syntax,
-    analysis, entry-input validation, integration preflight, initial journal
-    ownership, execution-start persistence, and required-event-delivery
-    failure during pre-execution validation or analysis. Gantry MAY allocate a
-    candidate execution ID while constructing the execution-start record, but
-    that ID is not an accepted execution handle until the record is durable.
+    embedder, structured start failures MUST use one of the following exact
+    category values when applicable: `syntax`, `analysis`,
+    `entry-input-validation`, `integration-preflight`,
+    `initial-journal-ownership`, `execution-start-persistence`, or
+    `required-event-delivery`. The last category applies to required delivery
+    failure during pre-execution validation or analysis. Gantry MAY allocate
+    a candidate execution ID while constructing the execution-start record,
+    but that ID is not an accepted execution handle until the record is
+    durable.
 
     Resume has a distinct pre-execution failure boundary even though the
-    execution ID already exists. A resume-start failure MUST at least
-    distinguish journal read or format failure, ownership acquisition failure,
-    source or effective-configuration incompatibility, unresolved agent
-    mapping, unresolved action mapping, unresolved logical session, and
-    unavailable required event sink.
+    execution ID already exists. A resume-start failure MUST use one of the
+    following exact category values when applicable: `journal-read-or-format`,
+    `ownership-acquisition`, `source-or-configuration-incompatibility`,
+    `unresolved-agent-mapping`, `unresolved-action-mapping`,
+    `unresolved-logical-session`, or `unavailable-required-event-sink`.
     Such a failure means recovered interpretation never began: Gantry MUST NOT
     append an execution-state or terminal-execution record, consume a retry
     budget, or change the execution's durable terminal status. If journal
@@ -1908,20 +1911,23 @@ shown here.
     resume invocation has completed compatibility and dependency preflight and
     begins advancing recovered state, failures are runtime errors. Runtime
     errors MUST expose a stable category and MAY expose a more specific stable
-    code plus structured details. Runtime errors MUST at least distinguish the
-    following categories: logical-session setup, hook creation, hook failure,
-    decline of a required result, structured-output exhaustion, deterministic
-    evaluation failure, executor failure, cancellation, journal failure,
-    required-event-delivery failure, task/join failure, and internal invariant
-    failure.
+    code plus structured details. The exact v1 runtime category values are
+    `logical-session-setup`, `hook-creation`, `hook-failure`,
+    `required-result-decline`, `structured-output-exhaustion`,
+    `deterministic-evaluation-failure`, `executor-failure`, `cancellation`,
+    `journal-failure`, `required-event-delivery-failure`, `task-join-failure`,
+    and `internal-invariant-failure`.
     Backticked limit names such as `workflow-call-depth-limit`,
     `string-size-limit`, `list-size-limit`, and `task-count-limit` are codes
-    within the `deterministic evaluation failure` category, not additional
+    within the `deterministic-evaluation-failure` category, not additional
     categories. Task failures, foreground outcomes, terminal records, and
     events MUST preserve the category and any specified code. Projection bounds
-    failures are deterministic evaluation failures. Concrete Rust error types
-    are implementation-defined, but embedders MUST be able to distinguish
-    start, resume-start, and runtime categories without parsing display text.
+    failures use `deterministic-evaluation-failure`. Prose elsewhere in this
+    document MAY use spaces or descriptive wording for readability, but every
+    protocol, journal, event, diagnostic, and embedding result MUST use these
+    exact category values. Concrete Rust error types are implementation-defined,
+    but embedders MUST be able to distinguish start, resume-start, and runtime
+    categories without parsing display text.
 18. Unless a more specific rule states otherwise, a fatal operation or
     interpreter error terminates the current Gantry task rather than silently
     terminating unrelated parallel work. Failure of the root foreground task
@@ -2653,7 +2659,7 @@ shown here.
    MUST NOT abort foreground execution or change an already returned foreground
    outcome, regardless of whether it settles before or after that outcome is
    returned. It does, however, make the eventual terminal execution category
-   `detached-task failure` unless a durably recordable execution-wide runtime
+   `detached-task-failure` unless a durably recordable execution-wide runtime
    error takes precedence under this item. For this rule, an
    **execution-wide runtime error** is one that another normative requirement
    applies to the complete execution rather than to one Gantry task. In v1,
@@ -2681,7 +2687,7 @@ shown here.
    failed foreground task produces its runtime-error category as the terminal
    category and includes detached failures as secondary details. Otherwise,
    one or more detached failures produce the
-   `detached-task failure` terminal category; otherwise, a cancellation
+   `detached-task-failure` terminal category; otherwise, a cancellation
    produces the `cancellation` category; and only then is the terminal category
    `success`. Multiple detached failures MUST be reported in stable task-path
    order, using source spawn location and dynamic spawn occurrence rather than
@@ -3537,20 +3543,22 @@ shown here.
    across delivery retries. Prompt templates, schemas, and raw integration
    output MUST use protected stable references rather than being copied into ordinary
    event payloads; diagnostics and other nonsensitive standalone activity data
-   MAY be carried inline. The canonical v1 event kinds are parse, analysis,
-   workflow start, workflow end, operation dispatch, operation completion,
-   operation result, structured output validation failure, retry, branch
-   decision, spawn,
-   join, detach, mutation, cancellation, foreground completion, task
-   completion, terminal execution, shutdown, and failure. Concrete
+   MAY be carried inline. The canonical v1 event-kind values are `parse`,
+   `analysis`, `workflow-start`, `workflow-end`, `operation-dispatch`,
+   `operation-completion`, `operation-result`,
+   `structured-output-validation-failure`, `retry`, `branch-decision`,
+   `spawn`, `join`, `detach`, `mutation`, `cancellation`,
+   `foreground-completion`, `task-completion`, `terminal-execution`,
+   `shutdown`, and `failure`. These kebab-case spellings are exact protocol
+   values; headings and prose MAY use spaces for readability. Concrete
    serialization is implementation-defined.
 8. Event kind payloads MUST expose enough structured information for a harness
    to interpret an execution without parsing diagnostic text. The canonical
    minimum payloads are:
    - `parse` and `analysis`: phase, status, and structured diagnostics;
-   - `workflow start` and `workflow end`: workflow path, frame occurrence, and
+   - `workflow-start` and `workflow-end`: workflow path, frame occurrence, and
      completion status, plus a typed result reference when one exists;
-   - `operation dispatch`: operation and dispatch IDs, dispatch state
+   - `operation-dispatch`: operation and dispatch IDs, dispatch state
      (`prepared` in v1), operation and result kinds, validation-attempt number,
      recovery-dispatch number, and schema and operation-body references. A
      prompt or decide operation additionally identifies its selected agent,
@@ -3558,20 +3566,22 @@ shown here.
      active-session creation directive and parent session when applicable, and
      prompt reference. An action instead identifies its canonical path and
      signature and active action-mapping revision;
-   - `operation completion`: operation and dispatch IDs, outcome variant, and
-     a protected raw-output reference for `Completed`, or the decline/failure
-     reason under the sink's redaction policy;
-   - `operation result`: operation ID, committed outcome and operation-result
+   - `operation-completion`: operation and dispatch IDs, outcome variant, and
+     a protected raw-output reference for `Completed`, or a protected
+     integration-diagnostic reference for a decline or failure reason; the
+     referenced text is resolved for a sink only under its frozen redaction
+     capabilities;
+   - `operation-result`: operation ID, committed outcome and operation-result
      record references, outcome variant, result kind, canonical type
      descriptor, and a protected normalized-value reference for a value result
      or the decision and protected rationale reference for a decision result;
      an optional decline additionally identifies its decline provenance;
-   - `structured output validation failure`: operation and dispatch IDs plus
+   - `structured-output-validation-failure`: operation and dispatch IDs plus
      the structured validation errors defined in Section 8;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
      validation-attempt and recovery-dispatch numbers, retry class, and
      selected delay;
-   - `branch decision`: conditional, match, or loop identity; condition kind
+   - `branch-decision`: conditional, match, or loop identity; condition kind
      (`decision`, `bool`, or `pattern`); outcome; and selected arm or loop
      transition, plus the decide operation and protected rationale references
      when the condition used `Decision`;
@@ -3585,10 +3595,10 @@ shown here.
      and committed-value reference, without requiring the value inline;
    - `cancellation`: target activity, execution, or task; cancellation reason;
      and whether cancellation is requested or terminal;
-   - `foreground completion` and `task completion`: the applicable identity,
+   - `foreground-completion` and `task-completion`: the applicable identity,
      completion category, and typed result or failure reference when one
      exists;
-   - `terminal execution`: the execution identity, completion category,
+   - `terminal-execution`: the execution identity, completion category,
      terminal-execution record reference, and typed foreground result or
      primary failure reference when one exists;
    - `shutdown`: the shutdown activity identity, configured graceful and drain
@@ -5514,7 +5524,7 @@ provider-specific or executor-specific types in Gantry programs:
    replacement. The interface MUST return structured success or failure and
    MUST be safe to retry for the same execution and root ID. Gantry invokes it
    only after the execution-start record is durable; failure prevents hook
-   creation and is the `logical-session setup` runtime error defined in
+   creation and is the `logical-session-setup` runtime error defined in
    Section 7. An `embedder-supplied` root instead uses the preflight resolution
    required by Section 7.
 
