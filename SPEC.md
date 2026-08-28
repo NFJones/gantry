@@ -405,7 +405,7 @@ most important when humans or models author Gantry source:
 
 | Author intent | Canonical source shape | What it does |
 | --- | --- | --- |
-| Define deterministic orchestration | `fn name(...) -> T { ... }` | Creates an interpreter-managed workflow; only explicit operations reached in its body cross the integration boundary. |
+| Define a workflow | `fn name(...) -> T { ... }` | Creates interpreter-managed orchestration; only explicit operations reached in its body cross the integration boundary. |
 | Request a model-produced value | `prompt "..." -> T` | Performs one logical model operation and validates its output as `T`. |
 | Request model judgment | `decide "..."` | Performs one logical model operation and returns a sealed `Decision`. |
 | Invoke a harness capability | `action path(...)` | Performs one logical action operation against a declared action signature. |
@@ -589,7 +589,7 @@ activity throughout this specification:
 - An **integration operation** is a source-visible `prompt`, `decide`, or
   action invocation. A **model operation** is specifically a `prompt` or
   `decide`; an action is integration-backed but is not model-backed.
-- A **static operation site** is one authored `prompt`, `decide`, or action-
+- A **static operation site** is one authored `prompt`, `decide`, or `action`
   invocation expression at a particular source location. A site exists even
   when no execution path reaches it. Executing a site zero, one, or several
   times produces the corresponding number of logical operations.
@@ -2793,12 +2793,15 @@ shown here.
     append and flush the cancellation request before signalling task tokens,
     reject new task and hook dispatch for the execution, apply the configured
     post-cancellation drain and abortion behavior from item 10, and durably
-    record terminal cancellation before reporting completion. Repeating a
-    cancellation request is idempotent; requesting cancellation of an already
-    terminal execution returns its existing terminal state without changing
-    it. A journal failure while recording cancellation takes precedence and is
-    reported under Section 11. Cancellation of one execution MUST NOT cancel
-    unrelated executions owned by the same interpreter.
+    record the resulting terminal state before reporting completion. The
+    terminal category MUST follow the precedence in item 9: it is
+    `cancellation` unless a foreground failure, detached-task failure, or
+    durably recordable execution-wide runtime error already takes precedence.
+    Repeating a cancellation request is idempotent; requesting cancellation of
+    an already terminal execution returns its existing terminal state without
+    changing it. A journal failure while recording cancellation takes
+    precedence and is reported under Section 11. Cancellation of one execution
+    MUST NOT cancel unrelated executions owned by the same interpreter.
 
 ## 11. Journal and Resume Semantics
 
@@ -3643,6 +3646,13 @@ All EBNF fences in Sections 13.2 through 13.9 form one grammar; a production
 MAY refer forward to a production in a later fence. Names explicitly described
 as lexical metavariables in Section 13.2 constrain token characters and are not
 missing parser productions.
+
+Where a production gives a path a syntactically distinguished final segment,
+that final segment is split from the complete token sequence before name
+resolution. In particular, an enum-variant pattern always treats the final
+identifier after the final `::` as the variant name and every preceding
+segment as the enum type path. Name resolution MUST NOT choose a different
+token grouping.
 
 The lexical skip productions `whitespace`, `line_comment`, `block_comment`,
 and `trivia` describe tokenization and are intentionally not referenced from
