@@ -362,9 +362,9 @@ document are to be interpreted as described in RFC 2119.
    is permitted.
 11. Built-in deterministic string operations and list operations other than
     projection are excluded from v1. Lists and tuples are typed transport
-    aggregates: source may pass, return, interpolate, submit, or project them,
-    but cannot branch on, iterate over, or otherwise inspect them
-    deterministically.
+    aggregates: source may pass, return, interpolate into an operation, or
+    project them, but cannot branch on, iterate over, or otherwise inspect
+    them deterministically.
 
 ## 6. Functions and Methods
 
@@ -400,10 +400,14 @@ document are to be interpreted as described in RFC 2119.
    requires a receiver of the `impl` target type. Gantry has no default,
    variadic, named, coerced, or overloaded call arguments in v1.
 5. A workflow body MAY contain one or more `prompt` expressions. Each executed
-   `prompt` or `decide` expression MUST invoke exactly one agent operation
-   hook. Calling a decision workflow invokes no hook merely because of the
-   call; evaluating its body MAY execute multiple explicitly written prompt or
-   nested decision operations before its terminal decision is obtained.
+   `prompt` or `decide` expression MUST create exactly one logical agent
+   operation. That logical operation MAY require multiple physical hook
+   dispatches because of structured-output validation retries or recovery of
+   an indeterminate dispatch; those dispatches retain the same operation ID
+   and do not represent additional source operations. Calling a decision
+   workflow invokes no hook merely because of the call; evaluating its body
+   MAY execute multiple explicitly written prompt or nested decision
+   operations before its terminal decision is obtained.
    Struct construction, field access, assignment, `Option<T>` construction,
    module lookup, function or method dispatch, and `join` are interpreter
    operations and MUST NOT invoke an agent hook.
@@ -655,8 +659,10 @@ document are to be interpreted as described in RFC 2119.
    retries. Non-UTF-8 or malformed-JSON output is therefore a structured-output
    validation failure rather than a transport failure. `Declined` produces
    `None` only when the operation's expected type is `Option<T>`; for every
-   other result type, including a control decision, it aborts execution.
-   `Failed` aborts execution and is not a structured-output validation failure.
+   other result type, including a control decision, it fails the current
+   Gantry task. `Failed` likewise fails the current Gantry task and is not a
+   structured-output validation failure. Item 18 defines how task failure
+   propagates through foreground, attached, and detached work.
 12. Gantry MUST assign a logical session ID to each operation. Session IDs MUST
    remain stable across validation retries and resume. An integration MUST
    honor the following session directives:
@@ -680,12 +686,17 @@ document are to be interpreted as described in RFC 2119.
    no enclosing session. These fields make the `new`, `fork`, and `inline`
    obligations implementable without relying on provider-specific hidden
    state.
-   Nested constructs inherit the active directive unless they override it. For
-   a loop, `fork` creates a separate child session for each prospective
-   iteration under the condition/body rules in Section 9, while `new` creates
-   one fresh session on loop entry and reuses it for every condition and body
-   execution. Outside a loop, `fork` and `new` each create one session on entry
-   to their annotated construct.
+   Entering a construct with an explicit session modifier establishes the
+   active logical session for that construct's dynamic extent. Nested
+   operations or constructs without their own session modifier reuse that
+   active session as `inline`; they MUST NOT recursively reapply an enclosing
+   `fork` or `new` directive. A nested explicit modifier establishes a new
+   override under these same rules. For a loop, `fork` creates a separate child
+   session for each prospective iteration under the condition/body rules in
+   Section 9, while `new` creates one fresh session on loop entry and reuses it
+   for every condition and body execution. Outside a loop, an explicit `fork`
+   or `new` modifier creates one session on entry to the prompt, decision
+   condition, or other construct carrying that modifier.
 13. The integration MUST preserve the conversational continuity denoted by a
    reused logical session ID. Provider-specific session storage and mapping
    remain integration concerns. This obligation applies across interpreter
@@ -731,6 +742,18 @@ document are to be interpreted as described in RFC 2119.
     Projection bounds failures are deterministic evaluation failures. Concrete
     Rust error types are implementation-defined, but embedders MUST be able to
     distinguish these categories without parsing display text.
+18. Unless a more specific rule states otherwise, a fatal operation or
+    interpreter error terminates the current Gantry task rather than silently
+    terminating unrelated parallel work. Failure of the root foreground task
+    fails the foreground execution and applies the attached-descendant
+    cancellation rules in Section 10. Failure of an attached spawned task
+    settles that child as failed and is observed through its owning `join` or
+    `joinall`; it does not immediately cancel siblings. Failure of a detached
+    task follows the detached-task rules in Section 10 and cannot retroactively
+    change an already returned foreground outcome. This propagation rule
+    applies to hook failure, decline of a required result, structured-output
+    exhaustion, deterministic evaluation failure, and other task-local runtime
+    errors.
 
 ## 8. Structured Output and Validation
 
@@ -813,8 +836,10 @@ document are to be interpreted as described in RFC 2119.
    backoff beginning at 100 milliseconds, capped at two seconds, with
    randomized jitter. The effective retry limit and backoff policy are bound
    to resumable execution as specified in Section 11.
-11. When retries are exhausted, the operation and program MUST fail. Gantry has
-   no language-level error recovery in v1.
+11. When retries are exhausted, the operation and its current Gantry task MUST
+    fail under Section 7. Gantry has no language-level error recovery within
+    that task in v1; parallel failure observation and propagation follow
+    Section 10.
 12. Transport failures and their retry policy are integration concerns, not
    Gantry structured-output retries.
 13. Source snippets MAY be included in validation diagnostics. Raw agent
@@ -1269,6 +1294,16 @@ document are to be interpreted as described in RFC 2119.
    Operation-dispatch events MUST reference the applicable prompt and schema
    payloads. Event and journal envelopes MUST be explicitly versioned from the
    first public release, and consumers MUST reject unsupported major versions.
+   One operation-dispatch event MUST be emitted for each physical hook
+   invocation, including validation retries and recovery redispatches. One
+   operation-completion event MUST be emitted for each host-level outcome from
+   such an invocation, including a `Completed` outcome that subsequently fails
+   parsing or schema validation. Those events retain the logical operation ID
+   and carry the distinct dispatch ID and applicable validation-attempt and
+   recovery-dispatch numbers. A schema-validation-failure event and, when
+   another attempt is permitted, a retry event follow the corresponding
+   completion event. This event cardinality makes physical hook activity
+   observable without treating retries as additional source operations.
 2. Each event MUST have a stable event ID and activity ID. An activity is one
    syntax-validation, semantic-analysis, execution/resume, or shutdown
    invocation. An event associated with a program execution MUST also include
@@ -1666,7 +1701,7 @@ only in `join`, `joinall`, and `detach`, never as primary expressions.
 A value-producing `with` expression requires its block's trailing expression
 and yields that value, which permits a lexically selected agent to produce the
 enclosing workflow's result. A statement-only agent context instead uses the
-`with_statement` form in Section 13.9; it has no result and takes no semicolon
+`with_statement` form in Section 13.5; it has no result and takes no semicolon
 after its closing brace. A value-producing `with` expression MAY still be
 followed by `;` when its value is intentionally discarded.
 
