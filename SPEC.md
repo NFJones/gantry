@@ -36,7 +36,7 @@
     - [14.7 General, pre-test, and post-test loops](#147-general-pre-test-and-post-test-loops)
     - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-listt-joins)
     - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
-    - [14.10 `joinall`, no-result tasks, and detachment](#1410-joinall-no-result-tasks-and-detachment)
+    - [14.10 `joinall()`, no-result tasks, and detachment](#1410-joinall-no-result-tasks-and-detachment)
     - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
   - [15. Required Embedding Interfaces](#15-required-embedding-interfaces)
 
@@ -139,7 +139,7 @@ most important when humans or models author Gantry source:
   `session(<directive>) { ... }` selects conversational continuity. Neither
   construct hides the `prompt` and `decide` sites inside it.
 - `spawn` makes concurrency explicit. Every spawned handle must be consumed
-  visibly by `join`, `joinall`, or `detach` on every normal path that leaves
+  visibly by `join`, `joinall()`, or `detach` on every normal path that leaves
   its scope.
 - Ordinary calls, assignments, construction, projection, and joins are
   deterministic interpreter work. If source does not contain `prompt` or
@@ -169,7 +169,7 @@ in later sections:
   absent `Option<T>` value whose type must be known from context; after `->`
   it denotes that a workflow or operation returns no source value.
 - Concurrency is structured and ownership-visible. A spawned task must be
-  joined, joined through `joinall`, or explicitly detached on every normal
+  joined, joined through `joinall()`, or explicitly detached on every normal
   path before its handle leaves scope.
 
 ## 2. Normative Language
@@ -321,11 +321,19 @@ document are to be interpreted as described in RFC 2119.
     statements are permitted only within function, method, decision, spawn, or
     other executable block bodies.
 14. Gantry MUST discover the complete module graph and collect package-wide
-    agent names before resolving item bodies. This collection pass is the only
-    exception to declared-before-use ordering; discovery of a later `mod`
-    declaration MUST NOT make that namespace usable earlier in its parent
-    module, and it does not make functions, types, or imports usable before
-    their declarations. Within one module, item names
+    agent names before resolving item bodies. After declarations, type names,
+    and `impl` targets have been resolved under the ordinary source-order
+    rules, Gantry MUST also collect every valid inherent-method signature
+    before resolving executable bodies. Agent-name collection and
+    inherent-method collection are the only exceptions to declared-before-use
+    ordering. A valid inherent method is consequently available on its target
+    type throughout the package even when its `impl` block occurs later or in
+    another module. The target type and every type named by the method
+    signature MUST still be available at the `impl` declaration itself;
+    method collection does not make a later type declaration usable earlier.
+    Discovery of a later `mod` declaration MUST NOT make that namespace usable
+    earlier in its parent module, and it does not make functions, types, or
+    imports usable before their declarations. Within one module, item names
     MUST be unique across structs, functions, decisions, and modules. An
     imported name MUST NOT collide with another import or local item.
 15. Struct field names, parameter names, and method names for one receiver type
@@ -620,7 +628,7 @@ document are to be interpreted as described in RFC 2119.
    creation may fail but cannot decline. Failure while creating the root task's
    hook aborts the execution as a hook-creation error. Failure while creating a
    spawned task's hook settles that child as failed; it is then observed by
-   `join`, `joinall`, detachment, and terminal execution under the ordinary
+   `join`, `joinall()`, detachment, and terminal execution under the ordinary
    task-failure rules. Hook creation MUST NOT dispatch a model operation.
    Gantry MUST give every hook a Gantry-owned cancellation token whose signal
    the integration MUST make a best effort to honor.
@@ -698,12 +706,17 @@ document are to be interpreted as described in RFC 2119.
      phase (`condition` or `body`); and
    - `optional-decline`: declined operation ID, selected agent, source location,
      and decline reason when a decline normalized to `None`.
-   Entries MUST be ordered from outermost to innermost scope, with repeated
-   entries in execution order within one scope. An `else if` request MUST
-   include the `conditional-arm` entries from preceding arms in the same
-   chain. While a selected conditional arm executes, its active control-chain
-   context MUST include every preceding false arm followed by the controlling
-   true arm, each with its decision and rationale. An `else` arm MUST include
+   Structural entries (`workflow-frame`, `decision-frame`, `conditional-arm`,
+   and `loop-iteration`) MUST appear first, ordered from outermost to
+   innermost scope, with repeated entries in execution order within one scope.
+   Any `optional-decline` entries MUST follow all structural entries and use
+   the interpolation-input and value-traversal order defined below. This is a
+   total ordering; integrations MUST NOT regroup entries by kind. An `else if`
+   request MUST include the `conditional-arm` entries from preceding arms in
+   the same chain. While a selected conditional arm executes, its active
+   control-chain context MUST include every preceding false arm followed by
+   the controlling true arm, each with its decision and rationale. An `else`
+   arm MUST include
    every preceding false arm. These entries leave the active context when the
    conditional chain completes; they are not unbounded execution history. A
    `None` produced by `Declined` MUST carry interpreter-only decline
@@ -872,7 +885,7 @@ document are to be interpreted as described in RFC 2119.
     fails the foreground execution and applies the attached-descendant
     cancellation rules in Section 10. Failure of an attached spawned task
     settles that child as failed and is observed through its owning `join` or
-    `joinall`; it does not immediately cancel siblings. Failure of a detached
+    `joinall()`; it does not immediately cancel siblings. Failure of a detached
     task follows the detached-task rules in Section 10 and cannot retroactively
     change an already returned foreground outcome. This propagation rule
     applies to hook failure, decline of a required result, structured-output
@@ -1123,7 +1136,7 @@ document are to be interpreted as described in RFC 2119.
 
 1. Gantry MUST support annotated spawn declarations of the form
    `spawn <name> -> <type> { ... }`, joins of the form
-   `join(<task-name>, ...)`, `joinall`, and explicit detachment of the form
+   `join(<task-name>, ...)`, `joinall()`, and explicit detachment of the form
    `detach(<task-name>);`.
 2. A spawn creates an arbitrary child program block running in parallel. The
    spawn name declares a new, lexically scoped, unique, interpreter-owned task
@@ -1204,9 +1217,9 @@ document are to be interpreted as described in RFC 2119.
    join likewise consumes its handle durably and fails the current Gantry task
    with a task/join error. Propagation beyond that task follows Section 7 rather
    than implicitly aborting unrelated parallel work.
-6. `joinall` is the scope-oriented form for joining every unconsumed, attached
+6. `joinall()` is the scope-oriented form for joining every unconsumed, attached
    task handle that is owned by the current Gantry task, declared directly in
-   the current lexical scope, and definitely available at the `joinall`
+   the current lexical scope, and definitely available at the `joinall()`
    expression's program point. It excludes later declarations, tasks declared
    in nested scopes, tasks owned by another Gantry task, and tasks explicitly
    detached before the join. It consumes all included handles, waits until all
@@ -1215,25 +1228,25 @@ document are to be interpreted as described in RFC 2119.
    same non-`None` result type. When every joined task has a non-`None` result
    but those types are not all exactly equal, it yields a positional tuple in
    task declaration order. Otherwise it is a waiting statement that discards
-   successful outputs. With zero included tasks, `joinall` is a no-result
+   successful outputs. With zero included tasks, `joinall()` is a no-result
    no-op. It MUST
    NOT stop waiting merely because one task fails.
    After all tasks settle, one or more failures MUST fail the current Gantry
    task with one aggregate task/join error. That error MUST report failed tasks
    in source declaration order, not completion order. Propagation beyond the
-   current task follows Section 7. At a `joinall`, every task
+   current task follows Section 7. At a `joinall()`, every task
    handle declared directly in that scope MUST have one definite ownership
    state on all incoming control-flow paths. A handle that is consumed or
    detached on only some incoming paths is an analysis error rather than a
-   conditionally included `joinall` member.
-   Before waiting, a nonempty `joinall` MUST append and flush the same
+   conditionally included `joinall()` member.
+   Before waiting, a nonempty `joinall()` MUST append and flush the same
    consumed-by-join task-state transition required for a named join, listing
    included handles in declaration order. Its ordered result or aggregate
    failure MUST likewise be appended and flushed before source execution
-   consumes it. A zero-task `joinall` requires no ownership record.
+   consumes it. A zero-task `joinall()` requires no ownership record.
 7. A child failure does not immediately cancel siblings. A named child's
    failure is deferred until `join`; a scoped failure is deferred until
-   `joinall`.
+   `joinall()`.
 8. `detach(task)` consumes one attached task handle and transfers foreground
    ownership to the interpreter, acting on behalf of the task's originating
    execution and journal, without waiting for it. Detaching an
@@ -1434,7 +1447,11 @@ document are to be interpreted as described in RFC 2119.
    preceding errors and the exact remaining budget.
 6. Journals MUST identify the exact package source and journal format version.
    The package source identity is the SHA-256 digest of a canonical manifest
-   containing every resolved source module exactly once. Manifest entries are
+   containing every selected package-relative source-file path exactly once.
+   `main.gnt` contributes the root entry, and a file selected by a file-module
+   declaration contributes one entry for that module. Inline modules
+   contribute no separate entry because their bytes are already part of the
+   containing file's entry. Manifest entries are
    sorted in ascending lexicographic order by the unsigned UTF-8 bytes of their
    package-relative path, use `/` as their path separator, and contain the
    path, the exact source-file bytes, and the resolved module path.
@@ -1452,13 +1469,17 @@ document are to be interpreted as described in RFC 2119.
    manifest entry of their own because their bytes are already present in the
    containing source file. Each resolved module path is encoded as its
    `crate::`-rooted sequence of NFC identifier segments joined by `::`, with the
-   root module encoded as `crate`. These rules make the digest independent of
-   module-discovery order and host path syntax.
+   root module encoded as `crate`. One package-relative path MUST NOT be
+   selected as more than one file-backed module; such aliasing is the duplicate
+   module resolution error defined in Section 4. Distinct package-relative
+   paths remain distinct manifest entries even when the host filesystem stores
+   them as hard links to the same bytes. These rules make the digest
+   independent of module-discovery order and host path syntax.
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
    counters, task relationships, and committed values. An in-flight spawned
    block MUST restart at the top of that block while reusing every committed
    operation result recorded for it. Uncommitted operations are retried under
-   item 4. Deterministic replay of `spawn`, `join`, `joinall`, or `detach` MUST
+   item 4. Deterministic replay of `spawn`, `join`, `joinall()`, or `detach` MUST
    consult the durable task-state history before changing task ownership. A
    replayed `spawn` occurrence MUST recover its existing stable child task and
    MUST NOT create a duplicate child. A replayed join or detach whose ownership
@@ -2060,7 +2081,7 @@ or binding. A qualified item path is valid in an expression only as the callee
 of a workflow call or as the type path beginning a struct constructor. Because
 v1 has no module, type, function, decision, or method values, semantic analysis
 MUST reject a bare path that resolves to any such item. Task handles are legal
-only in `join`, `joinall`, and `detach`, never as primary expressions.
+only in `join`, `joinall()`, and `detach`, never as primary expressions.
 
 A value-producing `with` or `session` expression requires its block's trailing
 expression and yields that value. These forms permit a lexical agent or session
@@ -2069,7 +2090,7 @@ in Section 13.5 have no result and take no semicolon after the closing brace. A
 value-producing context expression MAY still be followed by `;` when its value
 is intentionally discarded.
 
-`prompt`, `join`, `joinall`, `with`, and `session` are complete expression
+`prompt`, `join`, `joinall()`, `with`, and `session` are complete expression
 forms rather than direct bases of a postfix chain. To select a field, invoke a
 method, or project from one of their results without first binding it, source
 MUST parenthesize that expression, as in `(join(first, second))[0]`. This explicit
@@ -2243,11 +2264,11 @@ spawn_statement         = "spawn", identifier_token, result_annotation, block ;
 detach_statement        = "detach", "(", identifier_token, ")", ";" ;
 join_expression         = "join", "(", identifier_token,
                           { ",", identifier_token }, [ "," ], ")" ;
-joinall_expression      = "joinall" ;
+joinall_expression      = "joinall", "(", ")" ;
 ```
 
 Every spawn has an explicit result annotation, including `-> None`. `join`
-requires at least one handle. `joinall` takes no parentheses or arguments.
+requires at least one handle. `joinall()` takes no arguments.
 `detach` consumes exactly one attached task handle and is a statement rather
 than a value-producing expression.
 Static result typing follows Section 10: one value for one task, `List<T>` for
@@ -2634,7 +2655,7 @@ example, `let headline_text: String = pair[0];` and
 `let full_report: Report = pair[1];` are deterministic projections and do not
 invoke an agent hook.
 
-### 14.10 `joinall`, no-result tasks, and detachment
+### 14.10 `joinall()`, no-result tasks, and detachment
 
 ```gantry
 fn collect_all(topic: String) -> List<Report> {
@@ -2646,7 +2667,7 @@ fn collect_all(topic: String) -> List<Report> {
         prompt "Investigate the second perspective on ${topic}." -> Report
     }
 
-    let reports: List<Report> = joinall;
+    let reports: List<Report> = joinall();
     reports
 }
 ```
@@ -2661,7 +2682,7 @@ fn audit_in_parallel(report: Report) {
         prompt "Perform a style audit of ${report}.";
     }
 
-    joinall;
+    joinall();
 }
 ```
 
