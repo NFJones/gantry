@@ -1559,14 +1559,18 @@ document are to be interpreted as described in RFC 2119.
    joined task has the same non-`None` result type. When the named tasks have
    non-`None` result types that are not all exactly equal, it yields
    `Tuple<T1, T2, ..., Tn>`, whose positional types and values follow argument
-   order. Joining a no-result task in this form is an analysis error. A multi-
-   task join waits until every named task settles even after a failure. Before
-   waiting, Gantry MUST append and flush one task-state record that identifies
+   order. When every named task has no result, the join is a waiting statement
+   with no source value. Mixing value-producing and no-result tasks in one
+   named join is an analysis error; Gantry MUST NOT silently discard selected
+   values merely because another named task has no result. Every named join
+   waits until every named task settles even after a failure. Before waiting,
+   Gantry MUST append and flush one task-state record that identifies
    the join form, source location, named handles in argument order, and their
    transition from attached to consumed-by-join. Only then are the handles
    consumed. This transition includes handles for successful tasks in a join
    where another task fails. After settlement, Gantry MUST append and flush the
-   ordered result or aggregate failure before returning it to source execution.
+   ordered result, successful no-result settlement, or aggregate failure before
+   returning it to source execution.
    Consuming a handle for a join changes its source-level ownership state but
    does not detach the child: until it settles, the child remains an attached
    descendant for cancellation and cleanup under items 10 and 14.
@@ -1709,7 +1713,13 @@ document are to be interpreted as described in RFC 2119.
     active when shutdown began. After that report's task and journal content is
     fixed, and while the executor adapter and event sinks remain available,
     Gantry MUST create exactly one final interpreter-wide `shutdown` event and
-    satisfy the required-sink barrier in Section 12. A delivery-barrier failure
+    satisfy the required-sink barrier in Section 12. Before shutdown returns,
+    every finite best-effort delivery obligation already owned by the
+    interpreter, including obligations for that final event, MUST also reach
+    success or terminal exhaustion under its captured policy. Journaled
+    settlements MUST be durable, every execution-journal owner MUST then be
+    released, and no delivery worker may remain dependent on the terminal
+    interpreter. A delivery-barrier failure or best-effort exhaustion summary
     is reported separately from the task and execution outcomes already fixed
     in the shutdown report. An interpreter cannot be reused after shutdown
     begins. Embedders MUST complete shutdown before dropping the interpreter.
@@ -1811,8 +1821,11 @@ document are to be interpreted as described in RFC 2119.
    best-effort event-delivery obligation created through its terminal event has
    settled durably. Returning a terminal result waits only for the required
    delivery barrier in Section 12; finite best-effort delivery MAY continue
-   afterward while the current interpreter retains journal ownership. Gantry
-   MUST also release ownership after a start or resume-start failure when
+   afterward while the current interpreter retains journal ownership. An
+   orderly interpreter shutdown is stricter: Section 10 requires every such
+   finite obligation to settle and every journal owner to be released before
+   shutdown returns. Gantry MUST also release ownership after a start or
+   resume-start failure when
    ownership was acquired but interpretation never began.
    Release failure is a journal failure after execution has begun. A start or
    resume-start invocation that has not advanced durable execution state MUST
@@ -2296,7 +2309,11 @@ document are to be interpreted as described in RFC 2119.
    execution result, validation or analysis result, or orderly shutdown
    report, Gantry MUST flush all required-sink deliveries produced by that
    completed activity through its final event. These barriers do not require
-   waiting for events that the activity has not yet produced.
+   waiting for events that the activity has not yet produced. The terminal
+   interpreter shutdown rule in Section 10 additionally requires every finite
+   best-effort obligation owned by the interpreter to settle before shutdown
+   returns; ordinary foreground and terminal execution results retain the
+   required-sink-only barrier stated here.
    A sink-delivery failure MUST NOT itself create a standard Gantry event.
    Its durable event-delivery settlement, the affected activity result, and
    the structured barrier or runtime error are its canonical observability
@@ -3443,6 +3460,23 @@ fn audit_in_parallel(report: Report) {
     }
 
     joinall();
+}
+```
+
+Named joins can wait for a selected set of no-result tasks without manufacturing
+an unused aggregate value:
+
+```gantry
+fn audit_selected(report: Report) {
+    spawn security_audit -> None {
+        prompt "Perform a security audit of ${report}.";
+    }
+
+    spawn style_audit -> None {
+        prompt "Perform a style audit of ${report}.";
+    }
+
+    join(security_audit, style_audit);
 }
 ```
 
