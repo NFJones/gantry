@@ -166,15 +166,20 @@ document are to be interpreted as described in RFC 2119.
    The directory containing `main.gnt` is the package root. `main` MUST have
    either no parameters or exactly one typed parameter and MAY return any v1
    result type or no result. When `main` has a
-   parameter, the embedding application MUST supply one strict-JSON entry
-   value, which Gantry MUST validate against the parameter's generated schema
-   before execution begins. When `main` has no parameter, supplying an entry
-   value is an error. Gantry MUST return a successful entry result to the
-   embedder as strict JSON together with a host-level indication of whether the
-   function returned a value; this indication distinguishes a no-result
-   `main` from an `Option<T>` result whose JSON value is `null`. A no-result
-   `main` returns JSON `null` with the host-level no-result indication; a
-   value-returning `main` uses the Section 8 encoding of its declared type.
+   parameter, the embedding application MUST supply one raw byte sequence
+   containing the entry JSON. Gantry MUST own UTF-8 decoding and RFC 8259 JSON
+   parsing and MUST apply the same empty-input, trailing-data, duplicate-member,
+   and Unicode-scalar rejection rules that Section 8 applies to hook output.
+   Gantry MUST then validate the parsed value against the parameter's generated
+   schema before execution begins. An embedding API MUST NOT require callers to
+   preparse the entry input through a JSON representation that can erase those
+   errors. When `main` has no parameter, supplying entry bytes is an error.
+   Gantry MUST return a successful entry result to the embedder as strict JSON
+   together with a host-level indication of whether the function returned a
+   value; this indication distinguishes a no-result `main` from an `Option<T>`
+   result whose JSON value is `null`. A no-result `main` returns JSON `null`
+   with the host-level no-result indication; a value-returning `main` uses the
+   Section 8 encoding of its declared type.
 3. Gantry MUST support comments and SHOULD adopt Rust lexical conventions
    where they fit the v1 feature set. Rust likeness is primarily a syntactic
    and readability goal; Gantry does not inherit Rust semantics by default.
@@ -260,7 +265,11 @@ document are to be interpreted as described in RFC 2119.
    otherwise permitted. A function, method, prompt, or spawned block MAY have
    no returned value.
    Omission of a result annotation and the explicit result annotation `-> None`
-   both denote this no-result form; they do not denote `Option<T>`.
+   both denote this no-result form; they do not denote `Option<T>`. No-result
+   is not a first-class value and cannot be bound, passed, interpolated, or
+   constructed. In particular, `return;` exits a no-result body, while
+   `return None;` is valid only when an expected `Option<T>` return type gives
+   that expression a type; it is not another spelling of a no-result return.
 3. `Option<T>`, `List<T>`, and `Tuple<T1, T2, ..., Tn>` MAY appear in
    parameters, bindings, returned values, and struct fields. `Some(value)` and
    `None` MUST be constructible by deterministic interpreter operations.
@@ -317,9 +326,13 @@ document are to be interpreted as described in RFC 2119.
    Defaults MUST NOT invoke an agent operation. When an optional field with a
    default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
-9. Bindings are immutable by default. `mut` enables rebinding and field
-   mutation. Assignments MUST preserve type, and v1 permits no implicit type
-   coercion.
+9. Bindings, including function, method, and decision-workflow parameters
+   other than the receiver, are immutable by default. `mut` on a local
+   declaration or parameter enables rebinding and field mutation of that local
+   value. Parameter mutability is local to the called workflow because
+   arguments use the deep-copy semantics in Section 6; it never permits
+   mutation of the caller's value. Assignments MUST preserve type, and v1
+   permits no implicit type coercion.
 10. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
 11. Built-in deterministic string operations and list operations other than
@@ -355,7 +368,12 @@ document are to be interpreted as described in RFC 2119.
    references, moves, or borrowed values in v1. A `self` or `mut self` receiver
    is therefore a local receiver copy. `mut self` permits mutation of that copy
    but never changes the caller's value implicitly; callers MUST assign a
-   returned value explicitly when they intend to retain receiver changes.
+   returned value explicitly when they intend to retain receiver changes. A
+   workflow call MUST provide exactly one argument for each declared
+   non-receiver parameter, in declaration order, and every argument's static
+   type MUST exactly equal its parameter type. A method call additionally
+   requires a receiver of the `impl` target type. Gantry has no default,
+   variadic, named, coerced, or overloaded call arguments in v1.
 5. A workflow body MAY contain one or more `prompt` expressions. Each executed
    `prompt` or `decide` expression MUST invoke exactly one agent operation
    hook. Calling a decision workflow invokes no hook merely because of the
@@ -389,17 +407,23 @@ document are to be interpreted as described in RFC 2119.
    governed by Section 9. Every explicit or implicit returned expression MUST
    exactly match the
    declared result type. A workflow whose signature omits a result type
-   implicitly returns no result. A value-producing prompt MAY be discarded by
-   writing it as an expression statement. A workflow or method call, `with`
-   expression, or `join` expression MAY likewise be used as an expression
-   statement when its result is intentionally discarded. A standalone literal,
-   constructor, field access, projection, `Some`, or `None` expression has no
-   execution effect and MUST be rejected as an expression statement.
-   Assignment and `spawn` statements do not themselves produce values. Semantic analysis
-   MUST prove that every reachable normal completion of a value-returning
-   function, method, or spawned block yields the declared type. Falling through
-   a value-returning body is an analysis error; it MUST NOT be deferred to a
-   runtime missing-value failure.
+   implicitly returns no result. Because no-result is not a value, a no-result
+   prompt, workflow call, method call, `with` expression, or `join` MUST be
+   terminated with `;` as an expression statement; it cannot be a block's
+   trailing expression. A value-producing prompt MAY be discarded by writing
+   it as an expression statement. A value-producing workflow or method call,
+   `with` expression, or `join` expression MAY likewise be used as an
+   expression statement when its result is intentionally discarded. A
+   standalone literal, constructor, field access, projection, `Some`, or
+   `None` expression has no execution effect and MUST be rejected as an
+   expression statement.
+   Assignment and `spawn` statements do not themselves produce values.
+   Conditional-arm and loop bodies are statement-only blocks; they MUST NOT
+   end in a trailing expression whose value would be silently discarded.
+   Semantic analysis MUST prove that every reachable normal completion of a
+   value-returning function, method, or spawned block yields the declared type.
+   Falling through a value-returning body is an analysis error; it MUST NOT be
+   deferred to a runtime missing-value failure.
 9. A method MAY return `self`; the returned value is a deep value copy and does
    not consume the receiver. Duplicate inherent methods for the same struct are
    analysis errors.
@@ -848,13 +872,20 @@ document are to be interpreted as described in RFC 2119.
 2. A spawn creates an arbitrary child program block running in parallel. The
    spawn name declares a new, lexically scoped, unique, interpreter-owned task
    handle. A task handle is not a `String`, is not agent-visible structured
-   data, and is not otherwise a first-class runtime value. Before submitting
-   the child to the executor or invoking its `HookFactory`, Gantry MUST append
-   and flush a task-state record containing the child's stable task identity,
-   parent identity, source spawn occurrence, copied captures, inherited agent
-   selection, and forked-session identity. The handle becomes visible to the
-   parent only after that record is durable. This ordering prevents a child
-   from performing model-backed work that recovery cannot identify.
+   data, and is not otherwise a first-class runtime value. The Gantry task that
+   executes the `spawn` exclusively owns the new handle. A spawned child MUST
+   NOT reference, join, detach, or otherwise consume a task handle declared by
+   its parent or another task, even when that handle's declaration is lexically
+   visible. A child may operate only on handles created by spawns that the child
+   itself executes. This ownership rule prevents cross-task races over linear
+   handles and keeps every join or detach visibly controlled by the task that
+   created the work. Before submitting the child to the executor or invoking
+   its `HookFactory`, Gantry MUST append and flush a task-state record containing
+   the child's stable task identity, parent identity, source spawn occurrence,
+   copied captures, inherited agent selection, and forked-session identity. The
+   handle becomes visible to the parent only after that record is durable. This
+   ordering prevents a child from performing model-backed work that recovery
+   cannot identify.
 3. A spawned block captures outer variables by copy and MUST NOT mutate outer
    variables. The captured values form a deep, isolated snapshot taken when
    `spawn` executes; “snapshot” describes isolation, not universal read-only
@@ -897,11 +928,13 @@ document are to be interpreted as described in RFC 2119.
    never by completion time. A failed single-task join consumes its handle and
    aborts with a task/join error.
 6. `joinall` is the scope-oriented form for joining every unconsumed, attached
-   task declared directly in the current lexical scope. It excludes tasks
-   declared in nested scopes and tasks explicitly detached before the join. It
-   consumes all included handles, waits until all included tasks have settled,
-   and yields an ordered `List<T>` in task declaration order when every joined
-   task has the
+   task handle that is owned by the current Gantry task, declared directly in
+   the current lexical scope, and definitely available at the `joinall`
+   expression's program point. It excludes later declarations, tasks declared
+   in nested scopes, tasks owned by another Gantry task, and tasks explicitly
+   detached before the join. It consumes all included handles, waits until all
+   included tasks have settled, and yields an ordered `List<T>` in task
+   declaration order when every joined task has the
    same non-`None` result type. When every joined task has a non-`None` result
    but their types differ, it yields a positional tuple in task declaration
    order. Otherwise it is a waiting statement that discards successful
@@ -1016,6 +1049,15 @@ document are to be interpreted as described in RFC 2119.
    task dispatch. The embedder and storage capability together MUST enforce
    this exclusive ownership; read-only inspection MAY remain concurrent.
 3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
+   Its dispatch record MUST preserve the complete versioned semantic request,
+   including the selected agent, operation and result kinds, templates,
+   interpolated inputs, schema, guidance, source location, session fields,
+   ordered execution context, validation state, and logical identities.
+   Protected or repeated payloads MAY be stored by stable reference, but those
+   references MUST resolve from the same durable journal. A recovery redispatch
+   MUST reuse those committed semantic fields exactly; only fields that identify
+   the new physical invocation, including the dispatch ID and incremented
+   recovery-dispatch number, may differ.
    After a hook returns, Gantry MUST append the outcome and flush through that
    outcome record's sequence number before the interpreter validates, assigns,
    branches on, returns, or otherwise consumes it. A successfully flushed
@@ -1370,7 +1412,7 @@ function_declaration    = "fn", identifier_token, "(",
                           [ parameter_list ], ")",
                           [ result_annotation ], block ;
 parameter_list          = parameter, { ",", parameter }, [ "," ] ;
-parameter               = identifier_token, ":", value_type ;
+parameter               = [ "mut" ], identifier_token, ":", value_type ;
 
 decision_declaration    = "decision", identifier_token, "(",
                           [ parameter_list ], ")", decision_block ;
@@ -1384,15 +1426,18 @@ receiver                = "self" | "mut", "self" ;
 ```
 
 A function signature without a result annotation returns no result, exactly as
-if it had `-> None`. A method always has a receiver as its first parameter.
-Associated functions without a receiver are excluded from v1. A `decision`
-has no source-level result annotation because its interpreter-only decision
-schema is implied by the declaration.
+if it had `-> None`. `mut` on a non-receiver parameter permits mutation of that
+workflow's deep-copied local argument; it does not affect the caller. A method
+always has a receiver as its first parameter. Associated functions without a
+receiver are excluded from v1. A `decision` has no source-level result
+annotation because its interpreter-only decision schema is implied by the
+declaration.
 
 ### 13.5 Blocks and statements
 
 ```ebnf
 block                   = "{", { statement }, [ trailing_expression ], "}" ;
+statement_block         = "{", { statement }, "}" ;
 decision_block          = "{", { statement }, [ decision_tail ], "}" ;
 decision_tail           = decision_expression ;
 
@@ -1425,9 +1470,11 @@ trailing_expression     = expression ;
 
 Bindings require explicit types in v1. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
-closing brace. `return;` is valid only in a no-result function, method, or
-spawned block. `break` and `continue` are valid only in a loop body. When a
-`decision_block` has a reachable normal completion, it MUST end in a direct
+closing brace. A trailing expression MUST produce a first-class value; a
+no-result operation must instead be an expression statement ending in `;`.
+`return;` is valid only in a no-result function, method, or spawned block.
+`break` and `continue` are valid only in a loop body. When a `decision_block`
+has a reachable normal completion, it MUST end in a direct
 `decide` expression, decision-workflow call, or decision-valued `with`
 expression. The optional grammar tail permits a
 block whose static control-flow analysis proves that every reachable path has
@@ -1545,8 +1592,12 @@ an ordinary-string Unicode escape that decodes to `$` immediately before `{`
 begins interpolation. Authors SHOULD use `$$` rather than Unicode spelling when
 they intend a literal dollar sign. Raw strings skip escape decoding but use the
 same left-to-right interpolation and `$$` rules. A closing `}` ends an island
-only when all nested constructor braces and parentheses inside it are balanced;
-an unclosed or syntactically invalid island is a syntax error.
+only when all nested constructor braces and parentheses inside it are balanced.
+The contextual scanner MUST tokenize the island using the ordinary Gantry
+lexical rules, so braces or parentheses inside nested quoted or raw string
+tokens do not affect that balance and comment delimiters inside those strings
+remain literal text. An unclosed or syntactically invalid island is a syntax
+error.
 
 Interpolation permits only the restricted grammar above. A projection index
 MUST obey the list and tuple rules in Section 5. In particular, interpolation
@@ -1560,10 +1611,10 @@ attempt.
 
 ```ebnf
 if_statement            = "if", [ decision_modifiers ],
-                          decision_expression, block,
+                          decision_expression, statement_block,
                           { "else", "if", [ decision_modifiers ],
-                            decision_expression, block },
-                          [ "else", block ] ;
+                            decision_expression, statement_block },
+                          [ "else", statement_block ] ;
 
 decision_modifiers      = "(", decision_modifier,
                           { ",", decision_modifier }, [ "," ], ")" ;
@@ -1580,15 +1631,16 @@ decision_with_expression
                         = "with", identifier_token, "{",
                           { statement }, decision_tail, "}" ;
 
-loop_statement          = "loop", [ loop_modifiers ], block ;
+loop_statement          = "loop", [ loop_modifiers ], statement_block ;
 loop_modifiers          = "(", loop_modifier,
                           { ",", loop_modifier }, [ "," ], ")" ;
 loop_modifier           = "session", "=", session_directive
                         | "limit", "=", integer_token ;
 
 while_statement         = "while", [ loop_condition_modifiers ],
-                          decision_expression, block ;
-until_statement         = "until", [ loop_condition_modifiers ], block,
+                          decision_expression, statement_block ;
+until_statement         = "until", [ loop_condition_modifiers ],
+                          statement_block,
                           "when", decision_expression, ";" ;
 loop_condition_modifiers
                         = "(", loop_condition_modifier,
@@ -2072,8 +2124,8 @@ The equivalent imported form is:
 use quality::Finding;
 use quality::inspect;
 
-fn run_imported_check(text: String) -> Finding {
-    inspect(text)
+fn run_imported_check(input: Input) -> Finding {
+    inspect(input)
 }
 ```
 
@@ -2091,10 +2143,12 @@ provider-specific or executor-specific types in Gantry programs:
    from the authoritative durable record prefix returned by journal storage,
    and MUST obtain the exclusive execution ownership required by Section 11
    before advancing it.
-   Execution accepts either no
-   entry value or one strict-JSON entry value as required by `main`, and returns
-   an execution ID and a typed foreground outcome that distinguishes a value,
-   no result, and every runtime-error category defined in Section 7. A
+   Execution accepts either no entry input or one raw byte sequence containing
+   strict JSON as required by `main`; Gantry, rather than the embedder, performs
+   the decoding, parsing, duplicate-member rejection, and schema validation
+   defined in Section 4. Execution returns an execution ID and a typed
+   foreground outcome that distinguishes a value, no result, and every
+   runtime-error category defined in Section 7. A
    foreground outcome MAY be returned while explicitly detached tasks remain;
    the execution ID allows the embedder to correlate their later events and
    terminal durable state. Because event sinks are optional, the API MUST also
