@@ -895,6 +895,17 @@ document are to be interpreted as described in RFC 2119.
    returned to the agent as validation guidance and retried up to the
    configured retry limit. A retry request MUST include the preceding
    validation errors but MUST NOT return the preceding raw output to the hook.
+   A validation retry is another physical dispatch of the same logical
+   operation, not a reevaluation of the source expression. Gantry MUST reuse
+   the selected agent, logical session, authored template, interpolated
+   prompt, typed interpolation arguments, expected type and schema, base
+   guidance, source location, and ordered execution context from the initial
+   dispatch. It MUST NOT reevaluate interpolation expressions or observe
+   intervening source state. Only the dispatch identity, validation-attempt
+   number, applicable recovery-dispatch number, preceding validation errors,
+   and repair-specific rendering of those errors may differ. This rule keeps
+   retries understandable as repairs of one visible operation rather than
+   hidden additional program evaluations.
 10. The retry limit is configured per interpreter and MAY be overridden per
    operation. It counts retries after the initial attempt; zero permits exactly
    one attempt. The v1 interpreter default is two retries after the initial
@@ -1075,10 +1086,14 @@ document are to be interpreted as described in RFC 2119.
    operation in the child reuses it. Sibling tasks MUST receive distinct child
    sessions. An explicit session directive inside the child MAY override this
    inherited session under Section 7.
-   Semantic analysis MUST derive the capture set from every parameter or local
-   binding referenced by the spawned block outside declarations local to that
-   block. Module items and agent names are resolved package-wide and are not
-   captures; task handles owned by another task are prohibited by item 2.
+   Semantic analysis MUST derive the capture set from every parameter, method
+   receiver, or local binding referenced by the spawned block outside
+   declarations local to that block. A captured `self` is the same deep,
+   isolated receiver copy visible to the enclosing method and preserves
+   whether that receiver was declared `self` or `mut self`; mutations through
+   a captured `mut self` remain child-local. Module items and agent names are
+   resolved package-wide and are not captures; task handles owned by another
+   task are prohibited by item 2.
    Gantry MUST snapshot every captured value and its binding mutability before
    the child becomes runnable, and the durable task-state record in item 2 MUST
    contain that complete snapshot. Evaluation of a `spawn` therefore cannot
@@ -1236,13 +1251,29 @@ document are to be interpreted as described in RFC 2119.
     unclean interruption rather than a durable cancellation: a later resume
     MUST follow the authoritative journal prefix and MAY recover tasks or
     redispatch indeterminate operations under Section 11.
+14. The embedding application MUST be able to request cancellation of one
+    execution without shutting down the interpreter. Execution cancellation
+    targets the foreground task plus every attached and detached descendant
+    owned by that execution. When the journal remains usable, Gantry MUST
+    append and flush the cancellation request before signalling task tokens,
+    reject new task and hook dispatch for the execution, apply the configured
+    post-cancellation drain and abortion behavior from item 10, and durably
+    record terminal cancellation before reporting completion. Repeating a
+    cancellation request is idempotent; requesting cancellation of an already
+    terminal execution returns its existing terminal state without changing
+    it. A journal failure while recording cancellation takes precedence and is
+    reported under Section 11. Cancellation of one execution MUST NOT cancel
+    unrelated executions owned by the same interpreter.
 
 ## 11. Journal and Resume Semantics
 
 1. Gantry MUST durably journal committed operation results, validation attempt
    counts, interpreter call frames, scopes, instruction positions, loop state,
    lexical session-context identities and lifetimes, task relationships, and
-   values needed to resume execution. Gantry MAY
+   values needed to resume execution. Journaled values MUST retain the
+   interpreter-only optional-decline provenance required by Section 7 so a
+   resumed operation receives the same decline context as uninterrupted
+   execution. Gantry MAY
    replay deterministic interpreter steps after the latest durable checkpoint,
    but such replay MUST reuse committed hook outcomes and reconstruct the same
    dynamic operation and task identities.
@@ -1467,6 +1498,16 @@ document are to be interpreted as described in RFC 2119.
    guaranteed within one task but not across concurrent tasks; IDs MUST permit
    reconstruction of cross-task causality. Delivery retries reuse the event ID
    and use a distinct delivery-attempt ID.
+   For a resumable execution, an event ID MUST identify one logical event
+   occurrence rather than one interpreter replay of that occurrence. Gantry
+   MUST journal enough event identity and causal state to recover an existing
+   event when deterministic steps are replayed after a checkpoint; it MUST NOT
+   create a new event ID for the same logical occurrence. A resume invocation
+   has its own activity ID, but recovery or continued delivery of an event
+   already in the journal retains that event's original activity ID and
+   timestamp. Events for genuinely new work performed by the resume use the
+   resume activity ID. These rules make sink deduplication effective across
+   both delivery retry and interpreter recovery.
 3. Events from a resumable execution MUST be durably journaled before their
    first delivery. Parse and analysis events produced without a resumable
    execution MAY be delivered without a journal. Event delivery MAY use
@@ -1587,6 +1628,23 @@ document are to be interpreted as described in RFC 2119.
    module, and schema validation without invoking hooks.
 10. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
+11. Diagnostics MUST be usable by both human authors and automated repair
+    agents without parsing display text. Every syntax or analysis diagnostic
+    MUST contain a canonical phase, severity, machine-readable category, a
+    documented code stable within the protocol major version, a human-readable
+    message, and a primary package-relative source span when the problem is
+    source-backed. The canonical v1 categories are `lexical`, `syntax`,
+    `package`, `name-resolution`, `type`, `control-flow`, `task-ownership`, and
+    `schema`. A diagnostic SHOULD include labeled related spans for conflicting
+    declarations or ownership paths. A syntax diagnostic SHOULD identify the
+    encountered token or end of input and the expected token classes when that
+    information is available without fabricating parser state.
+    Runtime diagnostics MUST include the runtime-error category from Section 7
+    and the applicable execution, task, operation, source, and causal
+    identities. Implementations MAY add notes and implementation-specific
+    subcodes, but the only machine-usable representation of an error MUST NOT
+    be free-form text. The redaction rules in this section continue to apply to
+    every diagnostic field.
 
 ## 13. Formal Lexical and Syntactic Grammar
 
@@ -2572,7 +2630,10 @@ provider-specific or executor-specific types in Gantry programs:
 1. An `Interpreter` accepts a package root, interpreter configuration (which
    includes the executor adapter), a hook factory, journal storage, and zero or
    more event sinks. It MUST expose syntax-only validation, semantic analysis,
-   execution, resume, and terminal asynchronous shutdown operations. Resume
+   execution, resume, execution cancellation, and terminal asynchronous
+   shutdown operations. Execution cancellation accepts an execution ID and a
+   structured reason, is idempotent, and implements Section 10 rather than
+   requiring the embedder to manipulate executor handles directly. Resume
    MUST identify the execution or journal to load and reconstruct state only
    from the authoritative durable record prefix returned by journal storage,
    and MUST obtain the exclusive execution ownership required by Section 11
