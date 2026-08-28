@@ -4,6 +4,7 @@
   - [1. Status and Scope](#1-status-and-scope)
     - [1.1 Language at a glance](#11-language-at-a-glance)
     - [1.2 Reading the surface syntax](#12-reading-the-surface-syntax)
+    - [1.3 V1 design boundary](#13-v1-design-boundary)
   - [2. Normative Language](#2-normative-language)
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
   - [4. Source Organization](#4-source-organization)
@@ -144,6 +145,33 @@ most important when humans or models author Gantry source:
   deterministic interpreter work. If source does not contain `prompt` or
   `decide` at a dynamic call path, that path dispatches no model operation.
 
+### 1.3 V1 design boundary
+
+The following non-normative summary makes deliberate v1 omissions visible.
+It is a reading aid rather than a substitute for the normative requirements
+in later sections:
+
+- Gantry is an orchestration language, not a general-purpose language. Its
+  source values are strings, structs, options, lists, and tuples. Boolean
+  decisions remain interpreter-only, and integers appear only in directives
+  and aggregate projections.
+- Model work is limited to the explicit `prompt` and `decide` operations.
+  Provider tools and harness actions may be used while fulfilling those
+  operations, but v1 has no separate source-level tool or action instruction.
+- V1 has no arithmetic, comparison operators, deterministic string
+  operations, `for`, `match`, `if let`, user-defined generics, traits, or
+  language-level error recovery. Branching on semantic content is deliberately
+  agent-mediated.
+- Lists and tuples are typed transport aggregates. Source can pass, return,
+  interpolate, and project them, but cannot construct literals, iterate over
+  them, or query their lengths in v1.
+- `None` has two intentionally contextual uses: as an expression it is an
+  absent `Option<T>` value whose type must be known from context; after `->`
+  it denotes that a workflow or operation returns no source value.
+- Concurrency is structured and ownership-visible. A spawned task must be
+  joined, joined through `joinall`, or explicitly detached on every normal
+  path before its handle leaves scope.
+
 ## 2. Normative Language
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
@@ -176,9 +204,14 @@ document are to be interpreted as described in RFC 2119.
    calls. It is responsible for mapping Gantry agent names to its own agents
    or models.
 7. Model selection, tool access, approvals, authentication, persistence
-   backend selection, logging backend selection, timeouts, cancellation
-   policy, and resource limits belong to the integration. Gantry MUST provide
-   the asynchronous task scheduling needed to execute parallel Gantry blocks.
+   backend selection, logging backend selection, operation-level timeouts,
+   provider-specific cancellation mechanics, and resource limits belong to
+   the integration. Gantry owns the language-level execution, task-ownership,
+   and cancellation state transitions defined in Sections 10 and 15 and MUST
+   provide Gantry-owned cancellation tokens to integrations. The integration
+   chooses applicable policy values and makes a best effort to stop provider
+   work when those tokens are signalled. Gantry MUST provide the asynchronous
+   task scheduling needed to execute parallel Gantry blocks.
 8. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
    journal, or an equivalent durable execution record, sufficient to continue
    an interrupted execution from its recorded state. Section 11 defines the
@@ -723,8 +756,10 @@ document are to be interpreted as described in RFC 2119.
    MUST remain present on every initial dispatch and repair retry.
 10. The only v1 operation-selection knob is the agent name. System/user/
    assistant roles, model choice, tools, sampling settings, streaming,
-   progress reporting, timeouts, and cancellation mechanics are integration
-   concerns.
+   progress reporting, operation-level timeouts, and provider-specific
+   cancellation mechanisms are integration concerns. Those mechanisms MUST
+   still observe the Gantry-owned cancellation token and the language-level
+   cancellation state transitions required by Sections 10 and 15.
 11. A hook MUST return one of three host-level outcomes:
    `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
    `Completed` contains the agent's raw output as bytes; Gantry, not the hook,
@@ -1246,7 +1281,11 @@ document are to be interpreted as described in RFC 2119.
 10. Parent timeout and cancellation constraints apply while a child remains
    attached and propagate through its attached descendants. Detachment releases
    the task from those parent constraints. Integration-specific operation
-   timeouts and cancellation policy MAY still apply.
+   timeouts and provider-specific cancellation policy MAY still apply, but
+   they MUST NOT override Gantry's durable task-ownership or cancellation state.
+   An integration MAY stop provider work earlier than Gantry's outer task
+   policy requires; it MUST report that outcome through the hook contract and
+   MUST still honor a signalled Gantry cancellation token.
     If a parent task aborts for any runtime error, Gantry MUST signal
     cancellation to all of its attached descendants, wait for them during the
     configured post-cancellation drain period, and abort executor tasks that do
@@ -1578,22 +1617,36 @@ document are to be interpreted as described in RFC 2119.
 5. Event sinks MUST be configured independently as `required` or
    `best-effort`, with interpreter defaults overridable per sink. Gantry MUST
    retry only errors the sink classifies as retriable. A non-retriable error
-   exhausts delivery immediately. The retry limit counts retries after the
-   initial delivery attempt. The default policy is three retries and uses the
-   same full-jitter exponential formula as Section 8: for one-based retry `r`,
-   the ceiling is `min(100 ms * 2^(r - 1), 2 s)`, and the delay is sampled
+   exhausts delivery immediately. The retry limit counts known retriable
+   failures after the initial delivery; recovery of an indeterminate delivery
+   does not consume that budget. The default policy is three retries and uses
+   the same full-jitter exponential formula as Section 8: for one-based retry
+   `r`, the ceiling is `min(100 ms * 2^(r - 1), 2 s)`, and the delay is sampled
    uniformly from whole microseconds from zero through that ceiling.
-   For a resumable execution, Gantry MUST append and flush an event-delivery
-   state record after every attempt and before any retry sleep. That record
-   MUST identify the sink, stable event ID, distinct delivery-attempt ID,
-   zero-based attempt number, outcome classification, remaining retry budget,
-   and selected delay when another attempt is permitted. If interrupted before
-   the next attempt is durably recorded, resume MUST wait the complete recorded
-   delay again and then deliver the same event ID with a new delivery-attempt
-   ID. A durably recorded success or terminal exhaustion MUST NOT be delivered
-   again to that sink. An indeterminate delivery whose attempt was recorded but
-   whose outcome was not is delivered again, giving event delivery its stated
-   at-least-once semantics.
+
+   For a resumable execution, every physical sink invocation MUST use two
+   durable event-delivery state transitions. Before invoking the sink, Gantry
+   MUST append and flush a `dispatched` state containing the sink ID, stable
+   event ID, distinct delivery-attempt ID, and zero-based retry number. After
+   the sink returns, Gantry MUST append and flush a `settled` state containing
+   the same identities, an outcome classification of `success`, `retriable`,
+   or `terminal`, and the remaining retry budget. A `retriable` settlement is
+   valid only when at least one retry remains and MUST also contain the selected
+   delay. A non-retriable sink error, or a retriable sink error received after
+   the retry budget is exhausted, MUST be recorded as `terminal`. Gantry MUST
+   NOT treat the delivery as successful or terminally exhausted until the
+   corresponding `settled` state is durable.
+
+   A durable `success` or `terminal` settlement MUST NOT be delivered again to
+   that sink. A `dispatched` delivery with no durable settlement is
+   indeterminate and MUST be delivered again with the same stable event ID, a
+   new delivery-attempt ID, and the same retry number; this recovery redelivery
+   does not apply backoff or consume retry budget. A durable `retriable`
+   settlement records its selected delay before any sleep begins. If execution
+   is interrupted before the following `dispatched` state becomes durable,
+   resume MUST wait that complete recorded delay again and then use the next
+   retry number. These rules give event delivery at-least-once semantics while
+   making retry accounting and crash recovery unambiguous.
 6. Event delivery is at least once. Sinks MUST deduplicate using the stable
    event ID. Exhaustion for a required sink MUST abort the affected activity
    and its execution when one exists; exhaustion for a best-effort sink MUST
