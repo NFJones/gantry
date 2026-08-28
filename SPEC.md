@@ -289,12 +289,16 @@ or concurrency syntax.
 The following non-normative table summarizes the visible execution boundary.
 It is a reading aid; Sections 6 through 8 define the normative contracts:
 
-| Source form | Work requested | Source result | Agent/session applies | Default output retries |
+| Source form | Work requested | Source result | Agent/session applies | V1 default structured-output retries |
 | --- | --- | --- | --- | --- |
 | `prompt "..." -> T` | Model-backed generation | Declared `T`, or no result when omitted | Yes | 2 |
 | `decide "..."` | Model-backed judgment | Sealed `Decision` | Yes | 2 |
 | `action path(...)` | Declared harness capability | Declared type, or no result | No | 0 |
 | `workflow(...)` | Interpreter-managed call dispatch; the body may reach explicit operations | Workflow's declared result | Only to explicit operations reached in the body | Not applicable |
+
+The retry counts are defaults, not fixed operation behavior. Interpreter
+configuration may replace them, and an operation-local `retry_limit` replaces
+the applicable configured default; Section 8 defines the normative rules.
 
 ### 1.3 V1 design boundary
 
@@ -483,7 +487,7 @@ activity throughout this specification:
   start record or after a resume begins advancing recovered state. Runtime
   errors are task-local unless a rule explicitly makes one execution-wide.
 - A **foreground outcome** is the completion of root `main`. A **terminal
-  execution outcome** is known only after foreground and detached work have
+  outcome** is known only after foreground and detached work have
   settled and required terminal state is durable. Foreground success can
   therefore precede a terminal detached-task failure.
 
@@ -1917,8 +1921,8 @@ shown here.
     `deterministic-evaluation-failure`, `executor-failure`, `cancellation`,
     `journal-failure`, `required-event-delivery-failure`, `task-join-failure`,
     and `internal-invariant-failure`.
-    `success` and `detached-task-failure` are terminal-execution outcome
-    categories, not runtime-error categories. A terminal-execution record uses
+    `success` and `detached-task-failure` are terminal-only outcome categories,
+    not runtime-error categories. A terminal-execution record uses
     one of those terminal-only categories or the exact runtime-error category
     that determines the terminal outcome under Section 10. `journal-failure`
     cannot become a durable terminal category because journal failure prevents
@@ -2221,11 +2225,13 @@ shown here.
    understandable as repairs of one visible operation rather than hidden
    additional program evaluations while preserving the explicit mapping-
    replacement contract for resumed work.
-10. The retry limit is configured per interpreter and MAY be overridden per
-   operation. It counts retries after the initial attempt; zero permits exactly
-   one attempt. The v1 interpreter default is two retries after the initial
-   attempt for `prompt` and `decide`, and zero retries for `action`. An explicit
-   operation-local `retry_limit` overrides the applicable default.
+10. Interpreter configuration supplies separate default retry limits for model
+   and action operations, and an operation MAY override its applicable default.
+   A retry limit counts retries after the initial attempt; zero permits exactly
+   one attempt. Unless the embedder configures replacements, the v1 defaults are
+   two retries for `prompt` and `decide`, and zero retries for `action`. An
+   explicit operation-local `retry_limit` overrides the applicable configured
+   default.
    Retry backoff MUST be configurable as an initial delay, a cap, and a jitter
    mode. Both durations are nonnegative whole-microsecond values, and the cap
    MUST be greater than or equal to the initial delay. The jitter mode is
@@ -2233,8 +2239,8 @@ shown here.
    is `min(initial_delay * 2^(r - 1), cap)`. Under `full`, the selected delay is
    sampled uniformly from the inclusive range of whole microseconds from zero
    through that ceiling. Under `none`, the selected delay is exactly the
-   ceiling. The v1 default is `initial_delay = 100 ms`, `cap = 2 s`, and
-   `jitter = full`.
+   ceiling. Unless the embedder configures replacements, the v1 defaults are
+   `initial_delay = 100 ms`, `cap = 2 s`, and `jitter = full`.
    The ceiling calculation uses saturating arithmetic: once doubling the
    initial delay would meet or exceed the cap, the ceiling is the cap for that
    and every later retry. An implementation MUST NOT construct an unbounded
@@ -3151,8 +3157,9 @@ shown here.
     ```
 
     The displayed model/action retry, retry-backoff, workflow-depth, task-count,
-    and event-delivery values are the normative v1 defaults. Their behavior is
-    defined in Sections 3, 8, 10, and 12. The six values inside
+    and event-delivery values are the normative v1 defaults when the embedder
+    does not configure replacements. Their behavior is defined in Sections 3,
+    8, 10, and 12. The six values inside
     `deterministic_values` are
     illustrative effective values, not language defaults; the integration MUST
     choose them within the bounds below. `maximum_directive_integer` is the
