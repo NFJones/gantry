@@ -306,10 +306,10 @@ The source surface is organized around these families:
 | --- | --- | --- | --- |
 | Package structure | `mod`, `use` | Section 4 | Sections 14.2 and 14.11 |
 | Typed data | `struct`, `enum`, `Option`, `Result`, `List`, `Tuple` | Section 5 | Section 14.3 |
-| Reusable orchestration | `fn`, `impl` | Sections 6 and 9 | Sections 14.4 and 14.6 |
+| Reusable orchestration | `fn`, `impl` | Section 6 | Sections 14.4 and 14.6 |
 | Integration-backed work | `prompt`, `decide`, `action` | Sections 6 through 8 | Sections 14.1, 14.6, and 14.12 |
 | Explicit operation failure handling | `attempt` | Sections 5, 7, and 8 | Section 14.13 |
-| Model context | `with`, `session` | Section 7 | Sections 14.4 through 14.7 |
+| Model context | `with`, `session` | Sections 6 and 7 | Sections 14.4 through 14.7 |
 | Sequential routing | `if`, `if let`, `match` | Section 9 | Sections 14.3 and 14.6 |
 | Repetition | `loop`, `while`, `until` | Section 9 | Section 14.7 |
 | Parallel work | `spawn`, `join`, `joinall`, `detach` | Section 10 | Sections 14.8 through 14.10 |
@@ -380,7 +380,7 @@ most important when humans or models author Gantry source:
 | Handle an expected operation failure | `attempt prompt ...`, `attempt decide ...`, `attempt action path(...)` | Performs that one explicit operation and returns `Result<T, OperationError>` instead of propagating the operation failures that `attempt` is defined to convert. |
 | Select an agent | `with agent_name { ... }` | Sets the active agent for model operations dynamically reached from the block, including through workflow calls and spawned children, unless overridden. |
 | Select conversational continuity | `session(fork) { ... }` | Establishes the active logical session for model operations dynamically reached from the block; nested unmodified operations use it inline. |
-| Run work concurrently | `spawn task { ... }`, `spawn task -> T { ... }` | Creates an owned child task; omit `-> T` only for a Unit task. The handle must later be joined or detached. |
+| Run work concurrently | `spawn task { ... }`, `spawn task -> T { ... }` | Creates an owned child task; omit `-> T` only for a Unit task. The handle must later be consumed by `join`, `joinall()`, or `detach`. |
 
 These forms are intentionally visually distinct. In particular, an ordinary
 workflow call never stands in for `prompt`, `decide`, or `action`, and none of
@@ -396,9 +396,13 @@ workflow summaries required by Section 6.
 - `decide` visibly performs model-backed judgment and returns a sealed
   `Decision` containing a `Bool` decision and nonempty rationale. A decision
   can be retained and passed; its read-only fields can
-  be projected, but source cannot construct or mutate one.
+  be projected, but source cannot construct or mutate one. A `decide`
+  expression has no result annotation because its result is always
+  `Decision`.
 - `action <path>(...)` visibly invokes a source-declared, typed harness action.
-  It is distinct from an ordinary workflow call and from model selection.
+  Its result type is written on the action declaration, not at the invocation
+  site. It is distinct from an ordinary workflow call and from model
+  selection.
 - `attempt` wraps exactly one syntactic `prompt`, `decide`, or `action`
   expression. It does not catch failures from a workflow call, deterministic
   evaluation, journaling, the executor, or task cancellation.
@@ -6652,6 +6656,24 @@ if answer {
 let approved: Bool = answer.decision;
 ```
 
+Only `prompt` writes an output annotation at the operation site. A `decide`
+always returns `Decision`, while an action invocation gets its result type
+from the declaration:
+
+```gantry
+action read_only load_report(id: String) -> Report;
+
+// Invalid: `decide` has a fixed result type and no result annotation.
+let answer: Decision = decide "Is the report complete?" -> Decision;
+
+// Invalid: the action declaration, not the invocation, carries `-> Report`.
+let report: Report = action load_report(report_id) -> Report;
+
+// Valid: both result types are already determined.
+let answer: Decision = decide "Is the report complete?";
+let report: Report = action load_report(report_id);
+```
+
 A previously evaluated non-`Unit` value cannot be “used” by writing it as a
 standalone statement. Every ignored non-`Unit` result requires `discard`:
 
@@ -6824,6 +6846,8 @@ provider-specific or executor-specific types in Gantry programs:
 
 <a id="GNT-15.1"></a>
 
+**Construction and operations.**
+
 An `Interpreter` accepts a package root, an explicitly selected supported
    source-language version, interpreter configuration (which includes the
    executor adapter), a hook factory, journal storage, and zero or more event
@@ -6840,6 +6864,9 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    from the authoritative durable record prefix returned by journal storage,
    and MUST obtain the exclusive execution ownership required by Section 11
    before advancing it.
+
+**New execution and entry input.**
+
    A new-execution request MUST identify a fresh journal target through an
    embedder-supplied stable journal ID. Allocation of that ID and its storage
    target is an integration concern completed before calling Gantry. The API
@@ -6853,7 +6880,9 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    schema validation defined in Section 4. It MUST also accept an optional
    root-session specification containing an embedder-chosen logical session ID
    and an optional canonical transcript in the versioned turn format from
-   Section 7. Gantry MUST validate and normalize that transcript before
+   Section 7. When the specification is present but its transcript is omitted,
+   the transcript is the empty sequence. Gantry MUST validate and normalize
+   that transcript before
    execution, commit it as the authoritative root-session state, and reject
    malformed or resource-limit-exceeding input as an integration-preflight
    start failure. The embedder MUST arrange for the hook integration to resolve
@@ -6884,7 +6913,11 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    create an empty replacement. An unresolved new root is
    an `integration-preflight` start failure; an unresolved reusable session on
    resume is an `unresolved-logical-session` resume-start failure. Neither
-   result creates a hook or dispatches an operation. Starting a new execution
+   result creates a hook or dispatches an operation.
+
+**Start and resume outcomes.**
+
+   Starting a new execution
    MUST return either a
    structured start failure with no execution ID, or an execution ID after the
    execution-start evidence is committed. Syntax, analysis, entry-input,
@@ -6905,6 +6938,9 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    If terminal execution is already durable, resume performs only the unsettled
    event-delivery recovery permitted by Section 11 and exposes the existing
    terminal outcome without creating a task or dispatching a hook.
+
+**Execution observation.**
+
    A typed foreground outcome carries its canonical value type, including
    `Unit`, or one runtime-error category defined in Section 7. A foreground
    outcome MAY be
