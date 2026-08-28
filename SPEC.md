@@ -1332,6 +1332,17 @@ document are to be interpreted as described in RFC 2119.
    `properties` object is keyed by exact field name, while its `required` array
    lists required fields in declaration order. RFC 8785 canonicalization, not
    source declaration order, determines serialized JSON object-member order.
+   More precisely, schema generation recursively constructs one schema node
+   for a type. `String` produces exactly `{"type":"string"}`.
+   `List<T>` produces exactly `{"type":"array","items":NODE(T)}`.
+   `Tuple<T1,...,Tn>` produces exactly an object whose `type` is `array`, whose
+   `prefixItems` is `[NODE(T1),...,NODE(Tn)]`, whose `items` is `false`, and
+   whose `minItems` and `maxItems` are both `n`. `Option<T>` produces exactly
+   `{"anyOf":[{"type":"null"},NODE(T)]}`, except for the field-level
+   `default` annotation permitted below. A declared struct type produces
+   exactly `{"$ref":"#/$defs/KEY"}`, where `KEY` is that struct's definition
+   key. `NODE(T)` denotes recursive application of these rules; it is notation
+   in this specification, not a protocol member.
    Every reachable declared struct MUST have exactly one `$defs` entry. Its
    definition key is the lowercase hexadecimal SHA-256 digest of the UTF-8
    canonical type descriptor from Section 5, and every occurrence of that
@@ -1354,6 +1365,18 @@ document are to be interpreted as described in RFC 2119.
    MUST NOT produce a schema annotation because that field remains required in
    agent output. These placement rules are part of canonical schema generation
    and therefore of the schema digest.
+   Each struct definition in `$defs` MUST contain exactly `type`, `properties`,
+   `required`, and `additionalProperties`. `type` is `object`;
+   `additionalProperties` is `false`; `properties` contains every declared
+   field mapped to its recursively generated schema node; and `required`
+   contains every non-`Option<T>` field name in source declaration order. An
+   empty struct therefore has an empty `properties` object and empty
+   `required` array. An optional field's property remains present in
+   `properties` even though its name is absent from `required`. When that field
+   has a source default, Gantry adds the `default` member to the property schema
+   object after generating its `anyOf`; no other schema node gains a source
+   default annotation. These exact members, together with the root and `$defs`
+   assembly in item 6, are the complete portable generated-schema shape.
    Gantry MUST still perform the normalization in item 2 because the annotation
    does not itself insert a value during JSON Schema validation.
 8. v1 validation MUST check JSON shape and types. Constraints such as length,
@@ -2132,6 +2155,7 @@ document are to be interpreted as described in RFC 2119.
           "id": "stable-sink-id",
           "raw_output_enabled": false,
           "redaction_policy_id": "policy-id",
+          "retry_policy_revision": "revision-id",
           "attempt_timeout_us": "30000000",
           "retry_limit": "3",
           "backoff": {
@@ -2151,11 +2175,26 @@ document are to be interpreted as described in RFC 2119.
     `gantry-created`. `jitter` is exactly `none` or `full`; a future mode
     requires a protocol change. Required sinks MUST be ordered by the unsigned
     UTF-8 bytes of `id` before canonicalization, and their IDs and redaction-
-    policy IDs MUST be valid UTF-8. The root-session ID and every required-sink
-    ID MUST use the same stable string representation that their embedding
-    interfaces expose. This exact object definition makes independently
-    produced identities comparable rather than leaving property spelling or
-    nesting to an implementation.
+    policy and retry-policy-revision IDs MUST be valid UTF-8. The root-session
+    ID and every required-sink ID MUST use the same stable string
+    representation that their embedding interfaces expose. This exact object
+    definition makes independently produced identities comparable rather than
+    leaving property spelling or nesting to an implementation.
+
+    The execution-start record MUST additionally contain the initial mutable
+    runtime policy that is deliberately excluded from the configuration
+    identity: the effective graceful-shutdown duration, post-cancellation-drain
+    duration, and complete effective best-effort sink set. Each best-effort
+    sink descriptor MUST contain the same fields shown above for a required
+    sink, plus its `best-effort` class, and the descriptors MUST be ordered by
+    unsigned UTF-8 sink ID. These initial values are the baseline for resume;
+    Gantry MUST restore them from the execution-start record and then apply
+    later compatible execution-state revisions in journal sequence order. A
+    resume caller MUST NOT silently replace that baseline through ordinary
+    interpreter configuration. A requested compatible change becomes active
+    only after the execution-state record described below is appended and
+    flushed. This separation keeps mutable operational policy recoverable
+    without pretending that it is immutable execution identity.
     Resume MUST reject changes to those fields. Executor implementation,
     worker count, and integration-owned operation-timeout policy MAY change on
     resume without changing this identity; they affect scheduling or
@@ -2164,10 +2203,11 @@ document are to be interpreted as described in RFC 2119.
     mappings MAY change only after Gantry appends and flushes the applicable
     execution-state record before further work. That record MUST contain the
     effective graceful-shutdown and post-cancellation-drain durations when
-    shutdown timing changes; best-effort-sink and agent-mapping changes use the
-    state described in Sections 12 and 7, respectively. These changes MUST
-    obey the per-event delivery-obligation rules in Section 12. Allowing agent
-    mappings to change is
+    shutdown timing changes; a best-effort-sink revision MUST contain the
+    complete replacement set in the canonical order and descriptor shape
+    above; and agent-mapping changes use the state described in Section 7.
+    These changes MUST obey the per-event delivery-obligation rules in Section
+    12. Allowing agent mappings to change is
     intentional because Gantry promises resumability, not deterministic model
     replay. Source operation modifiers remain bound through the package source
     identity rather than being duplicated into this configuration identity.
