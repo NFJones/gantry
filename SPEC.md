@@ -496,19 +496,19 @@ shown here.
    portable Gantry artifact, and an implementation MUST NOT require authors or
    embedders to supply source in another language or expose an additional
    language layer whose behavior changes Gantry semantics.
-4. Gantry MUST be available as an embeddable Rust library with an asynchronous
+3. Gantry MUST be available as an embeddable Rust library with an asynchronous
    execution API. It does not implement an agent, model provider, transport, or
    hidden asynchronous runtime itself. The embedding application MUST supply
    the executor used to poll Gantry futures. Gantry MUST permit its task
    scheduler or executor adapter to be replaced through library configuration,
    not through Gantry source syntax.
-5. The interpreter MUST control program flow, hook invocation, result
+4. The interpreter MUST control program flow, hook invocation, result
    validation, retry handling, and state transitions.
-6. An integration MUST implement the hooks needed to perform model operations
+5. An integration MUST implement the hooks needed to perform model operations
    and declared harness actions. It is responsible for mapping Gantry agent
    names to its own agents or models and canonical action signatures to its
    own capabilities.
-7. Model selection, tool access, approvals, authentication, persistence
+6. Model selection, tool access, approvals, authentication, persistence
    backend selection, logging backend selection, operation-level timeouts,
    and provider-specific cancellation mechanics belong to the integration.
    The integration also chooses the configurable resource-limit values that
@@ -538,17 +538,17 @@ shown here.
    configured interpreter resource limit MUST surface as a structured
    deterministic-evaluation runtime error, never a panic or silent process
    termination.
-8. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
+7. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
    journal, or an equivalent durable execution record, sufficient to continue
    an interrupted execution from its recorded state. Section 11 defines the
    required recovery behavior.
-9. Gantry does not promise deterministic replay. Re-execution of the same
+8. Gantry does not promise deterministic replay. Re-execution of the same
    source and inputs MAY produce different integration results. Resumption MUST,
    however, reuse every committed physical hook outcome and MUST reuse every
    validated operation result already derived from committed journal state.
    A committed raw `Completed` outcome that has not yet passed validation is
    durable input to resumed validation, not yet a successful operation result.
-10. The Gantry v1 source-language version is major `1`, minor `0`. The initial
+9. The Gantry v1 source-language version is major `1`, minor `0`. The initial
     public protocol version for hook requests, journal envelopes, event
     envelopes, and the configuration identity is likewise major `1`, minor
     `0`, but source-language and protocol versions are distinct fields and
@@ -557,10 +557,10 @@ shown here.
     different protocol major version. Every new execution and resume request
     MUST explicitly select a supported source-language version through the
     embedding API; v1 source contains no in-file version pragma.
-11. v1 makes no backward-compatibility promise for source syntax or the
+10. v1 makes no backward-compatibility promise for source syntax or the
     concrete Rust hook API. Public hook, journal, event, and configuration
     envelopes remain subject to the explicit major/minor compatibility rules
-    in item 10 and Section 15. That protocol obligation preserves the meaning
+    in item 9 and Section 15. That protocol obligation preserves the meaning
     of a supported envelope; it does not require a later implementation to
     accept source written for another language version or preserve concrete
     Rust type signatures.
@@ -775,11 +775,12 @@ shown here.
    finite IEEE 754 binary64 value. Directive integers used for limits and retry
    counts remain a separate nonnegative syntax domain through `2^63 - 1` and
    are not implicitly `Int` values.
-2. Parameters and returned values MAY be `Bool`, `Int`, `Float`, `String`, a declared struct or enum
-   type, `Option<T>`, `Result<T, E>`, `List<T>`,
-   `Tuple<T1, T2, ..., Tn>`, or `Decision` whose member types are otherwise
-   permitted. A function, method, prompt, action, or spawned block MAY have no
-   returned value. An ordinary function, method, binding, aggregate, or struct
+2. Parameters and returned values MAY be `Bool`, `Int`, `Float`, `String`, a
+   declared struct or enum type, `Option<T>`, `Result<T, E>`, `List<T>`,
+   `Tuple<T1, T2, ..., Tn>`, or `Decision`. Every member of a constructed type
+   MUST itself be a permitted value type. A function, method, prompt, action,
+   or spawned block MAY have no returned value. An ordinary function, method,
+   binding, aggregate, or struct
    MAY carry `Decision`, but an expected `prompt` or `action` output type MUST
    NOT contain `Decision` at any nesting depth. Only an executed `decide`
    operation can originate a new sealed `Decision`; an ordinary workflow,
@@ -827,10 +828,12 @@ shown here.
    right and the tuple becomes visible atomically after all members succeed.
    A tuple pattern MAY destructure a tuple in `let`, `if let`, or `match`.
    Iteration and mutation of tuple members are excluded from v1.
-6. Struct fields MAY be `Bool`, `Int`, `Float`, `String`, declared struct or enum values, `Option<T>`,
-   `Result<T, E>`, `List<T>`, `Tuple<T1, T2, ..., Tn>`, or `Decision` of
-   otherwise permitted types. Nested and directly self-recursive struct
-   definitions are permitted. In accordance with Section 4, a cycle through
+6. Struct fields MAY be `Bool`, `Int`, `Float`, `String`, declared struct or
+   enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
+   `Tuple<T1, T2, ..., Tn>`, or `Decision`. Every member of a constructed field
+   type MUST itself be a permitted value type. Nested and directly
+   self-recursive struct definitions are permitted. In accordance with Section
+   4, a cycle through
    two or more distinct declared types is excluded from v1. Every permitted
    self-recursive struct cycle MUST pass through `Option<T>` or `List<T>` so
    that a finite strict-JSON value can terminate the recursion. An unguarded
