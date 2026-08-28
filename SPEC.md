@@ -43,7 +43,7 @@
     - [14.5 Prompt strings, interpolation, and escaping](#145-prompt-strings-interpolation-and-escaping)
     - [14.6 Reusable model judgments and conditional chains](#146-reusable-model-judgments-and-conditional-chains)
     - [14.7 General, pre-test, and post-test loops](#147-general-pre-test-and-post-test-loops)
-    - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-listt-joins)
+    - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-list-joins)
     - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
     - [14.10 `joinall()`, Unit tasks, and detachment](#1410-joinall-unit-tasks-and-detachment)
     - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
@@ -137,8 +137,12 @@ conformance profiles:
   judgment; they do not add a second set of source-acceptance rules. Source
   validity does not imply that a particular integration can resolve the
   package's agents or actions.
-- A **frontend-profile implementation** parses complete packages and provides
-  syntax diagnostics under Sections 4, 12, and 13.
+- A **frontend-profile implementation** discovers and parses complete packages
+  and provides lexical and syntax diagnostics under the package-loading rules
+  needed for parsing, the tooling rules in Section 12, and the grammar in
+  Section 13. It does not decide name resolution, typing, effects, control-flow
+  completion, task ownership, or any other static semantic rule assigned to
+  the analyzer profile.
 - An **analyzer-profile implementation** additionally decides source validity,
   generates canonical schemas, reports inferred effects, and enforces control-
   flow and task-ownership rules.
@@ -760,8 +764,9 @@ defined in Sections 3.1 through 3.6.
    claim without claiming the complete durable runtime.
 <a id="GNT-3.2"></a>
 
-2. An implementation MUST parse Gantry source according to Section 13 and
-   preserve every semantic rule in this document. It MAY use handwritten or
+2. An implementation MUST parse Gantry source according to Section 13 and,
+   for each claimed profile, preserve every semantic rule applicable to that
+   profile. It MAY use handwritten or
    generated parsing, an AST, another private intermediate representation,
    bytecode, or native compilation. No such internal representation is a
    portable Gantry artifact, and an implementation MUST NOT require authors or
@@ -869,8 +874,9 @@ defined in Sections 3.1 through 3.6.
     Rust type signatures.
 <a id="GNT-3.11"></a>
 
-11. The normative semantics are defined over a desugared core language. A
-   frontend MUST lower surface source to the following core constructs while
+11. The normative semantics are defined over a desugared core language. An
+   analyzer-profile implementation MUST lower surface source to the following
+   core constructs while
     retaining source spans: typed literals and variables; immutable aggregate
     construction and projection; mutable-root assignment; workflow-frame
     entry and return; ordered sequencing; Boolean and tagged-pattern branch;
@@ -7524,9 +7530,13 @@ versioned URI for each:
 | `gantry.ir` | Canonical core IR and source-map schemas and desugaring fixtures |
 | `gantry.journal` | Logical evidence, migration, ownership, and commit schemas |
 | `gantry.conformance` | Requirement-ID registry, manifest schema, corpus index, and published results |
+| `gantry.authoring` | Executable positive and negative fixtures corresponding to the examples and common errors in Section 14 |
 
 Each artifact MUST identify its protocol major and minor version, applicable
-profiles and requirement IDs, canonical JSON Schemas, and golden encodings.
+profiles and requirement IDs. It MUST include canonical JSON Schemas and
+golden encodings for every public envelope or canonical byte representation
+that it defines; an artifact containing only source fixtures need not invent
+either form.
 Sections 15.1 through 15.7 refer to these logical IDs; repository paths and
 transport URLs may change only through a new publication index that preserves
 their versioned identities.
