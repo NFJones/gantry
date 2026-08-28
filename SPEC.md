@@ -125,10 +125,21 @@ This document uses three related but distinct judgments:
   not add a second set of source-acceptance rules. Source validity does not
   imply that a particular integration can resolve the package's agents or
   actions.
-- A **conforming Gantry v1 implementation** satisfies the complete normative
-  language, execution, durability, observability, and embedding contract. A
+- A **conforming Gantry v1 implementation** satisfies every requirement
+  assigned to Gantry, the interpreter, or its public library interfaces. A
   parser, analyzer, or source-validity tool may accurately describe its more
   limited role but is not by itself a conforming Gantry implementation.
+- A **conforming Gantry v1 integration** satisfies every requirement assigned
+  to the embedder, harness, or integration for the features it configures,
+  including hooks, sessions, executor services, journal storage, and event
+  sinks. Optional services create no obligation when they are not configured.
+- A **conforming Gantry v1 deployment** combines a conforming implementation
+  and integration and satisfies the complete normative language, execution,
+  durability, observability, and embedding contract. Conformance claims MUST
+  name the claimed role; an implementation cannot guarantee behavior that the
+  contract assigns to integration code after control crosses an embedding
+  interface, but it MUST detect and report integration failures where this
+  specification requires it to do so.
 
 Accordingly, “accepting a source-valid package” means recognizing it as a
 valid Gantry package. It does not mean that every execution request must start:
@@ -578,9 +589,11 @@ this document.
    the pre-execution failures defined in Sections 4, 7, 11, 12, and 15 remain
    applicable. An implementation MAY provide an explicitly selected extension
    mode, but source accepted only by that mode MUST NOT be represented as
-   portable Gantry v1 source. Conformance requires all v1 `MUST` and `MUST NOT`
-   requirements; implementing only the parser or only a subset of runtime
-   constructs is not full v1 conformance.
+   portable Gantry v1 source. Implementation conformance requires every v1
+   `MUST` and `MUST NOT` requirement assigned to Gantry, the interpreter, or
+   its public library interfaces; deployment conformance additionally requires
+   the integration obligations defined above. Implementing only the parser or
+   only a subset of runtime constructs is not implementation conformance.
 2. An implementation MUST parse Gantry source according to Section 13 and
    preserve every semantic rule in this document. It MAY use handwritten or
    generated parsing, an AST, another private intermediate representation,
@@ -2486,9 +2499,12 @@ the conservative static analysis required for all possible control-flow paths.
    `until`, a body and its following condition share it. A final false `while`
    condition therefore has a child session with no body execution. `new`
    creates one fresh session on loop entry and uses it for every condition and
-   body execution. A session modifier on the condition's final `decide`
-   overrides the loop session only for that decide operation. Validation
-   retries always retain the logical session of the operation being retried.
+   body execution. An operation-local session modifier on any `decide`
+   reached while evaluating the condition overrides the loop session only for
+   that decide operation. A condition that calls a decision workflow therefore
+   uses the modifiers written on the `decide` sites reached in that workflow.
+   Validation retries always retain the logical session of the operation being
+   retried.
 7. Gantry MUST support `break`, `continue`, and `return` in loops. Unlabeled
    `break` and `continue` target the nearest enclosing loop. Labeled loop
    control is excluded from v1. A body execution is counted when control enters
@@ -2889,8 +2905,10 @@ source-level choices.
     the authoritative durable prefix and may consequently redispatch an
     invocation that remained indeterminate there, as required by Section 11.
 11. Gantry MUST schedule spawned blocks through the executor supplied by the
-    embedding application. The integration determines operation-level resource
-    limits and queueing policy.
+    embedding application. The integration determines executor queueing and
+    provider-internal limits, including operation timeouts. Gantry's configured
+    language and protocol resource limits remain governed by Sections 3, 8,
+    10, 11, and 15 and MUST still be enforced at their specified boundaries.
 12. The embedding API MUST provide a terminal asynchronous shutdown operation.
     The embedder MUST configure a finite graceful-shutdown timeout; indefinite
     shutdown is not the v1 default. Shutdown MUST reject new executions and
