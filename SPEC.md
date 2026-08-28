@@ -222,8 +222,8 @@ valid:
   names even though the grammar makes each namespace use unambiguous. This
   makes `with <agent>` blocks easier to scan in model-authored source.
 
-Section 14 follows these conventions and serves as the canonical source-style
-reference for v1 examples.
+The valid examples in Section 14 follow these conventions and serve as the
+canonical source-style reference for v1.
 
 ### 1.5 Core terminology
 
@@ -831,8 +831,10 @@ document are to be interpreted as described in RFC 2119.
    concurrently with itself. A spawned child receives a distinct hook instance
    if it reaches an operation. `HookFactory::create` MUST receive a
    `TaskContext` containing task, execution, and parent-task identity; the
-   task's base logical session ID; the enclosing session ID and fork
-   provenance when the task was spawned; and the inherited agent selection.
+   task's base logical session ID; the root logical session ID and provenance;
+   the enclosing session ID and fork provenance when the task was spawned;
+   the inherited agent selection; and the immutable structural-context
+   ancestry captured when the task was created.
    The base session is the root session for the root task and the automatically
    forked child session for a spawned task. It is fixed when the task is
    created and MUST NOT be replaced by a transient `session(...)` context that
@@ -875,7 +877,8 @@ document are to be interpreted as described in RFC 2119.
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
    - the source location;
-   - the active logical session ID and root logical session ID;
+   - the active logical session ID, root logical session ID, and root-session
+     provenance (`embedder-supplied` or `gantry-created`);
    - the request session directive, which describes how this operation selected
      its active session;
    - the active session's creation directive, creator-construct identity, and
@@ -927,17 +930,20 @@ document are to be interpreted as described in RFC 2119.
    harnesses to render equivalent repair guidance without parsing diagnostic
    prose.
 6. A hook request MUST also contain a finite ordered execution-context vector.
-   It MUST contain the active workflow call chain and the control-chain entries
-   needed to interpret the current operation; it MUST NOT contain the entire
-   event history or all events since session creation. Each context entry MUST
-   identify its kind, dynamic source-construct identity when applicable, and
-   associated structured data. The canonical v1 context kinds and payloads
-   are:
+   It MUST contain the task's immutable structural ancestry, its active
+   workflow call chain, and the control-chain entries needed to interpret the
+   current operation; it MUST NOT contain the entire event history or all
+   events since session creation. Each context entry MUST identify its kind,
+   dynamic source-construct identity when applicable, and associated
+   structured data. The canonical v1 context kinds and payloads are:
    - `workflow-frame`: canonical workflow path, call-site location when the
      frame was entered by a source call, and zero-based frame occurrence
      within its immediate dynamic caller;
    - `decision-frame`: canonical decision-workflow path, call-site location,
      and zero-based frame occurrence within its immediate dynamic caller;
+   - `spawn-frame`: parent and child task IDs, source spawn location,
+     zero-based spawn occurrence within its immediate dynamic parent, and the
+     child's canonical declared result-type descriptor;
    - `conditional-arm`: conditional-chain dynamic identity, zero-based arm
      index, decision, and nonempty rationale for an already evaluated arm;
    - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
@@ -975,9 +981,18 @@ document are to be interpreted as described in RFC 2119.
    context kind is incompatible with protocol major version 1 and MUST be
    rejected; a newer minor version may add only optional fields to a known kind
    under the compatibility rule in Section 15.
-   Structural entries (`workflow-frame`, `decision-frame`, `conditional-arm`,
-   and `loop-iteration`) MUST appear first, ordered from outermost to
-   innermost scope, with repeated entries in execution order within one scope.
+   When a spawn executes, the child MUST capture the parent's current
+   structural entries and append one `spawn-frame` before the child becomes
+   runnable. Parent workflow, decision, conditional-arm, and loop-iteration
+   entries in that snapshot remain immutable origin context for the child even
+   after the corresponding parent scopes exit. Structural entries created by
+   the child are appended inside that inherited ancestry. Nested spawns repeat
+   this rule, so the vector records task provenance without copying event or
+   session history.
+   Structural entries (`workflow-frame`, `decision-frame`, `spawn-frame`,
+   `conditional-arm`, and `loop-iteration`) MUST appear first, ordered from
+   outermost to innermost dynamic scope, with repeated entries in execution
+   order within one scope.
    Any `optional-decline` entries MUST follow all structural entries and use
    the interpolation-input and value-traversal order defined below. This is a
    total ordering; integrations MUST NOT regroup entries by kind. An `else if`
@@ -1073,7 +1088,15 @@ document are to be interpreted as described in RFC 2119.
    logical session with no inherited conversational context. Entry-level
    `inline` operations use this root session. The selected root identity and
    whether it was supplied or generated MUST be journaled and restored on
-   resume.
+   resume. Root provenance is a separate protocol field and MUST NOT be
+   represented as a `new` or `fork` creation directive. For an
+   `embedder-supplied` root, integration preflight MUST resolve the supplied
+   context before execution begins. For a `gantry-created` root, the
+   integration MUST lazily establish one fresh empty conversational context
+   for that ID before first using the root or a session derived from it, then
+   resolve the same context for every later use in that execution. Establishing
+   that integration-side context is not a Gantry operation and MUST NOT
+   dispatch an `OperationHook` by itself.
    Every session created by `fork` or `new` MUST receive a fresh logical ID
    that is unique within the execution and stable across retry and resume.
    Before a hook dispatch, child-task submission, or other durable state may
@@ -1479,10 +1502,12 @@ document are to be interpreted as described in RFC 2119.
     `session` context whose trailing expression is one of those forms. Each
     completed evaluation MUST ultimately obtain its decision from exactly one
     decision-operation hook result with the decision schema in item 2. A
-    decision call is valid only as the condition of `if`, `else if`, `while`,
-    or `until`, or as the returned expression of another decision workflow.
-    Its result cannot be bound, returned by an ordinary workflow,
-    interpolated, or discarded as a standalone statement. Decision workflows
+    decision expression—including a direct `decide`, a decision-workflow call,
+    or a decision-valued `with` or `session` expression—is valid only as the
+    condition of `if`, `else if`, `while`, or `until`, or as the returned
+    expression of another decision workflow. Its result cannot be bound,
+    returned by an ordinary workflow, interpolated, or discarded as a
+    standalone statement. Decision workflows
     are free module items in v1;
     decision methods and decision-valued first-class values are excluded.
     Semantic analysis MUST prove that every reachable
@@ -1536,6 +1561,8 @@ document are to be interpreted as described in RFC 2119.
    its `HookFactory`, Gantry MUST append and flush a task-state record containing
    the child's stable task identity, parent identity, source spawn occurrence,
    copied captures, inherited agent selection, and forked-session identity. The
+   record MUST also contain the immutable structural-context ancestry captured
+   for the child under Section 7, including its appended `spawn-frame`. The
    handle becomes visible to the parent only after that record is durable. This
    ordering prevents a child from performing model-backed work that recovery
    cannot identify. If executor submission then fails, the child MUST settle as
@@ -3092,8 +3119,9 @@ heterogeneous results.
 ## 14. Syntax Examples
 
 The examples in this section are illustrative complete programs or focused
-fragments. They use only v1 syntax. Comments beginning with `//` explain the
-example and are valid Gantry comments.
+fragments. Except for snippets explicitly labeled invalid in Section 14.12,
+they use only v1 syntax. Comments beginning with `//` explain the example and
+are valid Gantry comments.
 
 ### 14.1 Minimal package entry point
 
@@ -3763,6 +3791,15 @@ provider-specific or executor-specific types in Gantry programs:
    nonterminal resume-start failure. It creates no `OperationHook` and MUST
    occur before `main` evaluation or recovered work. Successful preflight does
    not itself dispatch an operation.
+
+   For a `gantry-created` root session, this integration surface MUST also let
+   Gantry request establishment of one fresh empty integration-side
+   conversational context for the generated logical session ID before that
+   root or a session derived from it is first used. That request is session
+   setup, not hook creation or model dispatch. Repeating it for the same
+   execution and root ID MUST resolve the same context rather than create a
+   replacement. An `embedder-supplied` root instead uses the preflight
+   resolution required by Section 7.
 
    Gantry MUST call the factory lazily, at most once per Gantry task in one
    in-process run, immediately before that task's first hook dispatch; a task
