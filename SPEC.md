@@ -61,11 +61,13 @@ the repository commit containing `SPEC.md` or the lowercase hexadecimal
 SHA-256 digest of the exact `SPEC.md` bytes. The claim applies to the complete
 identified revision, not to a selected subset of its requirements.
 
-Except where a passage is explicitly labeled non-normative, Sections 1
-through 13 and Section 15 are normative. Section 14 is non-normative. The
-capitalized key words defined in Section 2 identify requirement strength, but
-lowercase declarative statements in normative sections remain part of the
-language and operational contract.
+Sections 1.1 through 1.4 and Section 14 are non-normative reading and
+authoring aids. The remainder of Sections 1 through 13 and all of Section 15
+are normative unless a passage is explicitly labeled non-normative. Examples
+and tables in a non-normative passage illustrate the contract but do not add
+requirements. The capitalized key words defined in Section 2 identify
+requirement strength, but lowercase declarative statements in normative
+passages remain part of the language and operational contract.
 
 The source language is designed around three priorities, in order:
 
@@ -81,11 +83,12 @@ The source language is designed around three priorities, in order:
 These priorities favor a small source surface, not a small implementation
 contract. Sections 3 through 12 and 15 are intentionally detailed because
 durability and integration behavior must be portable; that protocol detail is
-not additional syntax an author must learn. A source author can start with
-Sections 1.1 through 1.4 and the examples in Section 14, then consult Sections
-4 through 10 for the semantics of a construct and Section 13 for its formal
-syntax. An implementer must read the complete normative contract, including
-the execution, journal, observability, and embedding requirements.
+not additional syntax an author must learn. Source authors can begin with
+Sections 1.1 through 1.5 and Section 14, consult Sections 4 through 10 for
+construct semantics and operation behavior, then use Section 13 for exact
+syntax. Integrators should begin with Sections 1 and 3, then read Sections 7,
+8, 11, 12, and 15 before consulting the remaining normative sections. A
+conformance implementer must read the complete normative contract.
 
 Gantry is harness-neutral. Mezzanine may integrate Gantry, but it is not an
 assumed runtime or part of the language contract. An integration supplies the
@@ -101,8 +104,7 @@ that crosses the integration boundary is visibly introduced by `prompt`,
 `decide`, or `action` at the operation site; an ordinary function or method
 call site does not itself dispatch a hook, although executing the called body
 may reach explicit external operations. `prompt` and `decide` request
-model-backed work. `action` requests
-a named, typed harness
+model-backed work. An `action` invocation requests a named, typed harness
 capability without implying that a model must fulfill it. An integration may
 perform provider-internal work while fulfilling an operation, as defined in
 Section 7, but that work does not create hidden Gantry operations.
@@ -234,8 +236,8 @@ most important when humans or models author Gantry source:
 | Request a model-produced value | `prompt "..." -> T` | Performs one logical model operation and validates its output as `T`. |
 | Request model judgment | `decide "..."` | Performs one logical model operation and returns a sealed `Decision`. |
 | Invoke a harness capability | `action path(...)` | Performs one logical action operation against a declared action signature. |
-| Select an agent | `with agent_name { ... }` | Changes the agent inherited by model operations in the lexical block. |
-| Select conversational continuity | `session(fork) { ... }` | Establishes one logical session for model operations in the lexical block. |
+| Select an agent | `with agent_name { ... }` | Sets the active agent for model operations dynamically reached from the block, including through workflow calls and spawned children, unless overridden. |
+| Select conversational continuity | `session(fork) { ... }` | Establishes the active logical session for model operations dynamically reached from the block; nested unmodified operations use it inline. |
 | Run work concurrently | `spawn task -> T { ... }` | Creates an owned child task that must later be joined or detached. |
 
 These forms are intentionally visually distinct. In particular, an ordinary
@@ -834,10 +836,12 @@ shown here.
    payload when one variant needs several named values. Variant names MUST be
    unique within the enum. A unit variant is constructed as
    `Type::Variant`; a payload variant is constructed as
-   `Type::Variant(value)`. The payload type MUST match exactly. Enum values
-   MAY be inspected only by patterns, equality expressions, projection from a
-   bound payload, or by supplying the complete value to an operation.
-   Directly or transitively recursive enum payloads are excluded from v1.
+   `Type::Variant(value)`. The payload type MUST match exactly. Enum values MAY
+   be copied, stored, passed, returned, serialized, and supplied to operations
+   as complete values. Their variant or payload MAY be examined only by an
+   enum pattern or equality expression; a payload becomes available through
+   the binding introduced by a matching payload pattern. Directly or
+   transitively recursive enum payloads are excluded from v1.
 8. `Result<T, E>` is a built-in tagged union with source constructors
    `Ok(value)` and `Err(error)`. Their types are `Result<T, E>` when the
    expected type and argument type identify the other member. A constructor
@@ -1262,8 +1266,9 @@ shown here.
    set is empty, `default agent` MUST be absent. A `default agent` declaration
    in any child module is an analysis error, even when it repeats the root
    declaration. Conflicting default bindings or selection of an undeclared
-   agent are analysis errors. This conditional rule permits deterministic-only
-   and action-only packages without fictitious model configuration. Within one
+   agent are analysis errors. This conditional rule permits packages that
+   declare no agents, including deterministic-only and action-only packages,
+   to omit fictitious model configuration. Within one
    uninterrupted execution or resume run,
    integrations MUST resolve every occurrence of the same logical name
    consistently across all tasks. Before a new execution or resume begins,
@@ -1380,11 +1385,12 @@ shown here.
    with its restored task and session IDs. A recovered task that completes by
    deterministic interpreter work alone does not require a hook instance.
 5. Every operation hook request MUST be a versioned tagged envelope with a
-   common header and exactly one operation-specific body. The common header
-   MUST contain at least:
+   common header and exactly one operation-specific body. Except for fields
+   explicitly described as conditional below, every listed v1 field is
+   required. The common header MUST contain:
    - a protocol major and minor version;
-   - stable operation, execution, and task IDs, plus the parent-task ID when
-     the task was spawned;
+   - stable operation, execution, and task IDs, plus a parent-task ID exactly
+     when the task was spawned;
    - an operation kind;
    - the expected result kind;
    - the expected canonical result-type descriptor from Section 5;
@@ -1395,11 +1401,12 @@ shown here.
      will enforce outside or in addition to JSON Schema validation;
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
-   - the source location;
+   - the package-relative source file and half-open byte span of the operation
+     site;
    - a dispatch ID, validation-attempt number, and recovery-dispatch number;
      and
-   - validation errors from the immediately preceding invalid attempt, when
-     applicable.
+   - validation errors exactly when an immediately preceding invalid attempt
+     exists.
    The v1 operation kinds are `prompt`, `decision`, and `action`. The result
    kind is `value`, `no-result`, or `decision`. The expected result descriptor
    is the declared value type for `value`, `None` for `no-result`, and
@@ -1408,9 +1415,14 @@ shown here.
    A `prompt` or `decision` body MUST contain the selected agent name and
    active agent-mapping revision; authored source template and interpolated
    prompt; ordered interpolation-argument vector; ordered named-input vector;
-   active, root, and parent logical-session metadata; and request and creation
-   directives required by this section. Typed interpolation arguments MUST be
-   an ordered
+   required active and root logical-session IDs; a parent logical-session ID
+   exactly when the active session has a parent; and one session-use value.
+   The session-use value is `inline` when the operation reuses the active
+   session and contains no creation payload. It is `create` only when this
+   request creates a `fork` or `new` session and then contains that directive,
+   the new session ID, its parent ID and root ID, and the creation provenance
+   required by this section. An `inline` request MUST NOT cause creation of a
+   Gantry or provider session. Typed interpolation arguments MUST be an ordered
    vector containing one record for each interpolation island in source order;
    each record contains the exact UTF-8 source text between that island's
    `${` and matching `}` delimiters, its package-relative source file and
@@ -2605,9 +2617,15 @@ shown here.
     a shutdown report covering every execution and detached task that was
     active when shutdown began. After that report's task and journal content is
     fixed, and while the executor adapter and event sinks remain available,
-    Gantry MUST create exactly one final interpreter-wide `shutdown` event and
-    satisfy the required-sink barrier in Section 12. Before shutdown returns,
-    every finite best-effort delivery obligation already owned by the
+    Gantry MUST create exactly one final interpreter-wide `shutdown` event for
+    that completed shutdown invocation and satisfy the required-sink barrier
+    in Section 12. This event is interpreter-scoped, non-resumable activity: it
+    has no execution journal, and its delivery state is retained in memory
+    only for the lifetime of the shutdown invocation. If the process is
+    interrupted before shutdown returns, Gantry makes no claim that the event
+    or its deliveries completed; a later interpreter does not recover or
+    recreate that interrupted interpreter's shutdown event. Before shutdown
+    returns, every finite best-effort delivery obligation already owned by the
     interpreter, including obligations for that final event, MUST also reach
     success or terminal exhaustion under its captured policy. Journaled
     settlements MUST be durable, every execution-journal owner MUST then be
@@ -2982,6 +3000,11 @@ shown here.
           "id": "stable-sink-id",
           "raw_output_enabled": false,
           "redaction_policy_id": "policy-id",
+          "redaction_capabilities": {
+            "model_result_content": false,
+            "integration_diagnostics": false,
+            "source_snippets": false
+          },
           "retry_policy_revision": "revision-id",
           "attempt_timeout_us": "30000000",
           "retry_limit": "3",
@@ -3005,7 +3028,11 @@ shown here.
     that parser capability explicit in the configuration identity. Identity
     strings are placeholders, and `required_event_sinks` illustrates a
     nonempty configured set rather than prescribing a default sink. The
-    identity MUST encode the effective configured values.
+    identity MUST encode the effective configured values. Each required sink's
+    `redaction_capabilities` object contains exactly the three Boolean
+    properties shown; these resolved values, rather than the policy ID alone,
+    govern protected-data delivery and are frozen into event obligations under
+    Sections 12 and 15.
     `maximum_entry_input_bytes` limits the
     raw entry-input byte sequence before UTF-8 decoding.
     `maximum_hook_output_bytes` limits each raw `Completed` outcome before
@@ -3229,9 +3256,11 @@ shown here.
    error text. A decision rationale is normalized model-derived output and
    MUST likewise be stored as a protected payload referenced by operation-
    result and branch-decision events; it MUST NOT be copied into an ordinary
-   event envelope. A sink receives the rationale text only when its enabled
-   redaction policy permits model-derived result content. For delivery, Gantry
-   MUST resolve an event's protected references into a capability-filtered
+   event envelope. A sink receives the rationale text only when its frozen
+   `model_result_content` capability is true. Integration diagnostics and
+   source snippets are likewise delivered only when the corresponding frozen
+   `integration_diagnostics` or `source_snippets` capability is true. For
+   delivery, Gantry MUST resolve an event's protected references into a capability-filtered
    payload bundle supplied alongside, but not inside, the ordinary event
    envelope. The bundle MUST preserve the stable reference keys used by the
    envelope. It MUST omit or explicitly redact raw output for a sink that lacks
@@ -3511,7 +3540,9 @@ The grammar uses extended Backus-Naur form (EBNF):
 - `[ A ]` makes `A` optional;
 - `{ A }` repeats `A` zero or more times;
 - `( A )` groups terms; and
-- productions ending in `_token` are emitted by the lexer.
+- productions ending in `_token` describe lexical token classes; where a
+  production is explicitly contextual, the parser MAY reclassify a token with
+  the same boundaries after ordinary lexing.
 
 Whitespace and comments separate tokens and are otherwise insignificant,
 except inside string, raw-string, and block-prompt tokens. A trailing comma is
@@ -3520,13 +3551,6 @@ All EBNF fences in Sections 13.2 through 13.9 form one grammar; a production
 MAY refer forward to a production in a later fence. Names explicitly described
 as lexical metavariables in Section 13.2 constrain token characters and are not
 missing parser productions.
-
-Where a production gives a path a syntactically distinguished final segment,
-that final segment is split from the complete token sequence before name
-resolution. In particular, an enum-variant pattern always treats the final
-identifier after the final `::` as the variant name and every preceding
-segment as the enum type path. Name resolution MUST NOT choose a different
-token grouping.
 
 The lexical skip productions `whitespace`, `line_comment`, `block_comment`,
 and `trivia` describe tokenization and are intentionally not referenced from
@@ -3548,7 +3572,8 @@ line_comment        = "//", { line_comment_character },
 block_comment       = "/*", { block_comment | block_comment_character }, "*/" ;
 trivia              = whitespace | line_comment | block_comment ;
 
-identifier_token    = xid_start_or_underscore,
+identifier_token    = xid_start, { xid_continue_or_underscore }
+                    | "_", xid_continue,
                       { xid_continue_or_underscore } ;
 directive_integer_token
                     = "0" | nonzero_decimal_digit, { decimal_digit } ;
@@ -3584,11 +3609,13 @@ raw_string_token    = "r", raw_hashes, '"', raw_string_body,
 raw_hashes          = { "#" } ;
 ```
 
-`xid_start_or_underscore` and `xid_continue_or_underscore` are the Unicode
-XID_Start and XID_Continue classes, respectively, with `_` additionally
-permitted. The exact one-character token `_` is reserved and MUST NOT be
-emitted as an `identifier_token`; leading `_` remains valid when at least one
-`XID_Continue` scalar follows it. Source MUST be valid UTF-8. One UTF-8
+`xid_start` and `xid_continue` are the Unicode XID_Start and XID_Continue
+classes, respectively; `xid_continue_or_underscore` additionally permits `_`.
+The exact one-character token `_` is reserved and is not an
+`identifier_token`; leading `_` remains valid when at least one
+`XID_Continue` scalar follows it. Reserved-word classification takes
+precedence over `identifier_token`, so a reserved word is never emitted as an
+identifier. Source MUST be valid UTF-8. One UTF-8
 byte-order mark MAY appear only as the first decoded scalar of a source file
 and is ignored; U+FEFF in any other source position is not whitespace and is a
 syntax error. An identifier MUST NOT equal a reserved word.
@@ -3639,19 +3666,22 @@ prompt strings, authored line-ending scalars are content and are preserved
 exactly except for the structural block-prompt delimiters described below.
 
 `trivia` is a lexical skip production rather than a syntactic nonterminal.
-Outside string and prompt-template tokens, zero or more trivia elements MAY
-occur between any two grammar tokens and are discarded by the lexer. Trivia
-MUST NOT split one identifier, numeric token, string delimiter, comment
+Outside string and prompt-template tokens, the lexer discards zero or more
+trivia elements before the first parser token, between parser tokens, and
+after the last parser token before `end_of_file`. Trivia MUST NOT split one
+identifier, numeric token, string delimiter, comment
 delimiter, or fixed multicharacter terminal such as `::` or `->`. Maximal munch therefore
 requires trivia between a reserved word and an immediately following
 identifier character when they are intended as separate tokens.
 
 `string_character` is any Unicode scalar value other than `"` or `\`; newline
-characters are included. `block_prompt_body` is the shortest sequence ending
-before an unescaped `"""` delimiter and uses the same escape sequences as an
-ordinary string. One or two consecutive unescaped quote characters are block-
-prompt content; only three begin the closing delimiter. Escaping at least one
-quote permits a literal three-quote sequence in the decoded content. A block
+characters are included. `block_prompt_body` uses the same escape sequences as
+an ordinary string. While scanning it, a backslash followed by a valid escape
+suffix consumes the complete escape sequence before delimiter recognition.
+Otherwise, the first unconsumed run beginning with three consecutive `"`
+scalars starts the closing delimiter; a run of one or two quotes is content.
+Thus a `\"` escape consumes exactly one quote as content, and the following
+unconsumed quotes are considered independently for delimiter recognition. A block
 prompt MUST begin with a `line_terminator` immediately after its opening
 delimiter; that required terminator is structural and is not part of the
 resulting template. Its closing delimiter MUST be the first non-indentation
@@ -3986,9 +4016,12 @@ pattern                 = "_"
                         | "Some", "(", pattern, ")"
                         | "Ok", "(", pattern, ")"
                         | "Err", "(", pattern, ")"
-                        | qualified_path, "::", identifier_token,
-                          [ "(", pattern, ")" ]
+                        | enum_variant_pattern
                         | tuple_pattern ;
+enum_variant_pattern    = path_segment, "::", path_segment,
+                          { "::", path_segment },
+                          [ "(", pattern, ")" ] ;
+path_segment            = identifier_token ;
 tuple_pattern           = "(", pattern, ",", pattern,
                           { ",", pattern }, [ "," ], ")" ;
 
@@ -5255,9 +5288,16 @@ provider-specific or executor-specific types in Gantry programs:
    ID. Foreground-await and terminal-await results MUST represent the Gantry
    language outcome separately from the required-event-delivery barrier
    status. A delivery-barrier failure MUST NOT masquerade as, replace, or erase
-   a durable foreground or terminal language outcome. A terminal language
-   result MUST distinguish success, detached-task failure, cancellation, and
-   the runtime-error categories defined in Section 7.
+   a durable foreground or terminal language outcome. Execution observation
+   MUST distinguish `not-terminal`, `terminal(outcome, barrier_status)`, and
+   `run-failed-nondurably(journal_error)`. The last state is returned by an
+   in-process await when journal failure aborts the current run; it is not a
+   durable execution state and a later query observes only the authoritative
+   durable prefix. A terminal language outcome MUST distinguish success,
+   detached-task failure, cancellation, and every runtime-error category that
+   Sections 7 through 12 permit to be durably recorded as terminal. Journal
+   failure is excluded because Sections 10 and 11 prohibit claiming a new
+   durable terminal state after storage fails.
 2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    task context. The factory, or a companion harness-preflight interface owned
    by the same integration, MUST also validate the complete nonempty merged
@@ -5306,10 +5346,26 @@ provider-specific or executor-specific types in Gantry programs:
    not itself constitute a hook outcome; an integration that stops work after
    observing cancellation returns `Failed` or lets Gantry surface cancellation
    according to the runtime state.
-4. An executor adapter provides asynchronous task spawn, join, abort, and sleep
-   capabilities. Gantry MUST use those capabilities rather than constructing a
-   hidden Tokio or other provider runtime. Executor handles and errors MUST be
-   wrapped so no specific executor type appears in the language-facing API.
+4. An executor adapter provides asynchronous task spawn, join, abort, sleep,
+   and explicit scheduler-yield capabilities. It MUST also provide a
+   cancellation-aware race against a monotonic deadline. Completion wins when
+   the raced future completes no later than the deadline; otherwise timeout
+   wins, the adapter stops polling the losing future, and Gantry may invoke an
+   available cancellation mechanism. `sleep(0)` is not a substitute for
+   `yield_now` unless the adapter explicitly guarantees one scheduler yield.
+   Gantry MUST use these capabilities rather than constructing a hidden Tokio
+   or other provider runtime. Executor handles and errors MUST be wrapped so no
+   specific executor type appears in the language-facing API.
+
+   Executor-neutral runtime services MUST additionally provide the current UTC
+   time for RFC 3339 event timestamps and uniform sampling of an integer from
+   an inclusive bounded range for `full` jitter. Deadline and elapsed-time
+   behavior MUST use a monotonic clock and MUST NOT be affected by wall-clock
+   adjustment. A clock, timer, or sampling failure is an executor runtime error;
+   implementations MUST NOT silently substitute a fixed delay, reuse a stale
+   timestamp, or weaken a timeout. Selected retry delays and created event
+   timestamps are persisted where Sections 8, 11, and 12 require and are not
+   regenerated during recovery.
 5. Journal storage asynchronously provides durable-prefix reads, exclusive
    owner acquisition and release with fencing, plus atomic `append(record)` and
    `flush(sequence)` operations with the behavior in Section 11. Append and
@@ -5328,7 +5384,16 @@ provider-specific or executor-specific types in Gantry programs:
    Storage errors and malformed or noncontiguous durable histories are never
    retried as model-output failures and MUST surface as journal runtime errors.
 6. Each event sink declares a stable identity, its required/best-effort class,
-   raw-output capability, enabled redaction policy, and retry policy. Stable
+   raw-output capability, enabled redaction policy, and retry policy. The v1
+   redaction policy resolves to explicit Boolean capabilities for
+   `model_result_content`, `integration_diagnostics`, and `source_snippets`;
+   raw integration output remains governed by the separate raw-output
+   capability. The sink configuration MUST expose both its policy ID and these
+   resolved values. Gantry MUST freeze the resolved capability values, together
+   with the policy ID, in every event obligation. Recovery and delivery use
+   the frozen values rather than reinterpreting the policy ID under current
+   host configuration. The policy ID is audit metadata and MUST NOT be the
+   sole semantic representation of protected-data access. Stable
    sink identities MUST be unique within one interpreter configuration. Its
    asynchronous delivery operation receives a versioned event envelope and the
    capability-filtered referenced-payload bundle defined in Section 12, and
