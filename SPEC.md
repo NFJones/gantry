@@ -531,12 +531,15 @@ document are to be interpreted as described in RFC 2119.
    receiver or arguments and therefore need not be `'static`; only an owned
    Gantry task future submitted to the executor MUST be `Send + 'static`. Each
    individual operation awaits one hook outcome before it advances and is
-   therefore logically synchronous. Gantry MUST
-   obtain one independently usable `OperationHook` instance for each Gantry
-   task from an asynchronous `HookFactory`. That instance MUST live for the
-   task's entire lifetime, including nested workflow calls and validation
-   retries, and MUST NOT be invoked concurrently with itself. A spawned child
-   receives a distinct hook instance. `HookFactory::create` MUST receive a
+   therefore logically synchronous. Gantry MUST lazily obtain at most one
+   independently usable `OperationHook` instance for each Gantry task from an
+   asynchronous `HookFactory`, immediately before that task's first hook
+   dispatch. A task that executes no `prompt` or `decide` operation MUST NOT
+   require hook creation merely because the task exists. Once created, that
+   instance MUST live for the remainder of the task's lifetime, including
+   nested workflow calls and validation retries, and MUST NOT be invoked
+   concurrently with itself. A spawned child receives a distinct hook instance
+   if it reaches an operation. `HookFactory::create` MUST receive a
    `TaskContext` containing task, execution, and parent-task identity; the
    task's active logical session ID; the enclosing session ID and fork
    provenance when the task was spawned; and the inherited agent selection.
@@ -556,9 +559,11 @@ document are to be interpreted as described in RFC 2119.
    treating executor abortion as cooperative hook cancellation.
    “Task lifetime” in this interface means one in-process execution or resume
    run. Hook instances are integration resources and MUST NOT be serialized in
-   the journal. After process restart, Gantry MUST create a fresh hook instance
-   for each recovered task, after the session-resolution preflight in item 13,
-   and then continue that logical task with its restored task and session IDs.
+   the journal. After process restart and the session-resolution preflight in
+   item 13, Gantry MUST lazily create a fresh hook instance for each recovered
+   task that reaches another hook dispatch, then continue that logical task
+   with its restored task and session IDs. A recovered task that completes by
+   deterministic interpreter work alone does not require a hook instance.
 5. Every operation hook request MUST contain at least:
    - a protocol major and minor version;
    - stable operation, execution, and task IDs, plus the parent-task ID when
@@ -660,7 +665,14 @@ document are to be interpreted as described in RFC 2119.
    escaping.
 9. Hooks MUST receive the expected output schema as a separate
    machine-readable value. Gantry MUST provide guidance that clearly states
-   the operation's input and output contract; the exact guidance may evolve.
+   the operation's input and output contract. At minimum, the guidance MUST
+   state that `Completed` output is exactly one JSON text with no surrounding
+   prose, Markdown fence, or additional value; identify the expected result
+   kind; explain that unknown struct properties are rejected; identify fields
+   that may be omitted and the defaults or `None` values omission supplies;
+   and explain the no-result or decision shape when applicable. The wording and
+   provider-specific presentation MAY evolve, but those semantic instructions
+   MUST remain present on every initial dispatch and repair retry.
 10. The only v1 operation-selection knob is the agent name. System/user/
    assistant roles, model choice, tools, sampling settings, streaming,
    progress reporting, timeouts, and cancellation mechanics are integration
@@ -819,6 +831,13 @@ document are to be interpreted as described in RFC 2119.
    is emitted as JSON `null`, and an applied default is emitted as its resolved
    value. Although hook output may omit an optional property, omission is not
    preserved as a distinct runtime state.
+   Normalization is recursive and deterministic. Gantry MUST normalize nested
+   structs, list items, tuple members, and present option values from outermost
+   to innermost structure, preserving list and tuple order. It MUST apply each
+   omitted optional field's declared default, or `None` when no default exists,
+   at every nesting depth. A hook result becomes available to source execution
+   only after the entire value has validated and normalized successfully; no
+   partially normalized value may be observed.
 3. A `List<T>` result is represented by a JSON array. Every array item MUST
    validate as `T`, and item order MUST be preserved. Gantry MUST derive an
    array schema with the schema for `T` as its `items` schema.
@@ -849,7 +868,10 @@ document are to be interpreted as described in RFC 2119.
 7. Every struct schema MUST set `additionalProperties` to `false`. Declared
    fields are required unless represented by `Option<T>`. Literal field
    defaults affect source construction; they do not make a non-optional field
-   optional in an agent result.
+   optional in an agent result. A schema for an optional field with a declared
+   default MUST include that value through JSON Schema's `default` annotation.
+   Gantry MUST still perform the normalization in item 2 because the annotation
+   does not itself insert a value during JSON Schema validation.
 8. v1 validation MUST check JSON shape and types. Constraints such as length,
    patterns, enums, and semantic validity are conveyed through prompt guidance
    rather than enforced by Gantry. The fixed nonempty-rationale requirement for
@@ -1104,6 +1126,15 @@ document are to be interpreted as described in RFC 2119.
    agents, analysis, and recovery tooling.
    Detaching a value-producing task intentionally discards its eventual value;
    completion, failure, and observability remain governed by items 9 and 10.
+   Semantic analysis MUST model each handle on every reachable path as exactly
+   one of attached-and-unconsumed, consumed-by-join, or consumed-by-detach. At
+   every control-flow merge, all incoming paths MUST agree on that state. A
+   `return`, `break`, or `continue` that exits a handle's lexical scope is valid
+   only when the handle is consumed on that path. Runtime failure,
+   cancellation, shutdown, and unclean interpreter drop are exempt because
+   items 9 through 13 define their cleanup and ownership consequences. These
+   linear-state rules apply even when the consuming operation appears inside a
+   nested `with` or `session` block.
 9. A detached-task failure MUST be journaled and emitted as a failure event. It
    MUST NOT abort foreground execution or change a top-level success,
    regardless of whether it settles before or after that success is returned.
@@ -1415,10 +1446,47 @@ document are to be interpreted as described in RFC 2119.
    failure, retry, branch decision, spawn, join, detach, mutation,
    cancellation, foreground completion, task completion, terminal execution,
    and failure. Concrete serialization is implementation-defined.
-8. A dry-run performs syntax validation only and MUST NOT invoke agent hooks.
+8. Event kind payloads MUST expose enough structured information for a harness
+   to interpret an execution without parsing diagnostic text. The canonical
+   minimum payloads are:
+   - `parse` and `analysis`: phase, status, and structured diagnostics;
+   - `workflow start` and `workflow end`: workflow path, frame occurrence, and
+     completion status, plus a typed result reference when one exists;
+   - `operation dispatch`: operation and dispatch IDs, operation and result
+     kinds, selected agent, logical session ID, validation-attempt number,
+     recovery-dispatch number, and prompt and schema references;
+   - `operation completion`: operation and dispatch IDs, outcome variant, and
+     a protected raw-output reference for `Completed`, or the decline/failure
+     reason under the sink's redaction policy;
+   - `schema validation failure`: operation and dispatch IDs plus the
+     structured validation errors defined in Section 7;
+   - `retry`: operation ID, preceding and next dispatch IDs when assigned,
+     validation-attempt and recovery-dispatch numbers, retry class, and
+     selected delay;
+   - `branch decision`: conditional or loop identity, decision, rationale, and
+     selected arm or loop transition;
+   - `spawn`: parent and child task IDs, spawn occurrence, declared result
+     type, and attachment state;
+   - `join`: joining task ID, joined task IDs in source order, join form,
+     settlement status, result type when any, and ordered child failures;
+   - `detach`: owner and detached task IDs plus the durable ownership-transfer
+     record reference;
+   - `mutation`: task ID, assignment source location, target path, static type,
+     and committed-value reference, without requiring the value inline;
+   - `cancellation`: target activity, execution, or task; cancellation reason;
+     and whether cancellation is requested or terminal;
+   - `foreground completion`, `task completion`, and `terminal execution`:
+     the applicable identity, completion category, and typed result or failure
+     reference when one exists; and
+   - `failure`: the runtime-error category, structured causal identities, and
+     redacted diagnostic details.
+   An implementation MAY add optional fields under the minor-version rules,
+   but it MUST NOT omit these applicable fields or encode their only usable
+   representation in human-readable text.
+9. A dry-run performs syntax validation only and MUST NOT invoke agent hooks.
    Gantry MUST separately provide an analysis mode that performs name, type,
    module, and schema validation without invoking hooks.
-9. Normal execution MUST complete semantic analysis successfully before its
+10. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
 
 ## 13. Formal Lexical and Syntactic Grammar
@@ -1896,6 +1964,15 @@ The body of a decision-valued `with` or `session` expression follows the same
 definite-decision rules as any other `decision_block`: it either has a terminal
 decision tail or, when enclosed by a decision workflow, proves that every
 reachable path exits that workflow through a valid decision `return`.
+
+An ordinary workflow call and a decision-workflow call intentionally use the
+same Rust-inspired token sequence. The parser MUST represent that shared call
+shape without guessing from spelling alone; semantic analysis resolves the
+callee and requires a `decision` declaration in every `decision_expression`
+position. In particular, `return check(value);` is decision-valued only inside
+a decision workflow and only when `check` resolves to a decision declaration.
+This contextual resolution MUST NOT permit an ordinary function to masquerade
+as a condition or a decision call to escape into a first-class value position.
 
 ### 13.9 Parallel control flow
 
@@ -2427,8 +2504,11 @@ provider-specific or executor-specific types in Gantry programs:
    terminal states and to asynchronously wait for terminal state by execution
    ID. A terminal result MUST distinguish success, detached-task failure,
    cancellation, and the runtime-error categories defined in Section 7.
-2. A `HookFactory` asynchronously creates one `OperationHook` for a supplied
-   task context. `OperationHook` asynchronously accepts the versioned request
+2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
+   task context. Gantry MUST call the factory lazily, at most once per Gantry
+   task in one in-process run, immediately before that task's first hook
+   dispatch; a task that performs only deterministic interpreter work does not
+   require a hook. `OperationHook` asynchronously accepts the versioned request
    defined in Section 7 and a Gantry-owned cancellation token, and returns
    exactly one `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`
    outcome. `raw_output` is an uninterpreted byte sequence; Gantry owns UTF-8
