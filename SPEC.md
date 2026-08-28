@@ -174,6 +174,9 @@ in later sections:
 - Lists and tuples are typed transport aggregates. Source can pass, return,
   interpolate, and project them, but cannot construct literals, iterate over
   them, or query their lengths in v1.
+- A struct field default is a source-construction convenience. Agent output
+  must still contain every non-optional field, even when that field has a
+  source default; only `Option<T>` properties may be omitted from hook output.
 - `None` has two intentionally contextual uses: as an expression it is an
   absent `Option<T>` value whose type must be known from context; after `->`
   it denotes that a workflow or operation returns no source value.
@@ -684,6 +687,21 @@ document are to be interpreted as described in RFC 2119.
    dynamic identity also records the complete workflow-call path that reached
    it. This rule keeps operation counts, hook requests, journals, and events
    aligned with the model-backed sites visible in source.
+   Semantic analysis MUST expose this transitive behavior without changing
+   the call syntax. For every function, method, and decision workflow, the
+   structured analysis result MUST contain:
+   - every direct workflow-call edge, identified by call-site location and
+     canonical callee path;
+   - the direct `prompt`, `decide`, `spawn`, and `detach` sites in that
+     workflow, identified by kind and source location; and
+   - four transitive flags indicating whether execution of the workflow may
+     reach a `prompt`, `decide`, `spawn`, or `detach`, respectively.
+   The transitive flags MUST be the least fixed point of the package call
+   graph, including permitted self-recursion and method calls. These summaries
+   are analysis metadata rather than source-level effects or additional hook
+   operations. They let human-facing tools and model repair agents distinguish
+   deterministic calls from calls that may eventually perform model-backed or
+   parallel work without adding annotations to the source language.
    Struct construction, field access, assignment, `Option<T>` construction,
    module lookup, function or method dispatch, and `join` are interpreter
    operations and MUST NOT invoke an agent hook.
@@ -1210,10 +1228,11 @@ document are to be interpreted as described in RFC 2119.
     Once a new execution has a durably flushed execution-start record, or a
     resume invocation has completed compatibility and dependency preflight and
     begins advancing recovered state, failures are runtime errors. Runtime
-    errors MUST at least distinguish hook creation, hook failure, decline of a
-    required result, structured-output exhaustion, deterministic evaluation
-    failure, executor failure, cancellation, journal failure, required-event-
-    delivery failure, task/join failure, and internal invariant failure.
+    errors MUST at least distinguish logical-session setup, hook creation,
+    hook failure, decline of a required result, structured-output exhaustion,
+    deterministic evaluation failure, executor failure, cancellation, journal
+    failure, required-event-delivery failure, task/join failure, and internal
+    invariant failure.
     Projection bounds failures are deterministic evaluation failures. Concrete
     Rust error types are implementation-defined, but embedders MUST be able to
     distinguish start, resume-start, and runtime categories without parsing
@@ -2277,15 +2296,21 @@ document are to be interpreted as described in RFC 2119.
    redacted. Prompts and schemas MUST be observable through journal or event
    IDs referenced from events rather than duplicated in every event. Raw output
    MUST remain omitted from default human-readable diagnostics and validation
-   error text. For delivery, Gantry MUST resolve an event's protected references
-   into a capability-filtered payload bundle supplied alongside, but not inside,
-   the ordinary event envelope. The bundle MUST preserve the stable reference
-   keys used by the envelope. It MUST omit or explicitly redact raw output for
-   a sink that lacks raw-output access. Gantry MUST retain referenced payloads
-   until every required delivery has succeeded or terminally failed and every
-   best-effort delivery has either succeeded or exhausted its policy. This
-   makes reference-based events usable without placing sensitive or repeated
-   payloads directly in each event envelope.
+   error text. A decision rationale is normalized model-derived output and
+   MUST likewise be stored as a protected payload referenced by operation-
+   result and branch-decision events; it MUST NOT be copied into an ordinary
+   event envelope. A sink receives the rationale text only when its enabled
+   redaction policy permits model-derived result content. For delivery, Gantry
+   MUST resolve an event's protected references into a capability-filtered
+   payload bundle supplied alongside, but not inside, the ordinary event
+   envelope. The bundle MUST preserve the stable reference keys used by the
+   envelope. It MUST omit or explicitly redact raw output for a sink that lacks
+   raw-output access and MUST omit or explicitly redact a rationale when the
+   sink's redaction policy disallows model-derived result content. Gantry MUST
+   retain referenced payloads until every required delivery has succeeded or
+   terminally failed and every best-effort delivery has either succeeded or
+   exhausted its policy. This makes reference-based events usable without
+   placing sensitive or repeated payloads directly in each event envelope.
 5. Event sinks MUST be configured independently as `required` or
    `best-effort`, with interpreter defaults overridable per sink. Gantry MUST
    retry only errors the sink classifies as retriable. A non-retriable error
@@ -2450,15 +2475,15 @@ document are to be interpreted as described in RFC 2119.
    - `operation result`: operation ID, committed outcome and operation-result
      record references, outcome variant, result kind, canonical type
      descriptor, and a protected normalized-value reference for a value result
-     or the decision and rationale for a decision result; an optional decline
-     additionally identifies its decline provenance;
+     or the decision and protected rationale reference for a decision result;
+     an optional decline additionally identifies its decline provenance;
    - `schema validation failure`: operation and dispatch IDs plus the
      structured validation errors defined in Section 7;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
      validation-attempt and recovery-dispatch numbers, retry class, and
      selected delay;
-   - `branch decision`: conditional or loop identity, decision, rationale, and
-     selected arm or loop transition;
+   - `branch decision`: conditional or loop identity, decision, protected
+     rationale reference, and selected arm or loop transition;
    - `spawn`: parent and child task IDs, spawn occurrence, declared result
      type, and attachment state;
    - `join`: joining task ID, joined task IDs in source order, join form,
@@ -2495,6 +2520,8 @@ document are to be interpreted as described in RFC 2119.
    Gantry MUST separately provide an analysis mode that first satisfies this
    whole-package syntax contract and then performs name, type, module, control-
    flow, task-ownership, and schema validation without invoking hooks.
+   A successful analysis result MUST include the per-workflow call edges,
+   direct operation sites, and transitive effect flags required by Section 6.
 10. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
 11. Diagnostics MUST be usable by both human authors and automated repair
@@ -3798,8 +3825,12 @@ provider-specific or executor-specific types in Gantry programs:
    root or a session derived from it is first used. That request is session
    setup, not hook creation or model dispatch. Repeating it for the same
    execution and root ID MUST resolve the same context rather than create a
-   replacement. An `embedder-supplied` root instead uses the preflight
-   resolution required by Section 7.
+   replacement. The interface MUST return structured success or failure and
+   MUST be safe to retry for the same execution and root ID. Gantry invokes it
+   only after the execution-start record is durable; failure prevents hook
+   creation and is the `logical-session setup` runtime error defined in
+   Section 7. An `embedder-supplied` root instead uses the preflight resolution
+   required by Section 7.
 
    Gantry MUST call the factory lazily, at most once per Gantry task in one
    in-process run, immediately before that task's first hook dispatch; a task
