@@ -423,6 +423,14 @@ activity throughout this specification:
 - A **workflow** is a source `fn`, inherent method, or `decision`
   declaration. Calling a workflow creates an interpreter frame; the call is
   not itself model-backed work.
+- A **decision workflow** is specifically a workflow declared with
+  `decision`. It returns `Decision` but does not itself identify a model
+  operation: only a `decide` expression reached while evaluating its body does
+  so. A **decide operation** is the logical model operation created by one
+  dynamic evaluation of that expression. `Decision` (capitalized) is the
+  sealed value type produced by a successful decide operation. Keeping these
+  three terms distinct avoids treating a workflow call or retained value as a
+  new model request.
 - An **action declaration** is a typed package item that names an external
   harness capability. It has no Gantry body. An **action invocation** is an
   `action <path>(...)` expression resolved against that declaration.
@@ -1437,12 +1445,13 @@ shown here.
      and
    - validation errors exactly when the dispatch is a structured-output repair
      attempt, including a recovery redispatch of such an attempt.
-   The v1 operation kinds are `prompt`, `decision`, and `action`. The result
+   The v1 operation kinds are `prompt`, `decide`, and `action`, matching the
+   three source keywords that create operations. The result
    kind is `value`, `no-result`, or `decision`. The expected result descriptor
    is the declared value type for `value`, `None` for `no-result`, and
    `Decision` for `decision`.
 
-   A `prompt` or `decision` body MUST contain the selected agent name and
+   A `prompt` or `decide` body MUST contain the selected agent name and
    active agent-mapping revision; authored source template and interpolated
    prompt; ordered interpolation-argument vector; ordered named-input vector;
    required active and root logical-session IDs; a parent logical-session ID
@@ -3613,7 +3622,9 @@ The grammar uses extended Backus-Naur form (EBNF):
 - `( A )` groups terms; and
 - productions ending in `_token` describe lexical token classes; where a
   production is explicitly contextual, the parser MAY reclassify a token with
-  the same boundaries after ordinary lexing.
+  the same boundaries after ordinary lexing; and
+- `U+NNNN` denotes the single Unicode scalar with that hexadecimal code point,
+  not the literal source characters `U`, `+`, and digits.
 
 Whitespace and comments separate tokens and are otherwise insignificant,
 except inside string, raw-string, and block-prompt tokens. A trailing comma is
@@ -3907,7 +3918,11 @@ Their declared field type MUST accept the default without coercion.
 A `use` declaration imports the item named by the final path segment into the
 current module. The path roots have the meanings defined in Section 4. Glob
 imports, grouped imports, aliases, importing a module under the name `self`,
-and visibility modifiers are not v1 syntax.
+and visibility modifiers are not v1 syntax. Only package items admitted by
+the `item` production are importable. Enum variants, struct fields, and
+inherent methods are members rather than package items and therefore cannot be
+imported directly; authors refer to them through their enum type, value, or
+receiver.
 
 ### 13.4 Workflows and methods
 
