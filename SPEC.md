@@ -1209,13 +1209,19 @@ document are to be interpreted as described in RFC 2119.
    an expression statement; it cannot be a block's trailing expression. A
    statement-only agent or session context uses `with <agent> { ... }` or
    `session(<directive>) { ... }` without a semicolon after its closing brace.
-   A value-producing prompt MAY be discarded by writing it as an expression
-   statement. A value-producing workflow or method call, `with` expression,
-   `session` expression, or `join` expression MAY likewise be used as an
-   expression statement when its result is intentionally discarded. A
-   standalone literal, constructor, field access, projection, `Some`, or
-   `None` expression has no execution effect and MUST be rejected as an
-   expression statement.
+   A value-producing `prompt`, `decide`, or `action` MAY be discarded by
+   writing it as an expression statement. A value-producing workflow or
+   source-defined method call, `with` expression, `session` expression,
+   `match` expression, `join`, or `joinall()` MAY likewise be used as an
+   expression statement when its result is intentionally discarded. These
+   forms can perform visible integration, workflow, control-flow, or task-
+   ownership work while being evaluated. By contrast, a standalone binding,
+   primitive or operator expression, literal, constructor, field access,
+   projection, sealed deterministic built-in call, `Some`, `None`, `Ok`, or
+   `Err` has no execution effect and MUST be rejected as an expression
+   statement. In particular, writing a previously evaluated `Decision` binding
+   as a statement does not redispatch its decision or emit its rationale and
+   is invalid.
    Assignment and `spawn` statements do not themselves produce values.
    Conditional-arm and loop bodies are statement-only blocks; they MUST NOT
    end in a trailing expression whose value would be silently discarded.
@@ -1406,6 +1412,10 @@ document are to be interpreted as described in RFC 2119.
    - the expected result kind;
    - the expected canonical result-type descriptor from Section 5;
    - the expected JSON Schema;
+   - the effective `maximum_hook_output_bytes`,
+     `maximum_value_nesting_depth`, `maximum_value_nodes`,
+     `maximum_string_scalars`, and `maximum_list_items` limits that Gantry
+     will enforce outside or in addition to JSON Schema validation;
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
    - the source location;
@@ -1524,11 +1534,16 @@ document are to be interpreted as described in RFC 2119.
    its canonical kind, the listed payload fields, and the source-construct
    identity and location when the kind requires them. The structured vector
    MUST remain intact at the Gantry hook boundary: an integration MUST NOT
-   discard or reorder entries before presenting them to the selected agent. A
-   harness MAY render the entries into provider messages or prompt text when
-   its model API has no structured-context channel, but that rendering MUST
+   discard or reorder entries before presenting them to the operation
+   fulfiller. For a prompt or decision, the fulfiller is the selected agent;
+   for an action, it is the integration-side action handler. A harness MAY
+   render prompt or decision entries into provider messages or prompt text
+   when its model API has no structured-context channel, but that rendering MUST
    preserve vector order, visibly distinguish entry boundaries and kinds, and
-   make every required field available to the selected agent. Such rendering
+   make every required field available to the selected agent. An action
+   handler MUST likewise receive the canonical vector without loss or
+   reordering, although its capability API may expose the entries as
+   structured metadata rather than model-facing text. Such presentation
    and any provider-specific presentation metadata are integration behavior
    and MUST NOT replace or mutate the canonical request vector. An unknown
    context kind is incompatible with protocol major version 1 and MUST be
@@ -1580,8 +1595,8 @@ document are to be interpreted as described in RFC 2119.
    interpolation; an optional decline still emits `null`, and a `Decision`
    still emits only its `decision` and `rationale` fields. The integration MUST
    make every supplied entry
-   available to the selected agent in order, although its provider-specific
-   presentation is implementation-defined.
+   available to the applicable selected agent or action handler in order,
+   although its provider-specific presentation is implementation-defined.
 7. Prompt interpolation MUST use `${expression}`. An unescaped `$` followed by
    `{` begins interpolation. `$$` consumes exactly those two dollar signs and
    produces one literal dollar sign, so `$${name}` renders the literal text
@@ -1617,7 +1632,11 @@ document are to be interpreted as described in RFC 2119.
    struct properties are rejected; identify fields that may be omitted and the
    defaults or `None` values omission supplies; describe every interpolation,
    named input, or action argument; and explain the no-result, tagged-value, or
-   decision shape when applicable. The wording and provider-specific
+   decision shape when applicable. The guidance MUST also state the effective
+   raw-output byte, value-depth, value-node, String-scalar, and List-item
+   limits supplied in the request. These limits are part of the output
+   contract even when the generated JSON Schema cannot express them. The
+   wording and provider-specific
    presentation MAY evolve, but those semantic instructions MUST remain
    present on every initial dispatch and repair retry.
 10. The only v1 source-level model-selection knob is the agent name. Action
@@ -2263,9 +2282,12 @@ document are to be interpreted as described in RFC 2119.
     Decision workflows are free module items in v1; decision methods remain
     excluded. Their results may be bound, passed, returned by ordinary
     workflows, stored in aggregates, interpolated as strict JSON, or consumed
-    by `if`, `else if`, `while`, and `until`. Discarding a `Decision` as an
-    expression statement is permitted for its observable rationale, although
-    authors SHOULD bind or consume it when practical.
+    by `if`, `else if`, `while`, and `until`. A newly evaluated `decide` or
+    decision-workflow call MAY be an expression statement when its result is
+    intentionally discarded; any operation reached during that evaluation
+    retains its ordinary journal and event records. A previously evaluated
+    `Decision` value is inert and MUST NOT appear as a standalone expression
+    statement merely to make its rationale observable.
     Semantic analysis MUST prove that every reachable
     normal completion of a decision workflow yields `Decision` and
     that every reachable explicit `return` in that workflow returns
@@ -4909,6 +4931,23 @@ if answer {
 
 // Valid: project its controlling Bool when deterministic composition is needed.
 let approved: Bool = answer.decision;
+```
+
+A previously evaluated value cannot be “used” by writing it as a standalone
+statement. External-operation and workflow calls may discard their results,
+but an inert value statement is rejected:
+
+```gantry
+// Invalid: this performs no operation and does not emit the rationale again.
+answer;
+
+// Valid: consume the retained judgment in control flow.
+if answer {
+    prompt "Publish the report.";
+}
+
+// Also valid: deliberately execute a new judgment and discard its value.
+decide "Record a fresh publication judgment.";
 ```
 
 String operations never perform implicit conversion, and empty split or
