@@ -682,6 +682,12 @@ machine-readable manifest cite these anchors directly.
 
 <a id="GNT-3.0"></a>
 
+This section defines profile-independent implementation obligations and the
+normative semantic kernel used by the source-language, concurrency, and
+durability sections. Items 1 through 10 define implementation boundaries;
+items 11 through 15 summarize the formal relations defined in Sections 3.1
+through 3.6.
+
 <a id="GNT-3.1"></a>
 
 1. A conforming Gantry v1 implementation claiming the analyzer profile MUST
@@ -756,7 +762,7 @@ machine-readable manifest cite these anchors directly.
    cancellation immediately before and after the yield. Changing the quantum
    affects scheduling only: it MUST NOT alter deterministic computation within
    one task, dynamic operation or task identities, retry accounting, or the
-   semantic content and per-task order of journal records and events. It MAY
+   semantic content and per-task order of logical evidence and events. It MAY
    alter timestamps and the global sequence order in which records and events
    from different tasks interleave. Recursion MUST use interpreter-managed
    frames rather than rely on unbounded native Rust stack growth. Each task MUST
@@ -840,11 +846,14 @@ machine-readable manifest cite these anchors directly.
     exactly the same packages and emits equivalent canonical types and effects.
 <a id="GNT-3.13"></a>
 
-13. Dynamic semantics use labelled configurations `⟨P, C, K, H, S, Q, B⟩`,
+13. Dynamic semantics use labelled configurations `⟨P, C, K, H, S, Q, B, R⟩`,
    containing the immutable package IR `P`, task
     configuration `C`, continuation/frame state `K`, linear handle state `H`,
     logical-session state `S`, pending logical operations `Q`, and remaining
-    deterministic budgets `B`. One abstract transition is written
+    deterministic budgets `B`. `R` contains the active durable runtime
+    revisions that later transitions may consult, including agent and action
+    mapping revisions and compatible mutable execution-policy revisions. One
+    abstract transition is written
     `configuration --label--> configuration'`. The portable labels are
     deterministic, operation-prepared, operation-outcome, operation-accepted,
     task-created, task-settled, ownership-transferred, cancellation, failure,
@@ -853,7 +862,7 @@ machine-readable manifest cite these anchors directly.
     scheduling may choose among runnable tasks but MUST preserve each task's
     transition order. No telemetry, wall-clock value, provider identity, or
     implementation object may affect a transition unless this specification
-    places it explicitly in `P`, `S`, `Q`, or `B`.
+    places its semantic value explicitly in `P`, `S`, `Q`, `B`, or `R`.
 <a id="GNT-3.14"></a>
 
 14. The durable runtime is a refinement of that labelled transition system, not
@@ -1197,11 +1206,13 @@ means that completion is unreachable.
 
 `let` additionally requires a fresh binding and the declared exact type; its
 scope extension applies to the following command in the enclosing sequence.
-`let _` introduces no name. Pattern `let` uses `bind` and must be irrefutable.
-Bare expression statements are `discard e` only when `τ=Unit`; otherwise only
-the explicit source `discard` lowers to this command. `return`, `break`, and
-`continue` must have a valid nearest target, and every handle whose lexical
-scope they exit must be discharged in their output environment.
+Pattern `let` uses `bind` and must be irrefutable. `_` may ignore selected
+members inside a tuple pattern, but whole-value discard uses the explicit
+`discard` command. Bare expression statements are `discard e` only when
+`τ=Unit`; otherwise only the explicit source `discard` lowers to this command.
+`return`, `break`, and `continue` must have a valid nearest target, and every
+handle whose lexical scope they exit must be discharged in their output
+environment.
 
 <a id="GNT-3-T-ASSIGN"></a>
 
@@ -1278,7 +1289,7 @@ not create a static normal path.
 
 ```text
 h∉dom(Ω)    spawn_site(c)=κ    captures(c)=Γc    Σ;Γc;∅ ⊢ c ! ε ⇒ Φ
-normal_result(Φ)=τ    no_escaping_handles(Φ)
+task_body_result(Φ,τ)    no_escaping_handles(Φ)
 ──────────────────────────────────────────────── T-Spawn
 Σ;Γ;Ω ⊢ spawn h:τ c ! ε∪{spawn} ⇒ {N↦Ω[h↦attached(κ,τ)]}
 
@@ -1291,7 +1302,10 @@ normal_result(Φ)=τ    no_escaping_handles(Φ)
 Section 10 and never a foreign handle. The child is analyzed with an empty
 handle environment because it can own only handles it spawns. Its every normal
 completion must yield exactly the declared `τ`, and every child-local handle
-must be discharged on every completion that exits its scope. A scope may
+must be discharged on every completion that exits its scope.
+`task_body_result(Φ,τ)` holds when every reachable task-body exit is `R(τ)`;
+it does not require an exit when the body has no reachable completion. Unit
+fallthrough is first lowered to `R(Unit)` under `T-Completion`. A scope may
 complete normally or transfer control outward only when all handles declared
 in that scope are discharged.
 
@@ -1334,15 +1348,17 @@ the package-valid judgment.
 **[GNT-3-M-STATE] Machine state.**
 
 The dynamic semantics is a small-step relation over
-`M = ⟨P,C,K,H,S,Q,B⟩`. `P` is immutable typed core IR. `C(t)` is one task's
+`M = ⟨P,C,K,H,S,Q,B,R⟩`. `P` is immutable typed core IR. `C(t)` is one task's
 control, environment `ρ`, value store `μ`, active agent `a`, active session
 `s`, cancellation state, and status. `K(t)` is its stack of evaluation,
 workflow-return, dynamic-context, loop, and task-result frames. `H` maps each
 dynamic handle to its task, owner, result type, and ownership state. `S` maps
 session IDs to parent, root, creation mode, and canonical transcript. `Q`
 maps operation IDs to the lifecycle below. `B` contains the remaining
-execution and per-task budgets. Values in `ρ` and `μ` are normalized deep
-values; no machine component contains a source-visible alias.
+execution and per-task budgets. `R` contains the active durable agent and
+action mapping revisions and every compatible mutable execution-policy
+revision that a later transition can observe. Values in `ρ` and `μ` are
+normalized deep values; no machine component contains a source-visible alias.
 
 <a id="GNT-3-M-LABELS"></a>
 
@@ -1366,11 +1382,17 @@ terminal-completion(category)
 Payloads are the canonical identities and values required by later sections;
 the notation above omits those fields only for readability. The scheduler
 chooses any runnable task, but only the selected task takes the next rule and
-each task's transitions remain ordered. `operation-outcome` is the only rule
-whose payload is selected by integration code. Runnable-task selection,
-integration outcomes, retry jitter already recorded in `Q`, and order among
-independent tasks are the complete v1 nondeterminism. Every other applicable
-rule and its resulting state are unique.
+each task's transitions remain ordered. `operation-outcome` is the only
+source-operation label whose payload is selected by integration code.
+Runnable-task selection, integration outcomes, and sampled retry jitter are
+the nondeterministic inputs to source evaluation. Session setup, executor,
+storage, clock, timer, and event-sink services can additionally return the
+success or failure outcomes defined in Sections 7 and 10 through 15; those
+outcomes may trigger the specified failure transition or durability behavior
+but never supply a source value. Once one of these inputs is chosen and, where
+required, recorded in `Q` or `R`, every other applicable source-evaluation
+rule and its resulting state are unique. Wall-clock timestamps remain
+nonsemantic observability data.
 
 <a id="GNT-3-M-CONTEXT"></a>
 
@@ -1653,6 +1675,9 @@ are not assumptions of deterministic replay.
 
 <a id="GNT-4.0"></a>
 
+This section defines package entry, module loading, name resolution,
+identifier policy, canonical paths, and immutable source snapshots.
+
 <a id="GNT-4.1"></a>
 
 1. Gantry source files MUST use the `.gnt` extension.
@@ -1877,6 +1902,10 @@ are not assumptions of deterministic replay.
 
 <a id="GNT-5.0"></a>
 
+This section defines the complete v1 value domain, construction and copy
+semantics, deterministic primitives, patterns, and canonical type descriptors.
+Task handles are governed by Section 10 and are not source values.
+
 <a id="GNT-5.1"></a>
 
 1. Runtime values MUST include `Unit`, `Bool`, `Int`, `Float`, `String`,
@@ -2094,10 +2123,11 @@ are not assumptions of deterministic replay.
    value has been copied into the binding. Tuple destructuring introduces all
    of its bindings atomically after the initializer has completed and matched;
    no binding from the pattern is visible while another is being introduced.
-   A `let _` statement still evaluates and type-checks its value expression
-   but then explicitly discards the resulting first-class value. Initializer
-   failure introduces no binding, although integration side effects produced
-   while evaluating the initializer are not rolled back.
+   The `discard expression;` statement evaluates and type-checks its operand
+   and then explicitly discards the resulting first-class value. `_` remains
+   available inside tuple patterns to ignore selected members without creating
+   bindings. Initializer or discard failure introduces no binding, although
+   integration side effects produced before that failure are not rolled back.
 <a id="GNT-5.14"></a>
 
 14. `const` is excluded from v1. Runtime initialization of immutable bindings is
@@ -2588,7 +2618,7 @@ operation identity, failure categories, and propagation.
    blocks and dynamically inherited by model-backed work
    reached from them. The selected name applies to
    `prompt` and `decide` operations written directly in the block, model
-   operations reached through workflow or decision calls made from it, and
+   operations reached through workflow calls made from it, and
    child tasks spawned from it, unless a nested `with` block overrides the
    selection. It does not apply to `action` operations. A workflow call therefore
    inherits the caller's active selection rather than resetting to the default,
@@ -2970,9 +3000,10 @@ operation identity, failure categories, and propagation.
     code plus structured details. The exact v1 runtime category values are
     `logical-session-setup`, `hook-creation`, `hook-failure`,
     `required-result-decline`, `structured-output-exhaustion`,
-    `deterministic-evaluation-failure`, `executor-failure`, `cancellation`,
-    `journal-failure`, `required-event-delivery-failure`, `task-join-failure`,
-    and `internal-invariant-failure`.
+    `unknown-action-outcome`, `deterministic-evaluation-failure`,
+    `executor-failure`, `cancellation`, `journal-failure`,
+    `required-event-delivery-failure`, `task-join-failure`, and
+    `internal-invariant-failure`.
     `success` and `detached-task-failure` are terminal-only outcome categories,
     not runtime-error categories. A terminal-execution record uses
     one of those terminal-only categories or the exact runtime-error category
@@ -3227,8 +3258,8 @@ operation modifiers defined in Sections 6 and 13.
    definition produces exactly one `oneOf` array whose branches follow source
    variant order, using `UNIT(NAME)` for a unit variant and `PAYLOAD(NAME,T)`
    for a payload variant.
-   `Decision` produces exactly the schema in Section 9 without its root
-   `$schema` member when nested as `NODE(Decision)`. A declared struct or enum
+   `Decision` produces exactly `DECISION_NODE` from Section 9, item 2, when
+   nested as `NODE(Decision)`. A declared struct or enum
    type produces exactly `{"$ref":"#/$defs/KEY"}`, where `KEY` is that
    declared type's definition
    key. `NODE(T)` denotes recursive application of these rules; it is notation
@@ -3383,9 +3414,27 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 
 2. A successful `decide` returns exactly
    `{"decision":BOOL,"rationale":STRING}`, with a nonempty rationale and no
-   additional properties. Its schema is the closed Draft 2020-12 object schema
-   defined in Section 8. `Decision` values carry only those visible fields;
-   their originating operation identity belongs to logical-trace observability.
+   additional properties. Define `DECISION_NODE` as exactly the following
+   schema object without a `$schema` member:
+
+   ```json
+   {
+     "type": "object",
+     "properties": {
+       "decision": { "type": "boolean" },
+       "rationale": { "type": "string", "minLength": 1 }
+     },
+     "required": ["decision", "rationale"],
+     "additionalProperties": false
+   }
+   ```
+
+   The root `Decision` schema is exactly that object plus
+   `"$schema":"https://json-schema.org/draft/2020-12/schema"`. The schema is
+   canonicalized under Section 8 before hashing or transport; the presentation
+   whitespace above is not part of its canonical bytes. `Decision` values
+   carry only the two visible fields; their originating operation identity
+   belongs to logical-trace observability.
 
 <a id="GNT-9.3"></a>
 
@@ -3839,9 +3888,10 @@ MUST NOT be described as a structured child after transfer.
 <a id="GNT-11.0"></a>
 
 Items 1 through 5 define durable commit boundaries for interpreter and hook
-state. Items 6 through 9 define source identity, recovery, and journal
-envelopes. Item 10 defines execution-start state and the configuration fields
-that are immutable or durably revisable across resume.
+state. Items 6 through 9 define package identity, migration, recovery, and
+logical evidence envelopes. Item 10 defines execution-start state and the
+configuration fields that are immutable or durably revisable across resume.
+Item 11 clarifies the boundary between resumption and replay.
 
 <a id="GNT-11.1"></a>
 
@@ -3937,25 +3987,30 @@ that are immutable or durably revisable across resume.
 <a id="GNT-11.3"></a>
 
 3. A hook dispatch MUST be committed before the hook is invoked. Its dispatch
-   record MUST preserve the complete versioned semantic request,
-   including the operation-specific body, operation and result kinds, captured
-   inputs, schema, guidance, source location, canonical transcript,
-   validation state, and logical identities. Prompt and decision records MUST
-   preserve their selected agent, mapping revision, templates, interpolation
-   arguments, named inputs, and session fields. Action records MUST preserve
-   their canonical action path and signature, action-mapping revision, and
-   typed arguments.
+   evidence MUST preserve the complete versioned hook request separately from
+   nonsemantic observability metadata. The hook request includes the
+   operation-specific body, operation and result kinds, captured inputs,
+   schema, guidance, canonical transcript when applicable, validation state,
+   and logical identities defined in Section 7. Source location and protected
+   trace metadata MAY be retained alongside it for diagnostics and
+   observability, but they are not semantic request fields and MUST NOT be
+   supplied to the fulfiller. Prompt and decision evidence MUST preserve their
+   selected agent, mapping revision, templates, interpolation arguments,
+   named inputs, and session fields. Action evidence MUST preserve its
+   canonical action path and signature, action-mapping revision, and typed
+   arguments.
    Protected or repeated payloads MAY be stored by stable reference, but those
    references MUST resolve from the same durable journal. A recovery
-   redispatch MUST reuse those committed semantic fields except for the
+   redispatch MUST reuse the committed hook-request fields except for the
    physical-dispatch fields and the applicable agent- or action-mapping
    revision explicitly allowed to change by Section 7. It MUST retain all
-   committed operation inputs, schema, guidance, source location, context, and
-   validation state. A model operation also retains its logical agent and
-   session; an action retains its canonical path and signature. The new
-   dispatch ID and incremented recovery-dispatch number MUST differ, and the
-   request MUST carry the applicable mapping revision recorded for the resume
-   run. No other semantic request field may change.
+   committed operation inputs, schema, guidance, and validation state. A model
+   operation also retains its logical agent and session; an action retains its
+   canonical path and signature. Observability metadata MAY be reused but MUST
+   remain outside the hook request. The new dispatch ID and incremented
+   recovery-dispatch number MUST differ, and the request MUST carry the
+   applicable mapping revision recorded for the resume run. No other semantic
+   hook-request field may change.
    A durable dispatch record represents a prepared physical dispatch attempt;
    it does not prove that the hook future began polling or that the integration
    observed the request. There is no portable atomic boundary between durable
@@ -4287,7 +4342,7 @@ that are immutable or durably revisable across resume.
     configuration identity. It MAY change between in-process runs and on
     resume because Section 3 defines it as scheduling-only policy. Changing it
     MUST NOT alter language results, dynamic identities, retry accounting, or
-    the semantic content and per-task order of journal records and events; it
+    the semantic content and per-task order of logical evidence and events; it
     MAY alter timestamps and the global sequence order of records and events
     from different tasks.
     These changes MUST obey the per-event delivery-obligation rules in Section
@@ -5194,7 +5249,6 @@ statement               = let_statement
 let_statement           = "let", let_binding, ":",
                           value_type, "=", expression, ";" ;
 let_binding             = [ "mut" ], identifier_token
-                        | "_"
                         | let_tuple_pattern ;
 let_pattern             = "_" | identifier_token | let_tuple_pattern ;
 let_tuple_pattern       = "(", let_pattern, ",", let_pattern,
@@ -5218,8 +5272,10 @@ trailing_expression     = expression ;
 ```
 
 Bindings require explicit types in v1. `mut` is valid only on a single-name
-binding; `_` discards the initialized value, and tuple destructuring introduces
-immutable bindings. A trailing expression is distinguished
+binding, and tuple destructuring introduces immutable bindings. `_` may appear
+inside a tuple pattern to ignore selected members; ignoring the complete
+initializer uses `discard expression;` rather than a second wildcard-binding
+form. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
 closing brace. A bare expression statement MUST have type `Unit`; every other
 intentionally ignored value uses `discard expression;`. `discard` evaluates
@@ -6025,10 +6081,10 @@ Basic text preparation remains deterministic and visibly separate from model
 judgment:
 
 ```gantry
-fn prepare_label(mut topic: String, attempt: Int) -> String {
+fn prepare_label(mut topic: String, sequence: Int) -> String {
     topic = topic.trim().to_lowercase();
     topic += " #";
-    topic += attempt.to_string();
+    topic += sequence.to_string();
     topic
 }
 
@@ -6516,11 +6572,11 @@ String operations never perform implicit conversion, and empty split or
 replacement patterns are deterministic runtime errors:
 
 ```gantry
-// Invalid: `attempt` is not implicitly converted to String.
-let label: String = "attempt " + attempt;
+// Invalid: `retry_count` is not implicitly converted to String.
+let label: String = "attempt " + retry_count;
 
 // Valid: conversion is explicit.
-let label: String = "attempt " + attempt.to_string();
+let label: String = "attempt " + retry_count.to_string();
 
 // Runtime error: empty separators and replacement patterns are prohibited.
 let pieces: List<String> = text.split("");
