@@ -263,6 +263,9 @@ valid:
 - Use `Bool` for known mechanical facts and `Decision` for model judgment.
   Project `.decision` only when composing a judgment with deterministic policy;
   retain `.rationale` when later operations need the model's explanation.
+- Use deterministic String operations for exact text composition, inspection,
+  and scalar parsing. Use `decide` rather than a String predicate when routing
+  depends on meaning, quality, intent, policy, or another semantic judgment.
 - Keep numeric expressions short. Bind intermediate values when checked
   arithmetic, conversion, or list indexing would otherwise obscure operation
   inputs or control-flow intent.
@@ -635,15 +638,15 @@ document are to be interpreted as described in RFC 2119.
    interpolation island, is an analysis error; authors can interpolate a typed
    option binding instead. Gantry performs no other implicit option wrapping.
 4. `List<T>` is an ordered, homogeneous collection. V1 supports list literals
-   and zero-based
-   deterministic projection with `value[index]`, where `index` is a
-   nonnegative integer token. Projection yields `T`; an out-of-bounds list
-   projection is a fatal runtime error. Every item in a list literal MUST have
-   exactly one static type. An empty literal is valid only where an expected
-   `List<T>` type is known. Items are evaluated once from left to right and the
-   list becomes visible atomically after all items succeed. Iteration, length
-   queries, mutation, and other deterministic list operations are excluded
-   from v1.
+   and zero-based deterministic projection with `value[index]`, where `index`
+   is an `Int` expression. Projection yields `T`; a negative or out-of-bounds
+   list projection is a fatal runtime error. Every item in a list literal MUST
+   have exactly one static type. An empty literal is valid only where an
+   expected `List<T>` type is known. Items are evaluated once from left to
+   right and the list becomes visible atomically after all items succeed.
+   `List<T>.len()` is defined in item 14, and `List<String>.join(separator)` is
+   defined in item 15. Iteration, mutation, and other deterministic list
+   operations are excluded from v1.
 5. `Tuple<T1, T2, ..., Tn>` is an ordered, fixed-arity heterogeneous
    collection. Its arity MUST be at least two, and each positional member MAY
    have a distinct otherwise permitted type. v1 supports zero-based
@@ -728,12 +731,15 @@ document are to be interpreted as described in RFC 2119.
 13. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
 14. Gantry MUST provide the deterministic primitive operations in this item.
-    There is no truthiness or implicit numeric coercion.
+    There is no truthiness or implicit numeric or String coercion.
     - `!` accepts `Bool`. `&&` and `||` accept `Bool`, evaluate left to right,
       short-circuit, and return `Bool`.
     - Unary `-` accepts `Int` or `Float` and preserves its operand type.
     - `+`, `-`, `*`, and `/` accept two values of the same numeric type and
       return that type. `%` accepts two `Int` values and returns `Int`.
+      Additionally, `+` accepts two `String` values and returns their exact
+      concatenation without inserting a separator, whitespace, normalization,
+      or other text.
     - `<`, `<=`, `>`, and `>=` accept two values of the same numeric type and
       return `Bool`.
     - `==` and `!=` accept two values of one identical equatable type and
@@ -743,6 +749,10 @@ document are to be interpreted as described in RFC 2119.
     - `Int.to_float()` returns an exact `Float`. `Float.to_int()` returns
       `Some(Int)` only when the value is integral and in range, and otherwise
       returns `None`; it never rounds or truncates.
+    - `Bool.to_string()`, `Int.to_string()`, and `Float.to_string()` return the
+      same canonical spelling used when that primitive is interpolated:
+      exactly `true` or `false`, canonical decimal `Int`, or RFC 8785 JSON
+      number serialization, respectively.
     - `List<T>.len()` returns an `Int`. Every runtime list length MUST fit the
       `Int` range.
     Integer arithmetic is checked. Overflow, division by zero, remainder by
@@ -754,11 +764,65 @@ document are to be interpreted as described in RFC 2119.
     permitted, and negative zero is normalized to positive zero after every
     operation and input normalization. Implementations MUST NOT use fused
     arithmetic where it changes the specified intermediate rounding.
-    String concatenation, power, floating remainder, rounding and
-    transcendental functions, list mutation, and other built-ins are excluded.
+    Power, floating remainder, rounding and transcendental functions, String
+    repetition, list mutation, and other built-ins are excluded.
     Lists and tuples MAY otherwise be constructed, passed, returned,
     interpolated, projected, and pattern-destructured.
-15. Patterns are deterministic structural operations over an already evaluated
+15. `String` is an immutable valid-UTF-8 sequence of Unicode scalar values.
+    Gantry performs no implicit Unicode normalization. A `mut String` binding
+    permits atomic replacement of the complete value, not observable in-place
+    mutation of backing storage. String equality is exact scalar-sequence
+    equality. Gantry MUST provide the following sealed, deterministic methods;
+    source declarations cannot override them:
+    - `String.len() -> Int` returns the number of Unicode scalar values, not
+      bytes or grapheme clusters. `String.is_empty() -> Bool` is true exactly
+      when that count is zero.
+    - `String.contains(needle)`, `String.starts_with(prefix)`, and
+      `String.ends_with(suffix)` each accept one `String` and return `Bool`
+      using exact contiguous scalar-sequence matching. Every String contains,
+      starts with, and ends with the empty String.
+    - `String.trim()`, `String.trim_start()`, and `String.trim_end()` return a
+      new String after removing Unicode `White_Space` scalars from both ends,
+      the start, or the end, respectively.
+    - `String.to_lowercase()` and `String.to_uppercase()` return a new String
+      using full, locale-independent Unicode case mappings. A mapping MAY
+      change the scalar count.
+    - `String.replace(from, to)` returns a new String after exact,
+      nonoverlapping, left-to-right replacement. It MUST NOT rescan replacement
+      text. An empty `from` is a fatal `string-empty-pattern` deterministic-
+      evaluation error.
+    - `String.split(separator) -> List<String>` performs exact,
+      nonoverlapping, left-to-right splitting. An empty separator is a fatal
+      `string-empty-separator` deterministic-evaluation error. Leading,
+      trailing, and adjacent empty segments are preserved; no match returns a
+      one-item list containing the original String.
+    - `String.parse_bool() -> Option<Bool>` accepts exactly `true` or `false`.
+      `String.parse_int() -> Option<Int>` accepts exactly `0` or an optional
+      `-` followed by a nonzero decimal digit and zero or more decimal digits;
+      it rejects `-0`, leading `+`, separators, radix prefixes, leading zeroes,
+      and out-of-range values. `String.parse_float() -> Option<Float>` accepts
+      exactly the RFC 8259 JSON number grammar and returns the normalized
+      finite binary64 value, or `None` when parsing or normalization fails.
+      These parsers do not trim and never fail the task for invalid input.
+    `List<String>.join(separator) -> String` joins items in list order with the
+    exact separator only between adjacent items. It returns the empty String
+    for an empty list and the sole item unchanged for a one-item list. `join`
+    is not defined for another `List<T>`.
+    Trimming, case mapping, and scalar classification MUST use Unicode Standard
+    version 16.0.0, specifically its `White_Space` property and full default
+    case mappings. These methods are locale-independent. String indexing,
+    slicing, characters, bytes, regexes, normalization, locale-aware behavior,
+    case-insensitive comparison, ordering, repetition, and mutable String
+    methods are excluded from v1.
+16. Every String result and every List result produced by a deterministic
+    operation MUST satisfy the effective limits in Section 11 before it is
+    published. Concatenation, case mapping, replacement, splitting, and joining
+    are atomic: a `string-size-limit` or `list-size-limit` deterministic-
+    evaluation error leaves the assignment target unchanged. The same checks
+    apply recursively to source construction, entry input, hook output, and
+    resumed values. Deterministic String operations dispatch no hook, create no
+    model rationale or operation event, and consume no validation-retry budget.
+17. Patterns are deterministic structural operations over an already evaluated
     value. V1 patterns are `_`, an identifier binding, `Some(pattern)`,
     `None`, `Ok(pattern)`, `Err(pattern)`, a unit or payload enum variant, and
     a fixed-arity tuple pattern. `_` matches without binding. An identifier
@@ -768,7 +832,7 @@ document are to be interpreted as described in RFC 2119.
     irrefutable for its static type; v1 therefore permits only identifier and
     tuple patterns, recursively, in `let`. `if let` and `match` admit refutable
     patterns under Section 9.
-16. Every protocol field that identifies a Gantry type MUST use one canonical
+18. Every protocol field that identifies a Gantry type MUST use one canonical
     UTF-8 type descriptor. `Bool`, `Int`, `Float`, `String`, and `Decision` are
     encoded exactly as their source names; a declared struct or enum is encoded as its
     `crate::`-rooted qualified path; and constructed types are encoded as
@@ -779,7 +843,7 @@ document are to be interpreted as described in RFC 2119.
     are metadata rather than source values, but they ensure that hooks,
     journals, events, and diagnostics identify the same type independently of
     the spelling visible at a call site.
-17. Boolean literals are `true` and `false`. Integer and float literals follow
+19. Boolean literals are `true` and `false`. Integer and float literals follow
     Section 13.2. A numeric literal MUST be representable by its inferred
     primitive type; out-of-range literals are analysis errors. Gantry performs
     no implicit conversion between `Int` and `Float`, including in assignment,
@@ -804,9 +868,11 @@ document are to be interpreted as described in RFC 2119.
    complete right-hand side before changing the target and MUST commit the new
    root value atomically only after evaluation succeeds. Compound assignments
    `+=`, `-=`, `*=`, `/=`, and `%=` read the target exactly once, apply the
-   corresponding checked primitive operator, and atomically commit its result;
-   they are valid only for mutable numeric targets and `%=` is valid only for
-   `Int`. This includes hook
+   corresponding checked primitive operator, and atomically commit its result.
+   `+=` is valid for mutable `String`, `Int`, or `Float` targets; `-=`, `*=`,
+   and `/=` are valid only for mutable numeric targets; and `%=` is valid only
+   for mutable `Int` targets. String `+=` performs the exact concatenation
+   defined in Section 5 and is subject to its atomic size-limit check. This includes hook
    validation, workflow calls, construction, projection, and every nested
    subexpression. Any failure MUST leave the assignment target unchanged;
    external hook side effects and earlier successful assignments are not
@@ -1531,6 +1597,14 @@ document are to be interpreted as described in RFC 2119.
    positive zero before exposing or serializing a `Float`. A `String` result
    is represented by a JSON string. A struct result is a JSON object whose
    property names directly match its declared field names.
+   Every decoded or computed String and every decoded or computed List MUST
+   also satisfy the effective scalar-count and item-count resource limits in
+   Section 11. This resource check is independent of JSON Schema shape
+   validation and applies recursively before a value becomes observable.
+   JSON decoding does not normalize String contents. Deterministic String
+   methods operate on the decoded Unicode scalar sequence and serialize their
+   results through the same ordinary JSON String representation; they add no
+   provider-specific wire type or schema keyword.
    After source construction or hook-output normalization, a runtime struct
    contains every declared field. Whenever Gantry serializes that normalized
    struct, it MUST emit every field; an `Option<T>` field whose value is `None`
@@ -2485,6 +2559,10 @@ document are to be interpreted as described in RFC 2119.
           "jitter": "full"
         }
       },
+      "deterministic_values": {
+        "maximum_string_scalars": "1048576",
+        "maximum_list_items": "65536"
+      },
       "required_event_sinks": [
         {
           "id": "stable-sink-id",
@@ -2504,7 +2582,13 @@ document are to be interpreted as described in RFC 2119.
     ```
 
     The displayed values illustrate the v1 defaults; the identity MUST encode
-    the effective configured values. `model_retry_limit` applies to `prompt`
+    the effective configured values. `maximum_string_scalars` limits each
+    normalized or computed String by Unicode-scalar count, and
+    `maximum_list_items` limits each normalized or computed List by item count.
+    Both limits MUST be positive, MUST fit Gantry's directive-integer domain,
+    and are checked recursively at entry, operation, construction, parsing,
+    resume, and deterministic-evaluation boundaries. `model_retry_limit`
+    applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
     retries after the initial attempt. `source_language` MUST equal the version
     selected for the execution and MUST match the execution-start record.
@@ -3342,9 +3426,10 @@ complete_expression     = prompt_expression
                         | session_expression ;
 
 postfix_expression      = primary_expression, { postfix_suffix } ;
-postfix_suffix          = ".", identifier_token
+postfix_suffix          = ".", postfix_member_name
                         | "(", [ argument_list ], ")"
                         | "[", expression, "]" ;
+postfix_member_name     = identifier_token | "join" ;
 primary_expression      = boolean_literal
                         | integer_literal_token
                         | float_literal_token
@@ -3407,7 +3492,9 @@ productions can parse method bodies and their nested blocks. Semantic analysis
 MUST enforce the receiver scope specified in Section 13.4.
 
 Postfix `(...)` dispatches a workflow function or method or invokes one of the
-sealed built-ins `to_float()`, `to_int()`, or `len()`. Postfix `.name`
+sealed built-ins defined in Section 5. These include numeric conversion,
+primitive formatting, String query/transformation/parsing, `List<T>.len()`,
+and `List<String>.join(separator)`. Postfix `.name`
 accesses a struct field, selects a method, or selects the read-only
 `Decision.decision` or `Decision.rationale` field. Postfix `[expression]`
 projects a list when the index has type `Int`; tuple projection still requires
@@ -3441,7 +3528,8 @@ operation result annotations and operations on the produced value.
 
 Semantic analysis MUST validate every postfix step from left to right. A call
 suffix is legal only on a function or decision item, selected inherent method,
-or the sealed zero-argument primitive and list built-ins defined in Section 5;
+or a sealed deterministic built-in defined in Section 5 with exactly its
+declared argument count and types;
 a field suffix is legal only on a struct value, selected inherent method, or a
 read-only `Decision` field; and an index suffix is legal only on a list or
 tuple value. Calling another value, selecting an unsupported field, indexing
@@ -3489,9 +3577,14 @@ interpolation_unary     = ("!" | "-"), interpolation_unary
                         | interpolation_postfix ;
 interpolation_postfix   = interpolation_primary,
                           { interpolation_suffix } ;
-interpolation_suffix    = ".", identifier_token
-                        | "(", ")"
+interpolation_suffix    = ".", interpolation_member_name
+                        | "(", [ interpolation_argument_list ], ")"
                         | "[", interpolation_expression, "]" ;
+interpolation_member_name
+                        = identifier_token | "join" ;
+interpolation_argument_list
+                        = interpolation_expression,
+                          { ",", interpolation_expression }, [ "," ] ;
 interpolation_primary   = boolean_literal
                         | integer_literal_token
                         | float_literal_token
@@ -3564,13 +3657,18 @@ remain literal text. An unclosed or syntactically invalid island is a syntax
 error.
 
 Interpolation and named inputs permit only the restricted grammar above. A
-postfix empty call is legal only for the sealed deterministic built-ins
-`to_float()`, `to_int()`, and `len()`; it cannot dispatch a workflow or method.
+postfix call is legal only for the sealed deterministic built-ins in Section
+5, with the exact argument count and types defined there; it cannot dispatch a
+workflow or source-defined method.
 A projection index MUST obey the list and tuple rules in Section 5. Neither
 form admits any other function or method call, `prompt`, `decide`, `action`,
 joins, mutation, or control flow. Primitive operators use the same typing,
 precedence, short-circuiting, checked arithmetic, and deterministic-failure
-rules as ordinary expressions. Nested braces belonging to a constructor are
+rules as ordinary expressions. Plain `String` interpolation of a computed
+String still inserts its unquoted contents. A deterministic built-in failure,
+including an empty split or replacement pattern or a size-limit failure,
+prevents the containing operation from being dispatched. Nested braces
+belonging to a constructor are
 balanced before the interpolation's closing `}` is recognized.
 Duplicate prompt modifiers and duplicate named-input names are analysis
 errors. `retry_limit` counts retries after the initial attempt.
@@ -3978,6 +4076,50 @@ fn two_stage(report: Report) -> String {
 }
 ```
 
+Basic text preparation remains deterministic and visibly separate from model
+judgment:
+
+```gantry
+fn prepare_label(mut topic: String, attempt: Int) -> String {
+    topic = topic.trim().to_lowercase();
+    topic += " #";
+    topic += attempt.to_string();
+    topic
+}
+
+fn route_text(command: String) -> String {
+    if command.trim().starts_with("review:") {
+        return "review";
+    }
+
+    if decide "Does ${command} request a semantic review?" {
+        return "review";
+    }
+
+    "other"
+}
+
+fn assemble_prompt(lines: List<String>) -> String {
+    let body: String = lines.join("\n");
+    prompt "Summarize these lines:\n${body}" -> String
+}
+
+fn parse_settings(enabled_text: String, count_text: String)
+    -> Tuple<Option<Bool>, Option<Int>> {
+    (enabled_text.trim().parse_bool(), count_text.trim().parse_int())
+}
+```
+
+`len()` counts Unicode scalar values. `split` preserves empty segments and
+`replace` uses nonoverlapping matches:
+
+```gantry
+let scalar_count: Int = "é".len();
+let parts: List<String> = ",a,,b,".split(",");
+let revised: String = "aaaa".replace("aa", "b");
+// scalar_count is 1, parts is ["", "a", "", "b", ""], revised is "bb".
+```
+
 ### 14.6 Decision workflows and conditional chains
 
 ```gantry
@@ -4363,6 +4505,21 @@ if answer {
 
 // Valid: project its controlling Bool when deterministic composition is needed.
 let approved: Bool = answer.decision;
+```
+
+String operations never perform implicit conversion, and empty split or
+replacement patterns are deterministic runtime errors:
+
+```gantry
+// Invalid: `attempt` is not implicitly converted to String.
+let label: String = "attempt " + attempt;
+
+// Valid: conversion is explicit.
+let label: String = "attempt " + attempt.to_string();
+
+// Runtime error: empty separators and replacement patterns are prohibited.
+let pieces: List<String> = text.split("");
+let expanded: String = text.replace("", "-");
 ```
 
 Task handles are linear ownership markers rather than ordinary values. Every
