@@ -200,6 +200,9 @@ valid:
   harder to audit.
 - Prefer imported or `crate::`-rooted item paths when the unqualified lookup
   would not be obvious from the surrounding module.
+- Keep agent names visually distinct from workflow, module, binding, and task
+  names even though the grammar makes each namespace use unambiguous. This
+  makes `with <agent>` blocks easier to scan in model-authored source.
 
 Section 14 follows these conventions and serves as the canonical source-style
 reference for v1 examples.
@@ -387,6 +390,13 @@ document are to be interpreted as described in RFC 2119.
     reuse names that exist in unrelated lexical scopes. These rules deliberately
     exclude source-level shadowing in v1 so references remain unambiguous to
     both readers and static analysis.
+    Agent names occupy a separate package-wide namespace. They are introduced
+    only by `agents`, selected only by `default agent` or `with`, and MUST NOT
+    participate in ordinary item, local-binding, field, method, or task-handle
+    lookup. The same spelling MAY therefore occur in the agent namespace and
+    one ordinary namespace without creating a name-resolution conflict,
+    although Section 1.4 recommends distinct spellings when coexistence would
+    make source harder to read.
 
 ## 5. Values, Bindings, and Structs
 
@@ -780,13 +790,18 @@ document are to be interpreted as described in RFC 2119.
      and decline reason when a decline normalized to `None`.
    A context entry's protocol representation MUST preserve one entry boundary,
    its canonical kind, the listed payload fields, and the source operation and
-   location when the kind requires them. An integration MUST NOT flatten the
-   vector into prompt text, discard an entry it does not intend to use, or
-   reorder entries before making them available to the selected agent. It MAY
-   attach provider-specific presentation metadata without changing the
-   canonical entry. An unknown context kind is incompatible with protocol major
-   version 1 and MUST be rejected; a newer minor version may add only optional
-   fields to a known kind under the compatibility rule in Section 15.
+   location when the kind requires them. The structured vector MUST remain
+   intact at the Gantry hook boundary: an integration MUST NOT discard or
+   reorder entries before presenting them to the selected agent. A harness MAY
+   render the entries into provider messages or prompt text when its model API
+   has no structured-context channel, but that rendering MUST preserve vector
+   order, visibly distinguish entry boundaries and kinds, and make every
+   required field available to the selected agent. Such rendering and any
+   provider-specific presentation metadata are integration behavior and MUST
+   NOT replace or mutate the canonical request vector. An unknown context kind
+   is incompatible with protocol major version 1 and MUST be rejected; a newer
+   minor version may add only optional fields to a known kind under the
+   compatibility rule in Section 15.
    Structural entries (`workflow-frame`, `decision-frame`, `conditional-arm`,
    and `loop-iteration`) MUST appear first, ordered from outermost to
    innermost scope, with repeated entries in execution order within one scope.
@@ -1616,6 +1631,12 @@ document are to be interpreted as described in RFC 2119.
    validation state. The new dispatch ID and incremented recovery-dispatch
    number MUST differ, and the request MUST carry the mapping revision recorded
    for the resume run. No other semantic request field may change.
+   A durable dispatch record represents a prepared physical dispatch attempt;
+   it does not prove that the hook future began polling or that the integration
+   observed the request. There is no portable atomic boundary between durable
+   preparation and entry into integration code. Consequently, a prepared
+   attempt with no committed outcome is indeterminate under item 4 even when
+   interruption may have happened before the hook began.
    After a hook returns, Gantry MUST append the outcome and flush through that
    outcome record's sequence number before the interpreter validates, assigns,
    branches on, returns, or otherwise consumes it. A successfully flushed
@@ -1848,15 +1869,19 @@ document are to be interpreted as described in RFC 2119.
    Operation-dispatch events MUST reference the applicable prompt and schema
    payloads. Event and journal envelopes MUST be explicitly versioned from the
    first public release, and consumers MUST reject unsupported major versions.
-   One operation-dispatch event MUST be emitted for each physical hook
-   invocation, including validation retries and recovery redispatches. One
-   operation-completion event MUST be emitted for each host-level outcome from
-   such an invocation, including a `Completed` outcome that subsequently fails
-   parsing or schema validation. Those events retain the logical operation ID
-   and carry the distinct dispatch ID and applicable validation-attempt and
-   recovery-dispatch numbers. A schema-validation-failure event and, when
-   another attempt is permitted, a retry event follow the corresponding
-   completion event. After a `Completed` outcome is successfully decoded,
+   One operation-dispatch event MUST be emitted for each prepared physical
+   dispatch attempt, including validation retries and recovery redispatches.
+   It records durable intent immediately before hook invocation, not proof that
+   the integration observed the request. Process interruption MAY therefore
+   leave a dispatch event with no corresponding hook entry or outcome; sinks
+   MUST treat the attempt as indeterminate rather than infer that provider work
+   occurred. One operation-completion event MUST be emitted for each host-level
+   outcome actually returned by a hook, including a `Completed` outcome that
+   subsequently fails parsing or schema validation. Those events retain the
+   logical operation ID and carry the distinct dispatch ID and applicable
+   validation-attempt and recovery-dispatch numbers. A schema-validation-
+   failure event and, when another attempt is permitted, a retry event follow
+   the corresponding completion event. After a `Completed` outcome is successfully decoded,
    parsed, validated, normalized, and durably recorded under Section 11, or an
    optional `Declined` outcome is durably normalized to `None`, Gantry MUST
    emit exactly one operation-result event for that logical operation. The
@@ -2098,10 +2123,12 @@ document are to be interpreted as described in RFC 2119.
    - `parse` and `analysis`: phase, status, and structured diagnostics;
    - `workflow start` and `workflow end`: workflow path, frame occurrence, and
      completion status, plus a typed result reference when one exists;
-   - `operation dispatch`: operation and dispatch IDs, operation and result
-     kinds, selected agent, active agent-mapping revision ID, logical session
-     ID, validation-attempt number, recovery-dispatch number, and prompt and
-     schema references;
+   - `operation dispatch`: operation and dispatch IDs, dispatch state
+     (`prepared` in v1), operation and result kinds, selected agent, active
+     agent-mapping revision ID, logical session ID, request session directive,
+     active-session creation directive and parent session when applicable,
+     validation-attempt number, recovery-dispatch number, and prompt and schema
+     references;
    - `operation completion`: operation and dispatch IDs, outcome variant, and
      a protected raw-output reference for `Completed`, or the decline/failure
      reason under the sink's redaction policy;
@@ -2210,6 +2237,7 @@ line_terminator     = "\r\n" | "\n" | "\r" ;
 line_comment        = "//", { any_character_except_line_terminator },
                       ( line_terminator | end_of_file ) ;
 block_comment       = "/*", { block_comment | block_comment_character }, "*/" ;
+trivia              = whitespace | line_comment | block_comment ;
 
 identifier_token    = xid_start_or_underscore,
                       { xid_continue_or_underscore } ;
@@ -2246,6 +2274,14 @@ The lexer performs no indentation normalization. Outside string tokens,
 `\r\n` is one line terminator rather than two. Inside ordinary, raw, and block
 prompt strings, authored line-ending scalars are content and are preserved
 exactly except for the structural block-prompt delimiters described below.
+
+`trivia` is a lexical skip production rather than a syntactic nonterminal.
+Outside string and prompt-template tokens, zero or more trivia elements MAY
+occur between any two grammar tokens and are discarded by the lexer. Trivia
+MUST NOT split one identifier, integer, string delimiter, comment delimiter,
+or fixed multicharacter terminal such as `::` or `->`. Maximal munch therefore
+requires trivia between a reserved word and an immediately following
+identifier character when they are intended as separate tokens.
 
 `string_character` is any Unicode scalar value other than `"` or `\`; newline
 characters are included. `block_prompt_body` is the shortest sequence ending
@@ -2579,6 +2615,12 @@ interpolation_field_list
 interpolation_field     = identifier_token, ":",
                           interpolation_expression ;
 ```
+
+`interpolation` is a contextual scanner production embedded within a
+`prompt_template`; it is intentionally not referenced as an ordinary parser
+nonterminal. The contextual scan produces one template syntax value while
+retaining its ordered literal segments and interpolation islands. This keeps a
+generic non-prompt `string_token` free of interpolation semantics.
 
 When the parser expects the prompt template immediately following `prompt` or
 `decide`, the lexer MUST enter contextual template mode. It identifies the
