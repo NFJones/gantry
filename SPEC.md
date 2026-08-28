@@ -169,6 +169,28 @@ conformance profiles:
   detect and report integration failures where this specification requires it
   to do so.
 
+Profile applicability is capability-scoped. A frontend-profile claim covers
+package discovery needed for parsing, lexical and syntactic grammar, and syntax
+diagnostics. An analyzer-profile claim additionally covers name and type
+resolution, source validity, canonical schemas and core IR, effect analysis,
+control-flow completion, and task-ownership analysis. An evaluator-profile
+claim additionally covers sequential execution, integration operations,
+sessions, validation, and root-task cancellation. A concurrent-evaluator-
+profile claim additionally covers spawned tasks, joins, detachment, and their
+cancellation semantics. A durable-runtime-profile claim additionally covers
+journaling, resume, migration, durable events, and delivery recovery. An
+embedding-profile claim covers the host interfaces in Section 15 and the
+integration-facing obligations used by the evaluator profile it embeds.
+Requirements for an earlier capability also apply to profiles defined as
+adding to it. Requirements for a later or orthogonal capability do not: for
+example, a frontend-only implementation need not execute hooks or provide a
+journal, and a nondurable evaluator need not implement resume. When one
+requirement block contains clauses for more than one capability or role, each
+clause applies only to the profile or integration role whose behavior it
+governs. A conformance manifest MUST map every requirement identifier to each
+applicable claimed profile, or record a profile-based `not-applicable`
+justification.
+
 Every normative requirement has a stable identifier formed from its section,
 item, and optional local label, for example `GNT-7.5-request-header`. Published
 editions MUST preserve an identifier's meaning within one source-language
@@ -221,14 +243,14 @@ The contract is organized into layers:
 | Authoring guide | Non-normative focused examples and corrections | Section 14 |
 | Host contract | Required embedding interfaces | Section 15 |
 
-The v1 publication MUST also expose seven separately addressable artifacts:
-the Language Reference, Static Semantics, Core Abstract Machine, Durable Execution
-Profile, Embedding Protocol, Observability and Security Profile, and executable
-Authoring Guide. This consolidated document may contain those artifacts in one file,
-but each artifact MUST have its own versioned machine-readable index so a frontend,
-analyzer, evaluator, or integration can depend on only its claimed profile. The
-examples in the Authoring Guide MUST be maintained as executable positive or negative
-fixtures rather than copied, unchecked prose.
+The v1 publication MUST expose this contract and its companion protocol
+schemas, conformance corpus, and authoring fixtures as separately addressable,
+versioned artifacts. A machine-readable index MUST map each requirement and
+companion artifact to its applicable profiles so an implementation or
+integration can select the contract for its claim without duplicating the
+normative prose into several differently maintained documents. The examples in
+Section 14 MUST be maintained as executable positive or negative fixtures
+rather than copied, unchecked prose.
 
 These layers are complementary rather than an order of precedence. The lexical
 and syntactic productions in Section 13 determine whether source can be
@@ -682,11 +704,13 @@ machine-readable manifest cite these anchors directly.
 
 <a id="GNT-3.0"></a>
 
-This section defines profile-independent implementation obligations and the
-normative semantic kernel used by the source-language, concurrency, and
-durability sections. Items 1 through 10 define implementation boundaries;
-items 11 through 15 summarize the formal relations defined in Sections 3.1
-through 3.6.
+This section defines shared implementation obligations and the normative
+semantic kernel used by the source-language, concurrency, and durability
+profiles. Requirement applicability follows the capability boundaries in
+Section 1: a frontend-only claim does not acquire evaluator or durability
+obligations merely because they are collected here. Items 1 through 10 define
+implementation boundaries; items 11 through 15 summarize the formal relations
+defined in Sections 3.1 through 3.6.
 
 <a id="GNT-3.1"></a>
 
@@ -715,10 +739,11 @@ through 3.6.
    language layer whose behavior changes Gantry semantics.
 <a id="GNT-3.3"></a>
 
-3. Gantry MUST be available as an embeddable Rust library with an asynchronous
-   execution API. This is the required v1 embedding profile; “portable” in this
-   specification describes Gantry source and runtime semantics across
-   conforming integrations, not a requirement to expose a language-neutral ABI.
+3. An implementation claiming the embedding profile MUST make Gantry available
+   as an embeddable Rust library with an asynchronous execution API.
+   “Portable” in this specification describes Gantry source and runtime
+   semantics across conforming integrations, not a requirement to expose a
+   language-neutral ABI.
    Gantry does not implement an agent, model provider, transport, or hidden
    asynchronous runtime itself. Gantry schedules logical tasks through an
    embedder-supplied executor adapter; it neither creates nor owns an async
@@ -778,10 +803,11 @@ through 3.6.
    termination.
 <a id="GNT-3.7"></a>
 
-7. Gantry execution state MUST be serializable and resumable. Gantry MUST
-   provide a journal, or an equivalent durable execution record, sufficient to
-   continue an interrupted execution from its recorded state. Section 11
-   defines the required recovery behavior.
+7. An implementation claiming the durable-runtime profile MUST make Gantry
+   execution state serializable and resumable. It MUST provide a journal, or
+   an equivalent durable execution record, sufficient to continue an
+   interrupted execution from its recorded state. Section 11 defines the
+   required recovery behavior.
 <a id="GNT-3.8"></a>
 
 8. Gantry does not promise deterministic replay. Re-execution of the same
@@ -877,9 +903,9 @@ through 3.6.
 <a id="GNT-3.15"></a>
 
 15. Conforming implementations MUST test and document the following semantic
-   properties for every applicable profile: progress or a specified runtime
-    error for a well-typed nonterminal configuration; preservation of source
-    types across deterministic and accepted-operation transitions; linear task
+   properties for every applicable claimed profile: progress or a specified
+    runtime error for a well-typed nonterminal configuration; preservation of
+    source types across deterministic and accepted-operation transitions; linear task
     handles are never joined or transferred twice; one logical operation
     produces at most one consumable result; cancellation prevents later source
     consumption in the cancelled task; and every recovered execution is a
@@ -2742,8 +2768,10 @@ operation identity, failure categories, and propagation.
    A `prompt` or `decide` body MUST contain the selected agent name and
    active agent-mapping revision; authored source template and interpolated
    prompt; ordered interpolation-argument vector; ordered named-input vector;
-   required active and root logical-session IDs; a parent logical-session ID
-   exactly when the active session has a parent; and one session-use value.
+   the active canonical logical-session transcript immediately before the
+   current operation; required active and root logical-session IDs; a parent
+   logical-session ID exactly when the active session has a parent; and one
+   session-use value.
    The session-use value is `inline` when the operation reuses the active
    session and contains no creation payload. It is `create` only when this
    request creates a `fork` or `new` session and then contains that directive,
@@ -5535,9 +5563,9 @@ Semantic analysis MUST validate every postfix step from left to right. A call
 suffix is legal only on a function item, selected inherent method, declared
 enum payload variant, or a sealed deterministic built-in defined in
 Section 5 with exactly its declared argument count and types;
-a field suffix is legal only on a struct value, selected inherent method, or a
-read-only `Decision` field; and an index suffix is legal only on a list or
-tuple value. Calling another value, selecting an unsupported field, or
+a field suffix is legal only on a struct value, selected inherent method, a
+read-only `Decision` field, or a read-only `OperationError` field; and an index
+suffix is legal only on a list or tuple value. Calling another value, selecting an unsupported field, or
 indexing another type is an analysis error. `Unit` has no fields, methods, or
 index operation, so an attempted postfix suffix on `()` is rejected by those
 ordinary rules.
@@ -5767,7 +5795,7 @@ grammar:
 
 | Source context | Body form | Trailing value | Semicolon after closing brace |
 | --- | --- | --- | --- |
-| Function, method, decision, or spawned block | ordinary block | Optional, but required on each reachable normal completion of a value-returning body | No |
+| Function, method, or spawned block | ordinary block | Optional, but required on each reachable normal completion of a value-returning body | No |
 | `if`, loop, or effect-only `match` arm | statement-only block | Prohibited | No |
 | Value-producing `match` arm | value block | Required | The complete value is ignored only with `discard match ...;` |
 | Statement-only `with` or `session` | statement-only block | Prohibited | No |
