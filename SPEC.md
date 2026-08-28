@@ -1,5 +1,42 @@
 # Gantry Specification
 
+- [Gantry Specification](#gantry-specification)
+  - [1. Status and Scope](#1-status-and-scope)
+  - [2. Normative Language](#2-normative-language)
+  - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
+  - [4. Source Organization](#4-source-organization)
+  - [5. Values, Bindings, and Structs](#5-values-bindings-and-structs)
+  - [6. Functions and Methods](#6-functions-and-methods)
+  - [7. Agents, Hooks, and Sessions](#7-agents-hooks-and-sessions)
+  - [8. Structured Output and Validation](#8-structured-output-and-validation)
+  - [9. Control Flow](#9-control-flow)
+  - [10. Parallel Execution](#10-parallel-execution)
+  - [11. Journal and Resume Semantics](#11-journal-and-resume-semantics)
+  - [12. Observability and Validation Modes](#12-observability-and-validation-modes)
+  - [13. Formal Lexical and Syntactic Grammar](#13-formal-lexical-and-syntactic-grammar)
+    - [13.1 Grammar notation](#131-grammar-notation)
+    - [13.2 Lexical grammar](#132-lexical-grammar)
+    - [13.3 Package declarations and types](#133-package-declarations-and-types)
+    - [13.4 Workflows and methods](#134-workflows-and-methods)
+    - [13.5 Blocks and statements](#135-blocks-and-statements)
+    - [13.6 Expressions](#136-expressions)
+    - [13.7 Prompts and interpolation](#137-prompts-and-interpolation)
+    - [13.8 Decisions and sequential control flow](#138-decisions-and-sequential-control-flow)
+    - [13.9 Parallel control flow](#139-parallel-control-flow)
+  - [14. Syntax Examples](#14-syntax-examples)
+    - [14.1 Minimal package entry point](#141-minimal-package-entry-point)
+    - [14.2 Modules, imports, and package-wide agents](#142-modules-imports-and-package-wide-agents)
+    - [14.3 Struct construction, options, bindings, and mutation](#143-struct-construction-options-bindings-and-mutation)
+    - [14.4 Inherent methods and lexical agent selection](#144-inherent-methods-and-lexical-agent-selection)
+    - [14.5 Prompt strings, interpolation, and escaping](#145-prompt-strings-interpolation-and-escaping)
+    - [14.6 Decision workflows and conditional chains](#146-decision-workflows-and-conditional-chains)
+    - [14.7 General, pre-test, and post-test loops](#147-general-pre-test-and-post-test-loops)
+    - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-listt-joins)
+    - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
+    - [14.10 `joinall`, no-result tasks, and detachment](#1410-joinall-no-result-tasks-and-detachment)
+    - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
+  - [15. Required Embedding Interfaces](#15-required-embedding-interfaces)
+
 ## 1. Status and Scope
 
 Gantry is a proposed, Rust-inspired control language for coordinating
@@ -78,10 +115,15 @@ document are to be interpreted as described in RFC 2119.
    resolution are excluded from v1. Module resolution MUST reject `.` and `..`
    path components and symbolic links. Rejecting symbolic links keeps package
    containment and source identity independent of host filesystem aliasing.
-7. A file module declaration `mod foo;` resolves relative to the declaring
-   module as either `foo.gnt` or `foo/mod.gnt`. If both candidates exist,
-   analysis MUST fail as ambiguous. The package root is a containment boundary,
-   not an alternate lookup directory for nested modules.
+7. A file module declaration `mod foo;` resolves in the declaring module's
+   module directory as either `foo.gnt` or `foo/mod.gnt`. The root module's
+   module directory is the package root. A module loaded from `foo.gnt` or
+   `foo/mod.gnt` has `foo/` as its module directory, and an inline `mod foo {
+   ... }` likewise has the conceptual module directory `foo/` below its
+   parent's module directory. These rules apply recursively to child module
+   declarations. If both file candidates exist, analysis MUST fail as
+   ambiguous. The package root is a containment boundary, not an alternate
+   lookup directory for nested modules.
 8. Inline modules of the form `mod foo { ... }` MUST be supported. Module items
    are visible package-wide in v1 and qualified access uses Rust-inspired
    `module::item` paths.
@@ -98,11 +140,11 @@ document are to be interpreted as described in RFC 2119.
     Escaping above the package root is an analysis error. `use` follows the
     same path rules and does not change item visibility.
 12. Module filenames and identifiers MUST be valid UTF-8 and MAY use
-    `snake_case`, `camelCase`, or `PascalCase`. A module declaration's
-    identifier and resolved filesystem name MUST match exactly, including case.
-    Module path components MUST be Unicode Normalization Form C (NFC); an
-    implementation MUST reject a non-NFC component rather than silently
-    normalize it.
+    `snake_case`, `camelCase`, or `PascalCase`. A `mod foo;` declaration MUST
+    match either the `foo` stem in `foo.gnt` or the `foo` directory in
+    `foo/mod.gnt` exactly, including case. Module path components MUST be
+    Unicode Normalization Form C (NFC); an implementation MUST reject a
+    non-NFC component rather than silently normalize it.
 13. Top-level package and module contents MUST be declarations. Executable
     statements are permitted only within function, method, decision, spawn, or
     other executable block bodies.
@@ -175,10 +217,11 @@ document are to be interpreted as described in RFC 2119.
    `None`. A constructed value becomes visible only after every supplied field
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
-8. Struct fields MAY declare literal defaults. Defaults MUST NOT invoke an
-   agent operation. When an optional field with a default is omitted, the
-   default is assigned; explicit `null` remains `None`. Struct update syntax
-   and destructuring are excluded from v1.
+8. Struct fields MAY declare string-literal or `None` defaults, which are the
+   only field-default forms in v1. Defaults MUST NOT invoke an agent operation.
+   When an optional field with a default is omitted, the default is assigned;
+   explicit `null` remains `None`. Struct update syntax and destructuring are
+   excluded from v1.
 9. Bindings are immutable by default. `mut` enables rebinding and field
    mutation. Assignments MUST preserve type, and v1 permits no implicit type
    coercion.
@@ -209,11 +252,14 @@ document are to be interpreted as described in RFC 2119.
    is therefore a local receiver copy. `mut self` permits mutation of that copy
    but never changes the caller's value implicitly; callers MUST assign a
    returned value explicitly when they intend to retain receiver changes.
-5. A workflow body MAY contain one or more `prompt` expressions. Each `prompt`
-   expression, and each conditional or loop decision, MUST invoke exactly one
-   agent operation hook. Struct construction, field access, assignment,
-   `Option<T>` construction, module lookup, function or method dispatch, and
-   `join` are interpreter operations and MUST NOT invoke an agent hook.
+5. A workflow body MAY contain one or more `prompt` expressions. Each executed
+   `prompt` or `decide` expression MUST invoke exactly one agent operation
+   hook. Calling a decision workflow invokes no hook merely because of the
+   call; evaluating its body MAY execute multiple explicitly written prompt or
+   nested decision operations before its terminal decision is obtained.
+   Struct construction, field access, assignment, `Option<T>` construction,
+   module lookup, function or method dispatch, and `join` are interpreter
+   operations and MUST NOT invoke an agent hook.
 6. Each `prompt` expression MUST contain an explicit prompt template and MAY
    contain parenthesized operation modifiers before that template. A typed
    prompt places its result annotation after the template, as in
@@ -221,14 +267,18 @@ document are to be interpreted as described in RFC 2119.
    result annotation, or with `-> None`, has no result.
 7. Template expressions MUST be interpolated before hook dispatch. To keep
    agent invocation explicit, an interpolation MAY contain only bindings,
-   field paths, literals, and deterministic struct or `Option<T>` constructor
-   expressions composed from other permitted interpolation expressions.
+   field paths, zero-based `List<T>` or tuple projections, literals, and
+   deterministic struct or `Option<T>` constructor expressions composed from
+   other permitted interpolation expressions.
    Function calls, method calls, `prompt`, decisions, assignment, `join`, and
    other expressions that can invoke a hook, alter control flow, or mutate
    state are prohibited inside interpolation. Interpolations are evaluated in
    source order. If any interpolation cannot be evaluated or encoded, the
    containing prompt MUST remain undispatched and execution MUST fail. The
    source template and interpolated prompt MUST both be supplied to the hook.
+   The supplied source template is the semantic template after ordinary escape
+   decoding, raw-string delimiter removal, and block-prompt dedentation, but
+   before interpolation. It is not the original source token spelling.
 8. A trailing expression in a function, method, or spawned block implicitly
    yields its value. An explicit `return` MAY yield earlier from a function or
    method. Every explicit or implicit returned expression MUST exactly match
@@ -266,10 +316,13 @@ document are to be interpreted as described in RFC 2119.
    runtime binding. `with` contexts MAY occur at any block scope. Operations
    outside such a context use the declared default agent.
 4. The Rust hook contract MUST be asynchronous and executor-neutral. Its
-   futures MUST be `Send + 'static` so Gantry tasks can execute on a
-   multithreaded executor, and Gantry's public API MUST NOT expose Tokio- or
-   provider-specific types. Each individual operation awaits one hook outcome
-   before it advances and is therefore logically synchronous. Gantry MUST
+   futures MUST be `Send` so Gantry tasks can execute on a multithreaded
+   executor, and Gantry's public API MUST NOT expose Tokio- or provider-specific
+   types. A future returned by an extension method MAY borrow that method's
+   receiver or arguments and therefore need not be `'static`; only an owned
+   Gantry task future submitted to the executor MUST be `Send + 'static`. Each
+   individual operation awaits one hook outcome before it advances and is
+   therefore logically synchronous. Gantry MUST
    obtain one independently usable `OperationHook` instance for each Gantry
    task from an asynchronous `HookFactory`. That instance MUST live for the
    task's entire lifetime, including nested workflow calls and validation
@@ -290,7 +343,8 @@ document are to be interpreted as described in RFC 2119.
    - a protocol major and minor version;
    - stable operation, execution, and parent-operation IDs;
    - an operation kind and selected agent name;
-   - the original prompt template and interpolated prompt;
+   - the semantic source prompt template defined in Section 6 and the
+     interpolated prompt;
    - JSON-serialized typed arguments;
    - the expected result kind;
    - the expected JSON Schema;
@@ -346,8 +400,11 @@ document are to be interpreted as described in RFC 2119.
    produces one literal dollar sign, so `$${name}` renders the literal text
    `${name}` without interpolation. A `String` is interpolated as its string
    contents; a struct, `Option<T>`, `List<T>`, or tuple is interpolated as
-   compact strict JSON, with `None` rendered as `null`. Invalid references and
-   values that cannot be encoded are analysis or runtime errors, respectively.
+   compact strict JSON, with `None` rendered as `null`. This compact encoding
+   MUST use the RFC 8785 JSON Canonicalization Scheme so equivalent Gantry
+   values produce the same interpolated prompt across implementations. Invalid
+   references and values that cannot be encoded are analysis or runtime errors,
+   respectively.
 8. Ordinary quoted strings MUST support `\\`, `\"`, `\n`, `\r`, `\t`, `\0`,
    and Rust-style Unicode scalar escapes of the form `\u{HEX}`. Unknown,
    incomplete, or invalid escapes are syntax errors. A quoted prompt literal
@@ -429,6 +486,12 @@ document are to be interpreted as described in RFC 2119.
    exactly one RFC 8259 JSON text, allowing only JSON whitespace after the
    value. Gantry owns this parsing step and MUST reject non-UTF-8, malformed,
    empty, or trailing-data output as structured-output validation failures.
+   Duplicate member names in any JSON object MUST also be rejected as a
+   structured-output validation failure rather than normalized by a JSON
+   library's first-member or last-member behavior.
+   JSON strings and object member names MUST decode to sequences of Unicode
+   scalar values; valid escaped surrogate pairs are combined, and unpaired
+   surrogates MUST be rejected.
    For a no-result prompt, the expected schema is exactly
    `{ "type": "null" }`, and the parsed value MUST be JSON `null`. This wire
    value confirms successful completion but does not create a Gantry value;
@@ -442,8 +505,8 @@ document are to be interpreted as described in RFC 2119.
 4. A `Tuple<T1, T2, ..., Tn>` result is represented by a JSON array with
    exactly `n` items. Each item MUST validate against its corresponding
    positional member type, and item order MUST be preserved. Gantry MUST
-   derive a fixed-length JSON Schema array using `prefixItems`, with
-   `items: false`.
+   derive a fixed-length JSON Schema array using `prefixItems`, `items: false`,
+   and `minItems` and `maxItems` both equal to `n`.
 5. `Some(value)` is represented by the JSON encoding of `value`, and `None` is
    represented by JSON `null`. An `Option<T>` struct property MAY also be
    omitted. Omission assigns the field's declared literal default when one
@@ -451,20 +514,29 @@ document are to be interpreted as described in RFC 2119.
    to `None`.
 6. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
    during semantic analysis and MUST independently validate every successful
-   hook result against that schema. Recursive types MUST use `$defs` and
-   `$ref`.
-7. Struct results MUST reject unknown properties. Declared fields are required
-   unless represented by `Option<T>`.
+   hook result against that schema. Every schema root MUST identify that
+   dialect with its `$schema` URI. Recursive types MUST use `$defs` and `$ref`.
+   `Option<T>` MUST be represented by a schema accepting exactly `null` or the
+   schema for `T`.
+7. Every struct schema MUST set `additionalProperties` to `false`. Declared
+   fields are required unless represented by `Option<T>`. Literal field
+   defaults affect source construction; they do not make a non-optional field
+   optional in an agent result.
 8. v1 validation MUST check JSON shape and types. Constraints such as length,
    patterns, enums, and semantic validity are conveyed through prompt guidance
-   rather than enforced by Gantry.
+   rather than enforced by Gantry. The fixed nonempty-rationale requirement for
+   the interpreter-only decision schema is the sole v1 exception to this rule.
 9. UTF-8 decoding failures, malformed JSON, and schema-invalid output MUST be
    returned to the agent as validation guidance and retried up to the
    configured retry limit. A retry request MUST include the preceding
    validation errors but MUST NOT return the preceding raw output to the hook.
 10. The retry limit is configured per interpreter and MAY be overridden per
    operation. It counts retries after the initial attempt; zero permits exactly
-   one attempt. Retry backoff MUST be configurable with sensible defaults.
+   one attempt. The v1 interpreter default is two retries after the initial
+   attempt. Retry backoff MUST be configurable; its v1 default is exponential
+   backoff beginning at 100 milliseconds, capped at two seconds, with
+   randomized jitter. The effective retry limit and backoff policy are bound
+   to resumable execution as specified in Section 11.
 11. When retries are exhausted, the operation and program MUST fail. Gantry has
    no language-level error recovery in v1.
 12. Transport failures and their retry policy are integration concerns, not
@@ -475,11 +547,13 @@ document are to be interpreted as described in RFC 2119.
 ## 9. Control Flow
 
 1. Gantry MUST support `if`, `else if`, and `else`. Each `if` or `else if`
-   condition MUST ultimately perform exactly one agent decision operation. A
-   direct decision operation uses the visually distinct `decide` expression;
-   an ordinary unannotated `prompt` always remains a no-result prompt. A
-   condition MAY be a direct `decide` expression or a call to a decision
-   workflow; calling the workflow does not add a second hook invocation.
+   condition MUST obtain its controlling result from exactly one terminal
+   agent decision operation. A direct decision operation uses the visually
+   distinct `decide` expression; an ordinary unannotated `prompt` always
+   remains a no-result prompt. A condition MAY be a direct `decide` expression
+   or a call to a decision workflow. Calling the workflow does not itself add
+   a hook invocation, although explicit prompts and nested decisions in that
+   workflow execute normally before its terminal decision.
 2. A conditional decision MUST return this strict JSON shape, with no
    additional properties:
 
@@ -491,9 +565,11 @@ document are to be interpreted as described in RFC 2119.
    ```
 
    `decision` MUST be a JSON Boolean and `rationale` MUST be a nonempty JSON
-   string. Gantry uses only `decision` to select control flow and retains the
-   rationale for observability. A decision is interpreter-only and cannot be
-   bound as a user-visible Boolean value.
+   string. The generated decision schema MUST enforce this with
+   `minLength: 1`, in addition to requiring both properties and setting
+   `additionalProperties` to `false`. Gantry uses only `decision` to select
+   control flow and retains the rationale for observability. A decision is
+   interpreter-only and cannot be bound as a user-visible Boolean value.
 3. Each `else if` performs a separate decision operation. Its hook request MUST
    include the decisions and rationales produced by preceding arms in the same
    conditional chain through the ordered execution-context vector.
@@ -509,9 +585,10 @@ document are to be interpreted as described in RFC 2119.
    in `while(session = fork, limit = 10) decide(retry_limit = 2) "..." { ... }`.
    `until` places the same loop modifiers before its body and operation
    modifiers on the `decide` expression after `when`.
-   They MUST accept `session`, `limit`, and `retry_limit` modifiers. Agent
-   selection is inherited from a lexical `with` context rather than specified
-   as a loop modifier. `retry_limit` counts retries after the initial attempt.
+   `loop` MUST accept `session` and `limit`; `while` and `until` MUST also
+   accept `retry_limit` for their decision operation. Agent selection is
+   inherited from a lexical `with` context rather than specified as a loop
+   modifier. `retry_limit` counts retries after the initial attempt.
 6. A loop session is `new`, `fork`, or `inline`, with `inline` as the default.
    A loop limit is a nonnegative integer no greater than `2^63 - 1`; every v1
    implementation MUST support that full range. It counts body executions.
@@ -603,11 +680,12 @@ document are to be interpreted as described in RFC 2119.
    current program as one aggregate task/join error ordered by join argument,
    never by completion time. A failed single-task join consumes its handle and
    aborts with a task/join error.
-6. `joinall` is syntactic sugar for joining every unconsumed, attached task
-   declared directly in the current lexical scope. It excludes tasks declared
-   in nested scopes and tasks explicitly detached before the join. It consumes all
-   included handles, waits until all included tasks have settled, and yields an
-   ordered `List<T>` in task declaration order when every joined task has the
+6. `joinall` is the scope-oriented form for joining every unconsumed, attached
+   task declared directly in the current lexical scope. It excludes tasks
+   declared in nested scopes and tasks explicitly detached before the join. It
+   consumes all included handles, waits until all included tasks have settled,
+   and yields an ordered `List<T>` in task declaration order when every joined
+   task has the
    same non-`None` result type. When every joined task has a non-`None` result
    but their types differ, it yields a positional tuple in task declaration
    order. Otherwise it is a waiting statement that discards successful
@@ -628,9 +706,11 @@ document are to be interpreted as described in RFC 2119.
    Requiring an explicit `detach` keeps background execution visible to humans,
    agents, analysis, and recovery tooling.
 9. A detached-task failure MUST be journaled and emitted as a failure event. It
-   MUST NOT retroactively change an already returned top-level success into a
-   failure. If execution is still awaiting that task through `join` or
-   `joinall`, the ordinary join failure rules apply.
+   MUST NOT abort foreground execution or change a top-level success,
+   regardless of whether it settles before or after that success is returned.
+   A detached task cannot subsequently be joined because `detach` consumes its
+   handle. These rules make explicit detachment a deliberate transfer of both
+   lifetime and failure ownership to the interpreter instance.
 10. Parent timeout and cancellation constraints apply while a child remains
    attached and propagate through its attached descendants. Detachment releases
    the task from those parent constraints. Integration-specific operation
@@ -648,11 +728,13 @@ document are to be interpreted as described in RFC 2119.
 12. The embedding API MUST provide a terminal asynchronous shutdown operation.
     The embedder MUST configure a finite graceful-shutdown timeout; indefinite
     shutdown is not the v1 default. Shutdown MUST reject new executions and
-    allow detached tasks to finish naturally until the timeout expires. It
-    MUST then signal cancellation, abort tasks that do not finish within a
-    bounded drain period, flush journal and required event state, and return a
-    shutdown report. An interpreter cannot be reused after shutdown begins.
-    Embedders MUST complete shutdown before dropping the interpreter.
+    allow every interpreter-owned foreground execution and detached task to
+    finish naturally until the timeout expires. It MUST then signal
+    cancellation to all remaining work, abort tasks that do not finish within
+    a bounded drain period, flush journal and required event state, and return
+    a shutdown report covering every execution and detached task that was
+    active when shutdown began. An interpreter cannot be reused after shutdown
+    begins. Embedders MUST complete shutdown before dropping the interpreter.
 13. Because Rust destruction cannot await, dropping an interpreter without
     shutdown MUST reject new work, signal cancellation, abort or detach
     remaining executor handles without blocking, and emit a best-effort
@@ -663,7 +745,10 @@ document are to be interpreted as described in RFC 2119.
 
 1. Gantry MUST durably journal committed operation results, validation attempt
    counts, interpreter call frames, scopes, instruction positions, loop state,
-   task relationships, and values needed to resume execution.
+   task relationships, and values needed to resume execution. Gantry MAY
+   replay deterministic interpreter steps after the latest durable checkpoint,
+   but such replay MUST reuse committed hook outcomes and reconstruct the same
+   dynamic operation and task identities.
 2. Gantry MUST expose a journal-storage trait through which an integration
    provides durable storage. The trait MUST expose atomic append and flush
    operations only; Gantry defines the transaction and commit boundaries built
@@ -715,7 +800,10 @@ document are to be interpreted as described in RFC 2119.
    an execution with unfinished detached tasks MUST recover them under the
    same rules as other in-flight spawned blocks. An execution reaches its
    terminal durable state only after its foreground and every detached task
-   have completed, failed, or been cancelled during shutdown.
+   have completed, failed, or been cancelled during shutdown. Before returning
+   a foreground result or reporting terminal execution state, Gantry MUST
+   append and flush an interpreter checkpoint that makes the corresponding
+   scopes, instruction positions, task ownership, and completed values durable.
 9. A v1 journal envelope MUST identify its protocol version, journal and
    execution IDs, monotonically increasing sequence number, record ID, record
    kind, causal parent record when one exists, task and operation identities
@@ -745,18 +833,26 @@ document are to be interpreted as described in RFC 2119.
 
 ## 12. Observability and Validation Modes
 
-1. Gantry MUST expose events for parsing, call start and end, prompts, schema,
-   validation failure, retry, branch decision, spawn, join, mutation, and
-   failure. Event and journal envelopes MUST be explicitly versioned from the
+1. Gantry MUST expose events for parsing and analysis, workflow start and end,
+   operation dispatch and completion, schema validation failure, retry, branch
+   decision, spawn, join, detach, mutation, cancellation, foreground
+   completion, task completion, terminal execution, and failure. Foreground
+   completion is distinct from terminal execution when detached tasks remain.
+   Operation-dispatch events MUST reference the applicable prompt and schema
+   payloads. Event and journal envelopes MUST be explicitly versioned from the
    first public release, and consumers MUST reject unsupported major versions.
-2. Each event MUST have a stable event ID and execution ID. It MUST include a
-   source location when caused by a source-backed construct, a task ID when it
-   occurs in a task, an operation ID when it concerns an operation, and causal
-   parent/child IDs when such relationships exist. Parse, package-analysis,
-   shutdown, and storage failures MAY lack task or operation identity. Event
-   order is guaranteed within one task but not across concurrent tasks; IDs
-   MUST permit reconstruction of cross-task causality. Delivery retries reuse
-   the event ID and use a distinct delivery-attempt ID.
+2. Each event MUST have a stable event ID and activity ID. An activity is one
+   syntax-validation, semantic-analysis, execution/resume, or shutdown
+   invocation. An event associated with a program execution MUST also include
+   its execution ID; standalone validation, analysis, and interpreter-wide
+   shutdown events MAY omit it. An event MUST include a source location when
+   caused by a source-backed construct, a task ID when it occurs in a task, an
+   operation ID when it concerns an operation, and causal parent/child IDs
+   when such relationships exist. Parse, package-analysis, shutdown, and
+   storage failures MAY lack task or operation identity. Event order is
+   guaranteed within one task but not across concurrent tasks; IDs MUST permit
+   reconstruction of cross-task causality. Delivery retries reuse the event ID
+   and use a distinct delivery-attempt ID.
 3. Events from a resumable execution MUST be durably journaled before their
    first delivery. Parse and analysis events produced without a resumable
    execution MAY be delivered without a journal. Event delivery MAY use
@@ -777,23 +873,28 @@ document are to be interpreted as described in RFC 2119.
    the initial attempt with exponential backoff beginning at 100 milliseconds,
    capped at two seconds, and randomized jitter.
 6. Event delivery is at least once. Sinks MUST deduplicate using the stable
-   event ID. Exhaustion for a required sink MUST abort the affected execution;
-   exhaustion for a best-effort sink MUST be journaled and execution MUST
-   continue. Successful completion and orderly shutdown MUST flush all required
-   sink deliveries for the applicable execution before returning.
+   event ID. Exhaustion for a required sink MUST abort the affected activity
+   and its execution when one exists; exhaustion for a best-effort sink MUST
+   be journaled when a journal exists, otherwise included in the activity
+   result, and the activity MUST continue. Successful completion and orderly
+   shutdown MUST flush all required sink deliveries for the applicable
+   activity before returning.
    An event describing sink-delivery failure MUST NOT be delivered to the same
-   failing sink. Required-sink exhaustion MUST append and flush one terminal
-   failure record directly to the journal without requiring event delivery;
-   failure of that journal write is returned to the embedder as a journal
-   failure. These rules prevent recursive failure-event generation.
-7. Every event envelope MUST identify its protocol version, event and
-   execution IDs, event kind, source location when source-backed, task and
-   operation identities when applicable, causal parent IDs, per-task sequence,
-   timestamp, payload reference, and redaction state. The canonical v1 event
-   kinds are parse, analysis, workflow start, workflow end, operation dispatch,
-   operation completion, schema validation failure, retry, branch decision,
-   spawn, join, detach, mutation, cancellation, execution completion, and
-   failure. Concrete serialization is implementation-defined.
+   failing sink. For a resumable execution, required-sink exhaustion MUST append
+   and flush one terminal failure record directly to the journal without
+   requiring event delivery; failure of that journal write is returned to the
+   embedder as a journal failure. A standalone activity without a journal MUST
+   return the required-event-delivery failure directly. These rules prevent
+   recursive failure-event generation.
+7. Every event envelope MUST identify its protocol version, event and activity
+   IDs, optional execution ID, event kind, source location when source-backed,
+   task and operation identities when applicable, causal parent IDs, per-task
+   sequence when task-backed, timestamp, payload reference, and redaction
+   state. The canonical v1 event kinds are parse, analysis, workflow start,
+   workflow end, operation dispatch, operation completion, schema validation
+   failure, retry, branch decision, spawn, join, detach, mutation,
+   cancellation, foreground completion, task completion, terminal execution,
+   and failure. Concrete serialization is implementation-defined.
 8. A dry-run performs syntax validation only and MUST NOT invoke agent hooks.
    Gantry MUST separately provide an analysis mode that performs name, type,
    module, and schema validation without invoking hooks.
@@ -864,24 +965,26 @@ escape decoding and performs no indentation normalization.
 characters are included. `block_prompt_body` is the shortest sequence ending
 before an unescaped `"""` delimiter and uses the same escape sequences as an
 ordinary string. A block prompt MUST begin with a newline immediately after
-its opening delimiter. Its closing delimiter MUST appear on a line containing
-only indentation and the delimiter. Gantry removes that first newline and the
-common indentation prefix shared by every nonblank content line; the closing
-delimiter's indentation is the maximum prefix that may be removed. Relative
-indentation and trailing newlines remain significant. A nonblank line with
-less indentation than the closing delimiter is a syntax error. This explicit
-dedent form keeps multiline prompts readable while ordinary and raw strings
-continue to preserve exact whitespace. `block_comment_character` consumes one
-scalar value that does not begin the nested opener `/*` or closing delimiter
-`*/`.
+its opening delimiter; that required opening newline is structural and is not
+part of the resulting template. Its closing delimiter MUST appear on a line
+containing only indentation and the delimiter. That indentation is the exact
+dedent prefix: it MUST prefix every nonblank content line and is removed once
+from each such line. A whitespace-only content line becomes an empty line when
+its whitespace is no longer than the dedent prefix; any excess whitespace
+remains. Relative indentation and trailing newlines before the closing
+delimiter remain significant. This explicit dedent form keeps multiline
+prompts readable while ordinary and raw strings continue to preserve exact
+whitespace. `block_comment_character` consumes one scalar value that does not
+begin the nested opener `/*` or closing delimiter `*/`.
 `raw_string_body` is the shortest sequence ending immediately before a quote
 followed by exactly `matching_raw_hashes`. Lexing uses maximal munch for
 identifiers, directive integers, `::`, and `->`. A raw-string token takes
 precedence over an identifier only when `r` is immediately followed by zero or
-more `#` characters and a quote. Reserved-word classification occurs after an
-identifier token is scanned. Comments are recognized only outside string
-tokens, and interpolation islands are recognized only by the contextual prompt
-scan described in Section 13.7.
+more `#` characters and a quote. A block-prompt token takes precedence over an
+ordinary quoted-string token when the next three characters are `"""`.
+Reserved-word classification occurs after an identifier token is scanned.
+Comments are recognized only outside string tokens, and interpolation islands
+are recognized only by the contextual prompt scan described in Section 13.7.
 
 For a raw string, `matching_raw_hashes` means exactly the same number of `#`
 characters as `raw_hashes`. Backslashes have no special meaning in a raw
@@ -934,9 +1037,10 @@ qualified_path          = relative_path
 relative_path           = identifier_token, { "::", identifier_token } ;
 
 struct_declaration      = "struct", identifier_token, "{",
-                          { struct_field }, "}" ;
+                          [ struct_field_list ], "}" ;
+struct_field_list       = struct_field, { ",", struct_field }, [ "," ] ;
 struct_field            = identifier_token, ":", value_type,
-                          [ "=", field_default ], "," ;
+                          [ "=", field_default ] ;
 field_default           = string_token | raw_string_token | "None" ;
 
 value_type              = "String"
@@ -1011,7 +1115,8 @@ statement               = let_statement
 let_statement           = "let", [ "mut" ], identifier_token, ":",
                           value_type, "=", expression, ";" ;
 assignment_statement    = assignment_target, "=", expression, ";" ;
-assignment_target       = ( identifier_token | "self" ),
+assignment_target       = identifier_token, { ".", identifier_token }
+                        | "self", ".", identifier_token,
                           { ".", identifier_token } ;
 expression_statement    = expression, ";" ;
 return_statement        = "return", [ expression ], ";" ;
@@ -1026,7 +1131,9 @@ closing brace. `return;` is valid only in a no-result function or method.
 `break` and `continue` are valid only in a loop body. A `decision_block` MUST
 end in a direct `decide` expression or decision-workflow call, whether trailing
 or returned; an earlier `return` in its statement sequence is subject to the
-same restriction.
+same restriction. Assignment to `self` as a whole is not v1 syntax; a
+`mut self` method may assign its receiver fields and may return the resulting
+receiver value.
 
 ### 13.6 Expressions
 
@@ -1099,7 +1206,9 @@ prompt_template         = string_token | raw_string_token
 interpolation           = "${", interpolation_expression, "}" ;
 interpolation_expression
                         = interpolation_primary,
-                          { ".", identifier_token } ;
+                          { interpolation_suffix } ;
+interpolation_suffix    = ".", identifier_token
+                        | "[", integer_token, "]" ;
 interpolation_primary   = string_token
                         | raw_string_token
                         | "None"
@@ -1133,7 +1242,8 @@ same left-to-right interpolation and `$$` rules. A closing `}` ends an island
 only when all nested constructor braces and parentheses inside it are balanced;
 an unclosed or syntactically invalid island is a syntax error.
 
-Interpolation permits only the restricted grammar above. In particular, it
+Interpolation permits only the restricted grammar above. A projection index
+MUST obey the list and tuple rules in Section 5. In particular, interpolation
 does not admit function or method calls, prompts, decisions, joins, mutation,
 or control flow. Nested braces belonging to a struct initializer are balanced
 before the interpolation's closing `}` is recognized. Duplicate prompt
@@ -1179,9 +1289,12 @@ present; empty `prompt()`, `decide()`, `loop()`, `while()`, and `until()`
 modifiers are not v1 syntax. Bare `loop` uses `session = inline` and
 `limit = 0`. Duplicate modifiers are analysis errors.
 
-A condition-level `session` or `retry_limit` establishes the inherited value
-for the decision evaluation. A modifier written directly on a `decide`
-expression is more local and overrides the inherited value. `limit` belongs
+A condition-level `session` establishes the inherited session for the complete
+decision-workflow evaluation, including any ordinary prompts it executes. A
+condition-level `retry_limit` applies only to the ultimate decision operation;
+ordinary prompts inside a decision workflow use their own modifier or the
+interpreter default. A modifier written directly on a `decide` expression is
+more local and overrides the corresponding inherited value. `limit` belongs
 only to the enclosing `while` or `until`. The `until` grammar deliberately
 places its body before `when` and the post-test decision. A `decision_call`
 MUST resolve to a `decision` declaration; an ordinary workflow call is not a
@@ -1271,7 +1384,7 @@ struct Report {
 `workflows.gnt`:
 
 ```gantry
-use domain::Report;
+use crate::domain::Report;
 
 fn produce_report(topic: String) -> Report {
     with researcher {
@@ -1624,13 +1737,17 @@ Concrete Rust names and signatures MAY evolve during implementation, but a v1
 embedding API MUST expose the following semantic interfaces without requiring
 provider-specific or executor-specific types in Gantry programs:
 
-1. An `Interpreter` accepts a package root, interpreter configuration, a hook
-   factory, executor adapter, journal storage, and zero or more event sinks. It
-   MUST expose syntax-only validation, semantic analysis, execution, resume,
-   and terminal asynchronous shutdown operations. Execution accepts either no
+1. An `Interpreter` accepts a package root, interpreter configuration (which
+   includes the executor adapter), a hook factory, journal storage, and zero or
+   more event sinks. It MUST expose syntax-only validation, semantic analysis,
+   execution, resume, and terminal asynchronous shutdown operations. Execution
+   accepts either no
    entry value or one strict-JSON entry value as required by `main`, and returns
-   a typed execution outcome that distinguishes a value, no result, and every
-   runtime-error category defined in Section 7.
+   an execution ID and a typed foreground outcome that distinguishes a value,
+   no result, and every runtime-error category defined in Section 7. A
+   foreground outcome MAY be returned while explicitly detached tasks remain;
+   the execution ID allows the embedder to correlate their later events and
+   terminal durable state.
 2. A `HookFactory` asynchronously creates one `OperationHook` for a supplied
    task context. `OperationHook` asynchronously accepts the versioned request
    defined in Section 7 and a Gantry-owned cancellation token, and returns
@@ -1652,11 +1769,12 @@ provider-specific or executor-specific types in Gantry programs:
    returns the stable record ID and monotonically increasing sequence number
    assigned to the record. Storage errors are never retried as model-output
    failures and MUST surface as journal runtime errors.
-6. Each event sink declares its required/best-effort class, raw-output
-   capability, enabled redaction policy, and retry policy. Its asynchronous
-   delivery operation receives a versioned event envelope and returns success,
-   a retriable error, or a terminal error. Gantry owns delivery attempt IDs,
-   retry timing, journaling, and required-sink failure semantics.
+6. Each event sink declares a stable identity, its required/best-effort class,
+   raw-output capability, enabled redaction policy, and retry policy. Stable
+   sink identities MUST be unique within one interpreter configuration. Its
+   asynchronous delivery operation receives a versioned event envelope and
+   returns success, a retriable error, or a terminal error. Gantry owns delivery
+   attempt IDs, retry timing, journaling, and required-sink failure semantics.
 7. Interpreter configuration MUST include the default agent-output retry
    limit and backoff, event-delivery defaults, executor adapter, graceful-
    shutdown timeout, and post-cancellation drain duration. Implementations
@@ -1670,6 +1788,13 @@ provider-specific or executor-specific types in Gantry programs:
    a newer minor version only when it ignores unknown optional fields without
    changing the meaning of known fields; unknown required fields or enum
    variants MUST be rejected.
+9. Integration-provided hook factories, executor adapters, journal stores, and
+   event sinks MUST be `Send + Sync` and safe for Gantry to access from its
+   multithreaded tasks. An individual `OperationHook` MUST be `Send` but need
+   not be `Sync`, because Gantry owns it within one task and invokes it only
+   serially. Futures returned by these interfaces MUST be `Send` for the
+   lifetime of their borrows. Gantry MUST package all borrowed state into owned
+   task state before submitting a `Send + 'static` future to the executor.
 
 The canonical serialization format and concrete Rust data-type layout are
 implementation choices. They MUST preserve every field, category, ordering,
