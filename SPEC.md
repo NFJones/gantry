@@ -1548,10 +1548,11 @@ shown here.
    - `spawn-frame`: parent and child task IDs, source spawn location,
      zero-based spawn occurrence within its immediate dynamic parent, and the
      child's canonical declared result-type descriptor;
-   - `conditional-arm`: conditional-chain dynamic identity, zero-based arm
-     index, condition kind (`decision`, `bool`, or `pattern`), controlling
-     outcome, and, for a model-produced decision, its operation ID; a prompt
-     or decide request additionally contains the nonempty rationale;
+   - `branch-arm`: branch-construct kind (`conditional` or `match`), branch
+     dynamic identity, zero-based arm index, condition kind (`decision`,
+     `bool`, or `pattern`), controlling outcome, and, for a model-produced
+     decision, its operation ID; a prompt or decide request additionally
+     contains the nonempty rationale;
    - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
      index, phase (`condition` or `body`), and the most recently settled
      condition's associated index and decision; a prompt or decide request
@@ -1614,28 +1615,34 @@ shown here.
    compatibility rule in Section 15.
    When a spawn executes, the child MUST capture the parent's current
    structural entries and append one `spawn-frame` before the child becomes
-   runnable. Parent workflow, decision, conditional-arm, and loop-iteration
+   runnable. Parent workflow, decision, branch-arm, and loop-iteration
    entries in that snapshot remain immutable origin context for the child even
    after the corresponding parent scopes exit. Structural entries created by
    the child are appended inside that inherited ancestry. Nested spawns repeat
    this rule, so the vector records task provenance without copying event or
    session history.
    Structural entries (`workflow-frame`, `decision-frame`, `spawn-frame`,
-   `conditional-arm`, and `loop-iteration`) MUST appear first, ordered from
+   `branch-arm`, and `loop-iteration`) MUST appear first, ordered from
    outermost to innermost dynamic scope, with repeated entries in execution
    order within one scope.
    Any value-provenance entries (`decision-value` and `optional-decline`) MUST
    follow all structural entries and use the interpolation-input and value-
    traversal order defined below. This is a total ordering; integrations MUST
-   NOT regroup entries by kind. An `else if`
-   request MUST include the `conditional-arm` entries from preceding arms in
-   the same chain. While a selected conditional arm executes, its active
-   control-chain context MUST include every preceding false arm followed by
-   the controlling true arm. Decision entries include their rationale;
-   structural entries do not fabricate one. An `else`
-   arm MUST include
-   every preceding false arm. These entries leave the active context when the
-   conditional chain completes; they are not unbounded execution history. A
+   NOT regroup entries by kind. A request made while evaluating an `else if`
+   or `else if let` head MUST include the `branch-arm` entries from preceding
+   arms in the same conditional chain. While a selected conditional arm
+   executes, its active control-chain context MUST include every preceding
+   false arm followed by the controlling true arm. Decision entries include
+   their rationale; structural entries do not fabricate one. An `else` arm
+   MUST include every preceding false arm and adds no entry of its own because
+   it has no condition. A model operation reached while evaluating a `match`
+   scrutinee precedes arm selection and therefore has no `branch-arm` entry for
+   that match. While the selected match arm executes, its active control-chain
+   context MUST include each preceding nonmatching pattern arm followed by the
+   selected matching arm, all as `pattern` entries with false or true outcomes.
+   Match patterns themselves are deterministic and dispatch no operation.
+   These entries leave the active context when their conditional or match
+   construct completes; they are not unbounded execution history. A
    `None` produced by `Declined` MUST carry interpreter-only decline
    provenance distinct from a `None` produced by `Completed(null)` or source.
    That provenance MUST survive assignment, argument and return passing,
@@ -1868,7 +1875,8 @@ shown here.
     is the complete byte span defined in item 5. Call-frame, recursive-call,
     spawn, and repeated-call occurrences are zero-based counters assigned in
     deterministic encounter order within their immediate dynamic parent.
-    Branch identity uses the zero-based arm position in its conditional chain;
+    Branch identity uses the branch-construct kind and the zero-based arm
+    position in its conditional chain or `match`;
     loop identity uses the zero-based body-execution and condition-evaluation
     positions required by Section 9. These counters are logical interpreter
     state and MUST be checkpointed or reconstructible from the durable prefix;
@@ -2359,6 +2367,14 @@ shown here.
    a statement `match` requires statement-only arms. Pattern bindings are deep
    copies scoped to their arm.
 
+   A model operation reached while evaluating the scrutinee occurs before arm
+   selection. Pattern tests dispatch no operation. A model operation reached
+   in the selected arm receives the ordered branch context defined in Section
+   7: one false `branch-arm` entry for each preceding nonmatching pattern and
+   one true entry for the selected pattern. This makes a model operation's
+   structural context and dynamic identity distinguish otherwise identical
+   operation sites reached through different match arms.
+
    An effect-only `match` SHOULD use the semicolon-free statement form in
    Section 13.6. Every arm of that form is a braced statement-only block, so a
    human or model reader can distinguish it from a value-producing `match`
@@ -2444,6 +2460,15 @@ shown here.
     consumption analysis. These conservative rules apply uniformly to the
     definite-result requirements in Sections 6 and 10 and to linear task-handle
     analysis in Section 10.
+    A refutable `if let` pattern MUST likewise be treated as capable of matching
+    or not matching, while an irrefutable pattern has only its matching path.
+    For `match`, analysis MUST inspect every arm not made unreachable by the
+    ordered pattern coverage of preceding arms. It MUST NOT eliminate an
+    `if let` outcome or `match` arm by constant-folding the scrutinee, even when
+    the scrutinee is a constructor expression whose runtime variant appears
+    evident. Pattern irrefutability and ordered coverage, rather than general
+    value evaluation, are the complete v1 compile-time basis for eliminating
+    structural-routing paths.
 
 ## 10. Parallel Execution
 
