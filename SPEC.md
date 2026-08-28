@@ -108,18 +108,22 @@ alone admits a value into source execution after decoding, validation,
 normalization, and durable acceptance. This explicitness is a core readability
 requirement for both human and model authors.
 
-This document defines the portable Gantry version 1.0 language and operational
-contract. Sections 3 and 4 define execution and package structure; Sections 5
-through 10 define values, workflows, integration operations, control flow, and
-parallelism; Sections 11 and 12 define durability and observability; Section 13
-is the normative grammar; Section 14 contains non-normative examples; and
-Section 15 defines the required embedding boundary. Concrete Rust type
-signatures may remain implementation-defined only where the semantic contract
-is fully specified here.
+The contract is organized by concern:
 
-Section 14 is explanatory and cannot override a normative rule. When the
-grammar admits a form that an earlier section rejects semantically, the
-semantic restriction controls whether the source is valid.
+| Concern | Primary sections |
+| --- | --- |
+| Execution and package structure | Sections 3 and 4 |
+| Source values, workflows, operations, and control flow | Sections 5 through 10 |
+| Durability and observability | Sections 11 and 12 |
+| Normative lexical and syntactic grammar | Section 13 |
+| Non-normative authoring examples | Section 14 |
+| Required host interfaces | Section 15 |
+
+Concrete Rust type signatures may remain implementation-defined only where
+the semantic contract is fully specified here. Section 14 cannot override a
+normative rule. When Section 13 admits a form that an earlier normative
+section rejects semantically, the semantic restriction controls whether the
+source is valid.
 
 ### 1.1 Language at a glance and feature tour
 
@@ -549,6 +553,10 @@ activity throughout this specification:
 - An **integration operation** is a source-visible `prompt`, `decide`, or
   action invocation. A **model operation** is specifically a `prompt` or
   `decide`; an action is integration-backed but is not model-backed.
+- A **static operation site** is one authored `prompt`, `decide`, or action-
+  invocation expression at a particular source location. A site exists even
+  when no execution path reaches it. Executing a site zero, one, or several
+  times produces the corresponding number of logical operations.
 - A **logical operation** is one dynamic execution of a source `prompt`,
   `decide`, or action invocation. It has one stable operation ID and
   produces at most one consumable operation result.
@@ -1582,11 +1590,13 @@ shown here.
    events since session creation. Each context entry MUST identify its kind,
    dynamic source-construct identity when applicable, and associated
    structured data. The canonical v1 context kinds and payloads are:
-   - `workflow-frame`: canonical workflow path, call-site location when the
-     frame was entered by a source call, and zero-based frame occurrence
-     within its immediate dynamic caller;
-   - `decision-frame`: canonical decision-workflow path, call-site location,
-     and zero-based frame occurrence within its immediate dynamic caller;
+   - `workflow-frame`: canonical workflow path for one active function or
+     method frame, call-site location when the frame was entered by a source
+     call, and zero-based frame occurrence within its immediate dynamic
+     caller;
+   - `decision-frame`: canonical decision-workflow path for one active
+     decision-workflow frame, call-site location, and zero-based frame
+     occurrence within its immediate dynamic caller;
    - `spawn-frame`: parent and child task IDs, source spawn location,
      zero-based spawn occurrence within its immediate dynamic parent, and the
      child's canonical declared result-type descriptor;
@@ -1610,6 +1620,12 @@ shown here.
    workflow or decision frame MUST carry the source location of the call that
    entered it. This exception makes the context shape complete for entry-point
    operations without assigning a fictitious caller to `main`.
+   Each interpreter call frame contributes exactly one of these two context
+   kinds: a function or method contributes `workflow-frame`, and a decision
+   workflow contributes `decision-frame`. Calling a decision workflow MUST NOT
+   add both kinds for the same frame. A spawned block is represented by its
+   `spawn-frame` and does not create a `workflow-frame` merely because it is a
+   task body.
    A prospective-iteration index identifies the condition/body pair described
    by Section 9: a `while` condition and the body it admits share an index, as
    do an `until` body and its following condition. A final false `while`
@@ -2108,8 +2124,11 @@ shown here.
    declared type's definition
    key. `NODE(T)` denotes recursive application of these rules; it is notation
    in this specification, not a protocol member.
-   Every reachable declared struct or enum MUST have exactly one `$defs`
-   entry. Its
+   Every declared struct or enum reachable from the root result type by
+   recursively following struct fields, enum payloads, and constructed-type
+   members MUST have exactly one `$defs` entry. Reachability in this rule is
+   type-graph reachability; it does not depend on package item order, runtime
+   control flow, or whether a workflow that mentions the type can execute. Its
    definition key is the lowercase hexadecimal SHA-256 digest of the UTF-8
    canonical type descriptor from Section 5, and every occurrence of that
    declared type uses a local `$ref` to that entry. RFC 8785 canonicalization
@@ -3049,11 +3068,14 @@ shown here.
     }
     ```
 
-    Numeric policy and resource-limit values in this example are the v1
-    defaults where this specification defines one. Identity strings are
-    placeholders, and `required_event_sinks` illustrates a nonempty configured
-    set rather than prescribing a default sink. The identity MUST encode the
-    effective configured values. `maximum_entry_input_bytes` limits the
+    The displayed model/action retry, retry-backoff, workflow-depth, task-count,
+    and event-delivery values are the v1 defaults defined elsewhere in this
+    specification. The six values inside `deterministic_values` are
+    illustrative effective values, not language defaults; the integration MUST
+    choose them within the bounds below. Identity strings are placeholders,
+    and `required_event_sinks` illustrates a nonempty configured set rather
+    than prescribing a default sink. The identity MUST encode the effective
+    configured values. `maximum_entry_input_bytes` limits the
     raw entry-input byte sequence before UTF-8 decoding, and
     `maximum_hook_output_bytes` limits each raw `Completed` outcome before
     UTF-8 decoding. `maximum_value_nesting_depth` and `maximum_value_nodes`
