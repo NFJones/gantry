@@ -262,9 +262,12 @@ schemas, conformance corpus, and authoring fixtures as separately addressable,
 versioned artifacts. A machine-readable index MUST map each requirement and
 companion artifact to its applicable profiles so an implementation or
 integration can select the contract for its claim without duplicating the
-normative prose into several differently maintained documents. The examples in
-Section 14 MUST be maintained as executable positive or negative fixtures
-rather than copied, unchecked prose.
+normative prose into several differently maintained documents. Each Gantry
+source excerpt in Section 14 MUST be classified in the companion corpus as a
+complete positive example, a complete negative example, or a focused fragment.
+The authoring fixtures MUST exercise every complete example and MUST embed each
+focused fragment in an executable positive or negative context rather than
+leaving source examples as unchecked prose.
 
 These layers are complementary rather than an order of precedence. The lexical
 and syntactic productions in Section 13 determine whether source can be
@@ -310,7 +313,8 @@ The core authoring model is deliberately small:
 4. Wrap one of those explicit operations in `attempt` only when source should
    handle its declared operation failures as data.
 5. Use `spawn` only when work should overlap, then visibly consume every task
-   with `join`, `joinall()`, or `detach`.
+   with `join`, `joinall()`, or `detach`. `joinall()` consumes only direct prior
+   spawns in its current lexical block; it never reaches into nested blocks.
 
 The source surface is organized around these families:
 
@@ -433,7 +437,9 @@ workflow summaries required by Section 6.
   `prompt` and `decide` sites inside it.
 - `spawn` makes concurrency explicit. Every spawned handle must be consumed
   visibly by `join`, `joinall()`, or `detach` on every normal path that leaves
-  its scope.
+  its scope. `joinall()` consumes only direct prior spawn declarations in the
+  current lexical block; use named `join(...)` when selecting particular
+  handles.
 - Ordinary call dispatch, assignments, construction, projection, pattern
   routing, and joins are deterministic interpreter work. A called workflow's
   body may reach explicit integration operations. If a dynamic call path
@@ -1203,12 +1209,21 @@ a∈agents(Σ)    Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
 d∈{inline,fork,new}    Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
 ──────────────────────────────────────── T-With-Session
 Σ;Γ;Ω ⊢ with-session(d,e):τ ! ε∪{session} ⇒ Ω'
+
+a∈agents(Σ)    Σ;Γ;Ω ⊢ c ! ε ⇒ Φ
+──────────────────────────────────────── T-With-Agent-Command
+Σ;Γ;Ω ⊢ with-agent(a,c) ! ε ⇒ Φ
+
+d∈{inline,fork,new}    Σ;Γ;Ω ⊢ c ! ε ⇒ Φ
+──────────────────────────────────────── T-With-Session-Command
+Σ;Γ;Ω ⊢ with-session(d,c) ! ε∪{session} ⇒ Φ
 ```
 
-The command forms use the corresponding rules. Selecting an agent is not
-itself an effect; creating or dynamically selecting a session is. The rules
-change dynamic context only for evaluation of the body and restore it on every
-completion.
+The command rules preserve every completion-map entry and its ownership
+environment; the context changes only while evaluating the body. Selecting an
+agent is not itself an effect; creating or dynamically selecting a session is.
+All four rules restore the previous dynamic context on normal completion,
+control transfer, or failure.
 
 <a id="GNT-3-T-MATCH"></a>
 
@@ -6020,13 +6035,15 @@ or override language requirements. Section 2 defines how normative prose,
 grammar, and examples relate; Sections 5, 6, 9, 10, and 13 govern when a form
 shown here is source-valid.*
 
-The examples in this section are either complete programs when explicitly
-introduced with package files, or focused fragments. A focused fragment
-assumes that referenced types, agents, defaults, and helper workflows are
-declared elsewhere in the package; it is not necessarily pasteable as a
-standalone `main.gnt`. Except for snippets explicitly labeled invalid in
-Section 14.14, all shown forms use only v1 syntax. Comments beginning with
-`//` explain the example and are valid Gantry comments.
+The examples in this section are complete positive examples, complete negative
+examples, or focused fragments, as recorded by the companion fixture corpus.
+A focused fragment assumes that referenced types, agents, defaults, and helper
+workflows are declared elsewhere in the package; it is not necessarily
+pasteable as a standalone `main.gnt`. Unless an inline comment explicitly
+labels a case invalid, each shown form uses only v1 syntax. A single fence in
+Section 14.14 may contain both an invalid case and its valid correction.
+Comments beginning with `//` explain or classify the case and are valid Gantry
+comments.
 
 The following matrix highlights the result-position rules most likely to be
 missed when reading Rust-inspired braces. It is a navigation aid, not a second
@@ -6148,7 +6165,9 @@ fn produce_report(topic: String) -> Report {
 ```
 
 The agent declaration in `main.gnt` makes both names available package-wide,
-including in `workflows.gnt`; only `main.gnt` declares the default agent.
+including in `workflows.gnt`. An `agents { ... }` declaration may appear in any
+package module; all such declarations merge package-wide, and repeating an
+agent name is permitted. Only `main.gnt` may declare the default agent.
 
 ### 14.3 Primitive values, structs, tagged values, and structural routing
 
@@ -6898,9 +6917,9 @@ if answer {
 let approved: Bool = answer.decision;
 ```
 
-Only `prompt` writes an output annotation at the operation site. A `decide`
-always returns `Decision`, while an action invocation gets its result type
-from the declaration:
+Only `prompt` writes an output annotation at an invocation site. A `decide`
+always returns `Decision`; an action's output annotation belongs to its
+declaration, and an action invocation gets its result type from there:
 
 ```gantry
 action read_only load_report(id: String) -> Report;
