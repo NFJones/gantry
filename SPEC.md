@@ -50,6 +50,14 @@ Gantry is a Rust-inspired control language for coordinating model-backed
 agents. It is named for the elevated structure spanning a factory floor: a
 Gantry program directs and observes the work performed below it.
 
+This document is the design contract for Gantry v1.0. It specifies the
+portable language and embedding behavior, but its publication does not imply
+that the current implementation is complete or conforming. The repository
+README reports implementation status. Until v1.0 is declared stable there,
+the contract may still change; an implementation claiming v1.0 conformance
+must nevertheless satisfy the complete version of this document that it
+names.
+
 Except where a passage is explicitly labeled non-normative, Sections 1
 through 13 and Section 15 are normative. Section 14 is non-normative. The
 capitalized key words defined in Section 2 identify requirement strength, but
@@ -1825,8 +1833,10 @@ shown here.
    need not be reattached unless unfinished work will reuse them.
 14. External operations may have side effects. Gantry does not require retries
     to be idempotent or prevent duplicate external effects. Integrations SHOULD
-    use the stable operation and dispatch identities to deduplicate action
-    effects when the underlying capability permits it.
+    use the stable operation ID as the deduplication key for action effects
+    when the underlying capability permits it. A dispatch ID identifies one
+    physical attempt and is audit metadata; using it as the deduplication key
+    would not suppress another attempt of the same logical operation.
 15. Evaluation of an explicit `prompt`, evaluation of an explicit `decide`,
     and invocation of an explicit `action` are the only v1 source constructs
     that directly dispatch an `OperationHook`. Reusing a `Decision` value or
@@ -2586,24 +2596,32 @@ shown here.
    MUST NOT abort foreground execution or change an already returned foreground
    outcome, regardless of whether it settles before or after that outcome is
    returned. It does, however, make the eventual terminal execution category
-   `detached-task failure` unless an execution-wide runtime error takes
-   precedence under this item. For this rule, an **execution-wide runtime
-   error** is one that another normative requirement applies to the complete
-   execution rather than to one Gantry task. In v1, journal failure and
-   required-event-delivery failure are execution-wide; ordinary hook,
-   structured-output, deterministic-evaluation, executor, and task/join
-   failures remain task-local unless a more specific rule propagates them.
+   `detached-task failure` unless a durably recordable execution-wide runtime
+   error takes precedence under this item. For this rule, an
+   **execution-wide runtime error** is one that another normative requirement
+   applies to the complete execution rather than to one Gantry task. In v1,
+   journal failure and required-event-delivery failure are execution-wide;
+   ordinary hook, structured-output, deterministic-evaluation, executor, and
+   task/join failures remain task-local unless a more specific rule propagates
+   them. Journal failure aborts the current in-process run but is not a durable
+   terminal category: after storage fails, Gantry cannot append the terminal
+   record that would establish one. It is returned separately to the embedder,
+   and a later owner may resume from the authoritative durable prefix under
+   Section 11.
    A detached task cannot subsequently be joined because `detach` consumes its
    handle. These rules make explicit detachment a deliberate transfer of both
    lifetime and failure ownership to the interpreter instance.
    A detached-task failure MUST NOT cancel sibling detached tasks. Terminal
-   execution state is determined after all detached work settles. An
-   execution-wide runtime error other than an execution-cancellation request,
-   whether it occurs before or after foreground completion, is the primary
+   execution state is determined after all detached work settles. Before the
+   terminal-execution record is durable, a durably recordable execution-wide
+   runtime error other than an execution-cancellation request is the primary
    terminal category and includes detached failures as secondary details. If
    more than one such execution-wide runtime error races,
    the first one in durable journal-sequence order is primary and later errors
-   are secondary. Otherwise, one or more detached failures produce the
+   are secondary. A failure after the terminal-execution record is durable
+   MUST NOT replace its category; in particular, Section 12 reports later
+   required-delivery exhaustion as a separate barrier failure. Otherwise, one
+   or more detached failures produce the
    `detached-task failure` terminal category; otherwise, a cancellation
    produces the `cancellation` category; and only then is the terminal category
    `success`. Multiple detached failures MUST be reported in stable task-path
