@@ -1087,11 +1087,13 @@ shown here.
     journals, events, and diagnostics identify the same type independently of
     the spelling visible at a call site.
 19. Boolean literals are `true` and `false`. Integer and float literals follow
-    Section 13.2. A numeric literal MUST be representable by its inferred
-    primitive type; out-of-range literals are analysis errors. Gantry performs
-    no implicit conversion between `Int` and `Float`, including in assignment,
-    arguments, returns, aggregate members, equality, or arithmetic. Unary `-`
-    is an operator rather than part of a numeric token.
+    Section 13.2. An `integer_literal_token` has type `Int`, and a
+    `float_literal_token` has type `Float`; surrounding expected type does not
+    change that classification. A numeric literal MUST be representable by its
+    token's primitive type; out-of-range literals are analysis errors. Gantry
+    performs no implicit conversion between `Int` and `Float`, including in
+    assignment, arguments, returns, aggregate members, equality, or arithmetic.
+    Unary `-` is an operator rather than part of a numeric token.
 
 ## 6. Functions and Methods
 
@@ -1115,9 +1117,10 @@ shown here.
    `+=` is valid for mutable `String`, `Int`, or `Float` targets; `-=`, `*=`,
    and `/=` are valid only for mutable numeric targets; and `%=` is valid only
    for mutable `Int` targets. String `+=` performs the exact concatenation
-   defined in Section 5 and is subject to its atomic size-limit check. This includes hook
-   validation, workflow calls, construction, projection, and every nested
-   subexpression. Any failure MUST leave the assignment target unchanged;
+   defined in Section 5 and is subject to its atomic size-limit check. The
+   right-hand-side evaluation includes hook validation, workflow calls,
+   construction, projection, and every nested subexpression. Any failure MUST
+   leave the assignment target unchanged;
    external hook side effects and earlier successful assignments are not
    rolled back. This assignment-level atomicity is the v1 transaction
    boundary. The root binding of any assignment target MUST be declared `mut`,
@@ -1269,13 +1272,14 @@ shown here.
     value-producing block; its result type does not create a special control-
     transfer boundary.
 11. Except for explicitly parallel spawned blocks, expression evaluation MUST
-    be deterministic and left to right. A workflow call evaluates its callee
-    and then its arguments in source order; a method call evaluates its
-    receiver before its arguments; and a postfix chain evaluates each suffix
-    before the next. Constructor fields follow the source-order rule in
-    Section 5, and prompt interpolations follow the source-order rule in item
-    7 above. Each subexpression MUST complete before the next begins. Failure,
-    decline of a required result, or cancellation in one subexpression MUST
+    be deterministic and left to right. A workflow call resolves its callee
+    before evaluating its arguments in source order; resolving the callee does
+    not produce a runtime value or execute the workflow. A method call
+    evaluates its receiver before its arguments, and a postfix chain applies
+    each suffix before the next. Constructor fields follow the source-order
+    rule in Section 5, and prompt interpolations follow the source-order rule
+    in item 7 above. Each subexpression MUST complete before the next begins.
+    Failure, decline of a required result, or cancellation in one subexpression MUST
     prevent every later subexpression in that expression from being evaluated
     or dispatched. Entering a `with` expression establishes its selected agent
     before its body begins; entering a `session` expression establishes its
@@ -1938,7 +1942,10 @@ shown here.
    struct, it MUST emit every field; an `Option<T>` field whose value is `None`
    is emitted as JSON `null`, and an applied default is emitted as its resolved
    value. Although hook output may omit an optional property, omission is not
-   preserved as a distinct runtime state.
+   preserved as a distinct JSON-visible runtime state. The interpreter-only
+   decline provenance attached to a `None` produced by `Declined` remains
+   distinct and is preserved as required by Section 7; it never changes the
+   normalized JSON value.
    Normalization is recursive and deterministic. Gantry MUST normalize nested
    primitive values, structs, enum payloads, result payloads, list items,
    tuple members, present option values, and decisions from outermost
@@ -2532,9 +2539,10 @@ shown here.
    lifetime and failure ownership to the interpreter instance.
    A detached-task failure MUST NOT cancel sibling detached tasks. Terminal
    execution state is determined after all detached work settles. An
-   execution-wide runtime error, whether it occurs before or after foreground
-   completion, is the primary terminal category and includes detached failures
-   as secondary details. If more than one execution-wide runtime error races,
+   execution-wide runtime error other than an execution-cancellation request,
+   whether it occurs before or after foreground completion, is the primary
+   terminal category and includes detached failures as secondary details. If
+   more than one such execution-wide runtime error races,
    the first one in durable journal-sequence order is primary and later errors
    are secondary. Otherwise, one or more detached failures produce the
    `detached-task failure` terminal category; otherwise, a cancellation
