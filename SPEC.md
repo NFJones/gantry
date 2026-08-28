@@ -50,13 +50,16 @@ Gantry is a Rust-inspired control language for coordinating model-backed
 agents. It is named for the elevated structure spanning a factory floor: a
 Gantry program directs and observes the work performed below it.
 
-This document is the design contract for Gantry v1.0. It specifies the
+This document is the draft design contract for Gantry v1.0. It specifies the
 portable language and embedding behavior, but its publication does not imply
 that the current implementation is complete or conforming. The repository
 README reports implementation status. Until v1.0 is declared stable there,
-the contract may still change; an implementation claiming v1.0 conformance
-must nevertheless satisfy the complete version of this document that it
-names.
+the contract may still change without a source-language version change. A
+pre-stable conformance claim MUST therefore identify both source-language
+version 1.0 and one immutable revision of this document, expressed as either
+the repository commit containing `SPEC.md` or the lowercase hexadecimal
+SHA-256 digest of the exact `SPEC.md` bytes. The claim applies to the complete
+identified revision, not to a selected subset of its requirements.
 
 Except where a passage is explicitly labeled non-normative, Sections 1
 through 13 and Section 15 are normative. Section 14 is non-normative. The
@@ -2100,12 +2103,17 @@ shown here.
    operation. It counts retries after the initial attempt; zero permits exactly
    one attempt. The v1 interpreter default is two retries after the initial
    attempt for `prompt` and `decide`, and zero retries for `action`. An explicit
-   operation-local `retry_limit` overrides the applicable default. Retry
-   backoff MUST be configurable. The v1 default uses full-jitter
-   exponential backoff: for the one-based retry number `r`, the delay ceiling
-   is `min(100 ms * 2^(r - 1), 2 s)`, and the selected delay is sampled
-   uniformly from the inclusive range of whole microseconds from zero through
-   that ceiling. This formula uses saturating arithmetic: once doubling the
+   operation-local `retry_limit` overrides the applicable default.
+   Retry backoff MUST be configurable as an initial delay, a cap, and a jitter
+   mode. Both durations are nonnegative whole-microsecond values, and the cap
+   MUST be greater than or equal to the initial delay. The jitter mode is
+   exactly `full` or `none`. For one-based retry number `r`, the delay ceiling
+   is `min(initial_delay * 2^(r - 1), cap)`. Under `full`, the selected delay is
+   sampled uniformly from the inclusive range of whole microseconds from zero
+   through that ceiling. Under `none`, the selected delay is exactly the
+   ceiling. The v1 default is `initial_delay = 100 ms`, `cap = 2 s`, and
+   `jitter = full`.
+   The ceiling calculation uses saturating arithmetic: once doubling the
    initial delay would meet or exceed the cap, the ceiling is the cap for that
    and every later retry. An implementation MUST NOT construct an unbounded
    power or overflow an integer when `retry_limit` is large. An implementation
@@ -2114,9 +2122,7 @@ shown here.
    dispatch is durably recorded, resume MUST wait the complete recorded delay
    again; it MUST NOT sample another delay.
    The effective retry limit, initial delay, cap, and jitter mode are bound to
-   resumable execution as specified in Section 11. A configured policy MAY
-   choose no jitter, but it MUST still identify its initial delay, cap, and
-   jitter mode explicitly.
+   resumable execution as specified in Section 11.
 11. When retries are exhausted, the operation and its current Gantry task MUST
     fail under Section 7. Gantry has no language-level error recovery within
     that task in v1; parallel failure observation and propagation follow
@@ -3244,11 +3250,12 @@ shown here.
    retry only errors the sink classifies as retriable. A non-retriable error
    exhausts delivery immediately. The retry limit counts known retriable
    failures after the initial delivery; recovery of an indeterminate delivery
-   does not consume that budget. The default policy is three retries and uses
-   the same full-jitter exponential formula as Section 8: for one-based retry
-   `r`, the ceiling is `min(100 ms * 2^(r - 1), 2 s)`, and the delay is sampled
-   uniformly from whole microseconds from zero through that ceiling. Every
-   physical delivery attempt MUST also have a finite positive attempt timeout.
+   does not consume that budget. Event delivery uses the same configurable
+   initial-delay, cap, `full`/`none` jitter semantics, and saturating ceiling
+   calculation as structured-output retry in Section 8, item 10. The default
+   policy is three retries with `initial_delay = 100 ms`, `cap = 2 s`, and
+   `jitter = full`. Every physical delivery attempt MUST also have a finite
+   positive attempt timeout.
    The v1 default is 30 seconds. Gantry MUST race the sink future against that
    timeout through the executor adapter. Expiration is a retriable delivery
    error while retry budget remains and a terminal delivery error otherwise.
