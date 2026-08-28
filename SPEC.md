@@ -701,8 +701,12 @@ document are to be interpreted as described in RFC 2119.
    `Decision` as an `if`, `while`, or `until` condition. The field projections
    `.decision` and `.rationale` yield `Bool` and `String`, respectively.
    Source MUST NOT construct, compare, pattern-match, destructure, or mutate a
-   `Decision`. Reusing a bound decision performs no new hook dispatch and
-   preserves the logical operation provenance of the original decision.
+   `Decision`. In particular, assignment through `.decision` or `.rationale`
+   is invalid. This restriction does not prevent rebinding a mutable
+   `Decision` binding, or replacing a mutable struct field that has type
+   `Decision`, with another sealed `Decision` obtained from a valid source.
+   Reusing or replacing a bound decision performs no new hook dispatch and
+   preserves the logical operation provenance of the assigned decision.
 10. Gantry MUST support named-field struct construction. Struct values MAY be
    constructed by source execution or produced by an operation hook. A source
    constructor MUST reject unknown and duplicate fields during analysis.
@@ -815,9 +819,10 @@ document are to be interpreted as described in RFC 2119.
       `-` followed by a nonzero decimal digit and zero or more decimal digits;
       it rejects `-0`, leading `+`, separators, radix prefixes, leading zeroes,
       and out-of-range values. `String.parse_float() -> Option<Float>` accepts
-      exactly the RFC 8259 JSON number grammar and returns the normalized
-      finite binary64 value, or `None` when parsing or normalization fails.
-      These parsers do not trim and never fail the task for invalid input.
+      exactly the RFC 8259 JSON number grammar, including integer-looking
+      spellings such as `1`, and returns the normalized finite binary64 value,
+      or `None` when parsing or normalization fails. These parsers do not trim
+      and never fail the task for invalid input.
     `List<String>.join(separator) -> String` joins items in list order with the
     exact separator only between adjacent items. It returns the empty String
     for an empty list and the sole item unchanged for a one-item list. `join`
@@ -1257,22 +1262,23 @@ document are to be interpreted as described in RFC 2119.
    stable across validation retries and resume. Each physical hook invocation
    MUST have a distinct dispatch ID. The zero-based
    validation-attempt number advances only after Gantry receives output that
-   fails UTF-8, JSON parsing, or schema validation; it is bounded by the
-   operation's structured-output retry limit. The zero-based recovery-dispatch
-   number advances when an indeterminate invocation is repeated after resume
-   and does not consume that retry budget. Validation errors MUST identify the
-   failing JSON instance location with JSON Pointer when one exists, the
-   violated schema location when one exists, and a human-readable message;
-   they MUST NOT contain raw integration output. Each error MUST also carry exactly
-   one machine-readable category: `utf8`, `json-syntax`, `json-duplicate-key`,
-   `json-unicode`, or `schema`. JSON Pointer and schema-location fields are
-   absent rather than fabricated when the applicable parse stage could not
-   produce them. Error ordering MUST follow raw-output byte position for
-   decoding and parsing errors and depth-first instance traversal, with object
-   properties in unsigned UTF-8 name order and array members in index order,
-   for schema errors. This canonical shape and order allow independent
-   harnesses to render equivalent repair guidance without parsing diagnostic
-   prose.
+   fails UTF-8 decoding, JSON parsing, schema validation, or the effective
+   String or List resource limits; it is bounded by the operation's structured-
+   output retry limit. The zero-based recovery-dispatch number advances when
+   an indeterminate invocation is repeated after resume and does not consume
+   that retry budget. Validation errors MUST identify the failing JSON
+   instance location with JSON Pointer when one exists, the violated schema
+   location when one exists, and a human-readable message; they MUST NOT
+   contain raw integration output. Each error MUST also carry exactly one
+   machine-readable category: `utf8`, `json-syntax`, `json-duplicate-key`,
+   `json-unicode`, `schema`, or `resource-limit`. JSON Pointer and schema-
+   location fields are absent rather than fabricated when the applicable
+   validation stage cannot produce them. Error ordering MUST follow raw-output
+   byte position for decoding and parsing errors and depth-first instance
+   traversal, with object properties in unsigned UTF-8 name order and array
+   members in index order, for schema and resource-limit errors. This canonical
+   shape and order allow independent harnesses to render equivalent repair
+   guidance without parsing diagnostic prose.
 6. A hook request MUST also contain a finite ordered execution-context vector.
    It MUST contain the task's immutable structural ancestry, its active
    workflow call chain, and the control-chain entries needed to interpret the
@@ -1629,17 +1635,31 @@ document are to be interpreted as described in RFC 2119.
    no-result operations. Including `$schema` resolves the no-result case under
    the same root-schema rule as every value-producing operation.
 2. A `Bool` result is represented by a JSON Boolean. An `Int` result is a JSON
-   integer in Gantry's exact range. A `Float` result is a JSON number that
-   parses to a finite IEEE 754 binary64 value. Gantry MUST reject `NaN`,
-   infinities, overflow to a non-finite value, and any JSON number outside the
-   declared primitive contract. Gantry MUST normalize negative zero to
-   positive zero before exposing or serializing a `Float`. A `String` result
-   is represented by a JSON string. A struct result is a JSON object whose
-   property names directly match its declared field names.
+   number whose exact mathematical value is integral and in Gantry's exact
+   range. RFC 8259 has one number grammar rather than distinct integer and
+   floating lexical types, so spellings such as `1`, `1.0`, and `1e0` all
+   normalize to the same `Int` value when `Int` is the expected type. Gantry
+   MUST determine integrality and range without first rounding through
+   binary64. A `Float` result is any JSON number that rounds under Section 5
+   to a finite IEEE 754 binary64 value; integer-looking spellings are valid
+   when `Float` is expected. The expected Gantry type, not the source lexeme,
+   determines numeric normalization. Gantry MUST reject `NaN`, infinities,
+   overflow to a non-finite value, and any JSON number outside the declared
+   primitive contract. Gantry MUST normalize negative zero to positive zero
+   before exposing or serializing a `Float`. A `String` result is represented
+   by a JSON string. A struct result is a JSON object whose property names
+   directly match its declared field names.
    Every decoded or computed String and every decoded or computed List MUST
    also satisfy the effective scalar-count and item-count resource limits in
    Section 11. This resource check is independent of JSON Schema shape
-   validation and applies recursively before a value becomes observable.
+   validation and applies recursively before a value becomes observable. A
+   hook output that exceeds either limit is a structured-output validation
+   failure in the `resource-limit` category and participates in the operation's
+   normal validation-retry policy. Entry input that exceeds a limit is an
+   entry-input validation failure. Source construction or deterministic
+   evaluation that exceeds a limit is a deterministic-evaluation runtime
+   error. These contexts MUST NOT be conflated merely because they enforce the
+   same effective limits.
    JSON decoding does not normalize String contents. Deterministic String
    methods operate on the decoded Unicode scalar sequence and serialize their
    results through the same ordinary JSON String representation; they add no
@@ -1787,12 +1807,15 @@ document are to be interpreted as described in RFC 2119.
    does not itself insert a value during JSON Schema validation.
 8. v1 validation MUST check JSON shape and types, including enum and result
    discriminators, closed variant sets, fixed tuple arity, and the nonempty
-   `Decision` rationale. Additional constraints such as arbitrary string
-   length, regular-expression patterns, and semantic validity are conveyed
-   through operation guidance rather than enforced by Gantry.
-9. UTF-8 decoding failures, malformed JSON, and schema-invalid output MUST be
-   returned to the integration as validation guidance and retried up to the
-   configured retry limit. A retry request MUST include the preceding
+   `Decision` rationale. It MUST also enforce the effective String and List
+   resource limits outside the generated shape schema as specified in item 2.
+   Additional constraints such as regular-expression patterns and semantic
+   validity are conveyed through operation guidance rather than enforced by
+   Gantry.
+9. UTF-8 decoding failures, malformed JSON, schema-invalid output, and output
+   exceeding the effective String or List resource limits MUST be returned to
+   the integration as validation guidance and retried up to the configured
+   retry limit. A retry request MUST include the preceding
    validation errors but MUST NOT return the preceding raw output to the hook.
    A validation retry is another physical dispatch of the same logical
    operation, not a reevaluation of the source expression. Gantry MUST reuse
@@ -3467,10 +3490,10 @@ logical_or_expression   = logical_and_expression,
 logical_and_expression  = equality_expression,
                           { "&&", equality_expression } ;
 equality_expression     = ordering_expression,
-                          { ("==" | "!="), ordering_expression } ;
+                          [ ("==" | "!="), ordering_expression ] ;
 ordering_expression     = additive_expression,
-                          { ("<" | "<=" | ">" | ">="),
-                            additive_expression } ;
+                          [ ("<" | "<=" | ">" | ">="),
+                            additive_expression ] ;
 additive_expression     = multiplicative_expression,
                           { ("+" | "-"), multiplicative_expression } ;
 multiplicative_expression
@@ -3562,8 +3585,12 @@ projects a list when the index has type `Int`; tuple projection still requires
 a nonnegative compile-time integer literal so its result type is statically
 known. Bracketed expressions construct lists; parentheses containing at least
 two comma-separated expressions construct tuples, while `(value)` remains
-grouping. Operators use the precedence shown by the grammar, all binary
-operators associate left to right, and parentheses override precedence.
+grouping. Operators use the precedence shown by the grammar. Arithmetic and
+logical operators associate left to right, while equality and ordering are
+non-associative and may occur at most once at their respective unparenthesized
+precedence level. Authors MUST write `low < value && value < high` rather than
+`low < value < high`; explicit parentheses remain available when comparing
+Boolean results is genuinely intended. Parentheses override precedence.
 
 An unqualified primary path used as a value MUST resolve to a visible parameter
 or binding. A qualified item path is valid in an expression only as the callee
@@ -3638,10 +3665,10 @@ interpolation_logical_and
                         = interpolation_equality,
                           { "&&", interpolation_equality } ;
 interpolation_equality  = interpolation_ordering,
-                          { ("==" | "!="), interpolation_ordering } ;
+                          [ ("==" | "!="), interpolation_ordering ] ;
 interpolation_ordering  = interpolation_additive,
-                          { ("<" | "<=" | ">" | ">="),
-                            interpolation_additive } ;
+                          [ ("<" | "<=" | ">" | ">="),
+                            interpolation_additive ] ;
 interpolation_additive  = interpolation_multiplicative,
                           { ("+" | "-"), interpolation_multiplicative } ;
 interpolation_multiplicative
@@ -4005,7 +4032,11 @@ Numeric conversion, precedence, list length, and dynamic indexing support
 bounded deterministic traversal without hiding model work:
 
 ```gantry
-fn average(scores: List<Float>) -> Float {
+fn average(scores: List<Float>) -> Option<Float> {
+    if scores.len() == 0 {
+        return None;
+    }
+
     let mut index: Int = 0;
     let mut total: Float = 0.0;
 
@@ -4014,7 +4045,7 @@ fn average(scores: List<Float>) -> Float {
         index += 1;
     }
 
-    total / scores.len().to_float()
+    Some(total / scores.len().to_float())
 }
 
 fn exact_count(value: Float) -> Option<Int> {
@@ -4022,8 +4053,8 @@ fn exact_count(value: Float) -> Option<Int> {
 }
 ```
 
-An empty list would make `average` fail through checked floating-point
-division by zero; callers must establish that precondition before calling it.
+The explicit empty-list branch keeps a normal absence case in the value domain
+rather than turning it into a checked-arithmetic runtime failure.
 
 ### 14.4 Inherent methods and lexical agent selection
 
@@ -4589,6 +4620,22 @@ let label: String = "attempt " + attempt.to_string();
 // Runtime error: empty separators and replacement patterns are prohibited.
 let pieces: List<String> = text.split("");
 let expanded: String = text.replace("", "-");
+```
+
+Ordering and equality operators are intentionally non-associative so
+model-authored source cannot accidentally rely on a surprising chained
+comparison:
+
+```gantry
+// Invalid: Gantry does not interpret this as a mathematical range test.
+if minimum < value < maximum {
+    prompt "Handle the in-range value.";
+}
+
+// Valid: each comparison is explicit and the Bool results are combined.
+if minimum < value && value < maximum {
+    prompt "Handle the in-range value.";
+}
 ```
 
 Struct constructors at control-flow boundaries are parenthesized so the first
