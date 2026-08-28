@@ -2,7 +2,7 @@
 
 - [Gantry Specification](#gantry-specification)
   - [1. Status and Scope](#1-status-and-scope)
-    - [1.1 Language at a glance](#11-language-at-a-glance)
+    - [1.1 Language at a glance and feature tour](#11-language-at-a-glance-and-feature-tour)
     - [1.2 Reading the surface syntax](#12-reading-the-surface-syntax)
     - [1.3 V1 design boundary](#13-v1-design-boundary)
     - [1.4 Authoring conventions](#14-authoring-conventions)
@@ -50,19 +50,40 @@ Gantry is a Rust-inspired control language for coordinating model-backed
 agents. It is named for the elevated structure spanning a factory floor: a
 Gantry program directs and observes the work performed below it.
 
+The source language is designed around three priorities, in order:
+
+1. **Visible effects.** Model and harness work is marked by `prompt`,
+   `decide`, or `action` at the source location that requests it.
+2. **Readable control flow.** Familiar blocks, typed values, pattern routing,
+   loops, and structured concurrency should make execution order and ownership
+   apparent without specialized notation.
+3. **One portable meaning.** Validation, retry, cancellation, and resume rules
+   are specified precisely enough that integrations do not silently change a
+   program's meaning.
+
+These priorities favor a small source surface, not a small implementation
+contract. Sections 3 through 12 and 15 are intentionally detailed because
+durability and integration behavior must be portable; that protocol detail is
+not additional syntax an author must learn. A source author can start with
+Sections 1, 4 through 10, and the examples in Section 14, using Section 13 as
+a syntax reference. An implementer must also follow the execution, journal,
+observability, and embedding requirements.
+
 Gantry is harness-neutral. Mezzanine may integrate Gantry, but it is not an
 assumed runtime or part of the language contract. An integration supplies the
 agents, models, tools, transport, credentials, resource policy, and any
 provider-specific behavior.
 
 The v1 language deliberately separates deterministic orchestration from
-integration-backed work. Bindings, construction, workflow dispatch,
-assignment, projection, pattern routing, modules, joins, and task ownership
-are interpreter operations. Every source-level request that crosses the
-integration boundary is visibly introduced by `prompt`, `decide`, or `action`;
-an ordinary function or method call does not itself dispatch a hook, although
-the called workflow may contain explicit external operations. `prompt` and
-`decide` request model-backed work. `action` requests a named, typed harness
+integration-backed work. Bindings, construction, call dispatch, assignment,
+projection, pattern routing, modules, joins, and task ownership are
+interpreter operations. Executing a called workflow may still reach explicit
+integration operations in that workflow's body. Every source-level request
+that crosses the integration boundary is visibly introduced by `prompt`,
+`decide`, or `action`; an ordinary function or method call does not itself
+dispatch a hook, although the called workflow may contain explicit external
+operations. `prompt` and `decide` request model-backed work. `action` requests
+a named, typed harness
 capability without implying that a model must fulfill it. An integration may
 perform provider-internal work while fulfilling an operation, as defined in
 Section 7, but that work does not create hidden Gantry operations.
@@ -82,24 +103,42 @@ Section 15 defines the required embedding boundary. Concrete Rust type
 signatures may remain implementation-defined only where the semantic contract
 is fully specified here.
 
-Readers implementing or reviewing the source language can begin with Sections
-1 through 10 and 13. Readers implementing an embedding should additionally use
-Sections 11, 12, and 15. Section 14 is explanatory and cannot override a
-normative rule. When the grammar admits a form that an earlier section rejects
-semantically, the semantic restriction controls whether the source is valid.
+Section 14 is explanatory and cannot override a normative rule. When the
+grammar admits a form that an earlier section rejects semantically, the
+semantic restriction controls whether the source is valid.
 
-### 1.1 Language at a glance
+### 1.1 Language at a glance and feature tour
+
+A complete model-backed program can be this small:
+
+```gantry
+agents { worker }
+default agent = worker;
+
+fn main(topic: String) -> String {
+    prompt "Summarize ${topic} clearly." -> String
+}
+```
+
+The declarations identify the available agent and default selection, `main`
+defines the typed entry point, `${topic}` performs deterministic textual
+interpolation, and `prompt ... -> String` is the one visible model operation
+and its output contract. Deterministic-only and action-only packages need no
+agent declarations.
 
 The following non-normative package tour shows the meaningful v1 language
 families together in one source file. It is intentionally broader than a
-typical program and is a feature map, not a recommended workflow shape.
+typical program and is a reference feature map, not the minimum syntax and not
+a recommended workflow shape.
 First-time readers may skip to Section 1.2 for the compact syntax rules or to
 Section 14 for focused examples. Workflows SHOULD use only the constructs they
 need.
 
-Model-backed work is explicit at each `prompt` or `decide`, harness work is
-explicit at each `action`, and ordinary calls, construction, assignment,
-operators, routing, loops, and joins remain interpreter control.
+Model-backed work is explicit at each `prompt` or `decide`, and harness work is
+explicit at each `action`. Ordinary call dispatch, construction, assignment,
+operators, routing, loops, and joins are interpreter control; a called body can
+perform only the integration operations explicitly written along the dynamic
+call path.
 
 ```gantry
 mod domain {
@@ -352,10 +391,11 @@ most important when humans or models author Gantry source:
 - `spawn` makes concurrency explicit. Every spawned handle must be consumed
   visibly by `join`, `joinall()`, or `detach` on every normal path that leaves
   its scope.
-- Ordinary calls, assignments, construction, projection, pattern routing, and
-  joins are deterministic interpreter work. If source does not contain
-  `prompt`, `decide`, or `action` at a dynamic call path, that path dispatches
-  no integration operation.
+- Ordinary call dispatch, assignments, construction, projection, pattern
+  routing, and joins are deterministic interpreter work. A called workflow's
+  body may reach explicit integration operations. If a dynamic call path
+  reaches no `prompt`, `decide`, or `action`, it dispatches no integration
+  operation.
 
 The following non-normative table summarizes the visible execution boundary.
 It is a reading aid; Sections 6 through 8 define the normative contracts:
@@ -365,7 +405,7 @@ It is a reading aid; Sections 6 through 8 define the normative contracts:
 | `prompt "..." -> T` | Model-backed generation | Declared `T`, or no result when omitted | Yes | 2 |
 | `decide "..."` | Model-backed judgment | Sealed `Decision` | Yes | 2 |
 | `action path(...)` | Declared harness capability | Declared type, or no result | No | 0 |
-| `workflow(...)` | Interpreter-managed workflow call | Workflow's declared result | Only to explicit operations reached in the body | Not applicable |
+| `workflow(...)` | Interpreter-managed call dispatch; the body may reach explicit operations | Workflow's declared result | Only to explicit operations reached in the body | Not applicable |
 
 ### 1.3 V1 design boundary
 
@@ -3920,6 +3960,12 @@ boolean_literal         = "true" | "false" ;
 The grammar admits `self` as a primary expression so the same expression
 productions can parse method bodies and their nested blocks. Semantic analysis
 MUST enforce the receiver scope specified in Section 13.4.
+
+`join` is the sole reserved word admitted as a postfix member name because
+`List<String>.join(separator)` is a deterministic built-in while bare
+`join(...)` is the parallel task operation. All other postfix member names are
+ordinary identifiers. Name and type resolution always distinguish these two
+forms; `.join(...)` never consumes task handles.
 
 Postfix `(...)` dispatches a workflow function or method, constructs the
 payload of a declared enum variant, or invokes one of the sealed built-ins
