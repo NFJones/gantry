@@ -960,15 +960,17 @@ transition rule.
 The metavariables are:
 
 - `τ` for a canonical value type and `v` for a normalized value of that type;
-- `x` for a value binding, `h` for a lexical task-handle name, `t` for a
-  stable dynamic task identity, `o` for a stable logical-operation identity,
-  and `q` for a physical dispatch identity;
+- `x` for a value binding, `h` for a lexical task-handle name, `η` for a
+  stable dynamic handle identity, `t` for a stable dynamic task identity, `o`
+  for a stable logical-operation identity, and `q` for a physical dispatch
+  identity;
 - `Σ` for the resolved package signature, `Γ` for value bindings of the form
   `x : (b, τ)`, `b` for binding mutability (`immutable` or `mutable`), `Ω` for
   task handles, and `ε` for effects;
-- `ρ` for a task-local environment from names to store roots, `μ` for the
-  task-local value store, `a` for active agent selection, and `s` for active
-  logical-session identity; and
+- `ρ` for a task-local environment from value names to store roots, `χ` for a
+  frame-local environment from lexical handle names to dynamic handle
+  identities, `μ` for the task-local value store, `a` for active agent
+  selection, and `s` for active logical-session identity; and
 - `N`, `R`, `Br`, and `Co` for normal, return, break, and continue completion.
 
 <a id="GNT-3-F-DOMAINS"></a>
@@ -992,7 +994,12 @@ path's exact disposition; `discharged` is the analysis-only merge of paths
 whose handles were consumed in different valid ways. Those states remain until
 scope exit so a merge can distinguish a discharged obligation from an
 available handle. Dynamic task identities are created only by `M-Spawn` and
-are tracked in `H`, not in static `Ω`.
+are tracked in `H`, not in static `Ω`. Each dynamic handle identity `η` is
+unique within its execution even when a loop, recursive call, or repeated call
+executes the same static `spawn h` site more than once. The current lexical
+handle environment `χ` resolves the source name `h` to that occurrence's `η`;
+continuation frames preserve the environments of suspended callers and
+enclosing scopes.
 
 In the formal rules, **consumed** means any `joined`, `detached`, or
 `discharged` state. The name `discharged` by itself denotes only the
@@ -1428,10 +1435,12 @@ the package-valid judgment.
 
 The dynamic semantics is a small-step relation over
 `M = ⟨P,C,K,H,S,Q,B,R⟩`. `P` is immutable typed core IR. `C(t)` is one task's
-control, environment `ρ`, value store `μ`, active agent `a`, active session
-`s`, cancellation state, and status. `K(t)` is its stack of evaluation,
-workflow-return, dynamic-context, loop, and task-result frames. `H` maps each
-dynamic handle to its task, owner, result type, and ownership state. `S` maps
+control, value environment `ρ`, lexical handle environment `χ`, value store
+`μ`, active agent `a`, active session `s`, cancellation state, and status.
+`K(t)` is its stack of evaluation, workflow-return, dynamic-context, loop, and
+task-result frames, including suspended lexical environments. `H` maps each
+stable dynamic handle identity `η` to its child task, owner, result type, and
+ownership state. `S` maps
 session IDs to parent, root, creation mode, and canonical transcript. `Q`
 maps operation IDs to the lifecycle below. `B` contains the remaining
 execution and per-task budgets. `R` contains the active durable agent and
@@ -1631,11 +1640,13 @@ dispatches it again during uninterrupted execution.
 **[GNT-3-M-SPAWN] Task creation.** After cancellation and task-count checks,
 `spawn h:τ c` derives a stable child identity, copies the statically determined
 captures and mutability, forks the active session, creates `C(child)` with an
-empty dynamic-handle set, inserts `H(h)=attached(child,owner,τ)`, increments
-the cumulative execution task count, and emits `task-created`. The parent
-advances only after this transition; the child may then be scheduled
-independently. Failure of executor submission settles that same child as
-failed and never creates a replacement identity.
+empty lexical handle environment, derives a fresh stable dynamic handle
+identity `η` from the owner and spawn occurrence, inserts
+`H(η)=attached(child,owner,τ)`, and extends the current lexical environment
+with `χ(h)=η`. It then increments the cumulative execution task count and emits
+`task-created`. The parent advances only after this transition; the child may
+then be scheduled independently. Failure of executor submission settles that
+same child as failed and never creates a replacement identity or handle.
 
 <a id="GNT-3-M-TASK-SETTLE"></a>
 
@@ -1643,9 +1654,11 @@ failed and never creates a replacement identity.
 a spawned block, uncaught failure, or durable cancellation changes that task
 exactly once from running to `succeeded(v)`, `failed(error)`, or `cancelled`
 and emits `task-settled`. A named `join` atomically changes every selected
-attached handle to joined and emits one `ownership-transferred(...,join)` per
-handle in argument order before waiting. `join-all` does the same for its
-static vector. The owner then blocks until every selected task is settled.
+attached dynamic handle resolved through `χ` to joined and emits one
+`ownership-transferred(...,join)` per handle in argument order before waiting.
+`join-all` does the same for the dynamic handles resolved from its static
+lexical-name vector in the current environment. The owner then blocks until
+every selected task is settled.
 If all succeed, one deterministic step constructs the Section 10 result in
 argument or declaration order. Otherwise one `M-Fail` produces the ordered
 aggregate `task-join-failure`. Timing never changes either ordering. Joined
@@ -1653,8 +1666,9 @@ handles have no later source transition.
 
 <a id="GNT-3-M-DETACH"></a>
 
-**[GNT-3-M-DETACH] Background ownership.** `detach h` changes exactly one
-attached handle to detached execution-owned work, emits
+**[GNT-3-M-DETACH] Background ownership.** `detach h` resolves `h` through
+`χ`, changes exactly that attached dynamic handle to detached execution-owned
+work, emits
 `ownership-transferred(...,detach)`, and advances the parent without waiting.
 The detached result is never returned to source. Its settlement still uses
 `M-Task-Settle` and contributes to terminal outcome according to Section 10.
@@ -2069,8 +2083,9 @@ Task handles are governed by Section 10 and are not source values.
 4. `List<T>` is an ordered, homogeneous collection. V1 supports list literals
    and zero-based deterministic projection with `value[index]`, where `index`
    is an `Int` expression. Projection yields `T`; a negative or out-of-bounds
-   list projection is a fatal runtime error. Every item in a list literal MUST
-   have exactly one static type. An empty literal is valid only where an
+   list projection is a `deterministic-evaluation-failure` runtime error with
+   code `list-index-out-of-bounds`. Every item in a list literal MUST have
+   exactly one static type. An empty literal is valid only where an
    expected `List<T>` type is known. Items are evaluated once from left to
    right and the list becomes visible atomically after all items succeed.
    `List<T>.len()` is defined in item 15, and `List<String>.join(separator)` is
@@ -2271,15 +2286,35 @@ Task handles are governed by Section 10 and are not source values.
       number serialization, respectively.
     - `List<T>.len()` returns an `Int`. Every runtime list length MUST fit the
       `Int` range.
-    Integer arithmetic is checked. Overflow, division by zero, remainder by
-    zero, and negation of an unrepresentable result are fatal runtime errors.
+    Partial deterministic primitives fail in the
+    `deterministic-evaluation-failure` category with these exact codes:
+
+    | Condition | Code |
+    | --- | --- |
+    | Negative or out-of-bounds `List` projection | `list-index-out-of-bounds` |
+    | `Int` arithmetic overflow, including unary negation | `integer-overflow` |
+    | `Int` division by zero | `integer-division-by-zero` |
+    | `Int` remainder by zero | `integer-remainder-by-zero` |
+    | `Float` division by positive or negative zero | `float-division-by-zero` |
+    | Non-finite `Float` arithmetic result | `float-non-finite-result` |
+    | Empty `String.replace` source pattern | `string-empty-pattern` |
+    | Empty `String.split` separator | `string-empty-separator` |
+    | Result exceeding the effective String limit | `string-size-limit` |
+    | Result exceeding the effective List limit | `list-size-limit` |
+
+    The owner rules for each condition define when it is checked; this table
+    defines the portable code. `Float.to_int()` returning `None` is not a
+    failure. Integer arithmetic is checked. Overflow, division by zero,
+    remainder by zero, and negation of an unrepresentable result use the codes
+    above.
     Integer division truncates toward zero and remainder has the dividend's
     sign, preserving `a == (a / b) * b + (a % b)`. Float operations use
     binary64 round-to-nearest, ties-to-even; a non-finite result or division by
-    either signed zero is fatal. Underflow to a finite subnormal or zero is
-    permitted, and negative zero is normalized to positive zero after every
-    operation and input normalization. Implementations MUST NOT use fused
-    arithmetic where it changes the specified intermediate rounding.
+    either signed zero uses the corresponding code above. Underflow to a finite
+    subnormal or zero is permitted, and negative zero is normalized to positive
+    zero after every operation and input normalization. Implementations MUST
+    NOT use fused arithmetic where it changes the specified intermediate
+    rounding.
     Power, floating remainder, rounding and transcendental functions, String
     repetition, list mutation, and other built-ins are excluded.
     Lists and tuples MAY otherwise be constructed, passed, returned,
@@ -2308,13 +2343,14 @@ Task handles are governed by Section 10 and are not source values.
       change the scalar count.
     - `String.replace(from, to)` returns a new String after exact,
       nonoverlapping, left-to-right replacement. It MUST NOT rescan replacement
-      text. An empty `from` is a fatal `string-empty-pattern` deterministic-
-      evaluation error.
+      text. An empty `from` is a `deterministic-evaluation-failure` runtime
+      error with code `string-empty-pattern`.
     - `String.split(separator) -> List<String>` performs exact,
-      nonoverlapping, left-to-right splitting. An empty separator is a fatal
-      `string-empty-separator` deterministic-evaluation error. Leading,
-      trailing, and adjacent empty segments are preserved; no match returns a
-      one-item list containing the original String.
+      nonoverlapping, left-to-right splitting. An empty separator is a
+      `deterministic-evaluation-failure` runtime error with code
+      `string-empty-separator`. Leading, trailing, and adjacent empty segments
+      are preserved; no match returns a one-item list containing the original
+      String.
     - `String.parse_bool() -> Option<Bool>` accepts exactly `true` or `false`.
       `String.parse_int() -> Option<Int>` accepts exactly `0` or an optional
       `-` followed by a nonzero decimal digit and zero or more decimal digits;
@@ -3058,9 +3094,10 @@ operation identity, failure categories, and propagation.
    only a cache of the Gantry-owned sequence. A lexical `session(fork)` or
    `session(new)` creates one session for its dynamic block; an operation-local
    directive creates one for that operation. Spawn creates a fork before the child becomes runnable.
-   A loop `fork` creates one child per prospective iteration, while loop `new`
-   creates one session on loop entry. Every allocated ID and its transcript
-   basis MUST be durable before dispatch or child submission can depend on it.
+   A loop `fork` creates child sessions at the loop-form-specific points in
+   Section 9, item 6, while loop `new` creates one session on loop entry. Every
+   allocated ID and its transcript basis MUST be durable before dispatch or
+   child submission can depend on it.
 
 <a id="GNT-7.13"></a>
 
@@ -3640,10 +3677,22 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 
 <a id="GNT-9.6"></a>
 
-6. Loop session behavior is `inline` by default. `fork` creates one transcript
-   snapshot per prospective iteration; a condition and admitted body share that
-   iteration session. `new` creates one empty session on loop entry and reuses
-   it. Operation-local session modifiers override only that operation.
+6. Loop session behavior is `inline` by default. For `while(session = fork)`,
+   Gantry creates and durably records one child session before each condition
+   evaluation; that condition and its body, when admitted, share the child.
+   A false condition therefore leaves one recorded session with no body entry.
+   For `until(session = fork)`, Gantry creates the child before each body entry,
+   and that body and its following condition share the child. For
+   `loop(session = fork)`, Gantry creates the child before each body entry.
+   For `until` and `loop`, a limit or budget check that rejects a prospective
+   body entry occurs before that entry's child session is created. For `while`,
+   the child already exists because its condition must use that session; if a
+   true condition is followed by a limit or budget failure, no body is entered
+   but the recorded child remains. `new` creates and durably records one empty
+   session on loop entry and reuses it for every condition and body. `inline`
+   allocates no loop session. Operation-local session modifiers override only
+   that operation. These creation points determine transcript lineage,
+   operation identity context, establishment ordering, and resume behavior.
 
 <a id="GNT-9.7"></a>
 
@@ -3864,6 +3913,14 @@ MUST NOT be described as a structured child after transfer.
    returns `Unit`. With zero included tasks, `joinall()` is a Unit no-op.
    Semantic analysis MUST
    determine the included handle set and resulting type at that program point.
+   Analysis computes that set as follows: start with spawn declarations whose
+   declarations are direct children of the current lexical block and precede
+   the `joinall()`; remove a handle only when every incoming path has already
+   consumed it by `join` or `detach`; reject the program when consumption
+   differs across incoming paths. Declarations inside an `if`, loop, `match`,
+   `with`, `session`, or nested spawn block belong to that nested block and are
+   never members of an enclosing block's `joinall()`. Runtime completion order
+   never adds, removes, or reorders members.
    Because `Unit` is first-class, a Unit `joinall()` MAY be bound, returned, or
    used as a trailing expression, although a bare `joinall();` is conventional.
    `joinall()` MUST NOT stop waiting merely because one task fails.
