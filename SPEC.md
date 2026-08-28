@@ -247,6 +247,18 @@ document are to be interpreted as described in RFC 2119.
    chooses applicable policy values and makes a best effort to stop provider
    work when those tokens are signalled. Gantry MUST provide the asynchronous
    task scheduling needed to execute parallel Gantry blocks.
+   Interpreter-only work MUST remain cooperatively cancellable even when it
+   executes no hook or spawned task. Gantry MUST observe cancellation before a
+   hook dispatch, child-task submission, workflow or decision frame entry, and
+   every loop condition or back edge. It MUST also yield to the embedding
+   executor after a finite configured number of consecutive deterministic
+   interpreter transitions. That yield quantum MUST be nonzero and finite;
+   changing it affects scheduling only and MUST NOT alter language results,
+   dynamic identities, journal state, or retry accounting. Recursion MUST use
+   interpreter-managed frames rather than rely on unbounded native Rust stack
+   growth. Exhaustion of a configured interpreter resource limit MUST surface
+   as a structured deterministic-evaluation runtime error, never a panic or
+   silent process termination.
 8. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
    journal, or an equivalent durable execution record, sufficient to continue
    an interrupted execution from its recorded state. Section 11 defines the
@@ -296,7 +308,11 @@ document are to be interpreted as described in RFC 2119.
    value; this indication distinguishes a no-result `main` from an `Option<T>`
    result whose JSON value is `null`. A no-result `main` returns JSON `null`
    with the host-level no-result indication; a value-returning `main` uses the
-   Section 8 encoding of its declared type.
+   Section 8 encoding of its declared type. The successful result envelope
+   MUST also contain the canonical result-type descriptor from Section 5:
+   `None` for a no-result `main`, or the declared return type for a
+   value-returning `main`. Embedders therefore never need to infer type or
+   no-result semantics from JSON shape.
 3. Gantry MUST support comments and SHOULD adopt Rust lexical conventions
    where they fit the v1 feature set. Rust likeness is primarily a syntactic
    and readability goal; Gantry does not inherit Rust semantics by default.
@@ -724,7 +740,7 @@ document are to be interpreted as described in RFC 2119.
      active for this dispatch;
    - the authored source prompt template defined in Section 6 and the
      interpolated prompt;
-   - JSON-serialized typed arguments;
+   - the ordered typed interpolation-argument vector defined below;
    - the expected result kind;
    - the expected canonical result-type descriptor from Section 5;
    - the expected JSON Schema;
@@ -772,7 +788,16 @@ document are to be interpreted as described in RFC 2119.
    and does not consume that retry budget. Validation errors MUST identify the
    failing JSON instance location with JSON Pointer when one exists, the
    violated schema location when one exists, and a human-readable message;
-   they MUST NOT contain raw model output.
+   they MUST NOT contain raw model output. Each error MUST also carry exactly
+   one machine-readable category: `utf8`, `json-syntax`, `json-duplicate-key`,
+   `json-unicode`, or `schema`. JSON Pointer and schema-location fields are
+   absent rather than fabricated when the applicable parse stage could not
+   produce them. Error ordering MUST follow raw-output byte position for
+   decoding and parsing errors and depth-first instance traversal, with object
+   properties in unsigned UTF-8 name order and array members in index order,
+   for schema errors. This canonical shape and order allow independent
+   harnesses to render equivalent repair guidance without parsing diagnostic
+   prose.
 6. A hook request MUST also contain a finite ordered execution-context vector.
    It MUST contain the active workflow call chain and the control-chain entries
    needed to interpret the current operation; it MUST NOT contain the entire
@@ -1244,7 +1269,12 @@ document are to be interpreted as described in RFC 2119.
    other structured agent results.
 10. Gantry imposes no mandatory loop, cost, or agent-call limit. Integrations
     MAY impose their own limits, except that such policy does not alter the
-    language meaning of `limit = 0`.
+    language meaning of `limit = 0`. Unlimited language execution does not
+    mean uninterruptible execution: every loop transition and deterministic
+    transition quantum remains a cancellation and executor-yield safe point
+    under Section 3. Cancellation or configured resource exhaustion terminates
+    the affected task under the ordinary runtime-error rules; it does not make
+    an unlimited loop complete normally.
 11. A direct prompted condition uses `if decide "..." { ... }`. Gantry MUST
     also support declarations of the form
     `decision is_complete(report: Report) { ... }`. Each reachable normal
@@ -3363,9 +3393,10 @@ provider-specific or executor-specific types in Gantry programs:
     cannot advance the journal. The `record` accepted by `append` is an
     unfinalized versioned body without a record ID or sequence number. Append
     atomically assigns both fields, stores the finalized immutable envelope, and
-    returns an append receipt containing the assigned stable record ID and next
-    contiguous sequence number through a per-journal linearizable ordering. A
-    read returns those finalized immutable versioned records in sequence order
+    returns an append receipt containing the assigned stable record ID and the
+    assigned contiguous sequence number from the per-journal linearizable
+    ordering. A read returns those finalized immutable versioned records in
+    sequence order
     together with the durable-through sequence and supports continuation after
     a supplied sequence. Owner release invalidates the supplied fencing token
     atomically and MUST NOT append, update, or delete a journal record.
@@ -3397,7 +3428,8 @@ provider-specific or executor-specific types in Gantry programs:
    be ignored after a bounded, nonblocking invocation attempt.
 7. Interpreter configuration MUST include the default agent-output retry
    limit and backoff, event-delivery defaults, executor adapter, graceful-
-   shutdown timeout, and post-cancellation drain duration. Implementations
+   shutdown timeout, post-cancellation drain duration, and the finite nonzero
+   deterministic-transition yield quantum required by Section 3. Implementations
    MUST accept directive and projection integers through `2^63 - 1` and MAY
    reject larger tokens during analysis. The v1 defaults are 30 seconds for
    graceful shutdown and 5 seconds for post-cancellation drain. Embedders MAY
