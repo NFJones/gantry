@@ -114,11 +114,12 @@ not additional syntax an author must learn. Use these reading paths:
 - **Source authors:** begin with Sections 1.1 through 1.5 and Section 14. Use
   Sections 4 through 10 only for the semantics of a construct in question and
   Section 13 when exact grammar is needed.
-- **Language tooling authors:** read Sections 4 through 10, Section 12, items
-  9 through 11, and Section 13. Section 13 contains both the formal grammar and
-  a small number of syntax-position and disambiguation rules enforced during
-  semantic analysis. Protocol and persistence requirements are relevant only
-  when the tool also executes programs or claims full conformance.
+- **Language tooling authors:** read Sections 4 through 10, requirements
+  `GNT-12.9` through `GNT-12.11`, and Section 13. Section 13 contains both the
+  formal grammar and a small number of syntax-position and disambiguation rules
+  enforced during semantic analysis. Protocol and persistence requirements are
+  relevant only when the tool also executes programs or claims full
+  conformance.
 - **Integrators:** begin with Sections 1 and 3, then read Sections 7, 8, 10
   through 12, and 15 before consulting the remaining normative sections.
 - **Conformance implementers:** read the complete normative contract.
@@ -131,11 +132,11 @@ conformance profiles:
 - **Source-valid** source is syntactically valid and satisfies every applicable
   static semantic rule in this document. Those rules are concentrated in
   Sections 4 through 10, with syntax-position and disambiguation rules stated
-  alongside the grammar in Section 13. Section 12, items 9 through 11, defines
-  how an analyzer evaluates and reports that single judgment; those items do
-  not add a second set of source-acceptance rules. Source validity does not
-  imply that a particular integration can resolve the package's agents or
-  actions.
+  alongside the grammar in Section 13. Requirements `GNT-12.9` through
+  `GNT-12.11` define how an analyzer evaluates and reports that single
+  judgment; they do not add a second set of source-acceptance rules. Source
+  validity does not imply that a particular integration can resolve the
+  package's agents or actions.
 - A **frontend-profile implementation** parses complete packages and provides
   syntax diagnostics under Sections 4, 12, and 13.
 - An **analyzer-profile implementation** additionally decides source validity,
@@ -246,7 +247,7 @@ The contract is organized into layers:
 | Layer | What it specifies | Primary sections |
 | --- | --- | --- |
 | Language surface | Packages, values, workflows, visible operations, and control flow | Sections 4 through 10 and 13 |
-| Static source validity | Name and type resolution, syntax-position restrictions, schema generation, control-flow completion, and task ownership | Rules concentrated in Sections 4 through 10, with grammar-adjacent rules in Section 13; analysis interface in Section 12, items 9 through 11 |
+| Static source validity | Name and type resolution, syntax-position restrictions, schema generation, control-flow completion, and task ownership | Rules concentrated in Sections 4 through 10, with grammar-adjacent rules in Section 13; analysis interface in requirements `GNT-12.9` through `GNT-12.11` |
 | Portable execution | Interpretation, validation, concurrency, durability, and observability | Sections 3 and 7 through 12 |
 | Formal syntax | Normative lexical and syntactic grammar | Section 13 |
 | Authoring guide | Non-normative focused examples and corrections | Section 14 |
@@ -2194,11 +2195,12 @@ Task handles are governed by Section 10 and are not source values.
    reversible if a later field expression fails.
 <a id="GNT-5.12"></a>
 
-12. Struct fields MAY declare `Bool`, `Int`, `Float`, `String`, or `None`
-   defaults, which are the only field-default forms in v1. A scalar default
-   MUST exactly match the field's declared scalar type or the member type of
-   an `Option` around that scalar. A scalar default on `Option<T>` normalizes
-   to `Some(default)`. A `None` default is valid only for an `Option<T>` field.
+12. Struct fields MAY declare `()`, `Bool`, `Int`, `Float`, `String`, or `None`
+   defaults, which are the only field-default forms in v1. The `()` default is
+   valid only for a `Unit` field. A scalar default MUST exactly match the
+   field's declared scalar type or the member type of an `Option` around that
+   scalar. A scalar default on `Option<T>` normalizes to `Some(default)`. A
+   `None` default is valid only for an `Option<T>` field.
    Defaults MUST NOT invoke an integration operation. When an optional field
    with a default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
@@ -5399,9 +5401,9 @@ The built-in type alternatives take precedence over `qualified_path`. A
 variant, and an action declaration has no body and exactly one recovery class.
 `Unit` is the result type for no-information work; `None` is only the absent
 value of an expected `Option<T>`. Field defaults are deliberately limited to
-primitive literals (including `()`), optionally negated numeric literals,
-strings, and `None` in v1.
-Their declared field type MUST accept the default without coercion.
+`()`, Boolean literals, optionally negated numeric literals, ordinary or raw
+strings, and `None` in v1. Their declared field type and normalization MUST
+satisfy requirement `GNT-5.12` without coercion.
 
 A `use` declaration imports the item named by the final path segment into the
 current module. The path roots have the meanings defined in Section 4. Glob
