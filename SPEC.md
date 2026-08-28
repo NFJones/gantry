@@ -734,8 +734,9 @@ document are to be interpreted as described in RFC 2119.
    each produce an independent logical value. An implementation MAY share
    immutable backing storage or use copy-on-write internally, but that sharing
    MUST NOT be observable through mutation, failure, cancellation, journaling,
-   or resume. Interpreter-only optional-decline provenance is copied with its
-   value under Section 7. Bindings, including function, method, and
+   or resume. Sealed-Decision provenance and interpreter-only optional-decline
+   provenance are copied with their values under Section 7. Bindings,
+   including function, method, and
    decision-workflow parameters other than the receiver, are immutable by
    default. `mut` on a local declaration or parameter enables rebinding and
    field mutation of that local value. Parameter mutability is local to the
@@ -829,7 +830,11 @@ document are to be interpreted as described in RFC 2119.
     methods are excluded from v1.
 16. Every String result and every List result produced by a deterministic
     operation MUST satisfy the effective limits in Section 11 before it is
-    published. Concatenation, case mapping, replacement, splitting, and joining
+    published. A rendered prompt, including its literal template segments and
+    interpolation replacements, MUST satisfy `maximum_string_scalars` before
+    hook dispatch; exceeding that limit is a `string-size-limit` deterministic-
+    evaluation error and the operation remains undispatched. Concatenation,
+    case mapping, replacement, splitting, and joining
     are atomic: a `string-size-limit` or `list-size-limit` deterministic-
     evaluation error leaves the assignment target unchanged. The same checks
     apply recursively to source construction, entry input, hook output, and
@@ -1051,9 +1056,11 @@ document are to be interpreted as described in RFC 2119.
     error rather than an implicit action dispatch. Gantry evaluates action
     arguments exactly once from left to right, requires exact parameter-type
     equality, captures their canonical JSON values, and then dispatches one
-    logical action operation. Source execution awaits that result unless the
-    invocation occurs in a spawned task. A no-result action is an expression
-    statement; a value-producing action yields its declared type and MAY be
+    logical action operation. The current Gantry task awaits that result before
+    advancing; concurrency requires placing the action invocation in a
+    `spawn` block, whose child task performs the same await independently. A
+    no-result action is an expression statement; a value-producing action
+    yields its declared type and MAY be
     bound, returned, matched, or intentionally discarded. Action declarations
     have no agent, session, prompt template, or provider policy in Gantry
     source. The integration resolves their canonical signatures during
@@ -1289,6 +1296,9 @@ document are to be interpreted as described in RFC 2119.
      index, phase (`condition` or `body`), and the most recently settled
      condition's associated index, decision, and nonempty rationale when one
      exists; and
+   - `decision-value`: originating decision operation ID, source location,
+     controlling Boolean, and nonempty rationale for a sealed `Decision`
+     reachable from a captured operation input; and
    - `optional-decline`: declined operation ID, operation kind, selected agent
      or canonical action path as applicable, source location, and decline
      reason when a decline normalized to `None`.
@@ -1334,9 +1344,10 @@ document are to be interpreted as described in RFC 2119.
    `conditional-arm`, and `loop-iteration`) MUST appear first, ordered from
    outermost to innermost dynamic scope, with repeated entries in execution
    order within one scope.
-   Any `optional-decline` entries MUST follow all structural entries and use
-   the interpolation-input and value-traversal order defined below. This is a
-   total ordering; integrations MUST NOT regroup entries by kind. An `else if`
+   Any value-provenance entries (`decision-value` and `optional-decline`) MUST
+   follow all structural entries and use the interpolation-input and value-
+   traversal order defined below. This is a total ordering; integrations MUST
+   NOT regroup entries by kind. An `else if`
    request MUST include the `conditional-arm` entries from preceding arms in
    the same chain. While a selected conditional arm executes, its active
    control-chain context MUST include every preceding false arm followed by
@@ -1349,20 +1360,22 @@ document are to be interpreted as described in RFC 2119.
    provenance distinct from a `None` produced by `Completed(null)` or source.
    That provenance MUST survive assignment, argument and return passing,
    struct or aggregate containment, capture, and other deep copies. An
-   operation request MUST include one `optional-decline` entry for every
+   operation request MUST include one `decision-value` entry for every distinct
+   sealed-Decision provenance and one `optional-decline` entry for every
    distinct decline provenance reachable from its captured inputs. Prompt and
    decision requests traverse interpolation arguments followed by named inputs;
    action requests traverse action arguments. Within each vector, entries are
-   ordered by source order and then depth-first value traversal;
-   repeated references to the same declined value produce one entry. Depth-first
-   value traversal is preorder: a struct visits fields in declaration order;
-   an enum, result, or present option visits its payload; and a list or tuple
-   visits members in ascending index order. A `None` or unit enum variant has
-   no child value. When the
-   same provenance is reachable by more than one path, its first encounter in
-   this total order determines the entry position. The
-   metadata is not part of Gantry's JSON value and MUST NOT change schema
-   validation or interpolation, which still emits `null`. The integration MUST
+   ordered by source order and then depth-first value traversal; repeated
+   references to the same provenance produce one entry. Depth-first value
+   traversal is preorder: a `Decision` visits its provenance before its visible
+   fields; a struct visits fields in declaration order; an enum, result, or
+   present option visits its payload; and a list or tuple visits members in
+   ascending index order. A `None` or unit enum variant has no child value.
+   When the same provenance is reachable by more than one path, its first
+   encounter in this total order determines the entry position. This metadata
+   is not part of Gantry's JSON value and MUST NOT change schema validation or
+   interpolation; an optional decline still emits `null`, and a `Decision`
+   still emits only its `decision` and `rationale` fields. The integration MUST
    make every supplied entry
    available to the selected agent in order, although its provider-specific
    presentation is implementation-defined.
@@ -1426,8 +1439,10 @@ document are to be interpreted as described in RFC 2119.
    likewise fails the current Gantry task and is not a structured-output
    validation failure. Item 18 defines how task failure propagates through
    foreground, attached, and detached work.
-12. Gantry MUST assign a logical session ID to each operation. Session IDs MUST
-   remain stable across validation retries and resume. An integration MUST
+12. Gantry MUST assign a logical session ID to each `prompt` and `decision`
+   operation. Action operations have no conversational session. Model-operation
+   session IDs MUST remain stable across validation retries and resume. An
+   integration MUST
    honor the following session directives:
    - `inline` reuses the enclosing logical session;
    - `fork` creates a child session initialized from the enclosing session; and
@@ -2001,10 +2016,15 @@ document are to be interpreted as described in RFC 2119.
     previous outcomes, rationale, selected agent, or session. Analysis MUST
     inspect both outcomes of every model-controlled reachable `if`, `else if`,
     `while`, and `until`; it MUST NOT assume that a model will make one branch
-    unreachable. Static analysis MAY use compile-time constant `Bool`
-    expressions to establish reachability, but MUST otherwise inspect all
-    possible outcomes. A `while` has a possible zero-body normal path unless
-    its condition is statically `true`. An `until` has
+    unreachable. To keep acceptance portable across implementations, the only
+    compile-time `Bool` expressions used to eliminate a control-flow outcome in
+    v1 are `true`, `false`, parenthesized compile-time Boolean expressions, and
+    expressions composed exclusively from those forms with `!`, `&&`, and
+    `||`. Analysis MUST evaluate that subset exactly. Every other `Bool`
+    expression MUST conservatively be treated as capable of either result,
+    even when an implementation could fold it from numeric, String, aggregate,
+    or workflow facts. A `while` has a possible zero-body normal path unless
+    its condition is compile-time `true` under this rule. An `until` has
     at least one body execution before a possible normal exit. A positive loop
     limit contributes the normal limit-exhaustion path defined in item 7,
     whereas `loop(limit = 0)` has no implicit normal exit. A reachable `break`
@@ -2289,10 +2309,10 @@ document are to be interpreted as described in RFC 2119.
 1. Gantry MUST durably journal committed operation results, validation attempt
    counts, interpreter call frames, scopes, instruction positions, loop state,
    lexical session-context identities and lifetimes, task relationships, and
-   values needed to resume execution. Journaled values MUST retain the
-   interpreter-only optional-decline provenance required by Section 7 so a
-   resumed operation receives the same decline context as uninterrupted
-   execution. Gantry MAY
+   values needed to resume execution. Journaled values MUST retain both the
+   sealed-Decision provenance and interpreter-only optional-decline provenance
+   required by Sections 5 and 7 so a resumed operation receives the same value
+   context as uninterrupted execution. Gantry MAY
    replay deterministic interpreter steps after the latest durable checkpoint,
    but such replay MUST reuse committed hook outcomes and reconstruct the same
    dynamic operation and task identities.
@@ -2649,7 +2669,10 @@ document are to be interpreted as described in RFC 2119.
     only after the execution-state record described below is appended and
     flushed. This separation keeps mutable operational policy recoverable
     without pretending that it is immutable execution identity.
-    Resume MUST reject changes to those fields. Executor implementation,
+    Resume MUST reject a change to any identity-bound field in the canonical
+    configuration object above. The mutable baseline fields in the preceding
+    paragraph are not identity-bound; they may change only through the durable
+    execution-state revisions defined below. Executor implementation,
     worker count, and integration-owned operation-timeout policy MAY change on
     resume without changing this identity; they affect scheduling or
     integration behavior rather than the meaning of already committed Gantry
@@ -3481,7 +3504,6 @@ primary_expression      = boolean_literal
                         | "Err", "(", expression, ")"
                         | "self"
                         | struct_expression
-                        | enum_expression
                         | list_expression
                         | tuple_expression
                         | qualified_path
@@ -3493,8 +3515,6 @@ field_initializer_list  = field_initializer, { ",", field_initializer },
 field_initializer       = identifier_token, [ ":", expression ] ;
 argument_list           = expression, { ",", expression }, [ "," ] ;
 
-enum_expression         = qualified_path, "::", identifier_token,
-                          [ "(", expression, ")" ] ;
 list_expression         = "[", [ argument_list ], "]" ;
 tuple_expression        = "(", expression, ",", expression,
                           { ",", expression }, [ "," ], ")" ;
@@ -3531,8 +3551,9 @@ The grammar admits `self` as a primary expression so the same expression
 productions can parse method bodies and their nested blocks. Semantic analysis
 MUST enforce the receiver scope specified in Section 13.4.
 
-Postfix `(...)` dispatches a workflow function or method or invokes one of the
-sealed built-ins defined in Section 5. These include numeric conversion,
+Postfix `(...)` dispatches a workflow function or method, constructs the
+payload of a declared enum variant, or invokes one of the sealed built-ins
+defined in Section 5. These include numeric conversion,
 primitive formatting, String query/transformation/parsing, `List<T>.len()`,
 and `List<String>.join(separator)`. Postfix `.name`
 accesses a struct field, selects a method, or selects the read-only
@@ -3546,10 +3567,15 @@ operators associate left to right, and parentheses override precedence.
 
 An unqualified primary path used as a value MUST resolve to a visible parameter
 or binding. A qualified item path is valid in an expression only as the callee
-of a workflow call, the action path after `action`, or the type path beginning
-a struct or enum constructor. Because v1 has no module, type, function,
-decision, action, or method values, semantic analysis MUST reject a bare path
-that resolves to any such item. Task handles are legal only in `join`,
+of a workflow call, the action path after `action`, the type path beginning a
+struct constructor, or a declared enum variant. A unit enum variant is a
+complete value; a payload variant requires one following call suffix carrying
+its payload. Workflow calls and payload-variant construction intentionally
+share Rust-like `path(value)` syntax and are distinguished by name and type
+resolution rather than by an ambiguous pair of grammar productions. Because
+v1 has no module, type, function, decision, action, or method values, semantic
+analysis MUST reject a bare path that resolves to any such item other than a
+unit enum variant. Task handles are legal only in `join`,
 `joinall()`, and `detach`, never as primary expressions.
 
 A value-producing `with` or `session` expression requires its block's trailing
@@ -3568,13 +3594,21 @@ operation result annotations and operations on the produced value.
 
 Semantic analysis MUST validate every postfix step from left to right. A call
 suffix is legal only on a function or decision item, selected inherent method,
-or a sealed deterministic built-in defined in Section 5 with exactly its
-declared argument count and types;
+declared enum payload variant, or a sealed deterministic built-in defined in
+Section 5 with exactly its declared argument count and types;
 a field suffix is legal only on a struct value, selected inherent method, or a
 read-only `Decision` field; and an index suffix is legal only on a list or
 tuple value. Calling another value, selecting an unsupported field, indexing
 another type, or continuing a postfix chain after a no-result expression is an
 analysis error.
+
+The `{` that begins an `if` or `while` body, an `if let` arm, or the arm list of
+a `match` is a syntactic boundary. A struct constructor used anywhere in the
+immediately preceding condition or match scrutinee MUST therefore be enclosed
+in parentheses. For example, `if (Policy { enabled: true }).enabled { ... }`
+is valid, while the same condition without those parentheses is rejected.
+This rule gives parsers, human readers, and model authors one deterministic
+interpretation of a path followed by `{` at a control-flow boundary.
 
 ### 13.7 Prompts and interpolation
 
@@ -3637,8 +3671,7 @@ interpolation_primary   = boolean_literal
                         | interpolation_struct
                         | interpolation_list
                         | interpolation_tuple
-                        | interpolation_enum
-                        | identifier_token
+                        | qualified_path
                         | "self"
                         | "(", interpolation_expression, ")" ;
 interpolation_struct    = qualified_path, "{",
@@ -3653,8 +3686,6 @@ interpolation_list      = "[", [ interpolation_expression,
 interpolation_tuple     = "(", interpolation_expression, ",",
                           interpolation_expression,
                           { ",", interpolation_expression }, [ "," ], ")" ;
-interpolation_enum      = qualified_path, "::", identifier_token,
-                          [ "(", interpolation_expression, ")" ] ;
 ```
 
 `interpolation` is a contextual scanner production embedded within a
@@ -3697,9 +3728,11 @@ remain literal text. An unclosed or syntactically invalid island is a syntax
 error.
 
 Interpolation and named inputs permit only the restricted grammar above. A
-postfix call is legal only for the sealed deterministic built-ins in Section
-5, with the exact argument count and types defined there; it cannot dispatch a
-workflow or source-defined method.
+postfix call is legal only for a declared enum payload constructor or a sealed
+deterministic built-in in Section 5, with the exact argument count and types
+defined for that target; it cannot dispatch a workflow or source-defined
+method. A qualified path without a call may denote a unit enum variant, while
+an unqualified path denotes a visible binding under the ordinary name rules.
 A projection index MUST obey the list and tuple rules in Section 5. Neither
 form admits any other function or method call, `prompt`, `decide`, `action`,
 joins, mutation, or control flow. Primitive operators use the same typing,
@@ -4556,6 +4589,21 @@ let label: String = "attempt " + attempt.to_string();
 // Runtime error: empty separators and replacement patterns are prohibited.
 let pieces: List<String> = text.split("");
 let expanded: String = text.replace("", "-");
+```
+
+Struct constructors at control-flow boundaries are parenthesized so the first
+unparenthesized `{` always begins the control-flow body or match arms:
+
+```gantry
+// Invalid: the constructor brace conflicts with the `if` body boundary.
+if Policy { enabled: true }.enabled {
+    prompt "Apply the policy.";
+}
+
+// Valid: grouping makes the complete condition explicit.
+if (Policy { enabled: true }).enabled {
+    prompt "Apply the policy.";
+}
 ```
 
 Task handles are linear ownership markers rather than ordinary values. Every
