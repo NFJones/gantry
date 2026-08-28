@@ -104,8 +104,10 @@ This document uses three related but distinct judgments:
 - **Syntactically valid** source is admitted by Section 13 and the package
   loading rules required for parsing it.
 - **Source-valid** source is syntactically valid and satisfies every applicable
-  static semantic rule in Sections 4 through 10. Source validity does not imply
-  that a particular integration can resolve the package's agents or actions.
+  static semantic rule in Sections 4 through 10. Sections 12.9 through 12.11
+  define how an analyzer reports that judgment; they do not add a second set of
+  source-acceptance rules. Source validity does not imply that a particular
+  integration can resolve the package's agents or actions.
 - A **conforming Gantry v1 implementation** satisfies the complete normative
   language, execution, durability, observability, and embedding contract. A
   parser, analyzer, or source-validity tool may accurately describe its more
@@ -147,7 +149,7 @@ The contract is organized into layers:
 | Layer | What it specifies | Primary sections |
 | --- | --- | --- |
 | Language surface | Packages, values, workflows, visible operations, and control flow | Sections 4 through 10 and 13 |
-| Static source validity | Name and type resolution, schema generation, control-flow completion, and task ownership | Sections 4 through 10 and 12.9 through 12.11 |
+| Static source validity | Name and type resolution, schema generation, control-flow completion, and task ownership | Rules in Sections 4 through 10; analysis interface in Sections 12.9 through 12.11 |
 | Portable execution | Interpretation, validation, concurrency, durability, and observability | Sections 3 and 7 through 12 |
 | Formal syntax | Normative lexical and syntactic grammar | Section 13 |
 | Authoring guide | Non-normative focused examples and corrections | Section 14 |
@@ -589,11 +591,12 @@ shown here.
    per-task counter resets after any such await or explicit scheduler yield.
    The yield quantum MUST be nonzero and finite, and Gantry MUST observe
    cancellation immediately before and after the yield. Changing the quantum
-   affects scheduling only: it MUST NOT alter deterministic single-task
-   computation, dynamic operation or task identities, or retry accounting,
-   but it MAY alter timestamps and the permitted cross-task interleaving of
-   journal records and events. Recursion MUST use interpreter-managed frames
-   rather than rely on unbounded native Rust stack growth. Each task MUST
+   affects scheduling only: it MUST NOT alter deterministic computation within
+   one task, dynamic operation or task identities, retry accounting, or the
+   semantic content and per-task order of journal records and events. It MAY
+   alter timestamps and the global sequence order in which records and events
+   from different tasks interleave. Recursion MUST use interpreter-managed
+   frames rather than rely on unbounded native Rust stack growth. Each task MUST
    enforce the configured
    `maximum_workflow_call_depth`: the root `main` frame counts as depth one,
    and entering a function, method, or decision-workflow frame increases the
@@ -1366,7 +1369,7 @@ operation identity, failure categories, and propagation.
    merged into one package-wide set; repeating the same logical name is
    idempotent rather than an error. A package containing any `prompt` or
    `decide` operation site MUST have a nonempty merged agent set. When that set
-   is nonempty, exactly one dedicated `default agent = <name>;` binding MUST
+   is nonempty, exactly one `default agent = <name>;` declaration MUST
    appear in `main.gnt`, and its name MUST belong to the merged set. When the
    set is empty, `default agent` MUST be absent. A `default agent` declaration
    in any child module is an analysis error, even when it repeats the root
@@ -3325,9 +3328,11 @@ that are immutable or durably revisable across resume.
     Section 7.
     The deterministic-transition yield quantum is also excluded from the
     configuration identity. It MAY change between in-process runs and on
-    resume because Section 3 defines it as scheduling-only policy; changing it
-    MUST NOT alter language results, dynamic identities, journal state, or
-    retry accounting.
+    resume because Section 3 defines it as scheduling-only policy. Changing it
+    MUST NOT alter language results, dynamic identities, retry accounting, or
+    the semantic content and per-task order of journal records and events; it
+    MAY alter timestamps and the global sequence order of records and events
+    from different tasks.
     These changes MUST obey the per-event delivery-obligation rules in Section
     12. Allowing agent mappings to change is
     intentional because Gantry promises resumability, not deterministic model
