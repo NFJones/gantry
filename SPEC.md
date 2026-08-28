@@ -10,7 +10,7 @@
   - [2. Normative Language](#2-normative-language)
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
   - [4. Source Organization](#4-source-organization)
-  - [5. Values, Bindings, and Structs](#5-values-bindings-and-structs)
+  - [5. Values, Bindings, Structs, and Tagged Types](#5-values-bindings-structs-and-tagged-types)
   - [6. Functions and Methods](#6-functions-and-methods)
   - [7. Agents, Hooks, and Sessions](#7-agents-hooks-and-sessions)
   - [8. Structured Output and Validation](#8-structured-output-and-validation)
@@ -31,7 +31,7 @@
   - [14. Syntax Examples](#14-syntax-examples)
     - [14.1 Minimal package entry point](#141-minimal-package-entry-point)
     - [14.2 Modules, imports, and package-wide agents](#142-modules-imports-and-package-wide-agents)
-    - [14.3 Struct construction, options, bindings, and mutation](#143-struct-construction-options-bindings-and-mutation)
+    - [14.3 Structs, tagged values, aggregates, and structural routing](#143-structs-tagged-values-aggregates-and-structural-routing)
     - [14.4 Inherent methods and lexical agent selection](#144-inherent-methods-and-lexical-agent-selection)
     - [14.5 Prompt strings, interpolation, and escaping](#145-prompt-strings-interpolation-and-escaping)
     - [14.6 Decision workflows and conditional chains](#146-decision-workflows-and-conditional-chains)
@@ -40,7 +40,8 @@
     - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
     - [14.10 `joinall()`, no-result tasks, and detachment](#1410-joinall-no-result-tasks-and-detachment)
     - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
-    - [14.12 Common invalid forms and their corrections](#1412-common-invalid-forms-and-their-corrections)
+    - [14.12 Explicit harness actions and named prompt inputs](#1412-explicit-harness-actions-and-named-prompt-inputs)
+    - [14.13 Common invalid forms and their corrections](#1413-common-invalid-forms-and-their-corrections)
   - [15. Required Embedding Interfaces](#15-required-embedding-interfaces)
 
 ## 1. Status and Scope
@@ -55,19 +56,22 @@ agents, models, tools, transport, credentials, resource policy, and any
 provider-specific behavior.
 
 The v1 language deliberately separates deterministic orchestration from
-model-backed work. Bindings, construction, workflow dispatch, assignment,
-projection, modules, joins, and task ownership are interpreter operations.
-Every source-level request for model-backed work is visibly introduced by
-`prompt` or `decide`; an ordinary function or method call does not itself
-dispatch a hook, although the called workflow may contain explicit model
-operations. An integration may perform provider-internal work while fulfilling
-one such request, as defined in Section 7, but that work does not create hidden
-Gantry operations. Interpolation never dispatches a hook. Typed strict-JSON
-values are the boundary between model-backed work and source execution: raw
-hook outcomes cross the embedding boundary first, and Gantry alone admits a
-value into source execution after decoding, validation, normalization, and
-durable acceptance. This explicitness is a core readability requirement for
-both human and model authors.
+integration-backed work. Bindings, construction, workflow dispatch,
+assignment, projection, pattern routing, modules, joins, and task ownership
+are interpreter operations. Every source-level request that crosses the
+integration boundary is visibly introduced by `prompt`, `decide`, or `action`;
+an ordinary function or method call does not itself dispatch a hook, although
+the called workflow may contain explicit external operations. `prompt` and
+`decide` request model-backed work. `action` requests a named, typed harness
+capability without implying that a model must fulfill it. An integration may
+perform provider-internal work while fulfilling an operation, as defined in
+Section 7, but that work does not create hidden Gantry operations.
+Interpolation and named-input evaluation never dispatch a hook. Typed
+strict-JSON values are the boundary between integration-backed work and source
+execution: raw hook outcomes cross the embedding boundary first, and Gantry
+alone admits a value into source execution after decoding, validation,
+normalization, and durable acceptance. This explicitness is a core readability
+requirement for both human and model authors.
 
 This document records the settled version 1 (v1) language and operational
 requirements. Concrete Rust type signatures may remain implementation-defined
@@ -89,11 +93,33 @@ struct Report {
     sources: List<String>,
 }
 
+struct SearchRequest {
+    topic: String,
+}
+
+struct SearchFailure {
+    message: String,
+}
+
+action search(request: SearchRequest)
+    -> Result<List<String>, SearchFailure>;
+
 decision needs_revision(report: Report) {
     decide "Does this report need another revision? ${report}"
 }
 
 fn main(topic: String) -> Report {
+    let search_result: Result<List<String>, SearchFailure> =
+        action search(SearchRequest { topic: topic });
+
+    let sources: List<String> = match search_result {
+        Ok(value) => value,
+        Err(error) => prompt "Recover source references." using {
+            topic,
+            error,
+        } -> List<String>,
+    };
+
     spawn primary -> Report {
         prompt """
             Research primary sources for this topic:
@@ -111,7 +137,8 @@ fn main(topic: String) -> Report {
 
     let reports: List<Report> = join(primary, independent);
     let mut report: Report = prompt
-        "Synthesize these reports: ${reports}"
+        "Synthesize the supplied research reports."
+        using { topic, sources, reports }
         -> Report;
 
     loop(limit = 3) {
@@ -138,21 +165,28 @@ most important when humans or models author Gantry source:
 - `prompt` visibly performs model-backed work and optionally returns the type
   written after `->`. An omitted annotation or `-> None` means that the
   operation returns no source value.
-- `decide` visibly performs the model-backed work that controls `if`, `while`,
-  and `until`. Its Boolean decision and rationale are interpreter-only and do
-  not introduce a source-level Boolean value.
+- `decide` visibly performs model-backed judgment and returns an opaque
+  `Decision` containing a controlling Boolean and rationale. A decision can be
+  retained and passed, but its Boolean cannot be extracted as a general value.
+- `action <path>(...)` visibly invokes a source-declared, typed harness action.
+  It is distinct from an ordinary workflow call and from model selection.
+- `using { ... }` supplies ordered typed inputs to `prompt` or `decide`
+  without rendering them into the authored prompt text.
 - `${...}` computes deterministic prompt input. It can read and construct
-  values, but cannot hide another model call, mutation, join, or control-flow
-  transfer.
+  values, but cannot hide another external operation, mutation, join, or
+  control-flow transfer.
+- `match`, `if let`, and condition-only `==` or `!=` route validated structure
+  deterministically. Semantic judgment remains explicit through `decide`.
 - `with <agent> { ... }` selects an agent lexically, while
   `session(<directive>) { ... }` selects conversational continuity. Neither
   construct hides the `prompt` and `decide` sites inside it.
 - `spawn` makes concurrency explicit. Every spawned handle must be consumed
   visibly by `join`, `joinall()`, or `detach` on every normal path that leaves
   its scope.
-- Ordinary calls, assignments, construction, projection, and joins are
-  deterministic interpreter work. If source does not contain `prompt` or
-  `decide` at a dynamic call path, that path dispatches no model operation.
+- Ordinary calls, assignments, construction, projection, pattern routing, and
+  joins are deterministic interpreter work. If source does not contain
+  `prompt`, `decide`, or `action` at a dynamic call path, that path dispatches
+  no integration operation.
 
 ### 1.3 V1 design boundary
 
@@ -161,19 +195,27 @@ It is a reading aid rather than a substitute for the normative requirements
 in later sections:
 
 - Gantry is an orchestration language, not a general-purpose language. Its
-  source values are strings, structs, options, lists, and tuples. Boolean
-  decisions remain interpreter-only, and integers appear only in directives
-  and aggregate projections.
-- Model work is limited to the explicit `prompt` and `decide` operations.
-  Provider tools and harness actions may be used while fulfilling those
-  operations, but v1 has no separate source-level tool or action instruction.
-- V1 has no arithmetic, comparison operators, deterministic string
-  operations, `for`, `match`, `if let`, user-defined generics, traits, or
-  language-level error recovery. Branching on semantic content is deliberately
-  agent-mediated.
-- Lists and tuples are typed transport aggregates. Source can pass, return,
-  interpolate, and project them, but cannot construct literals, iterate over
-  them, or query their lengths in v1.
+  source values are strings, structs, enums, options, results, lists, tuples,
+  and opaque decisions. Integers appear only in directives and aggregate
+  projections; Gantry has no general numeric type.
+- Integration-backed work is limited to the explicit `prompt`, `decide`, and
+  `action` operations. `prompt` and `decide` are model-facing. `action` invokes
+  a typed capability declared by the package and resolved by the integrating
+  harness.
+- V1 has no arithmetic, ordering, Boolean algebra, deterministic string
+  operations, `for`, user-defined generics, traits, or general exception
+  handling. Exact structural routing through patterns and condition-only
+  equality is deterministic; semantic judgments remain agent-mediated.
+- Lists and tuples are typed aggregates. Source can construct, pass, return,
+  interpolate, project, and pattern-destructure them, but cannot iterate over
+  them, query their lengths, or mutate their members in v1.
+- `Result<T, E>` represents a declared, expected source-level outcome. Hook
+  failure, invalid structured output, cancellation, journal failure, and retry
+  exhaustion remain runtime failures and are never implicitly converted to
+  `Err`.
+- `Map<T>` and an opaque artifact-reference type are deferred. They require
+  lookup, lifetime, authorization, and resume contracts that v1 does not need
+  to express typed model and action control flow.
 - A struct field default is a source-construction convenience. Agent output
   must still contain every non-optional field, even when that field has a
   source default; only `Option<T>` properties may be omitted from hook output.
@@ -193,6 +235,9 @@ valid:
 - Keep each `prompt` or `decide` visually prominent. Bind an intermediate
   model result before passing it to another workflow when nesting would make
   operation order difficult to scan.
+- Keep each `action` invocation equally prominent. An ordinary call is always
+  an interpreter-managed workflow call; the `action` keyword is the visible
+  indication that execution crosses into a harness capability.
 - Treat each visible model operation as logically singular but physically
   repeatable. Validation repair and interruption recovery can dispatch the
   same operation more than once, so harness actions with external side effects
@@ -207,6 +252,12 @@ valid:
   authored prompt when that distinction matters. Gantry also supplies each
   interpolation as a separate typed hook argument, but canonical JSON and the
   typed argument vector do not by themselves prevent prompt injection.
+- Prefer `using { ... }` for typed context that the model needs but that need
+  not be embedded in prose. Use `${...}` when the placement of a value in the
+  rendered prompt is itself meaningful.
+- Prefer `match` for exhaustive routing over enums and results, and `if let`
+  for one focused structural case. Use `decide` instead when the branch depends
+  on interpretation, quality, intent, policy, or another semantic judgment.
 - Use triple-quoted block prompts for multiline instructions and ordinary or
   raw quoted prompts for short text. Keep result annotations on the same
   visual operation, even when the template spans several lines.
@@ -236,15 +287,18 @@ activity throughout this specification:
 - A **workflow** is a source `fn`, inherent method, or `decision`
   declaration. Calling a workflow creates an interpreter frame; the call is
   not itself model-backed work.
-- A **logical operation** is one dynamic execution of a source `prompt` or
-  terminal `decide`. It has one stable operation ID and produces at most one
-  consumable operation result.
+- An **action declaration** is a typed package item that names an external
+  harness capability. It has no Gantry body. An **action invocation** is an
+  `action <path>(...)` expression resolved against that declaration.
+- A **logical operation** is one dynamic execution of a source `prompt`,
+  terminal `decide`, or action invocation. It has one stable operation ID and
+  produces at most one consumable operation result.
 - A **physical dispatch** is one invocation of `OperationHook` for a logical
   operation. Validation repair and recovery may cause several physical
   dispatches for one logical operation, each with a distinct dispatch ID.
 - A **hook outcome** is `Completed(raw_output)`, `Declined(reason)`, or
   `Failed(message)`. An **operation result** is the validated and normalized
-  value, no-result acceptance, optional decline, or interpreter-only decision
+  value, no-result acceptance, optional decline, or opaque `Decision`
   that Gantry durably derives from an outcome and may consume.
 - A **Gantry task** is an interpreter execution lane: the root task or one
   child created by `spawn`. A task is not an agent, model, provider request,
@@ -252,10 +306,16 @@ activity throughout this specification:
 - An **agent** is a logical source-declared name selected by `with` or by the
   package default. The integration maps that name to its model or agent
   implementation.
-- A **harness action** is provider, tool, approval, shell, network, or other
-  integration-internal work performed while fulfilling a hook. It is not a
-  separate Gantry v1 source operation and cannot mutate Gantry state except
-  through the hook outcome.
+- A **harness action** is a package-declared capability fulfilled through an
+  action operation. An integration may also perform provider-internal work
+  while fulfilling any operation; such hidden work is not a second Gantry
+  operation and cannot mutate Gantry state except through the hook outcome.
+- A **tagged value** is an enum or `Result<T, E>` value whose strict-JSON
+  representation carries an explicit variant discriminator.
+- A **structural predicate** is an interpreter-evaluated pattern or equality
+  test over already validated values. It never invokes a hook.
+- A **named input** is one ordered, typed `using` entry supplied separately
+  from rendered prompt text.
 - A **foreground outcome** is the completion of root `main`. A **terminal
   execution outcome** is known only after foreground and detached work have
   settled and required terminal state is durable. Foreground success can
@@ -289,9 +349,10 @@ document are to be interpreted as described in RFC 2119.
    not through Gantry source syntax.
 5. The interpreter MUST control program flow, hook invocation, result
    validation, retry handling, and state transitions.
-6. An integration MUST implement the hooks needed to perform agent/model
-   calls. It is responsible for mapping Gantry agent names to its own agents
-   or models.
+6. An integration MUST implement the hooks needed to perform model operations
+   and declared harness actions. It is responsible for mapping Gantry agent
+   names to its own agents or models and canonical action signatures to its
+   own capabilities.
 7. Model selection, tool access, approvals, authentication, persistence
    backend selection, logging backend selection, operation-level timeouts,
    provider-specific cancellation mechanics, and resource limits belong to
@@ -318,7 +379,7 @@ document are to be interpreted as described in RFC 2119.
    an interrupted execution from its recorded state. Section 11 defines the
    required recovery behavior.
 9. Gantry does not promise deterministic replay. Re-execution of the same
-   source and inputs MAY produce different agent results. Resumption MUST,
+   source and inputs MAY produce different integration results. Resumption MUST,
    however, reuse every committed physical hook outcome and MUST reuse every
    validated operation result already derived from committed journal state.
    A committed raw `Completed` outcome that has not yet passed validation is
@@ -454,10 +515,11 @@ document are to be interpreted as described in RFC 2119.
     signature MUST still be available at the `impl` declaration itself;
     method collection does not make a later type declaration usable earlier.
     Discovery of a later `mod` declaration MUST NOT make that namespace usable
-    earlier in its parent module, and it does not make functions, types, or
-    imports usable before their declarations. Within one module, item names
-    MUST be unique across structs, functions, decisions, and modules. An
-    imported name MUST NOT collide with another import or local item.
+    earlier in its parent module, and it does not make functions, types,
+    actions, or imports usable before their declarations. Within one module,
+    item names MUST be unique across structs, enums, functions, decisions,
+    actions, and modules. An imported name MUST NOT collide with another
+    import or local item.
 15. Struct field names, parameter names, and method names for one receiver type
     MUST each be unique. A local binding or task handle MUST NOT duplicate or
     shadow any parameter, binding, or task handle visible at its declaration
@@ -488,10 +550,11 @@ document are to be interpreted as described in RFC 2119.
     `<crate::domain::Report>::revise`. Canonical paths MUST use exact NFC item
     spellings and MUST NOT retain a source-level import alias or relative root.
 
-    A canonical workflow signature is one UTF-8 string constructed from that
-    path and the canonical type descriptors in Section 5. A free-function
-    signature is `fn PATH(P1,P2,...)->R`; a decision signature is
-    `decision PATH(P1,P2,...)->Decision`; and a method signature is
+    A canonical workflow or action signature is one UTF-8 string constructed
+    from that path and the canonical type descriptors in Section 5. A
+    free-function signature is `fn PATH(P1,P2,...)->R`; a decision signature
+    is `decision PATH(P1,P2,...)->Decision`; an action signature is
+    `action PATH(P1,P2,...)->R`; and a method signature is
     `fn METHOD_PATH(RECEIVER[,P1,P2,...])->R`. `RECEIVER` is exactly `self` or
     `mut self`. Each non-receiver parameter descriptor is its type descriptor,
     prefixed by `mut ` when the source parameter is mutable. `R` is the
@@ -500,6 +563,7 @@ document are to be interpreted as described in RFC 2119.
     parameter names, and preserves declaration order. Examples are
     `fn crate::main(String)->crate::domain::Report`,
     `decision crate::quality::is_complete(crate::domain::Report)->Decision`,
+    `action crate::search(crate::SearchRequest)->Result<List<crate::Source>,crate::SearchFailure>`,
     and
     `fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report`.
     This format is metadata rather than source syntax.
@@ -518,32 +582,38 @@ document are to be interpreted as described in RFC 2119.
     unrelated host files, but it prevents one Gantry activity from having
     internally inconsistent source text and identity.
 
-## 5. Values, Bindings, and Structs
+## 5. Values, Bindings, Structs, and Tagged Types
 
-1. Runtime values MUST include `String`, declared struct values, `Option<T>`,
-   `List<T>`, and `Tuple<T1, T2, ..., Tn>`. User-visible Boolean or integer
-   values are excluded from v1.
-   Boolean decisions exist only inside the interpreter. Nonnegative integer
+1. Runtime values MUST include `String`, declared struct and enum values,
+   `Option<T>`, `Result<T, E>`, `List<T>`, `Tuple<T1, T2, ..., Tn>`, and
+   `Decision`. A general user-visible Boolean or integer type is excluded from
+   v1. `Decision` is an opaque first-class value whose controlling Boolean can
+   be consumed only by the control-flow forms in Section 9.
+   Nonnegative integer
    tokens MAY occur only in language directives such as loop limits and retry
    counts and in deterministic list or tuple projections; they are not values
    that source code can bind or pass.
-2. Parameters and returned values MAY be `String`, a declared struct type,
-   `Option<T>`, `List<T>`, or `Tuple<T1, T2, ..., Tn>` whose member types are
-   otherwise permitted. A function, method, prompt, or spawned block MAY have
-   no returned value.
+2. Parameters and returned values MAY be `String`, a declared struct or enum
+   type, `Option<T>`, `Result<T, E>`, `List<T>`,
+   `Tuple<T1, T2, ..., Tn>`, or `Decision` whose member types are otherwise
+   permitted. A function, method, prompt, action, or spawned block MAY have no
+   returned value. An ordinary function, method, binding, aggregate, or struct
+   MAY carry `Decision`, but an expected `prompt` or `action` output type MUST
+   NOT contain `Decision` at any nesting depth. Only `decide` or a decision
+   workflow can produce that opaque type.
    Omission of a result annotation and the explicit result annotation `-> None`
    both denote this no-result form; they do not denote `Option<T>`. No-result
    is not a first-class value and cannot be bound, passed, interpolated, or
    constructed. In particular, `return;` exits a no-result body, while
    `return None;` is valid only when an expected `Option<T>` return type gives
    that expression a type; it is not another spelling of a no-result return.
-3. `Option<T>`, `List<T>`, and `Tuple<T1, T2, ..., Tn>` MAY appear in
+3. `Option<T>`, `Result<T, E>`, `List<T>`, and
+   `Tuple<T1, T2, ..., Tn>` MAY appear in
    parameters, bindings, returned values, and struct fields. `Some(value)` and
    `None` MUST be constructible by deterministic interpreter operations.
-   Gantry code MUST NOT inspect an option through
-   deterministic branching, pattern matching, `if let`, or an unwrap
-   operation in v1; a program that needs to branch on an option MUST supply it
-   to an agent decision operation. `Option<Option<T>>` is excluded from v1
+   Gantry code MAY inspect an option through the deterministic `match` and
+   `if let` forms in Section 9. An unwrap operation remains excluded.
+   `Option<Option<T>>` is excluded from v1
    because the untagged strict-JSON encoding cannot distinguish `None` from
    `Some(None)`.
    Every expression MUST have one statically known type. `Some(value)` has
@@ -553,32 +623,64 @@ document are to be interpreted as described in RFC 2119.
    in a position without such an expected type, including a top-level prompt
    interpolation island, is an analysis error; authors can interpolate a typed
    option binding instead. Gantry performs no other implicit option wrapping.
-4. `List<T>` is an ordered, homogeneous collection. v1 supports zero-based
+4. `List<T>` is an ordered, homogeneous collection. V1 supports list literals
+   and zero-based
    deterministic projection with `value[index]`, where `index` is a
    nonnegative integer token. Projection yields `T`; an out-of-bounds list
-   projection is a fatal runtime error. List literals, iteration, length
-   queries, and other deterministic list operations are excluded from v1; v1
-   lists are produced by agent operations, returned by joins, passed as values,
-   and represented in schemas and JSON.
+   projection is a fatal runtime error. Every item in a list literal MUST have
+   exactly one static type. An empty literal is valid only where an expected
+   `List<T>` type is known. Items are evaluated once from left to right and the
+   list becomes visible atomically after all items succeed. Iteration, length
+   queries, mutation, and other deterministic list operations are excluded
+   from v1.
 5. `Tuple<T1, T2, ..., Tn>` is an ordered, fixed-arity heterogeneous
    collection. Its arity MUST be at least two, and each positional member MAY
    have a distinct otherwise permitted type. v1 supports zero-based
    deterministic projection with `value[index]`; the literal index MUST be in
    bounds during analysis and the projection's static type is the type at that
-   tuple position. Tuple literals, destructuring, iteration, and other
-   deterministic tuple operations are excluded from v1; v1 tuples are produced
-   by agent operations or multi-task joins, passed as values, and represented
-   in schemas and JSON.
-6. Struct fields MAY be `String`, declared struct values, `Option<T>`,
-   `List<T>`, or `Tuple<T1, T2, ..., Tn>` of otherwise permitted types. Nested
-   and directly self-recursive struct definitions are permitted. In accordance
-   with Section 4, a cycle through two or more distinct struct declarations is
-   excluded from v1. Every permitted self-recursive cycle MUST pass through
-   `Option<T>` or `List<T>` so that a finite strict-JSON value can terminate the
-   recursion. An unguarded recursive cycle is an analysis error because it has
-   no finite inhabitant.
-7. Gantry MUST support named-field struct construction. Struct values MAY be
-   constructed by source execution or produced by an agent hook. A source
+   tuple position. `(a, b, ...)` constructs a tuple of at least two members;
+   `(value)` remains grouping. Tuple members are evaluated once from left to
+   right and the tuple becomes visible atomically after all members succeed.
+   A tuple pattern MAY destructure a tuple in `let`, `if let`, or `match`.
+   Iteration and mutation of tuple members are excluded from v1.
+6. Struct fields MAY be `String`, declared struct or enum values, `Option<T>`,
+   `Result<T, E>`, `List<T>`, `Tuple<T1, T2, ..., Tn>`, or `Decision` of
+   otherwise permitted types. Nested and directly self-recursive struct
+   definitions are permitted. In accordance with Section 4, a cycle through
+   two or more distinct declared types is excluded from v1. Every permitted
+   self-recursive struct cycle MUST pass through `Option<T>` or `List<T>` so
+   that a finite strict-JSON value can terminate the recursion. An unguarded
+   recursive cycle is an analysis error because it has no finite inhabitant.
+7. Gantry MUST support declared enums as closed tagged unions. An enum MUST
+   contain at least one variant. Each variant is either unit-like or carries
+   exactly one otherwise permitted payload type; authors MUST use a struct
+   payload when one variant needs several named values. Variant names MUST be
+   unique within the enum. A unit variant is constructed as
+   `Type::Variant`; a payload variant is constructed as
+   `Type::Variant(value)`. The payload type MUST match exactly. Enum values
+   MAY be inspected only by patterns, equality conditions, projection from a
+   bound payload, or by supplying the complete value to an operation.
+   Directly or transitively recursive enum payloads are excluded from v1.
+8. `Result<T, E>` is a built-in tagged union with source constructors
+   `Ok(value)` and `Err(error)`. Their types are `Result<T, E>` when the
+   expected type and argument type identify the other member. A constructor
+   without enough expected-type information is an analysis error. `Result`
+   represents an expected outcome intentionally returned by a prompt, action,
+   workflow, or source constructor. Gantry MUST NOT convert `HookOutcome::Failed`,
+   a required decline, invalid output, retry exhaustion, cancellation,
+   journal failure, or another runtime error into `Err`; those failures retain
+   their ordinary runtime semantics. V1 has no `?` operator or implicit result
+   propagation.
+9. `Decision` is an opaque first-class value with a controlling Boolean and a
+   nonempty rationale. Only `decide` and decision workflows may create one.
+   Source MAY bind, pass, return, capture, store, interpolate, and consume a
+   `Decision` as an `if`, `while`, or `until` condition. The field projection
+   `decision.rationale` yields a `String`; no projection exposes the Boolean,
+   and source MUST NOT construct, compare, pattern-match, or mutate a
+   `Decision`. Reusing a bound decision performs no new hook dispatch and
+   preserves the logical operation provenance of the original decision.
+10. Gantry MUST support named-field struct construction. Struct values MAY be
+   constructed by source execution or produced by an operation hook. A source
    constructor MUST reject unknown and duplicate fields during analysis.
    Constructor field expressions are evaluated once in source order. For
    source construction, a field is required only when it has neither a
@@ -586,18 +688,18 @@ document are to be interpreted as described in RFC 2119.
    analysis error; an omitted field with a default uses that default, and an
    omitted `Option<T>` field without a default becomes `None`. A non-optional
    field with a source default may therefore be omitted from a source
-   constructor even though Section 8 still requires that field in agent hook
+   constructor even though Section 8 still requires that field in operation-hook
    output. A constructed value becomes visible only after every supplied field
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
-8. Struct fields MAY declare string-literal or `None` defaults, which are the
+11. Struct fields MAY declare string-literal or `None` defaults, which are the
    only field-default forms in v1. A string default is valid for `String` and
    `Option<String>` fields; for `Option<String>` it normalizes to
    `Some(default)`. A `None` default is valid only for an `Option<T>` field.
    Defaults MUST NOT invoke an agent operation. When an optional field with a
    default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
-9. Every first-class Gantry value has deep, nonaliasing value semantics.
+12. Every first-class Gantry value has deep, nonaliasing value semantics.
    Binding initialization, assignment, argument and return passing, field and
    aggregate projection, construction, task capture, and join-result delivery
    each produce an independent logical value. An implementation MAY share
@@ -610,24 +712,35 @@ document are to be interpreted as described in RFC 2119.
    field mutation of that local value. Parameter mutability is local to the
    called workflow and never permits mutation of the caller's value.
    Assignments MUST preserve type, and v1 permits no implicit type coercion.
-10. `const` is excluded from v1. Runtime initialization of immutable bindings
+13. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
-11. Built-in deterministic string operations and list operations other than
-    projection are excluded from v1. Lists and tuples are typed transport
-    aggregates: source may pass, return, interpolate into an operation, or
-    project them, but cannot branch on, iterate over, or otherwise inspect
-    them deterministically.
-12. Every protocol field that identifies a Gantry type MUST use one canonical
-    UTF-8 type descriptor. `String` is encoded as `String`; a declared struct
-    is encoded as its `crate::`-rooted qualified path; and constructed types
-    are encoded as `Option<T>`, `List<T>`, or `Tuple<T1,T2,...,Tn>` with no
+14. Built-in deterministic string operations and list operations other than
+    projection are excluded from v1. Exact `==` and `!=` are available only
+    as structural conditions under Section 9; they do not produce a bindable
+    Boolean. Lists and tuples MAY be constructed, passed, returned,
+    interpolated, projected, and pattern-destructured, but source cannot
+    iterate over them, query their lengths, or mutate their members.
+15. Patterns are deterministic structural operations over an already evaluated
+    value. V1 patterns are `_`, an identifier binding, `Some(pattern)`,
+    `None`, `Ok(pattern)`, `Err(pattern)`, a unit or payload enum variant, and
+    a fixed-arity tuple pattern. `_` matches without binding. An identifier
+    pattern matches and deep-copies the complete value into a new immutable
+    lexical binding. Names introduced by one pattern MUST be unique and obey
+    the no-shadowing rules in Section 4. A `let` destructuring pattern MUST be
+    irrefutable for its static type; v1 therefore permits only identifier and
+    tuple patterns, recursively, in `let`. `if let` and `match` admit refutable
+    patterns under Section 9.
+16. Every protocol field that identifies a Gantry type MUST use one canonical
+    UTF-8 type descriptor. `String` and `Decision` are encoded exactly as
+    `String` and `Decision`; a declared struct or enum is encoded as its
+    `crate::`-rooted qualified path; and constructed types are encoded as
+    `Option<T>`, `Result<T,E>`, `List<T>`, or `Tuple<T1,T2,...,Tn>` with no
     whitespace and with each member recursively encoded by this rule. The
-    no-result form is encoded as `None`, and the interpreter-only decision
-    result is encoded as `Decision`. Source aliases introduced by `use` MUST
-    be resolved before a descriptor is produced. Canonical descriptors are
-    metadata rather than source values, but they ensure that hooks, journals,
-    events, and diagnostics identify the same type independently of the
-    spelling visible at a call site.
+    no-result form is encoded as `None`. Source aliases introduced by `use`
+    MUST be resolved before a descriptor is produced. Canonical descriptors
+    are metadata rather than source values, but they ensure that hooks,
+    journals, events, and diagnostics identify the same type independently of
+    the spelling visible at a call site.
 
 ## 6. Functions and Methods
 
@@ -656,7 +769,7 @@ document are to be interpreted as described in RFC 2119.
    does not create aliases to intermediate structs.
 4. Functions and methods are interpreter-managed workflows. Calling one MUST
    create an interpreter call frame and execute its body; the call itself MUST
-   NOT invoke an agent hook.
+   NOT invoke an operation hook.
    Arguments and receivers use deep-copy value semantics. There are no aliases,
    references, moves, or borrowed values in v1. A `self` or `mut self` receiver
    is therefore a local receiver copy. `mut self` permits mutation of that copy
@@ -667,9 +780,9 @@ document are to be interpreted as described in RFC 2119.
    type MUST exactly equal its parameter type. A method call additionally
    requires a receiver of the `impl` target type. Gantry has no default,
    variadic, named, coerced, or overloaded call arguments in v1.
-5. A workflow body MAY contain one or more `prompt` expressions. Each executed
-   `prompt` or `decide` expression MUST create exactly one logical agent
-   operation. That logical operation MAY require multiple physical hook
+5. A workflow body MAY contain one or more external-operation expressions.
+   Each executed `prompt`, `decide`, or `action` expression MUST create exactly
+   one logical operation. That logical operation MAY require multiple physical hook
    dispatches because of structured-output validation retries or recovery of
    an indeterminate dispatch; those dispatches retain the same operation ID
    and do not represent additional source operations. Calling a decision
@@ -678,10 +791,10 @@ document are to be interpreted as described in RFC 2119.
    operations before its terminal decision is obtained.
    The same transitive rule applies to ordinary workflow and method calls: a
    call site is deterministic interpreter dispatch, but executing the called
-   body MAY reach any `prompt` or `decide` sites written in that body or in
-   workflows it calls. Consequently, the absence of `prompt` or `decide` on
-   the same source line as a call does not prove that the call tree is free of
-   model operations. Model work remains explicit at its declaration site and
+   body MAY reach any `prompt`, `decide`, or `action` sites written in that
+   body or in workflows it calls. Consequently, the absence of those keywords
+   on the same source line as a call does not prove that the call tree is free
+   of integration operations. External work remains explicit at its source site and
    observable through the workflow-call context, operation source location,
    journal, and events. Analysis tooling SHOULD expose this transitive effect
    to authors without representing the call itself as a model operation.
@@ -697,30 +810,37 @@ document are to be interpreted as described in RFC 2119.
    structured analysis result MUST contain:
    - every direct workflow-call edge, identified by call-site location and
      canonical callee path;
-   - the direct `prompt`, `decide`, `spawn`, and `detach` sites in that
+   - the direct `prompt`, `decide`, `action`, `spawn`, and `detach` sites in that
      workflow, identified by kind and source location; and
-   - four transitive flags indicating whether execution of the workflow may
-     reach a `prompt`, `decide`, `spawn`, or `detach`, respectively.
+   - five transitive flags indicating whether execution of the workflow may
+     reach a `prompt`, `decide`, `action`, `spawn`, or `detach`, respectively.
    The transitive flags MUST be the least fixed point of the package call
    graph, including permitted self-recursion and method calls. These summaries
    are analysis metadata rather than source-level effects or additional hook
    operations. They let human-facing tools and model repair agents distinguish
-   deterministic calls from calls that may eventually perform model-backed or
-   parallel work without adding annotations to the source language.
-   Struct construction, field access, assignment, `Option<T>` construction,
-   module lookup, function or method dispatch, and `join` are interpreter
-   operations and MUST NOT invoke an agent hook.
+   deterministic calls from calls that may eventually perform integration-
+   backed or parallel work without adding annotations to the source language.
+   Struct, enum, option, result, list, and tuple construction; field access;
+   assignment; pattern routing; module lookup; workflow dispatch; and `join`
+   are interpreter operations and MUST NOT invoke an operation hook.
 6. Each `prompt` expression MUST contain an explicit prompt template and MAY
    contain parenthesized operation modifiers before that template. A typed
    prompt places its result annotation after the template, as in
    `prompt(retry_limit = 2, session = fork) "..." -> Report`. A prompt with no
-   result annotation, or with `-> None`, has no result.
+   result annotation, or with `-> None`, has no result. A prompt or `decide`
+   expression MAY contain one `using { ... }` clause after its template and
+   before the prompt result annotation. Each entry is either shorthand `name`,
+   equivalent to `name: name`, or `name: expression`. Entry names MUST be
+   unique. Expressions use the same deterministic, side-effect-free subset as
+   interpolation. Gantry MUST evaluate named inputs once from left to right
+   after interpolation and before dispatch. Validation retries and recovery
+   redispatches MUST reuse the captured values rather than reevaluate them.
 7. Template expressions MUST be interpolated before hook dispatch. To keep
    agent invocation explicit, an interpolation MAY contain only bindings,
    field paths, zero-based `List<T>` or tuple projections, literals, and
    deterministic struct or `Option<T>` constructor expressions composed from
    other permitted interpolation expressions.
-   Function calls, method calls, `prompt`, decisions, assignment, `join`, and
+   Function calls, method calls, `prompt`, `decide`, `action`, assignment, `join`, and
    other expressions that can invoke a hook, alter control flow, or mutate
    state are prohibited inside interpolation. Interpolations are evaluated in
    source order. If any interpolation cannot be evaluated or encoded, the
@@ -736,7 +856,11 @@ document are to be interpreted as described in RFC 2119.
    island. It is not the complete original source token because delimiters and
    structural block-prompt layout are omitted. An implementation MUST retain
    each interpolation island's exact source text and source span independently
-   of the dedented hook-facing template.
+   of the dedented hook-facing template. The hook request MUST carry named
+   inputs separately from interpolation arguments as an ordered vector of
+   name, source span, canonical type descriptor, and canonical JSON value.
+   An integration MUST make every named input available to the selected agent,
+   even when it must render that structured vector into provider text.
 8. A trailing expression in a function, method, or spawned block implicitly
    yields its value. An explicit `return` MAY yield earlier from a function,
    method, or spawned block. An explicit `return` in a decision workflow is
@@ -773,10 +897,9 @@ document are to be interpreted as described in RFC 2119.
     ordinary value-producing or statement-only `with` block changes agent
     selection only, and the corresponding `session` block changes the active
     logical session only; neither intercepts or retargets control transfer.
-    Decision-valued `with` and `session` blocks are the deliberate exception:
-    Section 9 makes them boundaries for nonlocal `break` and `continue` and
-    restricts `return` because they execute as part of a condition rather than
-    as an ordinary workflow block.
+    A `with` or `session` block that yields `Decision` remains an ordinary
+    value-producing block; its result type does not create a special control-
+    transfer boundary.
 11. Except for explicitly parallel spawned blocks, expression evaluation MUST
     be deterministic and left to right. A workflow call evaluates its callee
     and then its arguments in source order; a method call evaluates its
@@ -789,7 +912,21 @@ document are to be interpreted as described in RFC 2119.
     or dispatched. Entering a `with` expression establishes its selected agent
     before its body begins; entering a `session` expression establishes its
     active logical session before its body begins. These rules make the order
-    of model operations visible even when calls or constructors are nested.
+    of external operations visible even when calls or constructors are nested.
+12. An action declaration is a package item with a canonical path, typed
+    positional parameters, an optional result type, and no Gantry body. An
+    action invocation MUST use the `action` keyword and MUST resolve to one
+    declared action; writing the same path as an ordinary call is an analysis
+    error rather than an implicit action dispatch. Gantry evaluates action
+    arguments exactly once from left to right, requires exact parameter-type
+    equality, captures their canonical JSON values, and then dispatches one
+    logical action operation. Source execution awaits that result unless the
+    invocation occurs in a spawned task. A no-result action is an expression
+    statement; a value-producing action yields its declared type and MAY be
+    bound, returned, matched, or intentionally discarded. Action declarations
+    have no agent, session, prompt template, or provider policy in Gantry
+    source. The integration resolves their canonical signatures during
+    preflight under Section 7.
 
 ## 7. Agents, Hooks, and Sessions
 
@@ -825,18 +962,35 @@ document are to be interpreted as described in RFC 2119.
    `OperationHook` creation or task execution has begun.
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
+   Action declarations likewise identify logical harness capabilities rather
+   than concrete provider functions. Before a new execution or resume begins,
+   the integration MUST resolve every canonical action signature in the
+   analyzed package and MUST supply one opaque stable action-mapping revision
+   ID covering that complete mapping. An unresolved action is an integration-
+   preflight start or resume-start failure, even when no reachable execution
+   path is expected to invoke it. The execution-start record MUST contain the
+   initial revision. A resume MAY change the mapping only after Gantry appends
+   and flushes an execution-state record containing the replacement revision;
+   that revision applies to every later action dispatch in the resume run.
+   Previously committed outcomes and results remain unchanged. Recovery of an
+   indeterminate action retains its canonical action path, signature, typed
+   arguments, and logical operation ID while carrying the active recorded
+   action-mapping revision. The integration MUST map one canonical signature
+   consistently for the complete run and MUST reject conflicting or ambiguous
+   capability registrations during preflight.
 3. Agent selection is established by lexical `with <name> { ... }` blocks and
-   inherited by their dynamic work. The selected name applies to operations
-   written directly in the block, operations reached through workflow or
-   decision calls made from it, and child tasks spawned from it, unless a
-   nested `with` block overrides the selection. A workflow call therefore
+   inherited by their dynamic model-backed work. The selected name applies to
+   `prompt` and `decide` operations written directly in the block, model
+   operations reached through workflow or decision calls made from it, and
+   child tasks spawned from it, unless a nested `with` block overrides the
+   selection. It does not apply to `action` operations. A workflow call therefore
    inherits the caller's active selection rather than resetting to the default,
    and a spawned child snapshots the selection that is active when `spawn`
    executes. Exiting `with` restores the previous selection for its caller;
    an already spawned child retains its snapshot. `<name>` MUST be a literal
    name from the merged agent declarations, not a runtime binding. `with`
-   contexts MAY occur at any block scope. Operations with no active selection
-   use the declared default agent.
+   contexts MAY occur at any block scope. Model operations with no active
+   selection use the declared default agent.
    Agent selection and logical-session selection are orthogonal. Reusing one
    logical session across nested or sequential `with` blocks MUST preserve the
    session's conversational continuity even when those blocks select different
@@ -857,7 +1011,7 @@ document are to be interpreted as described in RFC 2119.
    therefore logically synchronous. Gantry MUST lazily obtain at most one
    independently usable `OperationHook` instance for each Gantry task from an
    asynchronous `HookFactory`, immediately before that task's first hook
-   dispatch. A task that executes no `prompt` or `decide` operation MUST NOT
+   dispatch. A task that executes no `prompt`, `decide`, or `action` operation MUST NOT
    require hook creation merely because the task exists. Once created, that
    instance MUST live for the remainder of the task's lifetime, including
    nested workflow calls and validation retries, and MUST NOT be invoked
@@ -895,41 +1049,51 @@ document are to be interpreted as described in RFC 2119.
    task that reaches another hook dispatch, then continue that logical task
    with its restored task and session IDs. A recovered task that completes by
    deterministic interpreter work alone does not require a hook instance.
-5. Every operation hook request MUST contain at least:
+5. Every operation hook request MUST be a versioned tagged envelope with a
+   common header and exactly one operation-specific body. The common header
+   MUST contain at least:
    - a protocol major and minor version;
    - stable operation, execution, and task IDs, plus the parent-task ID when
      the task was spawned;
-   - an operation kind, selected agent name, and the agent-mapping revision ID
-     active for this dispatch;
-   - the authored source prompt template defined in Section 6 and the
-     interpolated prompt;
-   - the ordered typed interpolation-argument vector defined below;
+   - an operation kind;
    - the expected result kind;
    - the expected canonical result-type descriptor from Section 5;
    - the expected JSON Schema;
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
    - the source location;
-   - the active logical session ID, root logical session ID, and root-session
-     provenance (`embedder-supplied` or `gantry-created`);
-   - the request session directive, which describes how this operation selected
-     its active session;
-   - the active session's creation directive, creator-construct identity, and
-     parent logical session ID when that session was created by `fork` or
-     `new`;
    - a dispatch ID, validation-attempt number, and recovery-dispatch number;
      and
    - validation errors from the immediately preceding invalid attempt, when
      applicable.
-   The v1 operation kinds are `prompt` and `decision`. The result kind is
-   `value`, `no-result`, or `decision`. Typed arguments MUST be an ordered
+   The v1 operation kinds are `prompt`, `decision`, and `action`. The result
+   kind is `value`, `no-result`, or `decision`. The expected result descriptor
+   is the declared value type for `value`, `None` for `no-result`, and
+   `Decision` for `decision`.
+
+   A `prompt` or `decision` body MUST contain the selected agent name and
+   active agent-mapping revision; authored source template and interpolated
+   prompt; ordered interpolation-argument vector; ordered named-input vector;
+   active, root, and parent logical-session metadata; and request and creation
+   directives required by this section. Typed interpolation arguments MUST be
+   an ordered
    vector containing one record for each interpolation island in source order;
    each record contains the exact UTF-8 source text between that island's
    `${` and matching `}` delimiters, its package-relative source file and
    half-open byte span, its canonical static-type descriptor from Section 5,
-   and its RFC 8785 canonical strict-JSON value. The expected result descriptor
-   is the declared value type for `value`, `None` for `no-result`, and
-   `Decision` for `decision`.
+   and its RFC 8785 canonical strict-JSON value. The named-input vector MUST
+   preserve `using` source order. Each entry contains its unique name, complete
+   entry source span, canonical static-type descriptor, and RFC 8785 canonical
+   strict-JSON value. A shorthand entry and its expanded `name: name` form have
+   the same protocol value but retain their own authored source span.
+
+   An `action` body MUST instead contain the action's canonical item path and
+   canonical signature; the action-mapping revision active for the dispatch;
+   and an ordered argument vector containing each parameter name, argument
+   source span, canonical static-type descriptor, and RFC 8785 canonical
+   strict-JSON value. It MUST NOT contain a selected agent, prompt template,
+   interpolated prompt, named model input, or conversational-session directive.
+   Lexical `with` and `session` contexts do not change an action request.
    Comments and whitespace inside the island remain part of that source-text
    field even though they do not affect evaluation. A repeated
    interpolation appears repeatedly so the request
@@ -938,8 +1102,9 @@ document are to be interpreted as described in RFC 2119.
    byte span into that file's exact source bytes. A permitted UTF-8 byte-order
    mark is part of those bytes and therefore contributes three bytes to later
    offsets even though the lexer ignores it. An operation location spans the
-   complete authored `prompt` or `decide` expression, including modifiers,
-   template delimiters, and a prompt result annotation when present. An
+   complete authored `prompt`, `decide`, or action-invocation expression,
+   including modifiers, template delimiters, arguments, and a prompt result
+   annotation when present. An
    interpolation location spans the complete `${...}` island. Implementations
    MAY additionally report line and scalar-column coordinates, but protocol
    identity and resume MUST use the byte span. The operation ID MUST remain
@@ -978,13 +1143,16 @@ document are to be interpreted as described in RFC 2119.
      zero-based spawn occurrence within its immediate dynamic parent, and the
      child's canonical declared result-type descriptor;
    - `conditional-arm`: conditional-chain dynamic identity, zero-based arm
-     index, decision, and nonempty rationale for an already evaluated arm;
+     index, condition kind (`decision`, `equality`, or `pattern`), controlling
+     outcome, and, for a model-produced decision, its operation ID and
+     nonempty rationale;
    - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
      index, phase (`condition` or `body`), and the most recently settled
      condition's associated index, decision, and nonempty rationale when one
      exists; and
-   - `optional-decline`: declined operation ID, selected agent, source location,
-     and decline reason when a decline normalized to `None`.
+   - `optional-decline`: declined operation ID, operation kind, selected agent
+     or canonical action path as applicable, source location, and decline
+     reason when a decline normalized to `None`.
    The root `crate::main` frame has no source call site and MUST encode that
    field as absent rather than inventing a location. It has frame occurrence
    zero and is always the first structural context entry. Every non-root
@@ -1033,7 +1201,8 @@ document are to be interpreted as described in RFC 2119.
    request MUST include the `conditional-arm` entries from preceding arms in
    the same chain. While a selected conditional arm executes, its active
    control-chain context MUST include every preceding false arm followed by
-   the controlling true arm, each with its decision and rationale. An `else`
+   the controlling true arm. Decision entries include their rationale;
+   structural entries do not fabricate one. An `else`
    arm MUST include
    every preceding false arm. These entries leave the active context when the
    conditional chain completes; they are not unbounded execution history. A
@@ -1042,12 +1211,15 @@ document are to be interpreted as described in RFC 2119.
    That provenance MUST survive assignment, argument and return passing,
    struct or aggregate containment, capture, and other deep copies. An
    operation request MUST include one `optional-decline` entry for every
-   distinct decline provenance reachable from its interpolation inputs,
-   ordered by interpolation-input order and then depth-first value traversal;
+   distinct decline provenance reachable from its captured inputs. Prompt and
+   decision requests traverse interpolation arguments followed by named inputs;
+   action requests traverse action arguments. Within each vector, entries are
+   ordered by source order and then depth-first value traversal;
    repeated references to the same declined value produce one entry. Depth-first
-   value traversal is preorder: a struct visits fields in declaration order, a
-   `List<T>` or tuple visits members in ascending index order, and a present
-   `Option<T>` visits its contained value. A `None` has no child value. When the
+   value traversal is preorder: a struct visits fields in declaration order;
+   an enum, result, or present option visits its payload; and a list or tuple
+   visits members in ascending index order. A `None` or unit enum variant has
+   no child value. When the
    same provenance is reachable by more than one path, its first encounter in
    this total order determines the entry position. The
    metadata is not part of Gantry's JSON value and MUST NOT change schema
@@ -1059,8 +1231,8 @@ document are to be interpreted as described in RFC 2119.
    `{` begins interpolation. `$$` consumes exactly those two dollar signs and
    produces one literal dollar sign, so `$${name}` renders the literal text
    `${name}` without interpolation. A `String` is interpolated as its string
-   contents; a struct, `Option<T>`, `List<T>`, or tuple is interpolated as
-   compact strict JSON, with `None` rendered as `null`. This compact encoding
+   contents; a struct, enum, option, result, list, tuple, or `Decision` is
+   interpolated as compact strict JSON, with `None` rendered as `null`. This compact encoding
    MUST use the RFC 8785 JSON Canonicalization Scheme so equivalent Gantry
    values produce the same interpolated prompt across implementations.
    Consequently, `Some("text")` held as an `Option<String>` interpolates as
@@ -1083,23 +1255,26 @@ document are to be interpreted as described in RFC 2119.
 9. Hooks MUST receive the expected output schema as a separate
    machine-readable value. Gantry MUST provide guidance that clearly states
    the operation's input and output contract. At minimum, the guidance MUST
-   state that the raw model output returned through `Completed` must contain
+   state that the raw operation output returned through `Completed` must contain
    exactly one JSON text with no surrounding prose, Markdown fence, or
    additional value; identify the expected result kind; explain that unknown
    struct properties are rejected; identify fields that may be omitted and the
-   defaults or `None` values omission supplies; and explain the no-result or
+   defaults or `None` values omission supplies; describe every interpolation,
+   named input, or action argument; and explain the no-result, tagged-value, or
    decision shape when applicable. The wording and provider-specific
    presentation MAY evolve, but those semantic instructions MUST remain
    present on every initial dispatch and repair retry.
-10. The only v1 operation-selection knob is the agent name. System/user/
-   assistant roles, model choice, tools, sampling settings, streaming,
-   progress reporting, operation-level timeouts, and provider-specific
-   cancellation mechanisms are integration concerns. Those mechanisms MUST
-   still observe the Gantry-owned cancellation token and the language-level
-   cancellation state transitions required by Sections 10 and 15.
+10. The only v1 source-level model-selection knob is the agent name. Action
+    selection is instead the canonical path of a declared action. System/user/
+    assistant roles, model choice, tool implementation, sampling settings,
+    streaming, progress reporting, operation-level timeouts, and provider-
+    specific cancellation mechanisms are integration concerns. Those
+    mechanisms MUST still observe the Gantry-owned cancellation token and the
+    language-level cancellation state transitions required by Sections 10 and
+    15.
 11. A hook MUST return one of three host-level outcomes:
    `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
-   `Completed` contains the agent's raw output as bytes; Gantry, not the hook,
+   `Completed` contains the integration's raw output as bytes; Gantry, not the hook,
    owns UTF-8 decoding, strict-JSON parsing, schema validation, and repair
    retries. Non-UTF-8 or malformed-JSON output is therefore a structured-output
    validation failure rather than a transport failure. A decline reason or
@@ -1189,18 +1364,23 @@ document are to be interpreted as described in RFC 2119.
    failure to resolve any required session is a nonterminal resume-start
    failure under item 17. Sessions used only by committed, completed operations
    need not be reattached unless unfinished work will reuse them.
-14. Agent operations may have side effects. Gantry does not require retries to
-    be idempotent or prevent duplicate external effects.
-15. `prompt` and decision evaluation are the only v1 source constructs that
-    directly dispatch an `OperationHook`. Tools, approvals, shell commands,
-    network calls, and other harness actions MAY occur while the integration
-    fulfills that hook, but they are not separately expressed or interpreted
-    by Gantry v1. Gantry observes that internal work only through the hook
-    outcome; an integration MAY expose additional telemetry through its own
-    harness-specific facilities. This boundary keeps the language focused on
-    agent control flow without prescribing a harness action vocabulary or
-    implying that harness-internal actions alter Gantry state independently of
-    their hook outcome.
+14. External operations may have side effects. Gantry does not require retries
+    to be idempotent or prevent duplicate external effects. Integrations SHOULD
+    use the stable operation and dispatch identities to deduplicate action
+    effects when the underlying capability permits it.
+15. `prompt`, decision evaluation, and `action` invocation are the only v1
+    source constructs that directly dispatch an `OperationHook`. Tools,
+    approvals, shell commands, network calls, and other provider-internal work
+    MAY still occur while an integration fulfills any hook, but such work is
+    not a second Gantry operation. A source-visible harness capability MUST be
+    declared and invoked as an `action`; Gantry observes its arguments,
+    declared result contract, outcome, durability, retry, cancellation, and
+    events through the same operation lifecycle as model operations.
+    Actions are independent of agent and conversational-session selection.
+    Their default structured-output retry limit is zero because redispatch can
+    duplicate side effects; an action invocation MAY explicitly override that
+    limit. Crash recovery retains the at-least-once redispatch semantics in
+    Section 11.
 16. Every dynamic operation identity MUST correspond to a logical execution
     path consisting of the execution ID, task path, workflow-call path, source
     operation location, branch arm, and enclosing loop iteration counters.
@@ -1268,7 +1448,7 @@ document are to be interpreted as described in RFC 2119.
 
 ## 8. Structured Output and Validation
 
-1. A successful agent hook outcome provides raw bytes in
+1. A successful operation-hook outcome provides raw bytes in
    `Completed(raw_output)`. Gantry MUST decode those bytes as UTF-8 and parse
    exactly one RFC 8259 JSON text, allowing only JSON whitespace after the
    value. Gantry owns this parsing step and MUST reject non-UTF-8, malformed,
@@ -1279,7 +1459,7 @@ document are to be interpreted as described in RFC 2119.
    JSON strings and object member names MUST decode to sequences of Unicode
    scalar values; valid escaped surrogate pairs are combined, and unpaired
    surrogates MUST be rejected.
-   For a no-result prompt, the expected schema is exactly the following schema
+   For any no-result operation, the expected schema is exactly the following schema
    object, and the parsed value MUST be JSON `null`:
 
    ```json
@@ -1302,7 +1482,8 @@ document are to be interpreted as described in RFC 2119.
    value. Although hook output may omit an optional property, omission is not
    preserved as a distinct runtime state.
    Normalization is recursive and deterministic. Gantry MUST normalize nested
-   structs, list items, tuple members, and present option values from outermost
+   structs, enum payloads, result payloads, list items, tuple members, present
+   option values, and decisions from outermost
    to innermost structure, preserving list and tuple order. It MUST apply each
    omitted optional field's declared default, or `None` when no default exists,
    at every nesting depth. A hook result becomes available to source execution
@@ -1329,12 +1510,24 @@ document are to be interpreted as described in RFC 2119.
    successful parsing, validation, and normalization. Plain `String`
    interpolation remains the deliberate exception because it inserts string
    contents rather than a JSON value.
+
+   A declared enum uses a strict tagged JSON object. A unit variant is
+   `{"variant":"NAME"}`. A payload variant is
+   `{"variant":"NAME","value":PAYLOAD}`. `variant` and `value` are the
+   literal protocol property names; unit variants MUST reject `value`, payload
+   variants MUST require it, and every variant object MUST reject additional
+   properties. `Result<T, E>` uses the same representation with variant names
+   `Ok` and `Err`, each requiring `value` of type `T` or `E`, respectively.
+   `Decision` uses the exact `decision` and nonempty `rationale` object shape
+   in Section 9. Decision provenance is interpreter metadata and is not part
+   of that JSON value.
 6. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
    during semantic analysis and MUST independently validate every successful
    hook result against that schema. Every schema root MUST identify that
    dialect with its `$schema` URI. Recursive types MUST use `$defs` and `$ref`.
    `Option<T>` MUST be represented by a schema accepting exactly `null` or the
-   schema for `T`.
+   schema for `T`. Declared enums, results, and decisions MUST use the strict
+   tagged and decision schemas defined in this section and Section 9.
    Schema generation is part of the portable hook protocol, not an
    implementation formatting choice. Gantry MUST serialize every generated
    schema with RFC 8785 JSON canonicalization before placing it in a hook,
@@ -1344,7 +1537,8 @@ document are to be interpreted as described in RFC 2119.
    schema rules: `String` uses `{"type":"string"}`; `List<T>` uses an array
    with the schema for `T` in `items`; tuples use the exact fixed-array form in
    item 4; options use `anyOf` with `{"type":"null"}` first and the schema
-   for `T` second; and structs use the object rules in item 7. A struct's
+   for `T` second; results and enums use strict `oneOf` branches; decisions use
+   the exact schema in Section 9; and structs use the object rules in item 7. A struct's
    `properties` object is keyed by exact field name, while its `required` array
    lists required fields in declaration order. RFC 8785 canonicalization, not
    source declaration order, determines serialized JSON object-member order.
@@ -1355,17 +1549,35 @@ document are to be interpreted as described in RFC 2119.
    `prefixItems` is `[NODE(T1),...,NODE(Tn)]`, whose `items` is `false`, and
    whose `minItems` and `maxItems` are both `n`. `Option<T>` produces exactly
    `{"anyOf":[{"type":"null"},NODE(T)]}`, except for the field-level
-   `default` annotation permitted below. A declared struct type produces
-   exactly `{"$ref":"#/$defs/KEY"}`, where `KEY` is that struct's definition
+   `default` annotation permitted below. Define `TAG(NAME)` as exactly
+   `{"type":"string","const":NAME}`. Define `PAYLOAD(NAME,T)` as exactly
+   `{"type":"object","properties":{"variant":TAG(NAME),"value":NODE(T)},
+   "required":["variant","value"],"additionalProperties":false}` and
+   `UNIT(NAME)` as exactly
+   `{"type":"object","properties":{"variant":TAG(NAME)},
+   "required":["variant"],"additionalProperties":false}`. These are schema
+   construction formulas; `NAME` is replaced by its JSON string and line
+   breaks shown here are not part of canonical serialization.
+   `Result<T,E>` produces exactly
+   `{"oneOf":[PAYLOAD("Ok",T),PAYLOAD("Err",E)]}`. A declared enum
+   definition produces exactly one `oneOf` array whose branches follow source
+   variant order, using `UNIT(NAME)` for a unit variant and `PAYLOAD(NAME,T)`
+   for a payload variant.
+   `Decision` produces exactly the schema in Section 9 without its root
+   `$schema` member when nested as `NODE(Decision)`. A declared struct or enum
+   type produces exactly `{"$ref":"#/$defs/KEY"}`, where `KEY` is that
+   declared type's definition
    key. `NODE(T)` denotes recursive application of these rules; it is notation
    in this specification, not a protocol member.
-   Every reachable declared struct MUST have exactly one `$defs` entry. Its
+   Every reachable declared struct or enum MUST have exactly one `$defs`
+   entry. Its
    definition key is the lowercase hexadecimal SHA-256 digest of the UTF-8
    canonical type descriptor from Section 5, and every occurrence of that
-   struct type uses a local `$ref` to that entry. RFC 8785 canonicalization
+   declared type uses a local `$ref` to that entry. RFC 8785 canonicalization
    determines `$defs` object-member order from those definition keys. The root
    adds `$schema`, the complete reachable `$defs` object when nonempty, and
-   either its own non-struct schema keywords or a `$ref` for a struct result.
+   either its own non-declared-type schema keywords or a `$ref` for a declared
+   struct or enum result.
    No implementation-specific title, description, identifier, or annotation
    may be added to the expected protocol schema. The sole annotations are the
    field defaults required by item 7. These rules make the expected schema and
@@ -1373,13 +1585,13 @@ document are to be interpreted as described in RFC 2119.
 7. Every struct schema MUST set `additionalProperties` to `false`. Declared
    fields are required unless represented by `Option<T>`. Literal field
    defaults affect source construction; they do not make a non-optional field
-   optional in an agent result. A schema for an optional field with a declared
+   optional in an operation result. A schema for an optional field with a declared
    default MUST include that value through JSON Schema's `default` annotation.
    The `default` member MUST be a direct member of that field's property schema,
    alongside the `anyOf` member that represents `Option<T>`; it MUST NOT be
    placed inside either the `null` or `T` branch. A non-optional field default
    MUST NOT produce a schema annotation because that field remains required in
-   agent output. These placement rules are part of canonical schema generation
+   operation output. These placement rules are part of canonical schema generation
    and therefore of the schema digest.
    Each struct definition in `$defs` MUST contain exactly `type`, `properties`,
    `required`, and `additionalProperties`. `type` is `object`;
@@ -1395,21 +1607,25 @@ document are to be interpreted as described in RFC 2119.
    assembly in item 6, are the complete portable generated-schema shape.
    Gantry MUST still perform the normalization in item 2 because the annotation
    does not itself insert a value during JSON Schema validation.
-8. v1 validation MUST check JSON shape and types. Constraints such as length,
-   patterns, enums, and semantic validity are conveyed through prompt guidance
-   rather than enforced by Gantry. The fixed nonempty-rationale requirement for
-   the interpreter-only decision schema is the sole v1 exception to this rule.
+8. v1 validation MUST check JSON shape and types, including enum and result
+   discriminators, closed variant sets, fixed tuple arity, and the nonempty
+   `Decision` rationale. Additional constraints such as arbitrary string
+   length, regular-expression patterns, and semantic validity are conveyed
+   through operation guidance rather than enforced by Gantry.
 9. UTF-8 decoding failures, malformed JSON, and schema-invalid output MUST be
-   returned to the agent as validation guidance and retried up to the
+   returned to the integration as validation guidance and retried up to the
    configured retry limit. A retry request MUST include the preceding
    validation errors but MUST NOT return the preceding raw output to the hook.
    A validation retry is another physical dispatch of the same logical
    operation, not a reevaluation of the source expression. Gantry MUST reuse
    the selected agent, logical session, authored template, interpolated
-   prompt, typed interpolation arguments, expected type and schema, base
-   guidance, source location, and ordered execution context from the initial
-   dispatch. It MUST NOT reevaluate interpolation expressions or observe
-   intervening source state. Only the dispatch identity, validation-attempt
+   operation-specific request body, expected type and schema, base guidance,
+   source location, and ordered execution context from the initial dispatch.
+   For a prompt or decision this includes agent, session, template,
+   interpolation arguments, and named inputs; for an action it includes its
+   canonical path, signature, mapping revision, and typed arguments. Gantry
+   MUST NOT reevaluate any captured input expression or observe intervening
+   source state. Only the dispatch identity, validation-attempt
    number, applicable recovery-dispatch number, preceding validation errors,
    and repair-specific rendering of those errors may differ. This rule keeps
    retries understandable as repairs of one visible operation rather than
@@ -1417,7 +1633,9 @@ document are to be interpreted as described in RFC 2119.
 10. The retry limit is configured per interpreter and MAY be overridden per
    operation. It counts retries after the initial attempt; zero permits exactly
    one attempt. The v1 interpreter default is two retries after the initial
-   attempt. Retry backoff MUST be configurable. The v1 default uses full-jitter
+   attempt for `prompt` and `decide`, and zero retries for `action`. An explicit
+   operation-local `retry_limit` overrides the applicable default. Retry
+   backoff MUST be configurable. The v1 default uses full-jitter
    exponential backoff: for the one-based retry number `r`, the delay ceiling
    is `min(100 ms * 2^(r - 1), 2 s)`, and the selected delay is sampled
    uniformly from the inclusive range of whole microseconds from zero through
@@ -1448,13 +1666,13 @@ document are to be interpreted as described in RFC 2119.
 ## 9. Control Flow
 
 1. Gantry MUST support `if`, `else if`, and `else`. Each `if` or `else if`
-   condition MUST obtain its controlling result from exactly one terminal
-   agent decision operation. A direct decision operation uses the visually
-   distinct `decide` expression; an ordinary unannotated `prompt` always
-   remains a no-result prompt. A condition MAY be a direct `decide` expression
-   or a call to a decision workflow. Calling the workflow does not itself add
-   a hook invocation, although explicit prompts and nested decisions in that
-   workflow execute normally before its terminal decision.
+   condition MUST be either a `Decision` expression or one deterministic
+   structural predicate defined below. A direct model judgment uses the
+   visually distinct `decide` expression; an ordinary unannotated `prompt`
+   always remains a no-result prompt. A condition MAY reuse a bound
+   `Decision`, call a decision workflow, or evaluate a new `decide`. Reusing a
+   decision or calling a workflow does not itself add a hook invocation,
+   although evaluating the workflow body may reach explicit operations.
 2. A conditional decision MUST return this strict JSON shape, with no
    additional properties:
 
@@ -1483,17 +1701,23 @@ document are to be interpreted as described in RFC 2119.
    ```
 
    Gantry uses only `decision` to select control flow and retains the rationale
-   for observability. A decision is interpreter-only and cannot be bound as a
-   user-visible Boolean value.
-3. Each `else if` performs a separate decision operation. Its hook request MUST
-   include the decisions and rationales produced by preceding arms in the same
-   conditional chain through the ordered execution-context vector.
+   and operation provenance for observability. The complete object is the
+   opaque first-class `Decision` value defined in Section 5; its Boolean member
+   cannot be projected, bound separately, or used in ordinary expressions.
+3. Each `else if` evaluates its own condition. A newly evaluated `decide`
+   expression performs a separate decision operation; a reused `Decision` or
+   structural predicate performs no new dispatch. A later model-operation hook
+   request MUST include the outcomes of preceding arms in the same conditional
+   chain through the ordered execution-context vector. Decision entries carry
+   their rationales, while structural entries identify their condition kind
+   and outcome without fabricating a rationale.
 4. Gantry MUST support `while` as a pre-test loop and `until` as a post-test
    loop. The post-test syntax places the body before its condition:
    `until(...) { ... } when decide "...";`. This ordering is normative and
    makes execution order visible in source. `until` MUST execute its body once
-   before its first decision. Each condition evaluation invokes its agent
-   decision operation again.
+   before its first decision. Each iteration reevaluates its `Decision`
+   expression. A direct `decide` therefore dispatches on every evaluation;
+   reusing an already bound `Decision` performs no new dispatch.
 5. The general loop form is `loop(session = inline, limit = 0) { ... }`.
    `loop { ... }` is equivalent to the form with all defaults. `while`
    places parenthesized modifiers before its decision expression, as
@@ -1533,10 +1757,38 @@ document are to be interpreted as described in RFC 2119.
    one following post-test unless it exits through `break`, `return`, failure,
    or cancellation. `break` completes any loop immediately without another
    decision call.
-8. `for`, `match`, and deterministic `if let` are excluded from v1.
-9. Control decisions MUST use the same schema-validation and retry policy as
-   other structured agent results.
-10. Gantry imposes no mandatory loop, cost, or agent-call limit. Integrations
+8. Gantry MUST support deterministic structural routing with `if let`,
+   `match`, and condition-only `==` and `!=`. These constructs MUST NOT invoke
+   an operation hook.
+   An `if let PATTERN = EXPRESSION` evaluates its scrutinee exactly once. A
+   successful match enters the first arm with fresh immutable bindings; a
+   failed match enters `else` when present and otherwise continues normally.
+   Pattern bindings exist only in the selected arm. An `if let` MAY omit
+   `else`.
+
+   A `match` evaluates its scrutinee exactly once and tests arms in source
+   order, selecting the first matching arm. Match patterns use Section 5.
+   Analysis MUST reject duplicate or unreachable arms and MUST prove exhaustive
+   coverage of `Option<T>`, `Result<T,E>`, and every declared enum unless a
+   final `_` or irrefutable identifier arm covers the remainder. Tuple-pattern
+   coverage is the product of its member coverage. A value-producing `match`
+   requires every reachable arm to yield exactly one identical static type;
+   a statement `match` requires statement-only arms. Pattern bindings are deep
+   copies scoped to their arm.
+
+   `==` and `!=` are legal only as complete `if` or `else if` conditions.
+   Both operands MUST have exactly the same first-class type, MUST NOT be
+   `Decision`, and are evaluated once from left to right. Equality is exact
+   deep structural equality over normalized values: strings compare Unicode
+   scalar sequences; structs compare fields in declaration order; tagged
+   values compare variant and payload; options compare presence and contained
+   value; and lists and tuples compare length or arity and members in order.
+   The result is an interpreter-only control bit that cannot be bound, returned,
+   interpolated, or composed with Boolean operators. `for` remains excluded.
+9. Model-produced decisions MUST use the same schema-validation and retry
+   policy as other structured operation results. Structural predicates do not
+   have a schema, retry budget, rationale, or hook context entry.
+10. Gantry imposes no mandatory loop, cost, or operation-call limit. Integrations
     MAY impose their own limits, except that such policy does not alter the
     language meaning of `limit = 0`. Unlimited language execution does not
     mean uninterruptible execution: every loop transition and deterministic
@@ -1544,46 +1796,31 @@ document are to be interpreted as described in RFC 2119.
     under Section 3. Cancellation or configured resource exhaustion terminates
     the affected task under the ordinary runtime-error rules; it does not make
     an unlimited loop complete normally.
-11. A direct prompted condition uses `if decide "..." { ... }`. Gantry MUST
+11. A direct model condition uses `if decide "..." { ... }`. Gantry MUST
     also support declarations of the form
     `decision is_complete(report: Report) { ... }`. Each reachable normal
     completion of a decision workflow MUST yield a trailing `decide`
-    expression, decision-workflow call, or decision-valued `with` or `session`
-    expression;
+    expression or another `Decision` expression;
     alternatively, every reachable path MAY exit through an explicit valid
     decision `return`. This permits a fully returning `if`/`else` decision
     workflow without an artificial unreachable tail. The result schema is the
-    interpreter-only decision schema in item 2. A decision workflow MAY contain
+    decision schema in item 2. A decision workflow MAY contain
     multiple ordinary prompts, nested decisions, and other executable blocks.
-    `return` MAY exit it early, but the returned expression MUST be a direct
-    `decide` expression, a call to another decision workflow, or a `with` or
-    `session` context whose trailing expression is one of those forms. Each
-    completed evaluation MUST ultimately obtain its decision from exactly one
-    decision-operation hook result with the decision schema in item 2. A
-    decision expression—including a direct `decide`, a decision-workflow call,
-    or a decision-valued `with` or `session` expression—is valid only as the
-    condition of `if`, `else if`, `while`, or `until`, or as the returned
-    expression of another decision workflow. Its result cannot be bound,
-    returned by an ordinary workflow, interpolated, or discarded as a
-    standalone statement. Decision workflows
-    are free module items in v1;
-    decision methods and decision-valued first-class values are excluded.
+    `return` MAY exit it early with any `Decision` expression. Each completed
+    evaluation MUST ultimately obtain its value from a previously evaluated or
+    newly dispatched decision operation; source cannot construct one.
+    Decision workflows are free module items in v1; decision methods remain
+    excluded. Their results may be bound, passed, returned by ordinary
+    workflows, stored in aggregates, interpolated as strict JSON, or consumed
+    by `if`, `else if`, `while`, and `until`. Discarding a `Decision` as an
+    expression statement is permitted for its observable rationale, although
+    authors SHOULD bind or consume it when practical.
     Semantic analysis MUST prove that every reachable
-    normal completion of a decision workflow yields a decision expression and
-    that every reachable explicit `return` in that workflow returns a decision
-    expression. A no-result `return;`, an ordinary value return, or fallthrough
+    normal completion of a decision workflow yields `Decision` and
+    that every reachable explicit `return` in that workflow returns
+    `Decision`. A no-result `return;`, another value type, or fallthrough
     from a decision workflow is an analysis error.
-    A decision-valued `with` or `session` block creates a control-transfer
-    boundary for `break` and `continue`: either keyword MAY target only a loop
-    declared inside that decision block and MUST NOT target a loop surrounding
-    the condition that contains the block. `return` inside such a block is
-    valid only when the block is lexically inside a decision workflow, in
-    which case it targets that workflow and remains subject to the decision-
-    return rules above. A decision-valued block used directly as a condition
-    in an ordinary function, method, or spawned block therefore MUST NOT
-    contain `return`. These restrictions keep evaluating a condition from
-    silently transferring control out of its surrounding workflow or loop.
-12. Static control-flow analysis MUST treat every agent decision as capable of
+12. Static control-flow analysis MUST treat every model-produced decision as capable of
     producing either `true` or `false`, independently of its prompt text,
     previous outcomes, rationale, selected agent, or session. Analysis MUST
     inspect both outcomes of every reachable `if`, `else if`, `while`, and
@@ -1953,18 +2190,24 @@ document are to be interpreted as described in RFC 2119.
    for journal records themselves.
 3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
    Its dispatch record MUST preserve the complete versioned semantic request,
-   including the selected agent, operation and result kinds, templates,
-   interpolated inputs, schema, guidance, source location, session fields,
-   ordered execution context, validation state, and logical identities.
+   including the operation-specific body, operation and result kinds, captured
+   inputs, schema, guidance, source location, ordered execution context,
+   validation state, and logical identities. Prompt and decision records MUST
+   preserve their selected agent, mapping revision, templates, interpolation
+   arguments, named inputs, and session fields. Action records MUST preserve
+   their canonical action path and signature, action-mapping revision, and
+   typed arguments.
    Protected or repeated payloads MAY be stored by stable reference, but those
    references MUST resolve from the same durable journal. A recovery
    redispatch MUST reuse those committed semantic fields except for the
-   physical-dispatch fields and the agent-mapping revision explicitly allowed
-   to change by Section 7. It MUST retain the committed logical agent name,
-   operation inputs, session, schema, guidance, source location, context, and
-   validation state. The new dispatch ID and incremented recovery-dispatch
-   number MUST differ, and the request MUST carry the mapping revision recorded
-   for the resume run. No other semantic request field may change.
+   physical-dispatch fields and the applicable agent- or action-mapping
+   revision explicitly allowed to change by Section 7. It MUST retain all
+   committed operation inputs, schema, guidance, source location, context, and
+   validation state. A model operation also retains its logical agent and
+   session; an action retains its canonical path and signature. The new
+   dispatch ID and incremented recovery-dispatch number MUST differ, and the
+   request MUST carry the applicable mapping revision recorded for the resume
+   run. No other semantic request field may change.
    A durable dispatch record represents a prepared physical dispatch attempt;
    it does not prove that the hook future began polling or that the integration
    observed the request. There is no portable atomic boundary between durable
@@ -1997,8 +2240,8 @@ document are to be interpreted as described in RFC 2119.
    `Declined` outcome that produces `None` for an expected `Option<T>`. The
    record MUST identify the operation and committed outcome, outcome variant,
    result kind, canonical type descriptor, normalized canonical JSON when the
-   operation returns a value, and the interpreter-only decision and rationale
-   when the operation returns a decision. An optional decline records JSON
+   operation returns a value, and the opaque decision value, provenance, and
+   rationale when the operation returns a decision. An optional decline records JSON
    `null` together with its decline provenance. A no-result operation records
    successful acceptance without creating a source value. A logical result
    recorded this way MUST be reused during resume and MUST NOT consume the
@@ -2096,8 +2339,8 @@ document are to be interpreted as described in RFC 2119.
    MUST contain the logical-session creation fields and obey the durability and
    replay rules in Section 7. An execution-state record MUST
    identify its state-transition subtype, including execution start, agent-
-   mapping revision, best-effort-sink configuration change, or shutdown-policy
-   revision when applicable.
+   mapping revision, action-mapping revision, best-effort-sink configuration
+   change, or shutdown-policy revision when applicable.
    A terminal-execution record MUST use one of the terminal categories defined
    in Sections 7, 10, and 15 and MUST be the final record that changes language
    execution state. Later event-delivery records and ownership release do not
@@ -2126,15 +2369,17 @@ document are to be interpreted as described in RFC 2119.
     record MUST have sequence number one and MUST contain the package source
     identity, the selected source-language major and minor version, the
     effective-configuration identity and fields defined below, the selected
-    root-session identity and provenance, the agent-mapping revision from
-    Section 7, the canonical signature of `main` defined in Section 4, and
+    root-session identity and provenance, the agent- and action-mapping
+    revisions from Section 7, the canonical signature of `main` defined in
+    Section 4, and
     either a no-entry-input marker or the validated and normalized canonical
     entry value with its type descriptor.
     Resume MUST verify and reuse the existing execution-start record, restore
     its entry value, and MUST NOT append a second execution-start record or
-    accept replacement entry input. A mapping revision changed during resume
-    MUST instead be appended and flushed as an execution-state record before
-    recovered interpretation or dispatch continues.
+    accept replacement entry input. An agent- or action-mapping revision
+    changed during resume MUST instead be appended and flushed as an
+    execution-state record before recovered interpretation or dispatch
+    continues.
 
     The effective-configuration identity is the SHA-256 digest of the RFC 8785
     JSON Canonicalization Scheme encoding of the following canonical object
@@ -2159,7 +2404,8 @@ document are to be interpreted as described in RFC 2119.
         "provenance": "embedder-supplied"
       },
       "structured_output": {
-        "retry_limit": "2",
+        "model_retry_limit": "2",
+        "action_retry_limit": "0",
         "backoff": {
           "initial_us": "100000",
           "cap_us": "2000000",
@@ -2185,7 +2431,9 @@ document are to be interpreted as described in RFC 2119.
     ```
 
     The displayed values illustrate the v1 defaults; the identity MUST encode
-    the effective configured values. `source_language` MUST equal the version
+    the effective configured values. `model_retry_limit` applies to `prompt`
+    and `decide`, while `action_retry_limit` applies to `action`. Both count
+    retries after the initial attempt. `source_language` MUST equal the version
     selected for the execution and MUST match the execution-start record.
     `root_session.provenance` is exactly `embedder-supplied` or
     `gantry-created`. `jitter` is exactly `none` or `full`; a future mode
@@ -2216,12 +2464,13 @@ document are to be interpreted as described in RFC 2119.
     resume without changing this identity; they affect scheduling or
     integration behavior rather than the meaning of already committed Gantry
     state. Shutdown timing, best-effort sinks, and logical-agent-to-provider
-    mappings MAY change only after Gantry appends and flushes the applicable
+    mappings and action mappings MAY change only after Gantry appends and flushes the applicable
     execution-state record before further work. That record MUST contain the
     effective graceful-shutdown and post-cancellation-drain durations when
     shutdown timing changes; a best-effort-sink revision MUST contain the
     complete replacement set in the canonical order and descriptor shape
-    above; and agent-mapping changes use the state described in Section 7.
+    above; and agent- and action-mapping changes use the state described in
+    Section 7.
     These changes MUST obey the per-event delivery-obligation rules in Section
     12. Allowing agent mappings to change is
     intentional because Gantry promises resumability, not deterministic model
@@ -2354,8 +2603,8 @@ document are to be interpreted as described in RFC 2119.
    separately configured, non-durable emergency diagnostic callback, but that
    callback is not an `EventSink`, carries no at-least-once guarantee, and MUST
    be identified as out-of-band reporting rather than a Gantry event.
-4. Canonical protected event records for completed agent operations MUST make
-   raw agent output available. A sink receives raw output only when it
+4. Canonical protected event records for completed operations MUST make raw
+   integration output available. A sink receives raw output only when it
    explicitly declares that capability and the embedder enables it for that
    sink. Other sinks receive the same event identity with the raw field
    redacted. Prompts and schemas MUST be observable through journal or event
@@ -2533,11 +2782,13 @@ document are to be interpreted as described in RFC 2119.
    - `workflow start` and `workflow end`: workflow path, frame occurrence, and
      completion status, plus a typed result reference when one exists;
    - `operation dispatch`: operation and dispatch IDs, dispatch state
-     (`prepared` in v1), operation and result kinds, selected agent, active
-     agent-mapping revision ID, logical session ID, request session directive,
-     active-session creation directive and parent session when applicable,
-     validation-attempt number, recovery-dispatch number, and prompt and schema
-     references;
+     (`prepared` in v1), operation and result kinds, validation-attempt number,
+     recovery-dispatch number, and schema and operation-body references. A
+     prompt or decision additionally identifies its selected agent, active
+     agent-mapping revision, logical session, request session directive,
+     active-session creation directive and parent session when applicable, and
+     prompt reference. An action instead identifies its canonical path and
+     signature and active action-mapping revision;
    - `operation completion`: operation and dispatch IDs, outcome variant, and
      a protected raw-output reference for `Completed`, or the decline/failure
      reason under the sink's redaction policy;
@@ -2551,8 +2802,9 @@ document are to be interpreted as described in RFC 2119.
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
      validation-attempt and recovery-dispatch numbers, retry class, and
      selected delay;
-   - `branch decision`: conditional or loop identity, decision, protected
-     rationale reference, and selected arm or loop transition;
+   - `branch decision`: conditional, match, or loop identity; condition kind;
+     outcome; and selected arm or loop transition, plus the decision operation
+     and protected rationale references when the condition used `Decision`;
    - `spawn`: parent and child task IDs, spawn occurrence, declared result
      type, and attachment state;
    - `join`: joining task ID, joined task IDs in source order, join form,
@@ -2578,7 +2830,7 @@ document are to be interpreted as described in RFC 2119.
    An implementation MAY add optional fields under the minor-version rules,
    but it MUST NOT omit these applicable fields or encode their only usable
    representation in human-readable text.
-9. A dry-run performs syntax validation only and MUST NOT invoke agent hooks.
+9. A dry-run performs syntax validation only and MUST NOT invoke operation hooks.
    Starting from `main.gnt`, it MUST discover every file module reachable
    through syntactically valid `mod` declarations and lex and parse every
    selected source file. Missing or ambiguous module files, containment
@@ -2780,21 +3032,24 @@ specific to model instructions rather than introducing a second multiline
 The reserved words are:
 
 ```text
-agent      agents     as          break       continue    crate
-decision   decide     default     detach       else        fn
-false      fork       if          impl         inline      join
-joinall    let        limit       List         loop        mod
-mut        new        None        null         Option      prompt
+action     agent      agents      as           break       continue
+crate      decision   Decision    decide       default     detach
+else       enum       Err         false        fn          fork        if
+impl       inline     join        joinall      let         limit
+List       loop       match       mod          mut         new
+None       null       Ok          Option       prompt      Result
 return     retry_limit self       session      Some        spawn
 String     struct     super       true         Tuple       until
-use        when       while       with
+use        using      when        while        with
 ```
 
 `as` is reserved for future compatible extension even though v1 has no alias
 form for `use`. `true`, `false`, and `null` are reserved because they are JSON
 spellings but are not Gantry source values in v1; reserving them prevents code
 that visually resembles deterministic Boolean or null-valued source logic.
-Reserved type and constructor names are case-sensitive.
+Reserved type and constructor names are case-sensitive. Lexing uses maximal
+munch for the fixed multi-character terminals `::`, `->`, `=>`, `==`, and
+`!=`; trivia MUST NOT split one of those terminals.
 
 ### 13.3 Package declarations and types
 
@@ -2805,6 +3060,8 @@ item                    = agents_declaration
                         | inline_module_declaration
                         | use_declaration
                         | struct_declaration
+                        | enum_declaration
+                        | action_declaration
                         | function_declaration
                         | decision_declaration
                         | impl_declaration ;
@@ -2832,9 +3089,21 @@ struct_field            = identifier_token, ":", value_type,
                           [ "=", field_default ] ;
 field_default           = string_token | raw_string_token | "None" ;
 
+enum_declaration        = "enum", identifier_token, "{",
+                          enum_variant, { ",", enum_variant }, [ "," ], "}" ;
+enum_variant            = identifier_token, [ "(", value_type, ")" ] ;
+
+action_declaration      = "action", identifier_token, "(",
+                          [ action_parameter_list ], ")",
+                          [ result_annotation ], ";" ;
+action_parameter_list   = action_parameter, { ",", action_parameter }, [ "," ] ;
+action_parameter        = identifier_token, ":", value_type ;
+
 value_type              = "String"
+                        | "Decision"
                         | qualified_path
                         | "Option", "<", value_type, ">"
+                        | "Result", "<", value_type, ",", value_type, ">"
                         | "List", "<", value_type, ">"
                         | "Tuple", "<", value_type, ",", value_type,
                           { ",", value_type }, [ "," ], ">" ;
@@ -2843,7 +3112,8 @@ result_annotation       = "->", result_type ;
 ```
 
 The built-in type alternatives take precedence over `qualified_path`. A
-`Tuple` has at least two member types by grammar. `None` in a result annotation
+`Tuple` has at least two member types by grammar. An enum has at least one
+variant, and an action declaration has no body. `None` in a result annotation
 is the no-result type; `None` in an expression is the absent value of an
 expected `Option<T>`. Field defaults are deliberately limited to strings and
 `None` in v1. Their declared field type MUST accept the default without
@@ -2864,7 +3134,7 @@ parameter_list          = parameter, { ",", parameter }, [ "," ] ;
 parameter               = [ "mut" ], identifier_token, ":", value_type ;
 
 decision_declaration    = "decision", identifier_token, "(",
-                          [ parameter_list ], ")", decision_block ;
+                          [ parameter_list ], ")", block ;
 
 impl_declaration        = "impl", qualified_path, "{",
                           { method_declaration }, "}" ;
@@ -2879,7 +3149,7 @@ if it had `-> None`. `mut` on a non-receiver parameter permits mutation of that
 workflow's deep-copied local argument; it does not affect the caller. A method
 always has a receiver as its first parameter. Associated functions without a
 receiver are excluded from v1. A `decision` has no source-level result
-annotation because its interpreter-only decision schema is implied by the
+annotation because its `Decision` result type and schema are implied by the
 declaration. The `self` token is valid only within the lexical body of an
 inherent method, including nested blocks and spawned blocks inside that method;
 it is an analysis error in a free function, decision workflow, field default,
@@ -2892,8 +3162,6 @@ rules in Section 10 rather than introducing a new receiver.
 block                   = "{", { statement }, [ trailing_expression ], "}" ;
 value_block             = "{", { statement }, trailing_expression, "}" ;
 statement_block         = "{", { statement }, "}" ;
-decision_block          = "{", { statement }, [ decision_tail ], "}" ;
-decision_tail           = decision_expression ;
 
 statement               = let_statement
                         | assignment_statement
@@ -2906,12 +3174,14 @@ statement               = let_statement
                         | with_statement
                         | session_statement
                         | if_statement
+                        | if_let_statement
                         | loop_statement
                         | while_statement
                         | until_statement ;
 
-let_statement           = "let", [ "mut" ], identifier_token, ":",
+let_statement           = "let", let_binding, ":",
                           value_type, "=", expression, ";" ;
+let_binding             = [ "mut" ], identifier_token | tuple_pattern ;
 assignment_statement    = assignment_target, "=", expression, ";" ;
 assignment_target       = identifier_token, { ".", identifier_token }
                         | "self", ".", identifier_token,
@@ -2921,39 +3191,22 @@ with_statement          = "with", identifier_token, statement_block ;
 session_statement       = "session", "(", session_directive, ")",
                           statement_block ;
 return_statement        = "return", [ return_expression ], ";" ;
-return_expression       = expression | explicit_decision_return ;
-explicit_decision_return
-                        = decide_expression
-                        | decision_with_expression
-                        | decision_session_expression
-                        | "(", explicit_decision_return, ")" ;
+return_expression       = expression ;
 break_statement         = "break", ";" ;
 continue_statement      = "continue", ";" ;
 trailing_expression     = expression ;
 ```
 
-Bindings require explicit types in v1. A trailing expression is distinguished
+Bindings require explicit types in v1. `mut` is valid only on a single-name
+binding; tuple destructuring introduces immutable bindings. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
 closing brace. A trailing expression MUST produce a first-class value; a
 no-result operation must instead be an expression statement ending in `;`.
 `return;` is valid only in a no-result function, method, or spawned block.
-`break` and `continue` are valid only in a loop body. When a `decision_block`
-has a reachable normal completion, it MUST end in a direct
-`decide` expression, decision-workflow call, or decision-valued `with` or
-`session` expression. The optional grammar tail permits a
-block whose static control-flow analysis proves that every reachable path has
-already exited through a valid decision `return`; it does not permit decision
-fallthrough. An earlier `return` in the statement sequence is subject to the
-same restriction. A call-shaped return such as `return check(value);` is parsed
-through the ordinary `expression` call shape; semantic analysis classifies it
-as decision-valued only inside a decision workflow and only when `check`
-resolves to a decision declaration. `explicit_decision_return` exists for the
-three decision forms that are not ordinary source expressions. This division
-avoids an ambiguous grammar alternative for the identical token sequence of an
-ordinary workflow call and a decision-workflow call. Semantic analysis MUST
-reject explicit decision returns from ordinary workflows and ordinary values
-returned from decision workflows. Assignment to `self` as a whole is not v1
-syntax; a
+`break` and `continue` are valid only in a loop body. A decision workflow uses
+the ordinary block grammar because `Decision` is a first-class value. Semantic
+analysis applies the definite-`Decision` return requirement in Section 9.
+Assignment to `self` as a whole is not v1 syntax; a
 `mut self` method may assign its receiver fields and may return the resulting
 receiver value.
 
@@ -2961,6 +3214,9 @@ receiver value.
 
 ```ebnf
 expression              = prompt_expression
+                        | decide_expression
+                        | action_expression
+                        | match_expression
                         | join_expression
                         | joinall_expression
                         | with_expression
@@ -2975,8 +3231,13 @@ primary_expression      = string_token
                         | raw_string_token
                         | "None"
                         | "Some", "(", expression, ")"
+                        | "Ok", "(", expression, ")"
+                        | "Err", "(", expression, ")"
                         | "self"
                         | struct_expression
+                        | enum_expression
+                        | list_expression
+                        | tuple_expression
                         | qualified_path
                         | "(", expression, ")" ;
 
@@ -2985,6 +3246,33 @@ field_initializer_list  = field_initializer, { ",", field_initializer },
                           [ "," ] ;
 field_initializer       = identifier_token, ":", expression ;
 argument_list           = expression, { ",", expression }, [ "," ] ;
+
+enum_expression         = qualified_path, "::", identifier_token,
+                          [ "(", expression, ")" ] ;
+list_expression         = "[", [ argument_list ], "]" ;
+tuple_expression        = "(", expression, ",", expression,
+                          { ",", expression }, [ "," ], ")" ;
+
+action_expression       = "action", [ action_modifiers ], qualified_path,
+                          "(", [ argument_list ], ")" ;
+action_modifiers        = "(", "retry_limit", "=", integer_token, ")" ;
+
+match_expression        = "match", expression, "{",
+                          match_arm, { match_arm }, "}" ;
+match_arm               = pattern, "=>", match_arm_body, "," ;
+match_arm_body          = expression | block ;
+
+pattern                 = "_"
+                        | identifier_token
+                        | "None"
+                        | "Some", "(", pattern, ")"
+                        | "Ok", "(", pattern, ")"
+                        | "Err", "(", pattern, ")"
+                        | qualified_path, "::", identifier_token,
+                          [ "(", pattern, ")" ]
+                        | tuple_pattern ;
+tuple_pattern           = "(", pattern, ",", pattern,
+                          { ",", pattern }, [ "," ], ")" ;
 
 with_expression         = "with", identifier_token, value_block ;
 session_expression      = "session", "(", session_directive, ")",
@@ -2996,17 +3284,19 @@ productions can parse method bodies and their nested blocks. Semantic analysis
 MUST enforce the receiver scope specified in Section 13.4.
 
 Postfix `(...)` dispatches a workflow function or method, postfix `.name`
-accesses a field or selects a method, and postfix `[integer]` projects a list
-or tuple member. Gantry has no arithmetic, Boolean, comparison, list literal,
-or tuple literal syntax in v1. Parentheses group one expression; they do not
-construct tuples.
+accesses a struct field, selects a method, or selects `Decision.rationale`, and
+postfix `[integer]` projects a list or tuple member. Gantry has no arithmetic,
+general Boolean, or ordering syntax. Bracketed expressions construct lists;
+parentheses containing at least two comma-separated expressions construct
+tuples, while `(value)` remains grouping.
 
 An unqualified primary path used as a value MUST resolve to a visible parameter
 or binding. A qualified item path is valid in an expression only as the callee
-of a workflow call or as the type path beginning a struct constructor. Because
-v1 has no module, type, function, decision, or method values, semantic analysis
-MUST reject a bare path that resolves to any such item. Task handles are legal
-only in `join`, `joinall()`, and `detach`, never as primary expressions.
+of a workflow call, the action path after `action`, or the type path beginning
+a struct or enum constructor. Because v1 has no module, type, function,
+decision, action, or method values, semantic analysis MUST reject a bare path
+that resolves to any such item. Task handles are legal only in `join`,
+`joinall()`, and `detach`, never as primary expressions.
 
 A value-producing `with` or `session` expression requires its block's trailing
 expression and yields that value. These forms permit a lexical agent or session
@@ -3015,25 +3305,26 @@ in Section 13.5 have no result and take no semicolon after the closing brace. A
 value-producing context expression MAY still be followed by `;` when its value
 is intentionally discarded.
 
-`prompt`, `join`, `joinall()`, `with`, and `session` are complete expression
-forms rather than direct bases of a postfix chain. To select a field, invoke a
-method, or project from one of their results without first binding it, source
-MUST parenthesize that expression, as in `(join(first, second))[0]`. This explicit
-grouping avoids ambiguity between prompt result annotations and operations on
-the produced value.
+`prompt`, `decide`, `action`, `match`, `join`, `joinall()`, `with`, and
+`session` are complete expression forms rather than direct bases of a postfix
+chain. To select a field, invoke a method, or project from one of their results
+without first binding it, source MUST parenthesize that expression, as in
+`(join(first, second))[0]`. This explicit grouping avoids ambiguity between
+operation result annotations and operations on the produced value.
 
 Semantic analysis MUST validate every postfix step from left to right. A call
-suffix is legal only on a function item or selected inherent method; a field
-suffix is legal only on a struct value unless it immediately selects an
-inherent method; and an index suffix is legal only on a list or tuple value.
-Calling a value, selecting a field from a non-struct, indexing another type, or
-continuing a postfix chain after a no-result expression is an analysis error.
+suffix is legal only on a function or decision item or selected inherent
+method; a field suffix is legal only on a struct value, selected inherent
+method, or the `rationale` projection of `Decision`; and an index suffix is
+legal only on a list or tuple value. Calling another value, selecting an
+unsupported field, indexing another type, or continuing a postfix chain after
+a no-result expression is an analysis error.
 
 ### 13.7 Prompts and interpolation
 
 ```ebnf
 prompt_expression       = "prompt", [ prompt_modifiers ], prompt_template,
-                          [ result_annotation ] ;
+                          [ using_clause ], [ result_annotation ] ;
 prompt_modifiers        = "(", prompt_modifier,
                           { ",", prompt_modifier }, [ "," ], ")" ;
 prompt_modifier         = "session", "=", session_directive
@@ -3041,6 +3332,11 @@ prompt_modifier         = "session", "=", session_directive
 session_directive       = "inline" | "fork" | "new" ;
 prompt_template         = string_token | raw_string_token
                         | block_prompt_token ;
+
+using_clause            = "using", "{", named_input,
+                          { ",", named_input }, [ "," ], "}" ;
+named_input             = identifier_token,
+                          [ ":", interpolation_expression ] ;
 
 interpolation           = "${", interpolation_expression, "}" ;
 interpolation_expression
@@ -3052,7 +3348,12 @@ interpolation_primary   = string_token
                         | raw_string_token
                         | "None"
                         | "Some", "(", interpolation_expression, ")"
+                        | "Ok", "(", interpolation_expression, ")"
+                        | "Err", "(", interpolation_expression, ")"
                         | interpolation_struct
+                        | interpolation_list
+                        | interpolation_tuple
+                        | interpolation_enum
                         | identifier_token
                         | "self" ;
 interpolation_struct    = qualified_path, "{",
@@ -3062,6 +3363,13 @@ interpolation_field_list
                           { ",", interpolation_field }, [ "," ] ;
 interpolation_field     = identifier_token, ":",
                           interpolation_expression ;
+interpolation_list      = "[", [ interpolation_expression,
+                          { ",", interpolation_expression }, [ "," ] ], "]" ;
+interpolation_tuple     = "(", interpolation_expression, ",",
+                          interpolation_expression,
+                          { ",", interpolation_expression }, [ "," ], ")" ;
+interpolation_enum      = qualified_path, "::", identifier_token,
+                          [ "(", interpolation_expression, ")" ] ;
 ```
 
 `interpolation` is a contextual scanner production embedded within a
@@ -3103,40 +3411,37 @@ tokens do not affect that balance and comment delimiters inside those strings
 remain literal text. An unclosed or syntactically invalid island is a syntax
 error.
 
-Interpolation permits only the restricted grammar above. A projection index
-MUST obey the list and tuple rules in Section 5. In particular, interpolation
-does not admit function or method calls, prompts, decisions, joins, mutation,
-or control flow. Nested braces belonging to a struct initializer are balanced
-before the interpolation's closing `}` is recognized. Duplicate prompt
-modifiers are analysis errors. `retry_limit` counts retries after the initial
-attempt.
+Interpolation and named inputs permit only the restricted grammar above. A
+projection index MUST obey the list and tuple rules in Section 5. In
+particular, neither form admits function or method calls, `prompt`, `decide`,
+`action`, joins, mutation, or control flow. Nested braces belonging to a
+constructor are balanced before the interpolation's closing `}` is recognized.
+Duplicate prompt modifiers and duplicate named-input names are analysis
+errors. `retry_limit` counts retries after the initial attempt.
 
 ### 13.8 Decisions and sequential control flow
 
 ```ebnf
 if_statement            = "if", [ decision_modifiers ],
-                          decision_expression, statement_block,
+                          condition_expression, statement_block,
                           { "else", "if", [ decision_modifiers ],
-                            decision_expression, statement_block },
+                            condition_expression, statement_block },
                           [ "else", statement_block ] ;
+
+if_let_statement        = "if", "let", pattern, "=", expression,
+                          statement_block, [ "else", statement_block ] ;
 
 decision_modifiers      = "(", decision_modifier,
                           { ",", decision_modifier }, [ "," ], ")" ;
 decision_modifier       = "session", "=", session_directive
                         | "retry_limit", "=", integer_token ;
 
-decision_expression     = decide_expression
-                        | decision_call
-                        | decision_with_expression
-                        | decision_session_expression
-                        | "(", decision_expression, ")" ;
-decide_expression       = "decide", [ prompt_modifiers ], prompt_template ;
-decision_call           = qualified_path, "(", [ argument_list ], ")" ;
-decision_with_expression
-                        = "with", identifier_token, decision_block ;
-decision_session_expression
-                        = "session", "(", session_directive, ")",
-                          decision_block ;
+condition_expression    = expression,
+                          [ equality_operator, expression ] ;
+equality_operator       = "==" | "!=" ;
+decision_expression     = expression ;
+decide_expression       = "decide", [ prompt_modifiers ], prompt_template,
+                          [ using_clause ] ;
 
 loop_statement          = "loop", [ loop_modifiers ], statement_block ;
 loop_modifiers          = "(", loop_modifier,
@@ -3177,22 +3482,14 @@ prompts used in arguments or inside a decision workflow use their own modifier
 or the interpreter default. A modifier written directly on a `decide`
 expression is more local and overrides the corresponding inherited value.
 `limit` belongs only to the enclosing `while` or `until`. The `until` grammar
-deliberately places its body before `when` and the post-test decision. A
-`decision_call` MUST resolve to a `decision` declaration; an ordinary workflow
-call is not a condition.
-The body of a decision-valued `with` or `session` expression follows the same
-definite-decision rules as any other `decision_block`: it either has a terminal
-decision tail or, when enclosed by a decision workflow, proves that every
-reachable path exits that workflow through a valid decision `return`.
-
-An ordinary workflow call and a decision-workflow call intentionally use the
-same Rust-inspired token sequence. The parser MUST represent that shared call
-shape without guessing from spelling alone; semantic analysis resolves the
-callee and requires a `decision` declaration in every `decision_expression`
-position. In particular, `return check(value);` is decision-valued only inside
-a decision workflow and only when `check` resolves to a decision declaration.
-This contextual resolution MUST NOT permit an ordinary function to masquerade
-as a condition or a decision call to escape into a first-class value position.
+deliberately places its body before `when` and the post-test decision.
+Semantic analysis MUST require a lone `condition_expression` to have type
+`Decision`; when an equality operator is present it applies the exact-type and
+condition-only rules in Section 9. Decision modifiers are invalid on an
+equality condition. A `decision_expression` in `while` or `until` MUST have
+type `Decision`. Ordinary and decision workflow calls share one Rust-inspired
+call syntax and are distinguished by their resolved result type rather than by
+parser guessing.
 
 ### 13.9 Parallel control flow
 
@@ -3215,7 +3512,7 @@ heterogeneous results.
 ## 14. Syntax Examples
 
 The examples in this section are illustrative complete programs or focused
-fragments. Except for snippets explicitly labeled invalid in Section 14.12,
+fragments. Except for snippets explicitly labeled invalid in Section 14.13,
 they use only v1 syntax. Comments beginning with `//` explain the example and
 are valid Gantry comments.
 
@@ -3293,7 +3590,7 @@ fn produce_report(topic: String) -> Report {
 All three agent declarations merge into one package set. Only `main.gnt`
 declares the default agent.
 
-### 14.3 Struct construction, options, bindings, and mutation
+### 14.3 Structs, tagged values, aggregates, and structural routing
 
 ```gantry
 struct Metadata {
@@ -3330,6 +3627,54 @@ fn make_seed() -> Draft {
 
 Assignments become visible only after the producing operation validates. The
 second assignment does not roll back the first if its prompt later fails.
+
+Enums, aggregate literals, patterns, and exact equality provide deterministic
+routing over already validated structure:
+
+```gantry
+enum ReviewOutcome {
+    Approved(Draft),
+    NeedsRevision(String),
+    Cancelled,
+}
+
+fn route_review(draft: Draft) -> Draft {
+    let labels: List<String> = ["draft", "review"];
+    let pair: Tuple<String, List<String>> = (draft.title, labels);
+    let (title, copied_labels): Tuple<String, List<String>> = pair;
+
+    if let Some(note) = draft.metadata.note {
+        prompt "Record the existing editorial note."
+            using { note, title, copied_labels };
+    }
+
+    let outcome: ReviewOutcome = prompt "Classify the supplied draft."
+        using { draft }
+        -> ReviewOutcome;
+
+    match outcome {
+        ReviewOutcome::Approved(approved) => approved,
+        ReviewOutcome::NeedsRevision(feedback) => prompt
+            "Revise the supplied draft."
+            using { draft, feedback }
+            -> Draft,
+        ReviewOutcome::Cancelled => draft,
+    }
+}
+
+fn compare_titles(left: Draft, right: Draft) -> String {
+    if left.title == right.title {
+        return "same";
+    } else {
+        return "different";
+    }
+}
+```
+
+List elements have one exact type, tuple positions may differ, and pattern
+bindings are immutable deep copies. `if let`, `match`, and equality do not
+dispatch hooks; the visible `prompt` operations still perform the semantic
+classification and revision work.
 
 ### 14.4 Inherent methods and lexical agent selection
 
@@ -3473,8 +3818,27 @@ fn route(report: Report) -> String {
 }
 ```
 
-The `decide` expression visibly requests the interpreter-only decision schema
-and never accepts a `->` annotation. The `else if` hook receives the preceding
+The `decide` expression visibly requests the `Decision` schema and never
+accepts a `->` annotation. The resulting opaque value may be retained and
+reused without another hook dispatch:
+
+```gantry
+fn retain_decision(report: Report) -> String {
+    let readiness: Decision = decide
+        "Is this report ready?"
+        using { report };
+
+    if readiness {
+        return readiness.rationale;
+    } else {
+        return prompt "Explain the next revision."
+            using { report, readiness }
+            -> String;
+    }
+}
+```
+
+The `else if` hook receives the preceding
 decision and rationale in its ordered context vector. Conditional blocks do
 not themselves form value expressions in v1, so each selected branch returns
 its value explicitly.
@@ -3491,7 +3855,8 @@ decision should_stop(report: Option<Report>) {
 }
 ```
 
-Option inspection remains agent-mediated; no source-level Boolean is created.
+This example asks for semantic judgment. Mechanical option presence checks can
+instead use `if let` or `match`; neither creates a source-level Boolean.
 
 ### 14.7 General, pre-test, and post-test loops
 
@@ -3587,11 +3952,14 @@ fn research_pair(topic: String) -> Tuple<String, Report> {
 }
 ```
 
-Tuple positions follow the explicit join argument order. v1 code can pass or
-return `pair`, project `pair[0]` or `pair[1]`, but cannot destructure it. For
-example, `let headline_text: String = pair[0];` and
-`let full_report: Report = pair[1];` are deterministic projections and do not
-invoke an agent hook.
+Tuple positions follow the explicit join argument order. V1 code can pass,
+return, project, or destructure `pair`:
+
+```gantry
+let (headline_text, full_report): Tuple<String, Report> = pair;
+```
+
+The destructuring is deterministic and does not invoke an operation hook.
 
 ### 14.10 `joinall()`, no-result tasks, and detachment
 
@@ -3722,7 +4090,58 @@ fn run_imported_check(input: Input) -> Finding {
 }
 ```
 
-### 14.12 Common invalid forms and their corrections
+### 14.12 Explicit harness actions and named prompt inputs
+
+Actions declare typed harness capabilities and remain visually distinct from
+ordinary workflow calls:
+
+```gantry
+struct SearchRequest {
+    query: String,
+}
+
+struct SearchFailure {
+    message: String,
+}
+
+struct Source {
+    title: String,
+    url: String,
+}
+
+action web_search(request: SearchRequest)
+    -> Result<List<Source>, SearchFailure>;
+action publish(report: Report) -> None;
+
+fn research(topic: String) -> Report {
+    let request: SearchRequest = SearchRequest { query: topic };
+    let search: Result<List<Source>, SearchFailure> =
+        action web_search(request);
+
+    let sources: List<Source> = match search {
+        Ok(value) => value,
+        Err(error) => prompt "Recover source material after the search failure."
+            using { error, topic }
+            -> List<Source>,
+    };
+
+    let report: Report = prompt "Write a sourced report." using {
+        topic,
+        sources,
+    } -> Report;
+
+    action publish(report);
+    report
+}
+```
+
+`using` carries ordered typed values separately from rendered prompt text.
+`${...}` remains available when exact textual placement is meaningful. The
+action declaration, action invocation, and result contract are visible in
+source; provider-internal tools used while fulfilling another hook do not
+create hidden Gantry operations.
+
+### 14.13 Common invalid forms and their corrections
 
 The following non-normative examples collect source shapes that can look
 plausible to a human or model author but are intentionally invalid in v1.
@@ -3739,8 +4158,8 @@ let critique: String = make_critique(report);
 prompt "Rewrite this critique: ${critique}" -> Report
 ```
 
-An unannotated prompt has no source value, and `decide` has an
-interpreter-only result usable only by decision control flow:
+An unannotated prompt has no source value. `Decision` is first-class but is not
+a `String` or a general Boolean:
 
 ```gantry
 // Invalid: the prompt returns no source value.
@@ -3749,11 +4168,12 @@ let summary: String = prompt "Summarize the report.";
 // Valid: the result contract is visible.
 let summary: String = prompt "Summarize the report." -> String;
 
-// Invalid: a decision cannot be bound as a source Boolean or other value.
+// Invalid: the declared binding type is wrong.
 let answer: String = decide "Is the report complete?";
 
-// Valid: the decision directly controls a branch.
-if decide "Is the report complete?" {
+// Valid: retain the opaque Decision and use it as a condition.
+let answer: Decision = decide "Is the report complete?";
+if answer {
     prompt "Publish the report.";
 }
 ```
@@ -3778,16 +4198,16 @@ fn start_background(report: Report) {
 }
 ```
 
-`Option<T>` may be passed to an agent decision but cannot be inspected through
-deterministic Boolean or pattern syntax in v1:
+Mechanical option inspection is deterministic; semantic judgment remains
+model-backed:
 
 ```gantry
-// Invalid v1 syntax: `if let` is intentionally absent.
+// Valid: structural presence check, with no hook dispatch.
 if let Some(report) = maybe_report {
     prompt "Publish ${report}.";
 }
 
-// Valid: semantic inspection is model-backed and visible.
+// Also valid: semantic publication judgment is model-backed and visible.
 if decide "Should this optional report be published? ${maybe_report}" {
     prompt "Handle publication for ${maybe_report}.";
 }
@@ -3879,10 +4299,11 @@ provider-specific or executor-specific types in Gantry programs:
 2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    task context. The factory, or a companion harness-preflight interface owned
    by the same integration, MUST also validate the complete merged agent-name
-   set and its supplied mapping revision before a new execution begins. Before
-   resume continues, that preflight MUST resolve every unfinished logical
-   session descriptor enumerated by Gantry, including root, parent, and
-   creation provenance. For a new execution, preflight failure is an
+   set and every canonical action signature, and MUST supply the corresponding
+   agent- and action-mapping revisions before a new execution begins. Before
+   resume continues, that preflight MUST resolve the active action mapping and
+   every unfinished logical session descriptor enumerated by Gantry, including
+   root, parent, and creation provenance. For a new execution, preflight failure is an
    integration-preflight start failure. For resume, it is the applicable
    nonterminal resume-start failure. It creates no `OperationHook` and MUST
    occur before `main` evaluation or recovered work. Successful preflight does
@@ -3910,7 +4331,7 @@ provider-specific or executor-specific types in Gantry programs:
    `raw_output` is an uninterpreted byte sequence; Gantry owns UTF-8 decoding,
    JSON parsing, schema validation, and repair retries. Hook futures MUST be
    `Send`; one hook instance is used serially for one Gantry task.
-   Returning `Completed(raw_output)` means the integration considers the model
+   Returning `Completed(raw_output)` means the integration considers the
    operation complete even when the bytes later fail Gantry validation.
    Provider transport failures, timeouts, and integration-internal retry
    exhaustion MUST instead be represented as `Failed(message)`; they MUST NOT
@@ -3967,8 +4388,9 @@ provider-specific or executor-specific types in Gantry programs:
    reporting when journal-first standard events cannot be created, including
    journal failure and unclean interpreter drop. Failure of this callback MUST
    be ignored after a bounded, nonblocking invocation attempt.
-7. Interpreter configuration MUST include the default agent-output retry
-   limit and backoff, event-delivery retry and attempt-timeout defaults,
+7. Interpreter configuration MUST include the default model-output retry
+   limit, the default action-output retry limit, their backoff policy,
+   event-delivery retry and attempt-timeout defaults,
    executor adapter, graceful-shutdown timeout, post-cancellation drain
    duration, and the finite nonzero deterministic-transition yield quantum
    required by Section 3. Implementations
