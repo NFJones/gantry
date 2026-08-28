@@ -11,8 +11,8 @@
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
   - [4. Source Organization](#4-source-organization)
   - [5. Values, Bindings, Structs, and Tagged Types](#5-values-bindings-structs-and-tagged-types)
-  - [6. Functions and Methods](#6-functions-and-methods)
-  - [7. Agents, Hooks, and Sessions](#7-agents-hooks-and-sessions)
+  - [6. Workflows, Methods, and Actions](#6-workflows-methods-and-actions)
+  - [7. Integration Operations, Agents, Hooks, and Sessions](#7-integration-operations-agents-hooks-and-sessions)
   - [8. Structured Output and Validation](#8-structured-output-and-validation)
   - [9. Control Flow](#9-control-flow)
   - [10. Parallel Execution](#10-parallel-execution)
@@ -87,12 +87,29 @@ The source language is designed around three priorities, in order:
 These priorities favor a small source surface, not a small implementation
 contract. Sections 3 through 12 and 15 are intentionally detailed because
 durability and integration behavior must be portable; that protocol detail is
-not additional syntax an author must learn. Source authors can begin with
-Sections 1.1 through 1.5 and Section 14, consult Sections 4 through 10 for
-construct semantics and operation behavior, then use Section 13 for exact
-syntax. Integrators should begin with Sections 1 and 3, then read Sections 7,
-8, 11, 12, and 15 before consulting the remaining normative sections. A
-conformance implementer must read the complete normative contract.
+not additional syntax an author must learn. Use these reading paths:
+
+- **Source authors:** begin with Sections 1.1 through 1.5 and Section 14. Use
+  Sections 4 through 10 only for the semantics of a construct in question and
+  Section 13 when exact grammar is needed.
+- **Language tooling authors:** read Sections 4 through 10, 12.9 through
+  12.11, and 13. Protocol and persistence requirements are relevant only when
+  the tool also executes programs or claims full conformance.
+- **Integrators:** begin with Sections 1 and 3, then read Sections 7, 8, 10
+  through 12, and 15 before consulting the remaining normative sections.
+- **Conformance implementers:** read the complete normative contract.
+
+This document uses three related but distinct judgments:
+
+- **Syntactically valid** source is admitted by Section 13 and the package
+  loading rules required for parsing it.
+- **Source-valid** source is syntactically valid and satisfies every applicable
+  static semantic rule in Sections 4 through 10. Source validity does not imply
+  that a particular integration can resolve the package's agents or actions.
+- A **conforming Gantry v1 implementation** satisfies the complete normative
+  language, execution, durability, observability, and embedding contract. A
+  parser, analyzer, or source-validity tool may accurately describe its more
+  limited role but is not by itself a conforming Gantry implementation.
 
 Gantry is harness-neutral. Mezzanine may integrate Gantry, but it is not an
 assumed runtime or part of the language contract. An integration supplies the
@@ -123,7 +140,8 @@ The contract is organized into layers:
 
 | Layer | What it specifies | Primary sections |
 | --- | --- | --- |
-| Language surface | Packages, values, workflows, visible operations, and control flow | Sections 4 through 10 |
+| Language surface | Packages, values, workflows, visible operations, and control flow | Sections 4 through 10 and 13 |
+| Static source validity | Name and type resolution, schema generation, control-flow completion, and task ownership | Sections 4 through 10 and 12.9 through 12.11 |
 | Portable execution | Interpretation, validation, concurrency, durability, and observability | Sections 3 and 7 through 12 |
 | Formal syntax | Normative lexical and syntactic grammar | Section 13 |
 | Authoring guide | Non-normative focused examples and corrections | Section 14 |
@@ -346,6 +364,14 @@ in later sections:
 - Concurrency is structured and ownership-visible. A spawned task must be
   joined, joined through `joinall()`, or explicitly detached on every normal
   path before its handle leaves scope.
+
+V1 also keeps integration protocol controls out of the source language unless
+they change portable orchestration semantics. Provider selection, credentials,
+transport, executor choice, persistence, event sinks, resource-limit values,
+and operation timeouts therefore remain embedding configuration. New source
+syntax should be introduced only when an author must express a portable
+semantic distinction at the operation or control-flow site; exposing a host
+implementation choice is not sufficient reason to enlarge the language.
 
 ### 1.4 Authoring conventions
 
@@ -1083,7 +1109,12 @@ shown here.
     assignment, arguments, returns, aggregate members, equality, or arithmetic.
     Unary `-` is an operator rather than part of a numeric token.
 
-## 6. Functions and Methods
+## 6. Workflows, Methods, and Actions
+
+This section defines callable source workflows, their evaluation order and
+effect summaries, prompt construction, and declared harness actions. Ordinary
+workflow dispatch is interpreter work; only the explicit operation forms
+defined here and in Section 7 cross the integration boundary.
 
 1. Gantry MUST support free functions and inherent methods declared in
    Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
@@ -1301,7 +1332,13 @@ shown here.
     source. The integration resolves their canonical signatures during
     preflight under Section 7.
 
-## 7. Agents, Hooks, and Sessions
+## 7. Integration Operations, Agents, Hooks, and Sessions
+
+This section defines the runtime side of the three visible integration
+operations. Items 1 through 3 cover package-level resolution and dynamic agent
+selection; items 4 through 11 define hook requests and outcomes; items 12 and
+13 define logical sessions; and items 14 through 18 define side effects,
+operation identity, failure categories, and propagation.
 
 1. A Gantry package MAY declare permitted agent names in one or more
    `agents { ... }` declarations. Declarations from all package modules are
@@ -1956,6 +1993,12 @@ shown here.
 
 ## 8. Structured Output and Validation
 
+Items 1 through 8 define strict-JSON decoding, normalization, and generated
+schemas. Items 9 through 12 define repair retries and exhaustion. Item 13
+limits source disclosure in diagnostics. These rules validate integration
+output; they do not add source syntax beyond the result annotations and
+operation modifiers defined in Sections 6 and 13.
+
 1. A successful operation-hook outcome provides raw bytes in
    `Completed(raw_output)`. Gantry MUST reject the outcome in the
    `resource-limit` validation category before UTF-8 decoding when its byte
@@ -2265,6 +2308,10 @@ shown here.
 
 ## 9. Control Flow
 
+This section separates deterministic routing (`Bool`, patterns, and `match`)
+from model judgment (`Decision` and `decide`), then defines loop behavior and
+the conservative static analysis required for all possible control-flow paths.
+
 1. Gantry MUST support `if`, `else if`, `else if let`, and `else`. Each
    expression condition in an `if` or `else if` MUST have type `Bool` or
    `Decision`. A `Decision` condition uses
@@ -2492,6 +2539,12 @@ shown here.
     structural-routing paths.
 
 ## 10. Parallel Execution
+
+This section defines structured task ownership. `spawn` creates one owned
+handle, `join` and `joinall()` wait and consume attached handles, and `detach`
+visibly transfers lifetime and failure ownership to the execution. The later
+items specify cancellation, shutdown, and recovery consequences of those
+source-level choices.
 
 1. Gantry MUST support annotated spawn declarations of the form
    `spawn <name> -> <type> { ... }`, joins of the form
@@ -2803,6 +2856,11 @@ shown here.
     MUST NOT cancel unrelated executions owned by the same interpreter.
 
 ## 11. Journal and Resume Semantics
+
+Items 1 through 5 define durable commit boundaries for interpreter and hook
+state. Items 6 through 9 define source identity, recovery, and journal
+envelopes. Item 10 defines execution-start state and the configuration fields
+that are immutable or durably revisable across resume.
 
 1. Gantry MUST durably journal committed operation results, validation attempt
    counts, interpreter call frames, scopes, instruction positions, loop state,
@@ -3251,6 +3309,11 @@ shown here.
     a new execution.
 
 ## 12. Observability and Validation Modes
+
+Items 1 through 8 define event creation, protected payloads, delivery, and
+failure behavior. Items 9 through 11 define syntax-only validation, semantic
+analysis, and machine-readable diagnostics; those tooling modes never invoke
+an operation hook.
 
 1. Gantry MUST expose events for parsing and analysis, workflow start and end,
    operation dispatch, completion, and result acceptance, structured output
@@ -5431,6 +5494,12 @@ semantic requirements in Sections 5, 6, 9, 10, and 13 determine rejection.
 ## 15. Required Embedding Interfaces
 
 *This section is normative.*
+
+This section collects the host capabilities implied by the runtime contract:
+interpreter lifecycle, hook and session integration, cancellation, executor
+services, journal storage, event delivery, configuration, protocol versioning,
+thread safety, and protected-data handling. It does not introduce additional
+Gantry source forms.
 
 Concrete Rust names and signatures MAY evolve during implementation, but a v1
 embedding API MUST expose the following semantic interfaces without requiring
