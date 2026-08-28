@@ -2,7 +2,7 @@
 
 - [Gantry Specification](#gantry-specification)
   - [1. Status and Scope](#1-status-and-scope)
-    - [1.1 Language at a glance and feature tour](#11-language-at-a-glance-and-feature-tour)
+    - [1.1 Language at a glance](#11-language-at-a-glance)
     - [1.2 Reading the surface syntax](#12-reading-the-surface-syntax)
     - [1.3 V1 design boundary](#13-v1-design-boundary)
     - [1.4 Authoring conventions](#14-authoring-conventions)
@@ -127,7 +127,7 @@ normative rule. When Section 13 admits a form that an earlier normative
 section rejects semantically, the semantic restriction controls whether the
 source is valid.
 
-### 1.1 Language at a glance and feature tour
+### 1.1 Language at a glance
 
 A complete model-backed program can be this small:
 
@@ -156,247 +156,69 @@ The core authoring model is deliberately small:
 4. Use `spawn` only when work should overlap, then visibly `join` or `detach`
    every task.
 
-The rest of the specification primarily makes those operations portable under
-validation, cancellation, observation, and resume; it does not add hidden
-source-language effects.
+The source surface is organized around these families:
 
-The following non-normative package tour shows the meaningful v1 language
-families together in one source file. It is intentionally broader than a
-typical program and is a reference feature map, not the minimum syntax and not
-a recommended workflow shape.
-First-time readers may skip to Section 1.2 for the compact syntax rules or to
-Section 14 for focused examples. Workflows are clearest when they use only the
-constructs they need.
+| Need | Canonical forms | Details | Focused examples |
+| --- | --- | --- | --- |
+| Package structure | `mod`, `use` | Section 4 | Sections 14.2 and 14.11 |
+| Typed data | `struct`, `enum`, `Option`, `Result`, `List`, `Tuple` | Section 5 | Section 14.3 |
+| Reusable orchestration | `fn`, `impl`, `decision` | Sections 6 and 9 | Sections 14.4 and 14.6 |
+| Integration-backed work | `prompt`, `decide`, `action` | Sections 6 through 8 | Sections 14.1, 14.6, and 14.12 |
+| Sequential routing | `if`, `if let`, `match` | Section 9 | Sections 14.3 and 14.6 |
+| Repetition | `loop`, `while`, `until` | Section 9 | Section 14.7 |
+| Parallel work | `spawn`, `join`, `joinall`, `detach` | Section 10 | Sections 14.8 through 14.10 |
 
-Model-backed work is explicit at each `prompt` or `decide`, and harness work is
-explicit at each `action`. Ordinary call dispatch, construction, assignment,
-operators, routing, loops, and joins are interpreter control; a called body can
-perform only the integration operations explicitly written along the dynamic
-call path.
+A representative workflow shows how these forms compose without requiring an
+all-features example:
 
 ```gantry
-mod domain {
-    agents { reviewer }
-
-    struct SearchRequest {
-        topic: String,
-    }
-
-    struct SearchFailure {
-        message: String,
-    }
-
-    struct Report {
-        topic: String,
-        summary: String,
-        sources: List<String>,
-        note: Option<String> = None,
-        revision: Int = 0,
-        confidence: Float = 0.0,
-        publishable: Bool = false,
-    }
-
-    enum ReviewOutcome {
-        Approved(Report),
-        NeedsRevision(String),
-        Escalate,
-    }
+struct Report {
+    title: String,
+    summary: String,
+    sources: List<String>,
 }
 
-agents { researcher, writer }
+agents { researcher, editor }
 default agent = researcher;
 
-use domain::Report;
-use domain::ReviewOutcome;
-use domain::SearchFailure;
-use domain::SearchRequest;
-
-action search(request: SearchRequest)
-    -> Result<List<String>, SearchFailure>;
-action publish(report: Report) -> None;
-action record_metric(name: String, value: Float) -> None;
-
-impl Report {
-    fn revise(mut self, guidance: String) -> Report {
-        self.summary = with writer {
-            prompt(retry_limit = 2)
-                "Revise this report using ${guidance}: ${self}"
-                -> String
-        };
-        self.revision += 1;
-        self
-    }
-
-    fn record_review(self) {
-        prompt "Record a review of ${self}.";
-    }
-}
-
-decision needs_revision(report: Report) {
-    decide "Does this report need another revision?" using { report }
-}
-
-fn prepare_topic(topic: String) -> Result<String, String> {
-    let normalized: String = topic.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Err("topic is empty");
-    }
-    Ok(normalized)
-}
+action search(topic: String) -> List<String>;
 
 fn main(topic: String) -> Report {
-    let normalized_topic: String = match prepare_topic(topic) {
-        Ok(value) => value,
-        Err(reason) => prompt "Repair this topic: ${reason}" -> String,
-    };
+    let sources: List<String> = action search(topic);
 
-    let words: List<String> = normalized_topic.split(" ");
-    let slug: String = words.join("-");
-
-    let search_result: Result<List<String>, SearchFailure> =
-        action(retry_limit = 0) search(SearchRequest {
-            topic: normalized_topic,
-        });
-
-    let sources: List<String> = match search_result {
-        Ok(value) => value,
-        Err(error) => prompt "Recover source references." using {
-            topic: normalized_topic,
-            error,
-        } -> List<String>,
-    };
-
-    let metadata: Tuple<String, Int> = (slug, sources.len());
-    let (topic_slug, source_count): Tuple<String, Int> = metadata;
-    let coverage: Float = source_count.to_float() / 2.0;
-    let needs_more: Bool = source_count == 0 || coverage < 1.0;
-
-    let configured_limit: Option<Int> = "3".parse_int();
-    if let Some(limit_value) = configured_limit {
-        prompt "Use the configured revision limit." using { limit_value };
+    spawn draft -> Report {
+        prompt "Draft a report about ${topic}."
+            using { sources }
+            -> Report
     }
-
-    spawn primary -> Report {
-        session(fork) {
-            prompt """
-                Research primary sources for this topic:
-                ${normalized_topic}
-                """ using { sources } -> Report
-        }
-    }
-
-    spawn independent -> Report {
-        with reviewer {
-            prompt r#"Independently research ${normalized_topic}.
-Preserve the literal marker $${topic}."# -> Report
-        }
-    }
-
-    let reports: List<Report> = join(primary, independent);
 
     spawn headline -> String {
-        prompt "Write a headline for ${normalized_topic}." -> String
-    }
-
-    spawn confidence -> Float {
-        prompt "Score source confidence." using { sources } -> Float
-    }
-
-    let (headline_text, model_confidence): Tuple<String, Float> =
-        join(headline, confidence);
-
-    spawn audit_text -> None {
-        prompt "Audit the research text." using { reports };
-    }
-
-    spawn audit_sources -> None {
-        action record_metric("source_count", source_count.to_float());
-    }
-
-    joinall();
-
-    spawn background -> None {
-        prompt "Record background observations." using { reports };
-    }
-    detach(background);
-
-    let mut report: Report = prompt
-        "Synthesize the supplied research reports."
-        using {
-            topic: normalized_topic,
-            topic_slug,
-            headline_text,
-            sources,
-            reports,
-            needs_more,
-        }
-        -> Report;
-
-    report.note = Some("parallel review complete");
-    report.confidence += model_confidence / 2.0;
-
-    if let Some(note) = report.note {
-        prompt "Record this editorial note: ${note}.";
-    }
-
-    let review: ReviewOutcome = prompt
-        "Classify the current review outcome."
-        using { report }
-        -> ReviewOutcome;
-
-    report = match review {
-        ReviewOutcome::Approved(approved) => approved,
-        ReviewOutcome::NeedsRevision(guidance) => report.revise(guidance),
-        ReviewOutcome::Escalate => with reviewer {
-            prompt "Resolve this escalated review." using { report } -> Report
-        },
-    };
-
-    loop(limit = 3) {
-        if needs_revision(report) {
-            report = prompt "Revise this report: ${report}" -> Report;
-        } else {
-            break;
+        with editor {
+            prompt "Write a concise headline for ${topic}." -> String
         }
     }
 
-    let mut source_index: Int = 0;
-    while source_index < sources.len() {
-        if sources[source_index].is_empty() {
-            source_index += 1;
-            continue;
-        }
-        prompt "Check source ${sources[source_index]}.";
-        source_index += 1;
+    let (report, proposed_title): Tuple<Report, String> =
+        join(draft, headline);
+
+    if decide "Does this report need revision?" using { report } {
+        return with editor {
+            prompt "Revise the report and use ${proposed_title} as its title."
+                using { report }
+                -> Report
+        };
     }
 
-    until(session = new, limit = 2) {
-        report = prompt "Polish ${report}." -> Report;
-    } when decide(retry_limit = 1) "Is the report polished enough?";
-
-    let publication: Decision = decide
-        "Should this report be published?"
-        using { report };
-
-    if report.publishable || publication.decision {
-        action crate::publish(report);
-    } else {
-        prompt "Record why publication was deferred: ${publication.rationale}.";
-    }
-
-    report.record_review();
     report
 }
 ```
 
-The tour demonstrates package declarations and imports; agents and lexical
-selection; structs, defaults, enums, options, results, lists, and tuples;
-methods and ordinary workflows; primitive and String operations; prompts,
-decisions, actions, interpolation, named inputs, and sessions; deterministic
-pattern routing; all three loop forms; typed parallel joins, `joinall()`, and
-explicit detachment. Section 14 provides smaller canonical examples and common
-error corrections. Section 1 identifies the document's normative parts and
-the shortest reading paths for source authors and implementers.
+Every integration crossing remains visible: `action` invokes the declared
+harness capability, each `prompt` requests model output, and `decide` requests
+model judgment. Construction, assignment, routing, workflow calls, and joins
+are interpreter operations, although a called workflow can reach explicit
+integration operations in its body. Section 14 provides focused examples for
+the remaining syntax instead of combining every construct into one program.
 
 ### 1.2 Reading the surface syntax
 
@@ -595,7 +417,9 @@ activity throughout this specification:
   times produces the corresponding number of logical operations.
 - A **logical operation** is one dynamic execution of a source `prompt`,
   `decide`, or action invocation. It has one stable operation ID and
-  produces at most one consumable operation result.
+  produces at most one consumable operation result. Failed or invalid
+  attempts are outcomes of physical dispatches, not additional logical
+  operation results.
 - A **physical dispatch** is one invocation of `OperationHook` for a logical
   operation. Validation repair and recovery may cause several physical
   dispatches for one logical operation, each with a distinct dispatch ID.
@@ -739,9 +563,9 @@ shown here.
    function named `main`; a missing `main`, a `main` declared only in a child
    module, or any non-function root item named `main` is an analysis error.
    The directory containing `main.gnt` is the package root. `main` MUST have
-   either no parameters or exactly one typed parameter and MAY return any v1
-   result type or no result. Neither the entry parameter nor the result type
-   MAY be `Decision` or contain `Decision` at any nesting depth. Entry and
+   either no parameters or exactly one typed parameter. It MAY return no result
+   or any v1 value type that does not contain `Decision` at any nesting depth.
+   The entry parameter likewise MUST NOT be `Decision` or contain it. Entry and
    result JSON cannot carry the interpreter-only operation provenance that
    makes a `Decision` sealed, even though the ordinary JSON representation of
    a `Decision` contains visible `decision` and `rationale` fields. A workflow
@@ -3196,8 +3020,9 @@ shown here.
     identity: the effective graceful-shutdown duration, post-cancellation-drain
     duration, and complete effective best-effort sink set. Each best-effort
     sink descriptor MUST contain the same fields shown above for a required
-    sink, plus its `best-effort` class, and the descriptors MUST be ordered by
-    unsigned UTF-8 sink ID. These initial values are the baseline for resume;
+    sink plus a `class` field whose value is exactly `best-effort`. The
+    descriptors MUST be ordered by unsigned UTF-8 sink ID. These initial values
+    are the baseline for resume;
     Gantry MUST restore them from the execution-start record and then apply
     later compatible execution-state revisions in journal sequence order. A
     resume caller MUST NOT silently replace that baseline through ordinary
