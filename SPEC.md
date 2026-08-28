@@ -127,33 +127,45 @@ document are to be interpreted as described in RFC 2119.
 
 ## 3. Implementation and Execution Model
 
-1. Gantry MUST provide its own grammar, lexer, parser, and abstract syntax
+1. A conforming Gantry v1 implementation MUST accept every source program
+   admitted by the grammar in Section 13 when it also satisfies the semantic
+   requirements in this document, and MUST reject source outside that grammar
+   when operating in v1 mode. An implementation MAY provide an explicitly
+   selected extension mode, but source accepted only by that mode MUST NOT be
+   represented as portable Gantry v1 source. Conformance requires all v1
+   `MUST` and `MUST NOT` requirements; implementing only the parser or only a
+   subset of runtime constructs is not full v1 conformance.
+2. Gantry MUST provide its own grammar, lexer, parser, and abstract syntax
    tree (AST).
-2. Gantry MUST execute source directly. It MUST NOT require compilation to a
+3. Gantry MUST execute source directly. It MUST NOT require compilation to a
    different language or runtime as its execution model.
-3. Gantry MUST be available as an embeddable Rust library with an asynchronous
+4. Gantry MUST be available as an embeddable Rust library with an asynchronous
    execution API. It does not implement an agent, model provider, transport, or
    hidden asynchronous runtime itself. The embedding application MUST supply
    the executor used to poll Gantry futures. Gantry MUST permit its task
    scheduler or executor adapter to be replaced through library configuration,
    not through Gantry source syntax.
-4. The interpreter MUST control program flow, hook invocation, result
+5. The interpreter MUST control program flow, hook invocation, result
    validation, retry handling, and state transitions.
-5. An integration MUST implement the hooks needed to perform agent/model
+6. An integration MUST implement the hooks needed to perform agent/model
    calls. It is responsible for mapping Gantry agent names to its own agents
    or models.
-6. Model selection, tool access, approvals, authentication, persistence
+7. Model selection, tool access, approvals, authentication, persistence
    backend selection, logging backend selection, timeouts, cancellation
    policy, and resource limits belong to the integration. Gantry MUST provide
    the asynchronous task scheduling needed to execute parallel Gantry blocks.
-7. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
+8. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
    journal, or an equivalent durable execution record, sufficient to continue
    an interrupted execution from its recorded state. Section 11 defines the
    required recovery behavior.
-8. Gantry does not promise deterministic replay. Re-execution of the same
+9. Gantry does not promise deterministic replay. Re-execution of the same
    source and inputs MAY produce different agent results. Resumption MUST,
    however, reuse operation results already committed to the journal.
-9. v1 makes no backward-compatibility promise for source, serialized state,
+10. The initial public protocol version for hook requests, journal envelopes,
+    event envelopes, and the configuration identity is major `1`, minor `0`.
+    A document reference to “v1” identifies source-language version 1 and does
+    not by itself permit a different protocol major version.
+11. v1 makes no backward-compatibility promise for source, serialized state,
    or the Rust hook API.
 
 ## 4. Source Organization
@@ -509,6 +521,11 @@ document are to be interpreted as described in RFC 2119.
    task spawning, task joining, task abortion, and asynchronous sleeping for
    backoff. Gantry MUST retain its own cancellation semantics rather than
    treating executor abortion as cooperative hook cancellation.
+   “Task lifetime” in this interface means one in-process execution or resume
+   run. Hook instances are integration resources and MUST NOT be serialized in
+   the journal. After process restart, Gantry MUST create a fresh hook instance
+   for each recovered task, after the session-resolution preflight in item 13,
+   and then continue that logical task with its restored task and session IDs.
 5. Every operation hook request MUST contain at least:
    - a protocol major and minor version;
    - stable operation, execution, and task IDs, plus the parent-task ID when
@@ -650,7 +667,17 @@ document are to be interpreted as described in RFC 2119.
    to their annotated construct.
 13. The integration MUST preserve the conversational continuity denoted by a
    reused logical session ID. Provider-specific session storage and mapping
-   remain integration concerns.
+   remain integration concerns. This obligation applies across interpreter
+   process restart: before resuming a task, the integration MUST be able to
+   resolve every journaled root, `new`, and `fork` session that unfinished work
+   may reuse. Gantry MUST enumerate those required logical session IDs and
+   their parent/provenance metadata to the embedding API before the first
+   resumed hook dispatch. The integration MAY reattach existing provider
+   sessions or reconstruct equivalent conversational state, but it MUST report
+   an unresolved session before dispatch rather than silently creating an
+   empty replacement. Such failure is a hook-creation failure. Sessions used
+   only by committed, completed operations need not be reattached unless an
+   unfinished operation will reuse them.
 14. Agent operations may have side effects. Gantry does not require retries to
     be idempotent or prevent duplicate external effects.
 15. `prompt` and decision evaluation are the only v1 source constructs that
@@ -927,6 +954,14 @@ document are to be interpreted as described in RFC 2119.
    operation in the child reuses it. Sibling tasks MUST receive distinct child
    sessions. An explicit session directive inside the child MAY override this
    inherited session under Section 7.
+   Semantic analysis MUST derive the capture set from every parameter or local
+   binding referenced by the spawned block outside declarations local to that
+   block. Module items and agent names are resolved package-wide and are not
+   captures; task handles owned by another task are prohibited by item 2.
+   Gantry MUST snapshot every captured value and its binding mutability before
+   the child becomes runnable, and the durable task-state record in item 2 MUST
+   contain that complete snapshot. Evaluation of a `spawn` therefore cannot
+   observe a mixture of parent values from before and after child submission.
 4. A spawned block MUST declare the type of its yielded value with `-> T`, or
    declare `-> None` when it yields no value. Every reachable normal completion
    of a value-yielding block MUST produce exactly `T` through its trailing
@@ -979,14 +1014,17 @@ document are to be interpreted as described in RFC 2119.
 7. A child failure does not immediately cancel siblings. A named child's
    failure is deferred until `join`; a scoped failure is deferred until
    `joinall`.
-8. `detach(task)` consumes one attached task handle and transfers ownership of
-   that task to the interpreter instance without waiting for it. Detaching an
+8. `detach(task)` consumes one attached task handle and transfers foreground
+   ownership to the interpreter, acting on behalf of the task's originating
+   execution and journal, without waiting for it. Detaching an
    already consumed handle is an analysis error. An attached, unconsumed task
    at lexical scope exit is an analysis error; v1 never detaches work
    implicitly. Detached tasks and nested spawns are permitted, and a top-level
    execution MAY report foreground success while detached tasks continue.
    Requiring an explicit `detach` keeps background execution visible to humans,
    agents, analysis, and recovery tooling.
+   Detaching a value-producing task intentionally discards its eventual value;
+   completion, failure, and observability remain governed by items 9 and 10.
 9. A detached-task failure MUST be journaled and emitted as a failure event. It
    MUST NOT abort foreground execution or change a top-level success,
    regardless of whether it settles before or after that success is returned.
@@ -994,14 +1032,17 @@ document are to be interpreted as described in RFC 2119.
    handle. These rules make explicit detachment a deliberate transfer of both
    lifetime and failure ownership to the interpreter instance.
    A detached-task failure MUST NOT cancel sibling detached tasks. Terminal
-   execution state is determined after all detached work settles: a foreground
-   runtime error remains the primary terminal category and includes detached
-   failures as secondary details; otherwise, one or more detached failures
-   produce the `detached-task failure` terminal category; otherwise, a
-   cancellation produces the `cancellation` category; and only then is the
-   terminal category `success`. Multiple detached failures MUST be reported in
-   stable task-path order, using source spawn location and dynamic spawn
-   occurrence rather than completion time.
+   execution state is determined after all detached work settles. An
+   execution-wide runtime error, whether it occurs before or after foreground
+   completion, is the primary terminal category and includes detached failures
+   as secondary details. If more than one execution-wide runtime error races,
+   the first one in durable journal-sequence order is primary and later errors
+   are secondary. Otherwise, one or more detached failures produce the
+   `detached-task failure` terminal category; otherwise, a cancellation
+   produces the `cancellation` category; and only then is the terminal category
+   `success`. Multiple detached failures MUST be reported in stable task-path
+   order, using source spawn location and dynamic spawn occurrence rather than
+   completion time.
 10. Parent timeout and cancellation constraints apply while a child remains
    attached and propagate through its attached descendants. Detachment releases
    the task from those parent constraints. Integration-specific operation
@@ -1042,7 +1083,11 @@ document are to be interpreted as described in RFC 2119.
     without blocking, and emit a best-effort diagnostic event when a sink is
     still usable. The drop path cannot guarantee that integrations observed
     cancellation before handles were relinquished. It MUST NOT retry event
-    delivery or claim that foreground or detached work completed.
+    delivery or claim that foreground or detached work completed. Unless a
+    cancellation or completion was already durably recorded, this path is an
+    unclean interruption rather than a durable cancellation: a later resume
+    MUST follow the authoritative journal prefix and MAY recover tasks or
+    redispatch indeterminate operations under Section 11.
 
 ## 11. Journal and Resume Semantics
 
@@ -1081,11 +1126,19 @@ document are to be interpreted as described in RFC 2119.
    execution, apply the configured cancellation drain, and return the journal
    failure directly to the embedder because durability can no longer be
    assumed. Exactly one interpreter execution owner MAY advance a journal at a
-   time. Concurrent tasks belonging to that owner MAY append through the
+   time. Before execution or resume advances durable state, storage MUST grant
+   that owner an opaque fencing token or equivalent monotonically ordered
+   ownership generation. Every append and flush MUST be authorized by the
+   current token, and storage MUST reject an operation from a superseded owner.
+   Concurrent tasks belonging to the current owner MAY append through the
    storage's linearizable ordering, but starting or resuming a second owner for
    the same journal while the first is active MUST be rejected before hook or
-   task dispatch. The embedder and storage capability together MUST enforce
-   this exclusive ownership; read-only inspection MAY remain concurrent.
+   task dispatch. After an unclean process loss, the embedder and storage MAY
+   reclaim ownership only after establishing that the preceding owner can no
+   longer successfully append or flush; granting the new fencing token MUST
+   make that guarantee atomic. Read-only inspection MAY remain concurrent.
+   These ownership operations coordinate access and do not add a mutation
+   primitive for journal records themselves.
 3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
    Its dispatch record MUST preserve the complete versioned semantic request,
    including the selected agent, operation and result kinds, templates,
@@ -1140,7 +1193,14 @@ document are to be interpreted as described in RFC 2119.
    counters, task relationships, and committed values. An in-flight spawned
    block MUST restart at the top of that block while reusing every committed
    operation result recorded for it. Uncommitted operations are retried under
-   item 4.
+   item 4. Deterministic replay of `spawn`, `join`, `joinall`, or `detach` MUST
+   consult the durable task-state history before changing task ownership. A
+   replayed `spawn` occurrence MUST recover its existing stable child task and
+   MUST NOT create a duplicate child. A replayed join or detach whose ownership
+   transition is already durable MUST recover that transition and its committed
+   result or failure rather than consume the handle again. Task identities and
+   lifecycle records MUST therefore be keyed by the same logical task and
+   source-occurrence path used by dynamic operation identity.
 8. A detached task remains part of its originating execution and journal after
    foreground `main` returns. Foreground completion, detachment, detached-task
    completion, and detached-task failure MUST each be durable states. Resuming
@@ -2211,7 +2271,11 @@ provider-specific or executor-specific types in Gantry programs:
    Section 7. Resume MUST restore the journaled root-session identity and MUST
    NOT accept a replacement; inability of the integration to resolve a
    supplied root session before the first affected dispatch is a hook-creation
-   failure. Execution returns an execution ID and a typed
+   failure. Before resume creates recovered task hooks, the API MUST enumerate
+   every journaled logical session needed by unfinished work, including its
+   parent and creation provenance, and require the integration to resolve the
+   complete set as specified in Section 7. Resume MUST dispatch no hook when
+   this preflight fails. Execution returns an execution ID and a typed
    foreground outcome that distinguishes a value, no result, and every
    runtime-error category defined in Section 7. A
    foreground outcome MAY be returned while explicitly detached tasks remain;
@@ -2243,9 +2307,12 @@ provider-specific or executor-specific types in Gantry programs:
    capabilities. Gantry MUST use those capabilities rather than constructing a
    hidden Tokio or other provider runtime. Executor handles and errors MUST be
    wrapped so no specific executor type appears in the language-facing API.
-5. Journal storage asynchronously provides durable-prefix reads plus atomic
-   `append(record)` and `flush(sequence)` operations with the behavior in
-   Section 11. Append and flush are its only mutation primitives. An append
+5. Journal storage asynchronously provides durable-prefix reads, exclusive
+   owner acquisition with fencing, plus atomic `append(record)` and
+   `flush(sequence)` operations with the behavior in Section 11. Append and
+   flush are its only record-mutation primitives. Every mutation call MUST be
+   associated with the current opaque ownership token so a superseded process
+   cannot advance the journal. An append
    returns the stable record ID and next contiguous sequence number assigned to
    the record through a per-journal linearizable ordering. A read returns
    immutable versioned records in sequence order together with the durable-
