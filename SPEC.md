@@ -82,6 +82,12 @@ Section 15 defines the required embedding boundary. Concrete Rust type
 signatures may remain implementation-defined only where the semantic contract
 is fully specified here.
 
+Readers implementing or reviewing the source language can begin with Sections
+1 through 10 and 13. Readers implementing an embedding should additionally use
+Sections 11, 12, and 15. Section 14 is explanatory and cannot override a
+normative rule. When the grammar admits a form that an earlier section rejects
+semantically, the semantic restriction controls whether the source is valid.
+
 ### 1.1 Language at a glance
 
 The following non-normative package tour shows the meaningful v1 language
@@ -90,6 +96,7 @@ typical program and is a feature map, not a recommended workflow shape.
 First-time readers may skip to Section 1.2 for the compact syntax rules or to
 Section 14 for focused examples. Workflows SHOULD use only the constructs they
 need.
+
 Model-backed work is explicit at each `prompt` or `decide`, harness work is
 explicit at each `action`, and ordinary calls, construction, assignment,
 operators, routing, loops, and joins remain interpreter control.
@@ -897,7 +904,8 @@ shown here.
    propagation.
 9. `Decision` is a sealed first-class value with read-only fields
    `decision: Bool` and `rationale: String`, where the rationale is nonempty.
-   Only `decide` and decision workflows may create one.
+   Only `decide` creates a new `Decision`; a decision workflow returns a
+   `Decision` obtained from an executed `decide` or from another valid source.
    Source MAY bind, pass, return, capture, store, interpolate, and consume a
    `Decision` as an `if`, `while`, or `until` condition. The field projections
    `.decision` and `.rationale` yield `Bool` and `String`, respectively.
@@ -1029,9 +1037,10 @@ shown here.
       exactly the RFC 8259 JSON number grammar, including integer-looking
       spellings such as `1`. It returns the normalized finite binary64 value
       only when the parsed exact mathematical value lies within the inclusive
-      Float bounds in Section 8; it otherwise returns `None`, including when
-      parsing, range checking, or normalization fails. These parsers do not
-      trim and never fail the task for invalid input.
+      decimal bounds defined for `Float` in Section 8.6 and rounds to a finite
+      binary64 value; it otherwise returns `None`, including when parsing,
+      range checking, or normalization fails. These parsers do not trim and
+      never fail the task for invalid input.
     `List<String>.join(separator) -> String` joins items in list order with the
     exact separator only between adjacent items. It returns the empty String
     for an empty list and the sole item unchanged for a one-item list. `join`
@@ -1138,12 +1147,13 @@ shown here.
    The same transitive rule applies to ordinary workflow and method calls: a
    call site is deterministic interpreter dispatch, but executing the called
    body MAY reach any `prompt`, `decide`, or `action` sites written in that
-   body or in workflows it calls. Consequently, the absence of those keywords
-   on the same source line as a call does not prove that the call tree is free
-   of integration operations. External work remains explicit at its source site and
-   observable through the workflow-call context, operation source location,
-   journal, and events. Analysis tooling SHOULD expose this transitive effect
-   to authors without representing the call itself as a model operation.
+   body or in workflows it calls. Consequently, an ordinary call is not
+   necessarily free of integration effects merely because its call site does
+   not contain one of those keywords. External work remains explicit at the
+   reached operation site and observable through the workflow-call context,
+   operation source location, journal, and events. Analysis tooling SHOULD
+   expose this transitive effect to authors without representing the call
+   itself as an integration operation.
    The terminal `decide` reached through a decision-workflow call is the
    logical decision operation; the call expression and each intermediate
    decision-workflow frame are not additional operations. Its source location
@@ -1888,11 +1898,11 @@ shown here.
    normalize to the same `Int` value when `Int` is the expected type. Gantry
    MUST determine integrality and range without first rounding through
    binary64. A `Float` result is a JSON number whose exact mathematical value
-   is within the inclusive finite-binary64 bounds in item 6 and that rounds
-   under Section 5 to a finite IEEE 754 binary64 value; integer-looking
-   spellings are valid when `Float` is expected. The expected Gantry type, not
-   the source lexeme, determines numeric normalization. Gantry MUST reject
-   `NaN`, infinities, values outside those exact bounds, and values whose
+   is within the inclusive decimal bounds in item 6 and that rounds under
+   Section 5 to a finite IEEE 754 binary64 value; integer-looking spellings
+   are valid when `Float` is expected. The expected Gantry type, not the source
+   lexeme, determines numeric normalization. Gantry MUST reject `NaN`,
+   infinities, values outside those decimal bounds, and values whose
    conversion overflows to a non-finite result. Gantry MUST normalize negative
    zero to positive zero
    before exposing or serializing a `Float`. A `String` result is represented
@@ -1982,11 +1992,12 @@ shown here.
    Implementations MUST derive equivalent types with the same structural
    schema rules: `Bool` uses `{"type":"boolean"}`; `Int` uses an integer
    schema with Gantry's inclusive exact bounds; `Float` uses a number schema
-   with finite binary64 bounds; `String` uses `{"type":"string"}`; `List<T>` uses an array
-   with the schema for `T` in `items`; tuples use the exact fixed-array form in
-   item 4; options use `anyOf` with `{"type":"null"}` first and the schema
-   for `T` second; results and enums use strict `oneOf` branches; decisions use
-   the exact schema in Section 9; and structs use the object rules in item 7. A struct's
+   with the inclusive decimal bounds shown below; `String` uses
+   `{"type":"string"}`; `List<T>` uses an array with the schema for `T` in
+   `items`; tuples use the exact fixed-array form in item 4; options use
+   `anyOf` with `{"type":"null"}` first and the schema for `T` second;
+   results and enums use strict `oneOf` branches; decisions use the exact
+   schema in Section 9; and structs use the object rules in item 7. A struct's
    `properties` object is keyed by exact field name, while its `required` array
    lists required fields in declaration order. RFC 8785 canonicalization, not
    source declaration order, determines serialized JSON object-member order.
@@ -2271,14 +2282,16 @@ shown here.
    policy as other structured operation results. Deterministic `Bool`
    conditions do not have a schema, retry budget, rationale, or hook context
    entry unless their evaluation explicitly performs an operation.
-10. Gantry imposes no mandatory loop, cost, or operation-call limit. Integrations
-    MAY impose their own limits, except that such policy does not alter the
-    language meaning of `limit = 0`. Unlimited language execution does not
-    mean uninterruptible execution: every loop transition and deterministic
-    transition quantum remains a cancellation and executor-yield safe point
-    under Section 3. Cancellation or configured resource exhaustion terminates
-    the affected task under the ordinary runtime-error rules; it does not make
-    an unlimited loop complete normally.
+10. Gantry imposes no mandatory loop-iteration, cost, or operation-call limit.
+    Integrations MAY impose their own limits, except that such policy does not
+    alter the language meaning of `limit = 0`. The workflow-depth, task-count,
+    and value-size limits elsewhere in this specification still apply.
+    Unlimited language execution does not mean uninterruptible execution:
+    every loop transition and deterministic transition quantum remains a
+    cancellation and executor-yield safe point under Section 3. Cancellation
+    or configured resource exhaustion terminates the affected task under the
+    ordinary runtime-error rules; it does not make an unlimited loop complete
+    normally.
 11. A direct model condition uses `if decide "..." { ... }`. Gantry MUST
     also support declarations of the form
     `decision is_complete(report: Report) { ... }`. Each reachable normal
@@ -5189,16 +5202,16 @@ provider-specific or executor-specific types in Gantry programs:
    `flush(sequence)` operations with the behavior in Section 11. Append and
    flush are its only record-mutation primitives. Every mutation call MUST be
    associated with the current opaque ownership token so a superseded process
-    cannot advance the journal. The `record` accepted by `append` is an
-    unfinalized versioned body without a record ID or sequence number. Append
-    atomically assigns both fields, stores the finalized immutable envelope, and
-    returns an append receipt containing the assigned stable record ID and the
-    assigned contiguous sequence number from the per-journal linearizable
-    ordering. A read returns those finalized immutable versioned records in
-    sequence order
-    together with the durable-through sequence and supports continuation after
-    a supplied sequence. Owner release invalidates the supplied fencing token
-    atomically and MUST NOT append, update, or delete a journal record.
+   cannot advance the journal. The `record` accepted by `append` is an
+   unfinalized versioned body without a record ID or sequence number. Append
+   atomically assigns both fields, stores the finalized immutable envelope, and
+   returns an append receipt containing the assigned stable record ID and the
+   assigned contiguous sequence number from the per-journal linearizable
+   ordering. A read returns those finalized immutable versioned records in
+   sequence order together with the durable-through sequence and supports
+   continuation after a supplied sequence. Owner release invalidates the
+   supplied fencing token atomically and MUST NOT append, update, or delete a
+   journal record.
    Storage errors and malformed or noncontiguous durable histories are never
    retried as model-output failures and MUST surface as journal runtime errors.
 6. Each event sink declares a stable identity, its required/best-effort class,
