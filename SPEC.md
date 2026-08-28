@@ -937,6 +937,11 @@ scope exit so a merge can distinguish a discharged obligation from an
 available handle. Dynamic task identities are created only by `M-Spawn` and
 are tracked in `H`, not in static `Ω`.
 
+In the formal rules, **consumed** means any `joined`, `detached`, or
+`discharged` state. The name `discharged` by itself denotes only the
+analysis-only merged state; prose about satisfying or discharging an ownership
+obligation means that the handle is consumed rather than still `attached`.
+
 The effect domain is the powerset of:
 
 ```text
@@ -1137,17 +1142,20 @@ to have one result type and ownership output:
 ```text
 Σ;Γ;Ω ⊢ e:τs ! ε0 ⇒ Ω0
 bind(Σ,τs,pati)=Γi    Σ;Γ,Γi;Ω0 ⊢ ei:τ ! εi ⇒ Ωi
-exhaustive(τs,pat1...patn)    all_equal(Ω1...Ωn)=Ω'
+exhaustive(τs,pat1...patn)    merge_ownership(Ω1...Ωn)=Ω'
 ──────────────────────────────────────────────────── T-Match
 Σ;Γ;Ω ⊢ match(e,pati=>ei...):τ ! ε0∪⋃i εi ⇒ Ω'
 ```
 
-`all_equal` compares handle names and whether each is attached or discharged.
-Equal `joined` states remain joined and equal `detached` states remain
-detached; a mixture of joined, detached, or already discharged incoming states
-becomes `discharged`, while path-specific evidence remains available to the
-runtime and diagnostics. A redundant, nonexhaustive, ill-typed, or
-ownership-inconsistent match has no derivation.
+`merge_ownership` is partial. It requires the same visible handle names on all
+incoming paths. For each handle, `attached` on every path remains `attached`;
+the same `joined` state on every path remains `joined`; and the same `detached`
+state on every path remains `detached`. Any mixture consisting only of
+`joined`, `detached`, and `discharged` becomes `discharged`, while
+path-specific evidence remains available to the runtime and diagnostics. A
+mixture of `attached` and any consumed state is not defined, so the match has
+no derivation and produces a task-ownership analysis error. A redundant,
+nonexhaustive, or ill-typed match likewise has no derivation.
 
 <a id="GNT-3-T-JOIN"></a>
 
@@ -1211,7 +1219,7 @@ members inside a tuple pattern, but whole-value discard uses the explicit
 `discard` command. Bare expression statements are `discard e` only when
 `τ=Unit`; otherwise only the explicit source `discard` lowers to this command.
 `return`, `break`, and `continue` must have a valid nearest target, and every
-handle whose lexical scope they exit must be discharged in their output
+handle whose lexical scope they exit must be consumed in its output
 environment.
 
 <a id="GNT-3-T-ASSIGN"></a>
@@ -1241,14 +1249,17 @@ target before the right operand has completed.
 ```
 
 `Γ'` adds only bindings whose declarations in `c1` scope over `c2`.
-Alternative maps are combined by `⊔`: for each common completion, every
-visible handle must be attached on all incoming paths or discharged on all
-incoming paths; an attached/discharged mixture is undefined. Joined and
-detached paths remain exact when all incoming paths agree and otherwise merge
-to `discharged`, retaining their path-specific action for runtime evidence. A
-completion present on only one reachable alternative is retained. If `Φ1` has
-no `N`, `c2` is unreachable and is rejected under Section 9's reachability
-rule rather than analyzed as executing code.
+Alternative maps are combined by the partial operator `⊔`, using
+`merge_ownership` from `GNT-3-T-MATCH` for each completion present on multiple
+paths. Thus a handle must be `attached` on every incoming path or consumed on
+every incoming path. A mixture of `attached` and consumed states makes `⊔`
+undefined, gives this sequence no derivation, and produces a task-ownership
+analysis error. Equal `joined` or `detached` states remain exact; differing
+consumed states merge to `discharged` while retaining their path-specific
+action for runtime evidence. A completion present on only one reachable
+alternative is retained. If `Φ1` has no `N`, `c2` is unreachable and is
+rejected under Section 9's reachability rule rather than analyzed as executing
+code.
 
 <a id="GNT-3-T-BRANCH"></a>
 
@@ -1302,19 +1313,19 @@ task_body_result(Φ,τ)    no_escaping_handles(Φ)
 Section 10 and never a foreign handle. The child is analyzed with an empty
 handle environment because it can own only handles it spawns. Its every normal
 completion must yield exactly the declared `τ`, and every child-local handle
-must be discharged on every completion that exits its scope.
+must be consumed on every completion that exits its scope.
 `task_body_result(Φ,τ)` holds when every reachable task-body exit is `R(τ)`;
 it does not require an exit when the body has no reachable completion. Unit
 fallthrough is first lowered to `R(Unit)` under `T-Completion`. A scope may
 complete normally or transfer control outward only when all handles declared
-in that scope are discharged.
+in that scope are consumed.
 
 <a id="GNT-3-T-COMPLETION"></a>
 
 **[GNT-3-T-COMPLETION] Callable completion.** A function or method with
 declared result `τ` is valid only if its body has no reachable normal
 fallthrough when `τ≠Unit`, every `R` completion is `R(τ)`, and every handle is
-discharged at each body-exiting completion. Unit bodies lower normal
+consumed at each body-exiting completion. Unit bodies lower normal
 fallthrough and `return;` to `R(Unit)`. Spawned blocks use the same check with
 their declared result. `Decision` is checked like every other declared result
 type. A loop body may expose `Br` or `Co` only to its immediately enclosing
@@ -6672,6 +6683,29 @@ fn start_background(report: Report) {
     }
     detach(audit);
 }
+```
+
+Consumption must also agree at control-flow merges. A handle cannot remain
+attached on one incoming path after another path has consumed it:
+
+```gantry
+// Invalid: `audit` is consumed only when `publish_now` is true.
+spawn audit {
+    prompt "Audit ${report}.";
+}
+if publish_now {
+    join(audit);
+}
+join(audit);
+
+// Valid: route first, then consume the still-attached handle once.
+spawn routed_audit {
+    prompt "Audit ${report}.";
+}
+if publish_now {
+    prompt "Prepare immediate publication.";
+}
+join(routed_audit);
 ```
 
 Mechanical option inspection is deterministic; semantic judgment remains
