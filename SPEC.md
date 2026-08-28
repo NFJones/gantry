@@ -2,6 +2,7 @@
 
 - [Gantry Specification](#gantry-specification)
   - [1. Status and Scope](#1-status-and-scope)
+    - [1.1 Language at a glance](#11-language-at-a-glance)
   - [2. Normative Language](#2-normative-language)
   - [3. Implementation and Execution Model](#3-implementation-and-execution-model)
   - [4. Source Organization](#4-source-organization)
@@ -61,6 +62,62 @@ requirement for both human and model authors.
 This document records the settled version 1 (v1) language and operational
 requirements. Concrete Rust type signatures may remain implementation-defined
 where the semantic contract is fully specified here.
+
+### 1.1 Language at a glance
+
+The following non-normative example shows the intended v1 source style in one
+place. Model-backed work is explicit at each `prompt` or `decide`; ordinary
+calls, assignment, loops, and joins remain deterministic interpreter control.
+
+```gantry
+agents { researcher, reviewer }
+default agent = researcher;
+
+struct Report {
+    topic: String,
+    summary: String,
+    sources: List<String>,
+}
+
+decision needs_revision(report: Report) {
+    decide "Does this report need another revision? ${report}"
+}
+
+fn main(topic: String) -> Report {
+    spawn primary -> Report {
+        prompt """
+            Research primary sources for this topic:
+            ${topic}
+            """ -> Report
+    }
+
+    spawn independent -> Report {
+        with reviewer {
+            prompt
+                "Independently research ${topic}."
+                -> Report
+        }
+    }
+
+    let reports: List<Report> = join(primary, independent);
+    let mut report: Report = prompt
+        "Synthesize these reports: ${reports}"
+        -> Report;
+
+    loop(limit = 3) {
+        if(retry_limit = 1) needs_revision(report) {
+            report = prompt "Revise this report: ${report}" -> Report;
+        } else {
+            break;
+        }
+    }
+
+    report
+}
+```
+
+Section 14 provides focused examples of each language construct. Sections 3
+through 13 define the normative behavior behind this surface syntax.
 
 ## 2. Normative Language
 
@@ -174,10 +231,11 @@ document are to be interpreted as described in RFC 2119.
 15. Struct field names, parameter names, and method names for one receiver type
     MUST each be unique. A local binding or task handle MUST NOT duplicate or
     shadow any parameter, binding, or task handle visible at its declaration
-    point. Fields and methods occupy their receiver's member namespace and MAY
-    reuse names that exist in unrelated lexical scopes. These rules deliberately
-    exclude source-level shadowing in v1 so references remain unambiguous to
-    both readers and static analysis.
+    point. Fields and methods occupy one shared namespace for their receiver, so
+    a field and an inherent method on the same struct MUST NOT have the same
+    name. Members MAY reuse names that exist in unrelated lexical scopes. These
+    rules deliberately exclude source-level shadowing in v1 so references
+    remain unambiguous to both readers and static analysis.
 
 ## 5. Values, Bindings, and Structs
 
@@ -203,6 +261,13 @@ document are to be interpreted as described in RFC 2119.
    to an agent decision operation. `Option<Option<T>>` is excluded from v1
    because the untagged strict-JSON encoding cannot distinguish `None` from
    `Some(None)`.
+   Every expression MUST have one statically known type. `Some(value)` has
+   type `Option<T>` when `value` has type `T`. A `None` expression acquires its
+   `Option<T>` type only from an expected type supplied by a binding annotation,
+   assignment target, parameter, struct field, or return position. Bare `None`
+   in a position without such an expected type, including a top-level prompt
+   interpolation island, is an analysis error; authors can interpolate a typed
+   option binding instead. Gantry performs no other implicit option wrapping.
 4. `List<T>` is an ordered, homogeneous collection. v1 supports zero-based
    deterministic projection with `value[index]`, where `index` is a
    nonnegative integer token. Projection yields `T`; an out-of-bounds list
@@ -237,10 +302,12 @@ document are to be interpreted as described in RFC 2119.
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
 8. Struct fields MAY declare string-literal or `None` defaults, which are the
-   only field-default forms in v1. Defaults MUST NOT invoke an agent operation.
-   When an optional field with a default is omitted, the default is assigned;
-   explicit `null` remains `None`. Struct update syntax and destructuring are
-   excluded from v1.
+   only field-default forms in v1. A string default is valid for `String` and
+   `Option<String>` fields; for `Option<String>` it normalizes to
+   `Some(default)`. A `None` default is valid only for an `Option<T>` field.
+   Defaults MUST NOT invoke an agent operation. When an optional field with a
+   default is omitted, the default is assigned; explicit `null` remains
+   `None`. Struct update syntax and destructuring are excluded from v1.
 9. Bindings are immutable by default. `mut` enables rebinding and field
    mutation. Assignments MUST preserve type, and v1 permits no implicit type
    coercion.
@@ -301,7 +368,8 @@ document are to be interpreted as described in RFC 2119.
 8. A trailing expression in a function, method, or spawned block implicitly
    yields its value. An explicit `return` MAY yield earlier from a function,
    method, or spawned block. An explicit `return` in a decision workflow is
-   governed by Section 9. Every explicit or implicit returned expression MUST exactly match the
+   governed by Section 9. Every explicit or implicit returned expression MUST
+   exactly match the
    declared result type. A workflow whose signature omits a result type
    implicitly returns no result. A value-producing prompt MAY be discarded by
    writing it as an expression statement. A workflow or method call, `with`
@@ -324,6 +392,18 @@ document are to be interpreted as described in RFC 2119.
     block, but they MUST NOT cross a spawned-block boundary. A `with` block
     changes agent selection only; it does not intercept or retarget control
     transfer.
+11. Except for explicitly parallel spawned blocks, expression evaluation MUST
+    be deterministic and left to right. A workflow call evaluates its callee
+    and then its arguments in source order; a method call evaluates its
+    receiver before its arguments; and a postfix chain evaluates each suffix
+    before the next. Constructor fields follow the source-order rule in
+    Section 5, and prompt interpolations follow the source-order rule in item
+    7 above. Each subexpression MUST complete before the next begins. Failure,
+    decline of a required result, or cancellation in one subexpression MUST
+    prevent every later subexpression in that expression from being evaluated
+    or dispatched. Entering a `with` expression establishes its selected agent
+    before its body begins. These rules make the order of model operations
+    visible even when calls or constructors are nested.
 
 ## 7. Agents, Hooks, and Sessions
 
@@ -692,7 +772,12 @@ document are to be interpreted as described in RFC 2119.
    access. Each captured binding preserves its declared mutability: an
    immutable capture cannot be assigned, while a `mut` capture may be changed
    inside the child without affecting the parent. A child MAY initialize a new
-   mutable local binding from any captured value.
+   mutable local binding from any captured value. Each spawned task MUST begin
+   with a forked child of the spawning task's active logical session. That
+   child session is the spawned task's enclosing session, so an `inline`
+   operation in the child reuses it. Sibling tasks MUST receive distinct child
+   sessions. An explicit session directive inside the child MAY override this
+   inherited session under Section 7.
 4. A spawned block MUST declare the type of its yielded value with `-> T`, or
    declare `-> None` when it yields no value. Every reachable normal completion
    of a value-yielding block MUST produce exactly `T` through its trailing
@@ -1178,8 +1263,9 @@ trailing_expression     = expression ;
 
 Bindings require explicit types in v1. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
-closing brace. `return;` is valid only in a no-result function or method.
-`break` and `continue` are valid only in a loop body. A `decision_block` MUST
+closing brace. `return;` is valid only in a no-result function, method, or
+spawned block. `break` and `continue` are valid only in a loop body. A
+`decision_block` MUST
 end in a direct `decide` expression or decision-workflow call, whether trailing
 or returned; an earlier `return` in its statement sequence is subject to the
 same restriction. The broader `return_expression` production permits a parser
@@ -1307,9 +1393,16 @@ attempt.
 ### 13.8 Decisions and sequential control flow
 
 ```ebnf
-if_statement            = "if", decision_expression, block,
-                          { "else", "if", decision_expression, block },
+if_statement            = "if", [ decision_modifiers ],
+                          decision_expression, block,
+                          { "else", "if", [ decision_modifiers ],
+                            decision_expression, block },
                           [ "else", block ] ;
+
+decision_modifiers      = "(", decision_modifier,
+                          { ",", decision_modifier }, [ "," ], ")" ;
+decision_modifier       = "session", "=", session_directive
+                        | "retry_limit", "=", integer_token ;
 
 decision_expression     = decide_expression
                         | decision_call
@@ -1327,32 +1420,33 @@ loop_modifiers          = "(", loop_modifier,
 loop_modifier           = "session", "=", session_directive
                         | "limit", "=", integer_token ;
 
-while_statement         = "while", [ condition_modifiers ],
+while_statement         = "while", [ loop_condition_modifiers ],
                           decision_expression, block ;
-until_statement         = "until", [ condition_modifiers ], block,
+until_statement         = "until", [ loop_condition_modifiers ], block,
                           "when", decision_expression, ";" ;
-condition_modifiers     = "(", condition_modifier,
-                          { ",", condition_modifier }, [ "," ], ")" ;
-condition_modifier      = "session", "=", session_directive
+loop_condition_modifiers
+                        = "(", loop_condition_modifier,
+                          { ",", loop_condition_modifier }, [ "," ], ")" ;
+loop_condition_modifier = "session", "=", session_directive
                         | "limit", "=", integer_token
                         | "retry_limit", "=", integer_token ;
 ```
 
 The optional modifier forms require at least one modifier when parentheses are
-present; empty `prompt()`, `decide()`, `loop()`, `while()`, and `until()`
-modifiers are not v1 syntax. Bare `loop` uses `session = inline` and
-`limit = 0`. Duplicate modifiers are analysis errors.
+present; empty `prompt()`, `decide()`, `if()`, `else if()`, `loop()`,
+`while()`, and `until()` modifiers are not v1 syntax. Bare `loop` uses
+`session = inline` and `limit = 0`. Duplicate modifiers are analysis errors.
 
-A condition-level `session` establishes the inherited session for the complete
-decision-workflow evaluation, including any ordinary prompts it executes. A
-condition-level `retry_limit` applies only to the ultimate decision operation;
-ordinary prompts inside a decision workflow use their own modifier or the
-interpreter default. A modifier written directly on a `decide` expression is
-more local and overrides the corresponding inherited value. `limit` belongs
-only to the enclosing `while` or `until`. The `until` grammar deliberately
-places its body before `when` and the post-test decision. A `decision_call`
-MUST resolve to a `decision` declaration; an ordinary workflow call is not a
-condition.
+A condition-level `session` on `if`, `else if`, `while`, or `until` establishes
+the inherited session for the complete decision-workflow evaluation, including
+any ordinary prompts it executes. A condition-level `retry_limit` applies only
+to the ultimate decision operation; ordinary prompts inside a decision
+workflow use their own modifier or the interpreter default. A modifier written
+directly on a `decide` expression is more local and overrides the corresponding
+inherited value. `limit` belongs only to the enclosing `while` or `until`. The
+`until` grammar deliberately places its body before `when` and the post-test
+decision. A `decision_call` MUST resolve to a `decision` declaration; an
+ordinary workflow call is not a condition.
 
 ### 13.9 Parallel control flow
 
@@ -1673,13 +1767,13 @@ completes normally. `limit = 0` means unlimited execution.
 fn parallel_research(topic: String) -> List<Report> {
     spawn primary -> Report {
         with researcher {
-            prompt(session = fork) "Research primary sources for ${topic}." -> Report
+            prompt "Research primary sources for ${topic}." -> Report
         }
     }
 
     spawn independent -> Report {
         with reviewer {
-            prompt(session = fork) "Independently research ${topic}." -> Report
+            prompt "Independently research ${topic}." -> Report
         }
     }
 
@@ -1688,7 +1782,10 @@ fn parallel_research(topic: String) -> List<Report> {
 }
 ```
 
-The returned list follows join argument order, not task completion order.
+The returned list follows join argument order, not task completion order. Each
+spawned task begins in its own forked child session, so its default `inline`
+prompt preserves inherited context without sharing one mutable conversation
+with its sibling.
 
 ### 14.9 Parallel heterogeneous work and `Tuple<...>` joins
 
