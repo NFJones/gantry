@@ -32,7 +32,7 @@
     - [14.1 Minimal package entry point](#141-minimal-package-entry-point)
     - [14.2 Modules, imports, and package-wide agents](#142-modules-imports-and-package-wide-agents)
     - [14.3 Primitive values, structs, tagged values, and structural routing](#143-primitive-values-structs-tagged-values-and-structural-routing)
-    - [14.4 Inherent methods and lexical agent selection](#144-inherent-methods-and-lexical-agent-selection)
+    - [14.4 Inherent methods and scoped agent selection](#144-inherent-methods-and-scoped-agent-selection)
     - [14.5 Prompt strings, interpolation, and escaping](#145-prompt-strings-interpolation-and-escaping)
     - [14.6 Decision workflows and conditional chains](#146-decision-workflows-and-conditional-chains)
     - [14.7 General, pre-test, and post-test loops](#147-general-pre-test-and-post-test-loops)
@@ -110,6 +110,12 @@ This document uses three related but distinct judgments:
   language, execution, durability, observability, and embedding contract. A
   parser, analyzer, or source-validity tool may accurately describe its more
   limited role but is not by itself a conforming Gantry implementation.
+
+Accordingly, “accepting a source-valid package” means recognizing it as a
+valid Gantry package. It does not mean that every execution request must start:
+entry-input validation, integration preflight, journal ownership, persistence,
+and required event delivery can still produce the structured start failures
+defined later in this document.
 
 Gantry is harness-neutral. Mezzanine may integrate Gantry, but it is not an
 assumed runtime or part of the language contract. An integration supplies the
@@ -467,10 +473,13 @@ activity throughout this specification:
 - An **integration operation** is a source-visible `prompt`, `decide`, or
   action invocation. A **model operation** is specifically a `prompt` or
   `decide`; an action is integration-backed but is not model-backed.
-- A **static operation site** is one authored `prompt`, `decide`, or `action`
+- A **static integration-operation site** (shortened to **operation site** when
+  the context is unambiguous) is one authored `prompt`, `decide`, or `action`
   invocation expression at a particular source location. A site exists even
   when no execution path reaches it. Executing a site zero, one, or several
-  times produces the corresponding number of logical operations.
+  times produces the corresponding number of logical operations. `spawn`,
+  `join`, `joinall()`, and `detach` are **task-control sites**, not operation
+  sites, because they never dispatch an `OperationHook` by themselves.
 - A **logical operation** is one dynamic execution of a source `prompt`,
   `decide`, or action invocation. It has one stable operation ID and
   produces at most one consumable operation result. Failed or invalid
@@ -527,14 +536,17 @@ shown here.
 
 ## 3. Implementation and Execution Model
 
-1. A conforming Gantry v1 implementation MUST accept every source program
-   admitted by the grammar in Section 13 when it also satisfies the semantic
-   requirements in this document, and MUST reject source outside that grammar
-   when operating in v1 mode. An implementation MAY provide an explicitly
-   selected extension mode, but source accepted only by that mode MUST NOT be
-   represented as portable Gantry v1 source. Conformance requires all v1
-   `MUST` and `MUST NOT` requirements; implementing only the parser or only a
-   subset of runtime constructs is not full v1 conformance.
+1. A conforming Gantry v1 implementation MUST recognize as source-valid every
+   source program admitted by the grammar in Section 13 that also satisfies
+   the semantic requirements in this document, and MUST reject source outside
+   that grammar when operating in v1 mode. Recognizing a package as
+   source-valid does not guarantee that a particular execution request starts;
+   the pre-execution failures defined in Sections 4, 7, 11, 12, and 15 remain
+   applicable. An implementation MAY provide an explicitly selected extension
+   mode, but source accepted only by that mode MUST NOT be represented as
+   portable Gantry v1 source. Conformance requires all v1 `MUST` and `MUST NOT`
+   requirements; implementing only the parser or only a subset of runtime
+   constructs is not full v1 conformance.
 2. An implementation MUST parse Gantry source according to Section 13 and
    preserve every semantic rule in this document. It MAY use handwritten or
    generated parsing, an AST, another private intermediate representation,
@@ -1189,11 +1201,13 @@ defined here and in Section 7 cross the integration boundary.
    model-backed sites visible in source.
    Semantic analysis MUST expose this transitive behavior without changing
    the call syntax. For every function, method, and decision workflow, the
-   structured analysis result MUST contain:
+   structured analysis result MUST contain the following direct-site inventory
+   and transitive summary:
    - every direct workflow-call edge, identified by call-site location and
      canonical callee path;
-   - the direct `prompt`, `decide`, `action`, `spawn`, `join`, `joinall()`, and
-     `detach` sites in that workflow, identified by kind and source location;
+   - every direct integration-operation site (`prompt`, `decide`, or `action`)
+     and task-control site (`spawn`, `join`, `joinall()`, or `detach`) in that
+     workflow, identified by kind and source location; and
    - seven transitive flags indicating whether execution of the workflow may
      reach a `prompt`, `decide`, `action`, `spawn`, `join`, `joinall()`, or
      `detach`, respectively.
@@ -3702,7 +3716,8 @@ an operation hook.
    whole-package syntax contract and then performs name, type, module, control-
    flow, task-ownership, and schema validation without invoking hooks.
    A successful analysis result MUST include the per-workflow call edges,
-   direct operation sites, and transitive effect flags required by Section 6.
+   direct integration-operation and task-control sites, and transitive flags
+   required by Section 6.
 10. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
 11. Diagnostics MUST be usable by both human authors and automated repair
@@ -4792,7 +4807,7 @@ fn exact_count(value: Float) -> Option<Int> {
 The explicit empty-list branch keeps a normal absence case in the value domain
 rather than turning it into a checked-arithmetic runtime failure.
 
-### 14.4 Inherent methods and lexical agent selection
+### 14.4 Inherent methods and scoped agent selection
 
 ```gantry
 struct Report {
@@ -5003,10 +5018,10 @@ fn retain_decision(report: Report) -> String {
 }
 ```
 
-The `else if` hook receives the preceding
-decision and rationale in its ordered context vector. Conditional blocks do
-not themselves form value expressions in v1, so each selected branch returns
-its value explicitly.
+The `decide` operation in the `else if` condition receives the preceding
+decision and rationale in its ordered context vector. The `else if` syntax
+does not create a hook by itself. Conditional blocks do not themselves form
+value expressions in v1, so each selected branch returns its value explicitly.
 
 An early decision return is also valid:
 
