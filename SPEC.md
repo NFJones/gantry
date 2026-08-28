@@ -3044,9 +3044,15 @@ shown here.
    Section 10, including the runtime-error categories defined in Section 7,
    and MUST be the final record that changes language execution state. Later
    event-delivery records and ownership release do not alter that state.
-   Concrete serialization and Rust types are implementation-
-   defined, but all required information and durability boundaries are
-   normative. Before append, Gantry constructs an unfinalized record body that
+   Concrete serialization and Rust types are implementation-defined, but the
+   journal protocol MUST publish a versioned canonical field schema for every
+   required record kind. Each schema MUST identify its required and optional
+   fields, field types, causal-reference rules, and canonical encoding and
+   decoding rules. A conforming durable reader MUST reject a record with a
+   missing required field, an unknown required field, an unsupported major
+   version, or a payload incompatible with its record kind. All required
+   information and durability boundaries remain normative. Before append,
+   Gantry constructs an unfinalized record body that
    omits the record ID and sequence number. The storage append operation MUST
    atomically assign both fields and store the resulting finalized envelope;
    only that finalized envelope is a journal record returned by durable reads.
@@ -3289,6 +3295,15 @@ shown here.
    `Declined` or `Failed` outcome that fails the task, this completion event is
    the final operation-specific event; the resulting task failure is observed
    separately and does not manufacture an operation-result event.
+   For every other required event kind that represents a durable interpreter
+   transition, Gantry MUST append and flush the event record after its causal
+   journal record is durable and before later source execution, an execution
+   waiter, or an event sink observes or depends on that transition. The event
+   MUST reference the causal record. This rule applies to workflow, branch,
+   spawn, join, detach, mutation, cancellation, task-completion, foreground-
+   completion, and terminal-execution events. If recovery finds such a causal
+   transition without its event record, Gantry MUST append and flush exactly
+   one replacement event under item 2 before work depends on the transition.
 2. Each event MUST have a stable event ID and activity ID. An activity is one
    syntax-validation, semantic-analysis, execution/resume, or shutdown
    invocation. An event associated with a program execution MUST also include
@@ -3454,10 +3469,14 @@ shown here.
    alive, but process interruption MAY lose an unsettled event and v1 provides
    no recovery source from which to redeliver it. An implementation MUST NOT
    describe that weaker standalone guarantee as durable at-least-once
-   delivery. Exhaustion for a required sink MUST abort the affected activity
-   and its execution when one exists; exhaustion for a best-effort sink MUST
-   be journaled when a journal exists, otherwise included in the activity
-   result, and the activity MUST continue. Before returning a foreground
+   delivery. Exhaustion for a required sink MUST abort a standalone activity.
+   For an execution whose terminal-execution record is not yet durable, it
+   MUST abort the execution as specified below. For an execution whose
+   terminal-execution record is already durable, it MUST produce only the
+   required-event-delivery barrier failure specified below and MUST NOT alter
+   the durable language outcome. Exhaustion for a best-effort sink MUST be
+   journaled when a journal exists, otherwise included in the activity result,
+   and the activity MUST continue. Before returning a foreground
    outcome, Gantry MUST flush required-sink delivery through that execution's
    foreground-completion event; events from detached work remain eligible for
    later delivery through the same execution. Before returning a terminal
@@ -3547,7 +3566,7 @@ shown here.
      or the decision and protected rationale reference for a decision result;
      an optional decline additionally identifies its decline provenance;
    - `structured output validation failure`: operation and dispatch IDs plus
-     the structured validation errors defined in Section 7;
+     the structured validation errors defined in Section 8;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
      validation-attempt and recovery-dispatch numbers, retry class, and
      selected delay;
@@ -3631,7 +3650,8 @@ and interpolation restrictions are semantic-analysis concerns.
 
 The grammar uses extended Backus-Naur form (EBNF):
 
-- quoted text is a literal terminal;
+- double-quoted or single-quoted text is a literal terminal; single quotes are
+  used only when the terminal itself contains double quotes;
 - concatenation, written with commas, binds more tightly than alternation;
 - `A | B` selects one alternative;
 - `[ A ]` makes `A` optional;
@@ -3965,6 +3985,9 @@ inherent method, including nested blocks and spawned blocks inside that method;
 it is an analysis error in a free function, decision workflow, field default,
 or module-level declaration. A spawned block captures `self` under the copy
 rules in Section 10 rather than introducing a new receiver.
+The root module's function named `main` is additionally restricted by Section
+4 to zero parameters or exactly one typed parameter; this is an entry-point
+semantic constraint rather than a separate function grammar.
 
 ### 13.5 Blocks and statements
 
@@ -4062,7 +4085,7 @@ postfix_expression      = primary_expression, { postfix_suffix } ;
 postfix_suffix          = ".", postfix_member_name
                         | "(", [ argument_list ], ")"
                         | "[", expression, "]" ;
-postfix_member_name     = identifier_token | "join" ;
+postfix_member_name     = identifier_token | "join" | "decision" ;
 primary_expression      = boolean_literal
                         | integer_literal_token
                         | float_literal_token
@@ -4195,12 +4218,12 @@ tuple value. Calling another value, selecting an unsupported field, indexing
 another type, or continuing a postfix chain after a no-result expression is an
 analysis error.
 
-The `{` that begins an `if` or `while` body, an `if let` arm, or the arm list of
-a `match` is a syntactic boundary. A struct constructor used anywhere in the
-immediately preceding condition or match scrutinee MUST therefore be enclosed
-in parentheses. For example, `if (Policy { enabled: true }).enabled { ... }`
-is valid, while the same condition without those parentheses is rejected.
-This rule gives parsers, human readers, and model authors one deterministic
+As a semantic disambiguation rule applied after parsing, a struct constructor
+used anywhere in the condition immediately before an `if` or `while` body, in
+an `if let` scrutinee, or in a `match` scrutinee MUST be enclosed in
+parentheses. For example, `if (Policy { enabled: true }).enabled { ... }` is
+valid, while the same condition without those parentheses is rejected. This
+rule gives parsers, human readers, and model authors one deterministic
 interpretation of a path followed by `{` at a control-flow boundary.
 
 ### 13.7 Prompts and interpolation
@@ -4248,7 +4271,7 @@ interpolation_suffix    = ".", interpolation_member_name
                         | "(", [ interpolation_argument_list ], ")"
                         | "[", interpolation_expression, "]" ;
 interpolation_member_name
-                        = identifier_token | "join" ;
+                        = identifier_token | "join" | "decision" ;
 interpolation_argument_list
                         = interpolation_expression,
                           { ",", interpolation_expression }, [ "," ] ;
@@ -4486,8 +4509,8 @@ fn produce_report(topic: String) -> Report {
 }
 ```
 
-All three agent declarations merge into one package set. Only `main.gnt`
-declares the default agent.
+The two agent declarations merge their three names into one package-wide set.
+Only `main.gnt` declares the default agent.
 
 ### 14.3 Primitive values, structs, tagged values, and structural routing
 
@@ -4970,6 +4993,7 @@ Tuple positions follow the explicit join argument order. V1 code can pass,
 return, project, or destructure `pair`:
 
 ```gantry
+// Inside an executable block where `pair` is in scope:
 let (headline_text, full_report): Tuple<String, Report> = pair;
 ```
 
@@ -5157,11 +5181,15 @@ create hidden Gantry operations.
 
 ### 14.13 Common invalid forms and their corrections
 
-The following non-normative examples collect source shapes that can look
-plausible to a human or model author but are intentionally invalid in v1.
-Keeping these boundaries visible is part of Gantry's clean-syntax goal.
+The following non-normative excerpts collect source shapes that are rejected
+by syntax or semantic analysis, plus syntactically valid forms that
+deterministically fail at runtime. Unless a snippet declares a function, each
+fragment is shown as if it appears inside an executable block with the
+referenced bindings and types already in scope. Keeping these boundaries
+visible is part of Gantry's clean-syntax goal.
 
-An interpolation cannot hide another model-backed workflow call:
+An interpolation cannot contain a workflow or source-defined method call,
+whether or not that call can reach a model operation:
 
 ```gantry
 // Invalid: workflow calls are not permitted inside interpolation.
