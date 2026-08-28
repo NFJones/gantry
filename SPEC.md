@@ -586,10 +586,18 @@ document are to be interpreted as described in RFC 2119.
    Conflicting default bindings or selection of an undeclared agent are
    analysis errors. Within one uninterrupted execution or resume run,
    integrations MUST resolve every occurrence of the same logical name
-   consistently across all tasks. A later resume MAY change that mapping only
-   as permitted by Section 11; the new mapping then applies consistently to
-   subsequent uncommitted dispatches, while committed outcomes remain
-   unchanged.
+   consistently across all tasks. Before a new execution or resume begins,
+   the integration MUST attest that it can resolve every name in the merged
+   set and MUST supply one opaque, stable agent-mapping revision ID. The ID
+   identifies the complete logical-name mapping for that run without requiring
+   Gantry to inspect provider configuration. For a new execution, Gantry MUST
+   record that revision in the durably flushed execution-start record required
+   by Section 11. A later resume MAY change the mapping only by supplying and
+   durably recording a new revision in an execution-state record before
+   recovered interpretation or dispatch continues; the new mapping then
+   applies consistently to subsequent uncommitted dispatches, while committed
+   outcomes remain unchanged. Failure to resolve the complete set is a hook-
+   creation error and MUST occur before any hook dispatch.
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
 3. Agent selection is established by lexical `with <name> { ... }` blocks and
@@ -702,8 +710,9 @@ document are to be interpreted as described in RFC 2119.
    - `decision-frame`: decision workflow path and frame occurrence;
    - `conditional-arm`: conditional-chain ID, zero-based arm index, decision,
      and nonempty rationale for an already evaluated arm;
-   - `loop-iteration`: loop operation ID, zero-based body-execution index, and
-     phase (`condition` or `body`); and
+   - `loop-iteration`: loop operation ID, zero-based body-execution index,
+     phase (`condition` or `body`), and the most recently settled condition's
+     associated index, decision, and nonempty rationale when one exists; and
    - `optional-decline`: declined operation ID, selected agent, source location,
      and decline reason when a decline normalized to `None`.
    Structural entries (`workflow-frame`, `decision-frame`, `conditional-arm`,
@@ -1506,14 +1515,27 @@ document are to be interpreted as described in RFC 2119.
    terminal failure. Concrete serialization and Rust types are implementation-
    defined, but all required information and durability boundaries are
    normative.
-10. An execution-start record MUST contain an effective-configuration identity
-    and the configuration fields needed to verify it. The identity is the
-    SHA-256 digest of the RFC 8785 JSON Canonicalization Scheme encoding of the
-    following canonical object shape. Property names and enum strings shown
-    here are normative. Protocol version components are JSON numbers. Every
-    other integer-valued field is a canonical unsigned decimal string with no
-    sign or leading zero except the value `0`; this avoids loss of precision in
-    RFC 8785 implementations whose JSON number domain is IEEE 754 binary64.
+10. For each new execution, after entry validation and integration preflight
+    succeed but before evaluating `main`, creating a child task, or dispatching
+    a hook, Gantry MUST append and flush exactly one execution-start record.
+    That record MUST contain the package source identity, the effective-
+    configuration identity and fields defined below, the selected root-session
+    identity and provenance, the agent-mapping revision from Section 7, the
+    canonical signature of `main`, and either a no-entry-input marker or the
+    validated and normalized canonical entry value with its type descriptor.
+    Resume MUST verify and reuse the existing execution-start record, restore
+    its entry value, and MUST NOT append a second execution-start record or
+    accept replacement entry input. A mapping revision changed during resume
+    MUST instead be appended and flushed as an execution-state record before
+    recovered interpretation or dispatch continues.
+
+    The effective-configuration identity is the SHA-256 digest of the RFC 8785
+    JSON Canonicalization Scheme encoding of the following canonical object
+    shape. Property names and enum strings shown here are normative. Protocol
+    version components are JSON numbers. Every other integer-valued field is a
+    canonical unsigned decimal string with no sign or leading zero except the
+    value `0`; this avoids loss of precision in RFC 8785 implementations whose
+    JSON number domain is IEEE 754 binary64.
     Durations are represented as whole microseconds, identities are JSON
     strings, and no additional properties participate in the v1 identity:
 
@@ -1868,6 +1890,15 @@ Reserved-word classification occurs after an identifier token is scanned.
 Comments are recognized only outside string tokens, and interpolation islands
 are recognized only by the contextual prompt scan described in Section 13.7.
 
+The shortest-closing-delimiter rules above apply directly to strings used as
+ordinary source values. When a string, raw string, or block prompt occurs in
+the `prompt_template` position after `prompt` or `decide`, its closing
+delimiter is recognized by the contextual template scan in Section 13.7.
+That scan suspends recognition of the outer delimiter while it tokenizes a
+balanced interpolation island. Consequently, quote characters and even a
+delimiter-shaped sequence inside an island's nested string token do not close
+the outer template.
+
 For a raw string, `matching_raw_hashes` means exactly the same number of `#`
 characters as `raw_hashes`. Backslashes have no special meaning in a raw
 string. The variable-hash delimiter rule is lexical and is intentionally
@@ -2139,16 +2170,22 @@ interpolation_field     = identifier_token, ":",
                           interpolation_expression ;
 ```
 
-The parser treats the prompt template immediately following `prompt` or
-`decide` as a template. After identifying the token's outer delimiters, it
-scans the authored template body for interpolation islands before decoding
-ordinary or block-prompt escapes and before block-prompt dedentation. The
-structural opening and closing lines of a block prompt are delimiters rather
-than body text and are excluded from this scan. `${` opens an interpolation
-unless its `$` was consumed by `$$`. `$$` emits one literal `$`; therefore
-`$${name}` emits literal `${name}`. This contextual scan applies to normal,
-raw, and block prompt strings. In non-prompt string expressions, `$` and
-`${...}` are ordinary string contents and are not interpolated.
+When the parser expects the prompt template immediately following `prompt` or
+`decide`, the lexer MUST enter contextual template mode. It identifies the
+opening delimiter and then scans literal segments, `$$` escapes, and balanced
+interpolation islands together; it MUST NOT first terminate a generic string
+token and search its completed body afterward. An outer closing delimiter is
+recognized only while scanning a literal segment, never while scanning an
+interpolation island. Within an island, ordinary Gantry tokens—including
+quoted and raw strings—use their normal lexical rules. This makes source such
+as `${Some("draft")}` valid inside an ordinary quoted prompt without requiring
+the island's quotes to be escaped for the outer template. Structural opening
+and closing lines of a block prompt are delimiters rather than body text and
+are excluded from this scan. `${` opens an interpolation unless its `$` was
+consumed by `$$`. `$$` emits one literal `$`; therefore `$${name}` emits
+literal `${name}`. This contextual mode applies to normal, raw, and block
+prompt templates. In non-prompt string expressions, `$` and `${...}` are
+ordinary string contents and are not interpolated.
 
 The scan proceeds left to right over authored dollar signs. Thus `$$${name}`
 emits one literal `$` followed by the interpolation of `name`. An ordinary or
@@ -2793,15 +2830,24 @@ provider-specific or executor-specific types in Gantry programs:
    ID. A terminal result MUST distinguish success, detached-task failure,
    cancellation, and the runtime-error categories defined in Section 7.
 2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
-   task context. Gantry MUST call the factory lazily, at most once per Gantry
-   task in one in-process run, immediately before that task's first hook
-   dispatch; a task that performs only deterministic interpreter work does not
-   require a hook. `OperationHook` asynchronously accepts the versioned request
-   defined in Section 7 and a Gantry-owned cancellation token, and returns
-   exactly one `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`
-   outcome. `raw_output` is an uninterpreted byte sequence; Gantry owns UTF-8
-   decoding, JSON parsing, schema validation, and repair retries. Hook futures
-   MUST be `Send`; one hook instance is used serially for one Gantry task.
+   task context. The factory, or a companion harness-preflight interface owned
+   by the same integration, MUST also validate the complete merged agent-name
+   set and its supplied mapping revision before a new execution begins. Before
+   resume continues, that preflight MUST resolve every unfinished logical
+   session descriptor enumerated by Gantry, including root, parent, and
+   creation provenance. Preflight failure is a hook-creation error, creates no
+   `OperationHook`, and MUST occur before `main` evaluation or recovered work.
+   Successful preflight does not itself dispatch an operation.
+
+   Gantry MUST call the factory lazily, at most once per Gantry task in one
+   in-process run, immediately before that task's first hook dispatch; a task
+   that performs only deterministic interpreter work does not require a hook.
+   `OperationHook` asynchronously accepts the versioned request defined in
+   Section 7 and a Gantry-owned cancellation token, and returns exactly one
+   `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)` outcome.
+   `raw_output` is an uninterpreted byte sequence; Gantry owns UTF-8 decoding,
+   JSON parsing, schema validation, and repair retries. Hook futures MUST be
+   `Send`; one hook instance is used serially for one Gantry task.
    Returning `Completed(raw_output)` means the integration considers the model
    operation complete even when the bytes later fail Gantry validation.
    Provider transport failures, timeouts, and integration-internal retry
