@@ -31,7 +31,7 @@
   - [14. Syntax Examples](#14-syntax-examples)
     - [14.1 Minimal package entry point](#141-minimal-package-entry-point)
     - [14.2 Modules, imports, and package-wide agents](#142-modules-imports-and-package-wide-agents)
-    - [14.3 Structs, tagged values, aggregates, and structural routing](#143-structs-tagged-values-aggregates-and-structural-routing)
+    - [14.3 Primitive values, structs, tagged values, and structural routing](#143-primitive-values-structs-tagged-values-and-structural-routing)
     - [14.4 Inherent methods and lexical agent selection](#144-inherent-methods-and-lexical-agent-selection)
     - [14.5 Prompt strings, interpolation, and escaping](#145-prompt-strings-interpolation-and-escaping)
     - [14.6 Decision workflows and conditional chains](#146-decision-workflows-and-conditional-chains)
@@ -165,9 +165,10 @@ most important when humans or models author Gantry source:
 - `prompt` visibly performs model-backed work and optionally returns the type
   written after `->`. An omitted annotation or `-> None` means that the
   operation returns no source value.
-- `decide` visibly performs model-backed judgment and returns an opaque
-  `Decision` containing a controlling Boolean and rationale. A decision can be
-  retained and passed, but its Boolean cannot be extracted as a general value.
+- `decide` visibly performs model-backed judgment and returns a sealed
+  `Decision` containing a `Bool` decision, nonempty rationale, and interpreter
+  provenance. A decision can be retained and passed; its read-only fields can
+  be projected, but source cannot construct or mutate one.
 - `action <path>(...)` visibly invokes a source-declared, typed harness action.
   It is distinct from an ordinary workflow call and from model selection.
 - `using { ... }` supplies ordered typed inputs to `prompt` or `decide`
@@ -175,7 +176,7 @@ most important when humans or models author Gantry source:
 - `${...}` computes deterministic prompt input. It can read and construct
   values, but cannot hide another external operation, mutation, join, or
   control-flow transfer.
-- `match`, `if let`, and condition-only `==` or `!=` route validated structure
+- `Bool` expressions, `match`, and `if let` route validated structure
   deterministically. Semantic judgment remains explicit through `decide`.
 - `with <agent> { ... }` selects an agent lexically, while
   `session(<directive>) { ... }` selects conversational continuity. Neither
@@ -195,20 +196,21 @@ It is a reading aid rather than a substitute for the normative requirements
 in later sections:
 
 - Gantry is an orchestration language, not a general-purpose language. Its
-  source values are strings, structs, enums, options, results, lists, tuples,
-  and opaque decisions. Integers appear only in directives and aggregate
-  projections; Gantry has no general numeric type.
+  source values include `Bool`, bounded exact `Int`, finite binary64 `Float`,
+  strings, structs, enums, options, results, lists, tuples, and sealed
+  decisions. Numeric operations are deliberately small and deterministic.
 - Integration-backed work is limited to the explicit `prompt`, `decide`, and
   `action` operations. `prompt` and `decide` are model-facing. `action` invokes
   a typed capability declared by the package and resolved by the integrating
   harness.
-- V1 has no arithmetic, ordering, Boolean algebra, deterministic string
-  operations, `for`, user-defined generics, traits, or general exception
-  handling. Exact structural routing through patterns and condition-only
-  equality is deterministic; semantic judgments remain agent-mediated.
+- V1 has checked arithmetic, numeric ordering, short-circuit Boolean algebra,
+  and exact equality, but no deterministic string transformation, `for`,
+  user-defined generics, traits, or general exception handling. Semantic
+  judgments remain agent-mediated.
 - Lists and tuples are typed aggregates. Source can construct, pass, return,
-  interpolate, project, and pattern-destructure them, but cannot iterate over
-  them, query their lengths, or mutate their members in v1.
+  interpolate, project, and pattern-destructure them. Lists additionally
+  expose deterministic `len()` and dynamic `Int` indexing, enabling explicit
+  bounded traversal with `while`; aggregate mutation remains excluded.
 - `Result<T, E>` represents a declared, expected source-level outcome. Hook
   failure, invalid structured output, cancellation, journal failure, and retry
   exhaustion remain runtime failures and are never implicitly converted to
@@ -258,6 +260,12 @@ valid:
 - Prefer `match` for exhaustive routing over enums and results, and `if let`
   for one focused structural case. Use `decide` instead when the branch depends
   on interpretation, quality, intent, policy, or another semantic judgment.
+- Use `Bool` for known mechanical facts and `Decision` for model judgment.
+  Project `.decision` only when composing a judgment with deterministic policy;
+  retain `.rationale` when later operations need the model's explanation.
+- Keep numeric expressions short. Bind intermediate values when checked
+  arithmetic, conversion, or list indexing would otherwise obscure operation
+  inputs or control-flow intent.
 - Use triple-quoted block prompts for multiline instructions and ordinary or
   raw quoted prompts for short text. Keep result annotations on the same
   visual operation, even when the template spans several lines.
@@ -312,8 +320,9 @@ activity throughout this specification:
   operation and cannot mutate Gantry state except through the hook outcome.
 - A **tagged value** is an enum or `Result<T, E>` value whose strict-JSON
   representation carries an explicit variant discriminator.
-- A **structural predicate** is an interpreter-evaluated pattern or equality
-  test over already validated values. It never invokes a hook.
+- A **deterministic condition** is a `Bool` expression evaluated over already
+  validated values. Pattern tests and exact equality are interpreter work and
+  never invoke a hook.
 - A **named input** is one ordered, typed `using` entry supplied separately
   from rendered prompt text.
 - A **foreground outcome** is the completion of root `main`. A **terminal
@@ -584,16 +593,18 @@ document are to be interpreted as described in RFC 2119.
 
 ## 5. Values, Bindings, Structs, and Tagged Types
 
-1. Runtime values MUST include `String`, declared struct and enum values,
-   `Option<T>`, `Result<T, E>`, `List<T>`, `Tuple<T1, T2, ..., Tn>`, and
-   `Decision`. A general user-visible Boolean or integer type is excluded from
-   v1. `Decision` is an opaque first-class value whose controlling Boolean can
-   be consumed only by the control-flow forms in Section 9.
-   Nonnegative integer
-   tokens MAY occur only in language directives such as loop limits and retry
-   counts and in deterministic list or tuple projections; they are not values
-   that source code can bind or pass.
-2. Parameters and returned values MAY be `String`, a declared struct or enum
+1. Runtime values MUST include `Bool`, `Int`, `Float`, `String`, declared
+   struct and enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
+   `Tuple<T1, T2, ..., Tn>`, and `Decision`. `Bool` is ordinary deterministic
+   data. `Decision` is a sealed first-class model judgment with provenance;
+   retaining it as a distinct type keeps agent judgment distinguishable from
+   locally computed facts.
+   `Int` is an exact signed integer in the inclusive range
+   `-9007199254740991` through `9007199254740991` (`±(2^53 - 1)`). `Float` is a
+   finite IEEE 754 binary64 value. Directive integers used for limits and retry
+   counts remain a separate nonnegative syntax domain through `2^63 - 1` and
+   are not implicitly `Int` values.
+2. Parameters and returned values MAY be `Bool`, `Int`, `Float`, `String`, a declared struct or enum
    type, `Option<T>`, `Result<T, E>`, `List<T>`,
    `Tuple<T1, T2, ..., Tn>`, or `Decision` whose member types are otherwise
    permitted. A function, method, prompt, action, or spawned block MAY have no
@@ -643,7 +654,7 @@ document are to be interpreted as described in RFC 2119.
    right and the tuple becomes visible atomically after all members succeed.
    A tuple pattern MAY destructure a tuple in `let`, `if let`, or `match`.
    Iteration and mutation of tuple members are excluded from v1.
-6. Struct fields MAY be `String`, declared struct or enum values, `Option<T>`,
+6. Struct fields MAY be `Bool`, `Int`, `Float`, `String`, declared struct or enum values, `Option<T>`,
    `Result<T, E>`, `List<T>`, `Tuple<T1, T2, ..., Tn>`, or `Decision` of
    otherwise permitted types. Nested and directly self-recursive struct
    definitions are permitted. In accordance with Section 4, a cycle through
@@ -671,12 +682,13 @@ document are to be interpreted as described in RFC 2119.
    journal failure, or another runtime error into `Err`; those failures retain
    their ordinary runtime semantics. V1 has no `?` operator or implicit result
    propagation.
-9. `Decision` is an opaque first-class value with a controlling Boolean and a
-   nonempty rationale. Only `decide` and decision workflows may create one.
+9. `Decision` is a sealed first-class value with read-only fields
+   `decision: Bool` and `rationale: String`, where the rationale is nonempty.
+   Only `decide` and decision workflows may create one.
    Source MAY bind, pass, return, capture, store, interpolate, and consume a
-   `Decision` as an `if`, `while`, or `until` condition. The field projection
-   `decision.rationale` yields a `String`; no projection exposes the Boolean,
-   and source MUST NOT construct, compare, pattern-match, or mutate a
+   `Decision` as an `if`, `while`, or `until` condition. The field projections
+   `.decision` and `.rationale` yield `Bool` and `String`, respectively.
+   Source MUST NOT construct, compare, pattern-match, destructure, or mutate a
    `Decision`. Reusing a bound decision performs no new hook dispatch and
    preserves the logical operation provenance of the original decision.
 10. Gantry MUST support named-field struct construction. Struct values MAY be
@@ -692,8 +704,9 @@ document are to be interpreted as described in RFC 2119.
    output. A constructed value becomes visible only after every supplied field
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
-11. Struct fields MAY declare string-literal or `None` defaults, which are the
-   only field-default forms in v1. A string default is valid for `String` and
+11. Struct fields MAY declare `Bool`, `Int`, `Float`, string-literal, or `None`
+   defaults, which are the only field-default forms in v1. A primitive default
+   MUST exactly match its declared primitive type. A string default is valid for `String` and
    `Option<String>` fields; for `Option<String>` it normalizes to
    `Some(default)`. A `None` default is valid only for an `Option<T>` field.
    Defaults MUST NOT invoke an agent operation. When an optional field with a
@@ -714,12 +727,37 @@ document are to be interpreted as described in RFC 2119.
    Assignments MUST preserve type, and v1 permits no implicit type coercion.
 13. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
-14. Built-in deterministic string operations and list operations other than
-    projection are excluded from v1. Exact `==` and `!=` are available only
-    as structural conditions under Section 9; they do not produce a bindable
-    Boolean. Lists and tuples MAY be constructed, passed, returned,
-    interpolated, projected, and pattern-destructured, but source cannot
-    iterate over them, query their lengths, or mutate their members.
+14. Gantry MUST provide the deterministic primitive operations in this item.
+    There is no truthiness or implicit numeric coercion.
+    - `!` accepts `Bool`. `&&` and `||` accept `Bool`, evaluate left to right,
+      short-circuit, and return `Bool`.
+    - Unary `-` accepts `Int` or `Float` and preserves its operand type.
+    - `+`, `-`, `*`, and `/` accept two values of the same numeric type and
+      return that type. `%` accepts two `Int` values and returns `Int`.
+    - `<`, `<=`, `>`, and `>=` accept two values of the same numeric type and
+      return `Bool`.
+    - `==` and `!=` accept two values of one identical equatable type and
+      return `Bool`. Equality is exact deep structural equality over normalized
+      values. `Decision`, and any aggregate transitively containing one, is
+      non-equatable.
+    - `Int.to_float()` returns an exact `Float`. `Float.to_int()` returns
+      `Some(Int)` only when the value is integral and in range, and otherwise
+      returns `None`; it never rounds or truncates.
+    - `List<T>.len()` returns an `Int`. Every runtime list length MUST fit the
+      `Int` range.
+    Integer arithmetic is checked. Overflow, division by zero, remainder by
+    zero, and negation of an unrepresentable result are fatal runtime errors.
+    Integer division truncates toward zero and remainder has the dividend's
+    sign, preserving `a == (a / b) * b + (a % b)`. Float operations use
+    binary64 round-to-nearest, ties-to-even; a non-finite result or division by
+    either signed zero is fatal. Underflow to a finite subnormal or zero is
+    permitted, and negative zero is normalized to positive zero after every
+    operation and input normalization. Implementations MUST NOT use fused
+    arithmetic where it changes the specified intermediate rounding.
+    String concatenation, power, floating remainder, rounding and
+    transcendental functions, list mutation, and other built-ins are excluded.
+    Lists and tuples MAY otherwise be constructed, passed, returned,
+    interpolated, projected, and pattern-destructured.
 15. Patterns are deterministic structural operations over an already evaluated
     value. V1 patterns are `_`, an identifier binding, `Some(pattern)`,
     `None`, `Ok(pattern)`, `Err(pattern)`, a unit or payload enum variant, and
@@ -731,8 +769,8 @@ document are to be interpreted as described in RFC 2119.
     tuple patterns, recursively, in `let`. `if let` and `match` admit refutable
     patterns under Section 9.
 16. Every protocol field that identifies a Gantry type MUST use one canonical
-    UTF-8 type descriptor. `String` and `Decision` are encoded exactly as
-    `String` and `Decision`; a declared struct or enum is encoded as its
+    UTF-8 type descriptor. `Bool`, `Int`, `Float`, `String`, and `Decision` are
+    encoded exactly as their source names; a declared struct or enum is encoded as its
     `crate::`-rooted qualified path; and constructed types are encoded as
     `Option<T>`, `Result<T,E>`, `List<T>`, or `Tuple<T1,T2,...,Tn>` with no
     whitespace and with each member recursively encoded by this rule. The
@@ -741,6 +779,12 @@ document are to be interpreted as described in RFC 2119.
     are metadata rather than source values, but they ensure that hooks,
     journals, events, and diagnostics identify the same type independently of
     the spelling visible at a call site.
+17. Boolean literals are `true` and `false`. Integer and float literals follow
+    Section 13.2. A numeric literal MUST be representable by its inferred
+    primitive type; out-of-range literals are analysis errors. Gantry performs
+    no implicit conversion between `Int` and `Float`, including in assignment,
+    arguments, returns, aggregate members, equality, or arithmetic. Unary `-`
+    is an operator rather than part of a numeric token.
 
 ## 6. Functions and Methods
 
@@ -748,7 +792,7 @@ document are to be interpreted as described in RFC 2119.
    Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
    declared in the same Gantry package. Because the grammar accepts only a
    qualified path after `impl`, built-in and constructed types such as
-   `String`, `Option<T>`, `List<T>`, `Tuple<...>`, and no-result `None` cannot
+   `Bool`, `Int`, `Float`, `String`, `Option<T>`, `List<T>`, `Tuple<...>`, and no-result `None` cannot
    be written as `impl` targets in v1. A qualified path that resolves to a
    function, decision, module, or other non-struct item is an analysis error.
    A package MAY split one struct's methods across multiple `impl` blocks,
@@ -758,7 +802,11 @@ document are to be interpreted as described in RFC 2119.
 3. A method may mutate its receiver only through interpreter-executed field
    assignments in its body. For every assignment, Gantry MUST evaluate the
    complete right-hand side before changing the target and MUST commit the new
-   root value atomically only after evaluation succeeds. This includes hook
+   root value atomically only after evaluation succeeds. Compound assignments
+   `+=`, `-=`, `*=`, `/=`, and `%=` read the target exactly once, apply the
+   corresponding checked primitive operator, and atomically commit its result;
+   they are valid only for mutable numeric targets and `%=` is valid only for
+   `Int`. This includes hook
    validation, workflow calls, construction, projection, and every nested
    subexpression. Any failure MUST leave the assignment target unchanged;
    external hook side effects and earlier successful assignments are not
@@ -837,9 +885,10 @@ document are to be interpreted as described in RFC 2119.
    redispatches MUST reuse the captured values rather than reevaluate them.
 7. Template expressions MUST be interpolated before hook dispatch. To keep
    agent invocation explicit, an interpolation MAY contain only bindings,
-   field paths, zero-based `List<T>` or tuple projections, literals, and
-   deterministic struct or `Option<T>` constructor expressions composed from
-   other permitted interpolation expressions.
+   field paths, list or tuple projections, primitive literals, deterministic
+   primitive operators and conversions, `List<T>.len()`, and deterministic
+   aggregate constructor expressions composed from other permitted
+   interpolation expressions.
    Function calls, method calls, `prompt`, `decide`, `action`, assignment, `join`, and
    other expressions that can invoke a hook, alter control flow, or mutate
    state are prohibited inside interpolation. Interpolations are evaluated in
@@ -1143,7 +1192,7 @@ document are to be interpreted as described in RFC 2119.
      zero-based spawn occurrence within its immediate dynamic parent, and the
      child's canonical declared result-type descriptor;
    - `conditional-arm`: conditional-chain dynamic identity, zero-based arm
-     index, condition kind (`decision`, `equality`, or `pattern`), controlling
+     index, condition kind (`decision`, `bool`, or `pattern`), controlling
      outcome, and, for a model-produced decision, its operation ID and
      nonempty rationale;
    - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
@@ -1231,8 +1280,9 @@ document are to be interpreted as described in RFC 2119.
    `{` begins interpolation. `$$` consumes exactly those two dollar signs and
    produces one literal dollar sign, so `$${name}` renders the literal text
    `${name}` without interpolation. A `String` is interpolated as its string
-   contents; a struct, enum, option, result, list, tuple, or `Decision` is
-   interpolated as compact strict JSON, with `None` rendered as `null`. This compact encoding
+   contents; `Bool`, `Int`, `Float`, a struct, enum, option, result, list,
+   tuple, or `Decision` is interpolated as compact strict JSON, with `None`
+   rendered as `null`. This compact encoding
    MUST use the RFC 8785 JSON Canonicalization Scheme so equivalent Gantry
    values produce the same interpolated prompt across implementations.
    Consequently, `Some("text")` held as an `Option<String>` interpolates as
@@ -1473,8 +1523,14 @@ document are to be interpreted as described in RFC 2119.
    value; `Declined` and `Failed` retain their ordinary fatal behavior for
    no-result operations. Including `$schema` resolves the no-result case under
    the same root-schema rule as every value-producing operation.
-2. A `String` result is represented by a JSON string. A struct result is a
-   JSON object whose property names directly match its declared field names.
+2. A `Bool` result is represented by a JSON Boolean. An `Int` result is a JSON
+   integer in Gantry's exact range. A `Float` result is a JSON number that
+   parses to a finite IEEE 754 binary64 value. Gantry MUST reject `NaN`,
+   infinities, overflow to a non-finite value, and any JSON number outside the
+   declared primitive contract. Gantry MUST normalize negative zero to
+   positive zero before exposing or serializing a `Float`. A `String` result
+   is represented by a JSON string. A struct result is a JSON object whose
+   property names directly match its declared field names.
    After source construction or hook-output normalization, a runtime struct
    contains every declared field. Whenever Gantry serializes that normalized
    struct, it MUST emit every field; an `Option<T>` field whose value is `None`
@@ -1482,8 +1538,8 @@ document are to be interpreted as described in RFC 2119.
    value. Although hook output may omit an optional property, omission is not
    preserved as a distinct runtime state.
    Normalization is recursive and deterministic. Gantry MUST normalize nested
-   structs, enum payloads, result payloads, list items, tuple members, present
-   option values, and decisions from outermost
+   primitive values, structs, enum payloads, result payloads, list items,
+   tuple members, present option values, and decisions from outermost
    to innermost structure, preserving list and tuple order. It MUST apply each
    omitted optional field's declared default, or `None` when no default exists,
    at every nesting depth. A hook result becomes available to source execution
@@ -1534,7 +1590,9 @@ document are to be interpreted as described in RFC 2119.
    journal, or protected event payload. A protocol schema reference MUST be
    the lowercase hexadecimal SHA-256 digest of those canonical bytes.
    Implementations MUST derive equivalent types with the same structural
-   schema rules: `String` uses `{"type":"string"}`; `List<T>` uses an array
+   schema rules: `Bool` uses `{"type":"boolean"}`; `Int` uses an integer
+   schema with Gantry's inclusive exact bounds; `Float` uses a number schema
+   with finite binary64 bounds; `String` uses `{"type":"string"}`; `List<T>` uses an array
    with the schema for `T` in `items`; tuples use the exact fixed-array form in
    item 4; options use `anyOf` with `{"type":"null"}` first and the schema
    for `T` second; results and enums use strict `oneOf` branches; decisions use
@@ -1543,7 +1601,14 @@ document are to be interpreted as described in RFC 2119.
    lists required fields in declaration order. RFC 8785 canonicalization, not
    source declaration order, determines serialized JSON object-member order.
    More precisely, schema generation recursively constructs one schema node
-   for a type. `String` produces exactly `{"type":"string"}`.
+   for a type. `Bool` produces exactly `{"type":"boolean"}`. `Int` produces
+   exactly
+   `{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991}`.
+   `Float` produces exactly
+   `{"type":"number","minimum":-1.7976931348623157e308,"maximum":1.7976931348623157e308}`.
+   These `Float` schema bounds are necessary but not sufficient: Gantry MUST
+   additionally perform the finite-binary64 parsing and normalization checks
+   in item 2. `String` produces exactly `{"type":"string"}`.
    `List<T>` produces exactly `{"type":"array","items":NODE(T)}`.
    `Tuple<T1,...,Tn>` produces exactly an object whose `type` is `array`, whose
    `prefixItems` is `[NODE(T1),...,NODE(Tn)]`, whose `items` is `false`, and
@@ -1666,13 +1731,14 @@ document are to be interpreted as described in RFC 2119.
 ## 9. Control Flow
 
 1. Gantry MUST support `if`, `else if`, and `else`. Each `if` or `else if`
-   condition MUST be either a `Decision` expression or one deterministic
-   structural predicate defined below. A direct model judgment uses the
+   condition MUST have type `Bool` or `Decision`. A `Decision` condition uses
+   its sealed `decision` field. A direct model judgment uses the
    visually distinct `decide` expression; an ordinary unannotated `prompt`
    always remains a no-result prompt. A condition MAY reuse a bound
    `Decision`, call a decision workflow, or evaluate a new `decide`. Reusing a
    decision or calling a workflow does not itself add a hook invocation,
    although evaluating the workflow body may reach explicit operations.
+   There is no truthiness: every other value type is invalid as a condition.
 2. A conditional decision MUST return this strict JSON shape, with no
    additional properties:
 
@@ -1700,13 +1766,13 @@ document are to be interpreted as described in RFC 2119.
    }
    ```
 
-   Gantry uses only `decision` to select control flow and retains the rationale
-   and operation provenance for observability. The complete object is the
-   opaque first-class `Decision` value defined in Section 5; its Boolean member
-   cannot be projected, bound separately, or used in ordinary expressions.
+   Gantry uses `decision` to select control flow and retains the rationale and
+   operation provenance for observability. The complete object is the sealed
+   first-class `Decision` value defined in Section 5. Its read-only
+   `.decision` and `.rationale` projections yield `Bool` and `String`.
 3. Each `else if` evaluates its own condition. A newly evaluated `decide`
    expression performs a separate decision operation; a reused `Decision` or
-   structural predicate performs no new dispatch. A later model-operation hook
+   `Bool` expression performs no new dispatch. A later model-operation hook
    request MUST include the outcomes of preceding arms in the same conditional
    chain through the ordered execution-context vector. Decision entries carry
    their rationales, while structural entries identify their condition kind
@@ -1715,9 +1781,10 @@ document are to be interpreted as described in RFC 2119.
    loop. The post-test syntax places the body before its condition:
    `until(...) { ... } when decide "...";`. This ordering is normative and
    makes execution order visible in source. `until` MUST execute its body once
-   before its first decision. Each iteration reevaluates its `Decision`
+   before its first condition. Each iteration reevaluates its condition
    expression. A direct `decide` therefore dispatches on every evaluation;
-   reusing an already bound `Decision` performs no new dispatch.
+   reusing an already bound `Decision` or evaluating a `Bool` expression
+   performs no new dispatch.
 5. The general loop form is `loop(session = inline, limit = 0) { ... }`.
    `loop { ... }` is equivalent to the form with all defaults. `while`
    places parenthesized modifiers before its decision expression, as
@@ -1751,15 +1818,16 @@ document are to be interpreted as described in RFC 2119.
    execution or `while` pre-test. Reaching the limit completes that loop
    without another decision call. After an `until` body completes normally or
    through `continue`, Gantry MUST always evaluate that body's post-test. A
-   true decision completes the loop. After a false decision, Gantry checks the
+   true condition completes the loop. After a false condition, Gantry checks the
    positive `limit`; reaching it completes the loop normally, and otherwise
    the next body execution begins. Thus every entered `until` body has exactly
    one following post-test unless it exits through `break`, `return`, failure,
    or cancellation. `break` completes any loop immediately without another
    decision call.
-8. Gantry MUST support deterministic structural routing with `if let`,
-   `match`, and condition-only `==` and `!=`. These constructs MUST NOT invoke
-   an operation hook.
+8. Gantry MUST support deterministic routing with `Bool` expressions, `if let`,
+   and `match`. These constructs MUST NOT invoke an operation hook unless
+   evaluation reaches an explicitly written workflow containing an operation;
+   primitive operators themselves never dispatch.
    An `if let PATTERN = EXPRESSION` evaluates its scrutinee exactly once. A
    successful match enters the first arm with fresh immutable bindings; a
    failed match enters `else` when present and otherwise continues normally.
@@ -1776,18 +1844,20 @@ document are to be interpreted as described in RFC 2119.
    a statement `match` requires statement-only arms. Pattern bindings are deep
    copies scoped to their arm.
 
-   `==` and `!=` are legal only as complete `if` or `else if` conditions.
-   Both operands MUST have exactly the same first-class type, MUST NOT be
-   `Decision`, and are evaluated once from left to right. Equality is exact
-   deep structural equality over normalized values: strings compare Unicode
-   scalar sequences; structs compare fields in declaration order; tagged
-   values compare variant and payload; options compare presence and contained
-   value; and lists and tuples compare length or arity and members in order.
-   The result is an interpreter-only control bit that cannot be bound, returned,
-   interpolated, or composed with Boolean operators. `for` remains excluded.
+   `==` and `!=` are ordinary `Bool`-producing expressions. Both operands MUST
+   have exactly the same equatable first-class type and are evaluated once from
+   left to right. Equality is exact deep structural equality over normalized
+   values: Boolean and integer values compare exactly; floats compare their
+   normalized binary64 values; strings compare Unicode scalar sequences;
+   structs compare fields in declaration order; tagged values compare variant
+   and payload; options compare presence and contained value; and lists and
+   tuples compare length or arity and members in order. `Decision`, and every
+   aggregate transitively containing `Decision`, is non-equatable. `for`
+   remains excluded.
 9. Model-produced decisions MUST use the same schema-validation and retry
-   policy as other structured operation results. Structural predicates do not
-   have a schema, retry budget, rationale, or hook context entry.
+   policy as other structured operation results. Deterministic `Bool`
+   conditions do not have a schema, retry budget, rationale, or hook context
+   entry unless their evaluation explicitly performs an operation.
 10. Gantry imposes no mandatory loop, cost, or operation-call limit. Integrations
     MAY impose their own limits, except that such policy does not alter the
     language meaning of `limit = 0`. Unlimited language execution does not
@@ -1823,9 +1893,12 @@ document are to be interpreted as described in RFC 2119.
 12. Static control-flow analysis MUST treat every model-produced decision as capable of
     producing either `true` or `false`, independently of its prompt text,
     previous outcomes, rationale, selected agent, or session. Analysis MUST
-    inspect both outcomes of every reachable `if`, `else if`, `while`, and
-    `until` decision; it MUST NOT assume that a model will make one branch
-    unreachable. A `while` has a possible zero-body normal path. An `until` has
+    inspect both outcomes of every model-controlled reachable `if`, `else if`,
+    `while`, and `until`; it MUST NOT assume that a model will make one branch
+    unreachable. Static analysis MAY use compile-time constant `Bool`
+    expressions to establish reachability, but MUST otherwise inspect all
+    possible outcomes. A `while` has a possible zero-body normal path unless
+    its condition is statically `true`. An `until` has
     at least one body execution before a possible normal exit. A positive loop
     limit contributes the normal limit-exhaustion path defined in item 7,
     whereas `loop(limit = 0)` has no implicit normal exit. A reachable `break`
@@ -2802,9 +2875,10 @@ document are to be interpreted as described in RFC 2119.
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
      validation-attempt and recovery-dispatch numbers, retry class, and
      selected delay;
-   - `branch decision`: conditional, match, or loop identity; condition kind;
-     outcome; and selected arm or loop transition, plus the decision operation
-     and protected rationale references when the condition used `Decision`;
+   - `branch decision`: conditional, match, or loop identity; condition kind
+     (`decision`, `bool`, or `pattern`); outcome; and selected arm or loop
+     transition, plus the decision operation and protected rationale references
+     when the condition used `Decision`;
    - `spawn`: parent and child task IDs, spawn occurrence, declared result
      type, and attachment state;
    - `join`: joining task ID, joined task IDs in source order, join form,
@@ -2912,7 +2986,15 @@ trivia              = whitespace | line_comment | block_comment ;
 
 identifier_token    = xid_start_or_underscore,
                       { xid_continue_or_underscore } ;
-integer_token       = "0" | nonzero_decimal_digit, { decimal_digit } ;
+directive_integer_token
+                    = "0" | nonzero_decimal_digit, { decimal_digit } ;
+integer_literal_token
+                    = decimal_digits ;
+float_literal_token = decimal_digits, ".", decimal_digits,
+                      [ exponent_part ]
+                    | decimal_digits, exponent_part ;
+decimal_digits      = decimal_digit, { [ "_" ], decimal_digit } ;
+exponent_part       = ( "e" | "E" ), [ "+" | "-" ], decimal_digits ;
 decimal_digit       = "0" | "1" | "2" | "3" | "4"
                     | "5" | "6" | "7" | "8" | "9" ;
 nonzero_decimal_digit
@@ -2943,6 +3025,15 @@ and is ignored; U+FEFF in any other source position is not whitespace and is a
 syntax error. An identifier MUST NOT equal a reserved word. Decimal directive
 integers have no sign, separator, or radix prefix.
 
+An integer literal has decimal digits with optional `_` separators only
+between digits. A float literal has either a decimal point with at least one
+digit on each side or an exponent; its exponent may have a leading `+` or `-`.
+The spellings `.5`, `1.`, radix-prefixed values, type suffixes, `NaN`, and
+infinities are invalid. A leading `-` is the unary operator, not part of either
+numeric token. Maximal munch classifies a digit sequence followed by `.` or an
+exponent as one `float_literal_token`; otherwise it is an
+`integer_literal_token`. Semantic analysis enforces the ranges in Section 5.
+
 `end_of_file` is the zero-width lexical boundary after the final source scalar.
 `line_comment_character` is any Unicode scalar other than U+000A or U+000D.
 `string_character`, `block_comment_character`, `block_prompt_body`,
@@ -2965,8 +3056,8 @@ exactly except for the structural block-prompt delimiters described below.
 `trivia` is a lexical skip production rather than a syntactic nonterminal.
 Outside string and prompt-template tokens, zero or more trivia elements MAY
 occur between any two grammar tokens and are discarded by the lexer. Trivia
-MUST NOT split one identifier, integer, string delimiter, comment delimiter,
-or fixed multicharacter terminal such as `::` or `->`. Maximal munch therefore
+MUST NOT split one identifier, numeric token, string delimiter, comment
+delimiter, or fixed multicharacter terminal such as `::` or `->`. Maximal munch therefore
 requires trivia between a reserved word and an immediately following
 identifier character when they are intended as separate tokens.
 
@@ -3032,11 +3123,11 @@ specific to model instructions rather than introducing a second multiline
 The reserved words are:
 
 ```text
-action     agent      agents      as           break       continue
+action     agent      agents      as           Bool        break       continue
 crate      decision   Decision    decide       default     detach
-else       enum       Err         false        fn          fork        if
+else       enum       Err         false        Float       fn          fork        if
 impl       inline     join        joinall      let         limit
-List       loop       match       mod          mut         new
+Int        List       loop        match         mod         mut         new
 None       null       Ok          Option       prompt      Result
 return     retry_limit self       session      Some        spawn
 String     struct     super       true         Tuple       until
@@ -3044,12 +3135,12 @@ use        using      when        while        with
 ```
 
 `as` is reserved for future compatible extension even though v1 has no alias
-form for `use`. `true`, `false`, and `null` are reserved because they are JSON
-spellings but are not Gantry source values in v1; reserving them prevents code
-that visually resembles deterministic Boolean or null-valued source logic.
+form for `use`. `true` and `false` are `Bool` literals. `null` remains reserved
+because absence is written as typed `None` rather than as a source null value.
 Reserved type and constructor names are case-sensitive. Lexing uses maximal
-munch for the fixed multi-character terminals `::`, `->`, `=>`, `==`, and
-`!=`; trivia MUST NOT split one of those terminals.
+munch for the fixed multi-character terminals `::`, `->`, `=>`, `==`, `!=`,
+`<=`, `>=`, `&&`, `||`, `+=`, `-=`, `*=`, `/=`, and `%=`; trivia MUST NOT
+split one of those terminals.
 
 ### 13.3 Package declarations and types
 
@@ -3087,7 +3178,12 @@ struct_declaration      = "struct", identifier_token, "{",
 struct_field_list       = struct_field, { ",", struct_field }, [ "," ] ;
 struct_field            = identifier_token, ":", value_type,
                           [ "=", field_default ] ;
-field_default           = string_token | raw_string_token | "None" ;
+field_default           = boolean_literal
+                        | [ "-" ], integer_literal_token
+                        | [ "-" ], float_literal_token
+                        | string_token
+                        | raw_string_token
+                        | "None" ;
 
 enum_declaration        = "enum", identifier_token, "{",
                           enum_variant, { ",", enum_variant }, [ "," ], "}" ;
@@ -3099,7 +3195,10 @@ action_declaration      = "action", identifier_token, "(",
 action_parameter_list   = action_parameter, { ",", action_parameter }, [ "," ] ;
 action_parameter        = identifier_token, ":", value_type ;
 
-value_type              = "String"
+value_type              = "Bool"
+                        | "Int"
+                        | "Float"
+                        | "String"
                         | "Decision"
                         | qualified_path
                         | "Option", "<", value_type, ">"
@@ -3115,9 +3214,9 @@ The built-in type alternatives take precedence over `qualified_path`. A
 `Tuple` has at least two member types by grammar. An enum has at least one
 variant, and an action declaration has no body. `None` in a result annotation
 is the no-result type; `None` in an expression is the absent value of an
-expected `Option<T>`. Field defaults are deliberately limited to strings and
-`None` in v1. Their declared field type MUST accept the default without
-coercion.
+expected `Option<T>`. Field defaults are deliberately limited to primitive
+literals, optionally negated numeric literals, strings, and `None` in v1.
+Their declared field type MUST accept the default without coercion.
 
 A `use` declaration imports the item named by the final path segment into the
 current module. The path roots have the meanings defined in Section 4. Glob
@@ -3182,7 +3281,9 @@ statement               = let_statement
 let_statement           = "let", let_binding, ":",
                           value_type, "=", expression, ";" ;
 let_binding             = [ "mut" ], identifier_token | tuple_pattern ;
-assignment_statement    = assignment_target, "=", expression, ";" ;
+assignment_statement    = assignment_target, assignment_operator,
+                          expression, ";" ;
+assignment_operator     = "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
 assignment_target       = identifier_token, { ".", identifier_token }
                         | "self", ".", identifier_token,
                           { ".", identifier_token } ;
@@ -3213,21 +3314,41 @@ receiver value.
 ### 13.6 Expressions
 
 ```ebnf
-expression              = prompt_expression
+expression              = logical_or_expression ;
+logical_or_expression   = logical_and_expression,
+                          { "||", logical_and_expression } ;
+logical_and_expression  = equality_expression,
+                          { "&&", equality_expression } ;
+equality_expression     = ordering_expression,
+                          { ("==" | "!="), ordering_expression } ;
+ordering_expression     = additive_expression,
+                          { ("<" | "<=" | ">" | ">="),
+                            additive_expression } ;
+additive_expression     = multiplicative_expression,
+                          { ("+" | "-"), multiplicative_expression } ;
+multiplicative_expression
+                        = unary_expression,
+                          { ("*" | "/" | "%"), unary_expression } ;
+unary_expression        = ("!" | "-"), unary_expression
+                        | complete_expression
+                        | postfix_expression ;
+complete_expression     = prompt_expression
                         | decide_expression
                         | action_expression
                         | match_expression
                         | join_expression
                         | joinall_expression
                         | with_expression
-                        | session_expression
-                        | postfix_expression ;
+                        | session_expression ;
 
 postfix_expression      = primary_expression, { postfix_suffix } ;
 postfix_suffix          = ".", identifier_token
                         | "(", [ argument_list ], ")"
-                        | "[", integer_token, "]" ;
-primary_expression      = string_token
+                        | "[", expression, "]" ;
+primary_expression      = boolean_literal
+                        | integer_literal_token
+                        | float_literal_token
+                        | string_token
                         | raw_string_token
                         | "None"
                         | "Some", "(", expression, ")"
@@ -3255,7 +3376,8 @@ tuple_expression        = "(", expression, ",", expression,
 
 action_expression       = "action", [ action_modifiers ], qualified_path,
                           "(", [ argument_list ], ")" ;
-action_modifiers        = "(", "retry_limit", "=", integer_token, ")" ;
+action_modifiers        = "(", "retry_limit", "=",
+                          directive_integer_token, ")" ;
 
 match_expression        = "match", expression, "{",
                           match_arm, { match_arm }, "}" ;
@@ -3277,18 +3399,23 @@ tuple_pattern           = "(", pattern, ",", pattern,
 with_expression         = "with", identifier_token, value_block ;
 session_expression      = "session", "(", session_directive, ")",
                           value_block ;
+boolean_literal         = "true" | "false" ;
 ```
 
 The grammar admits `self` as a primary expression so the same expression
 productions can parse method bodies and their nested blocks. Semantic analysis
 MUST enforce the receiver scope specified in Section 13.4.
 
-Postfix `(...)` dispatches a workflow function or method, postfix `.name`
-accesses a struct field, selects a method, or selects `Decision.rationale`, and
-postfix `[integer]` projects a list or tuple member. Gantry has no arithmetic,
-general Boolean, or ordering syntax. Bracketed expressions construct lists;
-parentheses containing at least two comma-separated expressions construct
-tuples, while `(value)` remains grouping.
+Postfix `(...)` dispatches a workflow function or method or invokes one of the
+sealed built-ins `to_float()`, `to_int()`, or `len()`. Postfix `.name`
+accesses a struct field, selects a method, or selects the read-only
+`Decision.decision` or `Decision.rationale` field. Postfix `[expression]`
+projects a list when the index has type `Int`; tuple projection still requires
+a nonnegative compile-time integer literal so its result type is statically
+known. Bracketed expressions construct lists; parentheses containing at least
+two comma-separated expressions construct tuples, while `(value)` remains
+grouping. Operators use the precedence shown by the grammar, all binary
+operators associate left to right, and parentheses override precedence.
 
 An unqualified primary path used as a value MUST resolve to a visible parameter
 or binding. A qualified item path is valid in an expression only as the callee
@@ -3313,12 +3440,13 @@ without first binding it, source MUST parenthesize that expression, as in
 operation result annotations and operations on the produced value.
 
 Semantic analysis MUST validate every postfix step from left to right. A call
-suffix is legal only on a function or decision item or selected inherent
-method; a field suffix is legal only on a struct value, selected inherent
-method, or the `rationale` projection of `Decision`; and an index suffix is
-legal only on a list or tuple value. Calling another value, selecting an
-unsupported field, indexing another type, or continuing a postfix chain after
-a no-result expression is an analysis error.
+suffix is legal only on a function or decision item, selected inherent method,
+or the sealed zero-argument primitive and list built-ins defined in Section 5;
+a field suffix is legal only on a struct value, selected inherent method, or a
+read-only `Decision` field; and an index suffix is legal only on a list or
+tuple value. Calling another value, selecting an unsupported field, indexing
+another type, or continuing a postfix chain after a no-result expression is an
+analysis error.
 
 ### 13.7 Prompts and interpolation
 
@@ -3328,7 +3456,7 @@ prompt_expression       = "prompt", [ prompt_modifiers ], prompt_template,
 prompt_modifiers        = "(", prompt_modifier,
                           { ",", prompt_modifier }, [ "," ], ")" ;
 prompt_modifier         = "session", "=", session_directive
-                        | "retry_limit", "=", integer_token ;
+                        | "retry_limit", "=", directive_integer_token ;
 session_directive       = "inline" | "fork" | "new" ;
 prompt_template         = string_token | raw_string_token
                         | block_prompt_token ;
@@ -3340,11 +3468,34 @@ named_input             = identifier_token,
 
 interpolation           = "${", interpolation_expression, "}" ;
 interpolation_expression
-                        = interpolation_primary,
+                        = interpolation_logical_or ;
+interpolation_logical_or
+                        = interpolation_logical_and,
+                          { "||", interpolation_logical_and } ;
+interpolation_logical_and
+                        = interpolation_equality,
+                          { "&&", interpolation_equality } ;
+interpolation_equality  = interpolation_ordering,
+                          { ("==" | "!="), interpolation_ordering } ;
+interpolation_ordering  = interpolation_additive,
+                          { ("<" | "<=" | ">" | ">="),
+                            interpolation_additive } ;
+interpolation_additive  = interpolation_multiplicative,
+                          { ("+" | "-"), interpolation_multiplicative } ;
+interpolation_multiplicative
+                        = interpolation_unary,
+                          { ("*" | "/" | "%"), interpolation_unary } ;
+interpolation_unary     = ("!" | "-"), interpolation_unary
+                        | interpolation_postfix ;
+interpolation_postfix   = interpolation_primary,
                           { interpolation_suffix } ;
 interpolation_suffix    = ".", identifier_token
-                        | "[", integer_token, "]" ;
-interpolation_primary   = string_token
+                        | "(", ")"
+                        | "[", interpolation_expression, "]" ;
+interpolation_primary   = boolean_literal
+                        | integer_literal_token
+                        | float_literal_token
+                        | string_token
                         | raw_string_token
                         | "None"
                         | "Some", "(", interpolation_expression, ")"
@@ -3355,7 +3506,8 @@ interpolation_primary   = string_token
                         | interpolation_tuple
                         | interpolation_enum
                         | identifier_token
-                        | "self" ;
+                        | "self"
+                        | "(", interpolation_expression, ")" ;
 interpolation_struct    = qualified_path, "{",
                           [ interpolation_field_list ], "}" ;
 interpolation_field_list
@@ -3412,10 +3564,14 @@ remain literal text. An unclosed or syntactically invalid island is a syntax
 error.
 
 Interpolation and named inputs permit only the restricted grammar above. A
-projection index MUST obey the list and tuple rules in Section 5. In
-particular, neither form admits function or method calls, `prompt`, `decide`,
-`action`, joins, mutation, or control flow. Nested braces belonging to a
-constructor are balanced before the interpolation's closing `}` is recognized.
+postfix empty call is legal only for the sealed deterministic built-ins
+`to_float()`, `to_int()`, and `len()`; it cannot dispatch a workflow or method.
+A projection index MUST obey the list and tuple rules in Section 5. Neither
+form admits any other function or method call, `prompt`, `decide`, `action`,
+joins, mutation, or control flow. Primitive operators use the same typing,
+precedence, short-circuiting, checked arithmetic, and deterministic-failure
+rules as ordinary expressions. Nested braces belonging to a constructor are
+balanced before the interpolation's closing `}` is recognized.
 Duplicate prompt modifiers and duplicate named-input names are analysis
 errors. `retry_limit` counts retries after the initial attempt.
 
@@ -3434,12 +3590,9 @@ if_let_statement        = "if", "let", pattern, "=", expression,
 decision_modifiers      = "(", decision_modifier,
                           { ",", decision_modifier }, [ "," ], ")" ;
 decision_modifier       = "session", "=", session_directive
-                        | "retry_limit", "=", integer_token ;
+                        | "retry_limit", "=", directive_integer_token ;
 
-condition_expression    = expression,
-                          [ equality_operator, expression ] ;
-equality_operator       = "==" | "!=" ;
-decision_expression     = expression ;
+condition_expression    = expression ;
 decide_expression       = "decide", [ prompt_modifiers ], prompt_template,
                           [ using_clause ] ;
 
@@ -3447,19 +3600,19 @@ loop_statement          = "loop", [ loop_modifiers ], statement_block ;
 loop_modifiers          = "(", loop_modifier,
                           { ",", loop_modifier }, [ "," ], ")" ;
 loop_modifier           = "session", "=", session_directive
-                        | "limit", "=", integer_token ;
+                        | "limit", "=", directive_integer_token ;
 
 while_statement         = "while", [ loop_condition_modifiers ],
-                          decision_expression, statement_block ;
+                          condition_expression, statement_block ;
 until_statement         = "until", [ loop_condition_modifiers ],
                           statement_block,
-                          "when", decision_expression, ";" ;
+                          "when", condition_expression, ";" ;
 loop_condition_modifiers
                         = "(", loop_condition_modifier,
                           { ",", loop_condition_modifier }, [ "," ], ")" ;
 loop_condition_modifier = "session", "=", session_directive
-                        | "limit", "=", integer_token
-                        | "retry_limit", "=", integer_token ;
+                        | "limit", "=", directive_integer_token
+                        | "retry_limit", "=", directive_integer_token ;
 ```
 
 The optional modifier forms require at least one modifier when parentheses are
@@ -3476,20 +3629,20 @@ selected arm. Authors who want a decision and its arm operations to share one
 explicit session should wrap the complete conditional in
 `session(<directive>) { ... }`. On `while` and `until`, the same modifier
 position instead declares the loop session whose condition/body lifetime is
-defined normatively in Section 9; it is not condition-only. A condition-level
+defined normatively in Section 9; its scope is the loop rather than only the
+condition. A condition-level
 `retry_limit` applies only to the ultimate decision operation;
 prompts used in arguments or inside a decision workflow use their own modifier
 or the interpreter default. A modifier written directly on a `decide`
 expression is more local and overrides the corresponding inherited value.
 `limit` belongs only to the enclosing `while` or `until`. The `until` grammar
-deliberately places its body before `when` and the post-test decision.
-Semantic analysis MUST require a lone `condition_expression` to have type
-`Decision`; when an equality operator is present it applies the exact-type and
-condition-only rules in Section 9. Decision modifiers are invalid on an
-equality condition. A `decision_expression` in `while` or `until` MUST have
-type `Decision`. Ordinary and decision workflow calls share one Rust-inspired
-call syntax and are distinguished by their resolved result type rather than by
-parser guessing.
+deliberately places its body before `when` and the post-test condition.
+Semantic analysis MUST require every `condition_expression` to have type
+`Bool` or `Decision`. Condition-level `session` and `retry_limit` modifiers are
+valid only when the complete condition has type `Decision`; deterministic
+`Bool` conditions have no operation to configure. Ordinary and decision
+workflow calls share one Rust-inspired call syntax and are distinguished by
+their resolved result type rather than by parser guessing.
 
 ### 13.9 Parallel control flow
 
@@ -3590,7 +3743,7 @@ fn produce_report(topic: String) -> Report {
 All three agent declarations merge into one package set. Only `main.gnt`
 declares the default agent.
 
-### 14.3 Structs, tagged values, aggregates, and structural routing
+### 14.3 Primitive values, structs, tagged values, and structural routing
 
 ```gantry
 struct Metadata {
@@ -3601,12 +3754,16 @@ struct Metadata {
 struct Draft {
     title: String,
     body: String,
+    revision: Int = 0,
+    confidence: Float = 0.0,
+    publishable: Bool = false,
     metadata: Metadata,
 }
 
 fn revise(seed: Draft) -> Draft {
     let mut draft: Draft = seed;
     draft.body = prompt "Rewrite this body clearly: ${draft.body}" -> String;
+    draft.revision += 1;
     draft.metadata.note = Some(
         prompt "Give one short editorial note for ${draft}." -> String
     );
@@ -3663,7 +3820,7 @@ fn route_review(draft: Draft) -> Draft {
 }
 
 fn compare_titles(left: Draft, right: Draft) -> String {
-    if left.title == right.title {
+    if left.publishable && right.publishable && left.title == right.title {
         return "same";
     } else {
         return "different";
@@ -3671,10 +3828,35 @@ fn compare_titles(left: Draft, right: Draft) -> String {
 }
 ```
 
-List elements have one exact type, tuple positions may differ, and pattern
-bindings are immutable deep copies. `if let`, `match`, and equality do not
-dispatch hooks; the visible `prompt` operations still perform the semantic
-classification and revision work.
+Primitive operators are deterministic and checked. List elements have one
+exact type, tuple positions may differ, and pattern bindings are immutable deep
+copies. `if let`, `match`, Boolean algebra, and equality do not dispatch hooks;
+the visible `prompt` operations still perform the semantic classification and
+revision work.
+
+Numeric conversion, precedence, list length, and dynamic indexing support
+bounded deterministic traversal without hiding model work:
+
+```gantry
+fn average(scores: List<Float>) -> Float {
+    let mut index: Int = 0;
+    let mut total: Float = 0.0;
+
+    while index < scores.len() {
+        total += scores[index];
+        index += 1;
+    }
+
+    total / scores.len().to_float()
+}
+
+fn exact_count(value: Float) -> Option<Int> {
+    value.to_int()
+}
+```
+
+An empty list would make `average` fail through checked floating-point
+division by zero; callers must establish that precondition before calling it.
 
 ### 14.4 Inherent methods and lexical agent selection
 
@@ -3819,7 +4001,7 @@ fn route(report: Report) -> String {
 ```
 
 The `decide` expression visibly requests the `Decision` schema and never
-accepts a `->` annotation. The resulting opaque value may be retained and
+accepts a `->` annotation. The resulting sealed value may be retained and
 reused without another hook dispatch:
 
 ```gantry
@@ -3827,8 +4009,9 @@ fn retain_decision(report: Report) -> String {
     let readiness: Decision = decide
         "Is this report ready?"
         using { report };
+    let allowed: Bool = readiness.decision;
 
-    if readiness {
+    if allowed {
         return readiness.rationale;
     } else {
         return prompt "Explain the next revision."
@@ -3856,7 +4039,8 @@ decision should_stop(report: Option<Report>) {
 ```
 
 This example asks for semantic judgment. Mechanical option presence checks can
-instead use `if let` or `match`; neither creates a source-level Boolean.
+instead use `if let` or `match`, while ordinary comparisons and Boolean
+operators produce first-class `Bool` values without model dispatch.
 
 ### 14.7 General, pre-test, and post-test loops
 
@@ -4159,7 +4343,7 @@ prompt "Rewrite this critique: ${critique}" -> Report
 ```
 
 An unannotated prompt has no source value. `Decision` is first-class but is not
-a `String` or a general Boolean:
+a `String` or an ordinary `Bool`:
 
 ```gantry
 // Invalid: the prompt returns no source value.
@@ -4171,11 +4355,14 @@ let summary: String = prompt "Summarize the report." -> String;
 // Invalid: the declared binding type is wrong.
 let answer: String = decide "Is the report complete?";
 
-// Valid: retain the opaque Decision and use it as a condition.
+// Valid: retain the sealed Decision and use it as a condition.
 let answer: Decision = decide "Is the report complete?";
 if answer {
     prompt "Publish the report.";
 }
+
+// Valid: project its controlling Bool when deterministic composition is needed.
+let approved: Bool = answer.decision;
 ```
 
 Task handles are linear ownership markers rather than ordinary values. Every
