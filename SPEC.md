@@ -183,9 +183,13 @@ document are to be interpreted as described in RFC 2119.
    parsing and MUST apply the same empty-input, trailing-data, duplicate-member,
    and Unicode-scalar rejection rules that Section 8 applies to hook output.
    Gantry MUST then validate the parsed value against the parameter's generated
-   schema before execution begins. An embedding API MUST NOT require callers to
-   preparse the entry input through a JSON representation that can erase those
-   errors. When `main` has no parameter, supplying entry bytes is an error.
+   schema before execution begins. After validation, Gantry MUST normalize the
+   entry value exactly as it normalizes hook output: omitted optional struct
+   fields receive their declared defaults when present and otherwise become
+   `None`, and every runtime struct contains all declared fields. An embedding
+   API MUST NOT require callers to preparse the entry input through a JSON
+   representation that can erase those errors. When `main` has no parameter,
+   supplying entry bytes is an error.
    Gantry MUST return a successful entry result to the embedder as the
    canonical strict JSON defined in Section 8
    together with a host-level indication of whether the function returned a
@@ -377,15 +381,17 @@ document are to be interpreted as described in RFC 2119.
    rule below. Traits are excluded from v1.
 2. Methods MUST support `self` and `mut self` receivers.
 3. A method may mutate its receiver only through interpreter-executed field
-   assignments in its body. An assignment that consumes an agent operation
-   result MUST commit atomically only after that operation completes and its
-   output validates. A failed operation MUST leave the assignment target
-   unchanged; external hook side effects are not rolled back. This operation-
-   level atomicity is the v1 transaction boundary. The root binding of any
-   assignment target MUST be declared `mut`, except that receiver-field
-   assignment is permitted through `mut self`. Assigning a nested field
-   constructs and commits one updated root value; it does not create aliases
-   to intermediate structs.
+   assignments in its body. For every assignment, Gantry MUST evaluate the
+   complete right-hand side before changing the target and MUST commit the new
+   root value atomically only after evaluation succeeds. This includes hook
+   validation, workflow calls, construction, projection, and every nested
+   subexpression. Any failure MUST leave the assignment target unchanged;
+   external hook side effects and earlier successful assignments are not
+   rolled back. This assignment-level atomicity is the v1 transaction
+   boundary. The root binding of any assignment target MUST be declared `mut`,
+   except that receiver-field assignment is permitted through `mut self`.
+   Assigning a nested field constructs and commits one updated root value; it
+   does not create aliases to intermediate structs.
 4. Functions and methods are interpreter-managed workflows. Calling one MUST
    create an interpreter call frame and execute its body; the call itself MUST
    NOT invoke an agent hook.
@@ -447,10 +453,11 @@ document are to be interpreted as described in RFC 2119.
    implicitly returns no result. Because no-result is not a value, a no-result
    prompt, workflow call, method call, or `join` MUST be terminated with `;` as
    an expression statement; it cannot be a block's trailing expression. A
-   statement-only agent context uses `with <agent> { ... }` without a semicolon
-   after its closing brace. A value-producing prompt MAY be discarded by
-   writing it as an expression statement. A value-producing workflow or method
-   call, `with` expression, or `join` expression MAY likewise be used as an
+   statement-only agent or session context uses `with <agent> { ... }` or
+   `session(<directive>) { ... }` without a semicolon after its closing brace.
+   A value-producing prompt MAY be discarded by writing it as an expression
+   statement. A value-producing workflow or method call, `with` expression,
+   `session` expression, or `join` expression MAY likewise be used as an
    expression statement when its result is intentionally discarded. A
    standalone literal, constructor, field access, projection, `Some`, or
    `None` expression has no execution effect and MUST be rejected as an
@@ -468,9 +475,10 @@ document are to be interpreted as described in RFC 2119.
 10. `return` exits the nearest enclosing function, method, decision workflow,
     or spawned block. A spawned block is therefore a return target before any
     workflow that lexically encloses the `spawn`. `break` and `continue` target
-    the nearest enclosing loop even when they occur inside a nested `with`
-    block, but they MUST NOT cross a spawned-block boundary. A `with` block
-    changes agent selection only; it does not intercept or retarget control
+    the nearest enclosing loop even when they occur inside a nested `with` or
+    `session` block, but they MUST NOT cross a spawned-block boundary. A `with` block
+    changes agent selection only, and a `session` block changes the active
+    logical session only. Neither context intercepts or retargets control
     transfer.
 11. Except for explicitly parallel spawned blocks, expression evaluation MUST
     be deterministic and left to right. A workflow call evaluates its callee
@@ -482,8 +490,9 @@ document are to be interpreted as described in RFC 2119.
     decline of a required result, or cancellation in one subexpression MUST
     prevent every later subexpression in that expression from being evaluated
     or dispatched. Entering a `with` expression establishes its selected agent
-    before its body begins. These rules make the order of model operations
-    visible even when calls or constructors are nested.
+    before its body begins; entering a `session` expression establishes its
+    active logical session before its body begins. These rules make the order
+    of model operations visible even when calls or constructors are nested.
 
 ## 7. Agents, Hooks, and Sessions
 
@@ -563,8 +572,12 @@ document are to be interpreted as described in RFC 2119.
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
    - the source location;
-   - the active logical session ID, root logical session ID, session directive,
-     and enclosing logical session ID when one exists;
+   - the active logical session ID and root logical session ID;
+   - the request session directive, which describes how this operation selected
+     its active session;
+   - the active session's creation directive, creator-construct identity, and
+     parent logical session ID when that session was created by `fork` or
+     `new`;
    - a dispatch ID, validation-attempt number, and recovery-dispatch number;
      and
    - validation errors from the immediately preceding invalid attempt, when
@@ -691,11 +704,27 @@ document are to be interpreted as described in RFC 2119.
    operations or constructs without their own session modifier reuse that
    active session as `inline`; they MUST NOT recursively reapply an enclosing
    `fork` or `new` directive. A nested explicit modifier establishes a new
-   override under these same rules. For a loop, `fork` creates a separate child
-   session for each prospective iteration under the condition/body rules in
-   Section 9, while `new` creates one fresh session on loop entry and reuses it
-   for every condition and body execution. Outside a loop, an explicit `fork`
-   or `new` modifier creates one session on entry to the prompt, decision
+   override under these same rules. Gantry MUST support a lexical session
+   context of the form `session(<directive>) { ... }`. Entering that context
+   applies its directive exactly once and makes the resulting logical session
+   active for the complete block, including workflow calls and explicit model
+   operations reached from it. This form exists so several visible `prompt`
+   and `decide` operations can deliberately share one fresh or forked
+   conversation without repeating operation-local modifiers. It MAY be used as
+   a statement, a value-producing expression, or a decision-valued expression
+   under the same block-result rules as `with`. Entering a `session(fork)` or
+   `session(new)` block MUST allocate and journal its stable logical session ID
+   before its body can dispatch a hook or spawn a child. Every operation in the
+   block that does not carry a more local session modifier uses the block's
+   active ID with an `inline` request directive. The integration learns the
+   allocated session's original `fork` or `new` directive and enclosing ID from
+   its journaled creation provenance and the task/session preflight contract;
+   it MUST NOT create a second provider session for each inline request.
+   For a loop, `fork` creates a separate child session for each prospective
+   iteration under the condition/body rules in Section 9, while `new` creates
+   one fresh session on loop entry and reuses it for every condition and body
+   execution. Outside a loop or lexical session context, an explicit `fork` or
+   `new` modifier creates one session on entry to the prompt, decision
    condition, or other construct carrying that modifier.
 13. The integration MUST preserve the conversational continuity denoted by a
    reused logical session ID. Provider-specific session storage and mapping
@@ -943,18 +972,19 @@ document are to be interpreted as described in RFC 2119.
     also support declarations of the form
     `decision is_complete(report: Report) { ... }`. Each reachable normal
     completion of a decision workflow MUST yield a trailing `decide`
-    expression, decision-workflow call, or decision-valued `with` expression;
+    expression, decision-workflow call, or decision-valued `with` or `session`
+    expression;
     alternatively, every reachable path MAY exit through an explicit valid
     decision `return`. This permits a fully returning `if`/`else` decision
     workflow without an artificial unreachable tail. The result schema is the
     interpreter-only decision schema in item 2. A decision workflow MAY contain
     multiple ordinary prompts, nested decisions, and other executable blocks.
     `return` MAY exit it early, but the returned expression MUST be a direct
-    `decide` expression, a call to another decision workflow, or a `with` context
-    whose trailing expression is one of those forms. Each completed
-    evaluation MUST ultimately obtain its decision from exactly one prompt hook
-   result with the decision schema in item 2. A decision call is valid only as
-   the condition of `if`, `else if`, `while`, or `until`, or as the returned
+    `decide` expression, a call to another decision workflow, or a `with` or
+    `session` context whose trailing expression is one of those forms. Each
+    completed evaluation MUST ultimately obtain its decision from exactly one
+    prompt hook result with the decision schema in item 2. A decision call is
+    valid only as the condition of `if`, `else if`, `while`, or `until`, or as the returned
    expression of another decision workflow. Its result cannot be bound,
    returned by an ordinary workflow, interpolated, or discarded as a
     standalone statement. Decision workflows are free module items in v1;
@@ -1034,9 +1064,11 @@ document are to be interpreted as described in RFC 2119.
    task join waits until every named task settles even after a failure. Entering
    the join consumes every named handle, including handles for successful tasks
    in a join where another task fails. After settlement, failures abort the
-   current program as one aggregate task/join error ordered by join argument,
-   never by completion time. A failed single-task join consumes its handle and
-   aborts with a task/join error.
+   current Gantry task as one aggregate task/join error ordered by join
+   argument, never by completion time. A failed single-task join consumes its
+   handle and fails the current Gantry task with a task/join error. Propagation
+   beyond that task follows Section 7 rather than implicitly aborting unrelated
+   parallel work.
 6. `joinall` is the scope-oriented form for joining every unconsumed, attached
    task handle that is owned by the current Gantry task, declared directly in
    the current lexical scope, and definitely available at the `joinall`
@@ -1050,9 +1082,10 @@ document are to be interpreted as described in RFC 2119.
    order. Otherwise it is a waiting statement that discards successful
    outputs. With zero included tasks, `joinall` is a no-result no-op. It MUST
    NOT stop waiting merely because one task fails.
-   After all tasks settle, one or more failures MUST abort the current program
-   with one aggregate runtime error. That error MUST report failed tasks in
-   source declaration order, not completion order. At a `joinall`, every task
+   After all tasks settle, one or more failures MUST fail the current Gantry
+   task with one aggregate task/join error. That error MUST report failed tasks
+   in source declaration order, not completion order. Propagation beyond the
+   current task follows Section 7. At a `joinall`, every task
    handle declared directly in that scope MUST have one definite ownership
    state on all incoming control-flow paths. A handle that is consumed or
    detached on only some incoming paths is an analysis error rather than a
@@ -1139,7 +1172,8 @@ document are to be interpreted as described in RFC 2119.
 
 1. Gantry MUST durably journal committed operation results, validation attempt
    counts, interpreter call frames, scopes, instruction positions, loop state,
-   task relationships, and values needed to resume execution. Gantry MAY
+   lexical session-context identities and lifetimes, task relationships, and
+   values needed to resume execution. Gantry MAY
    replay deterministic interpreter steps after the latest durable checkpoint,
    but such replay MUST reuse committed hook outcomes and reconstruct the same
    dynamic operation and task identities.
@@ -1614,6 +1648,7 @@ statement               = let_statement
                         | spawn_statement
                         | detach_statement
                         | with_statement
+                        | session_statement
                         | if_statement
                         | loop_statement
                         | while_statement
@@ -1627,6 +1662,8 @@ assignment_target       = identifier_token, { ".", identifier_token }
                           { ".", identifier_token } ;
 expression_statement    = expression, ";" ;
 with_statement          = "with", identifier_token, statement_block ;
+session_statement       = "session", "(", session_directive, ")",
+                          statement_block ;
 return_statement        = "return", [ return_expression ], ";" ;
 return_expression       = expression | decision_expression ;
 break_statement         = "break", ";" ;
@@ -1641,8 +1678,8 @@ no-result operation must instead be an expression statement ending in `;`.
 `return;` is valid only in a no-result function, method, or spawned block.
 `break` and `continue` are valid only in a loop body. When a `decision_block`
 has a reachable normal completion, it MUST end in a direct
-`decide` expression, decision-workflow call, or decision-valued `with`
-expression. The optional grammar tail permits a
+`decide` expression, decision-workflow call, or decision-valued `with` or
+`session` expression. The optional grammar tail permits a
 block whose static control-flow analysis proves that every reachable path has
 already exited through a valid decision `return`; it does not permit decision
 fallthrough. An earlier `return` in the statement sequence is subject to the
@@ -1661,6 +1698,7 @@ expression              = prompt_expression
                         | join_expression
                         | joinall_expression
                         | with_expression
+                        | session_expression
                         | postfix_expression ;
 
 postfix_expression      = primary_expression, { postfix_suffix } ;
@@ -1683,6 +1721,8 @@ field_initializer       = identifier_token, ":", expression ;
 argument_list           = expression, { ",", expression }, [ "," ] ;
 
 with_expression         = "with", identifier_token, value_block ;
+session_expression      = "session", "(", session_directive, ")",
+                          value_block ;
 ```
 
 Postfix `(...)` dispatches a workflow function or method, postfix `.name`
@@ -1698,17 +1738,17 @@ v1 has no module, type, function, decision, or method values, semantic analysis
 MUST reject a bare path that resolves to any such item. Task handles are legal
 only in `join`, `joinall`, and `detach`, never as primary expressions.
 
-A value-producing `with` expression requires its block's trailing expression
-and yields that value, which permits a lexically selected agent to produce the
-enclosing workflow's result. A statement-only agent context instead uses the
-`with_statement` form in Section 13.5; it has no result and takes no semicolon
-after its closing brace. A value-producing `with` expression MAY still be
-followed by `;` when its value is intentionally discarded.
+A value-producing `with` or `session` expression requires its block's trailing
+expression and yields that value. These forms permit a lexical agent or session
+context to produce the enclosing workflow's result. Their statement-only forms
+in Section 13.5 have no result and take no semicolon after the closing brace. A
+value-producing context expression MAY still be followed by `;` when its value
+is intentionally discarded.
 
-`prompt`, `join`, `joinall`, and `with` are complete expression forms rather
-than direct bases of a postfix chain. To select a field, invoke a method, or
-project from one of their results without first binding it, source MUST
-parenthesize that expression, as in `(join(first, second))[0]`. This explicit
+`prompt`, `join`, `joinall`, `with`, and `session` are complete expression
+forms rather than direct bases of a postfix chain. To select a field, invoke a
+method, or project from one of their results without first binding it, source
+MUST parenthesize that expression, as in `(join(first, second))[0]`. This explicit
 grouping avoids ambiguity between prompt result annotations and operations on
 the produced value.
 
@@ -1806,11 +1846,15 @@ decision_modifier       = "session", "=", session_directive
 decision_expression     = decide_expression
                         | decision_call
                         | decision_with_expression
+                        | decision_session_expression
                         | "(", decision_expression, ")" ;
 decide_expression       = "decide", [ prompt_modifiers ], prompt_template ;
 decision_call           = qualified_path, "(", [ argument_list ], ")" ;
 decision_with_expression
                         = "with", identifier_token, decision_block ;
+decision_session_expression
+                        = "session", "(", session_directive, ")",
+                          decision_block ;
 
 loop_statement          = "loop", [ loop_modifiers ], statement_block ;
 loop_modifiers          = "(", loop_modifier,
@@ -1848,10 +1892,10 @@ expression is more local and overrides the corresponding inherited value.
 deliberately places its body before `when` and the post-test decision. A
 `decision_call` MUST resolve to a `decision` declaration; an ordinary workflow
 call is not a condition.
-The body of a decision-valued `with` expression follows the same definite-
-decision rules as any other `decision_block`: it either has a terminal decision
-tail or, when enclosed by a decision workflow, proves that every reachable
-path exits that workflow through a valid decision `return`.
+The body of a decision-valued `with` or `session` expression follows the same
+definite-decision rules as any other `decision_block`: it either has a terminal
+decision tail or, when enclosed by a decision workflow, proves that every
+reachable path exits that workflow through a valid decision `return`.
 
 ### 13.9 Parallel control flow
 
@@ -2027,6 +2071,31 @@ When a `with` block is used only for its effects, as in `review`, it is a
 statement and takes no semicolon after its closing brace.
 The `apply_revision` assignment makes the by-value receiver rule visible: a
 `mut self` method never updates the caller's binding implicitly.
+
+A lexical session context applies one session choice to several explicit
+operations. Here both prompts share one child conversation forked from the
+caller's active session:
+
+```gantry
+fn investigate(report: Report) -> Report {
+    with researcher {
+        session(fork) {
+            let plan: String = prompt
+                "Plan a focused investigation of ${report}."
+                -> String;
+
+            prompt
+                "Follow this plan: ${plan}\nInvestigate: ${report}"
+                -> Report
+        }
+    }
+}
+```
+
+The `session` block does not hide model work: each hook site remains a visible
+`prompt` or `decide`. `session(new)` would instead start one conversation with
+no inherited context, while `session(inline)` would explicitly reuse the
+enclosing conversation.
 
 ### 14.5 Prompt strings, interpolation, and escaping
 
