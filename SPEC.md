@@ -48,7 +48,8 @@
     - [14.10 `joinall()`, Unit tasks, and detachment](#1410-joinall-unit-tasks-and-detachment)
     - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
     - [14.12 Explicit harness actions and named prompt inputs](#1412-explicit-harness-actions-and-named-prompt-inputs)
-    - [14.13 Common invalid forms and their corrections](#1413-common-invalid-forms-and-their-corrections)
+    - [14.13 Explicit operation failure handling with `attempt`](#1413-explicit-operation-failure-handling-with-attempt)
+    - [14.14 Common invalid forms and their corrections](#1414-common-invalid-forms-and-their-corrections)
   - [15. Required Embedding Interfaces](#15-required-embedding-interfaces)
     - [15.1 Interpreter lifecycle](#151-interpreter-lifecycle)
     - [15.2 Hooks and session integration](#152-hooks-and-session-integration)
@@ -293,7 +294,9 @@ The core authoring model is deliberately small:
    compute.
 3. Use `prompt` for model-generated values, `decide` for model judgment, and
    `action` for harness capabilities.
-4. Use `spawn` only when work should overlap, then visibly consume every task
+4. Wrap one of those explicit operations in `attempt` only when source should
+   handle its declared operation failures as data.
+5. Use `spawn` only when work should overlap, then visibly consume every task
    with `join`, `joinall()`, or `detach`.
 
 The source surface is organized around these families:
@@ -304,6 +307,7 @@ The source surface is organized around these families:
 | Typed data | `struct`, `enum`, `Option`, `Result`, `List`, `Tuple` | Section 5 | Section 14.3 |
 | Reusable orchestration | `fn`, `impl` | Sections 6 and 9 | Sections 14.4 and 14.6 |
 | Integration-backed work | `prompt`, `decide`, `action` | Sections 6 through 8 | Sections 14.1, 14.6, and 14.12 |
+| Explicit operation failure handling | `attempt` | Sections 5, 7, and 8 | Section 14.13 |
 | Model context | `with`, `session` | Section 7 | Sections 14.4 through 14.7 |
 | Sequential routing | `if`, `if let`, `match` | Section 9 | Sections 14.3 and 14.6 |
 | Repetition | `loop`, `while`, `until` | Section 9 | Section 14.7 |
@@ -372,6 +376,7 @@ most important when humans or models author Gantry source:
 | Request a model-produced value | `prompt "..." -> T` | Performs one logical model operation and validates its output as `T`. |
 | Request model judgment | `decide "..."` | Performs one logical model operation and returns a sealed `Decision`. |
 | Invoke a harness capability | `action path(...)` | Performs one logical action operation against a declared action signature. |
+| Handle an expected operation failure | `attempt prompt ...`, `attempt decide ...`, `attempt action path(...)` | Performs that one explicit operation and returns `Result<T, OperationError>` instead of propagating the operation failures that `attempt` is defined to convert. |
 | Select an agent | `with agent_name { ... }` | Sets the active agent for model operations dynamically reached from the block, including through workflow calls and spawned children, unless overridden. |
 | Select conversational continuity | `session(fork) { ... }` | Establishes the active logical session for model operations dynamically reached from the block; nested unmodified operations use it inline. |
 | Run work concurrently | `spawn task { ... }`, `spawn task -> T { ... }` | Creates an owned child task; omit `-> T` only for a Unit task. The handle must later be joined or detached. |
@@ -393,6 +398,9 @@ workflow summaries required by Section 6.
   be projected, but source cannot construct or mutate one.
 - `action <path>(...)` visibly invokes a source-declared, typed harness action.
   It is distinct from an ordinary workflow call and from model selection.
+- `attempt` wraps exactly one syntactic `prompt`, `decide`, or `action`
+  expression. It does not catch failures from a workflow call, deterministic
+  evaluation, journaling, the executor, or task cancellation.
 - `using { ... }` supplies ordered typed inputs to `prompt` or `decide`
   without rendering them into the authored prompt text.
 - `${...}` computes deterministic prompt input. It can read and construct
@@ -428,6 +436,9 @@ It is a reading aid; Sections 6 through 8 define the normative contracts:
 The retry counts are defaults, not fixed operation behavior. Interpreter
 configuration may replace them, and an operation-local `retry_limit` replaces
 the applicable configured default; Section 8 defines the normative rules.
+Wrapping an operation in `attempt` does not change its retry policy or make it
+effect-free; it changes only the narrow operation failures listed in Section 5
+into an explicit `Result<T, OperationError>`.
 
 ### 1.3 V1 design boundary
 
@@ -973,7 +984,7 @@ The effect domain is the powerset of:
 ```text
 E = { prompt, decide,
       action(read_only), action(idempotent), action(non_idempotent),
-      spawn, join, background, session, recover }
+      spawn, join, background, session, attempt }
 ```
 
 It is ordered by subset, with union as join and the empty set as bottom.
@@ -1130,7 +1141,7 @@ operation_ok(Σ,m,τ1...τn)    op_result(m)=τ
 Σ;Γ;Ω ⊢ operation(m,e...):τ ! ε ⇒ Ω'
 ──────────────────────────────────────────────── T-Attempt
 Σ;Γ;Ω ⊢ attempt(operation(m,e...))
-       :Result<τ,OperationError> ! ε∪{recover} ⇒ Ω'
+       :Result<τ,OperationError> ! ε∪{attempt} ⇒ Ω'
 ```
 
 `operation_ok` enforces agent availability, action resolution and class,
@@ -2422,7 +2433,7 @@ defined here and in Section 7 cross the integration boundary.
      workflow, identified by kind and source location; and
    - a canonical effect set drawn from `prompt`, `decide`,
      `action(read_only)`, `action(idempotent)`, `action(non_idempotent)`,
-     `spawn`, `join`, `background`, `session`, and `recover`; and
+     `spawn`, `join`, `background`, `session`, and `attempt`; and
    - the source locations and canonical action paths contributing each action
      effect.
    For this inventory, “direct” means lexically contained in the workflow's
@@ -5786,7 +5797,7 @@ introduced with package files, or focused fragments. A focused fragment
 assumes that referenced types, agents, defaults, and helper workflows are
 declared elsewhere in the package; it is not necessarily pasteable as a
 standalone `main.gnt`. Except for snippets explicitly labeled invalid in
-Section 14.13, all shown forms use only v1 syntax. Comments beginning with
+Section 14.14, all shown forms use only v1 syntax. Comments beginning with
 `//` explain the example and are valid Gantry comments.
 
 The following matrix highlights the result-position rules most likely to be
@@ -5805,7 +5816,7 @@ Only `Unit` expressions may be bare expression statements; other values use
 explicit `discard`. A Unit operation or workflow call therefore ends in `;`,
 whereas a statement-only braced control construct does not. Section 13.6 also
 requires a struct constructor at an `if`, `while`, `if let`, or `match`
-boundary to be parenthesized where specified. Section 14.13 gives paired
+boundary to be parenthesized where specified. Section 14.14 gives paired
 invalid and valid forms for these less-obvious rules.
 
 ### 14.1 Minimal package entry point
@@ -6557,7 +6568,36 @@ action declaration, action invocation, and result contract are visible in
 source; model hooks are externally read-only; state-changing capabilities require a
 declared action recovery class.
 
-### 14.13 Common invalid forms and their corrections
+### 14.13 Explicit operation failure handling with `attempt`
+
+`attempt` converts the operation failures defined in Section 5 into an
+explicit `Result<T, OperationError>`. The wrapped `prompt`, `decide`, or
+`action` remains visible and keeps its normal validation and retry policy:
+
+```gantry
+fn summarize_with_fallback(report: Report) -> String {
+    let outcome: Result<String, OperationError> =
+        attempt prompt "Summarize the supplied report."
+            using { report }
+            -> String;
+
+    match outcome {
+        Ok(summary) => summary,
+        Err(error) => prompt "Explain why no summary is available."
+            using { report, error }
+            -> String,
+    }
+}
+```
+
+The `Err` branch handles only failure of the first prompt. A failure from the
+fallback prompt still propagates normally. `attempt` cannot wrap a workflow
+call, a join, or a larger expression, and it does not catch deterministic,
+journal, executor, event-persistence, invariant, or Gantry task-cancellation
+failures. To handle an operation reached inside a workflow, place `attempt`
+around that operation in the workflow body rather than around the call.
+
+### 14.14 Common invalid forms and their corrections
 
 The following non-normative excerpts collect source shapes that are rejected
 by syntax or semantic analysis, plus syntactically valid forms that
