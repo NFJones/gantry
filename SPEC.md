@@ -423,13 +423,14 @@ document are to be interpreted as described in RFC 2119.
    module, or any non-function root item named `main` is an analysis error.
    The directory containing `main.gnt` is the package root. `main` MUST have
    either no parameters or exactly one typed parameter and MAY return any v1
-   result type or no result. The entry parameter type MUST NOT be `Decision`
-   or contain `Decision` at any nesting depth, because entry JSON has no
-   model-operation provenance and only `decide` or a decision workflow may
-   create that sealed type. A `main` result MAY contain `Decision` because it
-   was produced during Gantry execution with provenance intact. When `main` has a
-   parameter, the embedding application MUST supply one raw byte sequence
-   containing the entry JSON. Gantry MUST own UTF-8 decoding and RFC 8259 JSON
+   result type or no result. Neither the entry parameter nor the result type
+   MAY be `Decision` or contain `Decision` at any nesting depth. Entry and
+   result JSON encode the visible `decision` and `rationale` fields but cannot
+   carry the interpreter-only operation provenance that makes a `Decision`
+   sealed. A workflow that needs to export a judgment MUST project those
+   fields into an ordinary declared struct before returning it from `main`.
+   When `main` has a parameter, the embedding application MUST supply one raw
+   byte sequence containing the entry JSON. Gantry MUST own UTF-8 decoding and RFC 8259 JSON
    parsing and MUST apply the same empty-input, trailing-data, duplicate-member,
    and Unicode-scalar rejection rules that Section 8 applies to hook output.
    Gantry MUST then validate the parsed value against the parameter's generated
@@ -1055,20 +1056,26 @@ document are to be interpreted as described in RFC 2119.
 
 ## 7. Agents, Hooks, and Sessions
 
-1. A Gantry program MUST declare its permitted agent names in one or more
+1. A Gantry package MAY declare permitted agent names in one or more
    `agents { ... }` declarations. Declarations from all package modules are
    merged into one package-wide set; repeating the same logical name is
-   idempotent rather than an error. Exactly one dedicated
-   `default agent = <name>;` binding MUST appear in `main.gnt`, and its name
-   MUST belong to the merged set. A `default agent` declaration in any child
-   module is an analysis error, even when it repeats the root declaration.
-   Conflicting default bindings or selection of an undeclared agent are
-   analysis errors. Within one uninterrupted execution or resume run,
+   idempotent rather than an error. A package containing any `prompt` or
+   `decide` operation site MUST have a nonempty merged agent set. When that set
+   is nonempty, exactly one dedicated `default agent = <name>;` binding MUST
+   appear in `main.gnt`, and its name MUST belong to the merged set. When the
+   set is empty, `default agent` MUST be absent. A `default agent` declaration
+   in any child module is an analysis error, even when it repeats the root
+   declaration. Conflicting default bindings or selection of an undeclared
+   agent are analysis errors. This conditional rule permits deterministic-only
+   and action-only packages without fictitious model configuration. Within one
+   uninterrupted execution or resume run,
    integrations MUST resolve every occurrence of the same logical name
    consistently across all tasks. Before a new execution or resume begins,
-   the integration MUST attest that it can resolve every name in the merged
-   set and MUST supply one opaque, stable agent-mapping revision ID. The ID
-   identifies the complete logical-name mapping for that run without requiring
+   the integration MUST attest that it can resolve every name in a nonempty
+   merged set and MUST supply one opaque, stable agent-mapping revision ID.
+   An empty set requires neither agent resolution nor an agent-mapping
+   revision. When present, the ID identifies the complete logical-name mapping
+   for that run without requiring
    Gantry to inspect provider configuration. For a new execution, Gantry MUST
    record that revision in the durably flushed execution-start record required
    by Section 11. A later resume MAY change the mapping only by supplying and
@@ -1090,11 +1097,13 @@ document are to be interpreted as described in RFC 2119.
    Action declarations likewise identify logical harness capabilities rather
    than concrete provider functions. Before a new execution or resume begins,
    the integration MUST resolve every canonical action signature in the
-   analyzed package and MUST supply one opaque stable action-mapping revision
-   ID covering that complete mapping. An unresolved action is an integration-
+   analyzed package and, when that set is nonempty, MUST supply one opaque
+   stable action-mapping revision ID covering that complete mapping. A package
+   with no action declarations requires neither action resolution nor an
+   action-mapping revision. An unresolved action is an integration-
    preflight start or resume-start failure, even when no reachable execution
-   path is expected to invoke it. The execution-start record MUST contain the
-   initial revision. A resume MAY change the mapping only after Gantry appends
+   path is expected to invoke it. When present, the execution-start record MUST
+   contain the initial revision. A resume MAY change the mapping only after Gantry appends
    and flushes an execution-state record containing the replacement revision;
    that revision applies to every later action dispatch in the resume run.
    Previously committed outcomes and results remain unchanged. Recovery of an
@@ -1242,7 +1251,7 @@ document are to be interpreted as described in RFC 2119.
    and does not consume that retry budget. Validation errors MUST identify the
    failing JSON instance location with JSON Pointer when one exists, the
    violated schema location when one exists, and a human-readable message;
-   they MUST NOT contain raw model output. Each error MUST also carry exactly
+   they MUST NOT contain raw integration output. Each error MUST also carry exactly
    one machine-readable category: `utf8`, `json-syntax`, `json-duplicate-key`,
    `json-unicode`, or `schema`. JSON Pointer and schema-location fields are
    absent rather than fabricated when the applicable parse stage could not
@@ -2528,8 +2537,8 @@ document are to be interpreted as described in RFC 2119.
     record MUST have sequence number one and MUST contain the package source
     identity, the selected source-language major and minor version, the
     effective-configuration identity and fields defined below, the selected
-    root-session identity and provenance, the agent- and action-mapping
-    revisions from Section 7, the canonical signature of `main` defined in
+    root-session identity and provenance, each applicable agent- or action-
+    mapping revision from Section 7, the canonical signature of `main` defined in
     Section 4, and
     either a no-entry-input marker or the validated and normalized canonical
     entry value with its type descriptor.
@@ -2676,9 +2685,9 @@ document are to be interpreted as described in RFC 2119.
    outcome actually returned by a hook, including a `Completed` outcome that
    subsequently fails parsing or schema validation. Those events retain the
    logical operation ID and carry the distinct dispatch ID and applicable
-   validation-attempt and recovery-dispatch numbers. A schema-validation-
-   failure event and, when another attempt is permitted, a retry event follow
-   the corresponding completion event. After a `Completed` outcome is successfully decoded,
+   validation-attempt and recovery-dispatch numbers. A structured-output-
+   validation-failure event and, when another attempt is permitted, a retry
+   event follow the corresponding completion event. After a `Completed` outcome is successfully decoded,
    parsed, validated, normalized, and durably recorded under Section 11, or an
    optional `Declined` outcome is durably normalized to `None`, Gantry MUST
    emit exactly one operation-result event for that logical operation. The
@@ -2697,8 +2706,8 @@ document are to be interpreted as described in RFC 2119.
    the hook, Gantry MUST append and flush the corresponding operation-dispatch
    event record. After an operation outcome is durable and before decoding,
    validation, decline handling, or failure propagation consumes that outcome,
-   Gantry MUST append and flush its operation-completion event record. A schema-
-   validation-failure event and any retry event MUST be appended and flushed
+   Gantry MUST append and flush its operation-completion event record. A
+   structured-output-validation-failure event and any retry event MUST be appended and flushed
    before the next dispatch record. After an operation-result record is durable
    and before source execution consumes that result, Gantry MUST append and
    flush the operation-result event record. Delivery MAY remain asynchronous
@@ -2936,12 +2945,13 @@ document are to be interpreted as described in RFC 2119.
    sequence when task-backed, timestamp, a kind-specific payload or stable
    payload reference, and redaction state. A timestamp MUST be the event's
    creation time encoded as an RFC 3339 UTC string and MUST remain unchanged
-   across delivery retries. Prompt templates, schemas, and raw model output
-   MUST use protected stable references rather than being copied into ordinary
+   across delivery retries. Prompt templates, schemas, and raw integration
+   output MUST use protected stable references rather than being copied into ordinary
    event payloads; diagnostics and other nonsensitive standalone activity data
    MAY be carried inline. The canonical v1 event kinds are parse, analysis,
    workflow start, workflow end, operation dispatch, operation completion,
-   operation result, schema validation failure, retry, branch decision, spawn,
+   operation result, structured output validation failure, retry, branch
+   decision, spawn,
    join, detach, mutation, cancellation, foreground completion, task
    completion, terminal execution, shutdown, and failure. Concrete
    serialization is implementation-defined.
@@ -2967,8 +2977,8 @@ document are to be interpreted as described in RFC 2119.
      descriptor, and a protected normalized-value reference for a value result
      or the decision and protected rationale reference for a decision result;
      an optional decline additionally identifies its decline provenance;
-   - `schema validation failure`: operation and dispatch IDs plus the
-     structured validation errors defined in Section 7;
+   - `structured output validation failure`: operation and dispatch IDs plus
+     the structured validation errors defined in Section 7;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
      validation-attempt and recovery-dispatch numbers, retry class, and
      selected delay;
@@ -4638,12 +4648,14 @@ provider-specific or executor-specific types in Gantry programs:
    the runtime-error categories defined in Section 7.
 2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    task context. The factory, or a companion harness-preflight interface owned
-   by the same integration, MUST also validate the complete merged agent-name
-   set and every canonical action signature, and MUST supply the corresponding
-   agent- and action-mapping revisions before a new execution begins. Before
-   resume continues, that preflight MUST resolve the active action mapping and
-   every unfinished logical session descriptor enumerated by Gantry, including
-   root, parent, and creation provenance. For a new execution, preflight failure is an
+   by the same integration, MUST also validate the complete nonempty merged
+   agent-name set and every declared canonical action signature, and MUST
+   supply each corresponding mapping revision before a new execution begins.
+   An empty agent or action declaration set requires no mapping or revision for
+   that family. Before resume continues, that preflight MUST resolve every
+   applicable active mapping and every unfinished logical session descriptor
+   enumerated by Gantry, including root, parent, and creation provenance. For a
+   new execution, preflight failure is an
    integration-preflight start failure. For resume, it is the applicable
    nonterminal resume-start failure. It creates no `OperationHook` and MUST
    occur before `main` evaluation or recovered work. Successful preflight does
