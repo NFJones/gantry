@@ -543,12 +543,743 @@ document are to be interpreted as described in RFC 2119.
 8. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
 
-## 13. Open Design Work Before Syntax Is Finalized
+## 13. Formal Lexical and Syntactic Grammar
 
-The semantic requirements above are sufficient to begin grammar design. The
-following narrower contracts remain intentionally open:
+This section defines the normative v1 source grammar. Semantic restrictions in
+the preceding sections still apply when the grammar admits a construct in a
+broader syntactic position. In particular, name resolution, exact type
+matching, decision-only contexts, task-handle consumption, modifier validity,
+and interpolation restrictions are semantic-analysis concerns.
 
-- the formal lexical grammar and EBNF for the settled source constructs;
+### 13.1 Grammar notation
+
+The grammar uses extended Backus-Naur form (EBNF):
+
+- quoted text is a literal terminal;
+- `A | B` selects one alternative;
+- `[ A ]` makes `A` optional;
+- `{ A }` repeats `A` zero or more times;
+- `( A )` groups terms; and
+- productions ending in `_token` are emitted by the lexer.
+
+Whitespace and comments separate tokens and are otherwise insignificant,
+except inside string and raw-string tokens. A trailing comma is accepted in
+every comma-separated declaration, parameter, argument, field, and modifier
+list.
+
+### 13.2 Lexical grammar
+
+```ebnf
+source              = { item }, end_of_file ;
+
+whitespace          = " " | "\t" | "\r" | "\n" ;
+line_comment        = "//", { any_character_except_newline },
+                      ( "\n" | end_of_file ) ;
+block_comment       = "/*", { block_comment | block_comment_character }, "*/" ;
+
+identifier_token    = xid_start_or_underscore,
+                      { xid_continue_or_underscore } ;
+integer_token       = "0" | nonzero_decimal_digit, { decimal_digit } ;
+
+string_token        = '"', { string_character | escape_sequence }, '"' ;
+escape_sequence     = "\\\\" | "\\\"" | "\\n" | "\\r" | "\\t" | "\\0"
+                    | "\\u{", hex_digit, { hex_digit }, "}" ;
+
+raw_string_token    = "r", raw_hashes, '"', raw_string_body,
+                      '"', matching_raw_hashes ;
+raw_hashes          = { "#" } ;
+```
+
+`xid_start_or_underscore` and `xid_continue_or_underscore` are the Unicode
+XID_Start and XID_Continue classes, respectively, with `_` additionally
+permitted. Source MUST be valid UTF-8. An identifier MUST NOT equal a reserved
+word. Decimal directive integers have no sign, separator, or radix prefix.
+
+Block comments nest. An unterminated block comment, quoted string, raw string,
+escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
+Unicode scalar value and contain one through six hexadecimal digits. A normal
+string may contain a literal newline. The lexer preserves its bytes after
+escape decoding and performs no indentation normalization.
+
+For a raw string, `matching_raw_hashes` means exactly the same number of `#`
+characters as `raw_hashes`. Backslashes have no special meaning in a raw
+string. The variable-hash delimiter rule is lexical and is intentionally
+described outside pure EBNF.
+
+The reserved words are:
+
+```text
+agent      agents     as          break       continue    decision
+default    else       fn          if          impl        inline
+join       joinall    let         limit       loop        mod
+mut        new        None        Option      List        prompt
+return     retry_limit self        session     Some        spawn
+String     struct     Tuple       until       use         while
+with       fork
+```
+
+`as` is reserved for future compatible extension even though v1 has no alias
+form for `use`. Reserved type and constructor names are case-sensitive.
+
+### 13.3 Package declarations and types
+
+```ebnf
+item                    = agents_declaration
+                        | default_agent_declaration
+                        | file_module_declaration
+                        | inline_module_declaration
+                        | use_declaration
+                        | struct_declaration
+                        | function_declaration
+                        | decision_declaration
+                        | impl_declaration ;
+
+agents_declaration      = "agents", "{", identifier_list, "}" ;
+identifier_list         = identifier_token,
+                          { ",", identifier_token }, [ "," ] ;
+default_agent_declaration
+                        = "default", "agent", "=", identifier_token, ";" ;
+
+file_module_declaration = "mod", identifier_token, ";" ;
+inline_module_declaration
+                        = "mod", identifier_token, "{", { item }, "}" ;
+use_declaration         = "use", qualified_path, ";" ;
+qualified_path          = identifier_token,
+                          { "::", identifier_token } ;
+
+struct_declaration      = "struct", identifier_token, "{",
+                          { struct_field }, "}" ;
+struct_field            = identifier_token, ":", value_type,
+                          [ "=", field_default ], "," ;
+field_default           = string_token | raw_string_token | "None" ;
+
+value_type              = "String"
+                        | qualified_path
+                        | "Option", "<", value_type, ">"
+                        | "List", "<", value_type, ">"
+                        | "Tuple", "<", value_type, ",", value_type,
+                          { ",", value_type }, [ "," ], ">" ;
+result_type             = value_type | "None" ;
+result_annotation       = "->", result_type ;
+```
+
+The built-in type alternatives take precedence over `qualified_path`. A
+`Tuple` has at least two member types by grammar. `None` in a result annotation
+is the no-result type; `None` in an expression is the absent value of an
+expected `Option<T>`. Field defaults are deliberately limited to strings and
+`None` in v1. Their declared field type MUST accept the default without
+coercion.
+
+A `use` declaration imports the item named by the final path segment into the
+current module. Glob imports, grouped imports, aliases, `self` imports, and
+visibility modifiers are not v1 syntax.
+
+### 13.4 Workflows and methods
+
+```ebnf
+function_declaration    = "fn", identifier_token, "(",
+                          [ parameter_list ], ")",
+                          [ result_annotation ], block ;
+parameter_list          = parameter, { ",", parameter }, [ "," ] ;
+parameter               = identifier_token, ":", value_type ;
+
+decision_declaration    = "decision", identifier_token, "(",
+                          [ parameter_list ], ")", decision_block ;
+
+impl_declaration        = "impl", qualified_path, "{",
+                          { method_declaration }, "}" ;
+method_declaration      = "fn", identifier_token, "(", receiver,
+                          [ ",", parameter_list ], ")",
+                          [ result_annotation ], block ;
+receiver                = "self" | "mut", "self" ;
+```
+
+A function signature without a result annotation returns no result, exactly as
+if it had `-> None`. A method always has a receiver as its first parameter.
+Associated functions without a receiver are excluded from v1. A `decision`
+has no source-level result annotation because its interpreter-only decision
+schema is implied by the declaration.
+
+### 13.5 Blocks and statements
+
+```ebnf
+block                   = "{", { statement }, [ trailing_expression ], "}" ;
+decision_block          = "{", { statement }, decision_tail, "}" ;
+decision_tail           = decision_expression
+                        | "return", decision_expression, ";" ;
+
+statement               = let_statement
+                        | assignment_statement
+                        | expression_statement
+                        | return_statement
+                        | break_statement
+                        | continue_statement
+                        | spawn_statement
+                        | if_statement
+                        | loop_statement
+                        | while_statement
+                        | until_statement ;
+
+let_statement           = "let", [ "mut" ], identifier_token, ":",
+                          value_type, "=", expression, ";" ;
+assignment_statement    = assignment_target, "=", expression, ";" ;
+assignment_target       = ( identifier_token | "self" ),
+                          { ".", identifier_token } ;
+expression_statement    = expression, ";" ;
+return_statement        = "return", [ expression ], ";" ;
+break_statement         = "break", ";" ;
+continue_statement      = "continue", ";" ;
+trailing_expression     = expression ;
+```
+
+Bindings require explicit types in v1. A trailing expression is distinguished
+from an expression statement by the absence of `;` immediately before the
+closing brace. `return;` is valid only in a no-result function or method.
+`break` and `continue` are valid only in a loop body. A `decision_block` MUST
+end in a direct decision prompt or decision-workflow call, whether trailing or
+returned; an earlier `return` in its statement sequence is subject to the same
+restriction.
+
+### 13.6 Expressions
+
+```ebnf
+expression              = prompt_expression
+                        | join_expression
+                        | joinall_expression
+                        | with_expression
+                        | postfix_expression ;
+
+postfix_expression      = primary_expression, { postfix_suffix } ;
+postfix_suffix          = ".", identifier_token
+                        | "(", [ argument_list ], ")" ;
+primary_expression      = string_token
+                        | raw_string_token
+                        | "None"
+                        | "Some", "(", expression, ")"
+                        | "self"
+                        | struct_expression
+                        | qualified_path
+                        | "(", expression, ")" ;
+
+struct_expression       = qualified_path, "{", [ field_initializer_list ], "}" ;
+field_initializer_list  = field_initializer, { ",", field_initializer },
+                          [ "," ] ;
+field_initializer       = identifier_token, ":", expression ;
+argument_list           = expression, { ",", expression }, [ "," ] ;
+
+with_expression         = "with", identifier_token, block ;
+```
+
+Postfix `(...)` dispatches a workflow function or method, while postfix `.name`
+accesses a field or begins a method call. Gantry has no arithmetic, Boolean,
+comparison, indexing, tuple projection, list literal, or tuple literal syntax
+in v1. Parentheses group one expression; they do not construct tuples.
+
+A `with` expression yields its block's trailing value, if any, which permits a
+lexically selected agent to produce the enclosing workflow's result. If its
+block has no trailing value, the `with` expression has no result.
+
+### 13.7 Prompts and interpolation
+
+```ebnf
+prompt_expression       = "prompt", [ prompt_modifiers ], prompt_template,
+                          [ result_annotation ] ;
+prompt_modifiers        = "(", prompt_modifier,
+                          { ",", prompt_modifier }, [ "," ], ")" ;
+prompt_modifier         = "session", "=", session_directive
+                        | "retry_limit", "=", integer_token ;
+session_directive       = "inline" | "fork" | "new" ;
+prompt_template         = string_token | raw_string_token ;
+
+interpolation           = "${", interpolation_expression, "}" ;
+interpolation_expression
+                        = interpolation_primary,
+                          { ".", identifier_token } ;
+interpolation_primary   = string_token
+                        | raw_string_token
+                        | "None"
+                        | "Some", "(", interpolation_expression, ")"
+                        | interpolation_struct
+                        | identifier_token
+                        | "self" ;
+interpolation_struct    = qualified_path, "{",
+                          [ interpolation_field_list ], "}" ;
+interpolation_field_list
+                        = interpolation_field,
+                          { ",", interpolation_field }, [ "," ] ;
+interpolation_field     = identifier_token, ":",
+                          interpolation_expression ;
+```
+
+The parser treats the string token immediately following `prompt` as a prompt
+template and scans its decoded contents for interpolation islands. `${` opens
+an interpolation unless its `$` was consumed by `$$`. `$$` emits one literal
+`$`; therefore `$${name}` emits literal `${name}`. This contextual scan applies
+to normal and raw prompt strings. In non-prompt string expressions, `$` and
+`${...}` are ordinary string contents and are not interpolated.
+
+Interpolation permits only the restricted grammar above. In particular, it
+does not admit function or method calls, prompts, decisions, joins, mutation,
+or control flow. Nested braces belonging to a struct initializer are balanced
+before the interpolation's closing `}` is recognized. Duplicate prompt
+modifiers are analysis errors. `retry_limit` counts retries after the initial
+attempt.
+
+### 13.8 Decisions and sequential control flow
+
+```ebnf
+if_statement            = "if", decision_expression, block,
+                          { "else", "if", decision_expression, block },
+                          [ "else", block ] ;
+
+decision_expression     = decision_prompt
+                        | decision_call
+                        | "(", decision_expression, ")" ;
+decision_prompt         = "prompt", [ prompt_modifiers ], prompt_template ;
+decision_call           = qualified_path, "(", [ argument_list ], ")" ;
+
+loop_statement          = "loop", [ loop_modifiers ], block ;
+loop_modifiers          = "(", loop_modifier,
+                          { ",", loop_modifier }, [ "," ], ")" ;
+loop_modifier           = "session", "=", session_directive
+                        | "limit", "=", integer_token ;
+
+while_statement         = "while", [ condition_modifiers ],
+                          decision_expression, block ;
+until_statement         = "until", [ condition_modifiers ],
+                          decision_expression, block ;
+condition_modifiers     = "(", condition_modifier,
+                          { ",", condition_modifier }, [ "," ], ")" ;
+condition_modifier      = "session", "=", session_directive
+                        | "limit", "=", integer_token
+                        | "retry_limit", "=", integer_token ;
+```
+
+The optional modifier forms require at least one modifier when parentheses are
+present; empty `prompt()`, `loop()`, `while()`, and `until()` modifiers are not
+v1 syntax. Bare `loop` uses `session = inline` and `limit = 0`. Duplicate
+modifiers are analysis errors.
+
+A condition-level `session` or `retry_limit` establishes the inherited value
+for the decision evaluation. A modifier written directly on a final decision
+prompt is more local and overrides the inherited value. `limit` belongs only
+to the enclosing `while` or `until`. A `decision_call` MUST resolve to a
+`decision` declaration; an ordinary workflow call is not a condition.
+
+### 13.9 Parallel control flow
+
+```ebnf
+spawn_statement         = "spawn", identifier_token, result_annotation, block ;
+join_expression         = "join", "(", identifier_token,
+                          { ",", identifier_token }, [ "," ], ")" ;
+joinall_expression      = "joinall" ;
+```
+
+Every spawn has an explicit result annotation, including `-> None`. `join`
+requires at least one handle. `joinall` takes no parentheses or arguments.
+Static result typing follows Section 10: one value for one task, `List<T>` for
+multiple homogeneous results, and `Tuple<T1, ..., Tn>` for multiple
+heterogeneous results.
+
+## 14. Syntax Examples
+
+The examples in this section are illustrative complete programs or focused
+fragments. They use only v1 syntax. Comments beginning with `//` explain the
+example and are valid Gantry comments.
+
+### 14.1 Minimal package entry point
+
+```gantry
+agents { worker }
+default agent = worker;
+
+fn main() {
+    prompt "Inspect the current assignment and carry it out.";
+}
+```
+
+The omitted prompt annotation and omitted function result both mean no result.
+The explicit equivalent is:
+
+```gantry
+fn main() -> None {
+    prompt "Inspect the current assignment and carry it out." -> None;
+}
+```
+
+### 14.2 Modules, imports, and package-wide agents
+
+`main.gnt`:
+
+```gantry
+agents { researcher, writer }
+default agent = researcher;
+
+mod domain;
+mod workflows;
+
+use domain::Report;
+use workflows::produce_report;
+
+fn main() -> Report {
+    produce_report("Agent control languages")
+}
+```
+
+`domain.gnt`:
+
+```gantry
+agents { reviewer }
+
+struct Citation {
+    title: String,
+    url: String,
+}
+
+struct Report {
+    title: String,
+    summary: String,
+    caveat: Option<String> = None,
+    citations: List<Citation>,
+}
+```
+
+`workflows.gnt`:
+
+```gantry
+use domain::Report;
+
+fn produce_report(topic: String) -> Report {
+    with researcher {
+        prompt(session = new, retry_limit = 2)
+            "Research ${topic} and return a sourced report."
+            -> Report
+    }
+}
+```
+
+All three agent declarations merge into one package set. Only `main.gnt`
+declares the default agent.
+
+### 14.3 Struct construction, options, bindings, and mutation
+
+```gantry
+struct Metadata {
+    source: String,
+    note: Option<String> = None,
+}
+
+struct Draft {
+    title: String,
+    body: String,
+    metadata: Metadata,
+}
+
+fn revise(seed: Draft) -> Draft {
+    let mut draft: Draft = seed;
+    draft.body = prompt "Rewrite this body clearly: ${draft.body}" -> String;
+    draft.metadata.note = Some(
+        prompt "Give one short editorial note for ${draft}." -> String
+    );
+    draft
+}
+
+fn make_seed() -> Draft {
+    Draft {
+        title: "Initial draft",
+        body: "Unedited material",
+        metadata: Metadata {
+            source: "operator",
+            note: None,
+        },
+    }
+}
+```
+
+Assignments become visible only after the producing operation validates. The
+second assignment does not roll back the first if its prompt later fails.
+
+### 14.4 Inherent methods and lexical agent selection
+
+```gantry
+struct Report {
+    title: String,
+    summary: String,
+}
+
+impl Report {
+    fn revise(mut self, instruction: String) -> Report {
+        self.summary = with writer {
+            prompt(retry_limit = 3)
+                "Apply ${instruction} to this report: ${self}"
+                -> String
+        };
+        self
+    }
+
+    fn review(self) {
+        with reviewer {
+            prompt "Review ${self} and record any concerns.";
+        };
+    }
+}
+```
+
+`with` is an expression and may yield its block's trailing value. A nested
+`with` would override `writer` or `reviewer` only inside the nested block.
+
+### 14.5 Prompt strings, interpolation, and escaping
+
+```gantry
+fn summarize(topic: String, report: Report) -> String {
+    prompt(session = fork, retry_limit = 2)
+        "Topic: ${topic}\nReport: ${report}\nLiteral marker: $${topic}"
+        -> String
+}
+```
+
+The hook receives `topic` as plain string content and `report` as compact JSON.
+The final marker is the literal text `${topic}`. A normal multiline prompt
+preserves all indentation shown in the source:
+
+```gantry
+fn explain(report: Report) -> String {
+    prompt "Explain this report:
+        ${report}
+    Keep the answer concise." -> String
+}
+```
+
+Raw strings avoid quote and backslash escapes but still interpolate:
+
+```gantry
+fn emit_json_example(report: Report) -> String {
+    prompt r#"Describe ${report} using a JSON object such as {"status":"ok"}.
+Write the literal placeholder $${report} once."# -> String
+}
+```
+
+Operations remain visible outside interpolation. Compute a value first rather
+than attempting a call inside `${...}`:
+
+```gantry
+fn two_stage(report: Report) -> String {
+    let critique: String = prompt "Critique ${report}." -> String;
+    prompt "Rewrite ${report} using this critique: ${critique}" -> String
+}
+```
+
+### 14.6 Decision workflows and conditional chains
+
+```gantry
+decision is_complete(report: Report) {
+    let checklist: String = prompt
+        "Create a completeness checklist for ${report}."
+        -> String;
+
+    prompt "Using ${checklist}, is ${report} complete?"
+}
+
+fn route(report: Report) -> String {
+    if is_complete(report) {
+        return prompt "Return a publication message for ${report}." -> String;
+    } else if prompt(retry_limit = 1) "Should ${report} receive human review?" {
+        return prompt "Return a review-queue message for ${report}." -> String;
+    } else {
+        return prompt "Return a revision message for ${report}." -> String;
+    }
+}
+```
+
+The final prompt in `is_complete` has no `->` annotation because its position
+requires the decision schema. The `else if` hook receives the preceding
+decision and rationale in its ordered context vector. Conditional blocks do
+not themselves form value expressions in v1, so each selected branch returns
+its value explicitly.
+
+An early decision return is also valid:
+
+```gantry
+decision should_stop(report: Option<Report>) {
+    if prompt "Is ${report} absent?" {
+        return prompt "Given that the report is absent, should work stop?";
+    }
+
+    prompt "Given ${report}, should work stop now?"
+}
+```
+
+Option inspection remains agent-mediated; no source-level Boolean is created.
+
+### 14.7 General, pre-test, and post-test loops
+
+```gantry
+fn refine(mut report: Report) -> Report {
+    loop(session = inline, limit = 5) {
+        report = prompt "Improve ${report}." -> Report;
+
+        if prompt "Is ${report} ready to leave the refinement loop?" {
+            break;
+        }
+    }
+
+    report
+}
+```
+
+```gantry
+fn monitor(mut state: String) -> String {
+    while(session = fork, limit = 10, retry_limit = 2)
+        prompt "Should monitoring continue for ${state}?" {
+        state = prompt "Perform the next monitoring step for ${state}." -> String;
+
+        if prompt "Should this iteration skip remaining work?" {
+            continue;
+        }
+
+        prompt "Record monitoring observations for ${state}.";
+    }
+
+    state
+}
+```
+
+```gantry
+fn converge(mut draft: String) -> String {
+    until(session = new, limit = 4, retry_limit = 1)
+        prompt "Is ${draft} acceptable now?" {
+        draft = prompt "Revise ${draft}." -> String;
+    }
+
+    draft
+}
+```
+
+`until` runs its body before its first decision. Reaching either positive limit
+completes normally. `limit = 0` would mean unlimited execution.
+
+### 14.8 Parallel homogeneous work and `List<T>` joins
+
+```gantry
+fn parallel_research(topic: String) -> List<Report> {
+    spawn primary -> Report {
+        with researcher {
+            prompt(session = fork) "Research primary sources for ${topic}." -> Report
+        }
+    }
+
+    spawn independent -> Report {
+        with reviewer {
+            prompt(session = fork) "Independently research ${topic}." -> Report
+        }
+    }
+
+    let reports: List<Report> = join(primary, independent);
+    reports
+}
+```
+
+The returned list follows join argument order, not task completion order.
+
+### 14.9 Parallel heterogeneous work and `Tuple<...>` joins
+
+```gantry
+fn research_pair(topic: String) -> Tuple<String, Report> {
+    spawn headline -> String {
+        prompt "Write a headline for ${topic}." -> String
+    }
+
+    spawn report -> Report {
+        prompt "Produce a report about ${topic}." -> Report
+    }
+
+    let pair: Tuple<String, Report> = join(headline, report);
+    pair
+}
+```
+
+Tuple positions follow the explicit join argument order. v1 code can pass or
+return `pair`, but cannot index or destructure it.
+
+### 14.10 `joinall`, no-result tasks, and detachment
+
+```gantry
+fn collect_all(topic: String) -> List<Report> {
+    spawn first -> Report {
+        prompt "Investigate the first perspective on ${topic}." -> Report
+    }
+
+    spawn second -> Report {
+        prompt "Investigate the second perspective on ${topic}." -> Report
+    }
+
+    let reports: List<Report> = joinall;
+    reports
+}
+```
+
+```gantry
+fn audit_in_parallel(report: Report) {
+    spawn security_audit -> None {
+        prompt "Perform a security audit of ${report}.";
+    }
+
+    spawn style_audit -> None {
+        prompt "Perform a style audit of ${report}.";
+    }
+
+    joinall;
+}
+```
+
+Leaving the following inner scope without joining detaches `background` from
+that scope; the interpreter continues to own it:
+
+```gantry
+fn launch_background(report: Report) {
+    if prompt "Should a background audit be launched for ${report}?" {
+        spawn background -> None {
+            prompt "Audit ${report} in the background.";
+        }
+    }
+}
+```
+
+### 14.11 Nested modules and qualified paths
+
+```gantry
+mod quality {
+    struct Finding {
+        summary: String,
+    }
+
+    fn inspect(text: String) -> Finding {
+        prompt "Inspect ${text}." -> Finding
+    }
+}
+
+fn run_check(text: String) -> quality::Finding {
+    quality::inspect(text)
+}
+```
+
+The equivalent imported form is:
+
+```gantry
+use quality::Finding;
+use quality::inspect;
+
+fn run_imported_check(text: String) -> Finding {
+    inspect(text)
+}
+```
+
+## 15. Remaining Open Implementation Contracts
+
+The v1 source grammar is defined above. The following embedding and persistence
+contracts remain intentionally open and do not change the accepted source
+syntax:
+
 - the concrete Rust signatures and error types for the hook factory, executor,
   cancellation token, journal storage, and event sinks;
 - the canonical field-level schemas for versioned journal and event envelopes;
