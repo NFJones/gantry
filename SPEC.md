@@ -1070,9 +1070,9 @@ shown here.
     pattern matches and deep-copies the complete value into a new immutable
     lexical binding. Names introduced by one pattern MUST be unique and obey
     the no-shadowing rules in Section 4. A `let` destructuring pattern MUST be
-    irrefutable for its static type; v1 therefore permits only identifier and
-    tuple patterns, recursively, in `let`. `if let` and `match` admit refutable
-    patterns under Section 9.
+    irrefutable for its static type; v1 therefore permits only identifier
+    bindings, `_`, and tuple patterns recursively composed from those forms in
+    `let`. `if let` and `match` admit refutable patterns under Section 9.
 18. Every protocol field that identifies a Gantry type MUST use one canonical
     UTF-8 type descriptor. `Bool`, `Int`, `Float`, `String`, and `Decision` are
     encoded exactly as their source names; a declared struct or enum is encoded as its
@@ -2520,8 +2520,11 @@ shown here.
    linear-state rules apply even when the consuming operation appears inside a
    nested `with` or `session` block.
 9. A detached-task failure MUST be journaled and emitted as a failure event. It
-   MUST NOT abort foreground execution or change a top-level success,
-   regardless of whether it settles before or after that success is returned.
+   MUST NOT abort foreground execution or change an already returned foreground
+   outcome, regardless of whether it settles before or after that outcome is
+   returned. It does, however, make the eventual terminal execution category
+   `detached-task failure` unless an execution-wide runtime error takes
+   precedence under this item.
    A detached task cannot subsequently be joined because `detach` consumes its
    handle. These rules make explicit detachment a deliberate transfer of both
    lifetime and failure ownership to the interpreter instance.
@@ -3438,6 +3441,7 @@ and interpolation restrictions are semantic-analysis concerns.
 The grammar uses extended Backus-Naur form (EBNF):
 
 - quoted text is a literal terminal;
+- concatenation, written with commas, binds more tightly than alternation;
 - `A | B` selects one alternative;
 - `[ A ]` makes `A` optional;
 - `{ A }` repeats `A` zero or more times;
@@ -3492,7 +3496,8 @@ hex_digit           = decimal_digit
 
 string_token        = '"', { string_character | escape_sequence }, '"' ;
 escape_sequence     = "\\\\" | "\\\"" | "\\n" | "\\r" | "\\t" | "\\0"
-                    | "\\u{", hex_digit, { hex_digit }, "}" ;
+                    | "\\u{", hex_digit, [ hex_digit ], [ hex_digit ],
+                      [ hex_digit ], [ hex_digit ], [ hex_digit ], "}" ;
 
 block_prompt_token  = '"""', block_prompt_body, '"""' ;
 
@@ -3773,7 +3778,11 @@ statement               = let_statement
 
 let_statement           = "let", let_binding, ":",
                           value_type, "=", expression, ";" ;
-let_binding             = [ "mut" ], identifier_token | tuple_pattern ;
+let_binding             = [ "mut" ], identifier_token
+                        | let_tuple_pattern ;
+let_pattern             = "_" | identifier_token | let_tuple_pattern ;
+let_tuple_pattern       = "(", let_pattern, ",", let_pattern,
+                          { ",", let_pattern }, [ "," ], ")" ;
 assignment_statement    = assignment_target, assignment_operator,
                           expression, ";" ;
 assignment_operator     = "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
