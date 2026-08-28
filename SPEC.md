@@ -40,6 +40,7 @@
     - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
     - [14.10 `joinall()`, no-result tasks, and detachment](#1410-joinall-no-result-tasks-and-detachment)
     - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
+    - [14.12 Common invalid forms and their corrections](#1412-common-invalid-forms-and-their-corrections)
   - [15. Required Embedding Interfaces](#15-required-embedding-interfaces)
 
 ## 1. Status and Scope
@@ -667,6 +668,15 @@ document are to be interpreted as described in RFC 2119.
    workflow invokes no hook merely because of the call; evaluating its body
    MAY execute multiple explicitly written prompt or nested decision
    operations before its terminal decision is obtained.
+   The same transitive rule applies to ordinary workflow and method calls: a
+   call site is deterministic interpreter dispatch, but executing the called
+   body MAY reach any `prompt` or `decide` sites written in that body or in
+   workflows it calls. Consequently, the absence of `prompt` or `decide` on
+   the same source line as a call does not prove that the call tree is free of
+   model operations. Model work remains explicit at its declaration site and
+   observable through the workflow-call context, operation source location,
+   journal, and events. Analysis tooling SHOULD expose this transitive effect
+   to authors without representing the call itself as a model operation.
    The terminal `decide` reached through a decision-workflow call is the
    logical decision operation; the call expression and each intermediate
    decision-workflow frame are not additional operations. Its source location
@@ -736,10 +746,14 @@ document are to be interpreted as described in RFC 2119.
     or spawned block. A spawned block is therefore a return target before any
     workflow that lexically encloses the `spawn`. `break` and `continue` target
     the nearest enclosing loop even when they occur inside a nested `with` or
-    `session` block, but they MUST NOT cross a spawned-block boundary. A `with` block
-    changes agent selection only, and a `session` block changes the active
-    logical session only. Neither context intercepts or retargets control
-    transfer.
+    `session` block, but they MUST NOT cross a spawned-block boundary. An
+    ordinary value-producing or statement-only `with` block changes agent
+    selection only, and the corresponding `session` block changes the active
+    logical session only; neither intercepts or retargets control transfer.
+    Decision-valued `with` and `session` blocks are the deliberate exception:
+    Section 9 makes them boundaries for nonlocal `break` and `continue` and
+    restricts `return` because they execute as part of a condition rather than
+    as an ordinary workflow block.
 11. Except for explicitly parallel spawned blocks, expression evaluation MUST
     be deterministic and left to right. A workflow call evaluates its callee
     and then its arguments in source order; a method call evaluates its
@@ -1476,6 +1490,16 @@ document are to be interpreted as described in RFC 2119.
     that every reachable explicit `return` in that workflow returns a decision
     expression. A no-result `return;`, an ordinary value return, or fallthrough
     from a decision workflow is an analysis error.
+    A decision-valued `with` or `session` block creates a control-transfer
+    boundary for `break` and `continue`: either keyword MAY target only a loop
+    declared inside that decision block and MUST NOT target a loop surrounding
+    the condition that contains the block. `return` inside such a block is
+    valid only when the block is lexically inside a decision workflow, in
+    which case it targets that workflow and remains subject to the decision-
+    return rules above. A decision-valued block used directly as a condition
+    in an ordinary function, method, or spawned block therefore MUST NOT
+    contain `return`. These restrictions keep evaluating a condition from
+    silently transferring control out of its surrounding workflow or loop.
 12. Static control-flow analysis MUST treat every agent decision as capable of
     producing either `true` or `false`, independently of its prompt text,
     previous outcomes, rationale, selected agent, or session. Analysis MUST
@@ -3573,6 +3597,80 @@ fn run_imported_check(input: Input) -> Finding {
     inspect(input)
 }
 ```
+
+### 14.12 Common invalid forms and their corrections
+
+The following non-normative examples collect source shapes that can look
+plausible to a human or model author but are intentionally invalid in v1.
+Keeping these boundaries visible is part of Gantry's clean-syntax goal.
+
+An interpolation cannot hide another model-backed workflow call:
+
+```gantry
+// Invalid: workflow calls are not permitted inside interpolation.
+prompt "Rewrite this critique: ${make_critique(report)}" -> Report
+
+// Valid: operation order is explicit in separate source expressions.
+let critique: String = make_critique(report);
+prompt "Rewrite this critique: ${critique}" -> Report
+```
+
+An unannotated prompt has no source value, and `decide` has an
+interpreter-only result usable only by decision control flow:
+
+```gantry
+// Invalid: the prompt returns no source value.
+let summary: String = prompt "Summarize the report.";
+
+// Valid: the result contract is visible.
+let summary: String = prompt "Summarize the report." -> String;
+
+// Invalid: a decision cannot be bound as a source Boolean or other value.
+let answer: String = decide "Is the report complete?";
+
+// Valid: the decision directly controls a branch.
+if decide "Is the report complete?" {
+    prompt "Publish the report.";
+}
+```
+
+Task handles are linear ownership markers rather than ordinary values. Every
+normal path leaving their scope must visibly join or detach them:
+
+```gantry
+// Invalid: `audit` remains attached when the function returns.
+fn start_invalid(report: Report) {
+    spawn audit -> None {
+        prompt "Audit ${report}.";
+    }
+}
+
+// Valid: background ownership is transferred explicitly.
+fn start_background(report: Report) {
+    spawn audit -> None {
+        prompt "Audit ${report}.";
+    }
+    detach(audit);
+}
+```
+
+`Option<T>` may be passed to an agent decision but cannot be inspected through
+deterministic Boolean or pattern syntax in v1:
+
+```gantry
+// Invalid v1 syntax: `if let` is intentionally absent.
+if let Some(report) = maybe_report {
+    prompt "Publish ${report}.";
+}
+
+// Valid: semantic inspection is model-backed and visible.
+if decide "Should this optional report be published? ${maybe_report}" {
+    prompt "Handle publication for ${maybe_report}.";
+}
+```
+
+These invalid examples are explanatory only; the normative grammar and
+semantic requirements in Sections 5, 6, 9, 10, and 13 determine rejection.
 
 ## 15. Required Embedding Interfaces
 
