@@ -2843,13 +2843,16 @@ operation identity, failure categories, and propagation.
    the explicit operation inputs exactly.
 
    An `action` body MUST instead contain the action's canonical item path,
-   canonical signature, declared recovery class, and stable operation ID; the
-   action-mapping revision active for the dispatch; and an ordered argument
+   canonical signature, and declared recovery class; the action-mapping
+   revision active for the dispatch; and an ordered argument
    vector containing each parameter name, canonical static-type descriptor,
    and RFC 8785 canonical
    strict-JSON value. It MUST NOT contain a selected agent, prompt template,
    interpolated prompt, named model input, or conversational-session directive.
    Lexical `with` and `session` contexts do not change an action request.
+   The action fulfiller receives the stable operation ID from the common
+   header; the action body MUST NOT duplicate it. This single authoritative
+   field avoids conflicting identities within one request.
    Source locations remain required in diagnostics, journals, and protected
    observability records. They identify package-relative UTF-8 files and zero-
    based, end-exclusive byte spans into the immutable source snapshot, but they
@@ -3356,7 +3359,7 @@ operation modifiers defined in Sections 6 and 13.
    exactly
    `{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991}`.
    `Float` produces exactly
-   `{"type":"number","minimum":-1.7976931348623157e308,"maximum":1.7976931348623157e308}`.
+   `{"type":"number","minimum":-1.7976931348623157e+308,"maximum":1.7976931348623157e+308}`.
    These `Float` schema bounds are necessary but not sufficient: Gantry MUST
    additionally perform the finite-binary64 parsing and normalization checks
    in item 2. `String` produces exactly `{"type":"string"}`.
@@ -3460,7 +3463,7 @@ operation modifiers defined in Sections 6 and 13.
    operation, not a reevaluation of the source expression. Gantry MUST reuse
    the selected agent, logical session, authored template, interpolated
    operation-specific request body, expected type and schema, base guidance,
-   source location, and canonical transcript from the initial dispatch.
+   and canonical transcript from the initial dispatch.
    For a prompt or decide operation this includes the logical agent, session,
    canonical transcript, template, interpolation arguments, and named inputs;
    for an action it includes its canonical path, signature, recovery class,
@@ -3476,7 +3479,10 @@ operation modifiers defined in Sections 6 and 13.
    preceding dispatch's mapping revision. This rule keeps retries
    understandable as repairs of one visible operation rather than hidden
    additional program evaluations while preserving the explicit mapping-
-   replacement contract for resumed work.
+   replacement contract for resumed work. Gantry MUST retain the original
+   source location separately for diagnostics, journaling, and protected
+   observability across every retry, but Section 7 prohibits placing that
+   location in the hook request or semantic fulfillment input.
 <a id="GNT-8.10"></a>
 
 10. Interpreter configuration supplies separate default retry limits for model
@@ -4613,7 +4619,12 @@ layer and its own stable event ID.
    replacement event under item 2 before work depends on the transition.
 <a id="GNT-12.2"></a>
 
-2. Each event MUST have a stable event ID and activity ID. An activity is one
+2. Each event MUST have a stable event ID and activity ID. An event ID MUST be
+   globally unique among all event occurrences that can be delivered to the
+   same sink, across executions, resumes, validation and analysis activities,
+   and shutdown invocations. Sinks therefore deduplicate on the event ID alone
+   without applying an execution-, journal-, or activity-local namespace. An
+   activity is one
    syntax-validation, semantic-analysis, execution/resume, or shutdown
    invocation. An event associated with a program execution MUST also include
    its execution ID; standalone validation, analysis, and interpreter-wide
@@ -4796,7 +4807,8 @@ layer and its own stable event ID.
 <a id="GNT-12.6"></a>
 
 6. Delivery of a journaled event is durably at least once across process
-   interruption and resume. Sinks MUST deduplicate using the stable event ID.
+   interruption and resume. Sinks MUST deduplicate using the globally scoped
+   stable event ID defined in item 2.
    For a standalone validation or analysis activity without a journal, Gantry
    MUST apply the configured delivery attempts while that activity remains
    alive, but process interruption MAY lose an unsettled event and v1 provides
@@ -5122,8 +5134,9 @@ The exact one-character token `_` is reserved and is not an
 precedence over `identifier_token`, so a reserved word is never emitted as an
 identifier. Source MUST be valid UTF-8. One UTF-8
 byte-order mark MAY appear only as the first decoded scalar of a source file
-and is ignored; U+FEFF in any other source position is not whitespace and is a
-syntax error. An identifier MUST NOT equal a reserved word.
+and is ignored; U+FEFF in any other source position, including inside an
+ordinary string, raw string, or block prompt, is a syntax error. An identifier
+MUST NOT equal a reserved word.
 
 Identifiers use the UAX #31 default identifier profile for Unicode 16.0.0,
 narrowed by NFC and the grammar above. An identifier MUST NOT contain a
@@ -5193,8 +5206,10 @@ delimiter, or fixed multicharacter terminal such as `::` or `->`. Maximal munch 
 requires trivia between a reserved word and an immediately following
 identifier character when they are intended as separate tokens.
 
-`string_character` is any Unicode scalar value other than `"` or `\`; newline
-characters are included. `block_prompt_body` uses the same escape sequences as
+`string_character` is any Unicode scalar value other than `"`, `\`, or
+U+FEFF; newline characters are included. `block_prompt_body` and
+`raw_string_body` likewise exclude U+FEFF under the file-wide rule above.
+`block_prompt_body` uses the same escape sequences as
 an ordinary string. While scanning it, a backslash followed by a valid escape
 suffix consumes the complete escape sequence before delimiter recognition.
 Otherwise, the first unconsumed run beginning with three consecutive `"`
@@ -7002,9 +7017,14 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    the ID to an integration-owned conversational context whose semantic content
    matches the canonical transcript. Provider handles and lookup material are
    opaque and are not serialized; the canonical transcript is Gantry state and
-   is serialized. When the specification is absent, Gantry creates the fresh
-   empty root session required by Section 7. Resume MUST restore the journaled
-   root-session identity and transcript and MUST NOT accept a replacement.
+   is serialized. Opaque lookup material is an initial-resolution hint only.
+   An integration that accepts an embedder-supplied root MUST bind its
+   integration-side context to the durable logical session ID and MUST be able
+   to resolve that context on resume from the journaled session descriptor
+   without the opaque hint. When the specification is absent, Gantry creates
+   the fresh empty root session required by Section 7. Resume MUST restore the
+   journaled root-session identity and transcript and MUST NOT accept a
+   replacement or new opaque lookup material.
    Failure to resolve an embedder-supplied root
    session is an integration-preflight start failure for a new execution;
    failure to resolve any required journaled session is a nonterminal resume-
@@ -7021,8 +7041,12 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    That descriptor contains the execution candidate's root logical session ID,
    `embedder-supplied` provenance, normalized canonical transcript, and the
    same optional opaque integration lookup material from `root_session`.
-   Omitted lookup material is represented explicitly as absent; an integration
-   that requires it MUST return unresolved rather than infer or fabricate it.
+   Omitted lookup material is represented explicitly as absent. This field is
+   always absent from a resume descriptor; resume resolution uses only the
+   journaled logical session ID, canonical transcript, parent identity, and
+   creation provenance. An integration that cannot later resolve an accepted
+   root from those durable fields MUST reject it as unresolved during new-
+   execution preflight rather than create a non-resumable durable execution.
    Resolution MUST be idempotent, MUST return a structured resolved or
    unresolved result,
    and MUST reattach a context with the same semantic transcript rather than
@@ -7213,14 +7237,28 @@ durable-runtime profile. Journal storage asynchronously provides durable-prefix
    contract. Every commit MUST be associated with the current opaque ownership
    token so a superseded process cannot advance the journal. A batch contains
    one or more unfinalized versioned logical evidence bodies without evidence
-   IDs or sequence numbers. Commit atomically assigns those fields, stores the
-   finalized immutable envelopes, and returns a receipt containing the assigned
-   stable evidence IDs and contiguous sequence range from the per-journal
-   linearizable ordering. A read returns those finalized immutable envelopes
-   in sequence order together with the committed-through sequence and supports
-   continuation after a supplied sequence. Owner release invalidates the
-   supplied fencing token atomically and MUST NOT commit, update, or delete
-   logical evidence.
+   IDs or sequence numbers and MAY contain protected payload entries. Each
+   protected payload entry contains a caller-assigned stable reference key
+   unique within the journal, its protected-data class, and its exact bytes.
+   A logical evidence body in the same or a later batch refers to that key.
+   Commit MUST reject a duplicate key with different class or bytes and MUST
+   atomically store every new payload before any reference to it becomes
+   visible. Repeating the same key, class, and bytes is idempotent.
+   Commit atomically assigns evidence IDs and sequence numbers, stores the
+   finalized immutable envelopes and payload entries, and returns a receipt
+   containing the assigned stable evidence IDs and contiguous sequence range
+   from the per-journal linearizable ordering. A read returns those finalized
+   immutable envelopes in sequence order together with the committed-through
+   sequence and supports continuation after a supplied sequence. Journal
+   storage MUST also resolve a protected payload by journal ID and stable
+   reference key for Gantry's capability-filtered event delivery. Resolution
+   returns the exact stored class and bytes or a structured missing-payload
+   error; a missing payload referenced by retained evidence is malformed
+   durable history. Compaction or deletion MUST retain a payload while any
+   retained evidence refers to it or Section 12 still requires it for an
+   unsettled delivery obligation. Owner release invalidates the supplied
+   fencing token atomically and MUST NOT commit, update, or delete logical
+   evidence or protected payloads.
    Storage errors and malformed or noncontiguous durable histories are never
    retried as model-output failures and MUST surface as journal failures.
    Sections 11 and 15.1 classify them as start or resume-start failures before
@@ -7302,9 +7340,13 @@ Interpreter configuration MUST include the default model-output
 All public protocol envelopes MUST carry a major and minor version. A major
    mismatch is incompatible and MUST be rejected. Every protocol definition
    MUST identify which fields are required and which are optional. An
-   implementation MAY accept a newer minor version only when every unknown
-   field is marked optional by that version's protocol definition and ignoring
-   it does not change the meaning of known fields. Unknown required fields and unknown enum variants MUST be rejected.
+   implementation MAY accept a newer minor version only after selecting the
+   published protocol definition for that exact major and minor version and
+   determining from that definition that every unknown field is optional and
+   ignoring it does not change the meaning of known fields. A receiver without
+   that exact definition MUST reject the newer minor version; an instance
+   cannot self-attest that its unknown fields are optional. Unknown required
+   fields and unknown enum variants MUST be rejected.
 
 The v1 publication MUST provide canonical JSON Schemas and RFC 8785 golden
 encodings for hook requests/outcomes, canonical transcripts, events,
@@ -7324,11 +7366,14 @@ one corpus test and publishes the results.
 
 Integration-provided hook factories, executor adapters, journal stores, and
    event sinks MUST be `Send + Sync` and safe for Gantry to access from its
-   multithreaded tasks. An individual `OperationHook` MUST be `Send` but need
-   not be `Sync`, because Gantry owns it within one task and invokes it only
-   serially. Futures returned by these interfaces MUST be `Send` for the
-   lifetime of their borrows. Gantry MUST package all borrowed state into owned
-   task state before submitting a `Send + 'static` future to the executor.
+   multithreaded tasks. This is a baseline requirement of every Rust embedding-
+   profile implementation, including one that embeds only the sequential
+   evaluator profile; it is not a separate unnamed conformance profile. An
+   individual `OperationHook` MUST be `Send` but need not be `Sync`, because
+   Gantry owns it within one task and invokes it only serially. Futures returned
+   by these interfaces MUST be `Send` for the lifetime of their borrows. Gantry
+   MUST package all borrowed state into owned task state before submitting a
+   `Send + 'static` future to the executor.
 ### 15.10 Protected data
 
 <a id="GNT-15.10"></a>
