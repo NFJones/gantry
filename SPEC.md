@@ -558,9 +558,16 @@ document are to be interpreted as described in RFC 2119.
    changing it affects scheduling only and MUST NOT alter language results,
    dynamic identities, journal state, or retry accounting. Recursion MUST use
    interpreter-managed frames rather than rely on unbounded native Rust stack
-   growth. Exhaustion of a configured interpreter resource limit MUST surface
-   as a structured deterministic-evaluation runtime error, never a panic or
-   silent process termination.
+   growth. Each task MUST enforce the configured
+   `maximum_workflow_call_depth`: the root `main` frame counts as depth one,
+   and entering a function, method, or decision-workflow frame increases the
+   active task's depth by one. A spawned block is a task body rather than a
+   workflow frame; its first workflow call has depth one. Gantry MUST fail with
+   a `workflow-call-depth-limit` deterministic-evaluation runtime error before
+   entering a frame that would exceed the limit. Exhaustion of this or another
+   configured interpreter resource limit MUST surface as a structured
+   deterministic-evaluation runtime error, never a panic or silent process
+   termination.
 8. Gantry execution MUST be serializable and resumable. Gantry MUST provide a
    journal, or an equivalent durable execution record, sufficient to continue
    an interrupted execution from its recorded state. Section 11 defines the
@@ -2211,6 +2218,13 @@ document are to be interpreted as described in RFC 2119.
    a statement `match` requires statement-only arms. Pattern bindings are deep
    copies scoped to their arm.
 
+   An effect-only `match` SHOULD use the semicolon-free statement form in
+   Section 13.6. Every arm of that form is a braced statement-only block, so a
+   human or model reader can distinguish it from a value-producing `match`
+   without inferring whether a result is silently discarded. A value-producing
+   `match` remains an expression and MUST use the ordinary expression-statement
+   semicolon when its result is intentionally discarded.
+
    `==` and `!=` are ordinary `Bool`-producing expressions. Both operands MUST
    have exactly the same equatable first-class type and are evaluated once from
    left to right. Equality is exact deep structural equality over normalized
@@ -2297,8 +2311,17 @@ document are to be interpreted as described in RFC 2119.
    visible. A child may operate only on handles created by spawns that the child
    itself executes. This ownership rule prevents cross-task races over linear
    handles and keeps every join or detach visibly controlled by the task that
-   created the work. Before submitting the child to the executor or invoking
-   its `HookFactory`, Gantry MUST append and flush a task-state record containing
+   created the work. One execution MUST create no more than the configured
+   `maximum_tasks_per_execution`, counting the root task and every distinct
+   child task occurrence durably created during that execution, including
+   children that have already settled. This cumulative definition is
+   independent of executor timing and is recoverable from the journal. Gantry
+   MUST fail the spawning task with a `task-count-limit` deterministic-
+   evaluation runtime error before creating a child whose occurrence would
+   exceed the limit. No task identity, session, hook, task-state record, or
+   executor submission is created for that rejected child. Before submitting
+   an admitted child to the executor or invoking its `HookFactory`, Gantry MUST
+   append and flush a task-state record containing
    the child's stable task identity, parent identity, source spawn occurrence,
    copied captures, inherited agent selection, and forked-session identity. The
    record MUST also contain the immutable structural-context ancestry captured
@@ -2865,6 +2888,10 @@ document are to be interpreted as described in RFC 2119.
         "maximum_string_scalars": "1048576",
         "maximum_list_items": "65536"
       },
+      "interpreter": {
+        "maximum_workflow_call_depth": "1024",
+        "maximum_tasks_per_execution": "65536"
+      },
       "required_event_sinks": [
         {
           "id": "stable-sink-id",
@@ -2892,12 +2919,16 @@ document are to be interpreted as described in RFC 2119.
     definitions. `maximum_string_scalars` limits each normalized or computed
     String by Unicode-scalar count, and
     `maximum_list_items` limits each normalized or computed List by item count.
-    All six limits MUST be positive. The byte, nesting, and node limits MUST be
-    no greater than `2^63 - 1`; the String and List limits MUST be no greater
-    than Gantry's maximum `Int`, `9007199254740991`, because `String.len()` and
-    `List<T>.len()` return `Int`. They are checked at their applicable entry,
-    operation, construction, parsing, resume, and deterministic-evaluation
-    boundaries. `model_retry_limit`
+    `maximum_workflow_call_depth` is the per-task active-frame limit defined in
+    Section 3, and `maximum_tasks_per_execution` is the cumulative task limit
+    defined in Section 10. All eight limits MUST be positive. The byte,
+    nesting, node, workflow-depth, and task-count limits MUST be no greater
+    than `2^63 - 1`; the String and List limits MUST be no greater than
+    Gantry's maximum `Int`, `9007199254740991`, because `String.len()` and
+    `List<T>.len()` return `Int`. The displayed workflow-depth and task-count
+    values are the v1 defaults. Every limit is checked at the applicable
+    entry, operation, construction, parsing, task-creation, frame-entry,
+    resume, or deterministic-evaluation boundary. `model_retry_limit`
     applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
     retries after the initial attempt. `source_language` MUST equal the version
@@ -3428,8 +3459,12 @@ syntax error. An identifier MUST NOT equal a reserved word. Decimal directive
 integers have no sign, separator, or radix prefix.
 
 An integer literal has decimal digits with optional `_` separators only
-between digits. Its integral part is exactly `0` or begins with a nonzero
+between digits. Its semantic magnitude is the base-ten value after removing
+those separators. Its integral part is exactly `0` or begins with a nonzero
 digit; leading-zero spellings such as `00`, `01`, and `0_1` are invalid. A
+source expression such as `-0` is valid and evaluates by checked unary
+negation to `0`; this differs intentionally from `String.parse_int()`, which
+accepts only canonical input spellings and therefore rejects the text `-0`. A
 float literal has either a decimal point with at least one digit on each side
 or an exponent and follows the same integral-part rule; its exponent may have
 a leading `+` or `-`. The spellings `.5`, `1.`, `01.0`, radix-prefixed values,
@@ -3678,6 +3713,7 @@ statement               = let_statement
                         | with_statement
                         | session_statement
                         | if_statement
+                        | match_statement
                         | loop_statement
                         | while_statement
                         | until_statement ;
@@ -3784,7 +3820,11 @@ action_modifiers        = "(", "retry_limit", "=",
 match_expression        = "match", expression, "{",
                           match_arm, { ",", match_arm }, [ "," ], "}" ;
 match_arm               = pattern, "=>", match_arm_body ;
-match_arm_body          = expression | block ;
+match_arm_body          = expression | value_block ;
+match_statement         = "match", expression, "{",
+                          statement_match_arm,
+                          { ",", statement_match_arm }, [ "," ], "}" ;
+statement_match_arm     = pattern, "=>", statement_block ;
 
 pattern                 = "_"
                         | identifier_token
@@ -3852,6 +3892,15 @@ chain. To select a field, invoke a method, or project from one of their results
 without first binding it, source MUST parenthesize that expression, as in
 `(join(first, second))[0]`. This explicit grouping avoids ambiguity between
 operation result annotations and operations on the produced value.
+
+An effect-only `match` is parsed as `match_statement`: every arm body is a
+braced `statement_block`, and no semicolon follows the closing match brace. A
+value-producing match is `match_expression`; a braced arm in that form is a
+`value_block` and therefore has a trailing expression. When the complete
+value-producing match is intentionally discarded, it is followed by `;` under
+the ordinary `expression_statement` rule. The disjoint block forms prevent a
+block-shaped control construct from silently discarding a value while keeping
+the common effect-only form visually aligned with `if` and loops.
 
 Semantic analysis MUST validate every postfix step from left to right. A call
 suffix is legal only on a function or decision item, selected inherent method,
@@ -4261,6 +4310,27 @@ copies. Conditional chains may mix `if`, `else if`, and `else if let` without
 extra nesting. `if let`, `match`, Boolean algebra, and equality do not dispatch hooks;
 the visible `prompt` operations still perform the semantic classification and
 revision work.
+
+An effect-only match uses braced statement arms and no trailing semicolon:
+
+```gantry
+fn record_review_route(outcome: ReviewOutcome) {
+    match outcome {
+        ReviewOutcome::Approved(_) => {
+            prompt "Record approval.";
+        },
+        ReviewOutcome::NeedsRevision(feedback) => {
+            prompt "Record revision feedback: ${feedback}.";
+        },
+        ReviewOutcome::Cancelled => {
+            prompt "Record cancellation.";
+        },
+    }
+}
+```
+
+By contrast, the `match` in `route_review` is a value-producing expression and
+its selected arm supplies the function's `Draft` result.
 
 Numeric conversion, precedence, list length, and dynamic indexing support
 bounded deterministic traversal without hiding model work:
@@ -5105,9 +5175,10 @@ provider-specific or executor-specific types in Gantry programs:
    executor adapter, graceful-shutdown timeout, post-cancellation drain
    duration, maximum entry-input bytes, maximum hook-output bytes, maximum
    value nesting depth, maximum value nodes, maximum String scalar count,
-   maximum List item count, and the finite nonzero deterministic-transition
-   yield quantum required by Section 3. These deterministic-value limits MUST
-   satisfy Sections 5, 8, and 11. Implementations
+   maximum List item count, maximum workflow-call depth, maximum tasks per
+   execution, and the finite nonzero deterministic-transition yield quantum
+   required by Section 3. These value and interpreter limits MUST satisfy
+   Sections 3, 5, 8, 10, and 11. Implementations
    MUST accept directive integers through `2^63 - 1` and MAY reject larger
    directive tokens during analysis. First-class `Int` values used for list
    projection retain the exact range in Section 5; tuple projection requires
