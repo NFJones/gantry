@@ -366,9 +366,9 @@ selection; structs, defaults, enums, options, results, lists, and tuples;
 methods and ordinary workflows; primitive and String operations; prompts,
 decisions, actions, interpolation, named inputs, and sessions; deterministic
 pattern routing; all three loop forms; typed parallel joins, `joinall()`, and
-explicit detachment. Section 14 provides smaller canonical examples and the
-remaining lexical and error cases. The roadmap in Section 1 identifies the
-normative parts of this document.
+explicit detachment. Section 14 provides smaller canonical examples and common
+error corrections. Section 1 identifies the document's normative parts and
+the shortest reading paths for source authors and implementers.
 
 ### 1.2 Reading the surface syntax
 
@@ -475,8 +475,10 @@ valid:
 - Treat each visible integration operation as logically singular but physically
   repeatable. Validation repair and interruption recovery can dispatch the
   same operation more than once, so harness actions with external side effects
-  should use the stable operation and dispatch identities for deduplication or
-  audit whenever the integration can do so.
+  should use the stable operation ID as their deduplication key whenever the
+  integration can do so. Distinct dispatch IDs identify physical attempts for
+  audit; using a dispatch ID as the deduplication key would not suppress a
+  repeated attempt of the same logical operation.
 - Prefer one model operation per statement or trailing expression. Keep the
   `prompt` or `decide` keyword, its modifiers, template, and result annotation
   as one visibly continuous construct; do not rely on unusual line breaks to
@@ -540,7 +542,7 @@ activity throughout this specification:
   action invocation. A **model operation** is specifically a `prompt` or
   `decide`; an action is integration-backed but is not model-backed.
 - A **logical operation** is one dynamic execution of a source `prompt`,
-  terminal `decide`, or action invocation. It has one stable operation ID and
+  `decide`, or action invocation. It has one stable operation ID and
   produces at most one consumable operation result.
 - A **physical dispatch** is one invocation of `OperationHook` for a logical
   operation. Validation repair and recovery may cause several physical
@@ -1205,13 +1207,15 @@ shown here.
    operation source location, journal, and events. Analysis tooling SHOULD
    expose this transitive effect to authors without representing the call
    itself as an integration operation.
-   The terminal `decide` reached through a decision-workflow call is the
-   logical decision operation; the call expression and each intermediate
-   decision-workflow frame are not additional operations. Its source location
-   and static operation site are those of that executed `decide`, while its
-   dynamic identity also records the complete workflow-call path that reached
-   it. This rule keeps operation counts, hook requests, journals, and events
-   aligned with the model-backed sites visible in source.
+   Each `decide` executed through a decision-workflow call is its own logical
+   decision operation; the call expression and each intermediate decision-
+   workflow frame are not additional operations. Its source location and
+   static operation site are those of the executed `decide`, while its dynamic
+   identity also records the complete workflow-call path that reached it. A
+   decision workflow may instead return a previously obtained `Decision`;
+   returning or forwarding that value creates no new operation. These rules
+   keep operation counts, hook requests, journals, and events aligned with the
+   model-backed sites visible in source.
    Semantic analysis MUST expose this transitive behavior without changing
    the call syntax. For every function, method, and decision workflow, the
    structured analysis result MUST contain:
@@ -1930,7 +1934,7 @@ shown here.
    is a `resource-limit` validation failure. The same depth and node-count
    definitions apply to entry input and to the JSON encoding of every source-
    constructed, deterministic, journal-restored, or normalized Gantry value.
-   For any no-result operation, the expected schema is exactly the following schema
+   For any no-result operation, the expected schema is exactly the following
    object, and the parsed value MUST be JSON `null`:
 
    ```json
