@@ -798,9 +798,13 @@ shown here.
    `None` MUST be constructible by deterministic interpreter operations.
    Gantry code MAY inspect an option through the deterministic `match` and
    `if let` forms in Section 9. An unwrap operation remains excluded.
-   `Option<Option<T>>` is excluded from v1
-   because the untagged strict-JSON encoding cannot distinguish `None` from
-   `Some(None)`.
+   An `Option<T>` whose immediate member `T` is itself an `Option<U>` is
+   excluded from v1 at every nesting depth. For example,
+   `Option<Option<String>>` and `List<Option<Option<String>>>` are invalid.
+   The untagged strict-JSON encoding cannot distinguish the outer `None` from
+   `Some(None)`. An option nested through a tagged or object-shaped member,
+   such as `Option<Result<Option<String>, E>>`, remains valid because its
+   outer presence is distinguishable on the wire.
    Every expression MUST have one statically known type. `Some(value)` has
    type `Option<T>` when `value` has type `T`. A `None` expression acquires its
    `Option<T>` type only from an expected type supplied by a binding annotation,
@@ -2553,8 +2557,11 @@ shown here.
    failure is deferred until `join`; a scoped failure is deferred until
    `joinall()`.
 8. `detach(task)` consumes one attached task handle and transfers foreground
-   ownership to the interpreter, acting on behalf of the task's originating
-   execution and journal, without waiting for it. Detaching an
+   ownership to Gantry on behalf of the task's originating execution and
+   journal, without waiting for it. That ownership is durable execution state,
+   not state tied to the lifetime of the current interpreter instance; an
+   unfinished detached task is recovered by a later execution owner under
+   Section 11. Detaching an
    already consumed handle is an analysis error. An attached, unconsumed task
    at lexical scope exit is an analysis error; v1 never detaches work
    implicitly. Detached tasks and nested spawns are permitted, and a top-level
@@ -2602,7 +2609,7 @@ shown here.
    Section 11.
    A detached task cannot subsequently be joined because `detach` consumes its
    handle. These rules make explicit detachment a deliberate transfer of both
-   lifetime and failure ownership to the interpreter instance.
+   lifetime and failure ownership to the originating execution.
    A detached-task failure MUST NOT cancel sibling detached tasks. Terminal
    execution state is determined after all detached work settles. Before the
    terminal-execution record is durable, a durably recordable execution-wide
@@ -4376,13 +4383,14 @@ join_expression         = "join", "(", identifier_token,
 joinall_expression      = "joinall", "(", ")" ;
 ```
 
-Every spawn has an explicit result annotation, including `-> None`. `join`
-requires at least one handle. `joinall()` takes no arguments.
+Every spawn has an explicit result annotation, including `-> None`. Named
+`join` requires at least one handle. `joinall()` takes no arguments; its
+statically determined member set may contain zero, one, or several handles.
 `detach` consumes exactly one attached task handle and is a statement rather
-than a value-producing expression.
-Static result typing follows Section 10: one value for one task, `List<T>` for
-multiple homogeneous results, and `Tuple<T1, ..., Tn>` for multiple
-heterogeneous results.
+than a value-producing expression. Static result typing follows Section 10:
+one value for one value-producing task, `List<T>` for multiple homogeneous
+results, and `Tuple<T1, ..., Tn>` for multiple heterogeneous results. Zero
+tasks, or one or more exclusively no-result tasks, produce no source value.
 
 ## 14. Authoring Examples and Common Errors
 
@@ -5007,7 +5015,9 @@ fn audit_selected(report: Report) {
 ```
 
 Background work is explicit. `detach(background)` consumes the scoped handle
-and transfers the task to the interpreter instance:
+and transfers the task to its originating execution. The task may outlive the
+current foreground workflow or process and remains recoverable from its
+journal until terminal execution:
 
 ```gantry
 fn launch_background(report: Report) {
