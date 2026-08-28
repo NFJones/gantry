@@ -186,6 +186,10 @@ valid:
 - Keep each `prompt` or `decide` visually prominent. Bind an intermediate
   model result before passing it to another workflow when nesting would make
   operation order difficult to scan.
+- Prefer one model operation per statement or trailing expression. Keep the
+  `prompt` or `decide` keyword, its modifiers, template, and result annotation
+  as one visibly continuous construct; do not rely on unusual line breaks to
+  make an operation resemble ordinary deterministic code.
 - Use triple-quoted block prompts for multiline instructions and ordinary or
   raw quoted prompts for short text. Keep result annotations on the same
   visual operation, even when the template spans several lines.
@@ -709,9 +713,15 @@ document are to be interpreted as described in RFC 2119.
    concurrently with itself. A spawned child receives a distinct hook instance
    if it reaches an operation. `HookFactory::create` MUST receive a
    `TaskContext` containing task, execution, and parent-task identity; the
-   task's active logical session ID; the enclosing session ID and fork
+   task's base logical session ID; the enclosing session ID and fork
    provenance when the task was spawned; and the inherited agent selection.
-   Agent selection MUST remain part of each operation
+   The base session is the root session for the root task and the automatically
+   forked child session for a spawned task. It is fixed when the task is
+   created and MUST NOT be replaced by a transient `session(...)` context that
+   happens to be active when lazy hook creation occurs. Active session and
+   agent selection remain properties of each operation request because one
+   hook instance may serve operations executed under several nested `session`
+   and `with` contexts. Agent selection MUST remain part of each operation
    request because a task can enter different lexical `with` contexts. Hook
    creation may fail but cannot decline. Failure while creating the root task's
    hook aborts the execution as a hook-creation error. Failure while creating a
@@ -1126,6 +1136,28 @@ document are to be interpreted as described in RFC 2119.
    dialect with its `$schema` URI. Recursive types MUST use `$defs` and `$ref`.
    `Option<T>` MUST be represented by a schema accepting exactly `null` or the
    schema for `T`.
+   Schema generation is part of the portable hook protocol, not an
+   implementation formatting choice. Gantry MUST serialize every generated
+   schema with RFC 8785 JSON canonicalization before placing it in a hook,
+   journal, or protected event payload. A protocol schema reference MUST be
+   the lowercase hexadecimal SHA-256 digest of those canonical bytes.
+   Implementations MUST derive equivalent types with the same structural
+   schema rules: `String` uses `{"type":"string"}`; `List<T>` uses an array
+   with the schema for `T` in `items`; tuples use the exact fixed-array form in
+   item 4; options use `anyOf` with `{"type":"null"}` first and the schema
+   for `T` second; and structs use the object rules in item 7 with properties
+   in declaration order and required-field names in declaration order.
+   Every reachable declared struct MUST have exactly one `$defs` entry. Its
+   definition key is the lowercase hexadecimal SHA-256 digest of the UTF-8
+   canonical type descriptor from Section 5, and every occurrence of that
+   struct type uses a local `$ref` to that entry. `$defs` entries are ordered
+   by their definition-key bytes before canonical serialization. The root
+   adds `$schema`, the complete reachable `$defs` object when nonempty, and
+   either its own non-struct schema keywords or a `$ref` for a struct result.
+   No implementation-specific title, description, identifier, or annotation
+   may be added to the expected protocol schema. The sole annotations are the
+   field defaults required by item 7. These rules make the expected schema and
+   its identity stable across conforming Gantry implementations.
 7. Every struct schema MUST set `additionalProperties` to `false`. Declared
    fields are required unless represented by `Option<T>`. Literal field
    defaults affect source construction; they do not make a non-optional field
@@ -1850,6 +1882,7 @@ document are to be interpreted as described in RFC 2119.
           "id": "stable-sink-id",
           "raw_output_enabled": false,
           "redaction_policy_id": "policy-id",
+          "attempt_timeout_us": "30000000",
           "retry_limit": "3",
           "backoff": {
             "initial_us": "100000",
@@ -2021,7 +2054,15 @@ document are to be interpreted as described in RFC 2119.
    does not consume that budget. The default policy is three retries and uses
    the same full-jitter exponential formula as Section 8: for one-based retry
    `r`, the ceiling is `min(100 ms * 2^(r - 1), 2 s)`, and the delay is sampled
-   uniformly from whole microseconds from zero through that ceiling.
+   uniformly from whole microseconds from zero through that ceiling. Every
+   physical delivery attempt MUST also have a finite positive attempt timeout.
+   The v1 default is 30 seconds. Gantry MUST race the sink future against that
+   timeout through the executor adapter. Expiration is a retriable delivery
+   error while retry budget remains and a terminal delivery error otherwise.
+   Gantry MUST stop polling the expired future and MAY signal a sink-specific
+   cancellation mechanism when the embedding API provides one, but it cannot
+   assume that external sink effects stopped. A later retry is therefore an
+   at-least-once delivery and retains the same stable event ID.
 
    For a resumable execution, every physical sink invocation MUST use two
    durable event-delivery state transitions. Before invoking the sink, Gantry
@@ -2049,13 +2090,13 @@ document are to be interpreted as described in RFC 2119.
 
    Each journaled event MUST freeze its delivery obligations at creation by
    recording the active sink IDs and, for each sink, its required/best-effort
-   class, raw-output permission, retry-policy revision, retry limit, initial
-   delay, cap, and jitter mode. A retry or recovery redelivery MUST use that
-   captured class and effective retry policy rather than a later interpreter
-   default. Adding a sink after an event was created MUST NOT retroactively
-   deliver the older event to that sink. Removing or replacing a sink MUST NOT
-   silently abandon an unsettled captured obligation. Before recovered
-   interpretation begins, Gantry MUST verify that every required sink named by
+   class, raw-output permission, retry-policy revision, attempt timeout, retry
+   limit, initial delay, cap, and jitter mode. A retry or recovery redelivery
+   MUST use that captured class and effective retry policy rather than a later
+   interpreter default. Adding a sink after an event was created MUST NOT
+   retroactively deliver the older event to that sink. Removing or replacing a
+   sink MUST NOT silently abandon an unsettled captured obligation. Before
+   recovered interpretation begins, Gantry MUST verify that every required sink named by
    the execution-start configuration and every unsettled required delivery
    obligation has a resolvable adapter. An unavailable required adapter is the
    nonterminal resume-start failure defined in Section 7 rather than permanent
@@ -3408,11 +3449,12 @@ provider-specific or executor-specific types in Gantry programs:
    asynchronous delivery operation receives a versioned event envelope and the
    capability-filtered referenced-payload bundle defined in Section 12, and
    returns success, a retriable error, or a terminal error. Gantry owns delivery
-   attempt IDs, retry timing, payload retention, journaling, and required-sink
-   failure semantics. The embedding API MUST expose a stable retry-policy
-   revision for each sink. Gantry journals the effective policy values with
-   each event obligation, so recovery does not depend on an embedder retaining
-   historical defaults. The embedder MUST resolve every required sink identity
+   attempt IDs, finite attempt timeouts, retry timing, payload retention,
+   journaling, and required-sink failure semantics. The embedding API MUST
+   expose a stable retry-policy revision and finite positive attempt timeout
+   for each sink. Gantry journals the effective policy values with each event
+   obligation, so recovery does not depend on an embedder retaining historical
+   defaults. The embedder MUST resolve every required sink identity
    attached to an unsettled journaled delivery obligation during resume before
    recovered interpretation begins. Failure to resolve one is the nonterminal
    resume-start failure defined in Section 7. An absent best-effort sink is
@@ -3427,14 +3469,17 @@ provider-specific or executor-specific types in Gantry programs:
    journal failure and unclean interpreter drop. Failure of this callback MUST
    be ignored after a bounded, nonblocking invocation attempt.
 7. Interpreter configuration MUST include the default agent-output retry
-   limit and backoff, event-delivery defaults, executor adapter, graceful-
-   shutdown timeout, post-cancellation drain duration, and the finite nonzero
-   deterministic-transition yield quantum required by Section 3. Implementations
+   limit and backoff, event-delivery retry and attempt-timeout defaults,
+   executor adapter, graceful-shutdown timeout, post-cancellation drain
+   duration, and the finite nonzero deterministic-transition yield quantum
+   required by Section 3. Implementations
    MUST accept directive and projection integers through `2^63 - 1` and MAY
    reject larger tokens during analysis. The v1 defaults are 30 seconds for
-   graceful shutdown and 5 seconds for post-cancellation drain. Embedders MAY
-   override both with finite nonnegative durations; zero requests immediate
-   cancellation or immediate return after cancellation, respectively.
+   each event-delivery attempt, 30 seconds for graceful shutdown, and 5 seconds
+   for post-cancellation drain. Event-delivery attempt timeouts MUST remain
+   finite and positive. Embedders MAY override shutdown and drain with finite
+   nonnegative durations; zero requests immediate cancellation or immediate
+   return after cancellation, respectively.
 8. All public protocol envelopes MUST carry a major and minor version. A major
    mismatch is incompatible and MUST be rejected. An implementation MAY accept
    a newer minor version only when it ignores unknown optional fields without
