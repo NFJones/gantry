@@ -608,11 +608,14 @@ document are to be interpreted as described in RFC 2119.
 
 1. Gantry MUST support free functions and inherent methods declared in
    Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
-   declared in the same Gantry package. Implementations for `String`,
-   `Option<T>`, `List<T>`, `Tuple<...>`, no-result `None`, or any other
-   built-in type are analysis errors. A package MAY split one struct's methods
-   across multiple `impl` blocks, subject to the package-wide duplicate-method
-   rule below. Traits are excluded from v1.
+   declared in the same Gantry package. Because the grammar accepts only a
+   qualified path after `impl`, built-in and constructed types such as
+   `String`, `Option<T>`, `List<T>`, `Tuple<...>`, and no-result `None` cannot
+   be written as `impl` targets in v1. A qualified path that resolves to a
+   function, decision, module, or other non-struct item is an analysis error.
+   A package MAY split one struct's methods across multiple `impl` blocks,
+   subject to the package-wide duplicate-method rule below. Traits are
+   excluded from v1.
 2. Methods MUST support `self` and `mut self` receivers.
 3. A method may mutate its receiver only through interpreter-executed field
    assignments in its body. For every assignment, Gantry MUST evaluate the
@@ -900,8 +903,9 @@ document are to be interpreted as described in RFC 2119.
    identify its kind, dynamic source-construct identity when applicable, and
    associated structured data. The canonical v1 context kinds and payloads
    are:
-   - `workflow-frame`: canonical workflow path, call-site location, and
-     zero-based frame occurrence within its immediate dynamic caller;
+   - `workflow-frame`: canonical workflow path, call-site location when the
+     frame was entered by a source call, and zero-based frame occurrence
+     within its immediate dynamic caller;
    - `decision-frame`: canonical decision-workflow path, call-site location,
      and zero-based frame occurrence within its immediate dynamic caller;
    - `conditional-arm`: conditional-chain dynamic identity, zero-based arm
@@ -912,6 +916,12 @@ document are to be interpreted as described in RFC 2119.
      exists; and
    - `optional-decline`: declined operation ID, selected agent, source location,
      and decline reason when a decline normalized to `None`.
+   The root `crate::main` frame has no source call site and MUST encode that
+   field as absent rather than inventing a location. It has frame occurrence
+   zero and is always the first structural context entry. Every non-root
+   workflow or decision frame MUST carry the source location of the call that
+   entered it. This exception makes the context shape complete for entry-point
+   operations without assigning a fictitious caller to `main`.
    A prospective-iteration index identifies the condition/body pair described
    by Section 9: a `while` condition and the body it admits share an index, as
    do an `until` body and its following condition. A final false `while`
@@ -1266,6 +1276,12 @@ document are to be interpreted as described in RFC 2119.
    defaults affect source construction; they do not make a non-optional field
    optional in an agent result. A schema for an optional field with a declared
    default MUST include that value through JSON Schema's `default` annotation.
+   The `default` member MUST be a direct member of that field's property schema,
+   alongside the `anyOf` member that represents `Option<T>`; it MUST NOT be
+   placed inside either the `null` or `T` branch. A non-optional field default
+   MUST NOT produce a schema annotation because that field remains required in
+   agent output. These placement rules are part of canonical schema generation
+   and therefore of the schema digest.
    Gantry MUST still perform the normalization in item 2 because the annotation
    does not itself insert a value during JSON Schema validation.
 8. v1 validation MUST check JSON shape and types. Constraints such as length,
@@ -1555,16 +1571,18 @@ document are to be interpreted as described in RFC 2119.
    expression's program point. It excludes later declarations, tasks declared
    in nested scopes, tasks owned by another Gantry task, and tasks explicitly
    detached before the join. It consumes all included handles, waits until all
-   included tasks have settled, and yields the task's declared result type
-   when exactly one included task has a non-`None` result. With two or more
-   included tasks, it yields an ordered `List<T>` in task declaration order
-   when every joined task has the same non-`None` result type. When two or more
-   joined tasks all have non-`None` result types that are not exactly equal, it
-   yields a positional tuple in task declaration order. Otherwise it is a
-   waiting statement that discards
-   successful outputs and has no result. In particular, if any included task
-   has no result, the complete `joinall()` has no result. With zero included
-   tasks, `joinall()` is likewise a no-result no-op. Semantic analysis MUST
+   included tasks have settled, and yields one included task's declared result
+   type when exactly one task is included and that task has a non-`None`
+   result. With two or more included tasks, every task MUST either have a
+   non-`None` result or every task MUST have no result. When all have non-`None`
+   results, `joinall()` yields an ordered `List<T>` in task declaration order
+   if the result types are exactly equal, and otherwise yields a positional
+   tuple in task declaration order. When every included task has no result,
+   `joinall()` is a waiting statement with no result. Mixing value-producing
+   and no-result tasks in one `joinall()` is an analysis error; Gantry MUST NOT
+   silently discard the value-producing results merely because another task
+   has no result. With zero included tasks, `joinall()` is a no-result no-op.
+   Semantic analysis MUST
    determine the included handle set and resulting type at that program point;
    a no-result `joinall()` cannot be bound or used as a trailing expression.
    `joinall()` MUST NOT stop waiting merely because one task fails.
@@ -1678,7 +1696,12 @@ document are to be interpreted as described in RFC 2119.
     cancellation to all remaining work, abort tasks that do not finish within
     a bounded drain period, flush journal and required event state, and return
     a shutdown report covering every execution and detached task that was
-    active when shutdown began. An interpreter cannot be reused after shutdown
+    active when shutdown began. After that report's task and journal content is
+    fixed, and while the executor adapter and event sinks remain available,
+    Gantry MUST create exactly one final interpreter-wide `shutdown` event and
+    satisfy the required-sink barrier in Section 12. A delivery-barrier failure
+    is reported separately from the task and execution outcomes already fixed
+    in the shutdown report. An interpreter cannot be reused after shutdown
     begins. Embedders MUST complete shutdown before dropping the interpreter.
 13. Because Rust destruction cannot await, dropping an interpreter without
     shutdown MUST reject new work, signal cancellation, request abortion of
@@ -1932,7 +1955,8 @@ document are to be interpreted as described in RFC 2119.
    MUST contain the logical-session creation fields and obey the durability and
    replay rules in Section 7. An execution-state record MUST
    identify its state-transition subtype, including execution start, agent-
-   mapping revision, or best-effort-sink configuration change when applicable.
+   mapping revision, best-effort-sink configuration change, or shutdown-policy
+   revision when applicable.
    A terminal-execution record MUST use one of the terminal categories defined
    in Sections 7, 10, and 15 and MUST be the final record that changes language
    execution state. Later event-delivery records and ownership release do not
@@ -2027,10 +2051,17 @@ document are to be interpreted as described in RFC 2119.
     independently produced identities comparable rather than leaving property
     spelling or nesting to an implementation.
     Resume MUST reject changes to those fields. Executor implementation,
-    worker count, operation timeouts, shutdown timing, best-effort sinks, and
-    logical-agent-to-provider mappings MAY change on resume; such changes MUST
-    be journaled before further work and MUST obey the per-event delivery-
-    obligation rules in Section 12. Allowing agent mappings to change is
+    worker count, and integration-owned operation-timeout policy MAY change on
+    resume without changing this identity; they affect scheduling or
+    integration behavior rather than the meaning of already committed Gantry
+    state. Shutdown timing, best-effort sinks, and logical-agent-to-provider
+    mappings MAY change only after Gantry appends and flushes the applicable
+    execution-state record before further work. That record MUST contain the
+    effective graceful-shutdown and post-cancellation-drain durations when
+    shutdown timing changes; best-effort-sink and agent-mapping changes use the
+    state described in Sections 12 and 7, respectively. These changes MUST
+    obey the per-event delivery-obligation rules in Section 12. Allowing agent
+    mappings to change is
     intentional because Gantry promises resumability, not deterministic model
     replay. Source operation modifiers remain bound through the package source
     identity rather than being duplicated into this configuration identity.
@@ -2043,8 +2074,8 @@ document are to be interpreted as described in RFC 2119.
    operation dispatch, completion, and result acceptance, schema validation
    failure, retry, branch decision, spawn, join, detach, mutation,
    cancellation, foreground completion, task completion, terminal execution,
-   and failure, except that sink-delivery failures use the nonrecursive
-   representation defined in item 6. Foreground
+   shutdown, and failure, except that sink-delivery failures use the
+   nonrecursive representation defined in item 6. Foreground
    completion is distinct from terminal execution when detached tasks remain.
    This event requirement applies while the event's required durability
    boundary is available. A journal failure that makes a resumable execution's
@@ -2308,8 +2339,8 @@ document are to be interpreted as described in RFC 2119.
    workflow start, workflow end, operation dispatch, operation completion,
    operation result, schema validation failure, retry, branch decision, spawn,
    join, detach, mutation, cancellation, foreground completion, task
-   completion, terminal execution, and failure. Concrete serialization is
-   implementation-defined.
+   completion, terminal execution, shutdown, and failure. Concrete
+   serialization is implementation-defined.
 8. Event kind payloads MUST expose enough structured information for a harness
    to interpret an execution without parsing diagnostic text. The canonical
    minimum payloads are:
@@ -2353,6 +2384,10 @@ document are to be interpreted as described in RFC 2119.
    - `terminal execution`: the execution identity, completion category,
      terminal-execution record reference, and typed foreground result or
      primary failure reference when one exists; and
+   - `shutdown`: the shutdown activity identity, configured graceful and drain
+     durations, counts of executions and tasks observed at shutdown start,
+     counts completed naturally, cancelled, and aborted, required-state flush
+     status, and a shutdown-report reference; and
    - `failure`: the runtime-error category, structured causal identities, and
      redacted diagnostic details.
    An implementation MAY add optional fields under the minor-version rules,
