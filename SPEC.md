@@ -43,7 +43,7 @@
     - [14.5 Prompt strings, interpolation, and escaping](#145-prompt-strings-interpolation-and-escaping)
     - [14.6 Reusable model judgments and conditional chains](#146-reusable-model-judgments-and-conditional-chains)
     - [14.7 General, pre-test, and post-test loops](#147-general-pre-test-and-post-test-loops)
-    - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-list-joins)
+    - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-listt-joins)
     - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
     - [14.10 `joinall()`, Unit tasks, and detachment](#1410-joinall-unit-tasks-and-detachment)
     - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
@@ -388,7 +388,7 @@ most important when humans or models author Gantry source:
 | Define a workflow | `fn name(...) -> T { ... }` | Creates interpreter-managed orchestration; only explicit operations reached in its body cross the integration boundary. |
 | Request a model-produced value | `prompt "..." -> T` | Performs one logical model operation and validates its output as `T`. |
 | Request model judgment | `decide "..."` | Performs one logical model operation and returns a sealed `Decision`. |
-| Invoke a harness capability | `action path(...)` | Performs one logical action operation against a declared action signature. |
+| Invoke a harness capability | `action path(...)`, `action(retry_limit = N) path(...)` | Performs one logical action operation against a declared action signature; the optional modifier overrides validation retries. |
 | Handle an expected operation failure | `attempt prompt ...`, `attempt decide ...`, `attempt action path(...)` | Performs that one explicit operation and returns `Result<T, OperationError>` instead of propagating the operation failures that `attempt` is defined to convert. |
 | Select an agent | `with agent_name { ... }` | Sets the active agent for model operations dynamically reached from the block, including through workflow calls and spawned children, unless overridden. |
 | Select conversational continuity | `session(fork) { ... }` | Establishes the active logical session for model operations dynamically reached from the block; nested unmodified operations use it inline. |
@@ -2688,7 +2688,11 @@ defined here and in Section 7 cross the integration boundary.
     `idempotent`, or `non_idempotent`. An
     action invocation MUST use the `action` keyword and MUST resolve to one
     declared action; writing the same path as an ordinary call is an analysis
-    error rather than an implicit action dispatch. Gantry evaluates action
+    error rather than an implicit action dispatch. An invocation MAY place one
+    `retry_limit` modifier between `action` and its path, as in
+    `action(retry_limit = 2) crate::reports::load(id)`. The modifier overrides
+    the configured action retry limit under Section 8; a positive override on
+    a `non_idempotent` action is an analysis error. Gantry evaluates action
     arguments exactly once from left to right, requires exact parameter-type
     equality, captures their canonical JSON values, and then dispatches one
     logical action operation. The current Gantry task awaits that result before
@@ -6091,8 +6095,8 @@ For example, `{"topic":"task ownership"}` supplies `audience = None` and
 the declared `dry_run = false` default. Gantry, not the embedder, parses and
 normalizes those raw bytes. A `main` parameter or result containing `Decision`
 or `OperationError` at any nesting depth is invalid; authors must copy any
-data they intend to export into an ordinary declared type. Sections 4.2 and
-15.1 define this boundary normatively.
+data they intend to export into an ordinary declared type. Requirement
+`GNT-4.2` and Section 15.1 define this boundary normatively.
 
 ### 14.2 Modules, imports, and package-wide agents
 
@@ -6793,7 +6797,7 @@ action non_idempotent publish(report: Report) -> Unit;
 fn research(query: String) -> Report {
     let request: SearchRequest = SearchRequest { query };
     let search: Result<List<Source>, SearchFailure> =
-        action web_search(request);
+        action(retry_limit = 2) web_search(request);
 
     let sources: List<Source> = match search {
         Ok(value) => value,
@@ -6815,8 +6819,10 @@ fn research(query: String) -> Report {
 `using` carries ordered typed values separately from rendered prompt text.
 `${...}` remains available when exact textual placement is meaningful. The
 action declaration, action invocation, and result contract are visible in
-source; model hooks are externally read-only; state-changing capabilities require a
-declared action recovery class.
+source. The `web_search` invocation explicitly permits up to two validation
+retries after its initial dispatch; a positive override would be invalid for
+the `non_idempotent` `publish` action. Model hooks are externally read-only;
+state-changing capabilities require a declared action recovery class.
 
 ### 14.13 Explicit operation failure handling with `attempt`
 
