@@ -85,8 +85,10 @@ passages remain part of the language and operational contract.
 
 The source language is designed around three priorities, in order:
 
-1. **Visible effects.** Model and harness work is marked by `prompt`,
-   `decide`, or `action` at the source location that requests it.
+1. **Visible operation sites.** Model and harness work is marked by `prompt`,
+   `decide`, or `action` where that work is defined. An ordinary workflow call
+   may reach such a site in the called body, so this guarantee is source-local
+   visibility rather than a claim that call sites are effect-free.
 2. **Readable control flow.** Familiar blocks, typed values, pattern routing,
    loops, and structured concurrency should make execution order and ownership
    apparent without specialized notation.
@@ -297,7 +299,10 @@ most important when humans or models author Gantry source:
 These forms are intentionally visually distinct. In particular, an ordinary
 workflow call never stands in for `prompt`, `decide`, or `action`, and none of
 those three operation forms is implicit in assignment, interpolation, routing,
-or concurrency syntax.
+or concurrency syntax. This distinction does not make an ordinary workflow
+call transitively pure: its called body may execute visible operation sites.
+Authors and tools that need call-site effect information use the transitive
+workflow summaries required by Section 6.
 
 - `prompt` visibly performs model-backed work and optionally returns the type
   written after `->`. An omitted annotation or `-> None` means that the
@@ -1019,6 +1024,15 @@ this document.
    field mutation of that local value. Parameter mutability is local to the
    called workflow and never permits mutation of the caller's value.
    Assignments MUST preserve type, and v1 permits no implicit type coercion.
+   A local binding is not visible in its own initializer and becomes visible
+   only after the complete initializer has evaluated successfully and its
+   value has been copied into the binding. Tuple destructuring introduces all
+   of its bindings atomically after the initializer has completed and matched;
+   no binding from the pattern is visible while another is being introduced.
+   A `let _` statement still evaluates and type-checks its value expression
+   but then explicitly discards the resulting first-class value. Initializer
+   failure introduces no binding, although integration side effects produced
+   while evaluating the initializer are not rolled back.
 13. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
 14. Gantry MUST provide the deterministic primitive operations in this item.
@@ -2967,6 +2981,15 @@ that are immutable or durably revisable across resume.
    execution or an execution waiter can observe or depend on it. Recovery MUST
    reuse an existing transition record and MUST NOT commit or report the same
    transition a second time.
+   When another section requires a dedicated record for the same transition,
+   that dedicated record is authoritative for its subsystem state and the
+   `interpreter-transition` record MUST reference it as its causal record. For
+   example, a `task-state` record required for spawn, join, or detach owns the
+   task-lifecycle or handle-ownership transition; the corresponding
+   `interpreter-transition` record supplies the canonical causal record for
+   its event and MUST NOT encode a second, independently advancing ownership
+   transition. Both records remain required, in that order, unless a more
+   specific rule explicitly provides a different order.
 2. Gantry MUST expose a journal-storage trait through which an integration
    provides durable storage. The trait MUST expose durable record reading,
    exclusive owner acquisition and release, plus atomic append and flush
