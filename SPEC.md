@@ -50,6 +50,12 @@ Gantry is a Rust-inspired control language for coordinating model-backed
 agents. It is named for the elevated structure spanning a factory floor: a
 Gantry program directs and observes the work performed below it.
 
+Except where a passage is explicitly labeled non-normative, Sections 1
+through 13 and Section 15 are normative. Section 14 is non-normative. The
+capitalized key words defined in Section 2 identify requirement strength, but
+lowercase declarative statements in normative sections remain part of the
+language and operational contract.
+
 The source language is designed around three priorities, in order:
 
 1. **Visible effects.** Model and harness work is marked by `prompt`,
@@ -1764,10 +1770,11 @@ shown here.
    the context source the integration MUST copy. A `new` request includes the
    enclosing session only for causality and the integration MUST NOT inherit
    its conversational context. An `inline` request uses the enclosing session
-   as its active session rather than creating another ID. A root operation has
-   no enclosing session. These fields make the `new`, `fork`, and `inline`
-   obligations implementable without relying on provider-specific hidden
-   state.
+   as its active session rather than creating another ID. The root logical
+   session has no parent session; an entry-level `inline` operation uses that
+   root as both its enclosing and active session without creating another ID.
+   These fields make the `new`, `fork`, and `inline` obligations implementable
+   without relying on provider-specific hidden state.
    Entering a construct with an explicit session modifier establishes the
    active logical session for that construct's dynamic extent. Nested
    operations or constructs without their own session modifier reuse that
@@ -3564,8 +3571,17 @@ emitted as an `identifier_token`; leading `_` remains valid when at least one
 `XID_Continue` scalar follows it. Source MUST be valid UTF-8. One UTF-8
 byte-order mark MAY appear only as the first decoded scalar of a source file
 and is ignored; U+FEFF in any other source position is not whitespace and is a
-syntax error. An identifier MUST NOT equal a reserved word. Decimal directive
-integers have no sign, separator, or radix prefix.
+syntax error. An identifier MUST NOT equal a reserved word.
+
+`directive_integer_token` is a contextual classification used only where the
+grammar expects the value of `retry_limit` or loop `limit`. In those positions,
+an unsigned decimal spelling with no sign, separator, or radix prefix is
+emitted as `directive_integer_token`; the same spelling in an expression is
+emitted as `integer_literal_token`. The contextual classification is necessary
+because directive values may exceed the first-class `Int` range. It does not
+change token boundaries: the lexer still consumes the complete contiguous
+decimal digit sequence before applying the range rule for the applicable
+token class.
 
 An integer literal has decimal digits with optional `_` separators only
 between digits. Its semantic magnitude is the base-ten value after removing
