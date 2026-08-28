@@ -43,6 +43,16 @@
     - [14.12 Explicit harness actions and named prompt inputs](#1412-explicit-harness-actions-and-named-prompt-inputs)
     - [14.13 Common invalid forms and their corrections](#1413-common-invalid-forms-and-their-corrections)
   - [15. Required Embedding Interfaces](#15-required-embedding-interfaces)
+    - [15.1 Interpreter lifecycle](#151-interpreter-lifecycle)
+    - [15.2 Hooks and session integration](#152-hooks-and-session-integration)
+    - [15.3 Cancellation](#153-cancellation)
+    - [15.4 Executor services](#154-executor-services)
+    - [15.5 Journal storage](#155-journal-storage)
+    - [15.6 Event delivery](#156-event-delivery)
+    - [15.7 Configuration](#157-configuration)
+    - [15.8 Protocol versioning](#158-protocol-versioning)
+    - [15.9 Thread safety](#159-thread-safety)
+    - [15.10 Protected data](#1510-protected-data)
 
 ## 1. Status and Scope
 
@@ -1249,9 +1259,12 @@ defined here and in Section 7 cross the integration boundary.
    before the prompt result annotation. Each entry is either shorthand `name`,
    equivalent to `name: name`, or `name: expression`. Entry names MUST be
    unique. Expressions use the same deterministic, side-effect-free subset as
-   interpolation. Gantry MUST evaluate named inputs once from left to right
-   after interpolation and before dispatch. Validation retries and recovery
-   redispatches MUST reuse the captured values rather than reevaluate them.
+   interpolation. Gantry MUST first evaluate and capture interpolations in
+   source order, then evaluate and capture named inputs once from left to
+   right, and only then dispatch. If either phase fails, Gantry MUST NOT
+   evaluate entries in a later phase or dispatch the operation. Validation
+   retries and recovery redispatches MUST reuse the captured values rather
+   than reevaluate them.
 7. Template expressions MUST be interpolated before hook dispatch. To keep
    agent invocation explicit, an interpolation MAY contain only bindings,
    field paths, list or tuple projections, primitive literals, deterministic
@@ -2395,8 +2408,10 @@ the conservative static analysis required for all possible control-flow paths.
    An `else if let` scrutinee is evaluated exactly once when control reaches
    that arm, and its pattern bindings exist only in that selected arm. A newly
    evaluated `decide` expression performs a separate decide operation; a
-   reused `Decision`, `Bool` expression, or structural pattern test performs
-   no new dispatch. A later model-operation hook
+   reused `Decision`, a previously evaluated `Bool` value, or a structural
+   pattern test performs no new dispatch. Evaluating another `Bool` expression
+   may reach an explicitly written `prompt`, `action`, or workflow containing
+   an operation. A later model-operation hook
    request MUST include the outcomes of preceding arms in the same conditional
    chain through the ordered execution-context vector. Decision entries carry
    their rationales, while structural entries identify their condition kind
@@ -2407,8 +2422,9 @@ the conservative static analysis required for all possible control-flow paths.
    makes execution order visible in source. `until` MUST execute its body once
    before its first condition. Each iteration reevaluates its condition
    expression. A direct `decide` therefore dispatches on every evaluation;
-   reusing an already bound `Decision` or evaluating a `Bool` expression
-   performs no new dispatch.
+   reusing an already bound `Decision` or `Bool` value performs no new
+   dispatch. Reevaluating another `Bool` expression may reach an explicitly
+   written operation or workflow on every iteration.
 5. The general loop form is `loop(session = inline, limit = 0) { ... }`.
    `loop { ... }` is equivalent to the form with all defaults. `while`
    places parenthesized loop modifiers before its condition expression, as
@@ -2452,9 +2468,12 @@ the conservative static analysis required for all possible control-flow paths.
    or cancellation. `break` completes any loop immediately without another
    decision call.
 8. Gantry MUST support deterministic routing with `Bool` expressions, `if let`,
-   and `match`. These constructs MUST NOT invoke an operation hook unless
-   evaluation reaches an explicitly written workflow containing an operation;
-   primitive operators themselves never dispatch.
+   and `match`. Routing and primitive operators do not themselves invoke an
+   operation hook. Evaluating a condition or scrutinee MAY reach an explicitly
+   written `prompt`, `decide`, `action`, or workflow containing an operation;
+   the visible operation site retains its ordinary semantics. Authors SHOULD
+   use `decide` rather than `prompt ... -> Bool` when a condition represents
+   model judgment, so the result retains rationale and provenance.
    An `if let PATTERN = EXPRESSION` evaluates its scrutinee exactly once. A
    successful match enters the corresponding arm with fresh immutable
    bindings; a failed match proceeds to the next `else if` or `else if let`
@@ -3584,11 +3603,11 @@ an operation hook.
    unavailable returns a terminal sink error under the captured required
    policy. An absent best-effort adapter is an immediate terminal delivery
    error under its captured policy and does not block resume. Access to each
-   protected payload class at delivery time requires both the event's captured
-   permission for that class and the sink's corresponding currently enabled
-   capability. A later configuration may therefore reduce access but MUST NOT
-   retroactively broaden it. Configuration changes apply to events created
-   after the corresponding execution-state record becomes durable. For an active
+   protected payload class at delivery time is governed by the permission
+   captured in that event's obligation. Later configuration MUST NOT broaden
+   or reduce access for an existing obligation; configuration changes apply
+   only to events created after the corresponding execution-state record
+   becomes durable. For an active
    resumable execution, the required-sink identities and their identity-bound
    policy fields MUST remain exactly those in the execution-start
    configuration identity; adding, removing, or changing a required sink is a
@@ -3603,7 +3622,12 @@ an operation hook.
    alive, but process interruption MAY lose an unsettled event and v1 provides
    no recovery source from which to redeliver it. An implementation MUST NOT
    describe that weaker standalone guarantee as durable at-least-once
-   delivery. Exhaustion for a required sink MUST abort a standalone activity.
+   delivery. A shutdown event uses the same non-durable, non-resumable
+   delivery model for the lifetime of its shutdown invocation. Required-sink
+   exhaustion is reported in the shutdown result without changing task or
+   execution outcomes already fixed there; best-effort exhaustion is included
+   in that result under Section 10. Exhaustion for a required sink MUST abort
+   any other standalone activity.
    For an execution whose terminal-execution record is not yet durable, it
    MUST abort the execution as specified below. For an execution whose
    terminal-execution record is already durable, it MUST produce only the
@@ -3819,16 +3843,16 @@ missing parser productions.
 
 The lexical skip productions `whitespace`, `line_comment`, `block_comment`,
 and `trivia` describe tokenization and are intentionally not referenced from
-the parser entry production `source`. A conforming lexer removes that trivia
-between tokens under Section 13.2 before the parser applies the remaining
-productions.
+the parser entry production `module_source`. A conforming lexer removes that
+trivia between tokens under Section 13.2 before the parser applies the
+remaining productions. The lexer also consumes the one permitted initial
+byte-order mark. The `module_source` production applies independently to
+`main.gnt` and every source file selected by a `mod` declaration.
 
 ### 13.2 Lexical grammar
 
 ```ebnf
-source              = [ utf8_bom ], { item }, end_of_file ;
-
-utf8_bom            = U+FEFF ;
+module_source       = { item }, end_of_file ;
 
 whitespace          = " " | "\t" | "\r" | "\n" ;
 line_terminator     = "\r\n" | "\n" | "\r" ;
@@ -4634,9 +4658,12 @@ fn main() {
 ```
 
 The omitted prompt annotation and omitted function result both mean no result.
-The explicit equivalent is:
+The complete explicit equivalent is:
 
 ```gantry
+agents { worker }
+default agent = worker;
+
 fn main() -> None {
     prompt "Inspect the current assignment and carry it out." -> None;
 }
@@ -4717,9 +4744,9 @@ fn revise(seed: Draft) -> Draft {
     let mut draft: Draft = seed;
     draft.body = prompt "Rewrite this body clearly: ${draft.body}" -> String;
     draft.revision += 1;
-    draft.metadata.note = Some(
-        prompt "Give one short editorial note for ${draft}." -> String
-    );
+    let note: String =
+        prompt "Give one short editorial note for ${draft}." -> String;
+    draft.metadata.note = Some(note);
     draft
 }
 
@@ -5560,7 +5587,9 @@ Concrete Rust names and signatures MAY evolve during implementation, but a v1
 embedding API MUST expose the following semantic interfaces without requiring
 provider-specific or executor-specific types in Gantry programs:
 
-1. An `Interpreter` accepts a package root, an explicitly selected supported
+### 15.1 Interpreter lifecycle
+
+An `Interpreter` accepts a package root, an explicitly selected supported
    source-language version, interpreter configuration (which includes the
    executor adapter), a hook factory, journal storage, and zero or more event
    sinks. It MUST expose syntax-only validation, semantic analysis, execution,
@@ -5648,7 +5677,9 @@ provider-specific or executor-specific types in Gantry programs:
    durable terminal state after storage fails. The terminal-only categories
    are exactly `success` and `detached-task-failure`; all other durable failure
    outcomes use the applicable exact runtime-error category from Section 7.
-2. A `HookFactory` asynchronously creates an `OperationHook` for a supplied
+### 15.2 Hooks and session integration
+
+A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    task context. The factory, or a companion harness-preflight interface owned
    by the same integration, MUST also validate the complete nonempty merged
    agent-name set and every declared canonical action signature, and MUST
@@ -5710,12 +5741,16 @@ provider-specific or executor-specific types in Gantry programs:
    exhaustion MUST instead be represented as `Failed(message)`; they MUST NOT
    be encoded as synthetic malformed model output merely to enter Gantry's
    structured-output retry path.
-3. A cancellation token is cloneable, safe to observe from multiple threads,
+### 15.3 Cancellation
+
+A cancellation token is cloneable, safe to observe from multiple threads,
    and transitions monotonically from active to cancelled. Cancellation does
    not itself constitute a hook outcome; an integration that stops work after
    observing cancellation returns `Failed` or lets Gantry surface cancellation
    according to the runtime state.
-4. An executor adapter provides asynchronous task spawn, join, abort, sleep,
+### 15.4 Executor services
+
+An executor adapter provides asynchronous task spawn, join, abort, sleep,
    and explicit scheduler-yield capabilities. It MUST also provide a
    cancellation-aware race against a monotonic deadline. Completion wins when
    the raced future completes no later than the deadline; otherwise timeout
@@ -5735,7 +5770,9 @@ provider-specific or executor-specific types in Gantry programs:
    timestamp, or weaken a timeout. Selected retry delays and created event
    timestamps are persisted where Sections 8, 11, and 12 require and are not
    regenerated during recovery.
-5. Journal storage asynchronously provides durable-prefix reads, exclusive
+### 15.5 Journal storage
+
+Journal storage asynchronously provides durable-prefix reads, exclusive
    owner acquisition and release with fencing, plus atomic `append(record)` and
    `flush(sequence)` operations with the behavior in Section 11. Append and
    flush are its only record-mutation primitives. Every mutation call MUST be
@@ -5751,8 +5788,13 @@ provider-specific or executor-specific types in Gantry programs:
    supplied fencing token atomically and MUST NOT append, update, or delete a
    journal record.
    Storage errors and malformed or noncontiguous durable histories are never
-   retried as model-output failures and MUST surface as journal runtime errors.
-6. Each event sink declares a stable identity, its required/best-effort class,
+   retried as model-output failures and MUST surface as journal failures.
+   Sections 11 and 15.1 classify them as start or resume-start failures before
+   interpretation begins and as journal runtime errors afterward.
+
+### 15.6 Event delivery
+
+Each event sink declares a stable identity, its required/best-effort class,
    raw-output capability, enabled redaction policy, and retry policy. The v1
    redaction policy resolves to explicit Boolean capabilities for
    `model_result_content`, `integration_diagnostics`, and `source_snippets`;
@@ -5786,7 +5828,9 @@ provider-specific or executor-specific types in Gantry programs:
    reporting when journal-first standard events cannot be created, including
    journal failure and unclean interpreter drop. Failure of this callback MUST
    be ignored after a bounded, nonblocking invocation attempt.
-7. Interpreter configuration MUST include the default model-output
+### 15.7 Configuration
+
+Interpreter configuration MUST include the default model-output
    retry limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
    executor adapter, graceful-shutdown timeout, post-cancellation drain
@@ -5809,21 +5853,27 @@ provider-specific or executor-specific types in Gantry programs:
    deterministic-transition yield quantum counts transitions, MUST be no
    greater than `2^63 - 1`, and remains subject to the nonzero requirement in
    Section 3.
-8. All public protocol envelopes MUST carry a major and minor version. A major
+### 15.8 Protocol versioning
+
+All public protocol envelopes MUST carry a major and minor version. A major
    mismatch is incompatible and MUST be rejected. Every protocol definition
    MUST identify which fields are required and which are optional. An
    implementation MAY accept a newer minor version only when every unknown
    field is marked optional by that version's protocol definition and ignoring
    it does not change the meaning of known fields. Unknown required fields and
    unknown enum variants MUST be rejected.
-9. Integration-provided hook factories, executor adapters, journal stores, and
+### 15.9 Thread safety
+
+Integration-provided hook factories, executor adapters, journal stores, and
    event sinks MUST be `Send + Sync` and safe for Gantry to access from its
    multithreaded tasks. An individual `OperationHook` MUST be `Send` but need
    not be `Sync`, because Gantry owns it within one task and invokes it only
    serially. Futures returned by these interfaces MUST be `Send` for the
    lifetime of their borrows. Gantry MUST package all borrowed state into owned
    task state before submitting a `Send + 'static` future to the executor.
-10. Source, entry input, interpolation arguments, named inputs, action
+### 15.10 Protected data
+
+Source, entry input, interpolation arguments, named inputs, action
     arguments, rendered prompts, session identifiers, raw hook output,
     normalized values, decision rationales, decline reasons, hook-failure
     messages, journals, and protected event payloads MUST be treated as
