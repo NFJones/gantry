@@ -187,6 +187,11 @@ valid:
 - Keep each `prompt` or `decide` visually prominent. Bind an intermediate
   model result before passing it to another workflow when nesting would make
   operation order difficult to scan.
+- Treat each visible model operation as logically singular but physically
+  repeatable. Validation repair and interruption recovery can dispatch the
+  same operation more than once, so harness actions with external side effects
+  should use the stable operation and dispatch identities for deduplication or
+  audit whenever the integration can do so.
 - Prefer one model operation per statement or trailing expression. Keep the
   `prompt` or `decide` keyword, its modifiers, template, and result annotation
   as one visibly continuous construct; do not rely on unusual line breaks to
@@ -451,6 +456,46 @@ document are to be interpreted as described in RFC 2119.
     one ordinary namespace without creating a name-resolution conflict,
     although Section 1.4 recommends distinct spellings when coexistence would
     make source harder to read.
+16. Every protocol, journal, event, or diagnostic field that requires a
+    canonical item or workflow path MUST use a `crate::`-rooted path after
+    resolving `use`, `self`, and `super`. The root function `main` is therefore
+    `crate::main`; an item `inspect` in nested modules `quality::checks` is
+    `crate::quality::checks::inspect`. A free function or decision workflow
+    uses its canonical item path as its workflow path. An inherent method uses
+    `<T>::method`, where `T` is the receiver's canonical struct type descriptor
+    from Section 5, for example
+    `<crate::domain::Report>::revise`. Canonical paths MUST use exact NFC item
+    spellings and MUST NOT retain a source-level import alias or relative root.
+
+    A canonical workflow signature is one UTF-8 string constructed from that
+    path and the canonical type descriptors in Section 5. A free-function
+    signature is `fn PATH(P1,P2,...)->R`; a decision signature is
+    `decision PATH(P1,P2,...)->Decision`; and a method signature is
+    `fn METHOD_PATH(RECEIVER[,P1,P2,...])->R`. `RECEIVER` is exactly `self` or
+    `mut self`. Each non-receiver parameter descriptor is its type descriptor,
+    prefixed by `mut ` when the source parameter is mutable. `R` is the
+    declared result descriptor or `None` for no result. The encoding contains
+    no whitespace except the one space in `mut ` or `mut self`, contains no
+    parameter names, and preserves declaration order. Examples are
+    `fn crate::main(String)->crate::domain::Report`,
+    `decision crate::quality::is_complete(crate::domain::Report)->Decision`,
+    and
+    `fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report`.
+    This format is metadata rather than source syntax.
+17. Package loading MUST operate on one immutable source snapshot per dry-run,
+    analysis, new-execution, or resume activity. For each selected file, module
+    resolution, UTF-8 decoding, lexing, parsing, source spans, diagnostics, and
+    the package-source manifest in Section 11 MUST all use the same exact byte
+    buffer and package-relative path observation. An implementation MUST NOT
+    reread a selected path during one activity and combine tokens, spans, or a
+    digest from different file contents. A filesystem-backed implementation
+    MAY copy files into immutable memory as it discovers the module graph or
+    use an equivalent stable source-provider snapshot. A source change after
+    a file has entered that snapshot cannot affect the active activity; a
+    later activity observes either a complete compatible snapshot or a source
+    identity mismatch. This requirement does not promise an atomic snapshot of
+    unrelated host files, but it prevents one Gantry activity from having
+    internally inconsistent source text and identity.
 
 ## 5. Values, Bindings, and Structs
 
@@ -1916,9 +1961,9 @@ document are to be interpreted as described in RFC 2119.
     record MUST have sequence number one and MUST contain the package source
     identity, the effective-configuration identity and fields defined below,
     the selected root-session identity and provenance, the agent-mapping
-    revision from Section 7, the canonical signature of `main`, and either a
-    no-entry-input marker or the validated and normalized canonical entry value
-    with its type descriptor.
+    revision from Section 7, the canonical signature of `main` defined in
+    Section 4, and either a no-entry-input marker or the validated and
+    normalized canonical entry value with its type descriptor.
     Resume MUST verify and reuse the existing execution-start record, restore
     its entry value, and MUST NOT append a second execution-start record or
     accept replacement entry input. A mapping revision changed during resume
