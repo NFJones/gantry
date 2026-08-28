@@ -334,11 +334,14 @@ document are to be interpreted as described in RFC 2119.
 12. Module filenames and identifiers MUST be valid UTF-8 and MAY use
     `snake_case`, `camelCase`, or `PascalCase`. All source identifiers MUST be
     in Unicode Normalization Form C (NFC); an implementation MUST reject rather
-    than silently normalize a non-NFC identifier. Identifier equality and name
-    resolution MUST compare the exact NFC Unicode scalar sequence and MUST be
-    case-sensitive; implementations MUST NOT apply case folding or locale-
-    dependent comparison. Authors SHOULD use
-    `PascalCase` for struct types and `snake_case` for modules, agents,
+    than silently normalize a non-NFC identifier. Gantry v1 identifier
+    classification and normalization MUST use Unicode Standard version 15.1.0.
+    A scalar that is not `XID_Start` or `XID_Continue` in that version MUST NOT
+    become valid merely because a later Unicode release assigns it different
+    properties. Identifier equality and name resolution MUST compare the exact
+    NFC Unicode scalar sequence and MUST be case-sensitive; implementations
+    MUST NOT apply case folding or locale-dependent comparison. Authors SHOULD
+    use `PascalCase` for struct types and `snake_case` for modules, agents,
     workflows, methods, fields, parameters, bindings, and task handles. These
     case forms are readability conventions rather than analysis requirements.
     A `mod foo;` declaration MUST
@@ -815,12 +818,15 @@ document are to be interpreted as described in RFC 2119.
    `Completed` contains the agent's raw output as bytes; Gantry, not the hook,
    owns UTF-8 decoding, strict-JSON parsing, schema validation, and repair
    retries. Non-UTF-8 or malformed-JSON output is therefore a structured-output
-   validation failure rather than a transport failure. `Declined` produces
-   `None` only when the operation's expected type is `Option<T>`; for every
-   other result type, including a control decision, it fails the current
-   Gantry task. `Failed` likewise fails the current Gantry task and is not a
-   structured-output validation failure. Item 18 defines how task failure
-   propagates through foreground, attached, and detached work.
+   validation failure rather than a transport failure. A decline reason or
+   failure message MUST be a nonempty sequence of Unicode scalar values; it is
+   diagnostic integration data, not model output, and MUST follow the
+   redaction rules in Section 12. `Declined` produces `None` only when the
+   operation's expected type is `Option<T>`; for every other result type,
+   including a control decision, it fails the current Gantry task. `Failed`
+   likewise fails the current Gantry task and is not a structured-output
+   validation failure. Item 18 defines how task failure propagates through
+   foreground, attached, and detached work.
 12. Gantry MUST assign a logical session ID to each operation. Session IDs MUST
    remain stable across validation retries and resume. An integration MUST
    honor the following session directives:
@@ -1168,6 +1174,21 @@ document are to be interpreted as described in RFC 2119.
     that every reachable explicit `return` in that workflow returns a decision
     expression. A no-result `return;`, an ordinary value return, or fallthrough
     from a decision workflow is an analysis error.
+12. Static control-flow analysis MUST treat every agent decision as capable of
+    producing either `true` or `false`, independently of its prompt text,
+    previous outcomes, rationale, selected agent, or session. Analysis MUST
+    inspect both outcomes of every reachable `if`, `else if`, `while`, and
+    `until` decision; it MUST NOT assume that a model will make one branch
+    unreachable. A `while` has a possible zero-body normal path. An `until` has
+    at least one body execution before a possible normal exit. A positive loop
+    limit contributes the normal limit-exhaustion path defined in item 7,
+    whereas `loop(limit = 0)` has no implicit normal exit. A reachable `break`
+    still contributes a normal exit path from its target loop. Potential hook
+    failure, decline, cancellation, or retry exhaustion is an abnormal runtime
+    outcome and MUST NOT be used to satisfy definite-return or task-handle
+    consumption analysis. These conservative rules apply uniformly to the
+    definite-result requirements in Sections 6 and 10 and to linear task-handle
+    analysis in Section 10.
 
 ## 10. Parallel Execution
 
@@ -1556,7 +1577,10 @@ document are to be interpreted as described in RFC 2119.
    interpreter checkpoint, task state, event, event-delivery state, and
    terminal failure. Concrete serialization and Rust types are implementation-
    defined, but all required information and durability boundaries are
-   normative.
+   normative. Before append, Gantry constructs an unfinalized record body that
+   omits the record ID and sequence number. The storage append operation MUST
+   atomically assign both fields and store the resulting finalized envelope;
+   only that finalized envelope is a journal record returned by durable reads.
 10. For each new execution, after entry validation and integration preflight
     succeed but before evaluating `main`, creating a child task, or dispatching
     a hook, Gantry MUST append and flush exactly one execution-start record.
@@ -1675,15 +1699,23 @@ document are to be interpreted as described in RFC 2119.
    reconstruction of cross-task causality. Delivery retries reuse the event ID
    and use a distinct delivery-attempt ID.
    For a resumable execution, an event ID MUST identify one logical event
-   occurrence rather than one interpreter replay of that occurrence. Gantry
-   MUST journal enough event identity and causal state to recover an existing
-   event when deterministic steps are replayed after a checkpoint; it MUST NOT
-   create a new event ID for the same logical occurrence. A resume invocation
-   has its own activity ID, but recovery or continued delivery of an event
-   already in the journal retains that event's original activity ID and
-   timestamp. Events for genuinely new work performed by the resume use the
-   resume activity ID. These rules make sink deduplication effective across
-   both delivery retry and interpreter recovery.
+   occurrence rather than one interpreter replay of that occurrence. A durable
+   event record is the point at which that protocol-visible occurrence is
+   created. Gantry MUST reuse its event ID, original activity ID, and timestamp
+   whenever deterministic replay encounters an event already present in the
+   authoritative journal prefix; it MUST NOT append a second event for that
+   occurrence. If a causal interpreter transition is durable but interruption
+   occurred before its required event record became durable, no event from that
+   transition could have been delivered under item 3. Recovery MUST create
+   exactly one replacement event before performing work that depends on that
+   transition. The replacement uses the resume activity ID and its actual
+   creation timestamp, identifies the durable causal record, and thereafter has
+   the same stable recovery and deduplication behavior as any other event. An
+   unflushed event record is not authoritative and MUST NOT reserve an event ID
+   or timestamp across recovery. Events for genuinely new work performed by the
+   resume likewise use the resume activity ID. These rules make sink
+   deduplication effective without requiring recovery to reproduce metadata that
+   was never durable or externally visible.
 3. Events from a resumable execution MUST be durably journaled before their
    first delivery. Parse and analysis events produced without a resumable
    execution MAY be delivered without a journal. Event delivery MAY use
@@ -2944,11 +2976,14 @@ provider-specific or executor-specific types in Gantry programs:
    `flush(sequence)` operations with the behavior in Section 11. Append and
    flush are its only record-mutation primitives. Every mutation call MUST be
    associated with the current opaque ownership token so a superseded process
-   cannot advance the journal. An append
-   returns the stable record ID and next contiguous sequence number assigned to
-   the record through a per-journal linearizable ordering. A read returns
-   immutable versioned records in sequence order together with the durable-
-   through sequence and supports continuation after a supplied sequence.
+    cannot advance the journal. The `record` accepted by `append` is an
+    unfinalized versioned body without a record ID or sequence number. Append
+    atomically assigns both fields, stores the finalized immutable envelope, and
+    returns an append receipt containing the assigned stable record ID and next
+    contiguous sequence number through a per-journal linearizable ordering. A
+    read returns those finalized immutable versioned records in sequence order
+    together with the durable-through sequence and supports continuation after
+    a supplied sequence.
    Storage errors and malformed or noncontiguous durable histories are never
    retried as model-output failures and MUST surface as journal runtime errors.
 6. Each event sink declares a stable identity, its required/best-effort class,
