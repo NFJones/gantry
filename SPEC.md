@@ -142,8 +142,12 @@ conformance profiles:
   generates canonical schemas, reports inferred effects, and enforces control-
   flow and task-ownership rules.
 - An **evaluator-profile implementation** additionally executes source-valid
-  packages according to the abstract machine in Section 3, but need not
-  persist or resume executions.
+  packages when `main`'s transitive inferred effect set omits `spawn`, `join`,
+  and `background`, according to the sequential subset of the abstract machine
+  in Section 3. It need not implement spawned tasks, persist, or resume
+  executions. A package whose `main` effect set includes any of those three
+  effects remains source-valid but is outside this profile's execution
+  capability; unused workflows do not restrict execution capability.
 - A **concurrent-evaluator-profile implementation** additionally implements
   tasks, cancellation, joins, and background ownership transfer under Section
   10.
@@ -192,9 +196,10 @@ governs. A conformance manifest MUST map every requirement identifier to each
 applicable claimed profile, or record a profile-based `not-applicable`
 justification.
 
-Every normative requirement has a stable identifier formed from its section
-and item, with an optional local label:
-`GNT-<section>.<item>[-<label>]`. Published editions MUST preserve an
+Every normative requirement has a stable identifier in one of two forms:
+`GNT-<section>.<item>[-<label>]` for prose blocks, or
+`GNT-3-<family>-<label>` for named formal rules, where `<family>` is `F`, `T`,
+`M`, or `D`. Published editions MUST preserve an
 identifier's meaning within one source-language
 major version and MUST NOT reuse a retired identifier. The machine-readable
 conformance manifest required by Section 15 maps each claimed profile and
@@ -1530,7 +1535,9 @@ of that pattern's bindings, and starts that arm. Exhaustiveness guarantees one
 arm. Loop control lowers as follows: `while` tests before each body; `until`
 runs the body before each test; `loop` repeats after each normal body; and
 `for` evaluates and copies its list once, then installs one copied item at each
-ascending index. `continue` reaches the applicable test or next item and
+ascending index. An `until` post-test whose Boolean value is `true` exits the
+loop normally; `false` proceeds toward the next body entry. `continue` reaches
+the applicable test or next item and
 `break` exits. A source limit is checked before body entry. Cancellation and
 the loop-entry budget are checked at every condition, item binding, body
 entry, and back edge. Successful selection emits `deterministic`; exhausted
@@ -1569,7 +1576,16 @@ failed(request,error)
 After all explicit inputs are values, `M-Prepare` checks cancellation and the
 operation budget, captures and copies the complete semantic request, derives
 `o` and fresh `q`, decrements that budget, inserts `prepared`, and emits
-`operation-prepared`. A hook may be invoked only for this state. For exactly
+`operation-prepared`. For an operation-local `session = fork` or `session =
+new` modifier, the same transition first allocates and records one stable
+logical-session ID and its transcript basis, then places that ID and the
+complete `session-use = create` data in the captured request. The task's
+enclosing active session remains unchanged. Validation retries and recovery
+redispatches reuse the allocated session ID, transcript basis, and creation
+data; they MUST NOT allocate another session. The session record and prepared
+request must satisfy the Section 3.6 commit rule before dispatch, and the
+integration establishes the session through the idempotent request boundary
+in Sections 7 and 15.2. A hook may be invoked only for this state. For exactly
 one matching prepared dispatch, `M-Outcome` accepts one well-formed host
 outcome from Section 7, changes the state to `outcome`, and emits
 `operation-outcome`. No other rule introduces a host outcome.
@@ -2452,6 +2468,16 @@ defined here and in Section 7 cross the integration boundary.
    enclosing workflow even though the child task executes it. The transitive
    flags include both those direct sites and sites reachable through direct
    call edges.
+   Direct syntax contributes effects as follows: `prompt`, `decide`, and an
+   action invocation contribute their correspondingly named effects; `spawn`
+   contributes `spawn`; both `join(...)` and `joinall()` contribute `join`;
+   `detach(...)` contributes `background`; every explicit lexical, loop, or
+   operation-local session modifier contributes `session`; and `attempt`
+   contributes `attempt` in addition to the wrapped operation's effect.
+   Runtime-created root and spawned-task sessions do not independently add a
+   source effect. One source site MAY therefore contribute more than one
+   effect. Canonical effect order is the order shown in the effect domain in
+   Section 3.1.
    The transitive effect set MUST be the least fixed point of the package call
    graph, including recursion and method calls. Effects are a
    source-level contract reported by analysis, not additional hook operations.
@@ -2691,9 +2717,8 @@ operation identity, failure categories, and propagation.
    selection use the declared default agent.
    Agent selection and logical-session selection are orthogonal. Every logical
    session owns one Gantry-defined canonical transcript. The transcript is an
-   ordered sequence of accepted model exchanges, each containing operation
-   kind, authored template, rendered prompt, ordered typed inputs, and the
-   accepted canonical result. Failed physical dispatches, repair diagnostics,
+   ordered sequence of the versioned canonical turns defined in item 12.
+   Failed physical dispatches, repair diagnostics,
    telemetry, workflow frames, branches, task ancestry, and action operations
    are not transcript turns. `inline` reuses the sequence, `fork` snapshots its
    complete committed prefix at creation, and `new` starts with an empty
@@ -2969,9 +2994,19 @@ operation identity, failure categories, and propagation.
    several operations may intentionally reuse that session. Actions have no
    session. Every session owns a Gantry-defined
    canonical transcript consisting only of accepted model exchanges. Each turn
-   contains operation kind, authored and rendered prompt, ordered typed
-   interpolation and `using` inputs, selected logical agent, and accepted
-   canonical result. Failed dispatches, validation diagnostics, actions,
+   is a `TranscriptTurnV1` record containing exactly: `operation_kind`
+   (`prompt` or `decide`); `authored_template` and `rendered_prompt` Strings;
+   separate ordered `interpolation_inputs` and `using_inputs` arrays in the
+   request shapes defined by item 5; `selected_agent`; and `accepted_result`.
+   `accepted_result` contains the result kind, canonical type descriptor, and
+   normalized strict-JSON value. A canonical transcript value is an object
+   containing protocol major `1`, protocol minor `0`, and a `turns` array of
+   those records in acceptance order. It is serialized as RFC 8785 canonical
+   JSON. The v1 publication MUST provide its JSON Schema and golden encodings;
+   implementations MUST reject unknown fields, unknown variants, invalid
+   canonical type descriptors, and transcript values that exceed the effective
+   value-depth, value-node, String-scalar, or List-item limits. Failed
+   dispatches, validation diagnostics, actions,
    workflow frames, branch or loop history, task ancestry, and telemetry are
    excluded. Gantry MUST commit a turn before a later inline operation can
    observe it.
@@ -3535,7 +3570,10 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 
 4. Gantry supports `loop`, pre-test `while`, post-test `until`, and finite `for
    NAME in EXPRESSION`. `until { BODY } when CONDITION;` executes its body
-   before the first condition. A `for` expression is evaluated once, MUST have
+   before the first condition. After its condition evaluates, `true` completes
+   the loop normally and `false` proceeds toward another body entry, subject
+   to the cancellation, limit, budget, and session-establishment rules in this
+   section. A `for` expression is evaluated once, MUST have
    type `List<T>`, and iterates a deep snapshot in ascending index order with a
    fresh immutable `NAME: T` binding per item. Empty lists execute no body.
    `break`, `continue`, and `return` have their ordinary nearest-target rules;
@@ -3565,13 +3603,17 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 
 7. Every execution MUST enforce identity-bound positive budgets for
    deterministic transitions, logical operations, and loop body entries. A
-   deterministic transition, prepared logical operation, or body entry
+   deterministic transition, the `M-Prepare` transition defined in Section
+   3.5, or body entry
    decrements its corresponding durable counter before the transition becomes
    observable. Exhaustion fails with `deterministic-transition-budget`,
    `operation-budget`, or `loop-iteration-budget`, respectively, in the
    `deterministic-evaluation-failure` category. Budgets apply even to source
    marked `unbounded`, are restored exactly on resume, and MUST NOT be converted
-   into normal loop completion or caught by `attempt`.
+   into normal loop completion or caught by `attempt`. Input evaluation before
+   `M-Prepare` does not consume the logical-operation budget. Validation
+   retries and recovery redispatches remain transitions of the same prepared
+   logical operation and MUST NOT consume that budget again.
 
 <a id="GNT-9.8"></a>
 
@@ -3722,8 +3764,9 @@ MUST NOT be described as a structured child after transfer.
 
 5. `join(task)` waits for one named child and yields that child's typed block
    value. A join result MAY be bound as `let result: T = join(task);`. Joining
-   a Unit block is a waiting statement and yields `()`. A successful
-   join consumes the task handle. Every task handle MAY be joined at most once;
+   a Unit block is a waiting statement and yields `()`. Every admitted join
+   consumes each selected task handle durably before waiting; consumption is
+   not rolled back when a child or aggregate join fails. Every task handle MAY be joined at most once;
    repeated handles in one join, joins of already consumed handles, and uses of
    handles that may have been consumed on an incoming control-flow path are
    analysis errors. `join()` with no task names is invalid.
@@ -4469,7 +4512,12 @@ used to enforce causality, recovery, deduplication, and delivery guarantees;
 they MUST refine, rather than add behavior to, the abstract source semantics.
 Layer 4 may be sampled or dropped. Layers 2 through 4 MUST NOT be injected
 into fulfiller input or otherwise alter fulfillment, and every event schema
-MUST identify its layer.
+MUST identify its layer. Standard v1 event envelopes use layer `logical` for
+source and abstract-machine occurrences and layer `physical` for dispatch,
+completion, validation-failure, retry, persistence, delivery, and shutdown
+occurrences. Optional telemetry uses layer `telemetry`. One causal transition
+MAY produce linked logical and physical events, but each occurrence has one
+layer and its own stable event ID.
 
 <a id="GNT-12.1"></a>
 
@@ -4502,12 +4550,15 @@ MUST identify its layer.
    logical operation ID and carry the distinct dispatch ID and applicable
    validation-attempt and recovery-dispatch numbers. A structured-output-
    validation-failure event and, when another attempt is permitted, a retry
-   event follow the corresponding completion event. After a `Completed` outcome is successfully decoded,
-   parsed, validated, normalized, and durably recorded under Section 11, Gantry MUST
-   emit exactly one operation-result event for that logical operation. The
-   event represents acceptance of a value, decision, or `Unit` result
-   and MUST reference the operation-result record. It is not emitted for a
-   required-result `Declined`, `Failed`, or invalid `Completed` outcome.
+   event follow the corresponding completion event. Gantry MUST emit exactly
+   one operation-result event for every committed logical result that source
+   may consume. This includes a value, decision, or `Unit` accepted from a
+   successfully decoded, parsed, validated, and normalized `Completed`
+   outcome, and an explicit `Err(OperationError)` that `attempt` derives from
+   a committed decline, failure, exhausted invalid output, or unknown outcome.
+   The event MUST reference the applicable operation-result record. It is not
+   emitted for a required-result `Declined`, `Failed`, or invalid `Completed`
+   outcome that propagates as task failure rather than becoming source data.
    Recovery that reuses an existing operation-result record MUST reuse its
    corresponding durable event occurrence rather than emit another logical
    acceptance event. If the operation-result record is durable but its event
@@ -4695,8 +4746,12 @@ MUST identify its layer.
    class, raw-output permission, redaction-policy ID, resolved Boolean
    capabilities for `operation_request_content`, `operation_result_content`,
    `integration_diagnostics`, and `source_snippets`, retry-policy revision,
-   attempt timeout, retry limit, initial delay, cap, and jitter mode. A retry
-   or recovery redelivery
+   attempt timeout, retry limit, initial delay, cap, and jitter mode. The event
+   evidence and this complete immutable initial delivery plan MUST
+   be committed atomically in one journal batch. Recovery MUST treat an event
+   record missing that plan as malformed journal evidence and MUST NOT infer
+   obligations or permissions from current configuration. A retry or recovery
+   redelivery
    MUST use that captured class and effective retry policy rather than a later
    interpreter default. Adding a sink after an event was created MUST NOT
    retroactively deliver the older event to that sink. Removing or replacing a
@@ -4798,10 +4853,14 @@ MUST identify its layer.
 <a id="GNT-12.7"></a>
 
 7. Every event envelope MUST identify its protocol version, event and activity
-   IDs, optional execution ID, event kind, source location when source-backed,
+   IDs, optional execution ID, event kind, event layer (`logical`, `physical`,
+   or `telemetry`), source location when source-backed,
    task and operation identities when applicable, causal parent IDs, per-task
    sequence when task-backed, timestamp, a kind-specific payload or stable
-   payload reference, and redaction state. A timestamp MUST be the event's
+   payload reference. Redaction state is represented per protected reference
+   as `available`, `redacted`, or `not-applicable`, together with the frozen
+   permission class that governs it; there is no ambiguous envelope-wide
+   redaction Boolean. A timestamp MUST be the event's
    creation time encoded as an RFC 3339 UTC string and MUST remain unchanged
    across delivery retries. Prompt templates, schemas, and raw integration
    output MUST use protected stable references rather than being copied into ordinary
@@ -4834,13 +4893,17 @@ MUST identify its layer.
      signature and active action-mapping revision;
    - `operation-completion`: operation and dispatch IDs, outcome variant, and
      a protected raw-output reference for `Completed`, or a protected
-     integration-diagnostic reference for a decline or failure reason; the
-     referenced text is resolved for a sink only under its frozen redaction
-     capabilities;
+     integration-diagnostic reference for a decline or failure reason. A
+     `Completed` raw-output reference is resolved only when the obligation's
+     separately frozen raw-output permission is true; a decline or failure
+     diagnostic is resolved only when its frozen `integration_diagnostics`
+     capability is true;
    - `operation-result`: operation ID, committed outcome and operation-result
      record references, outcome variant, result kind, canonical type
-     descriptor, and a protected normalized-value reference for a value result
-     or a protected normalized-decision reference for a decision result;
+     descriptor, and a protected normalized-value reference for a value result,
+     a protected normalized-decision reference for a decision result, or a
+     protected normalized-`OperationError` reference for an `Err` produced by
+     `attempt`;
    - `structured-output-validation-failure`: operation and dispatch IDs plus
      the structured validation errors defined in Section 8;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
@@ -4951,6 +5014,11 @@ The grammar uses extended Backus-Naur form (EBNF):
 
 - double-quoted or single-quoted text is a literal terminal; single quotes are
   used only when the terminal itself contains double quotes;
+- inside an EBNF terminal, `\\`, `\"`, `\n`, `\r`, and `\t` denote one
+  backslash, double quote, line feed (U+000A), carriage return (U+000D), and
+  horizontal tab (U+0009), respectively; no other EBNF-terminal escape is
+  permitted, and these notation escapes are distinct from Gantry source
+  escapes recognized by `escape_sequence`;
 - concatenation, written with commas, binds more tightly than alternation;
 - `A | B` selects one alternative;
 - `[ A ]` makes `A` optional;
@@ -5046,7 +5114,8 @@ Default_Ignorable_Code_Point, join control, variation selector, or bidi
 formatting/control scalar, even if a broad library classifies it as XID.
 Analysis MUST compute the Unicode 16.0.0 UTS #39 confusable skeleton for every
 identifier. Two distinct spellings with the same skeleton in one lookup
-namespace are an `identifier-confusable-collision` analysis error. Collisions
+namespace are an analysis diagnostic with category `identifier-security` and
+the stable portable code `identifier-confusable-collision`. Collisions
 across separate namespaces and identifiers containing scripts outside one
 Recommended single-script set MUST produce an `identifier-security` diagnostic
 that lists the exact scripts, skeleton, and related spans. Diagnostics MUST
@@ -6850,8 +6919,11 @@ provider-specific or executor-specific types in Gantry programs:
 
 An `Interpreter` accepts a package root, an explicitly selected supported
    source-language version, interpreter configuration (which includes the
-   executor adapter), a hook factory, journal storage, and zero or more event
-   sinks. It MUST expose syntax-only validation, semantic analysis, execution,
+   executor adapter), a hook factory, a harness-preflight integration surface,
+   journal storage, and zero or more event sinks. The hook factory MAY also
+   implement the harness-preflight surface, but the interpreter MUST have an
+   explicit reference through which it can invoke the mapping, root-session,
+   and reusable-session operations in Section 15.2. It MUST expose syntax-only validation, semantic analysis, execution,
    resume, execution cancellation, and terminal asynchronous shutdown
    operations. Dry-run, analysis, and new execution MUST use the selected
    source-language version. Resume MUST use the version stored in the
@@ -6878,9 +6950,10 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    containing strict JSON as required by `main`; Gantry, rather than the
    embedder, performs the decoding, parsing, duplicate-member rejection, and
    schema validation defined in Section 4. It MUST also accept an optional
-   root-session specification containing an embedder-chosen logical session ID
-   and an optional canonical transcript in the versioned turn format from
-   Section 7. When the specification is present but its transcript is omitted,
+   `root_session` specification containing an embedder-chosen logical session
+   ID, optional opaque integration lookup material, and an optional canonical
+   transcript in the versioned turn format from Section 7. When the
+   specification is present but its transcript is omitted,
    the transcript is the empty sequence. Gantry MUST validate and normalize
    that transcript before
    execution, commit it as the authoritative root-session state, and reject
@@ -6907,8 +6980,11 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    resolve an embedder-supplied root-session descriptor for a new execution.
    That descriptor contains the execution candidate's root logical session ID,
    `embedder-supplied` provenance, normalized canonical transcript, and the
-   opaque integration lookup material supplied by the embedder. Resolution
-   MUST be idempotent, MUST return a structured resolved or unresolved result,
+   same optional opaque integration lookup material from `root_session`.
+   Omitted lookup material is represented explicitly as absent; an integration
+   that requires it MUST return unresolved rather than infer or fabricate it.
+   Resolution MUST be idempotent, MUST return a structured resolved or
+   unresolved result,
    and MUST reattach a context with the same semantic transcript rather than
    create an empty replacement. An unresolved new root is
    an `integration-preflight` start failure; an unresolved reusable session on
@@ -7185,9 +7261,10 @@ All public protocol envelopes MUST carry a major and minor version. A major
    it does not change the meaning of known fields. Unknown required fields and unknown enum variants MUST be rejected.
 
 The v1 publication MUST provide canonical JSON Schemas and RFC 8785 golden
-encodings for hook requests/outcomes, events, diagnostics, configuration,
-canonical IR/source maps, migrations, journal logical evidence, and the
-conformance manifest. It MUST provide a versioned requirement-ID registry and
+encodings for hook requests/outcomes, canonical transcripts, events,
+diagnostics, configuration, canonical IR/source maps, migrations, journal
+logical evidence, and the conformance manifest. It MUST provide a versioned
+requirement-ID registry and
 an executable conformance corpus covering lexer/parser boundaries, positive
 and negative static semantics, schema/hash goldens, RFC 8785 differential
 cases, cross-implementation logical traces, crash injection at every commit
