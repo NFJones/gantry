@@ -62,9 +62,11 @@ dispatch a hook, although the called workflow may contain explicit model
 operations. An integration may perform provider-internal work while fulfilling
 one such request, as defined in Section 7, but that work does not create hidden
 Gantry operations. Interpolation never dispatches a hook. Typed strict-JSON
-results are the boundary between the interpreter and model-backed work. This
-explicitness is a core readability requirement for both human and model
-authors.
+values are the boundary between model-backed work and source execution: raw
+hook outcomes cross the embedding boundary first, and Gantry alone admits a
+value into source execution after decoding, validation, normalization, and
+durable acceptance. This explicitness is a core readability requirement for
+both human and model authors.
 
 This document records the settled version 1 (v1) language and operational
 requirements. Concrete Rust type signatures may remain implementation-defined
@@ -196,6 +198,11 @@ valid:
   `prompt` or `decide` keyword, its modifiers, template, and result annotation
   as one visibly continuous construct; do not rely on unusual line breaks to
   make an operation resemble ordinary deterministic code.
+- Treat interpolation as textual prompt composition, not as an instruction/
+  data trust boundary. Delimit or explain untrusted string content in the
+  authored prompt when that distinction matters. Gantry also supplies each
+  interpolation as a separate typed hook argument, but canonical JSON and the
+  typed argument vector do not by themselves prevent prompt injection.
 - Use triple-quoted block prompts for multiline instructions and ordinary or
   raw quoted prompts for short text. Keep result annotations on the same
   visual operation, even when the template spans several lines.
@@ -1328,8 +1335,11 @@ document are to be interpreted as described in RFC 2119.
     Section 10.
 12. Transport failures and their retry policy are integration concerns, not
    Gantry structured-output retries.
-13. Source snippets MAY be included in validation diagnostics. Raw agent
-    output MUST NOT be included in validation diagnostics.
+13. Source snippets MAY be included in validation diagnostics only when the
+    embedder's diagnostic-disclosure policy explicitly permits source text for
+    that consumer. The default policy MUST report source spans without copying
+    source snippets. Raw agent output MUST NOT be included in validation
+    diagnostics under any disclosure policy.
 
 ## 9. Control Flow
 
@@ -2452,6 +2462,10 @@ The grammar uses extended Backus-Naur form (EBNF):
 Whitespace and comments separate tokens and are otherwise insignificant,
 except inside string, raw-string, and block-prompt tokens. A trailing comma is
 accepted only where the productions below include an optional final comma.
+All EBNF fences in Sections 13.2 through 13.9 form one grammar; a production
+MAY refer forward to a production in a later fence. Names explicitly described
+as lexical metavariables in Section 13.2 constrain token characters and are not
+missing parser productions.
 
 ### 13.2 Lexical grammar
 
@@ -2462,7 +2476,7 @@ utf8_bom            = U+FEFF ;
 
 whitespace          = " " | "\t" | "\r" | "\n" ;
 line_terminator     = "\r\n" | "\n" | "\r" ;
-line_comment        = "//", { any_character_except_line_terminator },
+line_comment        = "//", { line_comment_character },
                       ( line_terminator | end_of_file ) ;
 block_comment       = "/*", { block_comment | block_comment_character }, "*/" ;
 trivia              = whitespace | line_comment | block_comment ;
@@ -2470,6 +2484,14 @@ trivia              = whitespace | line_comment | block_comment ;
 identifier_token    = xid_start_or_underscore,
                       { xid_continue_or_underscore } ;
 integer_token       = "0" | nonzero_decimal_digit, { decimal_digit } ;
+decimal_digit       = "0" | "1" | "2" | "3" | "4"
+                    | "5" | "6" | "7" | "8" | "9" ;
+nonzero_decimal_digit
+                    = "1" | "2" | "3" | "4" | "5"
+                    | "6" | "7" | "8" | "9" ;
+hex_digit           = decimal_digit
+                    | "a" | "b" | "c" | "d" | "e" | "f"
+                    | "A" | "B" | "C" | "D" | "E" | "F" ;
 
 string_token        = '"', { string_character | escape_sequence }, '"' ;
 escape_sequence     = "\\\\" | "\\\"" | "\\n" | "\\r" | "\\t" | "\\0"
@@ -2491,6 +2513,14 @@ byte-order mark MAY appear only as the first decoded scalar of a source file
 and is ignored; U+FEFF in any other source position is not whitespace and is a
 syntax error. An identifier MUST NOT equal a reserved word. Decimal directive
 integers have no sign, separator, or radix prefix.
+
+`end_of_file` is the zero-width lexical boundary after the final source scalar.
+`line_comment_character` is any Unicode scalar other than U+000A or U+000D.
+`string_character`, `block_comment_character`, `block_prompt_body`,
+`raw_string_body`, and `matching_raw_hashes` are lexical metavariables whose
+constraints are defined in the following paragraphs because nesting,
+delimiter matching, and exclusions cannot be expressed faithfully by the
+simple EBNF notation used here.
 
 Block comments nest. An unterminated block comment, quoted string, raw string,
 escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
@@ -2714,7 +2744,12 @@ with_statement          = "with", identifier_token, statement_block ;
 session_statement       = "session", "(", session_directive, ")",
                           statement_block ;
 return_statement        = "return", [ return_expression ], ";" ;
-return_expression       = expression | decision_expression ;
+return_expression       = expression | explicit_decision_return ;
+explicit_decision_return
+                        = decide_expression
+                        | decision_with_expression
+                        | decision_session_expression
+                        | "(", explicit_decision_return, ")" ;
 break_statement         = "break", ";" ;
 continue_statement      = "continue", ";" ;
 trailing_expression     = expression ;
@@ -2732,11 +2767,16 @@ has a reachable normal completion, it MUST end in a direct
 block whose static control-flow analysis proves that every reachable path has
 already exited through a valid decision `return`; it does not permit decision
 fallthrough. An earlier `return` in the statement sequence is subject to the
-same restriction. The broader `return_expression` production permits a parser
-to recognize early decision returns inside nested ordinary blocks; semantic
-analysis MUST reject decision expressions returned from ordinary workflows and
-ordinary values returned from decision workflows. Assignment to `self` as a
-whole is not v1 syntax; a
+same restriction. A call-shaped return such as `return check(value);` is parsed
+through the ordinary `expression` call shape; semantic analysis classifies it
+as decision-valued only inside a decision workflow and only when `check`
+resolves to a decision declaration. `explicit_decision_return` exists for the
+three decision forms that are not ordinary source expressions. This division
+avoids an ambiguous grammar alternative for the identical token sequence of an
+ordinary workflow call and a decision-workflow call. Semantic analysis MUST
+reject explicit decision returns from ordinary workflows and ordinary values
+returned from decision workflows. Assignment to `self` as a whole is not v1
+syntax; a
 `mut self` method may assign its receiver fields and may return the resulting
 receiver value.
 
@@ -3666,9 +3706,12 @@ provider-specific or executor-specific types in Gantry programs:
     copy protected payloads into default diagnostics, display strings, or sinks
     that lack the applicable capability. An embedder MUST control access to
     journal storage and payload references and MUST define retention and
-    deletion policy for them. At-rest encryption, credential management, and
-    operator authorization remain deployment concerns, but an implementation
-    MUST provide enough separation between ordinary diagnostics and protected
+    deletion policy for them. It MUST also control whether a diagnostic
+    consumer may receive source snippets; absent an explicit source-disclosure
+    policy, Gantry diagnostics MUST expose source locations and spans but not
+    copied source text. At-rest encryption, credential management, and operator
+    authorization remain deployment concerns, but an implementation MUST
+    provide enough separation between ordinary diagnostics and protected
     records for an embedder to enforce those policies without parsing free-form
     text.
 
