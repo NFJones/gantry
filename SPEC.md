@@ -1903,12 +1903,18 @@ operation identity, failure categories, and propagation.
    remain integration concerns. This obligation applies across interpreter
    process restart: before resuming a task, the integration MUST be able to
    resolve every journaled root, `new`, and `fork` session that unfinished work
-   may reuse. Gantry MUST enumerate those required logical session IDs and
-   their parent/provenance metadata to the embedding API before the first
-   resumed hook dispatch. The integration MAY reattach existing provider
-   sessions or reconstruct equivalent conversational state, but it MUST report
-   an unresolved session before dispatch rather than silently creating an
-   empty replacement. For a new execution, failure to resolve an embedder-
+   may reuse through an `inline` request or as the parent of another session.
+   Gantry MUST enumerate those required logical session IDs and their parent/
+   provenance metadata to the embedding API before the first resumed hook
+   dispatch. The integration MAY reattach existing provider sessions or
+   reconstruct equivalent conversational state, but it MUST report an
+   unresolved session before dispatch rather than silently creating an empty
+   replacement. An operation-local session needed only by a recovery or
+   validation redispatch whose request carries `session-use = create` is not
+   resolved separately during preflight: that repeated idempotent request MUST
+   establish or resolve the same context under item 12. Its enclosing and root
+   sessions remain subject to preflight whenever the creation request depends
+   on them. For a new execution, failure to resolve an embedder-
    supplied root session is an integration-preflight start failure. For resume,
    failure to resolve any required session is a nonterminal resume-start
    failure under item 17. Sessions used only by committed, completed operations
@@ -5592,10 +5598,14 @@ provider-specific or executor-specific types in Gantry programs:
    session is an integration-preflight start failure for a new execution;
    failure to resolve any required journaled session is a nonterminal resume-
    start failure. Before resume creates recovered task hooks, the API MUST
-   enumerate every journaled logical session needed by unfinished work,
-   including its parent and creation provenance, and require the integration
-   to resolve the complete set as specified in Section 7. Resume MUST dispatch no hook when
-   this preflight fails. Starting a new execution MUST return either a
+   enumerate every journaled logical session that unfinished work will reuse
+   through `inline` or as a session parent, including its parent and creation
+   provenance, and require the integration to resolve the complete set as
+   specified in Section 7. An operation-local session represented by a pending
+   `session-use = create` redispatch is resolved by that idempotent request,
+   not by this preflight; any enclosing or root session on which it depends
+   remains in the preflight set. Resume MUST dispatch no hook when this
+   preflight fails. Starting a new execution MUST return either a
    structured start failure with no execution ID, or an execution ID after the
    execution-start record is durably flushed. Syntax, analysis, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
@@ -5645,9 +5655,12 @@ provider-specific or executor-specific types in Gantry programs:
    supply each corresponding mapping revision before a new execution begins.
    An empty agent or action declaration set requires no mapping or revision for
    that family. Before resume continues, that preflight MUST resolve every
-   applicable active mapping and every unfinished logical session descriptor
-   enumerated by Gantry, including root, parent, and creation provenance. For a
-   new execution, preflight failure is an
+   applicable active mapping and every reusable logical session descriptor
+   enumerated by Gantry, including root, parent, and creation provenance.
+   Operation-local sessions represented by pending `session-use = create`
+   redispatches are excluded because the repeated idempotent operation request
+   establishes or resolves them; their required enclosing and root sessions
+   are not excluded. For a new execution, preflight failure is an
    integration-preflight start failure. For resume, it is the applicable
    nonterminal resume-start failure. It creates no `OperationHook` and MUST
    occur before `main` evaluation or recovered work. Successful preflight does
