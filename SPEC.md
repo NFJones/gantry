@@ -196,7 +196,12 @@ document are to be interpreted as described in RFC 2119.
 3. Gantry MUST support comments and SHOULD adopt Rust lexical conventions
    where they fit the v1 feature set. Rust likeness is primarily a syntactic
    and readability goal; Gantry does not inherit Rust semantics by default.
-4. Names MUST be declared before use. Gantry uses lexical scope.
+4. Names MUST be declared before use. Gantry uses lexical scope. Declaration
+   order is evaluated within each module's source order. A child module becomes
+   available when its enclosing `mod` declaration is reached; names inside that
+   child are then resolved according to the child's own source order. Analysis
+   MUST NOT depend on filesystem enumeration order or the order in which an
+   implementation happens to parse module files.
 5. Gantry MUST support namespaces and whole-module imports through a
    Rust-inspired `mod` form. Included files are parsed as independent modules,
    not textual insertion into the caller's scope.
@@ -250,10 +255,12 @@ document are to be interpreted as described in RFC 2119.
 13. Top-level package and module contents MUST be declarations. Executable
     statements are permitted only within function, method, decision, spawn, or
     other executable block bodies.
-14. Gantry MUST collect all module declarations and package-wide agent names
-    before resolving item bodies. This collection pass is the only exception
-    to declared-before-use ordering; it does not make functions, types, or
-    imports usable before their declarations. Within one module, item names
+14. Gantry MUST discover the complete module graph and collect package-wide
+    agent names before resolving item bodies. This collection pass is the only
+    exception to declared-before-use ordering; discovery of a later `mod`
+    declaration MUST NOT make that namespace usable earlier in its parent
+    module, and it does not make functions, types, or imports usable before
+    their declarations. Within one module, item names
     MUST be unique across structs, functions, decisions, and modules. An
     imported name MUST NOT collide with another import or local item.
 15. Struct field names, parameter names, and method names for one receiver type
@@ -416,9 +423,17 @@ document are to be interpreted as described in RFC 2119.
    source order. If any interpolation cannot be evaluated or encoded, the
    containing prompt MUST remain undispatched and execution MUST fail. The
    source template and interpolated prompt MUST both be supplied to the hook.
-   The supplied source template is the semantic template after ordinary escape
-   decoding, raw-string delimiter removal, and block-prompt dedentation, but
-   before interpolation. It is not the original source token spelling.
+   Interpolation islands and `$$` escapes MUST be identified from the authored
+   template body before ordinary or block-prompt escape decoding, as specified
+   in Section 13.7. The supplied source template is the authored template body
+   after removal of its outer delimiter and any structural block-prompt lines
+   and indentation, but before ordinary or block-prompt escape decoding, `$$`
+   processing, or interpolation replacement. It therefore preserves authored
+   escape spellings and distinguishes `$${name}` from an actual `${name}`
+   island. It is not the complete original source token because delimiters and
+   structural block-prompt layout are omitted. An implementation MUST retain
+   each interpolation island's exact source text and source span independently
+   of the dedented hook-facing template.
 8. A trailing expression in a function, method, or spawned block implicitly
    yields its value. An explicit `return` MAY yield earlier from a function,
    method, or spawned block. An explicit `return` in a decision workflow is
@@ -426,11 +441,12 @@ document are to be interpreted as described in RFC 2119.
    exactly match the
    declared result type. A workflow whose signature omits a result type
    implicitly returns no result. Because no-result is not a value, a no-result
-   prompt, workflow call, method call, `with` expression, or `join` MUST be
-   terminated with `;` as an expression statement; it cannot be a block's
-   trailing expression. A value-producing prompt MAY be discarded by writing
-   it as an expression statement. A value-producing workflow or method call,
-   `with` expression, or `join` expression MAY likewise be used as an
+   prompt, workflow call, method call, or `join` MUST be terminated with `;` as
+   an expression statement; it cannot be a block's trailing expression. A
+   statement-only agent context uses `with <agent> { ... }` without a semicolon
+   after its closing brace. A value-producing prompt MAY be discarded by
+   writing it as an expression statement. A value-producing workflow or method
+   call, `with` expression, or `join` expression MAY likewise be used as an
    expression statement when its result is intentionally discarded. A
    standalone literal, constructor, field access, projection, `Some`, or
    `None` expression has no execution effect and MUST be rejected as an
@@ -513,7 +529,11 @@ document are to be interpreted as described in RFC 2119.
    provenance when the task was spawned; and the inherited agent selection.
    Agent selection MUST remain part of each operation
    request because a task can enter different lexical `with` contexts. Hook
-   creation may fail but cannot decline; failure aborts creation of the task.
+   creation may fail but cannot decline. Failure while creating the root task's
+   hook aborts the execution as a hook-creation error. Failure while creating a
+   spawned task's hook settles that child as failed; it is then observed by
+   `join`, `joinall`, detachment, and terminal execution under the ordinary
+   task-failure rules. Hook creation MUST NOT dispatch a model operation.
    Gantry MUST give every hook a Gantry-owned cancellation token whose signal
    the integration MUST make a best effort to honor.
    Public asynchronous extension traits MUST use executor-neutral boxed
@@ -531,7 +551,7 @@ document are to be interpreted as described in RFC 2119.
    - stable operation, execution, and task IDs, plus the parent-task ID when
      the task was spawned;
    - an operation kind and selected agent name;
-   - the semantic source prompt template defined in Section 6 and the
+   - the authored source prompt template defined in Section 6 and the
      interpolated prompt;
    - JSON-serialized typed arguments;
    - the expected result kind;
@@ -549,9 +569,10 @@ document are to be interpreted as described in RFC 2119.
    `value`, `no-result`, or `decision`. Typed arguments MUST be an ordered
    vector containing one record for each interpolation island in source order;
    each record contains the exact UTF-8 source text between that island's
-   `${` and matching `}` delimiters, its static type, and its canonical strict-
-   JSON value. Comments and whitespace inside the island remain part of that
-   source-text field even though they do not affect evaluation. A repeated
+   `${` and matching `}` delimiters, its package-relative source file and
+   half-open byte span, its static type, and its canonical strict-JSON value.
+   Comments and whitespace inside the island remain part of that source-text
+   field even though they do not affect evaluation. A repeated
    interpolation appears repeatedly so the request
    preserves the template's operation inputs exactly. Source locations MUST
    identify the package-relative UTF-8 file and half-open byte span. The
@@ -1393,12 +1414,13 @@ sign, separator, or radix prefix.
 Block comments nest. An unterminated block comment, quoted string, raw string,
 escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
 Unicode scalar value and contain one through six hexadecimal digits. A normal
-string may contain a literal newline. The lexer preserves its bytes after
-escape decoding and performs no indentation normalization. Outside string
-tokens, `\r\n` is one line terminator rather than two. Inside ordinary, raw,
-and block prompt strings, authored line-ending scalars are content and are
-preserved exactly except for the structural block-prompt delimiters described
-below.
+string may contain a literal newline. A string token MUST retain both its
+authored body and the decoded semantic text needed by later phases; this is
+required because prompt interpolation is recognized before escape decoding.
+The lexer performs no indentation normalization. Outside string tokens,
+`\r\n` is one line terminator rather than two. Inside ordinary, raw, and block
+prompt strings, authored line-ending scalars are content and are preserved
+exactly except for the structural block-prompt delimiters described below.
 
 `string_character` is any Unicode scalar value other than `"` or `\`; newline
 characters are included. `block_prompt_body` is the shortest sequence ending
@@ -1543,6 +1565,7 @@ declaration.
 
 ```ebnf
 block                   = "{", { statement }, [ trailing_expression ], "}" ;
+value_block             = "{", { statement }, trailing_expression, "}" ;
 statement_block         = "{", { statement }, "}" ;
 decision_block          = "{", { statement }, [ decision_tail ], "}" ;
 decision_tail           = decision_expression ;
@@ -1555,6 +1578,7 @@ statement               = let_statement
                         | continue_statement
                         | spawn_statement
                         | detach_statement
+                        | with_statement
                         | if_statement
                         | loop_statement
                         | while_statement
@@ -1567,6 +1591,7 @@ assignment_target       = identifier_token, { ".", identifier_token }
                         | "self", ".", identifier_token,
                           { ".", identifier_token } ;
 expression_statement    = expression, ";" ;
+with_statement          = "with", identifier_token, statement_block ;
 return_statement        = "return", [ return_expression ], ";" ;
 return_expression       = expression | decision_expression ;
 break_statement         = "break", ";" ;
@@ -1622,7 +1647,7 @@ field_initializer_list  = field_initializer, { ",", field_initializer },
 field_initializer       = identifier_token, ":", expression ;
 argument_list           = expression, { ",", expression }, [ "," ] ;
 
-with_expression         = "with", identifier_token, block ;
+with_expression         = "with", identifier_token, value_block ;
 ```
 
 Postfix `(...)` dispatches a workflow function or method, postfix `.name`
@@ -1638,9 +1663,12 @@ v1 has no module, type, function, decision, or method values, semantic analysis
 MUST reject a bare path that resolves to any such item. Task handles are legal
 only in `join`, `joinall`, and `detach`, never as primary expressions.
 
-A `with` expression yields its block's trailing value, if any, which permits a
-lexically selected agent to produce the enclosing workflow's result. If its
-block has no trailing value, the `with` expression has no result.
+A value-producing `with` expression requires its block's trailing expression
+and yields that value, which permits a lexically selected agent to produce the
+enclosing workflow's result. A statement-only agent context instead uses the
+`with_statement` form in Section 13.9; it has no result and takes no semicolon
+after its closing brace. A value-producing `with` expression MAY still be
+followed by `;` when its value is intentionally discarded.
 
 `prompt`, `join`, `joinall`, and `with` are complete expression forms rather
 than direct bases of a postfix chain. To select a field, invoke a method, or
@@ -1692,20 +1720,26 @@ interpolation_field     = identifier_token, ":",
 ```
 
 The parser treats the prompt template immediately following `prompt` or
-`decide` as a template and scans its decoded and, for block prompts, dedented
-contents for interpolation islands. `${` opens an interpolation unless its
-`$` was consumed by `$$`. `$$` emits one literal
-`$`; therefore `$${name}` emits literal `${name}`. This contextual scan applies
-to normal, raw, and block prompt strings. In non-prompt string expressions,
-`$` and `${...}` are ordinary string contents and are not interpolated.
+`decide` as a template. After identifying the token's outer delimiters, it
+scans the authored template body for interpolation islands before decoding
+ordinary or block-prompt escapes and before block-prompt dedentation. The
+structural opening and closing lines of a block prompt are delimiters rather
+than body text and are excluded from this scan. `${` opens an interpolation
+unless its `$` was consumed by `$$`. `$$` emits one literal `$`; therefore
+`$${name}` emits literal `${name}`. This contextual scan applies to normal,
+raw, and block prompt strings. In non-prompt string expressions, `$` and
+`${...}` are ordinary string contents and are not interpolated.
 
-The scan proceeds left to right after ordinary-string escape decoding. Thus
-`$$${name}` emits one literal `$` followed by the interpolation of `name`, and
-an ordinary-string Unicode escape that decodes to `$` immediately before `{`
-begins interpolation. Authors SHOULD use `$$` rather than Unicode spelling when
-they intend a literal dollar sign. Raw strings skip escape decoding but use the
-same left-to-right interpolation and `$$` rules. A closing `}` ends an island
-only when all nested constructor braces and parentheses inside it are balanced.
+The scan proceeds left to right over authored dollar signs. Thus `$$${name}`
+emits one literal `$` followed by the interpolation of `name`. An ordinary or
+block-prompt escape such as `\u{24}` that later decodes to `$` does not begin
+interpolation; `\u{24}{name}` emits the literal text `${name}`. Once islands
+have been recognized, escapes are decoded independently in the intervening
+literal segments and block-prompt dedentation is applied without changing the
+authored source text retained for an island. Raw strings skip escape decoding
+but use the same left-to-right interpolation and `$$` rules. A closing `}` ends
+an island only when all nested constructor braces and parentheses inside it are
+balanced.
 The contextual scanner MUST tokenize the island using the ordinary Gantry
 lexical rules, so braces or parentheses inside nested quoted or raw string
 tokens do not affect that balance and comment delimiters inside those strings
@@ -1767,16 +1801,18 @@ present; empty `prompt()`, `decide()`, `if()`, `else if()`, `loop()`,
 `while()`, and `until()` modifiers are not v1 syntax. Bare `loop` uses
 `session = inline` and `limit = 0`. Duplicate modifiers are analysis errors.
 
-A condition-level `session` on `if`, `else if`, `while`, or `until` establishes
-the inherited session for the complete decision-workflow evaluation, including
-any ordinary prompts it executes. A condition-level `retry_limit` applies only
-to the ultimate decision operation; ordinary prompts inside a decision
-workflow use their own modifier or the interpreter default. A modifier written
-directly on a `decide` expression is more local and overrides the corresponding
-inherited value. `limit` belongs only to the enclosing `while` or `until`. The
-`until` grammar deliberately places its body before `when` and the post-test
-decision. A `decision_call` MUST resolve to a `decision` declaration; an
-ordinary workflow call is not a condition.
+A condition-level `session` on `if`, `else if`, `while`, or `until` takes effect
+before evaluation of the decision expression. It therefore establishes the
+inherited session for prompt operations used to compute decision-call
+arguments as well as for the complete decision-workflow evaluation. A
+condition-level `retry_limit` applies only to the ultimate decision operation;
+prompts used in arguments or inside a decision workflow use their own modifier
+or the interpreter default. A modifier written directly on a `decide`
+expression is more local and overrides the corresponding inherited value.
+`limit` belongs only to the enclosing `while` or `until`. The `until` grammar
+deliberately places its body before `when` and the post-test decision. A
+`decision_call` MUST resolve to a `decision` declaration; an ordinary workflow
+call is not a condition.
 The body of a decision-valued `with` expression follows the same definite-
 decision rules as any other `decision_block`: it either has a terminal decision
 tail or, when enclosed by a decision workflow, proves that every reachable
@@ -1939,7 +1975,7 @@ impl Report {
     fn review(self) {
         with reviewer {
             prompt "Review ${self} and record any concerns.";
-        };
+        }
     }
 }
 
@@ -1952,6 +1988,8 @@ fn apply_revision(mut report: Report, instruction: String) -> Report {
 
 `with` is an expression and may yield its block's trailing value. A nested
 `with` would override `writer` or `reviewer` only inside the nested block.
+When a `with` block is used only for its effects, as in `review`, it is a
+statement and takes no semicolon after its closing brace.
 The `apply_revision` assignment makes the by-value receiver rule visible: a
 `mut self` method never updates the caller's binding implicitly.
 
