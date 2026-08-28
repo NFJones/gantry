@@ -1550,18 +1550,20 @@ shown here.
      child's canonical declared result-type descriptor;
    - `conditional-arm`: conditional-chain dynamic identity, zero-based arm
      index, condition kind (`decision`, `bool`, or `pattern`), controlling
-     outcome, and, for a model-produced decision, its operation ID and
-     nonempty rationale;
+     outcome, and, for a model-produced decision, its operation ID; a prompt
+     or decide request additionally contains the nonempty rationale;
    - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
      index, phase (`condition` or `body`), and the most recently settled
-     condition's associated index, decision, and nonempty rationale when one
-     exists;
+     condition's associated index and decision; a prompt or decide request
+     additionally contains the nonempty rationale when one exists;
    - `decision-value`: originating `decide` operation ID, source location,
-     controlling Boolean, and nonempty rationale for a sealed `Decision`
-     reachable from a captured operation input; and
+     and controlling Boolean for a sealed `Decision` reachable from a captured
+     operation input; a prompt or decide request additionally contains the
+     nonempty rationale; and
    - `optional-decline`: declined operation ID, operation kind, selected agent
-     or canonical action path as applicable, source location, and decline
-     reason when a decline normalized to `None`.
+     or canonical action path as applicable, and source location when a
+     decline normalized to `None`; a prompt or decide request additionally
+     contains the decline reason.
    Decision rationales and decline reasons are protected model or integration
    content. They MUST be present in request contexts for `prompt` and `decide`
    operations where listed above, but MUST be absent from action request
@@ -3408,8 +3410,10 @@ shown here.
 
    Each journaled event MUST freeze its delivery obligations at creation by
    recording the active sink IDs and, for each sink, its required/best-effort
-   class, raw-output permission, retry-policy revision, attempt timeout, retry
-   limit, initial delay, cap, and jitter mode. A retry or recovery redelivery
+   class, raw-output permission, redaction-policy ID, resolved Boolean
+   capabilities for `model_result_content`, `integration_diagnostics`, and
+   `source_snippets`, retry-policy revision, attempt timeout, retry limit,
+   initial delay, cap, and jitter mode. A retry or recovery redelivery
    MUST use that captured class and effective retry policy rather than a later
    interpreter default. Adding a sink after an event was created MUST NOT
    retroactively deliver the older event to that sink. Removing or replacing a
@@ -3421,12 +3425,12 @@ shown here.
    exhaustion of that obligation. Once resume begins, an adapter that becomes
    unavailable returns a terminal sink error under the captured required
    policy. An absent best-effort adapter is an immediate terminal delivery
-   error under its captured policy and does not block resume. Raw-output access
-   at delivery time requires both the
-   event's captured permission and the sink's current enabled capability, so a
-   later configuration may reduce but MUST NOT retroactively broaden access to
-   protected output. Configuration changes apply to events created after the
-   corresponding execution-state record becomes durable. For an active
+   error under its captured policy and does not block resume. Access to each
+   protected payload class at delivery time requires both the event's captured
+   permission for that class and the sink's corresponding currently enabled
+   capability. A later configuration may therefore reduce access but MUST NOT
+   retroactively broaden it. Configuration changes apply to events created
+   after the corresponding execution-state record becomes durable. For an active
    resumable execution, the required-sink identities and their identity-bound
    policy fields MUST remain exactly those in the execution-start
    configuration identity; adding, removing, or changing a required sink is a
@@ -5629,11 +5633,13 @@ provider-specific or executor-specific types in Gantry programs:
    serially. Futures returned by these interfaces MUST be `Send` for the
    lifetime of their borrows. Gantry MUST package all borrowed state into owned
    task state before submitting a `Send + 'static` future to the executor.
-10. Source, entry input, interpolated arguments, prompts, session identifiers,
-    raw hook output, normalized values, journals, and protected event payloads
-    MUST be treated as potentially sensitive integration data. Gantry MUST NOT
-    copy protected payloads into default diagnostics, display strings, or sinks
-    that lack the applicable capability. An embedder MUST control access to
+10. Source, entry input, interpolation arguments, named inputs, action
+    arguments, rendered prompts, session identifiers, raw hook output,
+    normalized values, decision rationales, decline reasons, hook-failure
+    messages, journals, and protected event payloads MUST be treated as
+    potentially sensitive integration data. Gantry MUST NOT copy protected
+    payloads into default diagnostics, display strings, or sinks that lack the
+    applicable capability. An embedder MUST control access to
     journal storage and payload references and MUST define retention and
     deletion policy for them. It MUST also control whether a diagnostic
     consumer may receive source snippets; absent an explicit source-disclosure
