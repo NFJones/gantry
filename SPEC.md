@@ -1211,6 +1211,13 @@ defined here and in Section 7 cross the integration boundary.
    - seven transitive flags indicating whether execution of the workflow may
      reach a `prompt`, `decide`, `action`, `spawn`, `join`, `joinall()`, or
      `detach`, respectively.
+   For this inventory, “direct” means lexically contained in the workflow's
+   body, including sites and call edges inside its nested control-flow and
+   spawned blocks, but excluding sites and edges in another workflow reached
+   by a call. A site inside a spawned block is therefore direct syntax of the
+   enclosing workflow even though the child task executes it. The transitive
+   flags include both those direct sites and sites reachable through direct
+   call edges.
    The transitive flags MUST be the least fixed point of the package call
    graph, including permitted self-recursion and method calls. These summaries
    are analysis metadata rather than source-level effects or additional hook
@@ -3056,10 +3063,13 @@ that are immutable or durably revisable across resume.
    them as hard links to the same bytes. These rules make the digest
    independent of module-discovery order and host path syntax.
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
-   counters, task relationships, and committed values. An in-flight spawned
-   block MUST restart at the top of that block while reusing every committed
-   operation result recorded for it. Uncommitted operations are retried under
-   item 4. Deterministic replay of `spawn`, `join`, `joinall()`, or `detach` MUST
+   counters, task relationships, and committed values. Each task, including an
+   in-flight spawned block, MUST resume from its latest durable instruction
+   position. When Gantry replays deterministic steps after the latest durable
+   checkpoint, it starts at that checkpoint's instruction position rather than
+   unconditionally restarting the task body. Such replay MUST reuse committed
+   operation results, and uncommitted operations are retried under item 4.
+   Deterministic replay of `spawn`, `join`, `joinall()`, or `detach` MUST
    consult the durable task-state history before changing task ownership. A
    replayed `spawn` occurrence MUST recover its existing stable child task and
    MUST NOT create a duplicate child. A replayed join or detach whose ownership
@@ -3170,7 +3180,11 @@ that are immutable or durably revisable across resume.
     value `0`; this avoids loss of precision in RFC 8785 implementations whose
     JSON number domain is IEEE 754 binary64.
     Durations are represented as whole microseconds, identities are JSON
-    strings, and no additional properties participate in the v1 identity:
+    strings, and no additional properties participate in the v1 identity.
+    Unless a narrower bound is stated below, every decimal-string integer in
+    this object MUST be no greater than `2^63 - 1`. This bound applies to retry
+    limits, retry-backoff durations, and event-delivery attempt timeouts as
+    well as to the resource limits described below:
 
     ```json
     {
@@ -5755,9 +5769,13 @@ provider-specific or executor-specific types in Gantry programs:
    an in-bounds nonnegative `Int` literal. The v1 defaults are 30 seconds for
    each event-delivery attempt, 30 seconds for graceful shutdown, and 5 seconds
    for post-cancellation drain. Event-delivery attempt timeouts MUST remain
-   finite and positive. Embedders MAY override shutdown and drain with finite
-   nonnegative durations; zero requests immediate cancellation or immediate
-   return after cancellation, respectively.
+   finite and positive. Configured retry limits and whole-microsecond duration
+   values MUST be no greater than `2^63 - 1`. Embedders MAY override shutdown
+   and drain with finite nonnegative durations; zero requests immediate
+   cancellation or immediate return after cancellation, respectively. The
+   deterministic-transition yield quantum counts transitions, MUST be no
+   greater than `2^63 - 1`, and remains subject to the nonzero requirement in
+   Section 3.
 8. All public protocol envelopes MUST carry a major and minor version. A major
    mismatch is incompatible and MUST be rejected. Every protocol definition
    MUST identify which fields are required and which are optional. An
