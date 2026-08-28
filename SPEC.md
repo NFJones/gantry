@@ -638,8 +638,11 @@ document are to be interpreted as described in RFC 2119.
    durably recording a new revision in an execution-state record before
    recovered interpretation or dispatch continues; the new mapping then
    applies consistently to subsequent uncommitted dispatches, while committed
-   outcomes remain unchanged. Failure to resolve the complete set is a hook-
-   creation error and MUST occur before any hook dispatch.
+   outcomes remain unchanged. Failure to resolve the complete set MUST occur
+   before any hook dispatch. For a new execution it is an integration-preflight
+   start failure; for a resume invocation it is the nonterminal resume-start
+   failure defined in item 17. It is not a task-local hook-creation error,
+   because no `OperationHook` creation or task execution has begun.
 2. Agent names are logical identifiers. Their mapping to concrete models or
    agent implementations is exclusively the integration's responsibility.
 3. Agent selection is established by lexical `with <name> { ... }` blocks and
@@ -907,9 +910,11 @@ document are to be interpreted as described in RFC 2119.
    resumed hook dispatch. The integration MAY reattach existing provider
    sessions or reconstruct equivalent conversational state, but it MUST report
    an unresolved session before dispatch rather than silently creating an
-   empty replacement. Such failure is a hook-creation failure. Sessions used
-   only by committed, completed operations need not be reattached unless an
-   unfinished operation will reuse them.
+   empty replacement. For a new execution, failure to resolve an embedder-
+   supplied root session is an integration-preflight start failure. For resume,
+   failure to resolve any required session is a nonterminal resume-start
+   failure under item 17. Sessions used only by committed, completed operations
+   need not be reattached unless unfinished work will reuse them.
 14. Agent operations may have side effects. Gantry does not require retries to
     be idempotent or prevent duplicate external effects.
 15. `prompt` and decision evaluation are the only v1 source constructs that
@@ -944,15 +949,33 @@ document are to be interpreted as described in RFC 2119.
     exactly `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
     Before an execution ID exists, structured start failures MUST at least
     distinguish syntax, analysis, entry-input validation, integration
-    preflight, initial journal ownership, and execution-start persistence.
-    Runtime errors for an existing execution MUST at least distinguish hook
-    creation, hook failure, decline of a required result, structured-output
-    exhaustion, deterministic evaluation failure, executor failure,
-    cancellation, journal failure, required-event-delivery failure, task/join
-    failure, and internal invariant failure. Projection bounds failures are
-    deterministic evaluation failures. Concrete Rust error types are
-    implementation-defined, but embedders MUST be able to distinguish these
-    categories and the start/runtime boundary without parsing display text.
+    preflight, initial journal ownership, execution-start persistence, and
+    required-event-delivery failure during pre-execution validation or
+    analysis.
+
+    Resume has a distinct pre-execution failure boundary even though the
+    execution ID already exists. A resume-start failure MUST at least
+    distinguish journal read or format failure, ownership acquisition failure,
+    source or effective-configuration incompatibility, unresolved agent
+    mapping, unresolved logical session, and unavailable required event sink.
+    Such a failure means recovered interpretation never began: Gantry MUST NOT
+    append an execution-state or terminal record, consume a retry budget, or
+    change the execution's durable terminal status. If journal ownership was
+    acquired before the failure, Gantry MUST release it under Section 11. The
+    embedder MAY correct the dependency or configuration and attempt resume
+    again.
+
+    Once a new execution has a durably flushed execution-start record, or a
+    resume invocation has completed compatibility and dependency preflight and
+    begins advancing recovered state, failures are runtime errors. Runtime
+    errors MUST at least distinguish hook creation, hook failure, decline of a
+    required result, structured-output exhaustion, deterministic evaluation
+    failure, executor failure, cancellation, journal failure, required-event-
+    delivery failure, task/join failure, and internal invariant failure.
+    Projection bounds failures are deterministic evaluation failures. Concrete
+    Rust error types are implementation-defined, but embedders MUST be able to
+    distinguish start, resume-start, and runtime categories without parsing
+    display text.
 18. Unless a more specific rule states otherwise, a fatal operation or
     interpreter error terminates the current Gantry task rather than silently
     terminating unrelated parallel work. Failure of the root foreground task
@@ -1482,15 +1505,17 @@ document are to be interpreted as described in RFC 2119.
    but such replay MUST reuse committed hook outcomes and reconstruct the same
    dynamic operation and task identities.
 2. Gantry MUST expose a journal-storage trait through which an integration
-   provides durable storage. The trait MUST expose durable record reading plus
-   atomic append and flush operations. Append and flush are the only mutation
-   primitives; Gantry defines the transaction and commit boundaries built from
-   them, and v1 requires no storage-level update, delete, or general transaction
-   operation. Each append MUST return a stable record ID and a sequence number
-   from one contiguous sequence within that journal. The first record has
-   sequence number 1, and each successful append is linearizable and receives
-   exactly the preceding sequence number plus one, including when concurrent
-   Gantry tasks append to the same journal. `flush(sequence)` MUST establish
+   provides durable storage. The trait MUST expose durable record reading,
+   exclusive owner acquisition and release, plus atomic append and flush
+   operations. Append and flush are the only record-mutation primitives;
+   ownership operations change fencing state rather than journal records.
+   Gantry defines the transaction and commit boundaries built from these
+   primitives, and v1 requires no storage-level update, delete, or general
+   transaction operation. Each append MUST return a stable record ID and a
+   sequence number from one contiguous sequence within that journal. The first
+   record has sequence number 1, and each successful append is linearizable and
+   receives exactly the preceding sequence number plus one, including when
+   concurrent Gantry tasks append to the same journal. `flush(sequence)` MUST establish
    that every successfully appended record through that sequence is durable
    before it returns.
    A durable read MUST identify a journal and return its authoritative flushed
@@ -1532,8 +1557,17 @@ document are to be interpreted as described in RFC 2119.
    reclaim ownership only after establishing that the preceding owner can no
    longer successfully append or flush; granting the new fencing token MUST
    make that guarantee atomic. Read-only inspection MAY remain concurrent.
-   These ownership operations coordinate access and do not add a mutation
-   primitive for journal records themselves.
+   An orderly owner release MUST atomically invalidate that owner's token so
+   every later append or flush using it fails. Gantry MUST release ownership
+   after an execution reaches terminal durable state and all required event
+   obligations through that state have settled, and after a start or resume-
+   start failure when ownership was acquired but interpretation never began.
+   Release failure is a journal failure after execution has begun. A start or
+   resume-start invocation that has not advanced durable execution state MUST
+   instead include ownership-release failure in its structured pre-execution
+   result and leave later acquisition to the storage's fencing rules. These
+   ownership operations coordinate access and do not add a mutation primitive
+   for journal records themselves.
 3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
    Its dispatch record MUST preserve the complete versioned semantic request,
    including the selected agent, operation and result kinds, templates,
@@ -1866,9 +1900,16 @@ document are to be interpreted as described in RFC 2119.
    captured class and effective retry policy rather than a later interpreter
    default. Adding a sink after an event was created MUST NOT retroactively
    deliver the older event to that sink. Removing or replacing a sink MUST NOT
-   silently abandon an unsettled captured obligation: on resume, an absent
-   sink adapter is treated as an immediate terminal delivery error under the
-   captured class. Raw-output access at delivery time requires both the
+   silently abandon an unsettled captured obligation. Before recovered
+   interpretation begins, Gantry MUST verify that every required sink named by
+   the execution-start configuration and every unsettled required delivery
+   obligation has a resolvable adapter. An unavailable required adapter is the
+   nonterminal resume-start failure defined in Section 7 rather than permanent
+   exhaustion of that obligation. Once resume begins, an adapter that becomes
+   unavailable returns a terminal sink error under the captured required
+   policy. An absent best-effort adapter is an immediate terminal delivery
+   error under its captured policy and does not block resume. Raw-output access
+   at delivery time requires both the
    event's captured permission and the sink's current enabled capability, so a
    later configuration may reduce but MUST NOT retroactively broaden access to
    protected output. Configuration changes apply to events created after the
@@ -3059,19 +3100,25 @@ provider-specific or executor-specific types in Gantry programs:
    treats that context as opaque and does not serialize it. When the
    specification is absent, Gantry creates the fresh root session required by
    Section 7. Resume MUST restore the journaled root-session identity and MUST
-   NOT accept a replacement; inability of the integration to resolve a
-   supplied root session before the first affected dispatch is a hook-creation
-   failure. Before resume creates recovered task hooks, the API MUST enumerate
-   every journaled logical session needed by unfinished work, including its
-   parent and creation provenance, and require the integration to resolve the
-   complete set as specified in Section 7. Resume MUST dispatch no hook when
+   NOT accept a replacement. Failure to resolve an embedder-supplied root
+   session is an integration-preflight start failure for a new execution;
+   failure to resolve any required journaled session is a nonterminal resume-
+   start failure. Before resume creates recovered task hooks, the API MUST
+   enumerate every journaled logical session needed by unfinished work,
+   including its parent and creation provenance, and require the integration
+   to resolve the complete set as specified in Section 7. Resume MUST dispatch no hook when
    this preflight fails. Starting a new execution MUST return either a
    structured start failure with no execution ID, or an execution ID after the
    execution-start record is durably flushed. Syntax, analysis, entry-input,
-   integration-preflight, initial journal-ownership, and execution-start write
-   failures are start failures. Once the execution ID is returned, execution
-   produces a typed foreground outcome that distinguishes a value, no result,
-   and every runtime-error category defined in Section 7. A
+   integration-preflight, initial journal-ownership, execution-start write,
+   and required-event-delivery failures during pre-execution validation or
+   analysis are start failures. Resume MUST likewise return a structured
+   resume-start failure when Section 7 preflight fails, without changing the
+   execution's durable state, and MUST permit a later corrected resume attempt.
+   Once recovered interpretation begins, resume returns the same runtime and
+   foreground outcome categories as execution. Once the execution ID is
+   returned, execution produces a typed foreground outcome that distinguishes
+   a value, no result, and every runtime-error category defined in Section 7. A
    foreground outcome MAY be returned while explicitly detached tasks remain;
    the execution ID allows the embedder to correlate their later events and
    terminal durable state. Because event sinks are optional, the API MUST also
@@ -3085,9 +3132,11 @@ provider-specific or executor-specific types in Gantry programs:
    set and its supplied mapping revision before a new execution begins. Before
    resume continues, that preflight MUST resolve every unfinished logical
    session descriptor enumerated by Gantry, including root, parent, and
-   creation provenance. Preflight failure is a hook-creation error, creates no
-   `OperationHook`, and MUST occur before `main` evaluation or recovered work.
-   Successful preflight does not itself dispatch an operation.
+   creation provenance. For a new execution, preflight failure is an
+   integration-preflight start failure. For resume, it is the applicable
+   nonterminal resume-start failure. It creates no `OperationHook` and MUST
+   occur before `main` evaluation or recovered work. Successful preflight does
+   not itself dispatch an operation.
 
    Gantry MUST call the factory lazily, at most once per Gantry task in one
    in-process run, immediately before that task's first hook dispatch; a task
@@ -3114,7 +3163,7 @@ provider-specific or executor-specific types in Gantry programs:
    hidden Tokio or other provider runtime. Executor handles and errors MUST be
    wrapped so no specific executor type appears in the language-facing API.
 5. Journal storage asynchronously provides durable-prefix reads, exclusive
-   owner acquisition with fencing, plus atomic `append(record)` and
+   owner acquisition and release with fencing, plus atomic `append(record)` and
    `flush(sequence)` operations with the behavior in Section 11. Append and
    flush are its only record-mutation primitives. Every mutation call MUST be
    associated with the current opaque ownership token so a superseded process
@@ -3125,7 +3174,8 @@ provider-specific or executor-specific types in Gantry programs:
     contiguous sequence number through a per-journal linearizable ordering. A
     read returns those finalized immutable versioned records in sequence order
     together with the durable-through sequence and supports continuation after
-    a supplied sequence.
+    a supplied sequence. Owner release invalidates the supplied fencing token
+    atomically and MUST NOT append, update, or delete a journal record.
    Storage errors and malformed or noncontiguous durable histories are never
    retried as model-output failures and MUST surface as journal runtime errors.
 6. Each event sink declares a stable identity, its required/best-effort class,
@@ -3138,11 +3188,13 @@ provider-specific or executor-specific types in Gantry programs:
    failure semantics. The embedding API MUST expose a stable retry-policy
    revision for each sink. Gantry journals the effective policy values with
    each event obligation, so recovery does not depend on an embedder retaining
-   historical defaults. The embedder MUST resolve every sink identity attached
-   to an unsettled journaled delivery obligation during resume. Failure to
-   resolve a captured sink is handled as the terminal sink error defined in
-   Section 12; it MUST NOT cause the obligation or protected payload
-   references to be dropped silently.
+   historical defaults. The embedder MUST resolve every required sink identity
+   attached to an unsettled journaled delivery obligation during resume before
+   recovered interpretation begins. Failure to resolve one is the nonterminal
+   resume-start failure defined in Section 7. An absent best-effort sink is
+   handled as the terminal best-effort delivery error defined in Section 12;
+   neither case permits the obligation or protected payload references to be
+   dropped silently.
 7. Interpreter configuration MUST include the default agent-output retry
    limit and backoff, event-delivery defaults, executor adapter, graceful-
    shutdown timeout, and post-cancellation drain duration. Implementations
