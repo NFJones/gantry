@@ -79,67 +79,190 @@ where the semantic contract is fully specified here.
 
 ### 1.1 Language at a glance
 
-The following non-normative example shows the intended v1 source style in one
-place. Model-backed work is explicit at each `prompt` or `decide`; ordinary
-calls, assignment, loops, and joins remain deterministic interpreter control.
+The following non-normative package tour shows the meaningful v1 language
+families together in one source file. It is intentionally broader than a
+typical program: focused workflows SHOULD use only the constructs they need.
+Model-backed work is explicit at each `prompt` or `decide`, harness work is
+explicit at each `action`, and ordinary calls, construction, assignment,
+operators, routing, loops, and joins remain interpreter control.
 
 ```gantry
-agents { researcher, reviewer }
+mod domain {
+    agents { reviewer }
+
+    struct SearchRequest {
+        topic: String,
+    }
+
+    struct SearchFailure {
+        message: String,
+    }
+
+    struct Report {
+        topic: String,
+        summary: String,
+        sources: List<String>,
+        note: Option<String> = None,
+        revision: Int = 0,
+        confidence: Float = 0.0,
+        publishable: Bool = false,
+    }
+
+    enum ReviewOutcome {
+        Approved(Report),
+        NeedsRevision(String),
+        Escalate,
+    }
+}
+
+agents { researcher, writer }
 default agent = researcher;
 
-struct Report {
-    topic: String,
-    summary: String,
-    sources: List<String>,
-}
-
-struct SearchRequest {
-    topic: String,
-}
-
-struct SearchFailure {
-    message: String,
-}
+use domain::Report;
+use domain::ReviewOutcome;
+use domain::SearchFailure;
+use domain::SearchRequest;
 
 action search(request: SearchRequest)
     -> Result<List<String>, SearchFailure>;
+action publish(report: Report) -> None;
+action record_metric(name: String, value: Float) -> None;
+
+impl Report {
+    fn revise(mut self, guidance: String) -> Report {
+        self.summary = with writer {
+            prompt(retry_limit = 2)
+                "Revise this report using ${guidance}: ${self}"
+                -> String
+        };
+        self.revision += 1;
+        self
+    }
+
+    fn record_review(self) {
+        prompt "Record a review of ${self}.";
+    }
+}
 
 decision needs_revision(report: Report) {
-    decide "Does this report need another revision? ${report}"
+    decide "Does this report need another revision?" using { report }
+}
+
+fn prepare_topic(topic: String) -> Result<String, String> {
+    let normalized: String = topic.trim().to_lowercase();
+    if normalized.is_empty() {
+        return Err("topic is empty");
+    }
+    Ok(normalized)
 }
 
 fn main(topic: String) -> Report {
+    let normalized_topic: String = match prepare_topic(topic) {
+        Ok(value) => value,
+        Err(reason) => prompt "Repair this topic: ${reason}" -> String,
+    };
+
+    let words: List<String> = normalized_topic.split(" ");
+    let slug: String = words.join("-");
+
     let search_result: Result<List<String>, SearchFailure> =
-        action search(SearchRequest { topic: topic });
+        action(retry_limit = 0) search(SearchRequest {
+            topic: normalized_topic,
+        });
 
     let sources: List<String> = match search_result {
         Ok(value) => value,
         Err(error) => prompt "Recover source references." using {
-            topic,
+            topic: normalized_topic,
             error,
         } -> List<String>,
     };
 
+    let metadata: Tuple<String, Int> = (slug, sources.len());
+    let (topic_slug, source_count): Tuple<String, Int> = metadata;
+    let coverage: Float = source_count.to_float() / 2.0;
+    let needs_more: Bool = source_count == 0 || coverage < 1.0;
+
+    let configured_limit: Option<Int> = "3".parse_int();
+    if let Some(limit_value) = configured_limit {
+        prompt "Use the configured revision limit." using { limit_value };
+    }
+
     spawn primary -> Report {
-        prompt """
-            Research primary sources for this topic:
-            ${topic}
-            """ -> Report
+        session(fork) {
+            prompt """
+                Research primary sources for this topic:
+                ${normalized_topic}
+                """ using { sources } -> Report
+        }
     }
 
     spawn independent -> Report {
         with reviewer {
-            prompt
-                "Independently research ${topic}."
-                -> Report
+            prompt r#"Independently research ${normalized_topic}.
+Preserve the literal marker $${topic}."# -> Report
         }
     }
 
     let reports: List<Report> = join(primary, independent);
+
+    spawn headline -> String {
+        prompt "Write a headline for ${normalized_topic}." -> String
+    }
+
+    spawn confidence -> Float {
+        prompt "Score source confidence." using { sources } -> Float
+    }
+
+    let (headline_text, model_confidence): Tuple<String, Float> =
+        join(headline, confidence);
+
+    spawn audit_text -> None {
+        prompt "Audit the research text." using { reports };
+    }
+
+    spawn audit_sources -> None {
+        action record_metric("source_count", source_count.to_float());
+    }
+
+    joinall();
+
+    spawn background -> None {
+        prompt "Record background observations." using { reports };
+    }
+    detach(background);
+
     let mut report: Report = prompt
         "Synthesize the supplied research reports."
-        using { topic, sources, reports }
+        using {
+            topic: normalized_topic,
+            topic_slug,
+            headline_text,
+            sources,
+            reports,
+            needs_more,
+        }
         -> Report;
+
+    report.note = Some("parallel review complete");
+    report.confidence += model_confidence / 2.0;
+
+    if let Some(note) = report.note {
+        prompt "Record this editorial note: ${note}.";
+    }
+
+    let review: ReviewOutcome = prompt
+        "Classify the current review outcome."
+        using { report }
+        -> ReviewOutcome;
+
+    report = match review {
+        ReviewOutcome::Approved(approved) => approved,
+        ReviewOutcome::NeedsRevision(guidance) => report.revise(guidance),
+        ReviewOutcome::Escalate => with reviewer {
+            prompt "Resolve this escalated review." using { report } -> Report
+        },
+    };
 
     loop(limit = 3) {
         if needs_revision(report) {
@@ -149,13 +272,43 @@ fn main(topic: String) -> Report {
         }
     }
 
+    let mut source_index: Int = 0;
+    while source_index < sources.len() {
+        if sources[source_index].is_empty() {
+            source_index += 1;
+            continue;
+        }
+        prompt "Check source ${sources[source_index]}.";
+        source_index += 1;
+    }
+
+    until(session = new, limit = 2) {
+        report = prompt "Polish ${report}." -> Report;
+    } when decide(retry_limit = 1) "Is the report polished enough?";
+
+    let publication: Decision = decide
+        "Should this report be published?"
+        using { report };
+
+    if report.publishable || publication.decision {
+        action crate::publish(report);
+    } else {
+        prompt "Record why publication was deferred: ${publication.rationale}.";
+    }
+
+    report.record_review();
     report
 }
 ```
 
-Section 14 provides focused examples of each language construct. Sections 3
-through 13 define the normative language and runtime behavior behind this
-surface syntax, and Section 15 defines the required embedding boundary.
+The tour demonstrates package declarations and imports; agents and lexical
+selection; structs, defaults, enums, options, results, lists, and tuples;
+methods and ordinary workflows; primitive and String operations; prompts,
+decisions, actions, interpolation, named inputs, and sessions; deterministic
+pattern routing; all three loop forms; typed parallel joins, `joinall()`, and
+explicit detachment. Section 14 provides smaller canonical examples and the
+remaining lexical and error cases. Sections 3 through 13 define the normative
+language and runtime behavior, and Section 15 defines the embedding boundary.
 
 ### 1.2 Reading the surface syntax
 
@@ -230,9 +383,10 @@ in later sections:
 - `Map<T>` and an opaque artifact-reference type are deferred. They require
   lookup, lifetime, authorization, and resume contracts that v1 does not need
   to express typed model and action control flow.
-- A struct field default is a source-construction convenience. Agent output
-  must still contain every non-optional field, even when that field has a
-  source default; only `Option<T>` properties may be omitted from hook output.
+- A struct field default is a source-construction convenience. Operation
+  output must still contain every non-optional field, even when that field has
+  a source default; only `Option<T>` properties may be omitted from hook
+  output.
 - `None` has two intentionally contextual uses: as an expression it is an
   absent `Option<T>` value whose type must be known from context; after `->`
   it denotes that a workflow or operation returns no source value.
@@ -840,9 +994,11 @@ document are to be interpreted as described in RFC 2119.
       it rejects `-0`, leading `+`, separators, radix prefixes, leading zeroes,
       and out-of-range values. `String.parse_float() -> Option<Float>` accepts
       exactly the RFC 8259 JSON number grammar, including integer-looking
-      spellings such as `1`, and returns the normalized finite binary64 value,
-      or `None` when parsing or normalization fails. These parsers do not trim
-      and never fail the task for invalid input.
+      spellings such as `1`. It returns the normalized finite binary64 value
+      only when the parsed exact mathematical value lies within the inclusive
+      Float bounds in Section 8; it otherwise returns `None`, including when
+      parsing, range checking, or normalization fails. These parsers do not
+      trim and never fail the task for invalid input.
     `List<String>.join(separator) -> String` joins items in list order with the
     exact separator only between adjacent items. It returns the empty String
     for an empty list and the sole item unchanged for a one-item list. `join`
@@ -1663,12 +1819,14 @@ document are to be interpreted as described in RFC 2119.
    floating lexical types, so spellings such as `1`, `1.0`, and `1e0` all
    normalize to the same `Int` value when `Int` is the expected type. Gantry
    MUST determine integrality and range without first rounding through
-   binary64. A `Float` result is any JSON number that rounds under Section 5
-   to a finite IEEE 754 binary64 value; integer-looking spellings are valid
-   when `Float` is expected. The expected Gantry type, not the source lexeme,
-   determines numeric normalization. Gantry MUST reject `NaN`, infinities,
-   overflow to a non-finite value, and any JSON number outside the declared
-   primitive contract. Gantry MUST normalize negative zero to positive zero
+   binary64. A `Float` result is a JSON number whose exact mathematical value
+   is within the inclusive finite-binary64 bounds in item 6 and that rounds
+   under Section 5 to a finite IEEE 754 binary64 value; integer-looking
+   spellings are valid when `Float` is expected. The expected Gantry type, not
+   the source lexeme, determines numeric normalization. Gantry MUST reject
+   `NaN`, infinities, values outside those exact bounds, and values whose
+   conversion overflows to a non-finite result. Gantry MUST normalize negative
+   zero to positive zero
    before exposing or serializing a `Float`. A `String` result is represented
    by a JSON string. A struct result is a JSON object whose property names
    directly match its declared field names.
@@ -1845,15 +2003,19 @@ document are to be interpreted as described in RFC 2119.
    the selected agent, logical session, authored template, interpolated
    operation-specific request body, expected type and schema, base guidance,
    source location, and ordered execution context from the initial dispatch.
-   For a prompt or decision this includes agent, session, template,
-   interpolation arguments, and named inputs; for an action it includes its
-   canonical path, signature, mapping revision, and typed arguments. Gantry
-   MUST NOT reevaluate any captured input expression or observe intervening
-   source state. Only the dispatch identity, validation-attempt
-   number, applicable recovery-dispatch number, preceding validation errors,
-   and repair-specific rendering of those errors may differ. This rule keeps
-   retries understandable as repairs of one visible operation rather than
-   hidden additional program evaluations.
+   For a prompt or decision this includes the logical agent, session,
+   template, interpolation arguments, and named inputs; for an action it
+   includes its canonical path, signature, and typed arguments. Gantry MUST
+   NOT reevaluate any captured input expression or observe intervening source
+   state. Only the dispatch identity, validation-attempt number, applicable
+   recovery-dispatch number, preceding validation errors, repair-specific
+   rendering of those errors, and an agent- or action-mapping revision changed
+   through the durable resume procedure in Sections 7 and 11 may differ. A
+   validation retry made without such a recorded resume change MUST reuse the
+   preceding dispatch's mapping revision. This rule keeps retries
+   understandable as repairs of one visible operation rather than hidden
+   additional program evaluations while preserving the explicit mapping-
+   replacement contract for resumed work.
 10. The retry limit is configured per interpreter and MAY be overridden per
    operation. It counts retries after the initial attempt; zero permits exactly
    one attempt. The v1 interpreter default is two retries after the initial
@@ -1884,7 +2046,7 @@ document are to be interpreted as described in RFC 2119.
 13. Source snippets MAY be included in validation diagnostics only when the
     embedder's diagnostic-disclosure policy explicitly permits source text for
     that consumer. The default policy MUST report source spans without copying
-    source snippets. Raw agent output MUST NOT be included in validation
+    source snippets. Raw integration output MUST NOT be included in validation
     diagnostics under any disclosure policy.
 
 ## 9. Control Flow
@@ -4888,8 +5050,8 @@ provider-specific or executor-specific types in Gantry programs:
    reporting when journal-first standard events cannot be created, including
    journal failure and unclean interpreter drop. Failure of this callback MUST
    be ignored after a bounded, nonblocking invocation attempt.
-7. Interpreter configuration MUST include the default model-output retry
-   limit, the default action-output retry limit, their backoff policy,
+7. Interpreter configuration MUST include the default prompt/decision-output
+   retry limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
    executor adapter, graceful-shutdown timeout, post-cancellation drain
    duration, maximum String scalar count, maximum List item count, and the
