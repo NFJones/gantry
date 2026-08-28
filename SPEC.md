@@ -778,6 +778,15 @@ document are to be interpreted as described in RFC 2119.
      associated index, decision, and nonempty rationale when one exists; and
    - `optional-decline`: declined operation ID, selected agent, source location,
      and decline reason when a decline normalized to `None`.
+   A context entry's protocol representation MUST preserve one entry boundary,
+   its canonical kind, the listed payload fields, and the source operation and
+   location when the kind requires them. An integration MUST NOT flatten the
+   vector into prompt text, discard an entry it does not intend to use, or
+   reorder entries before making them available to the selected agent. It MAY
+   attach provider-specific presentation metadata without changing the
+   canonical entry. An unknown context kind is incompatible with protocol major
+   version 1 and MUST be rejected; a newer minor version may add only optional
+   fields to a known kind under the compatibility rule in Section 15.
    Structural entries (`workflow-frame`, `decision-frame`, `conditional-arm`,
    and `loop-iteration`) MUST appear first, ordered from outermost to
    innermost scope, with repeated entries in execution order within one scope.
@@ -1709,6 +1718,19 @@ document are to be interpreted as described in RFC 2119.
    embedder. Unsettled best-effort obligations MAY continue after that result
    is returned, but they MUST settle under their captured finite policies
    before journal ownership is released.
+   When the authoritative prefix already contains a terminal-execution record,
+   `resume` MUST NOT reevaluate source, recreate a Gantry task, or dispatch an
+   operation hook. It MUST recover and settle only journaled event-delivery
+   obligations that remain unsettled, then return the existing terminal
+   language outcome together with any required-delivery barrier status. A
+   durable `terminal` delivery settlement MUST NOT be retried merely because a
+   caller invokes `resume` again.
+   When foreground completion is durable but detached tasks remain unfinished,
+   `resume` MUST preserve the existing foreground outcome and recover only the
+   unfinished detached task graph and unsettled delivery obligations. It MUST
+   NOT call `main` again or emit another foreground-completion event. The
+   embedding API MAY expose the preserved foreground outcome immediately while
+   the resumed execution continues toward terminal state.
 9. A v1 journal envelope MUST identify its protocol version, journal and
    execution IDs, monotonically increasing sequence number, record ID, record
    kind, causal parent record when one exists, task and operation identities
@@ -1845,6 +1867,19 @@ document are to be interpreted as described in RFC 2119.
    corresponding durable event occurrence rather than emit another logical
    acceptance event. This event cardinality distinguishes physical hook
    activity from the one source-level result that execution may consume.
+   For a resumable execution, causal event creation has the following mandatory
+   ordering. After the operation-dispatch record is durable and before invoking
+   the hook, Gantry MUST append and flush the corresponding operation-dispatch
+   event record. After an operation outcome is durable and before decoding,
+   validation, decline handling, or failure propagation consumes that outcome,
+   Gantry MUST append and flush its operation-completion event record. A schema-
+   validation-failure event and any retry event MUST be appended and flushed
+   before the next dispatch record. After an operation-result record is durable
+   and before source execution consumes that result, Gantry MUST append and
+   flush the operation-result event record. Delivery MAY remain asynchronous
+   under item 3; these requirements order durable event creation, not sink
+   acknowledgement. They ensure that a journal can never expose a consumed
+   operation transition without its canonical event occurrence.
 2. Each event MUST have a stable event ID and activity ID. An activity is one
    syntax-validation, semantic-analysis, execution/resume, or shutdown
    invocation. An event associated with a program execution MUST also include
@@ -2020,6 +2055,15 @@ document are to be interpreted as described in RFC 2119.
    attempt, and cancellation outcome. Failure of the terminal-record write is
    returned to the embedder as a journal failure.
 
+   After a sink has exhausted, Gantry MUST exclude that sink from every new
+   cancellation, failure, foreground-completion, task-completion, and terminal-
+   execution event obligation created while terminating the affected activity.
+   This is the sole exception to creating obligations for every sink active at
+   event creation. Other active sinks retain their ordinary obligations. The
+   exhausted sink's durable terminal delivery settlement and the terminal-
+   execution record are its canonical notification; Gantry MUST NOT attempt to
+   make it acknowledge consequences of its own failure.
+
    Exhaustion while delivering the terminal-execution event occurs after the
    terminal-execution record is durable and MUST NOT append a second terminal
    record or replace the recorded language outcome. Gantry MUST durably settle
@@ -2114,7 +2158,13 @@ document are to be interpreted as described in RFC 2119.
     message, and a primary package-relative source span when the problem is
     source-backed. The canonical v1 categories are `lexical`, `syntax`,
     `package`, `name-resolution`, `type`, `control-flow`, `task-ownership`, and
-    `schema`. A diagnostic SHOULD include labeled related spans for conflicting
+    `schema`. Diagnostic code namespaces are implementation-defined in v1, but
+    each implementation MUST publish its code registry and MUST NOT reuse one
+    code for a different meaning while supporting the same protocol major
+    version. The canonical category, source spans, and structured fields are
+    the portable cross-implementation contract; clients MUST NOT assume that
+    two implementations assign the same code to the same condition. A
+    diagnostic SHOULD include labeled related spans for conflicting
     declarations or ownership paths. A syntax diagnostic SHOULD identify the
     encountered token or end of input and the expected token classes when that
     information is available without fabricating parser state.
@@ -3203,14 +3253,24 @@ provider-specific or executor-specific types in Gantry programs:
    execution-start record is durably flushed. Syntax, analysis, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
    and required-event-delivery failures during pre-execution validation or
-   analysis are start failures. Resume MUST likewise return a structured
+   analysis are start failures. Returning the execution ID establishes an
+   accepted, resumable execution handle; it does not by itself report that
+   `main` has completed. The API MUST let the embedder asynchronously await or
+   query the foreground outcome through that handle while detached work, when
+   any, continues toward terminal execution state.
+   Resume MUST likewise return a structured
    resume-start failure when Section 7 preflight fails, without changing the
    execution's durable state, and MUST permit a later corrected resume attempt.
-   Once recovered interpretation begins, resume returns the same runtime and
-   foreground outcome categories as execution. Once the execution ID is
-   returned, execution produces a typed foreground outcome that distinguishes
-   a value, no result, and every runtime-error category defined in Section 7. A
-   foreground outcome MAY be returned while explicitly detached tasks remain;
+   Once recovered interpretation begins, resume returns the same execution
+   handle and foreground-outcome categories as a new execution. If foreground
+   completion is already durable, resume MUST expose that preserved outcome
+   without invoking `main` again while it recovers unfinished detached work.
+   If terminal execution is already durable, resume performs only the unsettled
+   event-delivery recovery permitted by Section 11 and exposes the existing
+   terminal outcome without creating a task or dispatching a hook.
+   A typed foreground outcome distinguishes a value, no result, and every
+   runtime-error category defined in Section 7. A foreground outcome MAY be
+   returned while explicitly detached tasks remain;
    the execution ID allows the embedder to correlate their later events and
    terminal durable state. Because event sinks are optional, the API MUST also
    permit the embedder to query an execution's latest durable foreground and
