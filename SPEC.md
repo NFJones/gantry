@@ -1212,7 +1212,14 @@ document are to be interpreted as described in RFC 2119.
    copied captures, inherited agent selection, and forked-session identity. The
    handle becomes visible to the parent only after that record is durable. This
    ordering prevents a child from performing model-backed work that recovery
-   cannot identify.
+   cannot identify. If executor submission then fails, the child MUST settle as
+   failed with an executor error; Gantry MUST append and flush that settlement
+   before the parent can observe it. The handle remains attached and visible,
+   and its owner MUST still consume it through `join`, `joinall()`, or `detach`
+   on every normal path. Recovery MUST reuse the durable failed settlement and
+   MUST NOT submit a second child for the same spawn occurrence. If Gantry
+   cannot durably record the submission failure, the execution instead fails
+   with the journal error under Section 11.
 3. A spawned block captures outer variables by copy and MUST NOT mutate outer
    variables. The captured values form a deep, isolated snapshot taken when
    `spawn` executes; “snapshot” describes isolation, not universal read-only
@@ -1324,10 +1331,16 @@ document are to be interpreted as described in RFC 2119.
    completion, failure, and observability remain governed by items 9 and 10.
    Semantic analysis MUST model each handle on every reachable path as exactly
    one of attached-and-unconsumed, consumed-by-join, or consumed-by-detach. At
-   every control-flow merge, all incoming paths MUST agree on that state. A
-   `return`, `break`, or `continue` that exits a handle's lexical scope is valid
-   only when the handle is consumed on that path. Runtime failure,
-   cancellation, shutdown, and unclean interpreter drop are exempt because
+   a control-flow merge, attached-and-unconsumed on every incoming path keeps
+   the handle available. Consumed on every incoming path makes the handle
+   unavailable after the merge; those paths MAY differ between
+   consumed-by-join and consumed-by-detach because both visibly discharge the
+   source-level ownership obligation. A merge between an attached path and any
+   consumed path is an analysis error. The path-specific durable ownership
+   transition remains join or detach and MUST NOT be collapsed in journals or
+   events. A `return`, `break`, or `continue` that exits a handle's lexical
+   scope is valid only when the handle is consumed on that path. Runtime
+   failure, cancellation, shutdown, and unclean interpreter drop are exempt because
    items 9 through 13 define their cleanup and ownership consequences. These
    linear-state rules apply even when the consuming operation appears inside a
    nested `with` or `session` block.
@@ -1509,8 +1522,19 @@ document are to be interpreted as described in RFC 2119.
    attempt number and remaining structured-output retry budget MUST NOT change
    merely because of recovery redispatch. Integrations MUST therefore assume
    at-least-once invocation and possible duplicate external side effects.
-5. A validated result derived from a committed outcome MUST be reused during
-   resume and MUST NOT consume the remaining validation-retry budget again.
+5. A consumable logical result derived from a committed hook outcome MUST be
+   appended and flushed as an operation-result record before source execution
+   may assign, branch on, return, or otherwise consume it. This requirement
+   applies both to a successfully validated `Completed` outcome and to a
+   `Declined` outcome that produces `None` for an expected `Option<T>`. The
+   record MUST identify the operation and committed outcome, outcome variant,
+   result kind, canonical type descriptor, normalized canonical JSON when the
+   operation returns a value, and the interpreter-only decision and rationale
+   when the operation returns a decision. An optional decline records JSON
+   `null` together with its decline provenance. A no-result operation records
+   successful acceptance without creating a source value. A logical result
+   recorded this way MUST be reused during resume and MUST NOT consume the
+   remaining validation-retry budget again.
    A committed but invalid `Completed` outcome MUST likewise be reused as the
    cause of its validation failure; Gantry MUST NOT invoke the hook again for
    that same validation attempt. Invalid attempts and retry counts MUST also
@@ -1574,9 +1598,9 @@ document are to be interpreted as described in RFC 2119.
    kind, causal parent record when one exists, task and operation identities
    when applicable, and a kind-specific payload. The required record kinds are
    execution state, operation dispatch, operation outcome, validation attempt,
-   interpreter checkpoint, task state, event, event-delivery state, and
-   terminal failure. Concrete serialization and Rust types are implementation-
-   defined, but all required information and durability boundaries are
+   operation result, interpreter checkpoint, task state, event,
+   event-delivery state, and terminal failure. Concrete serialization and Rust
+   types are implementation-defined, but all required information and durability boundaries are
    normative. Before append, Gantry constructs an unfinalized record body that
    omits the record ID and sequence number. The storage append operation MUST
    atomically assign both fields and store the resulting finalized envelope;
@@ -1664,9 +1688,10 @@ document are to be interpreted as described in RFC 2119.
 ## 12. Observability and Validation Modes
 
 1. Gantry MUST expose events for parsing and analysis, workflow start and end,
-   operation dispatch and completion, schema validation failure, retry, branch
-   decision, spawn, join, detach, mutation, cancellation, foreground
-   completion, task completion, terminal execution, and failure. Foreground
+   operation dispatch, completion, and result acceptance, schema validation
+   failure, retry, branch decision, spawn, join, detach, mutation,
+   cancellation, foreground completion, task completion, terminal execution,
+   and failure. Foreground
    completion is distinct from terminal execution when detached tasks remain.
    This event requirement applies while the event's required durability
    boundary is available. A journal failure that makes a resumable execution's
@@ -1684,8 +1709,17 @@ document are to be interpreted as described in RFC 2119.
    and carry the distinct dispatch ID and applicable validation-attempt and
    recovery-dispatch numbers. A schema-validation-failure event and, when
    another attempt is permitted, a retry event follow the corresponding
-   completion event. This event cardinality makes physical hook activity
-   observable without treating retries as additional source operations.
+   completion event. After a `Completed` outcome is successfully decoded,
+   parsed, validated, normalized, and durably recorded under Section 11, or an
+   optional `Declined` outcome is durably normalized to `None`, Gantry MUST
+   emit exactly one operation-result event for that logical operation. The
+   event represents acceptance of a value, decision, or no-result completion
+   and MUST reference the operation-result record. It is not emitted for a
+   required-result `Declined`, `Failed`, or invalid `Completed` outcome.
+   Recovery that reuses an existing operation-result record MUST reuse the
+   corresponding durable event occurrence rather than emit another logical
+   acceptance event. This event cardinality distinguishes physical hook
+   activity from the one source-level result that execution may consume.
 2. Each event MUST have a stable event ID and activity ID. An activity is one
    syntax-validation, semantic-analysis, execution/resume, or shutdown
    invocation. An event associated with a program execution MUST also include
@@ -1797,7 +1831,14 @@ document are to be interpreted as described in RFC 2119.
    event's captured permission and the sink's current enabled capability, so a
    later configuration may reduce but MUST NOT retroactively broaden access to
    protected output. Configuration changes apply to events created after the
-   corresponding execution-state record becomes durable.
+   corresponding execution-state record becomes durable. For an active
+   resumable execution, the required-sink identities and their identity-bound
+   policy fields MUST remain exactly those in the execution-start
+   configuration identity; adding, removing, or changing a required sink is a
+   resume-compatibility error. Best-effort sinks MAY be added, removed, or
+   reconfigured after Gantry appends and flushes an execution-state record
+   describing the new effective set. Such a change affects only later events
+   and never alters an already frozen delivery obligation.
 6. Event delivery is at least once. Sinks MUST deduplicate using the stable
    event ID. Exhaustion for a required sink MUST abort the affected activity
    and its execution when one exists; exhaustion for a best-effort sink MUST
@@ -1831,11 +1872,12 @@ document are to be interpreted as described in RFC 2119.
    across delivery retries. Prompt templates, schemas, and raw model output
    MUST use protected stable references rather than being copied into ordinary
    event payloads; diagnostics and other nonsensitive standalone activity data
-   MAY be carried inline. The canonical v1 event kinds are parse, analysis, workflow start,
-   workflow end, operation dispatch, operation completion, schema validation
-   failure, retry, branch decision, spawn, join, detach, mutation,
-   cancellation, foreground completion, task completion, terminal execution,
-   and failure. Concrete serialization is implementation-defined.
+   MAY be carried inline. The canonical v1 event kinds are parse, analysis,
+   workflow start, workflow end, operation dispatch, operation completion,
+   operation result, schema validation failure, retry, branch decision, spawn,
+   join, detach, mutation, cancellation, foreground completion, task
+   completion, terminal execution, and failure. Concrete serialization is
+   implementation-defined.
 8. Event kind payloads MUST expose enough structured information for a harness
    to interpret an execution without parsing diagnostic text. The canonical
    minimum payloads are:
@@ -1848,6 +1890,11 @@ document are to be interpreted as described in RFC 2119.
    - `operation completion`: operation and dispatch IDs, outcome variant, and
      a protected raw-output reference for `Completed`, or the decline/failure
      reason under the sink's redaction policy;
+   - `operation result`: operation ID, committed outcome and operation-result
+     record references, outcome variant, result kind, canonical type
+     descriptor, and a protected normalized-value reference for a value result
+     or the decision and rationale for a decision result; an optional decline
+     additionally identifies its decline provenance;
    - `schema validation failure`: operation and dispatch IDs plus the
      structured validation errors defined in Section 7;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
@@ -1874,8 +1921,16 @@ document are to be interpreted as described in RFC 2119.
    but it MUST NOT omit these applicable fields or encode their only usable
    representation in human-readable text.
 9. A dry-run performs syntax validation only and MUST NOT invoke agent hooks.
-   Gantry MUST separately provide an analysis mode that performs name, type,
-   module, and schema validation without invoking hooks.
+   Starting from `main.gnt`, it MUST discover every file module reachable
+   through syntactically valid `mod` declarations and lex and parse every
+   selected source file. Missing or ambiguous module files, containment
+   violations, invalid UTF-8, lexical errors, and syntax errors are therefore
+   dry-run failures because they prevent construction of the package syntax
+   tree. A dry-run MUST NOT perform name resolution, type checking, schema
+   generation, definite-control-flow analysis, or task-ownership analysis.
+   Gantry MUST separately provide an analysis mode that first satisfies this
+   whole-package syntax contract and then performs name, type, module, control-
+   flow, task-ownership, and schema validation without invoking hooks.
 10. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
 11. Diagnostics MUST be usable by both human authors and automated repair
@@ -2842,6 +2897,24 @@ fn launch_background(report: Report) {
         }
 
         detach(background);
+    }
+}
+```
+
+Control flow may deliberately choose whether to wait for work or leave it in
+the background. Both branches consume the handle, so it is unavailable after
+the conditional even though the durable consumption mode differs by path:
+
+```gantry
+fn launch_or_wait(report: Report) {
+    spawn audit -> None {
+        prompt "Audit ${report}.";
+    }
+
+    if decide "Must this audit finish before the workflow continues?" {
+        join(audit);
+    } else {
+        detach(audit);
     }
 }
 ```
