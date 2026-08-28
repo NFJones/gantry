@@ -92,22 +92,27 @@ not additional syntax an author must learn. Use these reading paths:
 - **Source authors:** begin with Sections 1.1 through 1.5 and Section 14. Use
   Sections 4 through 10 only for the semantics of a construct in question and
   Section 13 when exact grammar is needed.
-- **Language tooling authors:** read Sections 4 through 10, 12.9 through
-  12.11, and 13. Protocol and persistence requirements are relevant only when
-  the tool also executes programs or claims full conformance.
+- **Language tooling authors:** read Sections 4 through 10, Section 12, items
+  9 through 11, and Section 13. Section 13 contains both the formal grammar and
+  a small number of syntax-position and disambiguation rules enforced during
+  semantic analysis. Protocol and persistence requirements are relevant only
+  when the tool also executes programs or claims full conformance.
 - **Integrators:** begin with Sections 1 and 3, then read Sections 7, 8, 10
   through 12, and 15 before consulting the remaining normative sections.
 - **Conformance implementers:** read the complete normative contract.
 
 This document uses three related but distinct judgments:
 
-- **Syntactically valid** source is admitted by Section 13 and the package
-  loading rules required for parsing it.
+- **Syntactically valid** source is admitted by the lexical and syntactic
+  grammar in Section 13 and the package-loading rules required to parse it.
 - **Source-valid** source is syntactically valid and satisfies every applicable
-  static semantic rule in Sections 4 through 10. Sections 12.9 through 12.11
-  define how an analyzer reports that judgment; they do not add a second set of
-  source-acceptance rules. Source validity does not imply that a particular
-  integration can resolve the package's agents or actions.
+  static semantic rule in this document. Those rules are concentrated in
+  Sections 4 through 10, with syntax-position and disambiguation rules stated
+  alongside the grammar in Section 13. Section 12, items 9 through 11, defines
+  how an analyzer evaluates and reports that single judgment; those items do
+  not add a second set of source-acceptance rules. Source validity does not
+  imply that a particular integration can resolve the package's agents or
+  actions.
 - A **conforming Gantry v1 implementation** satisfies the complete normative
   language, execution, durability, observability, and embedding contract. A
   parser, analyzer, or source-validity tool may accurately describe its more
@@ -149,20 +154,23 @@ The contract is organized into layers:
 | Layer | What it specifies | Primary sections |
 | --- | --- | --- |
 | Language surface | Packages, values, workflows, visible operations, and control flow | Sections 4 through 10 and 13 |
-| Static source validity | Name and type resolution, schema generation, control-flow completion, and task ownership | Rules in Sections 4 through 10; analysis interface in Sections 12.9 through 12.11 |
+| Static source validity | Name and type resolution, syntax-position restrictions, schema generation, control-flow completion, and task ownership | Rules concentrated in Sections 4 through 10, with grammar-adjacent rules in Section 13; analysis interface in Section 12, items 9 through 11 |
 | Portable execution | Interpretation, validation, concurrency, durability, and observability | Sections 3 and 7 through 12 |
 | Formal syntax | Normative lexical and syntactic grammar | Section 13 |
 | Authoring guide | Non-normative focused examples and corrections | Section 14 |
 | Host contract | Required embedding interfaces | Section 15 |
 
-These layers are complementary rather than an order of precedence. Section 13
-determines whether source can be parsed; Sections 3 through 12 determine
-whether parsed source is valid and what executing it means; and Section 15
-defines the host capabilities required to provide that meaning. A grammatical
-form is therefore not necessarily a valid program. Section 14 illustrates the
-normative contract and cannot extend or override it. If two normative passages
-cannot both be satisfied, that is a defect in this specification rather than
-permission for an implementation to choose one silently.
+These layers are complementary rather than an order of precedence. The lexical
+and syntactic productions in Section 13 determine whether source can be
+parsed. The static requirements concentrated in Sections 4 through 10,
+together with the grammar-adjacent semantic rules in Section 13, determine
+whether parsed source is source-valid. Sections 3 and 7 through 12 define what
+executing it means, and Section 15 defines the host capabilities required to
+provide that meaning. A grammatical form is therefore not necessarily a valid
+program. Section 14 illustrates the normative contract and cannot extend or
+override it. If two normative passages cannot both be satisfied, that is a
+defect in this specification rather than permission for an implementation to
+choose one silently.
 
 Concrete Rust type signatures may remain implementation-defined only where
 the semantic contract is fully specified here.
@@ -3732,8 +3740,11 @@ an operation hook.
    tree. A dry-run MUST NOT perform name resolution, type checking, schema
    generation, definite-control-flow analysis, or task-ownership analysis.
    Gantry MUST separately provide an analysis mode that first satisfies this
-   whole-package syntax contract and then performs name, type, module, control-
-   flow, task-ownership, and schema validation without invoking hooks.
+   whole-package syntax contract and then enforces every applicable static
+   semantic requirement in this document without invoking hooks. This includes
+   name, type, module, source-form and modifier, control-flow, task-ownership,
+   and schema validation; the list is descriptive rather than an independent
+   or exhaustive definition of source validity.
    A successful analysis result MUST include the per-workflow call edges,
    direct integration-operation and task-control sites, and transitive flags
    required by Section 6.
@@ -3767,9 +3778,13 @@ an operation hook.
 
 This section defines the normative v1 source grammar. Semantic restrictions in
 the preceding sections still apply when the grammar admits a construct in a
-broader syntactic position. In particular, name resolution, exact type
-matching, decision-only contexts, task-handle consumption, modifier validity,
-and interpolation restrictions are semantic-analysis concerns.
+broader syntactic position. This section also states a small number of
+grammar-adjacent semantic rules where they are clearest, including contextual
+name restrictions and source-form disambiguation. Those rules are part of the
+same source-validity judgment; they are not optional parser guidance. In
+particular, name resolution, exact type matching, decision-only contexts,
+task-handle consumption, modifier validity, interpolation restrictions, and
+the control-boundary constructor rule are semantic-analysis concerns.
 
 ### 13.1 Grammar notation
 
