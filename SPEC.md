@@ -332,8 +332,13 @@ document are to be interpreted as described in RFC 2119.
     different protocol major version. Every new execution and resume request
     MUST explicitly select a supported source-language version through the
     embedding API; v1 source contains no in-file version pragma.
-11. v1 makes no backward-compatibility promise for source, serialized state,
-   or the Rust hook API.
+11. v1 makes no backward-compatibility promise for source syntax or the
+    concrete Rust hook API. Public hook, journal, event, and configuration
+    envelopes remain subject to the explicit major/minor compatibility rules
+    in item 10 and Section 15. That protocol obligation preserves the meaning
+    of a supported envelope; it does not require a later implementation to
+    accept source written for another language version or preserve concrete
+    Rust type signatures.
 
 ## 4. Source Organization
 
@@ -832,6 +837,16 @@ document are to be interpreted as described in RFC 2119.
    name from the merged agent declarations, not a runtime binding. `with`
    contexts MAY occur at any block scope. Operations with no active selection
    use the declared default agent.
+   Agent selection and logical-session selection are orthogonal. Reusing one
+   logical session across nested or sequential `with` blocks MUST preserve the
+   session's conversational continuity even when those blocks select different
+   agent names. An integration MAY implement that continuity with a shared
+   transcript, provider session transfer, or another semantically equivalent
+   mechanism, but it MUST NOT silently reset, fork, or replace the logical
+   session merely because the selected agent changed. An integration that
+   cannot honor cross-agent reuse for the package's declared mappings MUST
+   reject the execution during integration preflight rather than fail after a
+   partially executed session.
 4. The Rust hook contract MUST be asynchronous and executor-neutral. Its
    futures MUST be `Send` so Gantry tasks can execute on a multithreaded
    executor, and Gantry's public API MUST NOT expose Tokio- or provider-specific
@@ -997,8 +1012,9 @@ document are to be interpreted as described in RFC 2119.
    and any provider-specific presentation metadata are integration behavior
    and MUST NOT replace or mutate the canonical request vector. An unknown
    context kind is incompatible with protocol major version 1 and MUST be
-   rejected; a newer minor version may add only optional fields to a known kind
-   under the compatibility rule in Section 15.
+   rejected. Adding a context kind requires a new protocol major version; a
+   newer minor version may add only optional fields to a known kind under the
+   compatibility rule in Section 15.
    When a spawn executes, the child MUST capture the parent's current
    structural entries and append one `spawn-frame` before the child becomes
    runnable. Parent workflow, decision, conditional-arm, and loop-iteration
@@ -2250,10 +2266,13 @@ document are to be interpreted as described in RFC 2119.
    event represents acceptance of a value, decision, or no-result completion
    and MUST reference the operation-result record. It is not emitted for a
    required-result `Declined`, `Failed`, or invalid `Completed` outcome.
-   Recovery that reuses an existing operation-result record MUST reuse the
+   Recovery that reuses an existing operation-result record MUST reuse its
    corresponding durable event occurrence rather than emit another logical
-   acceptance event. This event cardinality distinguishes physical hook
-   activity from the one source-level result that execution may consume.
+   acceptance event. If the operation-result record is durable but its event
+   record is absent, recovery MUST create exactly one replacement occurrence
+   under item 2 before source execution consumes the result. This event
+   cardinality distinguishes physical hook activity from the one source-level
+   result that execution may consume.
    For a resumable execution, causal event creation has the following mandatory
    ordering. After the operation-dispatch record is durable and before invoking
    the hook, Gantry MUST append and flush the corresponding operation-dispatch
@@ -2267,6 +2286,12 @@ document are to be interpreted as described in RFC 2119.
    under item 3; these requirements order durable event creation, not sink
    acknowledgement. They ensure that a journal can never expose a consumed
    operation transition without its canonical event occurrence.
+   On recovery, a durable outcome without its operation-completion event MUST
+   receive exactly one replacement event under item 2 before processing of the
+   outcome resumes. A durable completion event MUST never be duplicated. For a
+   `Declined` or `Failed` outcome that fails the task, this completion event is
+   the final operation-specific event; the resulting task failure is observed
+   separately and does not manufacture an operation-result event.
 2. Each event MUST have a stable event ID and activity ID. An activity is one
    syntax-validation, semantic-analysis, execution/resume, or shutdown
    invocation. An event associated with a program execution MUST also include
@@ -2346,11 +2371,15 @@ document are to be interpreted as described in RFC 2119.
    envelope. The bundle MUST preserve the stable reference keys used by the
    envelope. It MUST omit or explicitly redact raw output for a sink that lacks
    raw-output access and MUST omit or explicitly redact a rationale when the
-   sink's redaction policy disallows model-derived result content. Gantry MUST
-   retain referenced payloads until every required delivery has succeeded or
-   terminally failed and every best-effort delivery has either succeeded or
-   exhausted its policy. This makes reference-based events usable without
-   placing sensitive or repeated payloads directly in each event envelope.
+   sink's redaction policy disallows model-derived result content. A protected
+   payload referenced by a durable journal or event record MUST remain
+   resolvable for as long as that record is retained. Gantry MUST additionally
+   retain it until every required delivery has succeeded or terminally failed
+   and every best-effort delivery has either succeeded or exhausted its policy.
+   Retention or deletion policy MAY remove a complete journal and its payloads,
+   but MUST NOT leave a retained durable record with a dangling protected
+   reference. This makes reference-based events usable without placing
+   sensitive or repeated payloads directly in each event envelope.
 5. Event sinks MUST be configured independently as `required` or
    `best-effort`, with interpreter defaults overridable per sink. Gantry MUST
    retry only errors the sink classifies as retriable. A non-retriable error
@@ -3342,7 +3371,7 @@ The `apply_revision` assignment makes the by-value receiver rule visible: a
 `mut self` method never updates the caller's binding implicitly.
 
 A lexical session context applies one session choice to several explicit
-operations. Here both prompts share one child conversation forked from the
+operations. Here both prompts share one logical child session forked from the
 caller's active session:
 
 ```gantry
