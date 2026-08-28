@@ -525,6 +525,13 @@ document are to be interpreted as described in RFC 2119.
    workflow invokes no hook merely because of the call; evaluating its body
    MAY execute multiple explicitly written prompt or nested decision
    operations before its terminal decision is obtained.
+   The terminal `decide` reached through a decision-workflow call is the
+   logical decision operation; the call expression and each intermediate
+   decision-workflow frame are not additional operations. Its source location
+   and static operation site are those of that executed `decide`, while its
+   dynamic identity also records the complete workflow-call path that reached
+   it. This rule keeps operation counts, hook requests, journals, and events
+   aligned with the model-backed sites visible in source.
    Struct construction, field access, assignment, `Option<T>` construction,
    module lookup, function or method dispatch, and `join` are interpreter
    operations and MUST NOT invoke an agent hook.
@@ -720,9 +727,17 @@ document are to be interpreted as described in RFC 2119.
    field even though they do not affect evaluation. A repeated
    interpolation appears repeatedly so the request
    preserves the template's operation inputs exactly. Source locations MUST
-   identify the package-relative UTF-8 file and half-open byte span. The
-   operation ID MUST remain stable across validation retries and resume. Each
-   physical hook invocation MUST have a distinct dispatch ID. The zero-based
+   identify the package-relative UTF-8 file and a zero-based, end-exclusive
+   byte span into that file's exact source bytes. A permitted UTF-8 byte-order
+   mark is part of those bytes and therefore contributes three bytes to later
+   offsets even though the lexer ignores it. An operation location spans the
+   complete authored `prompt` or `decide` expression, including modifiers,
+   template delimiters, and a prompt result annotation when present. An
+   interpolation location spans the complete `${...}` island. Implementations
+   MAY additionally report line and scalar-column coordinates, but protocol
+   identity and resume MUST use the byte span. The operation ID MUST remain
+   stable across validation retries and resume. Each physical hook invocation
+   MUST have a distinct dispatch ID. The zero-based
    validation-attempt number advances only after Gantry receives output that
    fails UTF-8, JSON parsing, or schema validation; it is bounded by the
    operation's structured-output retry limit. The zero-based recovery-dispatch
@@ -911,7 +926,15 @@ document are to be interpreted as described in RFC 2119.
     retries and recovery of one indeterminate dispatch retain that identity.
     Implementations MAY encode or hash the path opaquely, but MUST journal
     enough of it to reconstruct the same identity on resume and MUST NOT reuse
-    an identity for another dynamic invocation.
+    an identity for another dynamic invocation. The source operation location
+    is the complete byte span defined in item 5. Call-frame, recursive-call,
+    spawn, and repeated-call occurrences are zero-based counters assigned in
+    deterministic encounter order within their immediate dynamic parent.
+    Branch identity uses the zero-based arm position in its conditional chain;
+    loop identity uses the zero-based body-execution and condition-evaluation
+    positions required by Section 9. These counters are logical interpreter
+    state and MUST be checkpointed or reconstructible from the durable prefix;
+    wall-clock order and executor completion order MUST NOT influence them.
 17. Hook outcomes and interpreter failures are separate domains. A hook
     outcome is exactly `Completed(raw_output)`, `Declined(reason)`, or
     `Failed(message)`. Gantry runtime errors MUST at least distinguish entry-
@@ -1293,9 +1316,12 @@ document are to be interpreted as described in RFC 2119.
    same non-`None` result type. When every joined task has a non-`None` result
    but those types are not all exactly equal, it yields a positional tuple in
    task declaration order. Otherwise it is a waiting statement that discards
-   successful outputs. With zero included tasks, `joinall()` is a no-result
-   no-op. It MUST
-   NOT stop waiting merely because one task fails.
+   successful outputs and has no result. In particular, if any included task
+   has no result, the complete `joinall()` has no result. With zero included
+   tasks, `joinall()` is likewise a no-result no-op. Semantic analysis MUST
+   determine the included handle set and resulting type at that program point;
+   a no-result `joinall()` cannot be bound or used as a trailing expression.
+   `joinall()` MUST NOT stop waiting merely because one task fails.
    After all tasks settle, one or more failures MUST fail the current Gantry
    task with one aggregate task/join error. That error MUST report failed tasks
    in source declaration order, not completion order. Propagation beyond the
@@ -2004,11 +2030,13 @@ raw_hashes          = { "#" } ;
 
 `xid_start_or_underscore` and `xid_continue_or_underscore` are the Unicode
 XID_Start and XID_Continue classes, respectively, with `_` additionally
-permitted. Source MUST be valid UTF-8. One UTF-8 byte-order mark MAY appear
-only as the first decoded scalar of a source file and is ignored; U+FEFF in
-any other source position is not whitespace and is a syntax error. An
-identifier MUST NOT equal a reserved word. Decimal directive integers have no
-sign, separator, or radix prefix.
+permitted. The exact one-character token `_` is reserved and MUST NOT be
+emitted as an `identifier_token`; leading `_` remains valid when at least one
+`XID_Continue` scalar follows it. Source MUST be valid UTF-8. One UTF-8
+byte-order mark MAY appear only as the first decoded scalar of a source file
+and is ignored; U+FEFF in any other source position is not whitespace and is a
+syntax error. An identifier MUST NOT equal a reserved word. Decimal directive
+integers have no sign, separator, or radix prefix.
 
 Block comments nest. An unterminated block comment, quoted string, raw string,
 escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
@@ -2066,6 +2094,13 @@ For a raw string, `matching_raw_hashes` means exactly the same number of `#`
 characters as `raw_hashes`. Backslashes have no special meaning in a raw
 string. The variable-hash delimiter rule is lexical and is intentionally
 described outside pure EBNF.
+
+A `block_prompt_token` is valid only in the `prompt_template` position of a
+`prompt` or `decide` expression. It is not a general `String` literal and
+cannot be used as a field default; ordinary or raw strings serve those source
+value positions. This restriction keeps triple-quoted indentation processing
+specific to model instructions rather than introducing a second multiline
+`String` value semantics.
 
 The reserved words are:
 
@@ -2167,7 +2202,11 @@ workflow's deep-copied local argument; it does not affect the caller. A method
 always has a receiver as its first parameter. Associated functions without a
 receiver are excluded from v1. A `decision` has no source-level result
 annotation because its interpreter-only decision schema is implied by the
-declaration.
+declaration. The `self` token is valid only within the lexical body of an
+inherent method, including nested blocks and spawned blocks inside that method;
+it is an analysis error in a free function, decision workflow, field default,
+or module-level declaration. A spawned block captures `self` under the copy
+rules in Section 10 rather than introducing a new receiver.
 
 ### 13.5 Blocks and statements
 
@@ -2263,6 +2302,10 @@ with_expression         = "with", identifier_token, value_block ;
 session_expression      = "session", "(", session_directive, ")",
                           value_block ;
 ```
+
+The grammar admits `self` as a primary expression so the same expression
+productions can parse method bodies and their nested blocks. Semantic analysis
+MUST enforce the receiver scope specified in Section 13.4.
 
 Postfix `(...)` dispatches a workflow function or method, postfix `.name`
 accesses a field or selects a method, and postfix `[integer]` projects a list
