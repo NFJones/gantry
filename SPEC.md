@@ -204,9 +204,10 @@ in later sections:
   a typed capability declared by the package and resolved by the integrating
   harness.
 - V1 has checked arithmetic, numeric ordering, short-circuit Boolean algebra,
-  and exact equality, but no deterministic string transformation, `for`,
-  user-defined generics, traits, or general exception handling. Semantic
-  judgments remain agent-mediated.
+  exact equality, and a small deterministic String library, but no `for`,
+  user-defined generics, traits, general exception handling, regular
+  expressions, or locale-sensitive text processing. Semantic judgments remain
+  agent-mediated.
 - Lists and tuples are typed aggregates. Source can construct, pass, return,
   interpolate, project, and pattern-destructure them. Lists additionally
   expose deterministic `len()` and dynamic `Int` indexing, enabling explicit
@@ -499,7 +500,9 @@ document are to be interpreted as described in RFC 2119.
     `snake_case`, `camelCase`, or `PascalCase`. All source identifiers MUST be
     in Unicode Normalization Form C (NFC); an implementation MUST reject rather
     than silently normalize a non-NFC identifier. Gantry v1 identifier
-    classification and normalization MUST use Unicode Standard version 15.1.0.
+    classification and normalization MUST use Unicode Standard version 16.0.0,
+    the same pinned release used by the deterministic String operations in
+    Section 5.
     A scalar that is not `XID_Start` or `XID_Continue` in that version MUST NOT
     become valid merely because a later Unicode release assigns it different
     properties. Identifier equality and name resolution MUST compare the exact
@@ -952,12 +955,15 @@ document are to be interpreted as described in RFC 2119.
 7. Template expressions MUST be interpolated before hook dispatch. To keep
    agent invocation explicit, an interpolation MAY contain only bindings,
    field paths, list or tuple projections, primitive literals, deterministic
-   primitive operators and conversions, `List<T>.len()`, and deterministic
-   aggregate constructor expressions composed from other permitted
-   interpolation expressions.
-   Function calls, method calls, `prompt`, `decide`, `action`, assignment, `join`, and
-   other expressions that can invoke a hook, alter control flow, or mutate
-   state are prohibited inside interpolation. Interpolations are evaluated in
+   primitive operators and conversions, the sealed deterministic String and
+   List methods in Section 5, and deterministic aggregate constructor
+   expressions composed from other permitted interpolation expressions.
+   Workflow calls, source-defined method calls, `prompt`, `decide`, `action`,
+   assignment, `join`, and other expressions that can invoke a hook, alter
+   control flow, or mutate state are prohibited inside interpolation. A call
+   inside interpolation MUST resolve to a sealed deterministic built-in whose
+   receiver and arguments are themselves valid interpolation expressions.
+   Interpolations are evaluated in
    source order. If any interpolation cannot be evaluated or encoded, the
    containing prompt MUST remain undispatched and execution MUST fail. The
    source template and interpolated prompt MUST both be supplied to the hook.
@@ -2585,9 +2591,10 @@ document are to be interpreted as described in RFC 2119.
     the effective configured values. `maximum_string_scalars` limits each
     normalized or computed String by Unicode-scalar count, and
     `maximum_list_items` limits each normalized or computed List by item count.
-    Both limits MUST be positive, MUST fit Gantry's directive-integer domain,
-    and are checked recursively at entry, operation, construction, parsing,
-    resume, and deterministic-evaluation boundaries. `model_retry_limit`
+    Both limits MUST be positive and no greater than Gantry's maximum `Int`,
+    `9007199254740991`, because `String.len()` and `List<T>.len()` return
+    `Int`. They are checked recursively at entry, operation, construction,
+    parsing, resume, and deterministic-evaluation boundaries. `model_retry_limit`
     applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
     retries after the initial attempt. `source_language` MUST equal the version
@@ -4736,8 +4743,10 @@ provider-specific or executor-specific types in Gantry programs:
    limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
    executor adapter, graceful-shutdown timeout, post-cancellation drain
-   duration, and the finite nonzero deterministic-transition yield quantum
-   required by Section 3. Implementations
+   duration, maximum String scalar count, maximum List item count, and the
+   finite nonzero deterministic-transition yield quantum required by Section
+   3. The two deterministic-value limits MUST be positive and no greater than
+   `9007199254740991`, as required by Sections 5 and 11. Implementations
    MUST accept directive and projection integers through `2^63 - 1` and MAY
    reject larger tokens during analysis. The v1 defaults are 30 seconds for
    each event-delivery attempt, 30 seconds for graceful shutdown, and 5 seconds
