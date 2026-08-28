@@ -79,9 +79,10 @@ These priorities favor a small source surface, not a small implementation
 contract. Sections 3 through 12 and 15 are intentionally detailed because
 durability and integration behavior must be portable; that protocol detail is
 not additional syntax an author must learn. A source author can start with
-Sections 1, 4 through 10, and the examples in Section 14, using Section 13 as
-a syntax reference. An implementer must also follow the execution, journal,
-observability, and embedding requirements.
+Sections 1.1 through 1.4 and the examples in Section 14, then consult Sections
+4 through 10 for the semantics of a construct and Section 13 for its formal
+syntax. An implementer must read the complete normative contract, including
+the execution, journal, observability, and embedding requirements.
 
 Gantry is harness-neutral. Mezzanine may integrate Gantry, but it is not an
 assumed runtime or part of the language contract. An integration supplies the
@@ -163,8 +164,8 @@ families together in one source file. It is intentionally broader than a
 typical program and is a reference feature map, not the minimum syntax and not
 a recommended workflow shape.
 First-time readers may skip to Section 1.2 for the compact syntax rules or to
-Section 14 for focused examples. Workflows SHOULD use only the constructs they
-need.
+Section 14 for focused examples. Workflows are clearest when they use only the
+constructs they need.
 
 Model-backed work is explicit at each `prompt` or `decide`, and harness work is
 explicit at each `action`. Ordinary call dispatch, construction, assignment,
@@ -537,9 +538,11 @@ valid:
 - Use triple-quoted block prompts for multiline instructions and ordinary or
   raw quoted prompts for short text. Keep result annotations on the same
   visual operation, even when the template spans several lines.
-- Use `with` and `session` blocks when several operations deliberately share
-  an agent or session policy; use operation-local modifiers for one-off
-  overrides.
+- Use `with <agent> { ... }` for every nondefault agent selection; it may wrap
+  one operation or group several. Use `session(<directive>) { ... }` when
+  several operations deliberately share one session choice, and use a
+  `session` modifier on one `prompt` or `decide` for a one-off session
+  override. Gantry has no operation-local agent modifier.
 - Give decision workflows question-like names and ordinary workflows
   action- or result-oriented names. Prefer a direct `decide` for a condition
   that does not need reusable preparation.
@@ -553,7 +556,8 @@ valid:
   makes `with <agent>` blocks easier to scan in model-authored source.
 
 The valid examples in Section 14 follow these conventions and serve as the
-canonical source-style reference for v1.
+preferred source-style reference for v1. They remain non-normative: Sections
+4 through 10 and 13 determine whether source is valid and what it means.
 
 ### 1.5 Core terminology
 
@@ -601,6 +605,17 @@ activity throughout this specification:
   hook by themselves.
 - A **named input** is one ordered, typed `using` entry supplied separately
   from rendered prompt text.
+- An **analysis error** rejects a package before execution because its parsed
+  source violates a static language rule such as name resolution, typing,
+  definite completion, schema generation, or task-handle ownership.
+- A **start failure** rejects a requested new execution before Gantry returns
+  an accepted execution ID. A **resume-start failure** rejects one resume
+  attempt before recovered interpretation begins and without changing the
+  execution's durable terminal status. Both are embedding outcomes rather
+  than failures of a running Gantry task.
+- A **runtime error** occurs after a new execution has a durable execution-
+  start record or after a resume begins advancing recovered state. Runtime
+  errors are task-local unless a rule explicitly makes one execution-wide.
 - A **foreground outcome** is the completion of root `main`. A **terminal
   execution outcome** is known only after foreground and detached work have
   settled and required terminal state is durable. Foreground success can
@@ -4728,13 +4743,17 @@ fn parse_settings(enabled_text: String, count_text: String)
 ```
 
 `len()` counts Unicode scalar values. `split` preserves empty segments and
-`replace` uses nonoverlapping matches:
+`replace` uses nonoverlapping matches. The following deterministic workflow
+keeps the example in a valid executable scope:
 
 ```gantry
-let scalar_count: Int = "é".len();
-let parts: List<String> = ",a,,b,".split(",");
-let revised: String = "aaaa".replace("aa", "b");
-// scalar_count is 1, parts is ["", "a", "", "b", ""], revised is "bb".
+fn inspect_text() -> Tuple<Int, List<String>, String> {
+    let scalar_count: Int = "é".len();
+    let parts: List<String> = ",a,,b,".split(",");
+    let revised: String = "aaaa".replace("aa", "b");
+    // scalar_count is 1, parts is ["", "a", "", "b", ""], revised is "bb".
+    (scalar_count, parts, revised)
+}
 ```
 
 ### 14.6 Decision workflows and conditional chains
