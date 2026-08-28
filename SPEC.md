@@ -369,6 +369,17 @@ document are to be interpreted as described in RFC 2119.
     aggregates: source may pass, return, interpolate into an operation, or
     project them, but cannot branch on, iterate over, or otherwise inspect
     them deterministically.
+12. Every protocol field that identifies a Gantry type MUST use one canonical
+    UTF-8 type descriptor. `String` is encoded as `String`; a declared struct
+    is encoded as its `crate::`-rooted qualified path; and constructed types
+    are encoded as `Option<T>`, `List<T>`, or `Tuple<T1,T2,...,Tn>` with no
+    whitespace and with each member recursively encoded by this rule. The
+    no-result form is encoded as `None`, and the interpreter-only decision
+    result is encoded as `Decision`. Source aliases introduced by `use` MUST
+    be resolved before a descriptor is produced. Canonical descriptors are
+    metadata rather than source values, but they ensure that hooks, journals,
+    events, and diagnostics identify the same type independently of the
+    spelling visible at a call site.
 
 ## 6. Functions and Methods
 
@@ -573,6 +584,7 @@ document are to be interpreted as described in RFC 2119.
      interpolated prompt;
    - JSON-serialized typed arguments;
    - the expected result kind;
+   - the expected canonical result-type descriptor from Section 5;
    - the expected JSON Schema;
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
@@ -592,7 +604,10 @@ document are to be interpreted as described in RFC 2119.
    vector containing one record for each interpolation island in source order;
    each record contains the exact UTF-8 source text between that island's
    `${` and matching `}` delimiters, its package-relative source file and
-   half-open byte span, its static type, and its canonical strict-JSON value.
+   half-open byte span, its canonical static-type descriptor from Section 5,
+   and its RFC 8785 canonical strict-JSON value. The expected result descriptor
+   is the declared value type for `value`, `None` for `no-result`, and
+   `Decision` for `decision`.
    Comments and whitespace inside the island remain part of that source-text
    field even though they do not affect evaluation. A repeated
    interpolation appears repeatedly so the request
@@ -883,10 +898,18 @@ document are to be interpreted as described in RFC 2119.
 10. The retry limit is configured per interpreter and MAY be overridden per
    operation. It counts retries after the initial attempt; zero permits exactly
    one attempt. The v1 interpreter default is two retries after the initial
-   attempt. Retry backoff MUST be configurable; its v1 default is exponential
-   backoff beginning at 100 milliseconds, capped at two seconds, with
-   randomized jitter. The effective retry limit and backoff policy are bound
-   to resumable execution as specified in Section 11.
+   attempt. Retry backoff MUST be configurable. The v1 default uses full-jitter
+   exponential backoff: for the one-based retry number `r`, the delay ceiling
+   is `min(100 ms * 2^(r - 1), 2 s)`, and the selected delay is sampled
+   uniformly from the inclusive range of whole microseconds from zero through
+   that ceiling. An implementation MUST record the selected delay in the
+   validation-attempt record before sleeping. If execution is interrupted
+   before the corresponding retry dispatch is durably recorded, resume MUST
+   wait the complete recorded delay again; it MUST NOT sample another delay.
+   The effective retry limit, initial delay, cap, and jitter mode are bound to
+   resumable execution as specified in Section 11. A configured policy MAY
+   choose no jitter, but it MUST still identify its initial delay, cap, and
+   jitter mode explicitly.
 11. When retries are exhausted, the operation and its current Gantry task MUST
     fail under Section 7. Gantry has no language-level error recovery within
     that task in v1; parallel failure observation and propagation follow
@@ -1083,14 +1106,18 @@ document are to be interpreted as described in RFC 2119.
    different non-`None` result types, it yields
    `Tuple<T1, T2, ..., Tn>`, whose positional types and values follow argument
    order. Joining a no-result task in this form is an analysis error. A multi-
-   task join waits until every named task settles even after a failure. Entering
-   the join consumes every named handle, including handles for successful tasks
-   in a join where another task fails. After settlement, failures abort the
-   current Gantry task as one aggregate task/join error ordered by join
-   argument, never by completion time. A failed single-task join consumes its
-   handle and fails the current Gantry task with a task/join error. Propagation
-   beyond that task follows Section 7 rather than implicitly aborting unrelated
-   parallel work.
+   task join waits until every named task settles even after a failure. Before
+   waiting, Gantry MUST append and flush one task-state record that identifies
+   the join form, source location, named handles in argument order, and their
+   transition from attached to consumed-by-join. Only then are the handles
+   consumed. This transition includes handles for successful tasks in a join
+   where another task fails. After settlement, Gantry MUST append and flush the
+   ordered result or aggregate failure before returning it to source execution.
+   Failures abort the current Gantry task as one aggregate task/join error
+   ordered by join argument, never by completion time. A failed single-task
+   join likewise consumes its handle durably and fails the current Gantry task
+   with a task/join error. Propagation beyond that task follows Section 7 rather
+   than implicitly aborting unrelated parallel work.
 6. `joinall` is the scope-oriented form for joining every unconsumed, attached
    task handle that is owned by the current Gantry task, declared directly in
    the current lexical scope, and definitely available at the `joinall`
@@ -1112,6 +1139,11 @@ document are to be interpreted as described in RFC 2119.
    state on all incoming control-flow paths. A handle that is consumed or
    detached on only some incoming paths is an analysis error rather than a
    conditionally included `joinall` member.
+   Before waiting, a nonempty `joinall` MUST append and flush the same
+   consumed-by-join task-state transition required for a named join, listing
+   included handles in declaration order. Its ordered result or aggregate
+   failure MUST likewise be appended and flushed before source execution
+   consumes it. A zero-task `joinall` requires no ownership record.
 7. A child failure does not immediately cancel siblings. A named child's
    failure is deferred until `join`; a scoped failure is deferred until
    `joinall`.
@@ -1124,6 +1156,12 @@ document are to be interpreted as described in RFC 2119.
    execution MAY report foreground success while detached tasks continue.
    Requiring an explicit `detach` keeps background execution visible to humans,
    agents, analysis, and recovery tooling.
+   Before releasing the child from parent cancellation constraints or allowing
+   the enclosing scope to continue, Gantry MUST append and flush a task-state
+   record that identifies the source `detach`, child task, previous owner, and
+   transition to interpreter-owned detached work. Failure to make that transfer
+   durable is a journal failure; the task remains attached for cancellation and
+   cleanup purposes.
    Detaching a value-producing task intentionally discards its eventual value;
    completion, failure, and observability remain governed by items 9 and 10.
    Semantic analysis MUST model each handle on every reachable path as exactly
@@ -1333,12 +1371,60 @@ document are to be interpreted as described in RFC 2119.
    normative.
 10. An execution-start record MUST contain an effective-configuration identity
     and the configuration fields needed to verify it. The identity is the
-    SHA-256 digest of the RFC 8785 JSON Canonicalization Scheme encoding of a
-    versioned object containing the default structured-output retry limit and
-    backoff policy, maximum directive integer, root-session identity and
-    provenance, required event-sink stable identities and delivery policies,
-    and protocol major versions. Required sinks MUST be ordered by stable sink
-    identity before canonicalization.
+    SHA-256 digest of the RFC 8785 JSON Canonicalization Scheme encoding of the
+    following canonical object shape. Property names and enum strings shown
+    here are normative. Protocol version components are JSON numbers. Every
+    other integer-valued field is a canonical unsigned decimal string with no
+    sign or leading zero except the value `0`; this avoids loss of precision in
+    RFC 8785 implementations whose JSON number domain is IEEE 754 binary64.
+    Durations are represented as whole microseconds, identities are JSON
+    strings, and no additional properties participate in the v1 identity:
+
+    ```json
+    {
+      "configuration_protocol": { "major": 1, "minor": 0 },
+      "hook_protocol_major": 1,
+      "journal_protocol_major": 1,
+      "event_protocol_major": 1,
+      "maximum_directive_integer": "9223372036854775807",
+      "root_session": {
+        "id": "logical-session-id",
+        "provenance": "embedder-supplied"
+      },
+      "structured_output": {
+        "retry_limit": "2",
+        "backoff": {
+          "initial_us": "100000",
+          "cap_us": "2000000",
+          "jitter": "full"
+        }
+      },
+      "required_event_sinks": [
+        {
+          "id": "stable-sink-id",
+          "raw_output_enabled": false,
+          "redaction_policy_id": "policy-id",
+          "retry_limit": "3",
+          "backoff": {
+            "initial_us": "100000",
+            "cap_us": "2000000",
+            "jitter": "full"
+          }
+        }
+      ]
+    }
+    ```
+
+    The displayed values illustrate the v1 defaults; the identity MUST encode
+    the effective configured values. `root_session.provenance` is exactly
+    `embedder-supplied` or `gantry-created`. `jitter` is exactly `none` or
+    `full`; a future mode requires a protocol change. Required sinks MUST be
+    ordered by the unsigned UTF-8 bytes of `id` before canonicalization, and
+    their IDs and redaction-policy IDs MUST be valid UTF-8. The root-session ID
+    and every required-sink ID MUST use the same stable string representation
+    that their embedding interfaces expose. This exact object definition makes
+    independently produced identities comparable rather than leaving property
+    spelling or nesting to an implementation.
     Resume MUST reject changes to those fields. Executor implementation,
     worker count, operation timeouts, shutdown timing, best-effort sinks, and
     logical-agent-to-provider mappings MAY change on resume; such changes MUST
@@ -1405,9 +1491,22 @@ document are to be interpreted as described in RFC 2119.
 5. Event sinks MUST be configured independently as `required` or
    `best-effort`, with interpreter defaults overridable per sink. Gantry MUST
    retry only errors the sink classifies as retriable. A non-retriable error
-   exhausts delivery immediately. The default policy is three retries after
-   the initial attempt with exponential backoff beginning at 100 milliseconds,
-   capped at two seconds, and randomized jitter.
+   exhausts delivery immediately. The retry limit counts retries after the
+   initial delivery attempt. The default policy is three retries and uses the
+   same full-jitter exponential formula as Section 8: for one-based retry `r`,
+   the ceiling is `min(100 ms * 2^(r - 1), 2 s)`, and the delay is sampled
+   uniformly from whole microseconds from zero through that ceiling.
+   For a resumable execution, Gantry MUST append and flush an event-delivery
+   state record after every attempt and before any retry sleep. That record
+   MUST identify the sink, stable event ID, distinct delivery-attempt ID,
+   zero-based attempt number, outcome classification, remaining retry budget,
+   and selected delay when another attempt is permitted. If interrupted before
+   the next attempt is durably recorded, resume MUST wait the complete recorded
+   delay again and then deliver the same event ID with a new delivery-attempt
+   ID. A durably recorded success or terminal exhaustion MUST NOT be delivered
+   again to that sink. An indeterminate delivery whose attempt was recorded but
+   whose outcome was not is delivered again, giving event delivery its stated
+   at-least-once semantics.
 6. Event delivery is at least once. Sinks MUST deduplicate using the stable
    event ID. Exhaustion for a required sink MUST abort the affected activity
    and its execution when one exists; exhaustion for a best-effort sink MUST
@@ -2569,6 +2668,17 @@ provider-specific or executor-specific types in Gantry programs:
    serially. Futures returned by these interfaces MUST be `Send` for the
    lifetime of their borrows. Gantry MUST package all borrowed state into owned
    task state before submitting a `Send + 'static` future to the executor.
+10. Source, entry input, interpolated arguments, prompts, session identifiers,
+    raw hook output, normalized values, journals, and protected event payloads
+    MUST be treated as potentially sensitive integration data. Gantry MUST NOT
+    copy protected payloads into default diagnostics, display strings, or sinks
+    that lack the applicable capability. An embedder MUST control access to
+    journal storage and payload references and MUST define retention and
+    deletion policy for them. At-rest encryption, credential management, and
+    operator authorization remain deployment concerns, but an implementation
+    MUST provide enough separation between ordinary diagnostics and protected
+    records for an embedder to enforce those policies without parsing free-form
+    text.
 
 The canonical serialization format and concrete Rust data-type layout are
 implementation choices. They MUST preserve every field, category, ordering,
