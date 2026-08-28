@@ -174,7 +174,8 @@ document are to be interpreted as described in RFC 2119.
    schema before execution begins. An embedding API MUST NOT require callers to
    preparse the entry input through a JSON representation that can erase those
    errors. When `main` has no parameter, supplying entry bytes is an error.
-   Gantry MUST return a successful entry result to the embedder as strict JSON
+   Gantry MUST return a successful entry result to the embedder as the
+   canonical strict JSON defined in Section 8
    together with a host-level indication of whether the function returned a
    value; this indication distinguishes a no-result `main` from an `Option<T>`
    result whose JSON value is `null`. A no-result `main` returns JSON `null`
@@ -202,8 +203,10 @@ document are to be interpreted as described in RFC 2119.
    ambiguous. The package root is a containment boundary, not an alternate
    lookup directory for nested modules.
 8. Inline modules of the form `mod foo { ... }` MUST be supported. Module items
-   are visible package-wide in v1 and qualified access uses Rust-inspired
-   `module::item` paths.
+   are addressable package-wide in v1, but an item is not automatically added
+   to another module's unqualified lexical namespace. Code in another module
+   MUST use a `use` declaration or a Rust-inspired qualified `module::item`
+   path.
 9. `mod` declarations MUST precede references to their namespace. Module cycles,
    duplicate declarations, and duplicate module resolutions are analysis
    errors. Visibility constraints are excluded from v1.
@@ -221,7 +224,10 @@ document are to be interpreted as described in RFC 2119.
 12. Module filenames and identifiers MUST be valid UTF-8 and MAY use
     `snake_case`, `camelCase`, or `PascalCase`. All source identifiers MUST be
     in Unicode Normalization Form C (NFC); an implementation MUST reject rather
-    than silently normalize a non-NFC identifier. Authors SHOULD use
+    than silently normalize a non-NFC identifier. Identifier equality and name
+    resolution MUST compare the exact NFC Unicode scalar sequence and MUST be
+    case-sensitive; implementations MUST NOT apply case folding or locale-
+    dependent comparison. Authors SHOULD use
     `PascalCase` for struct types and `snake_case` for modules, agents,
     workflows, methods, fields, parameters, bindings, and task handles. These
     case forms are readability conventions rather than analysis requirements.
@@ -525,8 +531,11 @@ document are to be interpreted as described in RFC 2119.
    The v1 operation kinds are `prompt` and `decision`. The result kind is
    `value`, `no-result`, or `decision`. Typed arguments MUST be an ordered
    vector containing one record for each interpolation island in source order;
-   each record contains the source expression, its static type, and its strict-
-   JSON value. A repeated interpolation appears repeatedly so the request
+   each record contains the exact UTF-8 source text between that island's
+   `${` and matching `}` delimiters, its static type, and its canonical strict-
+   JSON value. Comments and whitespace inside the island remain part of that
+   source-text field even though they do not affect evaluation. A repeated
+   interpolation appears repeatedly so the request
    preserves the template's operation inputs exactly. Source locations MUST
    identify the package-relative UTF-8 file and half-open byte span. The
    operation ID MUST remain stable across validation retries and resume. Each
@@ -577,6 +586,10 @@ document are to be interpreted as described in RFC 2119.
    compact strict JSON, with `None` rendered as `null`. This compact encoding
    MUST use the RFC 8785 JSON Canonicalization Scheme so equivalent Gantry
    values produce the same interpolated prompt across implementations.
+   Consequently, `Some("text")` held as an `Option<String>` interpolates as
+   the JSON text `"text"`, including its quotes, while a plain `String` with
+   the same contents interpolates as `text`. This distinction preserves the
+   type and absence semantics of optional values.
    Replacement text is inserted verbatim and MUST NOT be scanned again for
    `${...}` or `$$`; interpolation is a single-pass template operation rather
    than recursive template evaluation. Invalid references and values that
@@ -700,6 +713,12 @@ document are to be interpreted as described in RFC 2119.
    the same root-schema rule as every value-producing operation.
 2. A `String` result is represented by a JSON string. A struct result is a
    JSON object whose property names directly match its declared field names.
+   After source construction or hook-output normalization, a runtime struct
+   contains every declared field. Whenever Gantry serializes that normalized
+   struct, it MUST emit every field; an `Option<T>` field whose value is `None`
+   is emitted as JSON `null`, and an applied default is emitted as its resolved
+   value. Although hook output may omit an optional property, omission is not
+   preserved as a distinct runtime state.
 3. A `List<T>` result is represented by a JSON array. Every array item MUST
    validate as `T`, and item order MUST be preserved. Gantry MUST derive an
    array schema with the schema for `T` as its `items` schema.
@@ -713,6 +732,14 @@ document are to be interpreted as described in RFC 2119.
    omitted. Omission assigns the field's declared literal default when one
    exists and otherwise normalizes to `None`; explicit `null` always normalizes
    to `None`.
+   Whenever Gantry serializes a first-class runtime value as JSON for a hook
+   argument, prompt interpolation of a non-`String` value, an entry result, or
+   another language-defined boundary, it MUST use the RFC 8785 JSON
+   Canonicalization Scheme. Raw entry input and raw hook output are accepted in
+   any otherwise valid RFC 8259 spelling and are canonicalized only after
+   successful parsing, validation, and normalization. Plain `String`
+   interpolation remains the deliberate exception because it inserts string
+   contents rather than a JSON value.
 6. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
    during semantic analysis and MUST independently validate every successful
    hook result against that schema. Every schema root MUST identify that
@@ -857,7 +884,9 @@ document are to be interpreted as described in RFC 2119.
    the condition of `if`, `else if`, `while`, or `until`, or as the returned
    expression of another decision workflow. Its result cannot be bound,
    returned by an ordinary workflow, interpolated, or discarded as a
-    standalone statement. Semantic analysis MUST prove that every reachable
+    standalone statement. Decision workflows are free module items in v1;
+    decision methods and decision-valued first-class values are excluded.
+    Semantic analysis MUST prove that every reachable
     normal completion of a decision workflow yields a decision expression and
     that every reachable explicit `return` in that workflow returns a decision
     expression. A no-result `return;`, an ordinary value return, or fallthrough
@@ -964,6 +993,15 @@ document are to be interpreted as described in RFC 2119.
    A detached task cannot subsequently be joined because `detach` consumes its
    handle. These rules make explicit detachment a deliberate transfer of both
    lifetime and failure ownership to the interpreter instance.
+   A detached-task failure MUST NOT cancel sibling detached tasks. Terminal
+   execution state is determined after all detached work settles: a foreground
+   runtime error remains the primary terminal category and includes detached
+   failures as secondary details; otherwise, one or more detached failures
+   produce the `detached-task failure` terminal category; otherwise, a
+   cancellation produces the `cancellation` category; and only then is the
+   terminal category `success`. Multiple detached failures MUST be reported in
+   stable task-path order, using source spawn location and dynamic spawn
+   occurrence rather than completion time.
 10. Parent timeout and cancellation constraints apply while a child remains
    attached and propagate through its attached descendants. Detachment releases
    the task from those parent constraints. Integration-specific operation
@@ -1259,7 +1297,9 @@ accepted only where the productions below include an optional final comma.
 ### 13.2 Lexical grammar
 
 ```ebnf
-source              = { item }, end_of_file ;
+source              = [ utf8_bom ], { item }, end_of_file ;
+
+utf8_bom            = U+FEFF ;
 
 whitespace          = " " | "\t" | "\r" | "\n" ;
 line_terminator     = "\r\n" | "\n" | "\r" ;
@@ -1284,8 +1324,11 @@ raw_hashes          = { "#" } ;
 
 `xid_start_or_underscore` and `xid_continue_or_underscore` are the Unicode
 XID_Start and XID_Continue classes, respectively, with `_` additionally
-permitted. Source MUST be valid UTF-8. An identifier MUST NOT equal a reserved
-word. Decimal directive integers have no sign, separator, or radix prefix.
+permitted. Source MUST be valid UTF-8. One UTF-8 byte-order mark MAY appear
+only as the first decoded scalar of a source file and is ignored; U+FEFF in
+any other source position is not whitespace and is a syntax error. An
+identifier MUST NOT equal a reserved word. Decimal directive integers have no
+sign, separator, or radix prefix.
 
 Block comments nest. An unterminated block comment, quoted string, raw string,
 escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
@@ -1300,7 +1343,10 @@ below.
 `string_character` is any Unicode scalar value other than `"` or `\`; newline
 characters are included. `block_prompt_body` is the shortest sequence ending
 before an unescaped `"""` delimiter and uses the same escape sequences as an
-ordinary string. A block prompt MUST begin with a newline immediately after
+ordinary string. One or two consecutive unescaped quote characters are block-
+prompt content; only three begin the closing delimiter. Escaping at least one
+quote permits a literal three-quote sequence in the decoded content. A block
+prompt MUST begin with a newline immediately after
 its opening delimiter; that required opening newline is structural and is not
 part of the resulting template. Its closing delimiter MUST appear on a line
 containing only indentation and the delimiter. The line break immediately
@@ -1536,6 +1582,13 @@ A `with` expression yields its block's trailing value, if any, which permits a
 lexically selected agent to produce the enclosing workflow's result. If its
 block has no trailing value, the `with` expression has no result.
 
+`prompt`, `join`, `joinall`, and `with` are complete expression forms rather
+than direct bases of a postfix chain. To select a field, invoke a method, or
+project from one of their results without first binding it, source MUST
+parenthesize that expression, as in `(join(first, second))[0]`. This explicit
+grouping avoids ambiguity between prompt result annotations and operations on
+the produced value.
+
 Semantic analysis MUST validate every postfix step from left to right. A call
 suffix is legal only on a function item or selected inherent method; a field
 suffix is legal only on a struct value unless it immediately selects an
@@ -1628,8 +1681,7 @@ decision_expression     = decide_expression
 decide_expression       = "decide", [ prompt_modifiers ], prompt_template ;
 decision_call           = qualified_path, "(", [ argument_list ], ")" ;
 decision_with_expression
-                        = "with", identifier_token, "{",
-                          { statement }, decision_tail, "}" ;
+                        = "with", identifier_token, decision_block ;
 
 loop_statement          = "loop", [ loop_modifiers ], statement_block ;
 loop_modifiers          = "(", loop_modifier,
@@ -1665,6 +1717,10 @@ inherited value. `limit` belongs only to the enclosing `while` or `until`. The
 `until` grammar deliberately places its body before `when` and the post-test
 decision. A `decision_call` MUST resolve to a `decision` declaration; an
 ordinary workflow call is not a condition.
+The body of a decision-valued `with` expression follows the same definite-
+decision rules as any other `decision_block`: it either has a terminal decision
+tail or, when enclosed by a decision workflow, proves that every reachable
+path exits that workflow through a valid decision `return`.
 
 ### 13.9 Parallel control flow
 
@@ -2146,7 +2202,16 @@ provider-specific or executor-specific types in Gantry programs:
    Execution accepts either no entry input or one raw byte sequence containing
    strict JSON as required by `main`; Gantry, rather than the embedder, performs
    the decoding, parsing, duplicate-member rejection, and schema validation
-   defined in Section 4. Execution returns an execution ID and a typed
+   defined in Section 4. It MUST also accept an optional root-session
+   specification containing an embedder-chosen logical session ID. When that
+   specification is present, the embedder MUST arrange for the hook integration
+   to resolve the ID to its integration-owned conversational context; Gantry
+   treats that context as opaque and does not serialize it. When the
+   specification is absent, Gantry creates the fresh root session required by
+   Section 7. Resume MUST restore the journaled root-session identity and MUST
+   NOT accept a replacement; inability of the integration to resolve a
+   supplied root session before the first affected dispatch is a hook-creation
+   failure. Execution returns an execution ID and a typed
    foreground outcome that distinguishes a value, no result, and every
    runtime-error category defined in Section 7. A
    foreground outcome MAY be returned while explicitly detached tasks remain;
