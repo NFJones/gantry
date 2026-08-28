@@ -156,7 +156,9 @@ conformance profiles:
   and 12.
 - An **embedding-profile implementation** exposes the interfaces and versioned
   protocol schemas in Section 15. It MUST identify which evaluator profile it
-  embeds.
+  embeds. Interfaces for concurrent or durable capabilities apply only when
+  the embedding includes the corresponding evaluator profile; in particular,
+  a nondurable embedding does not require journal storage or resume.
 - A **conforming Gantry v1 implementation** satisfies every requirement of one
   or more named profiles. A claim MUST name all claimed profiles and MUST NOT
   imply support for an unclaimed profile. The unqualified phrase “conforming
@@ -2039,10 +2041,13 @@ Task handles are governed by Section 10 and are not source values.
    Every expression MUST have one statically known type. `Some(value)` has
    type `Option<T>` when `value` has type `T`. A `None` expression acquires its
    `Option<T>` type only from an expected type supplied by a binding annotation,
-   assignment target, parameter, struct field, or return position. Bare `None`
-   in a position without such an expected type, including a top-level prompt
-   interpolation island, is an analysis error; authors can interpolate a typed
-   option binding instead. Gantry performs no other implicit option wrapping.
+   assignment target, parameter, struct field, return position, or aggregate
+   member whose enclosing constructor has a known expected type. Expected
+   member types propagate recursively through list, tuple, option, result,
+   struct, and enum construction. Bare `None` in a position without such an
+   expected type, including a top-level prompt interpolation island, is an
+   analysis error; authors can interpolate a typed option binding instead.
+   Gantry performs no other implicit option wrapping.
 <a id="GNT-5.4"></a>
 
 4. `List<T>` is an ordered, homogeneous collection. V1 supports list literals
@@ -3374,10 +3379,13 @@ operation modifiers defined in Sections 6 and 13.
    produces exactly one `oneOf` array containing `PAYLOAD(NAME,String)` for
    `Declined`, `InvalidOutput`, `ProviderFailure`, `Timeout`, `PolicyDenied`,
    and `Cancelled`, in that order, followed by
-   `PAYLOAD("UnknownOutcome",Tuple<String,String>)`. A declared enum
-   definition produces exactly one `oneOf` array whose branches follow source
-   variant order, using `UNIT(NAME)` for a unit variant and `PAYLOAD(NAME,T)`
-   for a payload variant.
+   `PAYLOAD("UnknownOutcome",Tuple<String,String>)`. This `OperationError`
+   node is available for protocol and source-value schemas such as the result
+   of `attempt`; Section 5 excludes it from a hook's declared output type, so
+   it is never the expected schema sent for the underlying operation. A
+   declared enum definition produces exactly one `oneOf` array whose branches
+   follow source variant order, using `UNIT(NAME)` for a unit variant and
+   `PAYLOAD(NAME,T)` for a payload variant.
    `Decision` produces exactly `DECISION_NODE` from Section 9, item 2, when
    nested as `NODE(Decision)`. A declared struct or enum
    type produces exactly `{"$ref":"#/$defs/KEY"}`, where `KEY` is that
@@ -3982,12 +3990,15 @@ MUST NOT be described as a structured child after transfer.
     returns, every finite best-effort delivery obligation already owned by the
     interpreter, including obligations for that final event, MUST also reach
     success or terminal exhaustion under its captured policy. Journaled
-    settlements MUST be durable, every execution-journal owner MUST then be
-    released, and no delivery worker may remain dependent on the terminal
-    interpreter. A delivery-barrier failure or best-effort exhaustion summary
-    is reported separately from the task and execution outcomes already fixed
-    in the shutdown report. An interpreter cannot be reused after shutdown
-    begins. Embedders MUST complete shutdown before dropping the interpreter.
+    settlements MUST be durable, release MUST have been attempted for every
+    execution-journal owner, and no delivery worker may remain dependent on the
+    terminal interpreter. If every release succeeds, shutdown returns an
+    orderly result. If a release fails, shutdown returns a non-orderly
+    `release-failed` result with that owner retained as unreleased under
+    Section 11. A delivery-barrier failure or best-effort exhaustion summary is
+    reported separately from the task and execution outcomes already fixed in
+    the shutdown report. An interpreter cannot be reused after shutdown begins.
+    Embedders MUST complete shutdown before dropping the interpreter.
 <a id="GNT-10.13"></a>
 
 13. Because Rust destruction cannot await, dropping an interpreter without
@@ -4105,10 +4116,11 @@ Item 11 clarifies the boundary between resumption and replay.
    delivery barrier in Section 12; finite best-effort delivery MAY continue
    afterward while the current interpreter retains journal ownership. An
    orderly interpreter shutdown is stricter: Section 10 requires every such
-   finite obligation to settle and every journal owner to be released before
-   shutdown returns. Gantry MUST also release ownership after a start or
-   resume-start failure when
-   ownership was acquired but interpretation never began.
+   finite obligation to settle and every journal-owner release to be attempted
+   before shutdown returns. A failed attempt produces the non-orderly
+   `release-failed` shutdown result defined there. Gantry MUST also release
+   ownership after a start or resume-start failure when ownership was acquired
+   but interpretation never began.
    Release failure is a journal failure after execution has begun. A start or
    resume-start invocation that has not advanced durable execution state MUST
    instead include ownership-release failure in its structured pre-execution
@@ -4201,10 +4213,15 @@ Item 11 clarifies the boundary between resumption and replay.
    SHA-256 digest of canonical core IR bytes under the published IR schema.
    Canonical IR contains resolved item paths, types, effects, desugared control
    flow, static operation and task sites, and modifiers, but excludes comments,
-   whitespace, physical file paths, line endings, and diagnostic spans. Gantry
-   SHOULD retain the original immutable source snapshot by content address for
-   audit, but cosmetic source changes do not prevent resume when they lower to
-   the same canonical IR identity.
+   whitespace, physical file paths, line endings, and diagnostic spans. The
+   durable execution record MUST retain the exact canonical IR and source map,
+   or a content-addressed reference through which the embedding can retrieve
+   their exact bytes and verify the recorded identity. Missing, unavailable, or
+   mismatched recovery artifacts are a
+   `source-or-configuration-incompatibility` resume-start failure. Gantry SHOULD
+   retain the original immutable source snapshot by content address for audit,
+   but cosmetic source changes do not prevent resume when they lower to the
+   same canonical IR identity.
 
    If a new package has a different IR identity, resume MUST reject it unless
    the caller supplies an explicit versioned migration accepted by the
@@ -5023,7 +5040,7 @@ The grammar uses extended Backus-Naur form (EBNF):
 - `A | B` selects one alternative;
 - `[ A ]` makes `A` optional;
 - `{ A }` repeats `A` zero or more times;
-- `( A )` groups terms;
+- `( A )` groups EBNF terms; quoted `"("` and `")"` are source terminals;
 - productions ending in `_token` describe lexical token classes; where a
   production is explicitly contextual, the parser MAY reclassify a token with
   the same boundaries after ordinary lexing; and
@@ -5664,15 +5681,17 @@ indexing another type is an analysis error. `Unit` has no fields, methods, or
 index operation, so an attempted postfix suffix on `()` is rejected by those
 ordinary rules.
 
-As a semantic disambiguation rule applied after parsing, a struct constructor
-used anywhere in the condition immediately before an `if` (including an
-`else if`) or `while` body, in an `if let` scrutinee, or in a `match` scrutinee
-MUST be enclosed in parentheses. For example,
+As a semantic disambiguation rule applied after parsing, every struct
+constructor expression nested at any depth within an `if` (including an
+`else if`) or `while` condition, an `if let` scrutinee, or a `match` scrutinee
+MUST have its own enclosing parentheses. For example,
 `if (Policy { enabled: true }).enabled { ... }` is valid, while the same
-condition without those parentheses is rejected. An `until` condition is not
-subject to this rule because it follows the body and ends at `;`. This rule
-gives parsers, human readers, and model authors one deterministic interpretation
-of a path followed by `{` at a control-flow boundary.
+condition without those parentheses is rejected; nested source such as
+`if check((Policy { enabled: true })) { ... }` follows the same rule. An
+`until` condition is not subject to this rule because it follows the body and
+ends at `;`. This rule gives parsers, human readers, and model authors one
+deterministic interpretation of a path followed by `{` at a control-flow
+boundary.
 
 ### 13.7 Prompts and interpolation
 
@@ -5818,7 +5837,8 @@ if_statement            = "if", conditional_head, statement_block,
                           { "else", "if", conditional_head, statement_block },
                           [ "else", statement_block ] ;
 conditional_head        = condition_expression
-                        | "let", pattern, "=", expression ;
+                        | if_let_head ;
+if_let_head             = "let", pattern, "=", expression ;
 condition_expression    = expression ;
 decide_expression       = "decide", [ prompt_modifiers ], prompt_template,
                           [ using_clause ] ;
@@ -5841,9 +5861,11 @@ Modifier parentheses cannot be empty, and duplicate modifiers are analysis
 errors. Omitted `limit` and `limit = unbounded` both mean no source-level
 limit; a numeric limit must be positive. `for` evaluates its list expression
 once and has the finite snapshot semantics in Section 9. Conditions must have
-type `Bool` or `Decision`; pattern bindings and for-item bindings are scoped to
-their selected body. The `until` grammar deliberately places its body before
-its post-test.
+type `Bool` or `Decision`. An `if let` scrutinee instead has the type required
+by its pattern; a successful structural match makes the pattern bindings
+available only in the selected body. For-item bindings are likewise scoped to
+their body. The `until` grammar deliberately places its body before its
+post-test.
 
 ### 13.9 Parallel control flow
 
@@ -5891,9 +5913,9 @@ grammar:
 | --- | --- | --- | --- |
 | Function, method, or spawned block | ordinary block | Optional, but required on each reachable normal completion of a value-returning body | No |
 | `if`, loop, or effect-only `match` arm | statement-only block | Prohibited | No |
-| Value-producing `match` arm | value block | Required | The complete value is ignored only with `discard match ...;` |
+| Value-producing `match` arm | value block | Required | No within an enclosing expression; `discard match ...;` requires `;` after the complete match |
 | Statement-only `with` or `session` | statement-only block | Prohibited | No |
-| Value-producing `with` or `session` | value block | Required | A non-`Unit` value is ignored only with explicit `discard` |
+| Value-producing `with` or `session` | value block | Required | No within an enclosing expression; `discard with ... { ... };` or `discard session(...) { ... };` requires `;` |
 
 Only `Unit` expressions may be bare expression statements; other values use
 explicit `discard`. A Unit operation or workflow call therefore ends in `;`,
@@ -5947,8 +5969,6 @@ fn main() -> Report {
 `domain.gnt`:
 
 ```gantry
-agents { reviewer }
-
 struct Citation {
     title: String,
     url: String,
@@ -5976,8 +5996,8 @@ fn produce_report(topic: String) -> Report {
 }
 ```
 
-The two agent declarations merge their three names into one package-wide set.
-Only `main.gnt` declares the default agent.
+The agent declaration in `main.gnt` makes both names available package-wide,
+including in `workflows.gnt`; only `main.gnt` declares the default agent.
 
 ### 14.3 Primitive values, structs, tagged values, and structural routing
 
@@ -6682,9 +6702,9 @@ around that operation in the workflow body rather than around the call.
 
 ### 14.14 Common invalid forms and their corrections
 
-The following non-normative excerpts collect source shapes that are rejected
-by syntax or semantic analysis, plus syntactically valid forms that
-deterministically fail at runtime. Unless a snippet contains a module-level
+The following non-normative excerpts collect syntax errors, analysis errors,
+and syntactically valid forms that deterministically fail at runtime. Each
+failing comment names its phase. Unless a snippet contains a module-level
 declaration, each fragment is shown as if it appears inside an executable
 block with the referenced bindings and types already in scope. Module-level
 declarations are identified by their ordinary declaration syntax. Keeping
@@ -6694,7 +6714,7 @@ An interpolation cannot contain a workflow or source-defined method call,
 whether or not that call can reach a model operation:
 
 ```gantry
-// Invalid: workflow calls are not permitted inside interpolation.
+// Analysis error: workflow calls are not permitted inside interpolation.
 prompt "Rewrite this critique: ${make_critique(report)}" -> Report
 
 // Valid: operation order is explicit in separate source expressions.
@@ -6706,13 +6726,13 @@ An unannotated prompt returns `Unit`. `Decision` is first-class but is not a
 `String` or an ordinary `Bool`:
 
 ```gantry
-// Invalid: the prompt returns Unit, not String.
+// Analysis error: the prompt returns Unit, not String.
 let summary: String = prompt "Summarize the report.";
 
 // Valid: the result contract is visible.
 let summary: String = prompt "Summarize the report." -> String;
 
-// Invalid: the declared binding type is wrong.
+// Analysis error: the declared binding type is wrong.
 let answer: String = decide "Is the report complete?";
 
 // Valid: retain the sealed Decision and use it as a condition.
@@ -6732,10 +6752,10 @@ from the declaration:
 ```gantry
 action read_only load_report(id: String) -> Report;
 
-// Invalid: `decide` has a fixed result type and no result annotation.
+// Syntax error: `decide` has a fixed result type and no result annotation.
 let answer: Decision = decide "Is the report complete?" -> Decision;
 
-// Invalid: the action declaration, not the invocation, carries `-> Report`.
+// Syntax error: the action declaration, not the invocation, carries `-> Report`.
 let report: Report = action load_report(report_id) -> Report;
 
 // Valid: both result types are already determined.
@@ -6747,7 +6767,7 @@ A previously evaluated non-`Unit` value cannot be “used” by writing it as a
 standalone statement. Every ignored non-`Unit` result requires `discard`:
 
 ```gantry
-// Invalid: this performs no operation and does not emit the rationale again.
+// Analysis error: this performs no operation and does not emit the rationale again.
 answer;
 
 // Valid: consume the retained judgment in control flow.
@@ -6764,7 +6784,7 @@ when its value is intentionally ignored. Larger deterministic expressions obey
 the same type-directed rule:
 
 ```gantry
-// Invalid: the arithmetic result is discarded by the outer expression.
+// Analysis error: the arithmetic result is discarded by the outer expression.
 (prompt "Return the next count." -> Int) + 1;
 
 // Valid: bind the operation result, then make the computation explicit.
@@ -6781,7 +6801,7 @@ when an action and workflow would otherwise have similar signatures:
 ```gantry
 action non_idempotent publish(report: Report) -> Unit;
 
-// Invalid: an action declaration is not an ordinary callable workflow.
+// Analysis error: an action declaration is not an ordinary callable workflow.
 publish(report);
 
 // Valid: the integration boundary remains explicit.
@@ -6792,7 +6812,7 @@ String operations never perform implicit conversion, and empty split or
 replacement patterns are deterministic runtime errors:
 
 ```gantry
-// Invalid: `retry_count` is not implicitly converted to String.
+// Analysis error: `retry_count` is not implicitly converted to String.
 let label: String = "attempt " + retry_count;
 
 // Valid: conversion is explicit.
@@ -6808,7 +6828,7 @@ model-authored source cannot accidentally rely on a surprising chained
 comparison:
 
 ```gantry
-// Invalid: Gantry does not interpret this as a mathematical range test.
+// Syntax error: Gantry does not interpret this as a mathematical range test.
 if minimum < value < maximum {
     prompt "Handle the in-range value.";
 }
@@ -6823,7 +6843,7 @@ Struct constructors at control-flow boundaries are parenthesized so the first
 unparenthesized `{` always begins the control-flow body or match arms:
 
 ```gantry
-// Invalid: the constructor brace conflicts with the `if` body boundary.
+// Analysis error: the constructor brace conflicts with the `if` body boundary.
 if Policy { enabled: true }.enabled {
     prompt "Apply the policy.";
 }
@@ -6838,7 +6858,7 @@ Task handles are linear ownership markers rather than ordinary values. Every
 normal path leaving their scope must visibly join or detach them:
 
 ```gantry
-// Invalid: `audit` remains attached when the function returns.
+// Analysis error: `audit` remains attached when the function returns.
 fn start_invalid(report: Report) {
     spawn audit {
         prompt "Audit ${report}.";
@@ -6858,7 +6878,7 @@ Consumption must also agree at control-flow merges. A handle cannot remain
 attached on one incoming path after another path has consumed it:
 
 ```gantry
-// Invalid: `audit` is consumed only when `publish_now` is true.
+// Analysis error: `audit` is consumed only when `publish_now` is true.
 spawn audit {
     prompt "Audit ${report}.";
 }
@@ -6907,6 +6927,14 @@ services, journal storage, event delivery, configuration, protocol versioning,
 thread safety, and protected-data handling. It does not introduce additional
 Gantry source forms.
 
+Interface requirements are capability-scoped as defined in Section 1. A
+nondurable embedding omits journal storage, resume, migration, durable
+observation, and delivery recovery. A concurrent embedding exposes task and
+detachment lifecycle behavior only when it embeds the concurrent evaluator.
+Sections 15.1 and 15.5 explicitly distinguish the durable and nondurable
+execution paths; other clauses apply only when the embedded profile uses the
+capability they govern.
+
 Concrete Rust names and signatures MAY evolve during implementation, but a v1
 embedding API MUST expose the following semantic interfaces without requiring
 provider-specific or executor-specific types in Gantry programs:
@@ -6920,36 +6948,48 @@ provider-specific or executor-specific types in Gantry programs:
 An `Interpreter` accepts a package root, an explicitly selected supported
    source-language version, interpreter configuration (which includes the
    executor adapter), a hook factory, a harness-preflight integration surface,
-   journal storage, and zero or more event sinks. The hook factory MAY also
+   zero or more event sinks, and, for a durable embedding, journal storage. The
+   hook factory MAY also
    implement the harness-preflight surface, but the interpreter MUST have an
    explicit reference through which it can invoke the mapping, root-session,
-   and reusable-session operations in Section 15.2. It MUST expose syntax-only validation, semantic analysis, execution,
-   resume, execution cancellation, and terminal asynchronous shutdown
-   operations. Dry-run, analysis, and new execution MUST use the selected
-   source-language version. Resume MUST use the version stored in the
-   execution-start record and MUST reject an incompatible caller selection as
-   a resume-start compatibility failure. Execution cancellation accepts an
-   execution ID and a structured reason, is idempotent, and implements Section
-   10 rather than requiring the embedder to manipulate executor handles
-   directly. Resume
-   MUST identify the execution or journal to load and reconstruct state only
-   from the authoritative durable record prefix returned by journal storage,
-   and MUST obtain the exclusive execution ownership required by Section 11
-   before advancing it.
+   and reusable-session operations in Section 15.2. Every evaluator embedding
+   MUST expose syntax-only validation, semantic analysis, execution, execution
+   cancellation, and terminal asynchronous shutdown operations. A durable
+   embedding MUST additionally expose resume. Dry-run, analysis, and new
+   execution MUST use the selected source-language version. Resume MUST use
+   the version stored in the execution-start record and MUST reject an
+   incompatible caller selection as a resume-start compatibility failure.
+   Execution cancellation accepts an execution ID and a structured reason, is
+   idempotent, and implements Section 10 rather than requiring the embedder to
+   manipulate executor handles directly. A resume request MUST identify the
+   execution or journal to load
+   and provide a candidate package identity plus an optional versioned
+   migration. Gantry MUST reconstruct state only from the authoritative
+   durable record prefix and the exact verified recovery artifacts required by
+   Section 11. It MUST obtain exclusive execution ownership before migration
+   validation or recovered execution advances. If the candidate identity
+   differs, Gantry MUST validate and commit the supplied migration under
+   Section 11 before advancing; an absent or rejected migration is
+   `source-or-configuration-incompatibility`.
 
 **New execution and entry input.**
 
-   A new-execution request MUST identify a fresh journal target through an
-   embedder-supplied stable journal ID. Allocation of that ID and its storage
-   target is an integration concern completed before calling Gantry. The API
-   MUST return that journal identity even when startup fails, while it MUST
-   return an accepted execution ID only after the execution-start record is
-   durable. This distinction permits inspection or resume after an uncertain
-   storage response without presenting an uncommitted candidate execution as
-   accepted. Execution accepts either no entry input or one raw byte sequence
-   containing strict JSON as required by `main`; Gantry, rather than the
-   embedder, performs the decoding, parsing, duplicate-member rejection, and
-   schema validation defined in Section 4. It MUST also accept an optional
+   In a durable embedding, a new-execution request MUST identify a fresh
+   journal target through an embedder-supplied stable journal ID. Allocation of
+   that ID and its storage target is an integration concern completed before
+   calling Gantry. The API MUST return that journal identity even when startup
+   fails, while it MUST return an accepted execution ID only after the
+   execution-start record is durable. This distinction permits inspection or
+   resume after an uncertain storage response without presenting an
+   uncommitted candidate execution as accepted. In a nondurable embedding, no
+   journal target is accepted or required, resume is unavailable, and a
+   successful start returns an execution ID after preflight succeeds but before
+   `main` is evaluated. That ID is valid only for the lifetime of the
+   interpreter and MUST NOT be described as resumable. Execution accepts either
+   no entry input or one raw byte sequence containing strict JSON as required
+   by `main`; Gantry, rather than the embedder, performs the decoding, parsing,
+   duplicate-member rejection, and schema validation defined in Section 4. It
+   MUST also accept an optional
    `root_session` specification containing an embedder-chosen logical session
    ID, optional opaque integration lookup material, and an optional canonical
    transcript in the versioned turn format from Section 7. When the
@@ -6996,11 +7036,14 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    Starting a new execution
    MUST return either a
    structured start failure with no execution ID, or an execution ID after the
-   execution-start evidence is committed. Syntax, analysis, entry-input,
+   applicable acceptance boundary above. For a durable execution, that
+   boundary is the committed execution-start evidence; for a nondurable
+   execution, it is successful preflight. Syntax, analysis, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
    and required-event-delivery failures during pre-execution validation or
-   analysis are start failures. Returning the execution ID establishes an
-   accepted, resumable execution handle; it does not by itself report that
+   analysis are start failures when applicable to the embedded profile.
+   Returning the execution ID establishes an accepted execution handle; only
+   the durable form is resumable. Acceptance does not by itself report that
    `main` has completed. The API MUST let the embedder asynchronously await or
    query the foreground outcome through that handle while detached work, when
    any, continues toward terminal execution state.
@@ -7022,13 +7065,14 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    outcome MAY be
    returned while explicitly detached tasks remain;
    the execution ID allows the embedder to correlate their later events and
-   terminal durable state. Because event sinks are optional, the API MUST also
-   permit the embedder to query an execution's latest durable foreground and
-   terminal states and to asynchronously wait for terminal state by execution
-   ID. Foreground-await and terminal-await results MUST represent the Gantry
-   language outcome separately from the `required-event-delivery-failure`
-   barrier status. A delivery-barrier failure MUST NOT masquerade as, replace,
-   or erase a durable foreground or terminal language outcome. Execution
+   terminal state. Every evaluator embedding MUST support in-process foreground
+   and terminal awaits. A durable embedding MUST additionally permit the
+   embedder to query an execution's latest durable foreground and terminal
+   states by execution ID. Foreground-await and terminal-await results MUST
+   represent the Gantry language outcome separately from the
+   `required-event-delivery-failure` barrier status. A delivery-barrier failure
+   MUST NOT masquerade as, replace, or erase a durable foreground or terminal
+   language outcome. Execution
    observation MUST distinguish `not-terminal`,
    `terminal(outcome, barrier_status)`, and
    `run-failed-nondurably(journal_error)`. The last state is returned by an
@@ -7159,9 +7203,11 @@ An executor adapter provides asynchronous task spawn, join, abort, sleep,
 
 <a id="GNT-15.5"></a>
 
-Journal storage asynchronously provides durable-prefix reads, exclusive
-   owner acquisition and release with fencing, and atomic `commit(batch)` with
-   the behavior in Section 11. An adapter MAY implement commit with an append
+This interface is REQUIRED only for an embedding that includes the
+durable-runtime profile. Journal storage asynchronously provides durable-prefix
+   reads, exclusive owner acquisition and release with fencing, and atomic
+   `commit(batch)` with the behavior in Section 11. An adapter MAY implement
+   commit with an append
    log and durability barrier, transactions, snapshots, group commit, or an
    equivalent primitive; the physical mechanism is not part of the embedding
    contract. Every commit MUST be associated with the current opaque ownership
