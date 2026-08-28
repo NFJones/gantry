@@ -73,15 +73,23 @@ alone admits a value into source execution after decoding, validation,
 normalization, and durable acceptance. This explicitness is a core readability
 requirement for both human and model authors.
 
-This document records the settled version 1 (v1) language and operational
-requirements. Concrete Rust type signatures may remain implementation-defined
-where the semantic contract is fully specified here.
+This document defines the portable Gantry version 1.0 language and operational
+contract. Sections 3 and 4 define execution and package structure; Sections 5
+through 10 define values, workflows, integration operations, control flow, and
+parallelism; Sections 11 and 12 define durability and observability; Section 13
+is the normative grammar; Section 14 contains non-normative examples; and
+Section 15 defines the required embedding boundary. Concrete Rust type
+signatures may remain implementation-defined only where the semantic contract
+is fully specified here.
 
 ### 1.1 Language at a glance
 
 The following non-normative package tour shows the meaningful v1 language
 families together in one source file. It is intentionally broader than a
-typical program: focused workflows SHOULD use only the constructs they need.
+typical program and is a feature map, not a recommended workflow shape.
+First-time readers may skip to Section 1.2 for the compact syntax rules or to
+Section 14 for focused examples. Workflows SHOULD use only the constructs they
+need.
 Model-backed work is explicit at each `prompt` or `decide`, harness work is
 explicit at each `action`, and ordinary calls, construction, assignment,
 operators, routing, loops, and joins remain interpreter control.
@@ -307,8 +315,8 @@ methods and ordinary workflows; primitive and String operations; prompts,
 decisions, actions, interpolation, named inputs, and sessions; deterministic
 pattern routing; all three loop forms; typed parallel joins, `joinall()`, and
 explicit detachment. Section 14 provides smaller canonical examples and the
-remaining lexical and error cases. Sections 3 through 13 define the normative
-language and runtime behavior, and Section 15 defines the embedding boundary.
+remaining lexical and error cases. The roadmap in Section 1 identifies the
+normative parts of this document.
 
 ### 1.2 Reading the surface syntax
 
@@ -475,6 +483,9 @@ activity throughout this specification:
 - An **action declaration** is a typed package item that names an external
   harness capability. It has no Gantry body. An **action invocation** is an
   `action <path>(...)` expression resolved against that declaration.
+- An **integration operation** is a source-visible `prompt`, `decide`, or
+  action invocation. A **model operation** is specifically a `prompt` or
+  `decide`; an action is integration-backed but is not model-backed.
 - A **logical operation** is one dynamic execution of a source `prompt`,
   terminal `decide`, or action invocation. It has one stable operation ID and
   produces at most one consumable operation result.
@@ -511,8 +522,10 @@ activity throughout this specification:
 ## 2. Normative Language
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
-document are to be interpreted as described in RFC 2119.
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+"OPTIONAL" in this document are to be interpreted as described in BCP 14
+(RFC 2119 and RFC 8174) when, and only when, they appear in all capitals as
+shown here.
 
 ## 3. Implementation and Execution Model
 
@@ -917,8 +930,8 @@ document are to be interpreted as described in RFC 2119.
    MUST exactly match the field's declared scalar type or the member type of
    an `Option` around that scalar. A scalar default on `Option<T>` normalizes
    to `Some(default)`. A `None` default is valid only for an `Option<T>` field.
-   Defaults MUST NOT invoke an agent operation. When an optional field with a
-   default is omitted, the default is assigned; explicit `null` remains
+   Defaults MUST NOT invoke an integration operation. When an optional field
+   with a default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
 12. Every first-class Gantry value has deep, nonaliasing value semantics.
    Binding initialization, assignment, argument and return passing, field and
@@ -2994,6 +3007,11 @@ document are to be interpreted as described in RFC 2119.
     complete replacement set in the canonical order and descriptor shape
     above; and agent- and action-mapping changes use the state described in
     Section 7.
+    The deterministic-transition yield quantum is also excluded from the
+    configuration identity. It MAY change between in-process runs and on
+    resume because Section 3 defines it as scheduling-only policy; changing it
+    MUST NOT alter language results, dynamic identities, journal state, or
+    retry accounting.
     These changes MUST obey the per-event delivery-obligation rules in Section
     12. Allowing agent mappings to change is
     intentional because Gantry promises resumability, not deterministic model
@@ -3005,8 +3023,8 @@ document are to be interpreted as described in RFC 2119.
 ## 12. Observability and Validation Modes
 
 1. Gantry MUST expose events for parsing and analysis, workflow start and end,
-   operation dispatch, completion, and result acceptance, schema validation
-   failure, retry, branch decision, spawn, join, detach, mutation,
+   operation dispatch, completion, and result acceptance, structured output
+   validation failure, retry, branch decision, spawn, join, detach, mutation,
    cancellation, foreground completion, task completion, terminal execution,
    shutdown, and failure, except that sink-delivery failures use the
    nonrecursive representation defined in item 6. Foreground
