@@ -129,11 +129,17 @@ The contract is organized into layers:
 | Authoring guide | Non-normative focused examples and corrections | Section 14 |
 | Host contract | Required embedding interfaces | Section 15 |
 
+These layers are complementary rather than an order of precedence. Section 13
+determines whether source can be parsed; Sections 3 through 12 determine
+whether parsed source is valid and what executing it means; and Section 15
+defines the host capabilities required to provide that meaning. A grammatical
+form is therefore not necessarily a valid program. Section 14 illustrates the
+normative contract and cannot extend or override it. If two normative passages
+cannot both be satisfied, that is a defect in this specification rather than
+permission for an implementation to choose one silently.
+
 Concrete Rust type signatures may remain implementation-defined only where
-the semantic contract is fully specified here. Section 14 cannot override a
-normative rule. When Section 13 admits a form that an earlier normative
-section rejects semantically, the semantic restriction controls whether the
-source is valid.
+the semantic contract is fully specified here.
 
 ### 1.1 Language at a glance
 
@@ -359,7 +365,9 @@ valid:
 - Prefer one model operation per statement or trailing expression. Keep the
   `prompt` or `decide` keyword, its modifiers, template, and result annotation
   as one visibly continuous construct; do not rely on unusual line breaks to
-  make an operation resemble ordinary deterministic code.
+  make an operation resemble ordinary deterministic code. When deterministic
+  computation uses an operation's result, bind the result first rather than
+  burying the operation inside a larger expression statement.
 - Treat interpolation as textual prompt composition, not as an instruction/
   data trust boundary. Delimit or explain untrusted string content in the
   authored prompt when that distinction matters. Gantry also supplies each
@@ -1198,8 +1206,9 @@ shown here.
    exactly match the
    declared result type. A workflow whose signature omits a result type
    implicitly returns no result. Because no-result is not a value, a no-result
-   prompt, workflow call, method call, or `join` MUST be terminated with `;` as
-   an expression statement; it cannot be a block's trailing expression. A
+   prompt, action, workflow call, method call, `join`, or `joinall()` MUST be
+   terminated with `;` as an expression statement; it cannot be a block's
+   trailing expression. A
    statement-only agent or session context uses `with <agent> { ... }` or
    `session(<directive>) { ... }` without a semicolon after its closing brace.
    A value-producing `prompt`, `decide`, or `action` MAY be discarded by
@@ -1208,13 +1217,18 @@ shown here.
    `match` expression, `join`, or `joinall()` MAY likewise be used as an
    expression statement when its result is intentionally discarded. These
    forms can perform visible integration, workflow, control-flow, or task-
-   ownership work while being evaluated. By contrast, a standalone binding,
-   primitive or operator expression, literal, constructor, field access,
-   projection, sealed deterministic built-in call, `Some`, `None`, `Ok`, or
-   `Err` has no execution effect and MUST be rejected as an expression
-   statement. In particular, writing a previously evaluated `Decision` binding
-   as a statement does not redispatch its decision or emit its rationale and
-   is invalid.
+   ownership work while being evaluated. This is an outer-form restriction,
+   not effect inference over arbitrary expression trees: every other value-
+   producing expression, including a binding, primitive or operator
+   expression, literal, constructor, field access, projection, sealed
+   deterministic built-in call, `Some`, `None`, `Ok`, or `Err`, MUST be
+   rejected as an expression statement even if one of its nested operands
+   could perform work. Authors MUST bind or otherwise consume the result of
+   such an expression. In particular, writing a previously evaluated
+   `Decision` binding as a statement does not redispatch its decision or emit
+   its rationale and is invalid. Rejecting these forms prevents semicolons from
+   silently discarding deterministic computation and keeps statement-level
+   work recognizable from the outer source form.
    Assignment and `spawn` statements do not themselves produce values.
    Conditional-arm and loop bodies are statement-only blocks; they MUST NOT
    end in a trailing expression whose value would be silently discarded.
@@ -3984,6 +3998,11 @@ immutable bindings. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
 closing brace. A trailing expression MUST produce a first-class value; a
 no-result operation must instead be an expression statement ending in `;`.
+Although `expression_statement` uses the general expression production,
+Section 6 restricts which outer expression forms are semantically valid as
+statements. In particular, wrapping an operation in an arithmetic, Boolean, or
+other otherwise-inert expression does not make that outer expression a valid
+statement.
 `return;` is valid only in a no-result function, method, or spawned block.
 `break` and `continue` are valid only in a loop body. A decision workflow uses
 the ordinary block grammar because `Decision` is a first-class value. Semantic
@@ -5158,10 +5177,11 @@ create hidden Gantry operations.
 
 The following non-normative excerpts collect source shapes that are rejected
 by syntax or semantic analysis, plus syntactically valid forms that
-deterministically fail at runtime. Unless a snippet declares a function, each
-fragment is shown as if it appears inside an executable block with the
-referenced bindings and types already in scope. Keeping these boundaries
-visible is part of Gantry's clean-syntax goal.
+deterministically fail at runtime. Unless a snippet contains a module-level
+declaration, each fragment is shown as if it appears inside an executable
+block with the referenced bindings and types already in scope. Module-level
+declarations are identified by their ordinary declaration syntax. Keeping
+these boundaries visible is part of Gantry's clean-syntax goal.
 
 An interpolation cannot contain a workflow or source-defined method call,
 whether or not that call can reach a model operation:
@@ -5213,6 +5233,35 @@ if answer {
 
 // Also valid: deliberately execute a new judgment and discard its value.
 decide "Record a fresh publication judgment.";
+```
+
+An operation may be intentionally discarded as a statement, but a larger
+deterministic expression must have its result consumed. This outer-form rule
+keeps statement-level work easy to identify without effect analysis:
+
+```gantry
+// Invalid: the arithmetic result is discarded by the outer expression.
+(prompt "Return the next count." -> Int) + 1;
+
+// Valid: bind the operation result, then make the computation explicit.
+let next: Int = prompt "Return the next count." -> Int;
+let incremented: Int = next + 1;
+
+// Also valid: intentionally discard the operation result itself.
+prompt "Return the next count." -> Int;
+```
+
+Harness actions cannot be called with ordinary workflow-call syntax, even
+when an action and workflow would otherwise have similar signatures:
+
+```gantry
+action publish(report: Report) -> None;
+
+// Invalid: an action declaration is not an ordinary callable workflow.
+publish(report);
+
+// Valid: the integration boundary remains explicit.
+action publish(report);
 ```
 
 String operations never perform implicit conversion, and empty split or
