@@ -38,7 +38,7 @@
     - [14.7 General, pre-test, and post-test loops](#147-general-pre-test-and-post-test-loops)
     - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-listt-joins)
     - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
-    - [14.10 `joinall()`, no-result tasks, and detachment](#1410-joinall-no-result-tasks-and-detachment)
+    - [14.10 `joinall()`, Unit tasks, and detachment](#1410-joinall-unit-tasks-and-detachment)
     - [14.11 Nested modules and qualified paths](#1411-nested-modules-and-qualified-paths)
     - [14.12 Explicit harness actions and named prompt inputs](#1412-explicit-harness-actions-and-named-prompt-inputs)
     - [14.13 Common invalid forms and their corrections](#1413-common-invalid-forms-and-their-corrections)
@@ -113,7 +113,8 @@ not additional syntax an author must learn. Use these reading paths:
   through 12, and 15 before consulting the remaining normative sections.
 - **Conformance implementers:** read the complete normative contract.
 
-This document uses three related but distinct judgments:
+This document uses the following related but distinct judgments and
+conformance profiles:
 
 - **Syntactically valid** source is admitted by the lexical and syntactic
   grammar in Section 13 and the package-loading rules required to parse it.
@@ -125,21 +126,48 @@ This document uses three related but distinct judgments:
   not add a second set of source-acceptance rules. Source validity does not
   imply that a particular integration can resolve the package's agents or
   actions.
-- A **conforming Gantry v1 implementation** satisfies every requirement
-  assigned to Gantry, the interpreter, or its public library interfaces. A
-  parser, analyzer, or source-validity tool may accurately describe its more
-  limited role but is not by itself a conforming Gantry implementation.
+- A **frontend-profile implementation** parses complete packages and provides
+  syntax diagnostics under Sections 4, 12, and 13.
+- An **analyzer-profile implementation** additionally decides source validity,
+  generates canonical schemas, reports inferred effects, and enforces control-
+  flow and task-ownership rules.
+- An **evaluator-profile implementation** additionally executes source-valid
+  packages according to the abstract machine in Section 3, but need not
+  persist or resume executions.
+- A **concurrent-evaluator-profile implementation** additionally implements
+  tasks, cancellation, joins, and background ownership transfer under Section
+  10.
+- A **durable-runtime-profile implementation** additionally implements the
+  crash, resume, evolution, and durable-observation refinements in Sections 11
+  and 12.
+- An **embedding-profile implementation** exposes the interfaces and versioned
+  protocol schemas in Section 15. It MUST identify which evaluator profile it
+  embeds.
+- A **conforming Gantry v1 implementation** satisfies every requirement of one
+  or more named profiles. A claim MUST name all claimed profiles and MUST NOT
+  imply support for an unclaimed profile. The unqualified phrase “conforming
+  Gantry v1 implementation” means all six profiles above.
 - A **conforming Gantry v1 integration** satisfies every requirement assigned
   to the embedder, harness, or integration for the features it configures,
   including hooks, sessions, executor services, journal storage, and event
   sinks. Optional services create no obligation when they are not configured.
 - A **conforming Gantry v1 deployment** combines a conforming implementation
   and integration and satisfies the complete normative language, execution,
-  durability, observability, and embedding contract. Conformance claims MUST
-  name the claimed role; an implementation cannot guarantee behavior that the
-  contract assigns to integration code after control crosses an embedding
-  interface, but it MUST detect and report integration failures where this
-  specification requires it to do so.
+  durability, observability, and embedding contract for every claimed
+  profile. Conformance claims MUST name the claimed role and profiles; an
+  implementation cannot guarantee behavior that the contract assigns to
+  integration code after control crosses an embedding interface, but it MUST
+  detect and report integration failures where this specification requires it
+  to do so.
+
+Every normative requirement has a stable identifier formed from its section,
+item, and optional local label, for example `GNT-7.5-request-header`. Published
+editions MUST preserve an identifier's meaning within one source-language
+major version and MUST NOT reuse a retired identifier. The machine-readable
+conformance manifest required by Section 15 maps each claimed profile and
+requirement identifier to one or more executable tests or an explicit
+`not-applicable` justification. Prose numbering may change editorially, but
+the published manifest preserves the stable identifiers.
 
 Accordingly, “accepting a source-valid package” means recognizing it as a
 valid Gantry package. It does not mean that every execution request must start:
@@ -161,10 +189,11 @@ that crosses the integration boundary is visibly introduced by `prompt`,
 `decide`, or `action` at the operation site; an ordinary function or method
 call site does not itself dispatch a hook, although executing the called body
 may reach explicit external operations. `prompt` and `decide` request
-model-backed work. An `action` invocation requests a named, typed harness
-capability without implying that a model must fulfill it. An integration may
-perform provider-internal work while fulfilling an operation, as defined in
-Section 7, but that work does not create hidden Gantry operations.
+model-backed, externally read-only work. An `action` invocation requests a
+named, typed harness capability with a declared recovery class. An integration
+may perform provider-internal read-only work while fulfilling a model
+operation, as defined in Section 7, but state-changing work requires an
+explicit action invocation.
 Interpolation and named-input evaluation never dispatch a hook. Typed
 strict-JSON values are the boundary between integration-backed work and source
 execution: raw hook outcomes cross the embedding boundary first, and Gantry
@@ -182,6 +211,15 @@ The contract is organized into layers:
 | Formal syntax | Normative lexical and syntactic grammar | Section 13 |
 | Authoring guide | Non-normative focused examples and corrections | Section 14 |
 | Host contract | Required embedding interfaces | Section 15 |
+
+The v1 publication MUST also expose seven separately addressable artifacts:
+the Language Reference, Static Semantics, Core Abstract Machine, Durable Execution
+Profile, Embedding Protocol, Observability and Security Profile, and executable
+Authoring Guide. This consolidated document may contain those artifacts in one file,
+but each artifact MUST have its own versioned machine-readable index so a frontend,
+analyzer, evaluator, or integration can depend on only its claimed profile. The
+examples in the Authoring Guide MUST be maintained as executable positive or negative
+fixtures rather than copied, unchecked prose.
 
 These layers are complementary rather than an order of precedence. The lexical
 and syntactic productions in Section 13 determine whether source can be
@@ -253,7 +291,7 @@ struct Report {
 agents { researcher, editor }
 default agent = researcher;
 
-action search(topic: String) -> List<String>;
+action read_only search(topic: String) -> List<String>;
 
 fn main(topic: String) -> Report {
     let sources: List<String> = action search(topic);
@@ -316,11 +354,11 @@ Authors and tools that need call-site effect information use the transitive
 workflow summaries required by Section 6.
 
 - `prompt` visibly performs model-backed work and optionally returns the type
-  written after `->`. An omitted annotation or `-> None` means that the
-  operation returns no source value.
+  written after `->`. An omitted annotation or `-> Unit` means that the
+  operation returns the sole `Unit` value `()`.
 - `decide` visibly performs model-backed judgment and returns a sealed
-  `Decision` containing a `Bool` decision, nonempty rationale, and interpreter
-  provenance. A decision can be retained and passed; its read-only fields can
+  `Decision` containing a `Bool` decision and nonempty rationale. A decision
+  can be retained and passed; its read-only fields can
   be projected, but source cannot construct or mutate one.
 - `action <path>(...)` visibly invokes a source-declared, typed harness action.
   It is distinct from an ordinary workflow call and from model selection.
@@ -351,9 +389,9 @@ It is a reading aid; Sections 6 through 8 define the normative contracts:
 
 | Source form | Work requested | Source result | Agent/session applies | V1 default structured-output retries |
 | --- | --- | --- | --- | --- |
-| `prompt "..." -> T` | Model-backed generation | Declared `T`, or no result when omitted | Yes | 2 |
+| `prompt "..." -> T` | Model-backed generation | Declared `T`, or `Unit` when omitted | Yes | 2 |
 | `decide "..."` | Model-backed judgment | Sealed `Decision` | Yes | 2 |
-| `action path(...)` | Declared harness capability | Declared type, or no result | No | 0 |
+| `action path(...)` | Declared harness capability | Declared type, or `Unit` when omitted | No | 0 |
 | `workflow(...)` | Interpreter-managed call dispatch; the body may reach explicit operations | Workflow's declared result | Only to explicit operations reached in the body | Not applicable |
 
 The retry counts are defaults, not fixed operation behavior. Interpreter
@@ -367,18 +405,19 @@ It is a reading aid rather than a substitute for the normative requirements
 in later sections:
 
 - Gantry is an orchestration language, not a general-purpose language. Its
-  source values include `Bool`, bounded exact `Int`, finite binary64 `Float`,
-  strings, structs, enums, options, results, lists, tuples, and sealed
-  decisions. Numeric operations are deliberately small and deterministic.
+  source values include `Unit`, `Bool`, bounded exact `Int`, finite binary64
+  `Float`, strings, structs, enums, options, results, lists, tuples, sealed
+  decisions, and sealed operation errors. Numeric operations are deliberately
+  small and deterministic.
 - Integration-backed work is limited to the explicit `prompt`, `decide`, and
   `action` operations. `prompt` and `decide` are model-facing. `action` invokes
   a typed capability declared by the package and resolved by the integrating
   harness.
 - V1 has checked arithmetic, numeric ordering, short-circuit Boolean algebra,
-  exact equality, and a small deterministic String library, but no `for`,
-  user-defined generics, traits, general exception handling, regular
-  expressions, or locale-sensitive text processing. Semantic judgments remain
-  agent-mediated.
+  exact equality, finite list `for` iteration, and a small deterministic String
+  library, but no user-defined generics, traits, general exception handling,
+  regular expressions, or locale-sensitive text processing. Semantic
+  judgments remain agent-mediated.
 - Raw entry input and raw hook output are subject to explicit byte limits, and
   every value is subject to explicit nesting-depth and total-node limits,
   before it can consume unbounded parser or interpreter resources. These
@@ -391,8 +430,9 @@ in later sections:
   destructuring and aggregate mutation remain excluded.
 - `Result<T, E>` represents a declared, expected source-level outcome. Hook
   failure, invalid structured output, cancellation, journal failure, and retry
-  exhaustion remain runtime failures and are never implicitly converted to
-  `Err`.
+  exhaustion are never implicitly converted to `Err`; only an explicit
+  `attempt` converts the narrow operation failures in Section 5 to
+  `OperationError`.
 - `Map<T>` and an opaque artifact-reference type are deferred. They require
   lookup, lifetime, authorization, and resume contracts that v1 does not need
   to express typed model and action control flow.
@@ -400,12 +440,12 @@ in later sections:
   output must still contain every non-optional field, even when that field has
   a source default; only `Option<T>` properties may be omitted from hook
   output.
-- `None` has two intentionally contextual uses: as an expression it is an
-  absent `Option<T>` value whose type must be known from context; after `->`
-  it denotes that a workflow or operation returns no source value.
-- Concurrency is structured and ownership-visible. A spawned task must be
-  joined, joined through `joinall()`, or explicitly detached on every normal
-  path before its handle leaves scope.
+- `None` is exclusively the absent `Option<T>` value whose type must be known
+  from context. `Unit` and `()` represent no-information results.
+- Attached concurrency is structured and ownership-visible. A spawned task
+  must be joined, joined through `joinall()`, or explicitly transferred to
+  durable background ownership with `detach` on every normal path before its
+  handle leaves scope.
 
 V1 also keeps integration protocol controls out of the source language unless
 they change portable orchestration semantics. Provider selection, credentials,
@@ -525,9 +565,11 @@ activity throughout this specification:
   operation. Validation repair and recovery may cause several physical
   dispatches for one logical operation, each with a distinct dispatch ID.
 - A **hook outcome** is `Completed(raw_output)`, `Declined(reason)`, or
-  `Failed(message)`. An **operation result** is the validated and normalized
-  value, no-result acceptance, optional decline, or sealed `Decision`
-  that Gantry durably derives from an outcome and may consume.
+  `Failed(category, message)`. An **operation result** is the validated and
+  normalized value, including `Unit`, or sealed `Decision` that Gantry durably
+  derives from `Completed` and may consume. Decline and failure are operation
+  failures; only an explicit `attempt` converts them into source-visible
+  `OperationError` values.
 - A **Gantry task** is an interpreter execution lane: the root task or one
   child created by `spawn`. A task is not an agent, model, provider request,
   or executor thread.
@@ -535,9 +577,9 @@ activity throughout this specification:
   package default. The integration maps that name to its model or agent
   implementation.
 - A **harness action** is a package-declared capability fulfilled through an
-  action operation. An integration may also perform provider-internal work
-  while fulfilling any operation; such hidden work is not a second Gantry
-  operation and cannot mutate Gantry state except through the hook outcome.
+  action operation. Provider-internal work during a model operation is limited
+  to the read-only behavior in Section 7; externally state-changing work must
+  use an action with an explicit recovery class.
 - A **tagged value** is an enum or `Result<T, E>` value whose strict-JSON
   representation carries an explicit variant discriminator.
 - A **deterministic condition** is a `Bool` expression evaluated over already
@@ -581,7 +623,8 @@ this document.
 
 ## 3. Implementation and Execution Model
 
-1. A conforming Gantry v1 implementation MUST recognize as source-valid every
+1. A conforming Gantry v1 implementation claiming the analyzer profile MUST
+   recognize as source-valid every
    source program admitted by the grammar in Section 13 that also satisfies
    the semantic requirements in this document, and MUST reject source outside
    that grammar when operating in v1 mode. Recognizing a package as
@@ -589,11 +632,11 @@ this document.
    the pre-execution failures defined in Sections 4, 7, 11, 12, and 15 remain
    applicable. An implementation MAY provide an explicitly selected extension
    mode, but source accepted only by that mode MUST NOT be represented as
-   portable Gantry v1 source. Implementation conformance requires every v1
-   `MUST` and `MUST NOT` requirement assigned to Gantry, the interpreter, or
-   its public library interfaces; deployment conformance additionally requires
-   the integration obligations defined above. Implementing only the parser or
-   only a subset of runtime constructs is not implementation conformance.
+   portable Gantry v1 source. Profile conformance requires every applicable v1
+   `MUST` and `MUST NOT` assigned to that profile; deployment conformance
+   additionally requires the integration obligations defined above. A parser,
+   analyzer, or nondurable evaluator may therefore make a precise profile
+   claim without claiming the complete durable runtime.
 2. An implementation MUST parse Gantry source according to Section 13 and
    preserve every semantic rule in this document. It MAY use handwritten or
    generated parsing, an AST, another private intermediate representation,
@@ -682,6 +725,63 @@ this document.
     of a supported envelope; it does not require a later implementation to
     accept source written for another language version or preserve concrete
     Rust type signatures.
+11. The normative semantics are defined over a desugared core language. A
+    frontend MUST lower surface source to the following core constructs while
+    retaining source spans: typed literals and variables; immutable aggregate
+    construction and projection; mutable-root assignment; workflow-frame
+    entry and return; ordered sequencing; Boolean and tagged-pattern branch;
+    loop back edge; explicit `prompt`, `decide`, and `action` operation;
+    `spawn`, all-settled `join`, and background ownership transfer; explicit
+    agent and session dynamic scopes; `attempt`; and cancellation checks.
+    Surface conveniences, including compound assignment, `if let`, `match`,
+    `for`, `joinall()`, implicit trailing return, and operation modifiers,
+    MUST desugar to those constructs without reordering evaluation or creating
+    an integration operation. The canonical core IR schema, desugaring rules,
+    and source-map schema are versioned public artifacts of the source-language
+    major version rather than implementation-private bytecode.
+12. Static semantics use judgments of the forms `Γ; Ω ⊢ e : T ! ε`,
+    `Γ; Ω ⊢ s ⇒ Ω' ! ε`, and `Σ ⊢ package ok`. `Γ` maps source names to types
+    and mutability, `Ω` maps task handles to their linear ownership states,
+    `T` is a source type, and `ε` is the least inferred effect set. Expression
+    evaluation MUST preserve types; statement evaluation MUST produce the
+    stated ownership environment on every normal outgoing path; and package
+    validity MUST include name resolution, schema construction, control-flow
+    completion, and the least fixed-point effect analysis in Section 6.
+    Implementations MAY use another algorithm only when it accepts and rejects
+    exactly the same packages and emits equivalent canonical types and effects.
+13. Dynamic semantics use labelled configurations
+    `⟨P, C, K, H, S, Q, B⟩`, containing the immutable package IR `P`, task
+    configuration `C`, continuation/frame state `K`, linear handle state `H`,
+    logical-session state `S`, pending logical operations `Q`, and remaining
+    deterministic budgets `B`. One abstract transition is written
+    `configuration --label--> configuration'`. The portable labels are
+    deterministic, operation-prepared, operation-outcome, operation-accepted,
+    task-created, task-settled, ownership-transferred, cancellation, failure,
+    and foreground/terminal completion. Integration code may choose an
+    operation outcome only after an operation-prepared label; executor
+    scheduling may choose among runnable tasks but MUST preserve each task's
+    transition order. No telemetry, wall-clock value, provider identity, or
+    implementation object may affect a transition unless this specification
+    places it explicitly in `P`, `S`, `Q`, or `B`.
+14. The durable runtime is a refinement of that labelled transition system,
+    not a second language semantics. A durable implementation MAY combine,
+    split, batch, snapshot, or compact physical storage records provided that
+    every externally observable committed prefix corresponds to a prefix of
+    abstract labels; no accepted operation result or ownership transition is
+    observed before its causal state is durable; recovery resumes from a
+    causally closed prefix; and a committed logical result is consumed at most
+    once. Section 11 defines the required crash cuts and evidence, not one
+    mandatory database layout.
+15. Conforming implementations MUST test and document the following semantic
+    properties for every applicable profile: progress or a specified runtime
+    error for a well-typed nonterminal configuration; preservation of source
+    types across deterministic and accepted-operation transitions; linear task
+    handles are never joined or transferred twice; one logical operation
+    produces at most one consumable result; cancellation prevents later source
+    consumption in the cancelled task; and every recovered execution is a
+    continuation of one causally closed durable prefix. These are conformance
+    obligations even though provider outcomes and cross-task schedules remain
+    nondeterministic.
 
 ## 4. Source Organization
 
@@ -691,12 +791,11 @@ this document.
    function named `main`; a missing `main`, a `main` declared only in a child
    module, or any non-function root item named `main` is an analysis error.
    The directory containing `main.gnt` is the package root. `main` MUST have
-   either no parameters or exactly one typed parameter. It MAY return no result
+   either no parameters or exactly one typed parameter. It MAY return `Unit`
    or any v1 value type that does not contain `Decision` at any nesting depth.
-   The entry parameter likewise MUST NOT be `Decision` or contain it. Entry and
-   result JSON cannot carry the interpreter-only operation provenance that
-   makes a `Decision` sealed, even though the ordinary JSON representation of
-   a `Decision` contains visible `decision` and `rationale` fields. A workflow
+   The entry parameter and result likewise MUST NOT be `Decision`,
+   `OperationError`, or contain either sealed type. Entry and result JSON cannot
+   originate a sealed judgment or operation failure. A workflow
    that needs to import or export a judgment MUST use an ordinary declared
    struct containing the required data rather than `Decision` itself.
    When `main` has a parameter, the embedding application MUST supply one raw
@@ -719,16 +818,11 @@ this document.
    MUST NOT create a resumable Gantry execution or an execution-start journal
    record. Section 15 defines the corresponding embedding result boundary.
    Gantry MUST return a successful entry result to the embedder as the
-   canonical strict JSON defined in Section 8
-   together with a host-level indication of whether the function returned a
-   value; this indication distinguishes a no-result `main` from an `Option<T>`
-   result whose JSON value is `null`. A no-result `main` returns JSON `null`
-   with the host-level no-result indication; a value-returning `main` uses the
-   Section 8 encoding of its declared type. The successful result envelope
-   MUST also contain the canonical result-type descriptor from Section 5:
-   `None` for a no-result `main`, or the declared return type for a
-   value-returning `main`. Embedders therefore never need to infer type or
-   no-result semantics from JSON shape.
+   canonical strict JSON defined in Section 8 together with its canonical static
+   type descriptor. `Unit` is encoded as JSON `null` with descriptor `Unit`;
+   `Option<T>::None` is also encoded as JSON `null` but retains descriptor
+   `Option<T>`. Embedders therefore determine semantics from the required type
+   descriptor rather than guessing from JSON shape.
 3. Gantry MUST support the comments and lexical forms defined in Section 13.
    Gantry resembles Rust only where this specification explicitly says so; it
    does not inherit unstated Rust lexical or semantic rules.
@@ -854,16 +948,16 @@ this document.
     from that path and the canonical type descriptors in Section 5. A
     free-function signature is `fn PATH(P1,P2,...)->R`; a decision signature
     is `decision PATH(P1,P2,...)->Decision`; an action signature is
-    `action PATH(P1,P2,...)->R`; and a method signature is
+    `action[CLASS] PATH(P1,P2,...)->R`; and a method signature is
     `fn METHOD_PATH(RECEIVER[,P1,P2,...])->R`. `RECEIVER` is exactly `self` or
     `mut self`. Each non-receiver parameter descriptor is its type descriptor,
     prefixed by `mut ` when the source parameter is mutable. `R` is the
-    declared result descriptor or `None` for no result. The encoding contains
+    declared result descriptor or `Unit` when the annotation is omitted. The encoding contains
     no whitespace except the one space in `mut ` or `mut self`, contains no
     parameter names, and preserves declaration order. Examples are
     `fn crate::main(String)->crate::domain::Report`,
     `decision crate::quality::is_complete(crate::domain::Report)->Decision`,
-    `action crate::search(crate::SearchRequest)->Result<List<crate::Source>,crate::SearchFailure>`,
+    `action[read_only] crate::search(crate::SearchRequest)->Result<List<crate::Source>,crate::SearchFailure>`,
     and
     `fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report`.
     This format is metadata rather than source syntax.
@@ -884,34 +978,39 @@ this document.
 
 ## 5. Values, Bindings, Structs, and Tagged Types
 
-1. Runtime values MUST include `Bool`, `Int`, `Float`, `String`, declared
-   struct and enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
-   `Tuple<T1, T2, ..., Tn>`, and `Decision`. `Bool` is ordinary deterministic
-   data. `Decision` is a sealed first-class model judgment with provenance;
+1. Runtime values MUST include `Unit`, `Bool`, `Int`, `Float`, `String`,
+   declared struct and enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
+   `Tuple<T1, T2, ..., Tn>`, `Decision`, and the sealed `OperationError` type.
+   `Unit` has exactly one value, written `()`, and is the result type for work
+   that returns no information. `None` is exclusively the absent constructor
+   of `Option<T>` and MUST NOT denote Unit work. `Bool` is ordinary
+   deterministic data. `Decision` is a sealed first-class model judgment;
    retaining it as a distinct type keeps agent judgment distinguishable from
-   locally computed facts.
+   locally computed facts without attaching hidden operation identity to the
+   value.
    `Int` is an exact signed integer in the inclusive range
    `-9007199254740991` through `9007199254740991` (`±(2^53 - 1)`). `Float` is a
    finite IEEE 754 binary64 value. Directive integers used for limits and retry
    counts remain a separate nonnegative syntax domain through `2^63 - 1` and
    are not implicitly `Int` values.
-2. Parameters and returned values MAY be `Bool`, `Int`, `Float`, `String`, a
+2. Parameters and returned values MAY be `Unit`, `Bool`, `Int`, `Float`, `String`, a
    declared struct or enum type, `Option<T>`, `Result<T, E>`, `List<T>`,
-   `Tuple<T1, T2, ..., Tn>`, or `Decision`. Every member of a constructed type
+   `Tuple<T1, T2, ..., Tn>`, `Decision`, or `OperationError`. Every member of a constructed type
    MUST itself be a permitted value type. A function, method, prompt, action,
-   or spawned block MAY have no returned value. An ordinary function, method,
+   or spawned block that returns no information has result type `Unit`. An ordinary function, method,
    binding, aggregate, or struct
-   MAY carry `Decision`, but an expected `prompt` or `action` output type MUST
-   NOT contain `Decision` at any nesting depth. Only an executed `decide`
+   MAY carry `Decision` or `OperationError`, but an expected `prompt` or
+   `action` output type MUST NOT contain either sealed type at any nesting depth.
+   Entry parameters and results have the same restriction. Only an executed `decide`
    operation can originate a new sealed `Decision`; an ordinary workflow,
    method, decision workflow, or spawned block may return or forward a
    `Decision` obtained from a valid source without creating another one.
-   Omission of a result annotation and the explicit result annotation `-> None`
-   both denote this no-result form; they do not denote `Option<T>`. No-result
-   is not a first-class value and cannot be bound, passed, interpolated, or
-   constructed. In particular, `return;` exits a no-result body, while
-   `return None;` is valid only when an expected `Option<T>` return type gives
-   that expression a type; it is not another spelling of a no-result return.
+   Omission of a result annotation and the explicit result annotation `-> Unit`
+   both denote `Unit`. `()` may be bound, passed, returned, and discarded like
+   another value, but it carries no information and encodes as JSON `null` at
+   an external boundary. `return;` is sugar for `return ();`. `return None;`
+   is valid only when an expected `Option<T>` return type gives that expression
+   a type; it is never a spelling of `Unit`.
 3. `Option<T>`, `Result<T, E>`, `List<T>`, and
    `Tuple<T1, T2, ..., Tn>` MAY appear in
    parameters, bindings, returned values, and struct fields. `Some(value)` and
@@ -939,8 +1038,8 @@ this document.
    have exactly one static type. An empty literal is valid only where an
    expected `List<T>` type is known. Items are evaluated once from left to
    right and the list becomes visible atomically after all items succeed.
-   `List<T>.len()` is defined in item 14, and `List<String>.join(separator)` is
-   defined in item 15. Iteration, mutation, and other deterministic list
+   `List<T>.len()` is defined in item 15, and `List<String>.join(separator)` is
+   defined in item 16. Iteration, mutation, and other deterministic list
    operations are excluded from v1.
 5. `Tuple<T1, T2, ..., Tn>` is an ordered, fixed-arity heterogeneous
    collection. Its arity MUST be at least two, and each positional member MAY
@@ -952,10 +1051,10 @@ this document.
    right and the tuple becomes visible atomically after all members succeed.
    A tuple pattern MAY destructure a tuple in `let`, `if let`, or `match`.
    Iteration and mutation of tuple members are excluded from v1.
-6. Struct fields MAY be `Bool`, `Int`, `Float`, `String`, declared struct or
-   enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
-   `Tuple<T1, T2, ..., Tn>`, or `Decision`. Every member of a constructed field
-   type MUST itself be a permitted value type. Nested and directly
+6. Struct fields MAY be `Unit`, `Bool`, `Int`, `Float`, `String`, declared
+   struct or enum values, `Option<T>`, `Result<T, E>`, `List<T>`,
+   `Tuple<T1, T2, ..., Tn>`, `Decision`, or `OperationError`. Every member of a
+   constructed field type MUST itself be a permitted value type. Nested and directly
    self-recursive struct definitions are permitted. In accordance with Section
    4, a cycle through
    two or more distinct declared types is excluded from v1. Every permitted
@@ -979,12 +1078,34 @@ this document.
    expected type and argument type identify the other member. A constructor
    without enough expected-type information is an analysis error. `Result`
    represents an expected outcome intentionally returned by a prompt, action,
-   workflow, or source constructor. Gantry MUST NOT convert `HookOutcome::Failed`,
-   a required decline, invalid output, retry exhaustion, cancellation,
-   journal failure, or another runtime error into `Err`; those failures retain
-   their ordinary runtime semantics. V1 has no `?` operator or implicit result
-   propagation.
-9. `Decision` is a sealed first-class value with read-only fields
+   workflow, source constructor, or `attempt` expression. Gantry MUST NOT
+   convert an operation failure into `Err` except at an explicit `attempt`
+   expression under item 9. Journal failure, internal invariant failure, and
+   deterministic evaluation failure are never converted. V1 has no `?`
+   operator or implicit result propagation.
+9. `OperationError` is a sealed built-in tagged type with the variants
+   `Declined(String)`, `InvalidOutput(String)`, `ProviderFailure(String)`,
+   `Timeout(String)`, `PolicyDenied(String)`, `Cancelled(String)`, and
+   `UnknownOutcome(Tuple<String,String>)`. The first six payloads are the
+   bounded diagnostic message. The `UnknownOutcome` tuple contains the stable
+   operation ID followed by its diagnostic message. Source can inspect these
+   variants with `match`, including
+   `OperationError::UnknownOutcome((operation_id, message))`, but cannot
+   construct an `OperationError`. Read-only `.message` returns the applicable
+   message, and `.operation_id` returns `Some(id)` only for `UnknownOutcome`.
+   `attempt OPERATION` evaluates exactly one syntactic `prompt`, `decide`, or
+   `action` expression. If the operation accepts a value of type `T`, the
+   result is `Ok(value): Result<T, OperationError>`. If it encounters a
+   decline, structured-output exhaustion, categorized provider failure,
+   timeout, policy denial, cancellation before result consumption, or an
+   unknown non-idempotent action outcome, the result is the corresponding
+   `Err`. Cancellation remains monotonic: catching it does not reactivate the
+   cancelled task, so the resulting value is observable only when cancellation
+   was scoped to the operation rather than the containing Gantry task.
+   Journal, event-persistence, executor, deterministic-evaluation, and
+   internal-invariant failures bypass `attempt`. An unattempted operation
+   failure retains the runtime-error propagation in Section 7.
+10. `Decision` is a sealed first-class value with read-only fields
    `decision: Bool` and `rationale: String`, where the rationale is nonempty.
    Only `decide` creates a new `Decision`; a decision workflow returns a
    `Decision` obtained from an executed `decide` or from another valid source.
@@ -996,9 +1117,11 @@ this document.
    is invalid. This restriction does not prevent rebinding a mutable
    `Decision` binding, or replacing a mutable struct field that has type
    `Decision`, with another sealed `Decision` obtained from a valid source.
-   Reusing or replacing a bound decision performs no new hook dispatch and
-   preserves the logical operation provenance of the assigned decision.
-10. Gantry MUST support named-field struct construction. Struct values MAY be
+   Reusing or replacing a bound decision performs no new hook dispatch.
+   `Decision` equality remains unavailable, but two decisions with equal
+   visible fields MUST be indistinguishable to later integration operations
+   unless source explicitly supplies different surrounding values.
+11. Gantry MUST support named-field struct construction. Struct values MAY be
    constructed by source execution or produced by an operation hook. A source
    constructor MUST reject unknown and duplicate fields during analysis.
    A source field initializer MAY use the explicit `name: expression` form or
@@ -1015,7 +1138,7 @@ this document.
    output. A constructed value becomes visible only after every supplied field
    expression completes successfully. Earlier hook side effects are not
    reversible if a later field expression fails.
-11. Struct fields MAY declare `Bool`, `Int`, `Float`, `String`, or `None`
+12. Struct fields MAY declare `Bool`, `Int`, `Float`, `String`, or `None`
    defaults, which are the only field-default forms in v1. A scalar default
    MUST exactly match the field's declared scalar type or the member type of
    an `Option` around that scalar. A scalar default on `Option<T>` normalizes
@@ -1023,14 +1146,15 @@ this document.
    Defaults MUST NOT invoke an integration operation. When an optional field
    with a default is omitted, the default is assigned; explicit `null` remains
    `None`. Struct update syntax and destructuring are excluded from v1.
-12. Every first-class Gantry value has deep, nonaliasing value semantics.
+13. Every first-class Gantry value has deep, nonaliasing value semantics.
    Binding initialization, assignment, argument and return passing, field and
    aggregate projection, construction, task capture, and join-result delivery
    each produce an independent logical value. An implementation MAY share
    immutable backing storage or use copy-on-write internally, but that sharing
    MUST NOT be observable through mutation, failure, cancellation, journaling,
-   or resume. Sealed-Decision provenance and interpreter-only optional-decline
-   provenance are copied with their values under Section 7. Bindings,
+   or resume. Values carry no hidden provenance that can alter a later
+   integration request. Operation and control provenance remains in journal
+   and observability records only. Bindings,
    including function, method, and
    decision-workflow parameters other than the receiver, are immutable by
    default. `mut` on a local declaration or parameter enables rebinding and
@@ -1046,9 +1170,9 @@ this document.
    but then explicitly discards the resulting first-class value. Initializer
    failure introduces no binding, although integration side effects produced
    while evaluating the initializer are not rolled back.
-13. `const` is excluded from v1. Runtime initialization of immutable bindings
+14. `const` is excluded from v1. Runtime initialization of immutable bindings
    is permitted.
-14. Gantry MUST provide the deterministic primitive operations in this item.
+15. Gantry MUST provide the deterministic primitive operations in this item.
     There is no truthiness or implicit numeric or String coercion.
     - `!` accepts `Bool`. `&&` and `||` accept `Bool`, evaluate left to right,
       short-circuit, and return `Bool`. When the left operand determines the
@@ -1092,7 +1216,7 @@ this document.
     Lists and tuples MAY otherwise be constructed, passed, returned,
     interpolated, and projected. Tuple patterns provide deterministic tuple
     destructuring; list patterns and list destructuring are excluded from v1.
-15. `String` is an immutable valid-UTF-8 sequence of Unicode scalar values.
+16. `String` is an immutable valid-UTF-8 sequence of Unicode scalar values.
     Gantry performs no implicit Unicode normalization. A `mut String` binding
     permits atomic replacement of the complete value, not observable in-place
     mutation of backing storage. String equality is exact scalar-sequence
@@ -1142,7 +1266,7 @@ this document.
     slicing, characters, bytes, regexes, normalization, locale-aware behavior,
     case-insensitive comparison, ordering, repetition, and mutable String
     methods are excluded from v1.
-16. Every String result and every List result produced by a deterministic
+17. Every String result and every List result produced by a deterministic
     operation MUST satisfy the effective limits in Section 11 before it is
     published. A rendered prompt, including its literal template segments and
     interpolation replacements, MUST satisfy `maximum_string_scalars` before
@@ -1154,7 +1278,7 @@ this document.
     apply recursively to source construction, entry input, hook output, and
     resumed values. Deterministic String operations dispatch no hook, create no
     model rationale or operation event, and consume no validation-retry budget.
-17. Patterns are deterministic structural operations over an already evaluated
+18. Patterns are deterministic structural operations over an already evaluated
     value. V1 patterns are `_`, an identifier binding, `Some(pattern)`,
     `None`, `Ok(pattern)`, `Err(pattern)`, a unit or payload enum variant, and
     a fixed-arity tuple pattern. `_` matches without binding. An identifier
@@ -1164,18 +1288,19 @@ this document.
     irrefutable for its static type; v1 therefore permits only identifier
     bindings, `_`, and tuple patterns recursively composed from those forms in
     `let`. `if let` and `match` admit refutable patterns under Section 9.
-18. Every protocol field that identifies a Gantry type MUST use one canonical
-    UTF-8 type descriptor. `Bool`, `Int`, `Float`, `String`, and `Decision` are
+19. Every protocol field that identifies a Gantry type MUST use one canonical
+    UTF-8 type descriptor. `Unit`, `Bool`, `Int`, `Float`, `String`,
+    `Decision`, and `OperationError` are
     encoded exactly as their source names; a declared struct or enum is encoded as its
     `crate::`-rooted qualified path; and constructed types are encoded as
     `Option<T>`, `Result<T,E>`, `List<T>`, or `Tuple<T1,T2,...,Tn>` with no
     whitespace and with each member recursively encoded by this rule. The
-    no-result form is encoded as `None`. Source aliases introduced by `use`
+    no-information result form is encoded as `Unit`. Source aliases introduced by `use`
     MUST be resolved before a descriptor is produced. Canonical descriptors
     are metadata rather than source values, but they ensure that hooks,
     journals, events, and diagnostics identify the same type independently of
     the spelling visible at a call site.
-19. Boolean literals are `true` and `false`. Integer and float literals follow
+20. Boolean literals are `true` and `false`. Integer and float literals follow
     Section 13.2. An `integer_literal_token` has type `Int`, and a
     `float_literal_token` has type `Float`; surrounding expected type does not
     change that classification. A numeric literal MUST be representable by its
@@ -1195,7 +1320,7 @@ defined here and in Section 7 cross the integration boundary.
    Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
    declared in the same Gantry package. Because the grammar accepts only a
    qualified path after `impl`, built-in types, constructed types such as
-   `Option<T>`, `List<T>`, and `Tuple<...>`, and the no-result annotation
+   `Option<T>`, `List<T>`, and `Tuple<...>`, and the Unit annotation
    `None` cannot be written as `impl` targets in v1. A qualified path that resolves to a
    function, decision, module, or other non-struct item is an analysis error.
    A package MAY split one struct's methods across multiple `impl` blocks,
@@ -1263,17 +1388,19 @@ defined here and in Section 7 cross the integration boundary.
    keep operation counts, hook requests, journals, and events aligned with the
    model-backed sites visible in source.
    Semantic analysis MUST expose this transitive behavior without changing
-   the call syntax. For every function, method, and decision workflow, the
-   structured analysis result MUST contain the following direct-site inventory
-   and transitive summary:
+   ordinary call syntax. For every function, method, and decision workflow,
+   the structured analysis result MUST contain the following direct-site
+   inventory and transitive effect summary:
    - every direct workflow-call edge, identified by call-site location and
      canonical callee path;
    - every direct integration-operation site (`prompt`, `decide`, or `action`)
      and task-control site (`spawn`, `join`, `joinall()`, or `detach`) in that
      workflow, identified by kind and source location; and
-   - seven transitive flags indicating whether execution of the workflow may
-     reach a `prompt`, `decide`, `action`, `spawn`, `join`, `joinall()`, or
-     `detach`, respectively.
+   - a canonical effect set drawn from `prompt`, `decide`,
+     `action(read_only)`, `action(idempotent)`, `action(non_idempotent)`,
+     `spawn`, `join`, `background`, `session`, and `recover`; and
+   - the source locations and canonical action paths contributing each action
+     effect.
    For this inventory, “direct” means lexically contained in the workflow's
    body, including sites and call edges inside its nested control-flow and
    spawned blocks, but excluding sites and edges in another workflow reached
@@ -1281,12 +1408,14 @@ defined here and in Section 7 cross the integration boundary.
    enclosing workflow even though the child task executes it. The transitive
    flags include both those direct sites and sites reachable through direct
    call edges.
-   The transitive flags MUST be the least fixed point of the package call
-   graph, including permitted self-recursion and method calls. These summaries
-   are analysis metadata rather than source-level effects or additional hook
-   operations. They let human-facing tools and model repair agents distinguish
-   deterministic calls from calls that may eventually perform integration-
-   backed or parallel work without adding annotations to the source language.
+   The transitive effect set MUST be the least fixed point of the package call
+   graph, including permitted self-recursion and method calls. Effects are a
+   source-level contract reported by analysis, not additional hook operations.
+   A function or method MAY be declared `pure fn`; analysis MUST reject that
+   assertion unless its inferred effect set is empty. A decision workflow is
+   necessarily at least `decide`-effectful on every normal completion and
+   cannot be declared pure. Implementations MUST emit the same canonical
+   effect set for the same package.
    Struct, enum, option, result, list, and tuple construction; field access;
    assignment; pattern routing; module lookup; the act of dispatching a
    workflow call; and `join` are interpreter operations and MUST NOT directly
@@ -1296,7 +1425,7 @@ defined here and in Section 7 cross the integration boundary.
    contain parenthesized operation modifiers before that template. A typed
    prompt places its result annotation after the template, as in
    `prompt(retry_limit = 2, session = fork) "..." -> Report`. A prompt with no
-   result annotation, or with `-> None`, has no result. A prompt or `decide`
+   result annotation, or with `-> Unit`, returns `Unit`. A prompt or `decide`
    expression MAY contain one `using { ... }` clause after its template. For a
    prompt, that clause precedes the result annotation when one is present.
    Each entry is either shorthand `name`, equivalent to `name: name`, or
@@ -1333,43 +1462,33 @@ defined here and in Section 7 cross the integration boundary.
    processing, or interpolation replacement. It therefore preserves authored
    escape spellings and distinguishes `$${name}` from an actual `${name}`
    island. It is not the complete original source token because delimiters and
-   structural block-prompt layout are omitted. An implementation MUST retain
-   each interpolation island's exact source text and source span independently
-   of the dedented hook-facing template. The hook request MUST carry named
-   inputs separately from interpolation arguments as an ordered vector of
-   name, source span, canonical type descriptor, and canonical JSON value.
-   An integration MUST make every named input available to the selected agent,
-   even when it must render that structured vector into provider text.
+   structural block-prompt layout are omitted. Exact interpolation source text
+   and source spans MUST be retained for diagnostics and protected
+   observability, but MUST NOT be supplied to or used by the operation
+   fulfiller. The hook request carries interpolation arguments and named inputs
+   as the ordered names, canonical type descriptors, and canonical JSON values
+   defined in Section 7. An integration MUST make every named input available
+   to the selected agent, even when it must render that structured vector into
+   provider text.
 8. A trailing expression in a function, method, or spawned block implicitly
    yields its value. An explicit `return` MAY yield earlier from a function,
    method, or spawned block. An explicit `return` in a decision workflow is
    governed by Section 9. Every explicit or implicit returned expression MUST
    exactly match the
    declared result type. A workflow whose signature omits a result type
-   implicitly returns no result. Because no-result is not a value, a no-result
-   prompt, action, workflow call, method call, `join`, or `joinall()` MUST be
-   terminated with `;` as an expression statement; it cannot be a block's
-   trailing expression. A
+   implicitly returns `Unit`. A Unit-producing prompt, action, workflow call,
+   method call, `join`, or `joinall()` MAY be terminated with `;`, which
+   evaluates it and discards its sole `()` value. A
    statement-only agent or session context uses `with <agent> { ... }` or
    `session(<directive>) { ... }` without a semicolon after its closing brace.
-   A value-producing `prompt`, `decide`, or `action` MAY be discarded by
-   writing it as an expression statement. A value-producing workflow or
-   source-defined method call, `with` expression, `session` expression,
-   `match` expression, `join`, or `joinall()` MAY likewise be used as an
-   expression statement when its result is intentionally discarded. These
-   forms can perform visible integration, workflow, control-flow, or task-
-   ownership work while being evaluated. This is an outer-form restriction,
-   not effect inference over arbitrary expression trees: every other value-
-   producing expression, including a binding, primitive or operator
-   expression, literal, constructor, field access, projection, sealed
-   deterministic built-in call, `Some`, `None`, `Ok`, or `Err`, MUST be
-   rejected as an expression statement even if one of its nested operands
-   could perform work. Authors MUST bind or otherwise consume the result of
-   such an expression. In particular, writing a previously evaluated
-   `Decision` binding as a statement does not redispatch its decision or emit
-   its rationale and is invalid. Rejecting these forms prevents semicolons from
-   silently discarding deterministic computation and keeps statement-level
-   work recognizable from the outer source form.
+   Every non-Unit value that is intentionally ignored MUST use the explicit
+   statement `discard expression;`. The expression is evaluated once with its
+   inferred effects and its value is then discarded. A bare `expression;` is
+   valid only when the expression has type `Unit`; syntax shape and inferred
+   effect do not create exceptions. In particular, `discard decision;` is
+   explicit but performs no new dispatch when `decision` is a previously
+   evaluated binding. This type-directed rule replaces the syntax-shaped
+   expression-statement whitelist.
    Assignment and `spawn` statements do not themselves produce values.
    Conditional-arm and loop bodies are statement-only blocks; they MUST NOT
    end in a trailing expression whose value would be silently discarded.
@@ -1405,8 +1524,10 @@ defined here and in Section 7 cross the integration boundary.
     before its body begins; entering a `session` expression establishes its
     active logical session before its body begins. These rules make the order
     of external operations visible even when calls or constructors are nested.
-12. An action declaration is a package item with a canonical path, typed
-    positional parameters, an optional result type, and no Gantry body. An
+12. An action declaration is a package item with a canonical path, one
+    mandatory recovery class, typed positional parameters, an optional result
+    type, and no Gantry body. The recovery class is exactly `read_only`,
+    `idempotent`, or `non_idempotent`. An
     action invocation MUST use the `action` keyword and MUST resolve to one
     declared action; writing the same path as an ordinary call is an analysis
     error rather than an implicit action dispatch. Gantry evaluates action
@@ -1415,9 +1536,10 @@ defined here and in Section 7 cross the integration boundary.
     logical action operation. The current Gantry task awaits that result before
     advancing; concurrency requires placing the action invocation in a
     `spawn` block, whose child task performs the same await independently. A
-    no-result action is an expression statement; a value-producing action
-    yields its declared type and MAY be
-    bound, returned, matched, or intentionally discarded. Action declarations
+    Unit action is a Unit expression statement; a value-producing action
+    yields its declared type and MAY be bound, returned, matched, or explicitly
+    discarded. Every action request carries the declared recovery class and
+    stable operation ID. Action declarations
     have no agent, session, prompt template, or provider policy in Gantry
     source. The integration resolves their canonical signatures during
     preflight under Section 7.
@@ -1483,11 +1605,11 @@ operation identity, failure categories, and propagation.
    and flushes an execution-state record containing the replacement revision;
    that revision applies to every later action dispatch in the resume run.
    Previously committed outcomes and results remain unchanged. Recovery of an
-   indeterminate action retains its canonical action path, signature, typed
-   arguments, and logical operation ID while carrying the active recorded
-   action-mapping revision. The integration MUST map one canonical signature
-   consistently for the complete run and MUST reject conflicting or ambiguous
-   capability registrations during preflight.
+   indeterminate action retains its canonical action path, signature, recovery
+   class, typed arguments, and logical operation ID while carrying the active
+   recorded action-mapping revision. The integration MUST map one canonical
+   signature and recovery class consistently for the complete run and MUST
+   reject conflicting or ambiguous capability registrations during preflight.
 3. Agent selection is established by lexically delimited
    `with <name> { ... }` blocks and dynamically inherited by model-backed work
    reached from them. The selected name applies to
@@ -1502,16 +1624,21 @@ operation identity, failure categories, and propagation.
    name from the merged agent declarations, not a runtime binding. `with`
    contexts MAY occur at any block scope. Model operations with no active
    selection use the declared default agent.
-   Agent selection and logical-session selection are orthogonal. Reusing one
-   logical session across nested or sequential `with` blocks MUST preserve the
-   session's conversational continuity even when those blocks select different
-   agent names. An integration MAY implement that continuity with a shared
-   transcript, provider session transfer, or another semantically equivalent
-   mechanism, but it MUST NOT silently reset, fork, or replace the logical
-   session merely because the selected agent changed. An integration that
-   cannot honor cross-agent reuse for the package's declared mappings MUST
-   reject the execution during integration preflight rather than fail after a
-   partially executed session.
+   Agent selection and logical-session selection are orthogonal. Every logical
+   session owns one Gantry-defined canonical transcript. The transcript is an
+   ordered sequence of accepted model exchanges, each containing operation
+   kind, authored template, rendered prompt, ordered typed inputs, and the
+   accepted canonical result. Failed physical dispatches, repair diagnostics,
+   telemetry, workflow frames, branches, task ancestry, and action operations
+   are not transcript turns. `inline` reuses the sequence, `fork` snapshots its
+   complete committed prefix at creation, and `new` starts with an empty
+   sequence. A prompt or decide request carries that sequence before the
+   current request. The integration MUST present its semantic content in order
+   and MUST NOT add provider history that is absent from it. Provider session
+   handles MAY cache this transcript, but the canonical sequence is the
+   portable authority. Reusing a session across `with` blocks therefore gives
+   every selected agent the same transcript; an integration unable to do so
+   MUST reject the mapping during preflight.
 4. The Rust hook contract MUST be asynchronous and independent of any specific
    executor implementation within v1's multithreaded Rust embedding profile.
    Its futures MUST be `Send`, and Gantry's public API MUST NOT expose Tokio-
@@ -1531,9 +1658,10 @@ operation identity, failure categories, and propagation.
    if it reaches an operation. `HookFactory::create` MUST receive a
    `TaskContext` containing task, execution, and parent-task identity; the
    task's base logical session ID; the root logical session ID and provenance;
-   the enclosing session ID and fork provenance when the task was spawned;
-   the inherited agent selection; and the immutable structural-context
-   ancestry captured when the task was created.
+   the enclosing session ID and fork provenance when the task was spawned; and
+   the inherited agent selection. Workflow frames, branch history, task
+   ancestry, and value provenance are observability data and MUST NOT be
+   supplied through `TaskContext` or otherwise influence hook fulfillment.
    The base session is the root session for the root task and the automatically
    forked child session for a spawned task. It is fixed when the task is
    created and MUST NOT be replaced by a transient `session(...)` context that
@@ -1578,17 +1706,16 @@ operation identity, failure categories, and propagation.
      will enforce outside or in addition to JSON Schema validation;
    - generated operation guidance describing the input contract, output
      contract, and required strict-JSON response;
-   - the package-relative source file and half-open byte span of the operation
-     site;
+   - the canonical core operation-site ID;
    - a dispatch ID, validation-attempt number, and recovery-dispatch number;
      and
    - validation errors exactly when the dispatch is a structured-output repair
      attempt, including a recovery redispatch of such an attempt.
    The v1 operation kinds are `prompt`, `decide`, and `action`, matching the
    three source keywords that create operations. The result
-   kind is `value`, `no-result`, or `decision`. The expected result descriptor
-   is the declared value type for `value`, `None` for `no-result`, and
-   `Decision` for `decision`.
+   kind is `value`, `unit`, or `decision`. The expected result descriptor is
+   the declared value type for `value`, `Unit` for `unit`, and `Decision` for
+   `decision`.
 
    A `prompt` or `decide` body MUST contain the selected agent name and
    active agent-mapping revision; authored source template and interpolated
@@ -1605,38 +1732,29 @@ operation identity, failure categories, and propagation.
    item 12. An `inline` request MUST NOT itself cause creation of a Gantry or
    provider session. Typed interpolation arguments MUST be an ordered
    vector containing one record for each interpolation island in source order;
-   each record contains the exact UTF-8 source text between that island's
-   `${` and matching `}` delimiters, its package-relative source file and
-   half-open byte span, its canonical static-type descriptor from Section 5,
-   and its RFC 8785 canonical strict-JSON value. The named-input vector MUST
-   preserve `using` source order. Each entry contains its unique name, complete
-   entry source span, canonical static-type descriptor, and RFC 8785 canonical
-   strict-JSON value. A shorthand entry and its expanded `name: name` form have
-   the same protocol value but retain their own authored source span.
+   each record contains its zero-based source-order position, canonical static-
+   type descriptor from Section 5, and RFC 8785 canonical strict-JSON value.
+   Exact island text and spans are observability metadata and MUST NOT be
+   supplied to or used by the fulfiller. The named-input vector MUST
+   preserve `using` source order. Each entry contains its unique name,
+   canonical static-type descriptor, and RFC 8785 canonical strict-JSON value.
+   A shorthand entry and its expanded `name: name` form have the same protocol
+   value. A repeated interpolation appears repeatedly so the request preserves
+   the explicit operation inputs exactly.
 
-   Comments and whitespace inside an interpolation island remain part of that
-   island's source-text field even though they do not affect evaluation. A
-   repeated interpolation appears repeatedly so the request preserves the
-   template's operation inputs exactly.
-
-   An `action` body MUST instead contain the action's canonical item path and
-   canonical signature; the action-mapping revision active for the dispatch;
-   and an ordered argument vector containing each parameter name, argument
-   source span, canonical static-type descriptor, and RFC 8785 canonical
+   An `action` body MUST instead contain the action's canonical item path,
+   canonical signature, declared recovery class, and stable operation ID; the
+   action-mapping revision active for the dispatch; and an ordered argument
+   vector containing each parameter name, canonical static-type descriptor,
+   and RFC 8785 canonical
    strict-JSON value. It MUST NOT contain a selected agent, prompt template,
    interpolated prompt, named model input, or conversational-session directive.
    Lexical `with` and `session` contexts do not change an action request.
-   Source locations MUST
-   identify the package-relative UTF-8 file and a zero-based, end-exclusive
-   byte span into that file's exact source bytes. A permitted UTF-8 byte-order
-   mark is part of those bytes and therefore contributes three bytes to later
-   offsets even though the lexer ignores it. An operation location spans the
-   complete authored `prompt`, `decide`, or action-invocation expression,
-   including modifiers, template delimiters, arguments, and a prompt result
-   annotation when present. An
-   interpolation location spans the complete `${...}` island. Implementations
-   MAY additionally report line and scalar-column coordinates, but protocol
-   identity and resume MUST use the byte span. The operation ID MUST remain
+   Source locations remain required in diagnostics, journals, and protected
+   observability records. They identify package-relative UTF-8 files and zero-
+   based, end-exclusive byte spans into the immutable source snapshot, but they
+   are not hook input, semantic identity, or a resume compatibility key. The
+   operation ID MUST remain
    stable across validation retries and resume. Each physical hook invocation
    MUST have a distinct dispatch ID. The zero-based
    validation-attempt number advances only after Gantry receives output that
@@ -1662,148 +1780,28 @@ operation identity, failure categories, and propagation.
    array members in index order, for schema and resource-limit errors. This
    canonical shape and order allow independent harnesses to render equivalent
    repair guidance without parsing diagnostic prose.
-6. A hook request MUST also contain a finite ordered execution-context vector.
-   It MUST contain the task's immutable structural ancestry, its active
-   workflow call chain, and the control-chain entries needed to interpret the
-   current operation; it MUST NOT contain the entire event history or all
-   events since session creation. Each context entry MUST identify its kind,
-   dynamic source-construct identity when applicable, and associated
-   structured data. The canonical v1 context kinds and payloads are:
-   - `workflow-frame`: canonical workflow path for one active function or
-     method frame, call-site location when the frame was entered by a source
-     call, and zero-based frame occurrence within its immediate dynamic
-     caller;
-   - `decision-frame`: canonical decision-workflow path for one active
-     decision-workflow frame, call-site location, and zero-based frame
-     occurrence within its immediate dynamic caller;
-   - `spawn-frame`: parent and child task IDs, source spawn location,
-     zero-based spawn occurrence within its immediate dynamic parent, and the
-     child's canonical declared result-type descriptor;
-   - `branch-arm`: branch-construct kind (`conditional` or `match`), branch
-     dynamic identity, zero-based arm index, condition kind (`decision`,
-     `bool`, or `pattern`), controlling outcome, and, for a model-produced
-     decision, its operation ID; a prompt or decide request additionally
-     contains the nonempty rationale;
-   - `loop-iteration`: loop dynamic identity, zero-based prospective-iteration
-     index, phase (`condition` or `body`), and the most recently settled
-     condition's associated index and decision; a prompt or decide request
-     additionally contains the nonempty rationale when one exists;
-   - `decision-value`: originating `decide` operation ID, source location,
-     and controlling Boolean for a sealed `Decision` reachable from a captured
-     operation input; a prompt or decide request additionally contains the
-     nonempty rationale; and
-   - `optional-decline`: declined operation ID, operation kind, selected agent
-     or canonical action path as applicable, and source location when a
-     decline normalized to `None`; a prompt or decide request additionally
-     contains the decline reason.
-   Decision rationales and decline reasons are protected model or integration
-   content. They MUST be present in request contexts for `prompt` and `decide`
-   operations where listed above, but MUST be absent from action request
-   contexts. Action contexts retain the corresponding operation IDs, source
-   locations, controlling outcomes, and other structural fields. An action
-   receives protected text only when the program passes that text explicitly
-   through a declared typed action argument.
-   The root `crate::main` frame has no source call site and MUST encode that
-   field as absent rather than inventing a location. It has frame occurrence
-   zero and is always the first structural context entry. Every non-root
-   workflow or decision frame MUST carry the source location of the call that
-   entered it. This exception makes the context shape complete for entry-point
-   operations without assigning a fictitious caller to `main`.
-   Each interpreter call frame contributes exactly one of these two context
-   kinds: a function or method contributes `workflow-frame`, and a decision
-   workflow contributes `decision-frame`. Calling a decision workflow MUST NOT
-   add both kinds for the same frame. A spawned block is represented by its
-   `spawn-frame` and does not create a `workflow-frame` merely because it is a
-   task body.
-   A prospective-iteration index identifies the condition/body pair described
-   by Section 9: a `while` condition and the body it admits share an index, as
-   do an `until` body and its following condition. A final false `while`
-   condition may therefore have an index for which no body executes.
-   Conditional-chain and loop dynamic identities MUST use the same execution,
-   task, workflow-call, branch, loop-counter, and source-span components that
-   item 16 requires for dynamic operation identity. They identify the
-   controlling source construct rather than any one `decide` operation within
-   it and MUST remain stable across retry and resume.
-   A context entry's protocol representation MUST preserve one entry boundary,
-   its canonical kind, the applicable listed payload fields, and the source-construct
-   identity and location when the kind requires them. The structured vector
-   MUST remain intact at the Gantry hook boundary: an integration MUST NOT
-   discard or reorder entries before presenting them to the operation
-   fulfiller. For a prompt or decide operation, the fulfiller is the selected
-   agent; for an action, it is the integration-side action handler. A harness
-   MAY render prompt or decide entries into provider messages or prompt text
-   when its model API has no structured-context channel, but that rendering MUST
-   preserve vector order, visibly distinguish entry boundaries and kinds, and
-   make every required field available to the selected agent. An action
-   handler MUST likewise receive its operation-specific vector without loss or
-   reordering, although its capability API may expose the entries as
-   structured metadata rather than model-facing text. Such presentation
-   and any provider-specific presentation metadata are integration behavior
-   and MUST NOT replace or mutate the canonical request vector. An unknown
-   context kind is incompatible with protocol major version 1 and MUST be
-   rejected. Adding a context kind requires a new protocol major version; a
-   newer minor version may add only optional fields to a known kind under the
-   compatibility rule in Section 15.
-   When a spawn executes, the child MUST capture the parent's current
-   structural entries and append one `spawn-frame` before the child becomes
-   runnable. Parent workflow, decision, branch-arm, and loop-iteration
-   entries in that snapshot remain immutable origin context for the child even
-   after the corresponding parent scopes exit. Structural entries created by
-   the child are appended inside that inherited ancestry. Nested spawns repeat
-   this rule, so the vector records task provenance without copying event or
-   session history.
-   Structural entries (`workflow-frame`, `decision-frame`, `spawn-frame`,
-   `branch-arm`, and `loop-iteration`) MUST appear first, ordered from
-   outermost to innermost dynamic scope, with repeated entries in execution
-   order within one scope.
-   Any value-provenance entries (`decision-value` and `optional-decline`) MUST
-   follow all structural entries and use the interpolation-input and value-
-   traversal order defined below. This is a total ordering; integrations MUST
-   NOT regroup entries by kind. A request made while evaluating an `else if`
-   or `else if let` head MUST include the `branch-arm` entries from preceding
-   arms in the same conditional chain. While a selected conditional arm
-   executes, its active control-chain context MUST include every preceding
-   false arm followed by the controlling true arm. Decision entries include
-   their rationale; structural entries do not fabricate one. An `else` arm
-   MUST include every preceding false arm and adds no entry of its own because
-   it has no condition. A model operation reached while evaluating a `match`
-   scrutinee precedes arm selection and therefore has no `branch-arm` entry for
-   that match. While the selected match arm executes, its active control-chain
-   context MUST include each preceding nonmatching pattern arm followed by the
-   selected matching arm, all as `pattern` entries with false or true outcomes.
-   Match patterns themselves are deterministic and dispatch no operation.
-   These entries leave the active context when their conditional or match
-   construct completes; they are not unbounded execution history. A
-   `None` produced by `Declined` MUST carry interpreter-only decline
-   provenance distinct from a `None` produced by `Completed(null)` or source.
-   That provenance MUST survive assignment, argument and return passing,
-   struct or aggregate containment, capture, and other deep copies. An
-   operation request MUST include one `decision-value` entry for every distinct
-   sealed-Decision provenance and one `optional-decline` entry for every
-   distinct decline provenance reachable from its captured inputs. `prompt`
-   and `decide` requests traverse interpolation arguments followed by named
-   inputs; action requests traverse action arguments. Within each vector,
-   entries are ordered by source order and then depth-first value traversal;
-   repeated references to the same provenance produce one entry. Depth-first
-   value traversal is preorder: a `Decision` visits its provenance before its visible
-   fields; a struct visits fields in declaration order; an enum, result, or
-   present option visits its payload; and a list or tuple visits members in
-   ascending index order. A `None` or unit enum variant has no child value.
-   When the same provenance is reachable by more than one path, its first
-   encounter in this total order determines the entry position. This metadata
-   is not part of Gantry's JSON value and MUST NOT change schema validation or
-   interpolation; an optional decline still emits `null`, and a `Decision`
-   still emits only its `decision` and `rationale` fields. The integration MUST
-   make every operation-specific supplied entry available to the applicable
-   selected agent or action handler in order,
-   although its provider-specific presentation is implementation-defined.
+6. A hook request MUST NOT contain an implicit logical trace.
+   Workflow and decision frames, branch outcomes, loop history, task ancestry,
+   source locations, operation provenance, decline evidence, and telemetry
+   are nonsemantic observability data. They MAY appear in protected journal or
+   event payloads, but an integration MUST NOT present them to an operation
+   fulfiller or use them to choose fulfillment behavior. A value carries only
+   its source-visible type and content. In particular, a `Decision` carries its
+   visible Boolean and rationale, and every `None` of one `Option<T>` type is
+   semantically identical regardless of how it arose. Model-visible input is
+   exactly the authored and rendered prompt, ordered interpolation arguments,
+   ordered `using` inputs, selected agent, explicit logical-session transcript,
+   expected output contract, and operation modifiers. Action-visible input is
+   exactly the canonical action signature, recovery class, stable operation
+   ID, and ordered typed arguments. Adding any other behavior-affecting input
+   requires a source-language and hook-protocol major version change.
 7. Prompt interpolation MUST use `${expression}`. An unescaped `$` followed by
    `{` begins interpolation. `$$` consumes exactly those two dollar signs and
    produces one literal dollar sign, so `$${name}` renders the literal text
    `${name}` without interpolation. A `String` is interpolated as its string
-   contents; `Bool`, `Int`, `Float`, a struct, enum, option, result, list,
-   tuple, or `Decision` is interpolated as compact strict JSON, with `None`
-   rendered as `null`. This compact encoding
+   contents; `Unit`, `Bool`, `Int`, `Float`, a struct, enum, option, result,
+   list, tuple, `Decision`, or `OperationError` is interpolated as compact
+   strict JSON, with both `()` and `None` rendered as `null`. This compact encoding
    MUST use the RFC 8785 JSON Canonicalization Scheme so equivalent Gantry
    values produce the same interpolated prompt across implementations.
    Consequently, `Some("text")` held as an `Option<String>` interpolates as
@@ -1831,7 +1829,7 @@ operation identity, failure categories, and propagation.
    additional value; identify the expected result kind; explain that unknown
    struct properties are rejected; identify fields that may be omitted and the
    defaults or `None` values omission supplies; describe every interpolation,
-   named input, or action argument; and explain the no-result, tagged-value, or
+   named input, or action argument; and explain the Unit, tagged-value, or
    decision shape when applicable. The guidance MUST also state the effective
    raw-output byte, value-depth, value-node, String-scalar, and List-item
    limits supplied in the request. These limits are part of the output
@@ -1848,173 +1846,85 @@ operation identity, failure categories, and propagation.
     language-level cancellation state transitions required by Sections 10 and
     15.
 11. A hook MUST return one of three host-level outcomes:
-   `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
-   `Completed` contains the integration's raw output as bytes; Gantry, not the hook,
-   owns UTF-8 decoding, strict-JSON parsing, schema validation, and repair
-   retries. Non-UTF-8 or malformed-JSON output is therefore a structured-output
-   validation failure rather than a transport failure. A decline reason or
-   failure message MUST be a nonempty sequence of Unicode scalar values whose
-   UTF-8 encoding does not exceed `maximum_hook_output_bytes` and whose scalar
-   count does not exceed `maximum_string_scalars`. It is diagnostic integration
-   data, not model output, and MUST follow the redaction rules in Section 12.
-   Gantry MUST check these bounds before journaling or emitting the integration-
-   supplied text. An empty or oversized reason or message violates the hook
-   contract and MUST fail the current task in the `hook-failure` category with
-   a Gantry-generated bounded diagnostic; it MUST NOT enter structured-output
-   repair, and the invalid integration-supplied text MUST NOT be copied into a
-   journal, event, or diagnostic. `Declined` produces `None` only when the
-   operation's expected type is `Option<T>`; for every other result type,
-   including a control decision, it fails the current Gantry task. `Failed`
-   likewise fails the current Gantry task and is not a structured-output
-   validation failure. Item 18 defines how task failure propagates through
-   foreground, attached, and detached work.
-12. Gantry MUST assign a logical session ID to each `prompt` and `decide`
-   operation. Action operations have no conversational session. Model-operation
-   session IDs MUST remain stable across validation retries and resume. An
-   integration MUST
-   honor the following session directives:
-   - `inline` reuses the enclosing logical session;
-   - `fork` creates a child session initialized from the enclosing session; and
-   - `new` creates a session without inherited conversational context.
-   At execution start, the embedder MAY supply one root logical session ID and
-   its integration-side context. Otherwise Gantry MUST create a fresh root
-   logical session with no inherited conversational context. Entry-level
-   `inline` operations use this root session. The selected root identity and
-   whether it was supplied or generated MUST be journaled and restored on
-   resume. Root provenance is a separate protocol field and MUST NOT be
-   represented as a `new` or `fork` creation directive. For an
-   `embedder-supplied` root, integration preflight MUST resolve the supplied
-   context before execution begins. For a `gantry-created` root, the
-   integration MUST lazily establish one fresh empty conversational context
-   for that ID before first using the root or a session derived from it, then
-   resolve the same context for every later use in that execution. Establishing
-   that integration-side context is not a Gantry operation and MUST NOT
-   dispatch an `OperationHook` by itself.
-   Every session created by `fork` or `new` MUST receive a fresh logical ID
-   that is unique within the execution and stable across retry and resume.
-   Before a hook dispatch, child-task submission, or other durable state may
-   refer to that ID, Gantry MUST append and flush a session-state record that
-   contains the ID, creation directive, creating construct's dynamic identity,
-   enclosing session ID, and creator task ID. Replaying the same dynamic
-   construct MUST recover that record and reuse its ID rather than allocate a
-   second session. `inline` creates no session-state record because it reuses an
-   existing ID. A `fork` request identifies that enclosing session as
-   the context source the integration MUST copy. A `new` request includes the
-   enclosing session only for causality and the integration MUST NOT inherit
-   its conversational context. An `inline` request uses the enclosing session
-   as its active session rather than creating another ID. The root logical
-   session has no parent session; an entry-level `inline` operation uses that
-   root as both its enclosing and active session without creating another ID.
-   These fields make the `new`, `fork`, and `inline` obligations implementable
-   without relying on provider-specific hidden state.
+   `Completed(raw_output)`, `Declined(reason)`, or
+   `Failed(category, message)`. `category` is exactly `provider-failure`,
+   `timeout`, `policy-denied`, or `cancelled`. `Completed` contains raw bytes;
+   Gantry alone owns decoding, validation, normalization, and repair. Reasons
+   and messages MUST be nonempty bounded Unicode strings under the effective
+   hook-output and String limits. Invalid diagnostic data is a bounded
+   `hook-failure` contract violation and MUST NOT be journaled verbatim.
+   `Declined` is an operation failure for every expected type, including
+   `Option<T>` and `Unit`; it never manufactures `None`. An enclosing `attempt`
+   converts it to `OperationError::Declined`. `Failed` maps its category to the
+   corresponding `OperationError` under `attempt`, or otherwise fails the task
+   in the applicable runtime category. Structured-output repair applies only
+   to `Completed` bytes, never to decline or failure.
+12. Gantry MUST assign a stable logical session ID to every `prompt` and
+   `decide`; actions have no session. Every session owns a Gantry-defined
+   canonical transcript consisting only of accepted model exchanges. Each turn
+   contains operation kind, authored and rendered prompt, ordered typed
+   interpolation and `using` inputs, selected logical agent, and accepted
+   canonical result. Failed dispatches, validation diagnostics, actions,
+   workflow frames, branch or loop history, task ancestry, and telemetry are
+   excluded. Gantry MUST durably append a turn before a later inline operation
+   can observe it.
 
-   A non-root session created by a lexical `session` block, a loop, or the
-   automatic fork for a spawned task is not created by one operation request.
-   Before such a session is first used by a model operation or as the parent
-   of another session, Gantry MUST use the runtime session-establishment
-   interface in Section 15 to establish its integration-side context from its
-   durable session-state descriptor. Gantry MUST establish a `new` session
-   with no inherited conversation and a `fork` session from the identified
-   enclosing session. Establishment MUST occur before a child that inherits or
-   forks that session is submitted, so concurrent parent progress cannot
-   change the fork point. The establishment call MUST be idempotent for the
-   same execution and logical session ID, including after interruption. Gantry
-   MAY omit establishment when the session is never used by model work and
-   never becomes another session's parent. Failure is a
-   `logical-session-setup` runtime error in the task attempting the use or
-   child creation; it is not a hook dispatch or structured-output failure.
+   `inline` reuses the active session. `fork` allocates a stable child ID and
+   snapshots the complete committed transcript prefix of its parent at the
+   fork point. `new` allocates a stable ID with an empty transcript. The root
+   session is either supplied with a canonical transcript by the embedder or
+   created empty by Gantry. A lexical `session(fork)` or `session(new)` creates
+   one session for its dynamic block; an operation-local directive creates one
+   for that operation. Spawn creates a fork before the child becomes runnable.
+   A loop `fork` creates one child per prospective iteration, while loop `new`
+   creates one session on loop entry. Every allocated ID and its transcript
+   basis MUST be durable before dispatch or child submission can depend on it.
 
-   An operation-local `fork` or `new` modifier remains the complementary case:
-   its first operation request carries `session-use = create`, and validation
-   retries or recovery redispatches repeat that request with the same logical
-   session ID. The integration MUST treat repeated creation for that ID as
-   resolution of the same context, not creation of another conversation.
-   Entering a construct with an explicit session modifier establishes the
-   active logical session for that construct's dynamic extent. Nested
-   operations or constructs without their own session modifier reuse that
-   active session as `inline`; they MUST NOT recursively reapply an enclosing
-   `fork` or `new` directive. A nested explicit modifier establishes a new
-   override under these same rules. Gantry MUST support a lexical session
-   context of the form `session(<directive>) { ... }`. Entering that context
-   applies its directive exactly once and makes the resulting logical session
-   active for the complete block, including workflow calls and explicit model
-   operations reached from it. This form exists so several visible `prompt`
-   and `decide` operations can deliberately share one fresh or forked
-   conversation without repeating operation-local modifiers. It MAY be used as
-   a statement, a value-producing expression, or a decision-valued expression
-   under the same block-result rules as `with`. Entering a `session(fork)` or
-   `session(new)` block MUST allocate and journal its stable logical session ID
-   before its body can dispatch a hook or spawn a child. Every operation in the
-   block that does not carry a more local session modifier uses the block's
-   active ID with an `inline` request directive. The integration learns the
-   allocated session's original `fork` or `new` directive and enclosing ID from
-   its journaled creation provenance and the task/session preflight contract;
-   it MUST NOT create a second provider session for each inline request.
-   For a loop, `fork` creates a separate child session for each prospective
-   iteration under the condition/body rules in Section 9, while `new` creates
-   one fresh session on loop entry and reuses it for every condition and body
-   execution. A prospective `fork` iteration session is allocated and its
-   session-state record is flushed before that iteration's condition or body
-   begins, even when deterministic evaluation later proves that no model
-   operation uses it. This preserves one portable session identity and journal
-   history for the prospective iteration. Outside loop and lexical-session
-   contexts, an operation-local `session = fork` or `session = new` modifier
-   on a `prompt` or `decide` creates one session for that operation.
-13. The integration MUST preserve the conversational continuity denoted by a
-   reused logical session ID. Provider-specific session storage and mapping
-   remain integration concerns. This obligation applies across interpreter
-   process restart: before resuming a task, the integration MUST be able to
-   resolve every journaled root, `new`, and `fork` session that unfinished work
-   may reuse through an `inline` request or as the parent of another session.
-   Gantry MUST enumerate those required logical session IDs and their parent/
-   provenance metadata to the embedding API before the first resumed hook
-   dispatch. The integration MAY reattach existing provider sessions or
-   reconstruct equivalent conversational state, but it MUST report an
-   unresolved session before dispatch rather than silently creating an empty
-   replacement. An operation-local session needed only by a recovery or
-   validation redispatch whose request carries `session-use = create` is not
-   resolved separately during preflight: that repeated idempotent request MUST
-   establish or resolve the same context under item 12. Its enclosing and root
-   sessions remain subject to preflight whenever the creation request depends
-   on them. For a new execution, failure to resolve an embedder-
-   supplied root session is an integration-preflight start failure. For resume,
-   failure to resolve any required session is a nonterminal resume-start
-   failure under item 17. Sessions used only by committed, completed operations
-   need not be reattached unless unfinished work will reuse them.
-14. External operations may have side effects. Gantry does not require retries
-    to be idempotent or prevent duplicate external effects. Integrations SHOULD
-    use the stable operation ID as the deduplication key for action effects
-    when the underlying capability permits it. A dispatch ID identifies one
-    physical attempt and is audit metadata; using it as the deduplication key
-    would not suppress another attempt of the same logical operation.
-15. Evaluation of an explicit `prompt`, evaluation of an explicit `decide`,
-    and invocation of an explicit `action` are the only v1 source constructs
-    that directly dispatch an `OperationHook`. Reusing a `Decision` value or
-    calling a workflow dispatches no hook by itself, although execution of the
-    called body may reach one of those explicit operation sites. Tools,
-    approvals, shell commands, network calls, and other provider-internal work
-    MAY still occur while an integration fulfills any hook, but such work is
-    not a second Gantry operation. A source-visible harness capability MUST be
-    declared and invoked as an `action`; Gantry observes its arguments,
-    declared result contract, outcome, durability, retry, cancellation, and
-    events through the same operation lifecycle as model operations.
-    Actions are independent of agent and conversational-session selection.
-    Their default structured-output retry limit is zero because redispatch can
-    duplicate side effects; an action invocation MAY explicitly override that
-    limit. Crash recovery retains the at-least-once redispatch semantics in
-    Section 11.
+13. Gantry is the transcript authority across retry, agent changes, process
+   restart, and resume. A hook request carries the active canonical transcript
+   before the current operation. An integration MAY cache provider session
+   handles, but it MUST be able to reconstruct or verify their content against
+   that transcript and MUST NOT add provider history absent from it. Session
+   establishment is idempotent by execution and logical-session ID. Resume
+   preflight MUST resolve or reconstruct every transcript required by
+   unfinished work; inability to do so is `unresolved-logical-session`, never
+   permission to substitute an empty conversation. Cross-agent reuse presents
+   the same canonical transcript to each selected agent.
+14. Model operations are externally read-only in v1: their fulfillment MAY
+    read provider state and use pure or read-only tools, but MUST NOT mutate an
+    external system, obtain approval, publish data, execute a state-changing
+    command, or perform another externally visible side effect. Such work MUST
+    be declared and invoked as an `action`, so its recovery class and operation
+    ID are visible. Provider caching, billing, and append-only audit telemetry
+    are not source-visible effects, but they MUST NOT alter Gantry semantics.
+
+15. An action's declared recovery class governs retries and interruption.
+    `read_only` promises no externally visible mutation. `idempotent` promises
+    that repeating the same stable operation ID has the effect of one
+    successful invocation; the handler MUST deduplicate with that ID.
+    `non_idempotent` makes no repetition promise. Structured-output repair and
+    recovery MAY automatically redispatch only `read_only` or `idempotent`
+    actions. An indeterminate `non_idempotent` action MUST become
+    `OperationError::UnknownOutcome` when enclosed by `attempt`, or the
+    `unknown-action-outcome` runtime error otherwise; it MUST NOT be
+    redispatched automatically. Prompt and decide repair remains safe because
+    item 14 prohibits external mutation. A dispatch ID identifies one physical
+    attempt for audit and is never the deduplication key.
 16. Every dynamic operation identity MUST correspond to a logical execution
-    path consisting of the execution ID, task path, workflow-call path, source
-    operation location, branch arm, and enclosing loop iteration counters.
+    path consisting of the execution ID, task path, workflow-call path, canonical
+    core operation-site ID, branch arm, and enclosing loop iteration counters.
+    A core site ID is derived from canonical module and workflow paths plus the
+    construct's structural position in canonical IR; comments, whitespace,
+    file paths, line endings, and source spans do not affect it.
     Recursive calls and repeated calls from the same call site MUST receive
     distinct call-frame occurrences; distinct loop iterations and spawned
     task occurrences MUST likewise receive distinct identities. Validation
     retries and recovery of one indeterminate dispatch retain that identity.
     Implementations MAY encode or hash the path opaquely, but MUST journal
     enough of it to reconstruct the same identity on resume and MUST NOT reuse
-    an identity for another dynamic invocation. The source operation location
-    is the complete byte span defined in item 5. Call-frame, recursive-call,
-    spawn, and repeated-call occurrences are zero-based counters assigned in
+    an identity for another dynamic invocation. Source locations remain
+    observability metadata and do not participate in identity. Call-frame,
+    recursive-call, spawn, and repeated-call occurrences are zero-based counters assigned in
     deterministic encounter order within their immediate dynamic parent.
     Branch identity uses the branch-construct kind and the zero-based arm
     position in its conditional chain or `match`;
@@ -2023,7 +1933,8 @@ operation identity, failure categories, and propagation.
     state and MUST be checkpointed or reconstructible from the durable prefix;
     wall-clock order and executor completion order MUST NOT influence them.
 17. Hook outcomes and Gantry failures are separate domains. A hook outcome is
-    exactly `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)`.
+    exactly `Completed(raw_output)`, `Declined(reason)`, or
+    `Failed(category, message)` with a category from item 11.
     Before a new execution is accepted and its execution ID is returned to the
     embedder, structured start failures MUST use one of the following exact
     category values when applicable: `syntax`, `analysis`,
@@ -2125,7 +2036,7 @@ operation modifiers defined in Sections 6 and 13.
    is a `resource-limit` validation failure. The same depth and node-count
    definitions apply to entry input and to the JSON encoding of every source-
    constructed, deterministic, journal-restored, or normalized Gantry value.
-   For any no-result operation, the expected schema is exactly the following
+   For a `Unit` operation, the expected schema is exactly the following
    object, and the parsed value MUST be JSON `null`:
 
    ```json
@@ -2135,10 +2046,9 @@ operation modifiers defined in Sections 6 and 13.
    }
    ```
 
-   This wire value confirms successful completion but does not create a Gantry
-   value; `Declined` and `Failed` retain their ordinary fatal behavior for
-   no-result operations. Including `$schema` resolves the no-result case under
-   the same root-schema rule as every value-producing operation.
+   This wire value creates the sole `Unit` value `()`. `Declined` and `Failed`
+   retain their operation-failure behavior. Including `$schema` gives `Unit`
+   the same explicit output contract as every other result type.
 2. A `Bool` result is represented by a JSON Boolean. An `Int` result is a JSON
    number whose exact mathematical value is integral and in Gantry's exact
    range. RFC 8259 has one number grammar rather than distinct integer and
@@ -2184,10 +2094,9 @@ operation modifiers defined in Sections 6 and 13.
    struct, it MUST emit every field; an `Option<T>` field whose value is `None`
    is emitted as JSON `null`, and an applied default is emitted as its resolved
    value. Although hook output may omit an optional property, omission is not
-   preserved as a distinct JSON-visible runtime state. The interpreter-only
-   decline provenance attached to a `None` produced by `Declined` remains
-   distinct and is preserved as required by Section 7; it never changes the
-   normalized JSON value.
+   preserved as a distinct runtime state. Every `None` of the same `Option<T>`
+   type is semantically identical; observability records may state how an
+   operation failed, but values carry no hidden decline evidence.
    Normalization is recursive and deterministic. Gantry MUST normalize nested
    primitive values, structs, enum payloads, result payloads, list items,
    tuple members, present option values, and decisions from outermost
@@ -2232,8 +2141,13 @@ operation modifiers defined in Sections 6 and 13.
    properties. `Result<T, E>` uses the same representation with variant names
    `Ok` and `Err`, each requiring `value` of type `T` or `E`, respectively.
    `Decision` uses the exact `decision` and nonempty `rationale` object shape
-   in Section 9. Decision provenance is interpreter metadata and is not part
-   of that JSON value.
+   in Section 9. Operation identity is observability metadata and is not part
+   of that JSON value. `OperationError` uses the same strict tagged encoding
+   as an enum. Its first six variants carry their message as the JSON String
+   `value`; `UnknownOutcome` carries a two-item JSON array containing operation
+   ID and message. Because operation and entry result contracts cannot contain
+   `OperationError`, this encoding is used only for source values, explicit
+   operation inputs, journals, events, and diagnostics.
 6. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
    during semantic analysis and MUST independently validate every successful
    hook result against that schema. Every schema root MUST identify that
@@ -2247,19 +2161,22 @@ operation modifiers defined in Sections 6 and 13.
    journal, or protected event payload. A protocol schema reference MUST be
    the lowercase hexadecimal SHA-256 digest of those canonical bytes.
    Implementations MUST derive equivalent types with the same structural
-   schema rules: `Bool` uses `{"type":"boolean"}`; `Int` uses an integer
+   schema rules: `Unit` uses `{"type":"null"}`; `Bool` uses
+   `{"type":"boolean"}`; `Int` uses an integer
    schema with Gantry's inclusive exact bounds; `Float` uses a number schema
    with the inclusive decimal bounds shown below; `String` uses
    `{"type":"string"}`; `List<T>` uses an array with the schema for `T` in
    `items`; tuples use the exact fixed-array form in item 4; options use
    `anyOf` with `{"type":"null"}` first and the schema for `T` second;
-   results and enums use strict `oneOf` branches; decisions use the exact
-   schema in Section 9; and structs use the object rules in item 7. A struct's
+   results, enums, and `OperationError` use strict `oneOf` branches; decisions
+   use the exact schema in Section 9; and structs use the object rules in item
+   7. A struct's
    `properties` object is keyed by exact field name, while its `required` array
    lists required fields in declaration order. RFC 8785 canonicalization, not
    source declaration order, determines serialized JSON object-member order.
    More precisely, schema generation recursively constructs one schema node
-   for a type. `Bool` produces exactly `{"type":"boolean"}`. `Int` produces
+   for a type. `Unit` produces exactly `{"type":"null"}`. `Bool` produces
+   exactly `{"type":"boolean"}`. `Int` produces
    exactly
    `{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991}`.
    `Float` produces exactly
@@ -2282,7 +2199,11 @@ operation modifiers defined in Sections 6 and 13.
    construction formulas; `NAME` is replaced by its JSON string and line
    breaks shown here are not part of canonical serialization.
    `Result<T,E>` produces exactly
-   `{"oneOf":[PAYLOAD("Ok",T),PAYLOAD("Err",E)]}`. A declared enum
+   `{"oneOf":[PAYLOAD("Ok",T),PAYLOAD("Err",E)]}`. `OperationError`
+   produces exactly one `oneOf` array containing `PAYLOAD(NAME,String)` for
+   `Declined`, `InvalidOutput`, `ProviderFailure`, `Timeout`, `PolicyDenied`,
+   and `Cancelled`, in that order, followed by
+   `PAYLOAD("UnknownOutcome",Tuple<String,String>)`. A declared enum
    definition produces exactly one `oneOf` array whose branches follow source
    variant order, using `UNIT(NAME)` for a unit variant and `PAYLOAD(NAME,T)`
    for a payload variant.
@@ -2354,10 +2275,13 @@ operation modifiers defined in Sections 6 and 13.
    operation, not a reevaluation of the source expression. Gantry MUST reuse
    the selected agent, logical session, authored template, interpolated
    operation-specific request body, expected type and schema, base guidance,
-   source location, and ordered execution context from the initial dispatch.
+   source location, and canonical transcript from the initial dispatch.
    For a prompt or decide operation this includes the logical agent, session,
-   template, interpolation arguments, and named inputs; for an action it
-   includes its canonical path, signature, and typed arguments. Gantry MUST
+   canonical transcript, template, interpolation arguments, and named inputs;
+   for an action it includes its canonical path, signature, recovery class,
+   operation ID, and typed arguments. A non-idempotent action MUST have an
+   effective retry limit of zero; a positive source override is an analysis
+   error. Gantry MUST
    NOT reevaluate any captured input expression or observe intervening source
    state. Only the dispatch identity, validation-attempt number, applicable
    recovery-dispatch number, preceding validation errors, repair-specific
@@ -2394,10 +2318,11 @@ operation modifiers defined in Sections 6 and 13.
    again; it MUST NOT sample another delay.
    The effective retry limit, initial delay, cap, and jitter mode are bound to
    resumable execution as specified in Section 11.
-11. When retries are exhausted, the operation and its current Gantry task MUST
-    fail under Section 7. Gantry has no language-level error recovery within
-    that task in v1; parallel failure observation and propagation follow
-    Section 10.
+11. When retries are exhausted, an enclosing `attempt` yields
+    `OperationError::InvalidOutput`; without `attempt`, the current task fails
+    with `structured-output-exhaustion`. `attempt` does not catch journal,
+    executor, deterministic-evaluation, event-persistence, or invariant
+    failures. Parallel propagation follows Section 10.
 12. Transport failures and their retry policy are integration concerns, not
    Gantry structured-output retries.
 13. Source snippets MAY be included in validation diagnostics only when the
@@ -2408,252 +2333,99 @@ operation modifiers defined in Sections 6 and 13.
 
 ## 9. Control Flow
 
-This section separates deterministic routing (`Bool`, patterns, and `match`)
-from model judgment (`Decision` and `decide`), then defines loop behavior and
-the conservative static analysis required for all possible control-flow paths.
+This section separates deterministic routing from model judgment and defines
+finite iteration, explicit source limits, and mandatory execution budgets.
 
-1. Gantry MUST support `if`, `else if`, `else if let`, and `else`. Each
-   expression condition in an `if` or `else if` MUST have type `Bool` or
-   `Decision`. A `Decision` condition uses
-   its sealed `decision` field. A direct model judgment uses the
-   visually distinct `decide` expression; an ordinary unannotated `prompt`
-   always remains a no-result prompt. A condition MAY reuse a bound
-   `Decision`, call a decision workflow, or evaluate a new `decide`. Reusing a
-   decision or calling a workflow does not itself add a hook invocation,
-   although evaluating the workflow body may reach explicit operations.
-   There is no truthiness: every other value type is invalid as a condition.
-2. A successful `decide` operation MUST return this strict JSON shape, with no
-   additional properties:
+1. `if` and `else if` conditions MUST have type `Bool` or `Decision`; a
+   `Decision` uses its visible `decision` field. `if let` and `match` inspect
+   tagged structure deterministically. Conditions and scrutinees are evaluated
+   once, left to right, and only explicit operation sites dispatch hooks.
 
-   ```json
-   {
-     "decision": true,
-     "rationale": "A nonempty explanation"
-   }
-   ```
+2. A successful `decide` returns exactly
+   `{"decision":BOOL,"rationale":STRING}`, with a nonempty rationale and no
+   additional properties. Its schema is the closed Draft 2020-12 object schema
+   defined in Section 8. `Decision` values carry only those visible fields;
+   their originating operation identity belongs to logical-trace observability.
 
-   `decision` MUST be a JSON Boolean and `rationale` MUST be a nonempty JSON
-   string. The generated decision schema MUST be the following JSON Schema
-   Draft 2020-12 schema:
+3. Conditional and match arm selection is deterministic after the controlling
+   value is available. Analysis MUST reject unreachable or duplicate match arms
+   and prove exhaustive coverage of `Option`, `Result`, declared enums, and
+   tuple products unless a final irrefutable arm covers the remainder. Branch
+   outcomes and rationales MAY be journaled and emitted as protected logical
+   trace, but MUST NOT become implicit input to a later hook.
 
-   ```json
-   {
-     "$schema": "https://json-schema.org/draft/2020-12/schema",
-     "type": "object",
-     "properties": {
-       "decision": { "type": "boolean" },
-       "rationale": { "type": "string", "minLength": 1 }
-     },
-     "required": ["decision", "rationale"],
-     "additionalProperties": false
-   }
-   ```
+4. Gantry supports `loop`, pre-test `while`, post-test `until`, and finite
+   `for NAME in EXPRESSION`. `until { BODY } when CONDITION;` executes its body
+   before the first condition. A `for` expression is evaluated once, MUST have
+   type `List<T>`, and iterates a deep snapshot in ascending index order with a
+   fresh immutable `NAME: T` binding per item. Empty lists execute no body.
+   `break`, `continue`, and `return` have their ordinary nearest-target rules;
+   `continue` in `until` proceeds to its post-test and in `for` proceeds to the
+   next snapshot item.
 
-   Gantry uses `decision` to select control flow and retains the rationale and
-   operation provenance for observability. The complete object is the sealed
-   first-class `Decision` value defined in Section 5. Its read-only
-   `.decision` and `.rationale` projections yield `Bool` and `String`.
-3. Each `else if` or `else if let` evaluates its own condition or scrutinee.
-   An `else if let` scrutinee is evaluated exactly once when control reaches
-   that arm, and its pattern bindings exist only in that selected arm. A newly
-   evaluated `decide` expression performs a separate decide operation; a
-   reused `Decision`, a previously evaluated `Bool` value, or a structural
-   pattern test performs no new dispatch. Evaluating another `Bool` expression
-   may reach an explicitly written `prompt`, `action`, or workflow containing
-   an operation. A later model-operation hook
-   request MUST include the outcomes of preceding arms in the same conditional
-   chain through the ordered execution-context vector. Decision entries carry
-   their rationales, while structural entries identify their condition kind
-   and outcome without fabricating a rationale.
-4. Gantry MUST support `while` as a pre-test loop and `until` as a post-test
-   loop. The post-test syntax places the body before its condition:
-   `until(...) { ... } when decide "...";`. This ordering is normative and
-   makes execution order visible in source. `until` MUST execute its body once
-   before its first condition. Each iteration reevaluates its condition
-   expression. A direct `decide` therefore dispatches on every evaluation;
-   reusing an already bound `Decision` or `Bool` value performs no new
-   dispatch. Reevaluating another `Bool` expression may reach an explicitly
-   written operation or workflow on every iteration.
-5. The general loop form is `loop(session = inline, limit = 0) { ... }`.
-   `loop { ... }` is equivalent to the form with all defaults. `while`
-   places parenthesized loop modifiers before its condition expression, as
-   in `while(session = fork, limit = 10) decide(retry_limit = 2) "..." { ... }`.
-   `until` places the same loop modifiers before its body and operation
-   modifiers on the explicit `decide` expression after `when`.
-   `loop`, `while`, and `until` accept `session` and `limit`. A structured-
-   output retry override MUST appear on the explicit `decide` operation it
-   configures; a loop whose condition calls a decision workflow uses the
-   modifiers written on the `decide` operations in that workflow or the
-   interpreter default. Agent selection is inherited from a lexical `with`
-   context rather than specified as a loop modifier.
-6. A loop session is `new`, `fork`, or `inline`, with `inline` as the default.
-   A loop limit is a nonnegative integer no greater than `2^63 - 1`; every v1
-   implementation MUST support that full range. It counts body executions.
-   Zero always means unlimited and MUST NOT be reinterpreted by interpreter
-   configuration.
-   Reaching a positive limit completes the loop normally rather than failing.
-   `inline` uses the enclosing session for both the condition and body. `fork`
-   creates one child session for each prospective iteration. For `loop`, each
-   body execution is one prospective iteration and uses its own child session.
-   For `while`, a condition and the body it admits share that child; for
-   `until`, a body and its following condition share it. A final false `while`
-   condition therefore has a child session with no body execution. `new`
-   creates one fresh session on loop entry and uses it for every condition and
-   body execution. An operation-local session modifier on any `decide`
-   reached while evaluating the condition overrides the loop session only for
-   that decide operation. A condition that calls a decision workflow therefore
-   uses the modifiers written on the `decide` sites reached in that workflow.
-   Validation retries always retain the logical session of the operation being
-   retried.
-7. Gantry MUST support `break`, `continue`, and `return` in loops. Unlabeled
-   `break` and `continue` target the nearest enclosing loop. Labeled loop
-   control is excluded from v1. A body execution is counted when control enters
-   the body. After a `loop` or `while` body completes normally or through
-   `continue`, Gantry checks the positive `limit` before starting another body
-   execution or `while` pre-test. Reaching the limit completes that loop
-   without another decision call. After an `until` body completes normally or
-   through `continue`, Gantry MUST always evaluate that body's post-test. A
-   true condition completes the loop. After a false condition, Gantry checks the
-   positive `limit`; reaching it completes the loop normally, and otherwise
-   the next body execution begins. Thus every entered `until` body has exactly
-   one following post-test unless it exits through `break`, `return`, failure,
-   or cancellation. `break` completes any loop immediately without another
-   decision call.
-8. Gantry MUST support deterministic routing with `Bool` expressions, `if let`,
-   and `match`. Routing and primitive operators do not themselves invoke an
-   operation hook. Evaluating a condition or scrutinee MAY reach an explicitly
-   written `prompt`, `decide`, `action`, or workflow containing an operation;
-   the visible operation site retains its ordinary semantics. Authors SHOULD
-   use `decide` rather than `prompt ... -> Bool` when a condition represents
-   model judgment, so the result retains rationale and provenance.
-   An `if let PATTERN = EXPRESSION` evaluates its scrutinee exactly once. A
-   successful match enters the corresponding arm with fresh immutable
-   bindings; a failed match proceeds to the next `else if` or `else if let`
-   arm when present, then to `else` when present, and otherwise continues
-   normally.
-   Pattern bindings exist only in the selected arm. An `if let` MAY omit
-   `else`.
+5. `loop`, `while`, and `until` accept `session` and optional `limit` modifiers.
+   Omission means no source-level limit; authors MAY write `limit = unbounded`
+   explicitly. A numeric limit MUST be positive and no greater than `2^63-1`;
+   `limit = 0` is an analysis error. The limit counts body entries. Attempting
+   another body after the limit is exhausted fails with deterministic code
+   `loop-limit-exhausted`; it is never normal completion. `break` remains
+   normal completion. `for` needs no source limit because its snapshotted list
+   is finite, but it still consumes the mandatory execution budgets.
 
-   A `match` evaluates its scrutinee exactly once and tests arms in source
-   order, selecting the first matching arm. Match patterns use Section 5.
-   Analysis MUST reject duplicate or unreachable arms and MUST prove exhaustive
-   coverage of `Option<T>`, `Result<T,E>`, and every declared enum unless a
-   final `_` or irrefutable identifier arm covers the remainder. Tuple-pattern
-   coverage is the product of its member coverage. A value-producing `match`
-   requires every reachable arm to yield exactly one identical static type;
-   a statement `match` requires statement-only arms. Pattern bindings are deep
-   copies scoped to their arm.
+6. Loop session behavior is `inline` by default. `fork` creates one transcript
+   snapshot per prospective iteration; a condition and admitted body share that
+   iteration session. `new` creates one empty session on loop entry and reuses
+   it. Operation-local session modifiers override only that operation.
 
-   A model operation reached while evaluating the scrutinee occurs before arm
-   selection. Pattern tests dispatch no operation. A model operation reached
-   in the selected arm receives the ordered branch context defined in Section
-   7: one false `branch-arm` entry for each preceding nonmatching pattern and
-   one true entry for the selected pattern. This makes a model operation's
-   structural context and dynamic identity distinguish otherwise identical
-   operation sites reached through different match arms.
+7. Every execution MUST enforce identity-bound positive budgets for
+   deterministic transitions, logical operations, and loop body entries. A
+   deterministic transition, prepared logical operation, or body entry
+   decrements its corresponding durable counter before the transition becomes
+   observable. Exhaustion fails with `deterministic-transition-budget`,
+   `operation-budget`, or `loop-iteration-budget`, respectively, in the
+   `deterministic-evaluation-failure` category. Budgets apply even to source
+   marked `unbounded`, are restored exactly on resume, and MUST NOT be converted
+   into normal loop completion or caught by `attempt`.
 
-   An effect-only `match` SHOULD use the semicolon-free statement form in
-   Section 13.6. Every arm of that form is a braced statement-only block, so a
-   human or model reader can distinguish it from a value-producing `match`
-   without inferring whether a result is silently discarded. A value-producing
-   `match` remains an expression and MUST use the ordinary expression-statement
-   semicolon when its result is intentionally discarded.
+8. Routing operators do not dispatch hooks. `==` and `!=` require identical
+   equatable types and perform exact deep equality. `Decision` and aggregates
+   containing it are non-equatable. A statement-form `match` has statement
+   blocks; discarding a value-producing `match` requires explicit `discard`.
 
-   `==` and `!=` are ordinary `Bool`-producing expressions. Both operands MUST
-   have exactly the same equatable first-class type and are evaluated once from
-   left to right. Equality is exact deep structural equality over normalized
-   values: Boolean and integer values compare exactly; floats compare their
-   normalized binary64 values; strings compare Unicode scalar sequences;
-   structs compare fields in declaration order; tagged values compare variant
-   and payload; options compare presence and contained value; and lists and
-   tuples compare length or arity and members in order. `Decision`, and every
-   aggregate transitively containing `Decision`, is non-equatable. `for`
-   remains excluded.
-9. Model-produced decisions MUST use the same schema-validation and retry
-   policy as other structured operation results. Deterministic `Bool`
-   conditions do not have a schema, retry budget, rationale, or hook context
-   entry unless their evaluation explicitly performs an operation.
-10. Gantry imposes no mandatory loop-iteration, cost, or operation-call limit.
-    An integration MAY enforce external budget policy through hook failure or
-    execution cancellation, but it MUST NOT present budget exhaustion as
-    normal loop completion or reinterpret `limit = 0`. An interpreter-enforced
-    cost, operation-call, or loop-iteration limit that can terminate otherwise
-    valid execution is not a v1 extension point. The workflow-depth,
-    task-count, and value-size limits elsewhere in this specification still
-    apply.
-    Unlimited language execution does not mean uninterruptible execution:
-    every loop transition and deterministic transition quantum remains a
-    cancellation and executor-yield safe point under Section 3. Cancellation
-    or configured resource exhaustion terminates the affected task under the
-    ordinary runtime-error rules; it does not make an unlimited loop complete
-    normally.
-11. A direct model condition uses `if decide "..." { ... }`. Gantry MUST
-    also support declarations of the form
-    `decision is_complete(report: Report) { ... }`. Each reachable normal
-    completion of a decision workflow MUST yield a trailing `decide`
-    expression or another `Decision` expression;
-    alternatively, every reachable path MAY exit through an explicit valid
-    decision `return`. This permits a fully returning `if`/`else` decision
-    workflow without an artificial unreachable tail. The result schema is the
-    decision schema in item 2. A decision workflow MAY contain
-    multiple ordinary prompts, nested decisions, and other executable blocks.
-    `return` MAY exit it early with any `Decision` expression. Each completed
-    evaluation MUST ultimately obtain its value from a previously evaluated or
-    newly dispatched decide operation; source cannot construct one.
-    Decision workflows are free module items in v1; decision methods remain
-    excluded. Their results may be bound, passed, returned by ordinary
-    workflows, stored in aggregates, interpolated as strict JSON, or consumed
-    by `if`, `else if`, `while`, and `until`. A newly evaluated `decide` or
-    decision-workflow call MAY be an expression statement when its result is
-    intentionally discarded; any operation reached during that evaluation
-    retains its ordinary journal and event records. A previously evaluated
-    `Decision` value is inert and MUST NOT appear as a standalone expression
-    statement merely to make its rationale observable.
-    Semantic analysis MUST prove that every reachable
-    normal completion of a decision workflow yields `Decision` and
-    that every reachable explicit `return` in that workflow returns
-    `Decision`. A no-result `return;`, another value type, or fallthrough
-    from a decision workflow is an analysis error.
-12. Static control-flow analysis MUST treat every model-produced decision as capable of
-    producing either `true` or `false`, independently of its prompt text,
-    previous outcomes, rationale, selected agent, or session. Analysis MUST
-    inspect both outcomes of every model-controlled reachable `if`, `else if`,
-    `while`, and `until`; it MUST NOT assume that a model will make one branch
-    unreachable. To keep acceptance portable across implementations, the only
-    compile-time `Bool` expressions used to eliminate a control-flow outcome in
-    v1 are `true`, `false`, parenthesized compile-time Boolean expressions, and
-    expressions composed exclusively from those forms with `!`, `&&`, and
-    `||`. Analysis MUST evaluate that subset exactly. Every other `Bool`
-    expression MUST conservatively be treated as capable of either result,
-    even when an implementation could fold it from numeric, String, aggregate,
-    or workflow facts. A `while` has a possible zero-body normal path unless
-    its condition is compile-time `true` under this rule. An `until` has
-    at least one body execution before a possible normal exit. A positive loop
-    limit contributes the normal limit-exhaustion path defined in item 7,
-    whereas `loop(limit = 0)` has no implicit normal exit. A reachable `break`
-    still contributes a normal exit path from its target loop. Potential hook
-    failure, decline, cancellation, or retry exhaustion is an abnormal runtime
-    outcome and MUST NOT be used to satisfy definite-return or task-handle
-    consumption analysis. These conservative rules apply uniformly to the
-    definite-result requirements in Sections 6 and 10 and to linear task-handle
-    analysis in Section 10.
-    A refutable `if let` pattern MUST likewise be treated as capable of matching
-    or not matching, while an irrefutable pattern has only its matching path.
-    For `match`, analysis MUST inspect every arm not made unreachable by the
-    ordered pattern coverage of preceding arms. It MUST NOT eliminate an
-    `if let` outcome or `match` arm by constant-folding the scrutinee, even when
-    the scrutinee is a constructor expression whose runtime variant appears
-    evident. Pattern irrefutability and ordered coverage, rather than general
-    value evaluation, are the complete v1 compile-time basis for eliminating
-    structural-routing paths.
+9. Model decisions use the ordinary structured-output retry and recovery rules.
+   Deterministic `Bool` conditions have no schema, rationale, retry budget, or
+   model-visible context unless their evaluation explicitly executes an
+   operation.
+
+10. A decision workflow always returns `Decision`. Every reachable normal path
+    MUST yield or explicitly return one, and only `decide` can originate one.
+    Discarding a newly evaluated decision requires `discard decide ...;` or
+    `discard decision_workflow(...);`; a retained value performs no operation.
+
+11. Static control-flow analysis treats every model-produced decision and every
+    nonliteral `Bool` as capable of both outcomes. Only `true`, `false`,
+    parentheses, and `!`, `&&`, or `||` composed solely from those literals are
+    compile-time Boolean facts. Pattern irrefutability and ordered coverage are
+    the only compile-time basis for removing structural paths. A `while` may
+    execute zero bodies, `until` executes at least one, and `for` may execute
+    zero or more because list length is not generally a compile-time fact.
+    Budget exhaustion is abnormal and cannot satisfy definite-return or linear
+    handle analysis.
+
+12. Evaluation observes cancellation before every condition, body entry, for
+    item binding, and back edge. Deterministic budgets complement cancellation;
+    they do not weaken cooperative yield or task-cleanup requirements.
 
 ## 10. Parallel Execution
 
-This section defines structured task ownership. `spawn` creates one owned
-handle, `join` and `joinall()` wait and consume attached handles, and `detach`
-visibly transfers lifetime and failure ownership to the execution. The later
-items specify cancellation, shutdown, and recovery consequences of those
-source-level choices.
+This section defines attached structured tasks and explicit durable background
+work. `spawn` creates one owned attached handle. `join` and `joinall()` are
+all-settled operations: they consume their selected attached handles and wait
+for every selected child before returning values or an aggregate failure.
+`detach` leaves structured concurrency by visibly transferring lifetime and
+failure ownership to execution-scoped background work. Detached work may
+outlive lexical parents, foreground completion, and an interpreter process and
+MUST NOT be described as a structured child after transfer.
 
 1. Gantry MUST support annotated spawn declarations of the form
    `spawn <name> -> <type> { ... }`, joins of the form
@@ -2682,8 +2454,8 @@ source-level choices.
    append and flush a task-state record containing
    the child's stable task identity, parent identity, source spawn occurrence,
    copied captures, inherited agent selection, and forked-session identity. The
-   record MUST also contain the immutable structural-context ancestry captured
-   for the child under Section 7, including its appended `spawn-frame`. The
+   record MAY also contain structural ancestry for protected observability,
+   but that metadata MUST NOT be presented to later operation fulfillers. The
    handle becomes visible to the parent only after that record is durable. This
    ordering prevents a child from performing model-backed work that recovery
    cannot identify. If executor submission then fails, the child MUST settle as
@@ -2719,10 +2491,10 @@ source-level choices.
    contain that complete snapshot. Evaluation of a `spawn` therefore cannot
    observe a mixture of parent values from before and after child submission.
 4. A spawned block MUST declare the type of its yielded value with `-> T`, or
-   declare `-> None` when it yields no value. Every reachable normal completion
+   declare `-> Unit` when it yields `()`. Every reachable normal completion
    of a value-yielding block MUST produce exactly `T` through its trailing
-   expression or a task-local `return`. A no-result block MAY fall through or
-   use `return;` but MUST NOT return a value. `spawn` declares the named handle
+   expression or a task-local `return`. A Unit block MAY fall through, return
+   `()`, or use `return;`, but MUST NOT return a non-Unit value. `spawn` declares the named handle
    but does not itself yield the handle as a value. A spawn boundary is also a
    control-transfer boundary: a `return` whose nearest return target is the
    spawned block completes only that child task. `break` or `continue` inside a
@@ -2730,27 +2502,27 @@ source-level choices.
    contained in a workflow or loop entered within the child remain valid.
 5. `join(task)` waits for one named child and yields that child's typed block
    value. A join result MAY be bound as `let result: T = join(task);`. Joining
-   a no-result block is a waiting statement and yields no value. A successful
+   a Unit block is a waiting statement and yields `()`. A successful
    join consumes the task handle. Every task handle MAY be joined at most once;
    repeated handles in one join, joins of already consumed handles, and uses of
    handles that may have been consumed on an incoming control-flow path are
    analysis errors. `join()` with no task names is invalid.
    A join of two or more named children waits for every named child and yields
    an ordered `List<T>` of their successful block values in argument order when
-   every joined task has the same non-`None` result type. When two or more named
-   tasks have non-`None` result types that are not all exactly equal, it yields
+   every joined task has the same non-`Unit` result type. When two or more named
+   tasks have non-`Unit` result types that are not all exactly equal, it yields
    `Tuple<T1, T2, ..., Tn>`, whose positional types and values follow argument
-   order. When every named task has no result, the join is a waiting statement
-   with no source value. Mixing value-producing and no-result tasks in one
+   order. When every named task returns `Unit`, the join is a waiting statement
+   with `()`. Mixing value-producing and Unit tasks in one
    named join is an analysis error; Gantry MUST NOT silently discard selected
-   values merely because another named task has no result. Every named join
+   values merely because another named task returns `Unit`. Every named join
    waits until every named task settles even after a failure. Before waiting,
    Gantry MUST append and flush one task-state record that identifies
    the join form, source location, named handles in argument order, and their
    transition from attached to consumed-by-join. Only then are the handles
    consumed. This transition includes handles for successful tasks in a join
    where another task fails. After settlement, Gantry MUST append and flush the
-   ordered result, successful no-result settlement, or aggregate failure before
+   ordered result, successful Unit settlement, or aggregate failure before
    returning it to source execution.
    Consuming a handle for a join changes its source-level ownership state but
    does not detach the child: until it settles, the child remains an attached
@@ -2768,19 +2540,20 @@ source-level choices.
    in nested scopes, tasks owned by another Gantry task, and tasks explicitly
    detached before the join. It consumes all included handles, waits until all
    included tasks have settled, and yields one included task's declared result
-   type when exactly one task is included and that task has a non-`None`
+   type when exactly one task is included and that task has a non-`Unit`
    result. With two or more included tasks, every task MUST either have a
-   non-`None` result or every task MUST have no result. When all have non-`None`
+   non-`Unit` result or every task MUST return `Unit`. When all have non-`Unit`
    results, `joinall()` yields an ordered `List<T>` in task declaration order
    if the result types are exactly equal, and otherwise yields a positional
-   tuple in task declaration order. When every included task has no result,
-   `joinall()` is a waiting statement with no result. Mixing value-producing
-   and no-result tasks in one `joinall()` is an analysis error; Gantry MUST NOT
+   tuple in task declaration order. When every included task returns `Unit`,
+   `joinall()` waits and yields `()`. Mixing value-producing
+   and Unit tasks in one `joinall()` is an analysis error; Gantry MUST NOT
    silently discard the value-producing results merely because another task
-   has no result. With zero included tasks, `joinall()` is a no-result no-op.
+   returns `Unit`. With zero included tasks, `joinall()` is a Unit no-op.
    Semantic analysis MUST
-   determine the included handle set and resulting type at that program point;
-   a no-result `joinall()` cannot be bound or used as a trailing expression.
+   determine the included handle set and resulting type at that program point.
+   Because `Unit` is first-class, a Unit `joinall()` MAY be bound, returned, or
+   used as a trailing expression, although a bare `joinall();` is conventional.
    `joinall()` MUST NOT stop waiting merely because one task fails.
    After all tasks settle, one or more failures MUST fail the current Gantry
    task with one aggregate `task-join-failure` runtime error. That error MUST
@@ -2973,55 +2746,28 @@ state. Items 6 through 9 define source identity, recovery, and journal
 envelopes. Item 10 defines execution-start state and the configuration fields
 that are immutable or durably revisable across resume.
 
-1. Gantry MUST durably journal committed operation results, validation attempt
-   counts, interpreter call frames, scopes, instruction positions, loop state,
-   lexical session-context identities and lifetimes, task relationships, and
-   values needed to resume execution. Journaled values MUST retain both the
-   sealed-Decision provenance and interpreter-only optional-decline provenance
-   required by Sections 5 and 7 so a resumed operation receives the same value
-   context as uninterrupted execution. Gantry MAY
-   replay deterministic interpreter steps after the latest durable checkpoint,
-   but such replay MUST reuse committed hook outcomes and reconstruct the same
-   dynamic operation and task identities.
-   Every interpreter transition that requires a durable event under Section 12
-   MUST have a durable causal record. Gantry MUST use an `interpreter-transition`
-   record for workflow-frame entry and exit, branch selection, spawn, join,
-   detach, mutation, cancellation, task completion, and foreground completion.
-   Terminal execution retains its dedicated record. The transition record MUST
-   contain an exact transition subtype; execution and task identities when
-   applicable; the source location and dynamic construct identity when source-
-   backed; the causal predecessor; and the subtype-specific semantic payload.
-   That payload MUST include result, failure, child-task, ownership-transfer,
-   or committed-value references needed by the corresponding event. A mutation
-   payload, for example, contains the target path, static type, and a stable
-   reference to the complete committed post-assignment value. The record MUST
-   be appended and flushed after the transition commits but before later source
-   execution or an execution waiter can observe or depend on it. Recovery MUST
-   reuse an existing transition record and MUST NOT commit or report the same
-   transition a second time.
-   When another section requires a dedicated record for the same transition,
-   that dedicated record is authoritative for its subsystem state and the
-   `interpreter-transition` record MUST reference it as its causal record. For
-   example, a `task-state` record required for spawn, join, or detach owns the
-   task-lifecycle or handle-ownership transition; the corresponding
-   `interpreter-transition` record supplies the canonical causal record for
-   its event and MUST NOT encode a second, independently advancing ownership
-   transition. Both records remain required, in that order, unless a more
-   specific rule explicitly provides a different order.
-2. Gantry MUST expose a journal-storage trait through which an integration
-   provides durable storage. The trait MUST expose durable record reading,
-   exclusive owner acquisition and release, plus atomic append and flush
-   operations. Append and flush are the only record-mutation primitives;
-   ownership operations change fencing state rather than journal records.
-   Gantry defines the transaction and commit boundaries built from these
-   primitives, and v1 requires no storage-level update, delete, or general
-   transaction operation. Each append MUST return a stable record ID and a
-   sequence number from one contiguous sequence within that journal. The first
-   record has sequence number 1, and each successful append is linearizable and
-   receives exactly the preceding sequence number plus one, including when
-   concurrent Gantry tasks append to the same journal. `flush(sequence)` MUST establish
-   that every successfully appended record through that sequence is durable
-   before it returns.
+1. The durable profile MUST commit a causally closed prefix of the abstract
+   transitions in Section 3. Before source execution or an external observer can
+   depend on a transition, durable state MUST establish its label, identities,
+   continuation, values, linear handle state, session transcripts, remaining
+   budgets, and causal predecessor. A transition and its canonical event MAY be
+   committed atomically. Dedicated operation, task, session, checkpoint, event,
+   and terminal schemas are logical evidence types, not a requirement to write
+   duplicate physical rows. An implementation MAY batch labels, use atomic
+   transactions, snapshot a prefix, group-commit concurrent tasks, or compact
+   old evidence when retained identities and protected references remain
+   resolvable. Recovery MUST reconstruct exactly one causally closed prefix,
+   never consume an uncommitted operation result, and never apply one logical
+   ownership or mutation transition twice.
+2. Gantry MUST expose durable-prefix reading, exclusive fenced ownership,
+   atomic commit, and owner release. `commit(batch)` atomically assigns a
+   contiguous sequence range and stable evidence IDs, stores one or more
+   logical evidence envelopes, and establishes durability before returning.
+   A storage adapter MAY implement this as append plus flush, one transaction,
+   a snapshot-plus-log update, or an equivalent primitive. References elsewhere
+   to “append and flush” mean this semantic commit boundary and MAY share one
+   physical batch with causally related evidence. Concurrent commits are
+   linearizable; the first sequence is one and there are no committed gaps.
    A durable read MUST identify a journal and return its authoritative flushed
    prefix in strictly increasing sequence order, optionally beginning after a
    caller-supplied sequence number. It MUST also report the greatest sequence
@@ -3090,7 +2836,7 @@ that are immutable or durably revisable across resume.
 3. A hook dispatch MUST be recorded and flushed before the hook is invoked.
    Its dispatch record MUST preserve the complete versioned semantic request,
    including the operation-specific body, operation and result kinds, captured
-   inputs, schema, guidance, source location, ordered execution context,
+   inputs, schema, guidance, source location, canonical transcript,
    validation state, and logical identities. Prompt and decision records MUST
    preserve their selected agent, mapping revision, templates, interpolation
    arguments, named inputs, and session fields. Action records MUST preserve
@@ -3129,62 +2875,44 @@ that are immutable or durably revisable across resume.
    recovery either reuses the committed outcome or treats the dispatch as
    indeterminate; program state MUST NOT advance using an outcome that is not
    yet durable.
-4. If execution is interrupted after dispatch but before an outcome is
-   committed, the operation is indeterminate. On resume, Gantry MUST
-   automatically invoke that operation again with the same operation ID and a
-   new dispatch ID and an incremented recovery-dispatch number. The validation-
-   attempt number and remaining structured-output retry budget MUST NOT change
-   merely because of recovery redispatch. Integrations MUST therefore assume
-   at-least-once invocation and possible duplicate external side effects.
-5. A consumable logical result derived from a committed hook outcome MUST be
-   appended and flushed as an operation-result record before source execution
-   may assign, branch on, return, or otherwise consume it. This requirement
-   applies both to a successfully validated `Completed` outcome and to a
-   `Declined` outcome that produces `None` for an expected `Option<T>`. The
-   record MUST identify the operation and committed outcome, outcome variant,
-   result kind, canonical type descriptor, normalized canonical JSON when the
-   operation returns a value, and the sealed decision value, provenance, and
-   rationale when the operation returns a decision. An optional decline records JSON
-   `null` together with its decline provenance. A no-result operation records
-   successful acceptance without creating a source value. A logical result
-   recorded this way MUST be reused during resume and MUST NOT consume the
-   remaining validation-retry budget again.
-   A committed but invalid `Completed` outcome MUST likewise be reused as the
-   cause of its validation failure; Gantry MUST NOT invoke the hook again for
-   that same validation attempt. Invalid attempts and retry counts MUST also
-   be journaled. Gantry MUST append and flush a validation-attempt
-   record before dispatching its repair retry, so recovery preserves both the
-   preceding errors and the exact remaining budget.
-6. Journals MUST identify the exact package source and journal format version.
-   The package source identity is the SHA-256 digest of a canonical manifest
-   containing every selected package-relative source-file path exactly once.
-   `main.gnt` contributes the root entry, and a file selected by a file-module
-   declaration contributes one entry for that module. Inline modules
-   contribute no separate entry because their bytes are already part of the
-   containing file's entry. Manifest entries are
-   sorted in ascending lexicographic order by the unsigned UTF-8 bytes of their
-   package-relative path, use `/` as their path separator, and contain the
-   path, the exact source-file bytes, and the resolved module path.
-   Paths use the NFC spelling already required by Section 4; source bytes and
-   line endings MUST NOT otherwise be normalized. The manifest byte stream is
-   the ASCII domain tag `gantry-source-v1\0`, followed by the entry count and,
-   for each entry, the path, source bytes, and resolved module path. Every
-   count and byte-string length is encoded as an unsigned 64-bit big-endian
-   integer, and every path is encoded as UTF-8. This length-prefix encoding is
-   unambiguous even when source contains arbitrary delimiters. Gantry MUST
-   reject resume when this identity differs or the journal format is
-   unsupported. The package-relative path of the root module is exactly
-   `main.gnt`. Every other manifest path is the path of the source file selected
-   by module resolution, relative to the package root; inline modules add no
-   manifest entry of their own because their bytes are already present in the
-   containing source file. Each resolved module path is encoded as its
-   `crate::`-rooted sequence of NFC identifier segments joined by `::`, with the
-   root module encoded as `crate`. One package-relative path MUST NOT be
-   selected as more than one file-backed module; such aliasing is the duplicate
-   module resolution error defined in Section 4. Distinct package-relative
-   paths remain distinct manifest entries even when the host filesystem stores
-   them as hard links to the same bytes. These rules make the digest
-   independent of module-discovery order and host path syntax.
+4. A prepared dispatch with no committed outcome is indeterminate. On resume,
+   `prompt`, `decide`, and `read_only` or `idempotent` actions are redispatched
+   with the same operation ID, captured semantic request, validation-attempt
+   number, and remaining retry budget, plus a new dispatch ID and incremented
+   recovery-dispatch number. An `idempotent` handler MUST deduplicate by the
+   operation ID. An indeterminate `non_idempotent` action is never
+   redispatched: it becomes `OperationError::UnknownOutcome` under `attempt` or
+   fails with `unknown-action-outcome`. This distinction is durable and cannot
+   be changed by a later integration mapping.
+5. A consumable logical result derived from a committed `Completed` outcome
+   MUST be committed before source execution may assign, branch on, return, or
+   otherwise consume it. The logical evidence identifies the operation,
+   outcome, result kind, canonical type descriptor, normalized canonical JSON,
+   and accepted decision fields when applicable. `Unit` records canonical JSON
+   `null` and produces `()`. Decline and failure produce no operation-result
+   value; `attempt` instead commits its explicit `OperationError` result.
+   Committed logical results and committed failed validation attempts are
+   reused on resume and never consume a retry budget twice.
+6. An execution MUST identify a versioned canonical core IR, its source map,
+   and the journal schema version. The execution package identity is the
+   SHA-256 digest of canonical core IR bytes under the published IR schema.
+   Canonical IR contains resolved item paths, types, effects, desugared control
+   flow, static operation and task sites, and modifiers, but excludes comments,
+   whitespace, physical file paths, line endings, and diagnostic spans. Gantry
+   SHOULD retain the original immutable source snapshot by content address for
+   audit, but cosmetic source changes do not prevent resume when they lower to
+   the same canonical IR identity.
+
+   If a new package has a different IR identity, resume MUST reject it unless
+   the caller supplies an explicit versioned migration accepted by the
+   embedding API. A migration maps old core continuation points, static sites,
+   value schemas, session transcripts, task ownership, and remaining budgets
+   to the new IR. It MUST be deterministic, side-effect-free, schema-validated,
+   and durably committed with old and new identities and a migration ID before
+   recovered execution advances. It MUST NOT alter committed outcomes,
+   resurrect consumed handles, reset budgets, or map an indeterminate
+   non-idempotent action to a redispatchable state. Failure leaves the old
+   execution prefix unchanged and is `source-or-configuration-incompatibility`.
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
    counters, task relationships, and committed values. Each task, including an
    in-flight spawned block, MUST resume from its latest durable instruction
@@ -3199,7 +2927,7 @@ that are immutable or durably revisable across resume.
    transition is already durable MUST recover that transition and its committed
    result or failure rather than consume the handle again. Task identities and
    lifecycle records MUST therefore be keyed by the same logical task and
-   source-occurrence path used by dynamic operation identity.
+   canonical core-occurrence path used by dynamic operation identity.
 8. A detached task remains part of its originating execution and journal after
    foreground `main` returns. Foreground completion, detachment, detached-task
    completion, and detached-task failure MUST each be durable states. Resuming
@@ -3236,36 +2964,18 @@ that are immutable or durably revisable across resume.
    NOT call `main` again or emit another foreground-completion event. The
    embedding API MAY expose the preserved foreground outcome immediately while
    the resumed execution continues toward terminal state.
-9. A v1 journal envelope MUST identify its protocol version, journal and
-   execution IDs, monotonically increasing sequence number, record ID, record
-   kind, causal parent record when one exists, task and operation identities
-   when applicable, and a kind-specific payload. The required record kinds are
-   execution state, session state, operation dispatch, operation outcome,
-   validation attempt, operation result, interpreter transition, interpreter
-   checkpoint, task state, event, event-delivery state, and terminal execution.
-   The exact interpreter-transition subtypes and minimum payload are defined in
-   item 1. A session-state record MUST contain the logical-session creation
-   fields and obey the durability and replay rules in Section 7. An
-   execution-state record MUST
-   identify its state-transition subtype, including execution start, agent-
-   mapping revision, action-mapping revision, best-effort-sink configuration
-   change, or shutdown-policy revision when applicable.
-   A terminal-execution record MUST use the category and precedence rules in
-   Section 10, including the runtime-error categories defined in Section 7,
-   and MUST be the final record that changes language execution state. Later
-   event-delivery records and ownership release do not alter that state.
-   Concrete serialization and Rust types are implementation-defined, but the
-   journal protocol MUST publish a versioned stable field schema for every
-   required record kind. Each schema MUST identify its required and optional
-   fields, field types, causal-reference rules, and canonical encoding and
-   decoding rules. A conforming durable reader MUST reject a record with a
-   missing required field, an unknown required field, an unsupported major
-   version, or a payload incompatible with its record kind. All required
-   information and durability boundaries remain normative. Before append,
-   Gantry constructs an unfinalized record body that
-   omits the record ID and sequence number. The storage append operation MUST
-   atomically assign both fields and store the resulting finalized envelope;
-   only that finalized envelope is a journal record returned by durable reads.
+9. The journal protocol MUST publish stable versioned schemas for the logical
+   evidence kinds: execution and migration state, session transcript state,
+   operation dispatch/outcome/validation/result, abstract interpreter
+   transition or checkpoint, task ownership and settlement, event and delivery
+   state, and terminal execution. Each envelope identifies journal, execution,
+   contiguous sequence or snapshot frontier, stable evidence ID, kind, causal
+   predecessors, applicable task and operation IDs, and a kind-specific payload.
+   Unknown required fields, unsupported major versions, dangling causal
+   references, or incompatible payloads are journal-format failures. Physical
+   storage MAY combine logical envelopes in an atomic batch or materialized
+   snapshot; it MUST reproduce the same authoritative logical prefix to a
+   durable reader.
 10. A new-execution request MUST identify a fresh journal target through an
     embedder-supplied stable journal ID. Allocation and naming of that target
     are integration concerns outside the `JournalStorage` mutation interface.
@@ -3342,7 +3052,10 @@ that are immutable or durably revisable across resume.
       },
       "interpreter": {
         "maximum_workflow_call_depth": "1024",
-        "maximum_tasks_per_execution": "65536"
+        "maximum_tasks_per_execution": "65536",
+        "maximum_deterministic_transitions_per_execution": "10000000",
+        "maximum_operations_per_execution": "100000",
+        "maximum_loop_iterations_per_task": "1000000"
       },
       "required_event_sinks": [
         {
@@ -3397,14 +3110,18 @@ that are immutable or durably revisable across resume.
     `maximum_list_items` limits each normalized or computed List by item count.
     `maximum_workflow_call_depth` is the per-task active-frame limit defined in
     Section 3, and `maximum_tasks_per_execution` is the cumulative task limit
-    defined in Section 10. All eight limits MUST be positive. The byte,
+    defined in Section 10. The three remaining interpreter values are the
+    mandatory durable budgets defined in Section 9. All eleven limits and
+    budgets MUST be positive. The byte,
     nesting, node, workflow-depth, and task-count limits MUST be no greater
     than `2^63 - 1`; the String and List limits MUST be no greater than
     Gantry's maximum `Int`, `9007199254740991`, because `String.len()` and
     `List<T>.len()` return `Int`. The displayed workflow-depth and task-count
     values are the v1 defaults. Every limit is checked at the applicable
     entry, operation, construction, parsing, task-creation, frame-entry,
-    resume, or deterministic-evaluation boundary. `model_retry_limit`
+    resume, or deterministic-evaluation boundary. Budget counters and their
+    effective maxima are part of execution identity and MUST NOT change on
+    resume or migration. `model_retry_limit`
     applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
     retries after the initial attempt. `source_language` MUST equal the version
@@ -3471,6 +3188,15 @@ failure behavior. Items 9 through 11 define syntax-only validation, semantic
 analysis, and machine-readable diagnostics; those tooling modes never invoke
 an operation hook.
 
+Gantry exposes four strictly separated observation layers: (1) source-visible
+values and errors, (2) one logical trace over abstract machine labels, (3) a
+physical trace of dispatch, retry, recovery, persistence, and delivery
+attempts, and (4) nonsemantic telemetry such as timing and provider metrics.
+Only layer 1 affects source evaluation. Layer 2 explains logical causality;
+layer 3 explains at-least-once physical activity; layer 4 may be sampled or
+dropped. Layers 2 through 4 MUST NOT be injected into hook input or alter
+fulfillment, and every event schema MUST identify its layer.
+
 1. Gantry MUST expose events for parsing and analysis, workflow start and end,
    operation dispatch, completion, and result acceptance, structured output
    validation failure, retry, branch decision, spawn, join, detach, mutation,
@@ -3501,10 +3227,9 @@ an operation hook.
    validation-attempt and recovery-dispatch numbers. A structured-output-
    validation-failure event and, when another attempt is permitted, a retry
    event follow the corresponding completion event. After a `Completed` outcome is successfully decoded,
-   parsed, validated, normalized, and durably recorded under Section 11, or an
-   optional `Declined` outcome is durably normalized to `None`, Gantry MUST
+   parsed, validated, normalized, and durably recorded under Section 11, Gantry MUST
    emit exactly one operation-result event for that logical operation. The
-   event represents acceptance of a value, decision, or no-result completion
+   event represents acceptance of a value, decision, or `Unit` result
    and MUST reference the operation-result record. It is not emitted for a
    required-result `Declined`, `Failed`, or invalid `Completed` outcome.
    Recovery that reuses an existing operation-result record MUST reuse its
@@ -3610,8 +3335,7 @@ an operation hook.
    sink. Other sinks receive the same event identity with the raw field
    redacted. Operation request content includes authored and rendered prompts,
    expected schemas, interpolation arguments, named inputs, action arguments,
-   logical-session identifiers, and protected context text such as prior
-   decision rationales or decline reasons. A sink receives that content only
+   logical-session identifiers, and the canonical session transcript. A sink receives that content only
    when its frozen `operation_request_content` capability is true. Operation
    result content includes normalized values from every operation kind and
    both visible fields of a sealed `Decision`; a sink receives that content
@@ -3825,8 +3549,7 @@ an operation hook.
    - `operation-result`: operation ID, committed outcome and operation-result
      record references, outcome variant, result kind, canonical type
      descriptor, and a protected normalized-value reference for a value result
-     or a protected normalized-decision reference for a decision result; an
-     optional decline additionally identifies its decline provenance;
+     or a protected normalized-decision reference for a decision result;
    - `structured-output-validation-failure`: operation and dispatch IDs plus
      the structured validation errors defined in Section 8;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
@@ -3878,7 +3601,8 @@ an operation hook.
    and schema validation; the list is descriptive rather than an independent
    or exhaustive definition of source validity.
    A successful analysis result MUST include the per-workflow call edges,
-   direct integration-operation and task-control sites, and transitive flags
+   direct integration-operation and task-control sites, canonical inferred
+   effect sets with contributing action paths, and checked `pure` assertions
    required by Section 6.
 10. Normal execution MUST complete semantic analysis successfully before its
    first hook invocation.
@@ -3889,7 +3613,7 @@ an operation hook.
     message, and a primary package-relative source span when the problem is
     source-backed. The canonical v1 categories are `lexical`, `syntax`,
     `package`, `name-resolution`, `type`, `control-flow`, `task-ownership`, and
-    `schema`. Diagnostic code namespaces are implementation-defined in v1, but
+    `schema`, and `identifier-security`. Diagnostic code namespaces are implementation-defined in v1, but
     each implementation MUST publish its code registry and MUST NOT reuse one
     code for a different meaning while supporting the same protocol major
     version. The canonical category, source spans, and structured fields are
@@ -4011,6 +3735,19 @@ byte-order mark MAY appear only as the first decoded scalar of a source file
 and is ignored; U+FEFF in any other source position is not whitespace and is a
 syntax error. An identifier MUST NOT equal a reserved word.
 
+Identifiers use the UAX #31 default identifier profile for Unicode 16.0.0,
+narrowed by NFC and the grammar above. An identifier MUST NOT contain a
+Default_Ignorable_Code_Point, join control, variation selector, or bidi
+formatting/control scalar, even if a broad library classifies it as XID.
+Analysis MUST compute the Unicode 16.0.0 UTS #39 confusable skeleton for every
+identifier. Two distinct spellings with the same skeleton in one lookup
+namespace are an `identifier-confusable-collision` analysis error. Collisions
+across separate namespaces and identifiers containing scripts outside one
+Recommended single-script set MUST produce an `identifier-security` diagnostic
+that lists the exact scripts, skeleton, and related spans. Diagnostics MUST
+render control scalars by code point and MUST NOT allow bidi reordering to hide
+the authored token.
+
 `directive_integer_token` is a contextual classification used only where the
 grammar expects the value of `retry_limit` or loop `limit`. In those positions,
 an unsigned decimal spelling with no sign, separator, or radix prefix is
@@ -4129,15 +3866,18 @@ specific to model instructions rather than introducing a second multiline
 The reserved words are:
 
 ```text
-action     agent      agents      as           Bool        break       continue
-crate      decision   Decision    decide       default     detach
+action     agent      agents      as           attempt     Bool        break
+continue   crate      decision   Decision      decide      default     detach
+discard
 else       enum       Err         false        Float       fn          fork        if
-impl       inline     join        joinall      let         limit
+for        idempotent in          impl        inline       join        joinall      let
+limit
 Int        List       loop        match         mod         mut         new
-None       null       Ok          Option       prompt      Result
-return     retry_limit self       session      Some        spawn
-String     struct     super       true         Tuple       until
-use        using      when        while        with
+non_idempotent None    null       Ok           OperationError Option
+prompt     pure       read_only   Result       return      retry_limit self
+session    Some       spawn       String       struct      super       true
+Tuple      unbounded  Unit       until       use          using       when        while
+with
 ```
 
 `as` is reserved for future compatible extension even though v1 has no alias
@@ -4195,32 +3935,36 @@ enum_declaration        = "enum", identifier_token, "{",
                           enum_variant, { ",", enum_variant }, [ "," ], "}" ;
 enum_variant            = identifier_token, [ "(", value_type, ")" ] ;
 
-action_declaration      = "action", identifier_token, "(",
+action_declaration      = "action", action_recovery_class,
+                          identifier_token, "(",
                           [ action_parameter_list ], ")",
                           [ result_annotation ], ";" ;
+action_recovery_class   = "read_only" | "idempotent" | "non_idempotent" ;
 action_parameter_list   = action_parameter, { ",", action_parameter }, [ "," ] ;
 action_parameter        = identifier_token, ":", value_type ;
 
-value_type              = "Bool"
+value_type              = "Unit"
+                        | "Bool"
                         | "Int"
                         | "Float"
                         | "String"
                         | "Decision"
+                        | "OperationError"
                         | qualified_path
                         | "Option", "<", value_type, ">"
                         | "Result", "<", value_type, ",", value_type, ">"
                         | "List", "<", value_type, ">"
                         | "Tuple", "<", value_type, ",", value_type,
                           { ",", value_type }, [ "," ], ">" ;
-result_type             = value_type | "None" ;
+result_type             = value_type ;
 result_annotation       = "->", result_type ;
 ```
 
 The built-in type alternatives take precedence over `qualified_path`. A
 `Tuple` has at least two member types by grammar. An enum has at least one
-variant, and an action declaration has no body. `None` in a result annotation
-is the no-result type; `None` in an expression is the absent value of an
-expected `Option<T>`. Field defaults are deliberately limited to primitive
+variant, and an action declaration has no body and exactly one recovery class.
+`Unit` is the result type for no-information work; `None` is only the absent
+value of an expected `Option<T>`. Field defaults are deliberately limited to primitive
 literals, optionally negated numeric literals, strings, and `None` in v1.
 Their declared field type MUST accept the default without coercion.
 
@@ -4236,7 +3980,7 @@ receiver.
 ### 13.4 Workflows and methods
 
 ```ebnf
-function_declaration    = "fn", identifier_token, "(",
+function_declaration    = [ "pure" ], "fn", identifier_token, "(",
                           [ parameter_list ], ")",
                           [ result_annotation ], block ;
 parameter_list          = parameter, { ",", parameter }, [ "," ] ;
@@ -4247,14 +3991,15 @@ decision_declaration    = "decision", identifier_token, "(",
 
 impl_declaration        = "impl", qualified_path, "{",
                           { method_declaration }, "}" ;
-method_declaration      = "fn", identifier_token, "(", receiver,
+method_declaration      = [ "pure" ], "fn", identifier_token, "(", receiver,
                           [ ",", parameter_list ], ")",
                           [ result_annotation ], block ;
 receiver                = "self" | "mut", "self" ;
 ```
 
-A function signature without a result annotation returns no result, exactly as
-if it had `-> None`. `mut` on a non-receiver parameter permits mutation of that
+A function signature without a result annotation returns `Unit`, exactly as
+if it had `-> Unit`. `pure` is a checked assertion that the inferred effect set
+is empty; it does not change evaluation. `mut` on a non-receiver parameter permits mutation of that
 workflow's deep-copied local argument; it does not affect the caller. A method
 always has a receiver as its first parameter. Associated functions without a
 receiver are excluded from v1. A `decision` has no source-level result
@@ -4278,6 +4023,7 @@ statement_block         = "{", { statement }, "}" ;
 statement               = let_statement
                         | assignment_statement
                         | expression_statement
+                        | discard_statement
                         | return_statement
                         | break_statement
                         | continue_statement
@@ -4289,7 +4035,8 @@ statement               = let_statement
                         | match_statement
                         | loop_statement
                         | while_statement
-                        | until_statement ;
+                        | until_statement
+                        | for_statement ;
 
 let_statement           = "let", let_binding, ":",
                           value_type, "=", expression, ";" ;
@@ -4306,6 +4053,7 @@ assignment_target       = identifier_token, { ".", identifier_token }
                         | "self", ".", identifier_token,
                           { ".", identifier_token } ;
 expression_statement    = expression, ";" ;
+discard_statement       = "discard", expression, ";" ;
 with_statement          = "with", identifier_token, statement_block ;
 session_statement       = "session", "(", session_directive, ")",
                           statement_block ;
@@ -4320,14 +4068,11 @@ Bindings require explicit types in v1. `mut` is valid only on a single-name
 binding; `_` discards the initialized value, and tuple destructuring introduces
 immutable bindings. A trailing expression is distinguished
 from an expression statement by the absence of `;` immediately before the
-closing brace. A trailing expression MUST produce a first-class value; a
-no-result operation must instead be an expression statement ending in `;`.
-Although `expression_statement` uses the general expression production,
-Section 6 restricts which outer expression forms are semantically valid as
-statements. In particular, wrapping an operation in an arithmetic, Boolean, or
-other otherwise-inert expression does not make that outer expression a valid
-statement.
-`return;` is valid only in a no-result function, method, or spawned block.
+closing brace. A bare expression statement MUST have type `Unit`; every other
+intentionally ignored value uses `discard expression;`. `discard` evaluates
+its operand exactly once before discarding it and does not suppress the
+operand's effects or failures. `return;` is sugar for `return ();` and is valid
+only in a `Unit` function, method, or spawned block.
 `break` and `continue` are valid only in a loop body. A decision workflow uses
 the ordinary block grammar because `Decision` is a first-class value. Semantic
 analysis applies the definite-`Decision` return requirement in Section 9.
@@ -4359,11 +4104,17 @@ unary_expression        = ("!" | "-"), unary_expression
 complete_expression     = prompt_expression
                         | decide_expression
                         | action_expression
+                        | attempt_expression
                         | match_expression
                         | join_expression
                         | joinall_expression
                         | with_expression
                         | session_expression ;
+
+attempt_expression      = "attempt", operation_expression ;
+operation_expression    = prompt_expression
+                        | decide_expression
+                        | action_expression ;
 
 postfix_expression      = primary_expression, { postfix_suffix } ;
 postfix_suffix          = ".", postfix_member_name
@@ -4375,6 +4126,7 @@ primary_expression      = boolean_literal
                         | float_literal_token
                         | string_token
                         | raw_string_token
+                        | "(", ")"
                         | "None"
                         | "Some", "(", expression, ")"
                         | "Ok", "(", expression, ")"
@@ -4416,8 +4168,11 @@ pattern                 = "_"
                         | "Some", "(", pattern, ")"
                         | "Ok", "(", pattern, ")"
                         | "Err", "(", pattern, ")"
+                        | operation_error_pattern
                         | enum_variant_pattern
                         | tuple_pattern ;
+operation_error_pattern = "OperationError", "::", identifier_token,
+                          "(", pattern, ")" ;
 enum_variant_pattern    = path_segment, "::", path_segment,
                           { "::", path_segment },
                           [ "(", pattern, ")" ]
@@ -4450,8 +4205,10 @@ payload of a declared enum variant, or invokes one of the sealed built-ins
 defined in Section 5. These include numeric conversion,
 primitive formatting, String query/transformation/parsing, `List<T>.len()`,
 and `List<String>.join(separator)`. Postfix `.name`
-accesses a struct field, selects a method, or selects the read-only
-`Decision.decision` or `Decision.rationale` field. Postfix `[expression]`
+accesses a struct field, selects a method, selects the read-only
+`Decision.decision` or `Decision.rationale` field, or selects the read-only
+`OperationError.message: String` or
+`OperationError.operation_id: Option<String>` field. Postfix `[expression]`
 projects a list when the index has type `Int`; tuple projection still requires
 a nonnegative compile-time integer literal so its result type is statically
 known. Bracketed expressions construct lists; parentheses containing at least
@@ -4482,16 +4239,22 @@ by `(` MUST resolve to exactly one callable workflow, declared enum payload
 variant, or permitted built-in. A path with no such suffix in value position
 MUST resolve to a visible binding when it has one unqualified segment, or to a
 declared unit enum variant. Enum patterns use the same root and module lookup
-rules as `qualified_path` and MUST resolve to an enum variant. Failure to find
+rules as `qualified_path` and MUST resolve to an enum variant. An
+`operation_error_pattern` is valid only for the seven exact variants in
+Section 5; the first six require a `String` payload pattern and
+`UnknownOutcome` requires a `Tuple<String,String>` payload pattern. This
+special production exists because `OperationError` is a reserved sealed type,
+not an ordinary declared enum. Failure to find
 the required item kind, or finding more than one valid interpretation, is an
 analysis error.
 
 A value-producing `with` or `session` expression requires its block's trailing
 expression and yields that value. These forms permit a lexical agent or session
 context to produce the enclosing workflow's result. Their statement-only forms
-in Section 13.5 have no result and take no semicolon after the closing brace. A
-value-producing context expression MAY still be followed by `;` when its value
-is intentionally discarded.
+in Section 13.5 return `Unit` and take no semicolon after the closing brace. A
+non-`Unit` context value is ignored only through `discard with ...` or
+`discard session(...) ...`; a bare trailing semicolon is valid only when the
+context expression has type `Unit`.
 
 `prompt`, `decide`, `action`, `match`, `join`, `joinall()`, `with`, and
 `session` are complete expression forms rather than direct bases of a postfix
@@ -4503,9 +4266,8 @@ operation result annotations and operations on the produced value.
 An effect-only `match` is parsed as `match_statement`: every arm body is a
 braced `statement_block`, and no semicolon follows the closing match brace. A
 value-producing match is `match_expression`; a braced arm in that form is a
-`value_block` and therefore has a trailing expression. When the complete
-value-producing match is intentionally discarded, it is followed by `;` under
-the ordinary `expression_statement` rule. The disjoint block forms prevent a
+`value_block` and therefore has a trailing expression. Ignoring the complete
+non-`Unit` match value requires `discard match ...`. The disjoint block forms prevent a
 block-shaped control construct from silently discarding a value while keeping
 the common effect-only form visually aligned with `if` and loops.
 
@@ -4515,9 +4277,10 @@ declared enum payload variant, or a sealed deterministic built-in defined in
 Section 5 with exactly its declared argument count and types;
 a field suffix is legal only on a struct value, selected inherent method, or a
 read-only `Decision` field; and an index suffix is legal only on a list or
-tuple value. Calling another value, selecting an unsupported field, indexing
-another type, or continuing a postfix chain after a no-result expression is an
-analysis error.
+tuple value. Calling another value, selecting an unsupported field, or
+indexing another type is an analysis error. `Unit` has no fields, methods, or
+index operation, so an attempted postfix suffix on `()` is rejected by those
+ordinary rules.
 
 As a semantic disambiguation rule applied after parsing, a struct constructor
 used anywhere in the condition immediately before an `if` (including an
@@ -4666,55 +4429,35 @@ errors. `retry_limit` counts retries after the initial attempt.
 
 ```ebnf
 if_statement            = "if", conditional_head, statement_block,
-                          { "else", "if",
-                            conditional_head, statement_block },
+                          { "else", "if", conditional_head, statement_block },
                           [ "else", statement_block ] ;
 conditional_head        = condition_expression
                         | "let", pattern, "=", expression ;
-
 condition_expression    = expression ;
 decide_expression       = "decide", [ prompt_modifiers ], prompt_template,
                           [ using_clause ] ;
 
 loop_statement          = "loop", [ loop_modifiers ], statement_block ;
+while_statement         = "while", [ loop_modifiers ],
+                          condition_expression, statement_block ;
+until_statement         = "until", [ loop_modifiers ], statement_block,
+                          "when", condition_expression, ";" ;
+for_statement           = "for", identifier_token, "in", expression,
+                          statement_block ;
 loop_modifiers          = "(", loop_modifier,
                           { ",", loop_modifier }, [ "," ], ")" ;
 loop_modifier           = "session", "=", session_directive
-                        | "limit", "=", directive_integer_token ;
-
-while_statement         = "while", [ loop_condition_modifiers ],
-                          condition_expression, statement_block ;
-until_statement         = "until", [ loop_condition_modifiers ],
-                          statement_block,
-                          "when", condition_expression, ";" ;
-loop_condition_modifiers
-                        = "(", loop_condition_modifier,
-                          { ",", loop_condition_modifier }, [ "," ], ")" ;
-loop_condition_modifier = "session", "=", session_directive
-                        | "limit", "=", directive_integer_token ;
+                        | "limit", "=", loop_limit ;
+loop_limit              = directive_integer_token | "unbounded" ;
 ```
 
-The optional modifier forms require at least one modifier when parentheses are
-present; empty `prompt()`, `decide()`, `loop()`, `while()`, and `until()`
-modifiers are not v1 syntax. Bare `loop` uses
-`session = inline` and `limit = 0`. Duplicate modifiers are analysis errors.
-
-`if` and `else if` have no condition-level modifiers. An author who wants a
-condition and its selected arm to share one explicit session wraps the complete
-conditional in `session(<directive>) { ... }`; an author who wants to configure
-one model judgment places modifiers directly on its visible `decide` expression.
-On `while` and `until`, the modifier position declares the loop session and
-limit whose condition/body lifetime is defined normatively in Section 9.
-`limit` belongs only to the enclosing loop. A modifier written directly on a
-`decide` expression affects only that operation. The `until` grammar deliberately
-places its body before `when` and the post-test condition.
-Semantic analysis MUST require every `condition_expression` to have type
-`Bool` or `Decision`. Ordinary and decision workflow calls share one
-Rust-inspired call syntax and are distinguished by their resolved result type
-rather than by parser guessing. The unified `conditional_head` permits a
-chain to mix ordinary conditions and `if let` pattern tests without adding
-another nesting level; pattern bindings remain scoped only to their selected
-arm.
+Modifier parentheses cannot be empty, and duplicate modifiers are analysis
+errors. Omitted `limit` and `limit = unbounded` both mean no source-level
+limit; a numeric limit must be positive. `for` evaluates its list expression
+once and has the finite snapshot semantics in Section 9. Conditions must have
+type `Bool` or `Decision`; pattern bindings and for-item bindings are scoped to
+their selected body. The `until` grammar deliberately places its body before
+its post-test.
 
 ### 13.9 Parallel control flow
 
@@ -4726,14 +4469,14 @@ join_expression         = "join", "(", identifier_token,
 joinall_expression      = "joinall", "(", ")" ;
 ```
 
-Every spawn has an explicit result annotation, including `-> None`. Named
+Every spawn has an explicit result annotation, including `-> Unit`. Named
 `join` requires at least one handle. `joinall()` takes no arguments; its
 statically determined member set may contain zero, one, or several handles.
 `detach` consumes exactly one attached task handle and is a statement rather
 than a value-producing expression. Static result typing follows Section 10:
 one value for one value-producing task, `List<T>` for multiple homogeneous
 results, and `Tuple<T1, ..., Tn>` for multiple heterogeneous results. Zero
-tasks, or one or more exclusively no-result tasks, produce no source value.
+tasks, or one or more exclusively Unit tasks, produce `Unit`.
 
 ## 14. Authoring Examples and Common Errors
 
@@ -4758,12 +4501,12 @@ grammar:
 | --- | --- | --- | --- |
 | Function, method, decision, or spawned block | ordinary block | Optional, but required on each reachable normal completion of a value-returning body | No |
 | `if`, loop, or effect-only `match` arm | statement-only block | Prohibited | No |
-| Value-producing `match` arm | value block | Required | Only after the complete `match` when its value is intentionally discarded |
+| Value-producing `match` arm | value block | Required | The complete value is ignored only with `discard match ...;` |
 | Statement-only `with` or `session` | statement-only block | Prohibited | No |
-| Value-producing `with` or `session` | value block | Required | Only when the produced value is intentionally discarded |
+| Value-producing `with` or `session` | value block | Required | A non-`Unit` value is ignored only with explicit `discard` |
 
-Only the outer expression forms listed in Section 6 may be expression
-statements. A no-result operation or workflow call therefore ends in `;`,
+Only `Unit` expressions may be bare expression statements; other values use
+explicit `discard`. A Unit operation or workflow call therefore ends in `;`,
 whereas a statement-only braced control construct does not. Section 13.6 also
 requires a struct constructor at an `if`, `while`, `if let`, or `match`
 boundary to be parenthesized where specified. Section 14.13 gives paired
@@ -4780,15 +4523,15 @@ fn main() {
 }
 ```
 
-The omitted prompt annotation and omitted function result both mean no result.
+The omitted prompt annotation and omitted function result both mean `Unit`.
 The complete explicit equivalent is:
 
 ```gantry
 agents { worker }
 default agent = worker;
 
-fn main() -> None {
-    prompt "Inspect the current assignment and carry it out." -> None;
+fn main() -> Unit {
+    prompt "Inspect the current assignment and carry it out." -> Unit;
 }
 ```
 
@@ -5208,8 +4951,7 @@ fn retain_decision(report: Report) -> String {
 }
 ```
 
-The `decide` operation in the `else if` condition receives the preceding
-decision and rationale in its ordered context vector. The `else if` syntax
+The `decide` operation in the `else if` condition receives only its explicit prompt, inputs, and canonical session transcript. The `else if` syntax
 does not create a hook by itself. Conditional blocks do not themselves form
 value expressions in v1, so each selected branch returns its value explicitly.
 
@@ -5274,10 +5016,9 @@ fn converge(mut draft: String) -> String {
 
 `until` places the body before its `when` decision because it runs that body
 before its first decision. A `continue` in this body proceeds to the post-test.
-A positive `loop` or `while` limit completes normally without another
-decision after its final body. An `until` body always performs its matching
-post-test; if that decision is false at the positive limit, the loop then
-completes normally. `limit = 0` means unlimited execution.
+A positive source limit fails with `loop-limit-exhausted` before another body entry.
+Omitting the limit or writing `limit = unbounded` removes only that source-level
+limit; mandatory execution budgets still apply.
 
 ### 14.8 Parallel homogeneous work and `List<T>` joins
 
@@ -5333,7 +5074,7 @@ let (headline_text, full_report): Tuple<String, Report> = pair;
 
 The destructuring is deterministic and does not invoke an operation hook.
 
-### 14.10 `joinall()`, no-result tasks, and detachment
+### 14.10 `joinall()`, Unit tasks, and detachment
 
 ```gantry
 fn collect_all(topic: String) -> List<Report> {
@@ -5352,11 +5093,11 @@ fn collect_all(topic: String) -> List<Report> {
 
 ```gantry
 fn audit_in_parallel(report: Report) {
-    spawn security_audit -> None {
+    spawn security_audit -> Unit {
         prompt "Perform a security audit of ${report}.";
     }
 
-    spawn style_audit -> None {
+    spawn style_audit -> Unit {
         prompt "Perform a style audit of ${report}.";
     }
 
@@ -5364,16 +5105,15 @@ fn audit_in_parallel(report: Report) {
 }
 ```
 
-Named joins can wait for a selected set of no-result tasks without manufacturing
-an unused aggregate value:
+Named joins can wait for a selected set of Unit tasks and return `()`:
 
 ```gantry
 fn audit_selected(report: Report) {
-    spawn security_audit -> None {
+    spawn security_audit -> Unit {
         prompt "Perform a security audit of ${report}.";
     }
 
-    spawn style_audit -> None {
+    spawn style_audit -> Unit {
         prompt "Perform a style audit of ${report}.";
     }
 
@@ -5389,7 +5129,7 @@ journal until terminal execution:
 ```gantry
 fn launch_background(report: Report) {
     if decide "Should a background audit be launched for ${report}?" {
-        spawn background -> None {
+        spawn background -> Unit {
             prompt "Audit ${report} in the background.";
         }
 
@@ -5404,7 +5144,7 @@ the conditional even though the durable consumption mode differs by path:
 
 ```gantry
 fn launch_or_wait(report: Report) {
-    spawn audit -> None {
+    spawn audit -> Unit {
         prompt "Audit ${report}.";
     }
 
@@ -5489,9 +5229,9 @@ struct Report {
     sources: List<Source>,
 }
 
-action web_search(request: SearchRequest)
+action read_only web_search(request: SearchRequest)
     -> Result<List<Source>, SearchFailure>;
-action publish(report: Report) -> None;
+action non_idempotent publish(report: Report) -> Unit;
 
 fn research(query: String) -> Report {
     let request: SearchRequest = SearchRequest { query };
@@ -5518,8 +5258,8 @@ fn research(query: String) -> Report {
 `using` carries ordered typed values separately from rendered prompt text.
 `${...}` remains available when exact textual placement is meaningful. The
 action declaration, action invocation, and result contract are visible in
-source; provider-internal tools used while fulfilling another hook do not
-create hidden Gantry operations.
+source; model hooks are externally read-only; state-changing capabilities require a
+declared action recovery class.
 
 ### 14.13 Common invalid forms and their corrections
 
@@ -5543,11 +5283,11 @@ let critique: String = make_critique(report);
 prompt "Rewrite this critique: ${critique}" -> Report
 ```
 
-An unannotated prompt has no source value. `Decision` is first-class but is not
-a `String` or an ordinary `Bool`:
+An unannotated prompt returns `Unit`. `Decision` is first-class but is not a
+`String` or an ordinary `Bool`:
 
 ```gantry
-// Invalid: the prompt returns no source value.
+// Invalid: the prompt returns Unit, not String.
 let summary: String = prompt "Summarize the report.";
 
 // Valid: the result contract is visible.
@@ -5566,9 +5306,8 @@ if answer {
 let approved: Bool = answer.decision;
 ```
 
-A previously evaluated value cannot be “used” by writing it as a standalone
-statement. External-operation and workflow calls may discard their results,
-but an inert value statement is rejected:
+A previously evaluated non-`Unit` value cannot be “used” by writing it as a
+standalone statement. Every ignored non-`Unit` result requires `discard`:
 
 ```gantry
 // Invalid: this performs no operation and does not emit the rationale again.
@@ -5580,12 +5319,12 @@ if answer {
 }
 
 // Also valid: deliberately execute a new judgment and discard its value.
-decide "Record a fresh publication judgment.";
+discard decide "Record a fresh publication judgment.";
 ```
 
-An operation may be intentionally discarded as a statement, but a larger
-deterministic expression must have its result consumed. This outer-form rule
-keeps statement-level work easy to identify without effect analysis:
+Any non-`Unit` expression, including an operation, requires explicit `discard`
+when its value is intentionally ignored. Larger deterministic expressions obey
+the same type-directed rule:
 
 ```gantry
 // Invalid: the arithmetic result is discarded by the outer expression.
@@ -5596,14 +5335,14 @@ let next: Int = prompt "Return the next count." -> Int;
 let incremented: Int = next + 1;
 
 // Also valid: intentionally discard the operation result itself.
-prompt "Return the next count." -> Int;
+discard prompt "Return the next count." -> Int;
 ```
 
 Harness actions cannot be called with ordinary workflow-call syntax, even
 when an action and workflow would otherwise have similar signatures:
 
 ```gantry
-action publish(report: Report) -> None;
+action non_idempotent publish(report: Report) -> Unit;
 
 // Invalid: an action declaration is not an ordinary callable workflow.
 publish(report);
@@ -5664,14 +5403,14 @@ normal path leaving their scope must visibly join or detach them:
 ```gantry
 // Invalid: `audit` remains attached when the function returns.
 fn start_invalid(report: Report) {
-    spawn audit -> None {
+    spawn audit -> Unit {
         prompt "Audit ${report}.";
     }
 }
 
 // Valid: background ownership is transferred explicitly.
 fn start_background(report: Report) {
-    spawn audit -> None {
+    spawn audit -> Unit {
         prompt "Audit ${report}.";
     }
     detach(audit);
@@ -5787,8 +5526,9 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    If terminal execution is already durable, resume performs only the unsettled
    event-delivery recovery permitted by Section 11 and exposes the existing
    terminal outcome without creating a task or dispatching a hook.
-   A typed foreground outcome distinguishes a value, no result, and every
-   runtime-error category defined in Section 7. A foreground outcome MAY be
+   A typed foreground outcome carries its canonical value type, including
+   `Unit`, or one runtime-error category defined in Section 7. A foreground
+   outcome MAY be
    returned while explicitly detached tasks remain;
    the execution ID allows the embedder to correlate their later events and
    terminal durable state. Because event sinks are optional, the API MUST also
@@ -5874,14 +5614,18 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    that performs only deterministic interpreter work does not require a hook.
    `OperationHook` asynchronously accepts the versioned request defined in
    Section 7 and a Gantry-owned cancellation token, and returns exactly one
-   `Completed(raw_output)`, `Declined(reason)`, or `Failed(message)` outcome.
+   `Completed(raw_output)`, `Declined(reason)`, or
+   `Failed(category, message)` outcome.
    `raw_output` is an uninterpreted byte sequence; Gantry owns UTF-8 decoding,
-   JSON parsing, schema validation, and repair retries. Hook futures MUST be
+   JSON parsing, schema validation, and repair retries. A failure outcome also
+   carries the exact typed category from Section 7 rather than requiring text
+   parsing. Hook futures MUST be
    `Send`; one hook instance is used serially for one Gantry task.
    Returning `Completed(raw_output)` means the integration considers the
    operation complete even when the bytes later fail Gantry validation.
-   Provider transport failures, timeouts, and integration-internal retry
-   exhaustion MUST instead be represented as `Failed(message)`; they MUST NOT
+   Provider transport failures, timeouts, policy denials, cancellation, and
+   integration-internal retry exhaustion MUST instead be represented as
+   `Failed(category, message)` with the category defined in Section 7; they MUST NOT
    be encoded as synthetic malformed model output merely to enter Gantry's
    structured-output retry path.
 ### 15.3 Cancellation
@@ -5916,9 +5660,9 @@ An executor adapter provides asynchronous task spawn, join, abort, sleep,
 ### 15.5 Journal storage
 
 Journal storage asynchronously provides durable-prefix reads, exclusive
-   owner acquisition and release with fencing, plus atomic `append(record)` and
-   `flush(sequence)` operations with the behavior in Section 11. Append and
-   flush are its only record-mutation primitives. Every mutation call MUST be
+   owner acquisition and release with fencing, and atomic `commit(batch)` with
+   the behavior in Section 11. An adapter MAY expose append and flush as its
+   implementation of commit, or use transactions and snapshots. Every mutation call MUST be
    associated with the current opaque ownership token so a superseded process
    cannot advance the journal. The `record` accepted by `append` is an
    unfinalized versioned body without a record ID or sequence number. Append
@@ -5982,7 +5726,9 @@ Interpreter configuration MUST include the default model-output
    duration, maximum entry-input bytes, maximum hook-output bytes, maximum
    value nesting depth, maximum value nodes, maximum String scalar count,
    maximum List item count, maximum workflow-call depth, maximum tasks per
-   execution, and the finite nonzero deterministic-transition yield quantum
+   execution, maximum deterministic transitions per execution, maximum logical
+   operations per execution, maximum loop body entries per task, and the finite
+   nonzero deterministic-transition yield quantum
    required by Section 3. These value and interpreter limits MUST satisfy
    Sections 3, 5, 8, 10, and 11. Implementations
    MUST accept directive integers through `2^63 - 1` and MUST reject larger
@@ -6005,8 +5751,19 @@ All public protocol envelopes MUST carry a major and minor version. A major
    MUST identify which fields are required and which are optional. An
    implementation MAY accept a newer minor version only when every unknown
    field is marked optional by that version's protocol definition and ignoring
-   it does not change the meaning of known fields. Unknown required fields and
-   unknown enum variants MUST be rejected.
+   it does not change the meaning of known fields. Unknown required fields and unknown enum variants MUST be rejected.
+
+The v1 publication MUST provide canonical JSON Schemas and RFC 8785 golden
+encodings for hook requests/outcomes, events, diagnostics, configuration,
+canonical IR/source maps, migrations, journal logical evidence, and the
+conformance manifest. It MUST provide a versioned requirement-ID registry and
+an executable conformance corpus covering lexer/parser boundaries, positive
+and negative static semantics, schema/hash goldens, RFC 8785 differential
+cases, cross-implementation logical traces, crash injection at every commit
+cut, idempotency and unknown outcomes, Unicode security, workflow migration,
+and property/model tests for linear task ownership and single result
+consumption. A profile claim maps every applicable requirement ID to at least
+one corpus test and publishes the results.
 ### 15.9 Thread safety
 
 Integration-provided hook factories, executor adapters, journal stores, and
@@ -6036,10 +5793,9 @@ Source, entry input, interpolation arguments, named inputs, action
     records for an embedder to enforce those policies without parsing free-form
     text.
 
-The serialization format and concrete Rust data-type layout are implementation
-choices. An implementation MUST publish the selected format with its versioned
-protocol schemas and MUST preserve every field, category, ordering, durability
-boundary, and compatibility rule made normative by this document. Independent
-implementations are byte-interoperable only when they explicitly implement the
-same published format and schemas; semantic v1 conformance alone does not make
-their serialized artifacts interchangeable.
+Public protocol envelopes use UTF-8 JSON validated by the published canonical
+schemas and RFC 8785 when an identity or golden byte sequence is required.
+Concrete Rust layouts and private storage encodings remain implementation
+choices. Independent implementations that support the same protocol major
+version MUST interoperate on canonical public envelopes and canonical IR;
+private database pages and executor objects are never portable artifacts.
