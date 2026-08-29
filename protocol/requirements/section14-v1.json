@@ -1,0 +1,446 @@
+{
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "excerpts": [
+    {
+      "key": "section14-excerpt-001",
+      "section": "14.1 Minimal package entry point",
+      "start_line": 7027,
+      "end_line": 7035,
+      "classification": "complete-positive",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-002",
+      "section": "14.1 Minimal package entry point",
+      "start_line": 7045,
+      "end_line": 7064,
+      "classification": "complete-positive",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-003",
+      "section": "14.2 Modules, imports, and package-wide agents",
+      "start_line": 7079,
+      "end_line": 7092,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-004",
+      "section": "14.2 Modules, imports, and package-wide agents",
+      "start_line": 7096,
+      "end_line": 7108,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-005",
+      "section": "14.2 Modules, imports, and package-wide agents",
+      "start_line": 7112,
+      "end_line": 7122,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-006",
+      "section": "14.3 Primitive values, structs, tagged values, and structural routing",
+      "start_line": 7131,
+      "end_line": 7166,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-007",
+      "section": "14.3 Primitive values, structs, tagged values, and structural routing",
+      "start_line": 7174,
+      "end_line": 7222,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-008",
+      "section": "14.3 Primitive values, structs, tagged values, and structural routing",
+      "start_line": 7235,
+      "end_line": 7249,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-009",
+      "section": "14.3 Primitive values, structs, tagged values, and structural routing",
+      "start_line": 7257,
+      "end_line": 7277,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-010",
+      "section": "14.4 Inherent methods and scoped agent selection",
+      "start_line": 7284,
+      "end_line": 7312,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-011",
+      "section": "14.4 Inherent methods and scoped agent selection",
+      "start_line": 7325,
+      "end_line": 7339,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-012",
+      "section": "14.5 Prompt strings, interpolation, and escaping",
+      "start_line": 7348,
+      "end_line": 7354,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-013",
+      "section": "14.5 Prompt strings, interpolation, and escaping",
+      "start_line": 7360,
+      "end_line": 7364,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-014",
+      "section": "14.5 Prompt strings, interpolation, and escaping",
+      "start_line": 7372,
+      "end_line": 7380,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-015",
+      "section": "14.5 Prompt strings, interpolation, and escaping",
+      "start_line": 7384,
+      "end_line": 7389,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-016",
+      "section": "14.5 Prompt strings, interpolation, and escaping",
+      "start_line": 7394,
+      "end_line": 7399,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-017",
+      "section": "14.5 Prompt strings, interpolation, and escaping",
+      "start_line": 7404,
+      "end_line": 7433,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-018",
+      "section": "14.5 Prompt strings, interpolation, and escaping",
+      "start_line": 7439,
+      "end_line": 7447,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-019",
+      "section": "14.6 Reusable model judgments and conditional chains",
+      "start_line": 7451,
+      "end_line": 7469,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-020",
+      "section": "14.6 Reusable model judgments and conditional chains",
+      "start_line": 7475,
+      "end_line": 7490,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-021",
+      "section": "14.6 Reusable model judgments and conditional chains",
+      "start_line": 7501,
+      "end_line": 7509,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-022",
+      "section": "14.7 Finite, general, pre-test, and post-test loops",
+      "start_line": 7519,
+      "end_line": 7525,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-023",
+      "section": "14.7 Finite, general, pre-test, and post-test loops",
+      "start_line": 7531,
+      "end_line": 7543,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-024",
+      "section": "14.7 Finite, general, pre-test, and post-test loops",
+      "start_line": 7545,
+      "end_line": 7560,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-025",
+      "section": "14.7 Finite, general, pre-test, and post-test loops",
+      "start_line": 7562,
+      "end_line": 7570,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-026",
+      "section": "14.8 Parallel homogeneous work and `List<T>` joins",
+      "start_line": 7580,
+      "end_line": 7597,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-027",
+      "section": "14.9 Parallel heterogeneous work and `Tuple<...>` joins",
+      "start_line": 7607,
+      "end_line": 7620,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-028",
+      "section": "14.9 Parallel heterogeneous work and `Tuple<...>` joins",
+      "start_line": 7625,
+      "end_line": 7628,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-029",
+      "section": "14.10 `joinall()`, Unit tasks, and detachment",
+      "start_line": 7648,
+      "end_line": 7661,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-030",
+      "section": "14.10 `joinall()`, Unit tasks, and detachment",
+      "start_line": 7663,
+      "end_line": 7675,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-031",
+      "section": "14.10 `joinall()`, Unit tasks, and detachment",
+      "start_line": 7679,
+      "end_line": 7691,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-032",
+      "section": "14.10 `joinall()`, Unit tasks, and detachment",
+      "start_line": 7699,
+      "end_line": 7709,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-033",
+      "section": "14.10 `joinall()`, Unit tasks, and detachment",
+      "start_line": 7715,
+      "end_line": 7727,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-034",
+      "section": "14.11 Nested modules and qualified paths",
+      "start_line": 7731,
+      "end_line": 7760,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-035",
+      "section": "14.11 Nested modules and qualified paths",
+      "start_line": 7768,
+      "end_line": 7775,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-036",
+      "section": "14.12 Explicit harness actions and named prompt inputs",
+      "start_line": 7782,
+      "end_line": 7826,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-037",
+      "section": "14.13 Explicit operation failure handling with `attempt`",
+      "start_line": 7842,
+      "end_line": 7856,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-038",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7879,
+      "end_line": 7886,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-039",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7891,
+      "end_line": 7909,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-040",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7916,
+      "end_line": 7928,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-041",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7933,
+      "end_line": 7944,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-042",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7950,
+      "end_line": 7960,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-043",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7965,
+      "end_line": 7973,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-044",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7978,
+      "end_line": 7988,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-045",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 7994,
+      "end_line": 8004,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-046",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 8010,
+      "end_line": 8021,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-047",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 8026,
+      "end_line": 8041,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-048",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 8046,
+      "end_line": 8064,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    },
+    {
+      "key": "section14-excerpt-049",
+      "section": "14.14 Common invalid forms and their corrections",
+      "start_line": 8069,
+      "end_line": 8079,
+      "classification": "focused-fragment",
+      "state": "planned",
+      "evidence": []
+    }
+  ]
+}

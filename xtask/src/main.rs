@@ -1,6 +1,7 @@
 //! Repository development commands for Gantry.
 
 mod protocol;
+mod requirements;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -49,12 +50,17 @@ fn run() -> Result<(), String> {
         [command, subject] if command == "generate" && subject == "protocol" => {
             protocol::generate(&workspace_root()?)
         }
+        [command, subject] if command == "generate" && subject == "requirements" => {
+            requirements::generate(&workspace_root()?)
+        }
         [command, subject] if command == "check" && subject == "generated" => {
-            protocol::check_generated(&workspace_root()?)
+            let root = workspace_root()?;
+            protocol::check_generated(&root)?;
+            requirements::check_generated(&root)
         }
         [command, subject] if command == "check" && subject == "workspace" => check_workspace(),
         _ => Err(
-            "usage: cargo run --locked -p xtask -- generate protocol | check generated | check workspace"
+            "usage: cargo run --locked -p xtask -- generate {protocol|requirements} | check generated | check workspace"
                 .to_owned(),
         ),
     }
