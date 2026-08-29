@@ -9,7 +9,12 @@ and documented as the implementation grows.
 
 - `SPEC.md`: normative language and runtime contract.
 - `README.md`: project overview and quick-start material.
-- `crates/gantry/`: product package and command-line entry point.
+- `crates/gantry/`: supported public Rust facade.
+- `crates/gantry-cli/`: command-line entry point and presentation boundary.
+- `crates/gantry-core/`: portable deterministic contracts shared across layers.
+- `crates/gantry-host/`: executor-neutral embedding contracts.
+- `crates/gantry-conformance/`: external public-surface conformance harness.
+- `xtask/`: repository generation and structural checks.
 - `docs/`: user, language, and contributor documentation.
 - `Justfile`: local development command entry points.
 - `.github/workflows/ci.yml`: continuous-integration validation.

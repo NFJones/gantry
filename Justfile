@@ -12,7 +12,7 @@ build-release:
 
 # Run Gantry
 run *args:
-    cargo run -p gantry -- {{args}}
+    cargo run -p gantry-cli --bin gantry -- {{args}}
 
 # Type-check without building artifacts
 check:
