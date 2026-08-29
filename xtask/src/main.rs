@@ -1,5 +1,6 @@
 //! Repository development commands for Gantry.
 
+mod governance;
 mod protocol;
 mod requirements;
 mod unicode;
@@ -64,8 +65,11 @@ fn run() -> Result<(), String> {
             unicode::check_generated(&root)
         }
         [command, subject] if command == "check" && subject == "workspace" => check_workspace(),
+        [command, subject] if command == "check" && subject == "governance" => {
+            governance::check(&workspace_root()?)
+        }
         _ => Err(
-            "usage: cargo run --locked -p xtask -- generate {protocol|requirements|unicode} | check generated | check workspace"
+            "usage: cargo run --locked -p xtask -- generate {protocol|requirements|unicode} | check {generated|governance|workspace}"
                 .to_owned(),
         ),
     }
@@ -76,6 +80,7 @@ fn check_workspace() -> Result<(), String> {
     let metadata = MetadataCommand::new()
         .current_dir(&root)
         .no_deps()
+        .other_options(vec!["--locked".to_owned()])
         .exec()
         .map_err(|error| format!("cargo metadata failed: {error}"))?;
     let workspace_ids = metadata.workspace_members.iter().collect::<BTreeSet<_>>();

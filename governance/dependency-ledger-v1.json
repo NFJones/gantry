@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "publication_lockfile": {
+    "path": "Cargo.lock",
+    "sha256": "7847520a099654d87a29798cabe27cd443f225245f41be05a7882a14c3308cbf"
+  },
+  "fuzz_lockfile": {
+    "path": "fuzz/Cargo.lock",
+    "sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899"
+  },
+  "allowed_licenses": [
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense"
+  ],
+  "allowed_sources": [
+    "registry+https://github.com/rust-lang/crates.io-index"
+  ],
+  "toolchains": {
+    "product_msrv": "1.91.0",
+    "current_stable": "stable",
+    "fuzz_nightly": "nightly-2026-07-01"
+  },
+  "tools": {
+    "cargo_deny": "0.20.2",
+    "cargo_fuzz": "0.13.2",
+    "libfuzzer_sys": "0.4.9"
+  },
+  "decisions": [
+    {
+      "id": "cargo-metadata-tooling",
+      "package": "cargo_metadata",
+      "status": "selected",
+      "version": "0.23.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "features": [
+        "default"
+      ],
+      "owner": "xtask",
+      "purpose": "Read Cargo's versioned metadata for repository-only workspace and dependency checks.",
+      "data_or_protocol_versions": [
+        "Cargo metadata format 1"
+      ],
+      "bounded_spike": "Validated the declared workspace graph and all seven facade feature selections against Cargo metadata.",
+      "acceptance_evidence": [
+        "xtask/src/main.rs"
+      ],
+      "fallback": "Invoke `cargo metadata --format-version 1` and validate the decoded stable fields in repository tooling."
+    },
+    {
+      "id": "serde-json-private-tooling",
+      "package": "serde_json",
+      "status": "selected",
+      "version": "1.0.151",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "features": [
+        "default",
+        "std",
+        "unbounded_depth"
+      ],
+      "owner": "xtask and gantry-conformance",
+      "purpose": "Decode reviewed repository metadata and independently inspect canonical protocol fixtures after admission.",
+      "data_or_protocol_versions": [
+        "RFC 8259 tooling envelopes only"
+      ],
+      "bounded_spike": "Canonical protocol and requirement fixtures are decoded independently and compared with Gantry-owned generated/public contracts.",
+      "acceptance_evidence": [
+        "crates/gantry-conformance/tests/canonical_protocol.rs",
+        "crates/gantry-conformance/tests/requirements_ledger.rs"
+      ],
+      "fallback": "Use the Gantry strict value decoder for semantic inputs and a small repository-only parser for reviewed tooling envelopes."
+    },
+    {
+      "id": "serde-private-tooling",
+      "package": "serde",
+      "status": "selected",
+      "version": "1.0.229",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "features": [
+        "default",
+        "derive",
+        "serde_derive",
+        "std"
+      ],
+      "owner": "xtask and gantry-conformance",
+      "purpose": "Decode private, reviewed repository metadata; Rust derive layout is not a portable protocol authority.",
+      "data_or_protocol_versions": [
+        "private tooling DTOs only"
+      ],
+      "bounded_spike": "Strict unknown-field repository inputs and independent protocol comparisons exercise every current derive boundary.",
+      "acceptance_evidence": [
+        "xtask/src/protocol.rs",
+        "xtask/src/requirements.rs"
+      ],
+      "fallback": "Replace individual private DTO decoders with explicit repository-owned field readers."
+    },
+    {
+      "id": "sha2-semantic-boundary",
+      "package": "sha2",
+      "status": "selected",
+      "version": "0.10.9",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "features": [
+        "default",
+        "std"
+      ],
+      "owner": "gantry-core",
+      "purpose": "Compute SHA-256 only over Gantry-prescribed canonical byte boundaries.",
+      "data_or_protocol_versions": [
+        "FIPS 180-4 SHA-256"
+      ],
+      "bounded_spike": "Portable identity derivation, vendored-input verification, publication fixtures, and independent conformance vectors agree byte for byte.",
+      "acceptance_evidence": [
+        "crates/gantry-core/src/identity.rs",
+        "crates/gantry-conformance/tests/canonical_protocol.rs",
+        "crates/gantry-conformance/tests/unicode_16.rs"
+      ],
+      "fallback": "Keep the Gantry-owned byte-boundary adapter and replace the digest engine with another reviewed SHA-256 implementation or a small audited implementation."
+    },
+    {
+      "id": "unicode-ident-semantic-rejection",
+      "package": "unicode-ident",
+      "status": "rejected",
+      "version": "1.0.24",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "features": [],
+      "owner": "gantry-core Unicode generation",
+      "purpose": "Reject moving transitive Unicode tables as Gantry v1 semantic authority; the crate may remain a tooling transitive dependency.",
+      "data_or_protocol_versions": [
+        "Gantry Unicode 16.0.0 is owned by vendored UCD and UTS #39 inputs"
+      ],
+      "bounded_spike": "Archived Unicode 16 data, adjacent-version negatives, and full normalization/property suites validate generated Gantry-owned tables independently.",
+      "acceptance_evidence": [
+        "third_party/unicode/16.0.0/SOURCES",
+        "crates/gantry-conformance/tests/unicode_16.rs"
+      ],
+      "fallback": "Continue generating checked-in tables directly from the reviewed Unicode 16.0.0 source manifest."
+    }
+  ]
+}

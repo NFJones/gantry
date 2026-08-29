@@ -1,0 +1,22 @@
+[package]
+name = "gantry-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+gantry-core = { path = "../crates/gantry-core" }
+libfuzzer-sys = "=0.4.9"
+
+[[bin]]
+name = "protocol_identity"
+path = "fuzz_targets/protocol_identity.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

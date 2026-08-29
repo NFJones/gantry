@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+  schedule:
+    - cron: "23 4 * * 1"
 
 permissions:
   contents: read
@@ -14,27 +16,100 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Validate
-    runs-on: ubuntu-latest
+  product:
+    name: Product (${{ matrix.os }}, Rust ${{ matrix.rust }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rust: 1.91.0
+          - os: ubuntu-latest
+            rust: stable
+          - os: macos-latest
+            rust: stable
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
+      - name: Check publication lockfile governance
+        run: cargo run --locked -p xtask -- check governance
       - name: Check formatting
         run: cargo fmt --all --check
-      - name: Check generated protocol bindings
+      - name: Check generated products
         run: cargo run --locked -p xtask -- check generated
       - name: Check workspace graph and facade features
         run: cargo run --locked -p xtask -- check workspace
       - name: Build
-        run: cargo build --workspace --all-targets --all-features
+        run: cargo build --locked --workspace --all-targets --all-features
       - name: Lint
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test
-        run: canonical_tmp="$(cd /tmp && pwd -P)"; TMPDIR="$canonical_tmp" cargo test --workspace --all-targets --all-features --no-fail-fast --quiet
+        run: canonical_tmp="$(cd /tmp && pwd -P)"; TMPDIR="$canonical_tmp" cargo test --locked --workspace --all-targets --all-features --no-fail-fast --quiet
+
+  generated:
+    name: Generated products are reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Rust 1.91
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.91.0
+      - name: Regenerate all checked-in products
+        run: |
+          cargo run --locked -p xtask -- generate protocol
+          cargo run --locked -p xtask -- generate requirements
+          cargo run --locked -p xtask -- generate unicode
+          git diff --exit-code
+
+  dependencies:
+    name: Publication dependency policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Rust 1.91
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.91.0
+      - name: Install cargo-deny 0.20.2
+        run: cargo install --locked cargo-deny --version 0.20.2
+      - name: Check licenses, advisories, bans, and sources
+        run: cargo deny check advisories bans licenses sources
+
+  fuzz:
+    name: Pinned nightly fuzz smoke
+    runs-on: ubuntu-latest
+    env:
+      FUZZ_RUNS: ${{ github.event_name == 'schedule' && '100000' || '2000' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install pinned fuzz nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-01
+      - name: Install cargo-fuzz 0.13.2
+        run: cargo +nightly-2026-07-01 install --locked cargo-fuzz --version 0.13.2
+      - name: Run bounded corpus smoke
+        working-directory: fuzz
+        run: |
+          mkdir -p artifacts/protocol_identity
+          cargo fuzz run protocol_identity -- -runs="$FUZZ_RUNS" -max_len=256 -artifact_prefix=artifacts/protocol_identity/
+      - name: Upload minimized failure candidates
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protocol-identity-fuzz-artifacts
+          path: fuzz/artifacts/protocol_identity/

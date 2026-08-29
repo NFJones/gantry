@@ -7,6 +7,7 @@ members = [
     "crates/gantry-host",
     "xtask",
 ]
+exclude = ["fuzz"]
 resolver = "3"
 
 [workspace.package]
@@ -16,9 +17,9 @@ rust-version = "1.91"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-gantry = { path = "crates/gantry", default-features = false }
-gantry-core = { path = "crates/gantry-core" }
-gantry-host = { path = "crates/gantry-host" }
+gantry = { path = "crates/gantry", version = "=0.1.0", default-features = false }
+gantry-core = { path = "crates/gantry-core", version = "=0.1.0" }
+gantry-host = { path = "crates/gantry-host", version = "=0.1.0" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"

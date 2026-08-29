@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "denied-license",
+      "field": "license",
+      "value": "GPL-3.0-only",
+      "expected_error": "license is not allowed"
+    },
+    {
+      "name": "denied-source",
+      "field": "source",
+      "value": "git+https://example.invalid/dependency",
+      "expected_error": "source is not allowed"
+    },
+    {
+      "name": "stale-ledger",
+      "field": "lockfile-sha256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expected_error": "publication lockfile digest is stale"
+    },
+    {
+      "name": "unresolved-advisory",
+      "field": "advisory",
+      "value": "RUSTSEC-2099-0001",
+      "expected_error": "unresolved advisory is denied"
+    },
+    {
+      "name": "unsupported-feature",
+      "field": "feature",
+      "value": "unstable-evaluator",
+      "expected_error": "facade feature is unsupported"
+    }
+  ]
+}

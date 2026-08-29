@@ -1,14 +1,14 @@
 # Default recipe builds in release mode
 default:
-    cargo build --workspace --all-targets --all-features --release
+    cargo build --locked --workspace --all-targets --all-features --release
 
 # Build (debug)
 build:
-    cargo build --workspace --all-targets --all-features
+    cargo build --locked --workspace --all-targets --all-features
 
 # Build (release)
 build-release:
-    cargo build --workspace --all-targets --all-features --release
+    cargo build --locked --workspace --all-targets --all-features --release
 
 # Run Gantry
 run *args:
@@ -16,7 +16,7 @@ run *args:
 
 # Type-check without building artifacts
 check:
-    cargo check --workspace --all-targets --all-features
+    cargo check --locked --workspace --all-targets --all-features
 
 # Format with rustfmt
 fmt:
@@ -24,11 +24,15 @@ fmt:
 
 # Lint with clippy and deny warnings
 clippy:
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
 # Run tests below the short physical system temporary directory.
 test:
-    canonical_tmp="$(cd /tmp && pwd -P)"; TMPDIR="$canonical_tmp" cargo test --workspace --all-targets --all-features --no-fail-fast --quiet
+    canonical_tmp="$(cd /tmp && pwd -P)"; TMPDIR="$canonical_tmp" cargo test --locked --workspace --all-targets --all-features --no-fail-fast --quiet
+
+# Validate the publication lockfile and dependency governance ledger.
+governance:
+    cargo run --locked -p xtask -- check governance
 
 # Clean build artifacts
 clean:
