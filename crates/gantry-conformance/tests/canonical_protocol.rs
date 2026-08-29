@@ -5,7 +5,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use gantry::PROFILE_DEFINITIONS;
+use gantry::identity::ProtocolIdentity;
+use gantry::portable::{
+    CONFIGURATION_FIELDS, EVENT_KINDS, IDENTITY_KINDS, IdentityKind, MAXIMUM_DIRECTIVE_INTEGER,
+    PORTABLE_SPECIFICATION_REVISION, PORTABLE_VOCABULARIES, PROTOCOL_FAMILY_DEFINITIONS,
+};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -36,6 +42,22 @@ struct PublicationInput {
 struct Version {
     major: u64,
     minor: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PortableVectors {
+    format: String,
+    identity_derivations: Vec<IdentityDerivationVector>,
+    invalid_identities: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IdentityDerivationVector {
+    kind: String,
+    canonical_key: String,
+    expected: String,
 }
 
 #[test]
@@ -106,6 +128,192 @@ fn canonical_schema_and_publication_skeleton_are_well_formed() {
         "gantry.values".to_owned(),
     ]);
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn portable_catalog_matches_its_golden_schema_and_public_binding() {
+    let root = protocol_root();
+    let catalog_path = root.join("catalogs/portable-contracts-v1.json");
+    let golden_path = root.join("goldens/portable-contracts-v1.canonical.json");
+    let schema: serde_json::Value =
+        read_json(&root.join("schemas/portable-contracts-v1.schema.json"));
+    let catalog: serde_json::Value = read_json(&catalog_path);
+    let golden: serde_json::Value = read_json(&golden_path);
+
+    assert_eq!(catalog, golden);
+    assert_eq!(
+        schema["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    assert_eq!(schema["additionalProperties"], false);
+    assert_eq!(catalog["catalog"], "gantry.portable-contracts");
+    assert_eq!(catalog["major"], 1);
+    assert_eq!(catalog["minor"], 0);
+    assert_eq!(
+        catalog["specification_revision"],
+        PORTABLE_SPECIFICATION_REVISION
+    );
+    assert_eq!(
+        catalog["maximum_directive_integer"],
+        MAXIMUM_DIRECTIVE_INTEGER.to_string()
+    );
+
+    let specification = fs::read(root.join("../SPEC.md"));
+    assert!(specification.is_ok());
+    let revision = specification
+        .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
+        .unwrap_or_else(|_| unreachable!("assertion above checks the specification read"));
+    assert_eq!(revision, PORTABLE_SPECIFICATION_REVISION);
+
+    let identities = catalog["identity_kinds"]
+        .as_array()
+        .unwrap_or_else(|| unreachable!("canonical catalog identities are an array"));
+    let public_identities = IDENTITY_KINDS
+        .iter()
+        .map(|kind| (kind.wire_name(), kind.origin().wire_name()))
+        .collect::<Vec<_>>();
+    let canonical_identities = identities
+        .iter()
+        .map(|entry| {
+            (
+                entry["wire"]
+                    .as_str()
+                    .unwrap_or_else(|| unreachable!("identity wire name is a string")),
+                entry["origin"]
+                    .as_str()
+                    .unwrap_or_else(|| unreachable!("identity origin is a string")),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(public_identities, canonical_identities);
+
+    let families = catalog["protocol_families"]
+        .as_array()
+        .unwrap_or_else(|| unreachable!("canonical protocol families are an array"));
+    let public_families = PROTOCOL_FAMILY_DEFINITIONS
+        .iter()
+        .map(|definition| {
+            (
+                definition.family.wire_name(),
+                definition.major,
+                definition.minor,
+            )
+        })
+        .collect::<Vec<_>>();
+    let canonical_families = families
+        .iter()
+        .map(|entry| {
+            (
+                entry["wire"]
+                    .as_str()
+                    .unwrap_or_else(|| unreachable!("protocol family name is a string")),
+                entry["major"]
+                    .as_u64()
+                    .unwrap_or_else(|| unreachable!("protocol major is unsigned")),
+                entry["minor"]
+                    .as_u64()
+                    .unwrap_or_else(|| unreachable!("protocol minor is unsigned")),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(public_families, canonical_families);
+
+    let vocabularies = catalog["vocabularies"]
+        .as_array()
+        .unwrap_or_else(|| unreachable!("canonical vocabularies are an array"));
+    let public_vocabularies = PORTABLE_VOCABULARIES
+        .iter()
+        .map(|definition| (definition.name, definition.values.to_vec()))
+        .collect::<Vec<_>>();
+    let canonical_vocabularies = vocabularies
+        .iter()
+        .map(|entry| {
+            let values = entry["values"]
+                .as_array()
+                .unwrap_or_else(|| unreachable!("vocabulary values are an array"))
+                .iter()
+                .map(|value| {
+                    value["wire"]
+                        .as_str()
+                        .unwrap_or_else(|| unreachable!("vocabulary wire name is a string"))
+                })
+                .collect::<Vec<_>>();
+            (
+                entry["name"]
+                    .as_str()
+                    .unwrap_or_else(|| unreachable!("vocabulary name is a string")),
+                values,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(public_vocabularies, canonical_vocabularies);
+
+    let events = catalog["events"]
+        .as_array()
+        .unwrap_or_else(|| unreachable!("canonical events are an array"));
+    let public_events = EVENT_KINDS
+        .iter()
+        .map(|definition| (definition.kind.wire_name(), definition.layer.wire_name()))
+        .collect::<Vec<_>>();
+    let canonical_events = events
+        .iter()
+        .map(|entry| {
+            (
+                entry["wire"]
+                    .as_str()
+                    .unwrap_or_else(|| unreachable!("event wire name is a string")),
+                entry["layer"]
+                    .as_str()
+                    .unwrap_or_else(|| unreachable!("event layer is a string")),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(public_events, canonical_events);
+
+    let configuration = catalog["configuration_fields"]
+        .as_array()
+        .unwrap_or_else(|| unreachable!("configuration metadata is an array"));
+    assert_eq!(CONFIGURATION_FIELDS.len(), configuration.len());
+    for (public, canonical) in CONFIGURATION_FIELDS.iter().zip(configuration) {
+        assert_eq!(
+            public.field.wire_name(),
+            canonical["wire"]
+                .as_str()
+                .unwrap_or_else(|| unreachable!("configuration wire name is a string"))
+        );
+        assert_eq!(
+            public.class.wire_name(),
+            canonical["class"]
+                .as_str()
+                .unwrap_or_else(|| unreachable!("configuration class is a string"))
+        );
+        assert_eq!(public.default, canonical["default"].as_str());
+        assert_eq!(public.zero_allowed, canonical["zero_allowed"].as_bool());
+        assert_eq!(public.maximum, canonical["maximum"].as_str());
+    }
+}
+
+#[test]
+fn portable_identity_vectors_cover_derivation_and_strict_rejection() {
+    let vectors: PortableVectors =
+        read_json(&protocol_root().join("goldens/portable-contract-vectors-v1.json"));
+    assert_eq!(vectors.format, "gantry.portable-contract-vectors/v1");
+    for vector in vectors.identity_derivations {
+        let kind = IdentityKind::from_wire_name(&vector.kind);
+        assert!(kind.is_some());
+        let derived = kind
+            .and_then(|kind| ProtocolIdentity::derive(kind, vector.canonical_key.as_bytes()).ok());
+        assert_eq!(
+            derived.map(|identity| identity.to_string()),
+            Some(vector.expected)
+        );
+    }
+    for invalid in vectors.invalid_identities {
+        assert!(
+            ProtocolIdentity::parse(&invalid).is_err(),
+            "accepted {invalid}"
+        );
+    }
 }
 
 fn protocol_root() -> PathBuf {

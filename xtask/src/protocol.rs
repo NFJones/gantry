@@ -1,5 +1,7 @@
 //! Deterministic one-way generation from canonical protocol inputs.
 
+mod portable;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -30,10 +32,12 @@ struct ProfileInput {
 
 /// Generates all currently materialized protocol bindings.
 pub(crate) fn generate(root: &Path) -> Result<(), String> {
-    let changed = generate_protocol(root)?;
-    if changed {
+    let profiles_changed = generate_protocol(root)?;
+    let portable_changed = portable::generate(root)?;
+    if profiles_changed {
         println!("generated {OUTPUT_PATH}");
-    } else {
+    }
+    if !profiles_changed && !portable_changed {
         println!("protocol bindings are already current");
     }
     Ok(())
@@ -51,6 +55,7 @@ pub(crate) fn check_generated(root: &Path) -> Result<(), String> {
             "{OUTPUT_PATH} is stale; run `cargo run --locked -p xtask -- generate protocol`"
         ));
     }
+    portable::check_generated(root)?;
     println!("generated protocol bindings are current");
     Ok(())
 }
@@ -277,7 +282,7 @@ pub const PROFILE_DEFINITIONS: &[ProfileDefinition] = &[\n",
     output
 }
 
-fn write_atomic_if_changed(path: &Path, contents: &[u8]) -> Result<bool, String> {
+pub(super) fn write_atomic_if_changed(path: &Path, contents: &[u8]) -> Result<bool, String> {
     if fs::read(path).is_ok_and(|existing| existing == contents) {
         return Ok(false);
     }

@@ -1,0 +1,182 @@
+{
+  "$id": "https://gantry.example/protocol/schemas/portable-contracts-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "catalog": { "const": "gantry.portable-contracts" },
+    "major": { "const": 1 },
+    "minor": { "const": 0 },
+    "specification_revision": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "maximum_directive_integer": {
+      "const": "9223372036854775807"
+    },
+    "identity_kinds": {
+      "items": { "$ref": "#/$defs/identityKind" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "protocol_families": {
+      "items": { "$ref": "#/$defs/protocolFamily" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "vocabularies": {
+      "items": { "$ref": "#/$defs/vocabulary" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "events": {
+      "items": { "$ref": "#/$defs/event" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "configuration_fields": {
+      "items": { "$ref": "#/$defs/configurationField" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "catalog",
+    "major",
+    "minor",
+    "specification_revision",
+    "maximum_directive_integer",
+    "identity_kinds",
+    "protocol_families",
+    "vocabularies",
+    "events",
+    "configuration_fields"
+  ],
+  "$defs": {
+    "wireName": {
+      "pattern": "^[a-z](?:[a-z_-]*[a-z])?$",
+      "type": "string"
+    },
+    "rustName": {
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "type": "string"
+    },
+    "requirements": {
+      "items": {
+        "pattern": "^GNT-[A-Za-z0-9.-]+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "namedValue": {
+      "additionalProperties": false,
+      "properties": {
+        "wire": { "$ref": "#/$defs/wireName" },
+        "rust": { "$ref": "#/$defs/rustName" }
+      },
+      "required": ["wire", "rust"],
+      "type": "object"
+    },
+    "identityKind": {
+      "additionalProperties": false,
+      "properties": {
+        "wire": { "$ref": "#/$defs/wireName" },
+        "rust": { "$ref": "#/$defs/rustName" },
+        "origin": {
+          "enum": ["derived", "fresh", "fresh-or-derived", "storage"]
+        },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": ["wire", "rust", "origin", "requirements"],
+      "type": "object"
+    },
+    "protocolFamily": {
+      "additionalProperties": false,
+      "properties": {
+        "wire": { "$ref": "#/$defs/wireName" },
+        "rust": { "$ref": "#/$defs/rustName" },
+        "major": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minor": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": ["wire", "rust", "major", "minor", "requirements"],
+      "type": "object"
+    },
+    "vocabulary": {
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/wireName" },
+        "rust": { "$ref": "#/$defs/rustName" },
+        "values": {
+          "items": { "$ref": "#/$defs/namedValue" },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": ["name", "rust", "values", "requirements"],
+      "type": "object"
+    },
+    "event": {
+      "additionalProperties": false,
+      "properties": {
+        "wire": { "$ref": "#/$defs/wireName" },
+        "rust": { "$ref": "#/$defs/rustName" },
+        "layer": { "enum": ["logical", "physical"] },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": ["wire", "rust", "layer", "requirements"],
+      "type": "object"
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "configurationField": {
+      "additionalProperties": false,
+      "properties": {
+        "wire": { "$ref": "#/$defs/wireName" },
+        "rust": { "$ref": "#/$defs/rustName" },
+        "class": {
+          "enum": [
+            "activity-policy",
+            "durably-mutable",
+            "identity-bound",
+            "integration-owned",
+            "scheduling-only"
+          ]
+        },
+        "default": { "$ref": "#/$defs/nullableString" },
+        "zero_allowed": { "type": ["boolean", "null"] },
+        "maximum": { "$ref": "#/$defs/nullableString" },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": [
+        "wire",
+        "rust",
+        "class",
+        "default",
+        "zero_allowed",
+        "maximum",
+        "requirements"
+      ],
+      "type": "object"
+    }
+  },
+  "title": "Gantry v1 portable contract catalog input",
+  "type": "object"
+}

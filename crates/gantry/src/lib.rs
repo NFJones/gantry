@@ -4,7 +4,8 @@
 //! implementation layers are compiled, while profile advertisement remains
 //! empty until the corresponding conformance gate closes.
 
-pub use gantry_core::profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
+pub use gantry_core::{identity, portable, profile, protocol};
+pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 
 /// Facade features compiled into the current build.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

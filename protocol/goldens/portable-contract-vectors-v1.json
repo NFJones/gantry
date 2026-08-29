@@ -1,0 +1,27 @@
+{
+  "format": "gantry.portable-contract-vectors/v1",
+  "identity_derivations": [
+    {
+      "kind": "operation",
+      "canonical_key": "{\"fixture\":\"operation\",\"version\":1}",
+      "expected": "operation:3f60958dba472a88ff81801181f4bb6c4c0119d23d98ffe011139b77c0b360fa"
+    },
+    {
+      "kind": "session",
+      "canonical_key": "{\"fixture\":\"session\",\"version\":1}",
+      "expected": "session:c2d0454fa8c19a540f4a0b91448e43b0337aea2187fbfdf63ec71d8c229aa755"
+    },
+    {
+      "kind": "task",
+      "canonical_key": "{\"fixture\":\"task\",\"version\":1}",
+      "expected": "task:eb9878f675fe96db943905852307d17d8aa937e4badd11af00217ee28461dd8d"
+    }
+  ],
+  "invalid_identities": [
+    "execution:00",
+    "execution:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "execution:0000000000000000000000000000000000000000000000000000000000000000 ",
+    "unknown:0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000000"
+  ]
+}

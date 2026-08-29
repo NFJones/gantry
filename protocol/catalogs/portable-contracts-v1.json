@@ -1,0 +1,1641 @@
+{
+  "catalog": "gantry.portable-contracts",
+  "major": 1,
+  "minor": 0,
+  "specification_revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "maximum_directive_integer": "9223372036854775807",
+  "identity_kinds": [
+    {
+      "wire": "activity",
+      "rust": "Activity",
+      "origin": "fresh",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "delivery-attempt",
+      "rust": "DeliveryAttempt",
+      "origin": "fresh",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "dispatch",
+      "rust": "Dispatch",
+      "origin": "fresh",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "event",
+      "rust": "Event",
+      "origin": "fresh",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "evidence",
+      "rust": "Evidence",
+      "origin": "storage",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "execution",
+      "rust": "Execution",
+      "origin": "fresh",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "operation",
+      "rust": "Operation",
+      "origin": "derived",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "session",
+      "rust": "Session",
+      "origin": "fresh-or-derived",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    },
+    {
+      "wire": "task",
+      "rust": "Task",
+      "origin": "derived",
+      "requirements": [
+        "GNT-7.16-protocol-identities"
+      ]
+    }
+  ],
+  "protocol_families": [
+    {
+      "wire": "canonical-ir",
+      "rust": "CanonicalIr",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "configuration",
+      "rust": "Configuration",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "embedding",
+      "rust": "Embedding",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "event",
+      "rust": "Event",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "hook",
+      "rust": "Hook",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "journal",
+      "rust": "Journal",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "recovery-projection",
+      "rust": "RecoveryProjection",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "source-language",
+      "rust": "SourceLanguage",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "source-map",
+      "rust": "SourceMap",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    },
+    {
+      "wire": "value",
+      "rust": "Value",
+      "major": 1,
+      "minor": 0,
+      "requirements": [
+        "GNT-15.8"
+      ]
+    }
+  ],
+  "vocabularies": [
+    {
+      "name": "cancel-execution-result",
+      "rust": "CancelExecutionResultKind",
+      "values": [
+        {
+          "wire": "accepted",
+          "rust": "Accepted"
+        },
+        {
+          "wire": "already-terminal",
+          "rust": "AlreadyTerminal"
+        },
+        {
+          "wire": "failed",
+          "rust": "Failed"
+        },
+        {
+          "wire": "not-found",
+          "rust": "NotFound"
+        }
+      ],
+      "requirements": [
+        "GNT-15.1"
+      ]
+    },
+    {
+      "name": "cancellation-reason-category",
+      "rust": "CancellationReasonCategory",
+      "values": [
+        {
+          "wire": "caller",
+          "rust": "Caller"
+        },
+        {
+          "wire": "deadline",
+          "rust": "Deadline"
+        },
+        {
+          "wire": "runtime",
+          "rust": "Runtime"
+        },
+        {
+          "wire": "shutdown",
+          "rust": "Shutdown"
+        }
+      ],
+      "requirements": [
+        "GNT-15.3"
+      ]
+    },
+    {
+      "name": "delivery-outcome",
+      "rust": "DeliveryOutcome",
+      "values": [
+        {
+          "wire": "retriable",
+          "rust": "Retriable"
+        },
+        {
+          "wire": "success",
+          "rust": "Success"
+        },
+        {
+          "wire": "terminal",
+          "rust": "Terminal"
+        }
+      ],
+      "requirements": [
+        "GNT-12.5"
+      ]
+    },
+    {
+      "name": "delivery-projection",
+      "rust": "DeliveryProjection",
+      "values": [
+        {
+          "wire": "available",
+          "rust": "Available"
+        },
+        {
+          "wire": "not-applicable",
+          "rust": "NotApplicable"
+        },
+        {
+          "wire": "redacted",
+          "rust": "Redacted"
+        }
+      ],
+      "requirements": [
+        "GNT-12.4"
+      ]
+    },
+    {
+      "name": "delivery-state",
+      "rust": "DeliveryState",
+      "values": [
+        {
+          "wire": "dispatched",
+          "rust": "Dispatched"
+        },
+        {
+          "wire": "settled",
+          "rust": "Settled"
+        }
+      ],
+      "requirements": [
+        "GNT-12.5"
+      ]
+    },
+    {
+      "name": "deterministic-evaluation-code",
+      "rust": "DeterministicEvaluationCode",
+      "values": [
+        {
+          "wire": "float-division-by-zero",
+          "rust": "FloatDivisionByZero"
+        },
+        {
+          "wire": "float-non-finite-result",
+          "rust": "FloatNonFiniteResult"
+        },
+        {
+          "wire": "integer-division-by-zero",
+          "rust": "IntegerDivisionByZero"
+        },
+        {
+          "wire": "integer-overflow",
+          "rust": "IntegerOverflow"
+        },
+        {
+          "wire": "integer-remainder-by-zero",
+          "rust": "IntegerRemainderByZero"
+        },
+        {
+          "wire": "list-index-out-of-bounds",
+          "rust": "ListIndexOutOfBounds"
+        },
+        {
+          "wire": "list-size-limit",
+          "rust": "ListSizeLimit"
+        },
+        {
+          "wire": "string-empty-pattern",
+          "rust": "StringEmptyPattern"
+        },
+        {
+          "wire": "string-empty-separator",
+          "rust": "StringEmptySeparator"
+        },
+        {
+          "wire": "string-size-limit",
+          "rust": "StringSizeLimit"
+        },
+        {
+          "wire": "task-count-limit",
+          "rust": "TaskCountLimit"
+        },
+        {
+          "wire": "workflow-call-depth-limit",
+          "rust": "WorkflowCallDepthLimit"
+        }
+      ],
+      "requirements": [
+        "GNT-5.15"
+      ]
+    },
+    {
+      "name": "diagnostic-category",
+      "rust": "DiagnosticCategory",
+      "values": [
+        {
+          "wire": "control-flow",
+          "rust": "ControlFlow"
+        },
+        {
+          "wire": "identifier-security",
+          "rust": "IdentifierSecurity"
+        },
+        {
+          "wire": "lexical",
+          "rust": "Lexical"
+        },
+        {
+          "wire": "name-resolution",
+          "rust": "NameResolution"
+        },
+        {
+          "wire": "package",
+          "rust": "Package"
+        },
+        {
+          "wire": "schema",
+          "rust": "Schema"
+        },
+        {
+          "wire": "syntax",
+          "rust": "Syntax"
+        },
+        {
+          "wire": "task-ownership",
+          "rust": "TaskOwnership"
+        },
+        {
+          "wire": "type",
+          "rust": "Type"
+        }
+      ],
+      "requirements": [
+        "GNT-12.11"
+      ]
+    },
+    {
+      "name": "diagnostic-severity",
+      "rust": "DiagnosticSeverity",
+      "values": [
+        {
+          "wire": "error",
+          "rust": "Error"
+        },
+        {
+          "wire": "warning",
+          "rust": "Warning"
+        }
+      ],
+      "requirements": [
+        "GNT-12.11"
+      ]
+    },
+    {
+      "name": "execution-observation-state",
+      "rust": "ExecutionObservationState",
+      "values": [
+        {
+          "wire": "not-terminal",
+          "rust": "NotTerminal"
+        },
+        {
+          "wire": "run-failed-nondurably",
+          "rust": "RunFailedNondurably"
+        },
+        {
+          "wire": "terminal",
+          "rust": "Terminal"
+        }
+      ],
+      "requirements": [
+        "GNT-15.1"
+      ]
+    },
+    {
+      "name": "executor-abort-result",
+      "rust": "ExecutorAbortResultKind",
+      "values": [
+        {
+          "wire": "already-settled",
+          "rust": "AlreadySettled"
+        },
+        {
+          "wire": "failed",
+          "rust": "Failed"
+        },
+        {
+          "wire": "stopped",
+          "rust": "Stopped"
+        }
+      ],
+      "requirements": [
+        "GNT-15.4"
+      ]
+    },
+    {
+      "name": "frontend-resource-code",
+      "rust": "FrontendResourceCode",
+      "values": [
+        {
+          "wire": "canonical-ir-byte-limit",
+          "rust": "CanonicalIrByteLimit"
+        },
+        {
+          "wire": "diagnostic-count-limit",
+          "rust": "DiagnosticCountLimit"
+        },
+        {
+          "wire": "generated-schema-byte-limit",
+          "rust": "GeneratedSchemaByteLimit"
+        },
+        {
+          "wire": "package-file-count-limit",
+          "rust": "PackageFileCountLimit"
+        },
+        {
+          "wire": "package-source-byte-limit",
+          "rust": "PackageSourceByteLimit"
+        },
+        {
+          "wire": "package-source-manifest-byte-limit",
+          "rust": "PackageSourceManifestByteLimit"
+        },
+        {
+          "wire": "source-file-byte-limit",
+          "rust": "SourceFileByteLimit"
+        },
+        {
+          "wire": "source-map-byte-limit",
+          "rust": "SourceMapByteLimit"
+        },
+        {
+          "wire": "source-token-limit",
+          "rust": "SourceTokenLimit"
+        }
+      ],
+      "requirements": [
+        "GNT-4.17-frontend-resource-limits"
+      ]
+    },
+    {
+      "name": "hook-failure-category",
+      "rust": "HookFailureCategory",
+      "values": [
+        {
+          "wire": "cancelled",
+          "rust": "Cancelled"
+        },
+        {
+          "wire": "policy-denied",
+          "rust": "PolicyDenied"
+        },
+        {
+          "wire": "provider-failure",
+          "rust": "ProviderFailure"
+        },
+        {
+          "wire": "timeout",
+          "rust": "Timeout"
+        },
+        {
+          "wire": "unknown-outcome",
+          "rust": "UnknownOutcome"
+        }
+      ],
+      "requirements": [
+        "GNT-7.11"
+      ]
+    },
+    {
+      "name": "hook-outcome",
+      "rust": "HookOutcomeKind",
+      "values": [
+        {
+          "wire": "completed",
+          "rust": "Completed"
+        },
+        {
+          "wire": "declined",
+          "rust": "Declined"
+        },
+        {
+          "wire": "failed",
+          "rust": "Failed"
+        }
+      ],
+      "requirements": [
+        "GNT-7.11"
+      ]
+    },
+    {
+      "name": "interpreter-state",
+      "rust": "InterpreterState",
+      "values": [
+        {
+          "wire": "running",
+          "rust": "Running"
+        },
+        {
+          "wire": "shutting-down",
+          "rust": "ShuttingDown"
+        },
+        {
+          "wire": "terminated",
+          "rust": "Terminated"
+        }
+      ],
+      "requirements": [
+        "GNT-15.1-concurrency-and-reentrancy"
+      ]
+    },
+    {
+      "name": "jitter-mode",
+      "rust": "JitterMode",
+      "values": [
+        {
+          "wire": "full",
+          "rust": "Full"
+        },
+        {
+          "wire": "none",
+          "rust": "None"
+        }
+      ],
+      "requirements": [
+        "GNT-8.10"
+      ]
+    },
+    {
+      "name": "journal-owner-status",
+      "rust": "JournalOwnerStatus",
+      "values": [
+        {
+          "wire": "held",
+          "rust": "Held"
+        },
+        {
+          "wire": "release-failed",
+          "rust": "ReleaseFailed"
+        },
+        {
+          "wire": "released",
+          "rust": "Released"
+        }
+      ],
+      "requirements": [
+        "GNT-15.1"
+      ]
+    },
+    {
+      "name": "journal-prefix-form",
+      "rust": "JournalPrefixForm",
+      "requirements": [
+        "GNT-11.2"
+      ],
+      "values": [
+        {
+          "wire": "full-prefix",
+          "rust": "FullPrefix"
+        },
+        {
+          "wire": "snapshot-prefix",
+          "rust": "SnapshotPrefix"
+        }
+      ]
+    },
+    {
+      "name": "operation-error-variant",
+      "rust": "OperationErrorVariant",
+      "requirements": [
+        "GNT-5.9"
+      ],
+      "values": [
+        {
+          "wire": "cancelled",
+          "rust": "Cancelled"
+        },
+        {
+          "wire": "declined",
+          "rust": "Declined"
+        },
+        {
+          "wire": "invalid-output",
+          "rust": "InvalidOutput"
+        },
+        {
+          "wire": "policy-denied",
+          "rust": "PolicyDenied"
+        },
+        {
+          "wire": "provider-failure",
+          "rust": "ProviderFailure"
+        },
+        {
+          "wire": "timeout",
+          "rust": "Timeout"
+        },
+        {
+          "wire": "unknown-outcome",
+          "rust": "UnknownOutcome"
+        }
+      ]
+    },
+    {
+      "name": "operation-state",
+      "rust": "OperationStateKind",
+      "values": [
+        {
+          "wire": "absent",
+          "rust": "Absent"
+        },
+        {
+          "wire": "accepted",
+          "rust": "Accepted"
+        },
+        {
+          "wire": "failed",
+          "rust": "Failed"
+        },
+        {
+          "wire": "outcome",
+          "rust": "Outcome"
+        },
+        {
+          "wire": "prepared",
+          "rust": "Prepared"
+        },
+        {
+          "wire": "retry-waiting",
+          "rust": "RetryWaiting"
+        }
+      ],
+      "requirements": [
+        "GNT-3-M-OPERATION"
+      ]
+    },
+    {
+      "name": "protected-reference-class",
+      "rust": "ProtectedReferenceClass",
+      "values": [
+        {
+          "wire": "integration-diagnostic",
+          "rust": "IntegrationDiagnostic"
+        },
+        {
+          "wire": "normalized-decision",
+          "rust": "NormalizedDecision"
+        },
+        {
+          "wire": "normalized-operation-error",
+          "rust": "NormalizedOperationError"
+        },
+        {
+          "wire": "normalized-value",
+          "rust": "NormalizedValue"
+        },
+        {
+          "wire": "operation-request",
+          "rust": "OperationRequest"
+        },
+        {
+          "wire": "raw-output",
+          "rust": "RawOutput"
+        },
+        {
+          "wire": "source-snippet",
+          "rust": "SourceSnippet"
+        }
+      ],
+      "requirements": [
+        "GNT-12.4",
+        "GNT-12.8"
+      ]
+    },
+    {
+      "name": "resume-start-failure-category",
+      "rust": "ResumeStartFailureCategory",
+      "values": [
+        {
+          "wire": "frontend-resource-limit",
+          "rust": "FrontendResourceLimit"
+        },
+        {
+          "wire": "implementation-resource-exhaustion",
+          "rust": "ImplementationResourceExhaustion"
+        },
+        {
+          "wire": "integration-preflight",
+          "rust": "IntegrationPreflight"
+        },
+        {
+          "wire": "internal",
+          "rust": "Internal"
+        },
+        {
+          "wire": "journal-read-or-format",
+          "rust": "JournalReadOrFormat"
+        },
+        {
+          "wire": "lifecycle",
+          "rust": "Lifecycle"
+        },
+        {
+          "wire": "ownership-acquisition",
+          "rust": "OwnershipAcquisition"
+        },
+        {
+          "wire": "source-or-configuration-incompatibility",
+          "rust": "SourceOrConfigurationIncompatibility"
+        },
+        {
+          "wire": "unavailable-required-event-sink",
+          "rust": "UnavailableRequiredEventSink"
+        },
+        {
+          "wire": "unresolved-action-mapping",
+          "rust": "UnresolvedActionMapping"
+        },
+        {
+          "wire": "unresolved-agent-mapping",
+          "rust": "UnresolvedAgentMapping"
+        },
+        {
+          "wire": "unresolved-logical-session",
+          "rust": "UnresolvedLogicalSession"
+        }
+      ],
+      "requirements": [
+        "GNT-7.17"
+      ]
+    },
+    {
+      "name": "runtime-error-category",
+      "rust": "RuntimeErrorCategory",
+      "values": [
+        {
+          "wire": "cancellation",
+          "rust": "Cancellation"
+        },
+        {
+          "wire": "deterministic-evaluation-failure",
+          "rust": "DeterministicEvaluationFailure"
+        },
+        {
+          "wire": "executor-failure",
+          "rust": "ExecutorFailure"
+        },
+        {
+          "wire": "hook-creation",
+          "rust": "HookCreation"
+        },
+        {
+          "wire": "hook-failure",
+          "rust": "HookFailure"
+        },
+        {
+          "wire": "identity-generation-failure",
+          "rust": "IdentityGenerationFailure"
+        },
+        {
+          "wire": "internal-invariant-failure",
+          "rust": "InternalInvariantFailure"
+        },
+        {
+          "wire": "journal-failure",
+          "rust": "JournalFailure"
+        },
+        {
+          "wire": "logical-session-setup",
+          "rust": "LogicalSessionSetup"
+        },
+        {
+          "wire": "logical-session-transcript-limit",
+          "rust": "LogicalSessionTranscriptLimit"
+        },
+        {
+          "wire": "policy-denied",
+          "rust": "PolicyDenied"
+        },
+        {
+          "wire": "provider-failure",
+          "rust": "ProviderFailure"
+        },
+        {
+          "wire": "required-event-delivery-failure",
+          "rust": "RequiredEventDeliveryFailure"
+        },
+        {
+          "wire": "required-result-decline",
+          "rust": "RequiredResultDecline"
+        },
+        {
+          "wire": "structured-output-exhaustion",
+          "rust": "StructuredOutputExhaustion"
+        },
+        {
+          "wire": "task-join-failure",
+          "rust": "TaskJoinFailure"
+        },
+        {
+          "wire": "timeout",
+          "rust": "Timeout"
+        },
+        {
+          "wire": "unknown-action-outcome",
+          "rust": "UnknownActionOutcome"
+        }
+      ],
+      "requirements": [
+        "GNT-7.17"
+      ]
+    },
+    {
+      "name": "shutdown-cause",
+      "rust": "ShutdownCause",
+      "values": [
+        {
+          "wire": "poisoned",
+          "rust": "Poisoned"
+        },
+        {
+          "wire": "requested",
+          "rust": "Requested"
+        }
+      ],
+      "requirements": [
+        "GNT-15.1-concurrency-and-reentrancy"
+      ]
+    },
+    {
+      "name": "sink-class",
+      "rust": "SinkClass",
+      "requirements": [
+        "GNT-12.5"
+      ],
+      "values": [
+        {
+          "wire": "best-effort",
+          "rust": "BestEffort"
+        },
+        {
+          "wire": "required",
+          "rust": "Required"
+        }
+      ]
+    },
+    {
+      "name": "start-failure-category",
+      "rust": "StartFailureCategory",
+      "values": [
+        {
+          "wire": "analysis",
+          "rust": "Analysis"
+        },
+        {
+          "wire": "entry-input-validation",
+          "rust": "EntryInputValidation"
+        },
+        {
+          "wire": "execution-start-persistence",
+          "rust": "ExecutionStartPersistence"
+        },
+        {
+          "wire": "frontend-resource-limit",
+          "rust": "FrontendResourceLimit"
+        },
+        {
+          "wire": "implementation-resource-exhaustion",
+          "rust": "ImplementationResourceExhaustion"
+        },
+        {
+          "wire": "initial-journal-ownership",
+          "rust": "InitialJournalOwnership"
+        },
+        {
+          "wire": "integration-preflight",
+          "rust": "IntegrationPreflight"
+        },
+        {
+          "wire": "internal",
+          "rust": "Internal"
+        },
+        {
+          "wire": "lifecycle",
+          "rust": "Lifecycle"
+        },
+        {
+          "wire": "required-event-delivery",
+          "rust": "RequiredEventDelivery"
+        },
+        {
+          "wire": "syntax",
+          "rust": "Syntax"
+        }
+      ],
+      "requirements": [
+        "GNT-7.17"
+      ]
+    },
+    {
+      "name": "start-result",
+      "rust": "StartResultKind",
+      "values": [
+        {
+          "wire": "accepted",
+          "rust": "Accepted"
+        },
+        {
+          "wire": "rejected",
+          "rust": "Rejected"
+        }
+      ],
+      "requirements": [
+        "GNT-15.1"
+      ]
+    },
+    {
+      "name": "task-handle-state",
+      "rust": "TaskHandleState",
+      "values": [
+        {
+          "wire": "attached",
+          "rust": "Attached"
+        },
+        {
+          "wire": "detached",
+          "rust": "Detached"
+        },
+        {
+          "wire": "discharged",
+          "rust": "Discharged"
+        },
+        {
+          "wire": "joined",
+          "rust": "Joined"
+        }
+      ],
+      "requirements": [
+        "GNT-3-F-DOMAINS"
+      ]
+    },
+    {
+      "name": "task-status",
+      "rust": "TaskStatusKind",
+      "values": [
+        {
+          "wire": "cancelled",
+          "rust": "Cancelled"
+        },
+        {
+          "wire": "failed",
+          "rust": "Failed"
+        },
+        {
+          "wire": "running",
+          "rust": "Running"
+        },
+        {
+          "wire": "submitting",
+          "rust": "Submitting"
+        },
+        {
+          "wire": "succeeded",
+          "rust": "Succeeded"
+        }
+      ],
+      "requirements": [
+        "GNT-3-M-STATE"
+      ]
+    },
+    {
+      "name": "terminal-only-category",
+      "rust": "TerminalOnlyCategory",
+      "values": [
+        {
+          "wire": "detached-task-failure",
+          "rust": "DetachedTaskFailure"
+        },
+        {
+          "wire": "success",
+          "rust": "Success"
+        }
+      ],
+      "requirements": [
+        "GNT-7.17"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "wire": "analysis",
+      "rust": "Analysis",
+      "layer": "physical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "branch-decision",
+      "rust": "BranchDecision",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "cancellation",
+      "rust": "Cancellation",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "detach",
+      "rust": "Detach",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "failure",
+      "rust": "Failure",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "foreground-completion",
+      "rust": "ForegroundCompletion",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "join",
+      "rust": "Join",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "mutation",
+      "rust": "Mutation",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "operation-completion",
+      "rust": "OperationCompletion",
+      "layer": "physical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "operation-dispatch",
+      "rust": "OperationDispatch",
+      "layer": "physical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "operation-result",
+      "rust": "OperationResult",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "parse",
+      "rust": "Parse",
+      "layer": "physical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "retry",
+      "rust": "Retry",
+      "layer": "physical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "shutdown",
+      "rust": "Shutdown",
+      "layer": "physical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "spawn",
+      "rust": "Spawn",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "structured-output-validation-failure",
+      "rust": "StructuredOutputValidationFailure",
+      "layer": "physical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "task-completion",
+      "rust": "TaskCompletion",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "terminal-execution",
+      "rust": "TerminalExecution",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "workflow-end",
+      "rust": "WorkflowEnd",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    },
+    {
+      "wire": "workflow-start",
+      "rust": "WorkflowStart",
+      "layer": "logical",
+      "requirements": [
+        "GNT-12.0",
+        "GNT-12.7"
+      ]
+    }
+  ],
+  "configuration_fields": [
+    {
+      "wire": "action_retry_limit",
+      "rust": "ActionRetryLimit",
+      "class": "identity-bound",
+      "default": "0",
+      "zero_allowed": true,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "best_effort_event_sinks",
+      "rust": "BestEffortEventSinks",
+      "class": "durably-mutable",
+      "default": null,
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "deterministic_transition_yield_quantum",
+      "rust": "DeterministicTransitionYieldQuantum",
+      "class": "scheduling-only",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "event_delivery_attempt_timeout_us",
+      "rust": "EventDeliveryAttemptTimeoutUs",
+      "class": "identity-bound",
+      "default": "30000000",
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "event_delivery_retry_limit",
+      "rust": "EventDeliveryRetryLimit",
+      "class": "identity-bound",
+      "default": "3",
+      "zero_allowed": true,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "executor_adapter",
+      "rust": "ExecutorAdapter",
+      "class": "integration-owned",
+      "default": null,
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "graceful_shutdown_timeout_us",
+      "rust": "GracefulShutdownTimeoutUs",
+      "class": "durably-mutable",
+      "default": "30000000",
+      "zero_allowed": true,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "identity_source",
+      "rust": "IdentitySource",
+      "class": "integration-owned",
+      "default": null,
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_canonical_ir_bytes",
+      "rust": "MaximumCanonicalIrBytes",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_deterministic_transitions_per_execution",
+      "rust": "MaximumDeterministicTransitionsPerExecution",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_diagnostics_per_activity",
+      "rust": "MaximumDiagnosticsPerActivity",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_entry_input_bytes",
+      "rust": "MaximumEntryInputBytes",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_generated_schema_bytes",
+      "rust": "MaximumGeneratedSchemaBytes",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_hook_output_bytes",
+      "rust": "MaximumHookOutputBytes",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_list_items",
+      "rust": "MaximumListItems",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9007199254740991",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_loop_iterations_per_task",
+      "rust": "MaximumLoopIterationsPerTask",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_operations_per_execution",
+      "rust": "MaximumOperationsPerExecution",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_package_files",
+      "rust": "MaximumPackageFiles",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_package_source_bytes",
+      "rust": "MaximumPackageSourceBytes",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_package_source_manifest_bytes",
+      "rust": "MaximumPackageSourceManifestBytes",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_source_file_bytes",
+      "rust": "MaximumSourceFileBytes",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_source_map_bytes",
+      "rust": "MaximumSourceMapBytes",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_source_tokens",
+      "rust": "MaximumSourceTokens",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_string_scalars",
+      "rust": "MaximumStringScalars",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9007199254740991",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_tasks_per_execution",
+      "rust": "MaximumTasksPerExecution",
+      "class": "identity-bound",
+      "default": "65536",
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_value_nesting_depth",
+      "rust": "MaximumValueNestingDepth",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_value_nodes",
+      "rust": "MaximumValueNodes",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_workflow_call_depth",
+      "rust": "MaximumWorkflowCallDepth",
+      "class": "identity-bound",
+      "default": "1024",
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "model_retry_limit",
+      "rust": "ModelRetryLimit",
+      "class": "identity-bound",
+      "default": "2",
+      "zero_allowed": true,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "operation_timeout_policy",
+      "rust": "OperationTimeoutPolicy",
+      "class": "integration-owned",
+      "default": null,
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "post_cancellation_drain_us",
+      "rust": "PostCancellationDrainUs",
+      "class": "durably-mutable",
+      "default": "5000000",
+      "zero_allowed": true,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "required_event_sinks",
+      "rust": "RequiredEventSinks",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "retry_backoff_cap_us",
+      "rust": "RetryBackoffCapUs",
+      "class": "identity-bound",
+      "default": "2000000",
+      "zero_allowed": true,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "retry_backoff_initial_us",
+      "rust": "RetryBackoffInitialUs",
+      "class": "identity-bound",
+      "default": "100000",
+      "zero_allowed": true,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "retry_jitter",
+      "rust": "RetryJitter",
+      "class": "identity-bound",
+      "default": "full",
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "root_session",
+      "rust": "RootSession",
+      "class": "identity-bound",
+      "default": null,
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-11.10",
+        "GNT-15.7"
+      ]
+    }
+  ]
+}
