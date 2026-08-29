@@ -1,8 +1,6 @@
 # Gantry
 
-Gantry is an agent-control language for [Mezzanine](../mezzanine): the
-terminal harness from which people can observe and direct agents working on
-the factory floor.
+Gantry is an agent control language.
 
 The language is intended to make prompts, agent operations, routing, and
 control flow explicit, reviewable program constructs.
