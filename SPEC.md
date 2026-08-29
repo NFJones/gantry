@@ -2423,6 +2423,74 @@ Task handles are governed by Section 10 and are not source values.
    available inside tuple patterns to ignore selected members without creating
    bindings. Initializer or discard failure introduces no binding, although
    integration side effects produced before that failure are not rolled back.
+
+<a id="GNT-5.13-automatic-storage"></a>
+
+**Automatic storage management.** Gantry source has automatic storage
+duration. The language exposes no pointers, references, borrowing, explicit
+allocation or deallocation, allocation addresses, object identity, reference
+counts, weak references, destructors, finalizers, or other reclamation hooks.
+A program therefore cannot observe whether two logical values share physical
+storage, when storage is reclaimed, or whether reclamation occurs eagerly,
+incrementally, at a suspension point, or when an interpreter run ends.
+Reclaiming an unreachable value MUST NOT dispatch an integration operation,
+write a journal record, emit an event, run source code, change a logical
+session, settle or cancel a task, consume a deterministic budget, or otherwise
+alter the labelled transition system in Section 3. A value remains reachable
+while it is needed by any live binding, workflow frame, continuation, task
+capture, unsettled join result, pending logical operation, session state,
+required event or journal payload, recovery projection, embedding input, or
+embedding result.
+
+The source-visible value graph is finite, acyclic, and has the deep,
+nonaliasing semantics of item 13. An implementation MAY represent it as a
+tree, an immutable directed acyclic graph with shared nodes, a persistent data
+structure, or another equivalent form. It MAY use copying, copy-on-write,
+reference counting, tracing collection, arenas, or a combination of those
+techniques. Internal sharing MUST be immutable. Mutation through a mutable
+root MUST construct the complete replacement logical value atomically; it MAY
+path-copy only the changed route and share untouched subvalues. No internal
+cycle, cache, interning table, journal buffer, or integration object may make
+otherwise unreachable source state observable or change equality,
+serialization, hashing, operation input, cancellation, failure, durability,
+or resume behavior.
+
+The reference interpreter SHOULD represent strings and aggregate value nodes
+as immutable, atomically reference-counted persistent data, keep economical
+scalars inline, clone shared ownership for logical copies, and use
+copy-on-write or path copying for mutable-root replacement. Its representation
+MUST be safe to transfer across the `Send` task and hook boundaries required
+by Sections 7 and 15; a thread-confined reference-counting representation by
+itself does not satisfy that obligation. This recommendation is not part of
+the language ABI: public protocols, canonical IR, journals, events,
+diagnostics, and embedding results MUST encode logical values rather than
+allocation addresses, implementation handles, sharing topology, or reference
+counts.
+
+All operations that can visit or release a value—including copy, path
+replacement, equality, normalization, validation, hashing, serialization,
+journaling, recovery, and reclamation—MUST remain safe for every value admitted
+by the effective `maximum_value_nesting_depth` and `maximum_value_nodes`.
+Implementations MUST NOT rely on one native call-stack frame per value level,
+including indirectly through a recursive destructor. They MAY use explicit
+work stacks, bounded recursion proven safe for the effective depth limit,
+deferred destruction, or equivalent depth-safe techniques. A logical copy or
+replacement MUST enforce the value limits before the result becomes
+observable and MUST preserve the atomicity and error rules specified elsewhere
+in this document.
+
+The value depth, node, string-scalar, and list-item limits bound each admitted
+logical value; they do not by themselves define a byte allocator, process
+resident-set limit, or execution-wide live-heap quota. Implementations MAY
+enforce additional host resource controls outside the Gantry language, but
+MUST NOT report an implementation allocation count or byte estimate as though
+it were one of those portable logical limits. A future portable live-storage
+budget would require a separately named, identity-bound configuration field,
+canonical accounting over logically reachable values, specified charging and
+release points, a stable failure code, and durable resume rules. In the
+absence of such a field in v1, physical memory exhaustion is not a portable
+source-visible condition and MUST NOT be made catchable by `attempt` or
+translated into a successful Gantry value.
 <a id="GNT-5.14"></a>
 
 14. `const` is excluded from v1. Runtime initialization of immutable bindings is
