@@ -2427,29 +2427,30 @@ Task handles are governed by Section 10 and are not source values.
 <a id="GNT-5.13-automatic-storage"></a>
 
 **13a. Automatic storage management.** Gantry has automatic storage
-management for first-class values. Source programs expose no pointers,
-references or borrowing of first-class values, explicit allocation or
-deallocation, allocation addresses, storage identity, reference counts, weak
-references, destructors, finalizers, or other reclamation hooks. This does not
-restrict the semantic task identities, task handles, operation identities,
-session identities, or protocol references defined elsewhere in this
-specification. A program therefore cannot observe whether two logical values
-share physical storage, when storage is reclaimed, or whether reclamation
-occurs eagerly, incrementally, at a suspension point, or when an interpreter
-run ends.
-Retention or reclamation of physical storage by itself MUST NOT dispatch an
-integration operation, write a journal record, emit an event, run source code,
-change a logical session, settle or cancel a task, consume a deterministic
-budget, or otherwise alter the labelled transition system in Section 3.
+management for first-class values. This item defines source-visible semantics,
+not a required heap technology. Source programs expose no pointers, references
+to or borrowing of first-class values, explicit allocation or deallocation,
+allocation addresses, storage identity, reference counts, weak references,
+destructors, finalizers, or other reclamation hooks. This does not restrict the
+semantic task identities, task handles, operation identities, session
+identities, or protocol references defined elsewhere in this specification. A
+program therefore cannot observe whether two logical values share physical
+storage, when storage is reclaimed, or whether reclamation occurs eagerly,
+incrementally, at a suspension point, or when an interpreter run ends.
+Allocation, retention, movement, sharing, or reclamation of physical storage by
+itself MUST NOT dispatch an integration operation, write a journal record, emit
+an event, run source code, change a logical session, settle or cancel a task,
+consume a deterministic budget, or otherwise alter the labelled transition
+system in Section 3.
 
 Logical retention follows abstract state and protocol obligations, not
-implementation pointers. Gantry MUST preserve the canonical content needed by
-a future abstract transition, a required embedding or event delivery, or
-durable recovery. Such content includes values held by live bindings, workflow
-frames, continuations, task captures, or settled task results that the machine
-state still requires; canonical values in pending operations, sessions, and
-embedding request or result payloads that Gantry must still retain; and values
-in required durable evidence or a recovery projection. A task, session,
+implementation pointers. A conforming implementation MUST preserve the
+canonical content needed by a future abstract transition, required embedding or
+event delivery, or durable recovery. That content includes values in live
+bindings, workflow frames, continuations, task captures, and settled task
+results that the machine state still requires; canonical values in pending
+operations, sessions, and retained embedding request or result payloads; and
+values in required durable evidence or a recovery projection. A task, session,
 operation, request, result, event obligation, or recovery projection logically
 retains only the canonical values its defined state or payload contains. It
 does not logically retain arbitrary integration resources or physical backing.
@@ -2461,19 +2462,19 @@ equivalent logical value. Conversely, an implementation MAY retain physically
 unreachable storage for caching, allocation, or collection purposes, provided
 that retention and later reclamation have no observable effect.
 
-Every first-class value is a finite, acyclic logical tree with the deep,
-nonaliasing semantics of item 13. An implementation MAY represent a logical
-tree as an immutable directed acyclic graph with shared nodes, a persistent
-data structure, or another equivalent form. It MAY use copying, copy-on-write,
-reference counting, tracing collection, arenas, or a combination of those
-techniques. Storage shared by two logical values MUST NOT permit an update to
-one value to change what the other value observes. A successful mutable-root
-update MUST replace the complete logical root only after its replacement has
-been constructed and validated; it MAY path-copy only the changed route and
-share untouched subvalues. Internal cycles, caches, interning tables, journal
-buffers, and integration objects MAY retain physical state, but MUST NOT create
-logical reachability or cause content absent from both abstract state and
-required durable evidence to reappear in equality, serialization, hashing,
+Every first-class value has a finite, acyclic logical-value tree, including
+scalar leaves, with the deep, nonaliasing semantics of item 13. An
+implementation MAY represent that tree as an immutable directed acyclic graph
+with shared nodes, a persistent data structure, or another equivalent form. It
+MAY use copying, copy-on-write, reference counting, tracing collection, arenas,
+or a combination of those techniques. Physical sharing MUST NOT permit an
+update to one logical value to change what another logical value observes. A
+successful mutable-root update MUST construct and validate its complete
+replacement logical value before publishing that replacement root; it MAY
+path-copy only the changed route and share untouched subvalues. Internal
+cycles, caches, interning tables, journal buffers, and integration objects MAY
+retain physical state, but MUST NOT make logically unreachable content
+observable or cause it to reappear in equality, serialization, hashing,
 operation input, cancellation, failure, durability, or resume behavior.
 
 **Reference-Rust implementation guidance (non-normative).** A Rust reference
@@ -2491,32 +2492,31 @@ events, diagnostics, and embedding results MUST encode logical values rather
 than allocation addresses, implementation handles, sharing topology, or
 reference counts.
 
-All operations that can visit or release a value—including construction, copy,
+Every operation that traverses a logical value—including construction, copy,
 path replacement, equality, normalization, validation, hashing, serialization,
-journaling, recovery, and reclamation—MUST remain safe for every value admitted
-by the effective `maximum_value_nesting_depth` and `maximum_value_nodes`.
-Implementations MUST NOT rely on one native call-stack frame per value level,
-including indirectly through a recursive destructor. They MAY use explicit
-work stacks, deferred destruction, or recursion whose native-stack bound is
-independent of admitted logical-value depth and is demonstrably safe. A logical
-copy or replacement that constructs new content MUST enforce the value limits
-before the result becomes observable and MUST preserve the atomicity and error
-rules specified elsewhere in this document.
+journaling, and recovery—MUST be native-stack-safe for every value admitted by
+the effective `maximum_value_nesting_depth` and `maximum_value_nodes` limits.
+A reclamation strategy likewise MUST NOT use one native call-stack frame per
+logical-value level, including indirectly through a recursive destructor.
+Implementations MAY use explicit work stacks, deferred destruction, or
+recursion whose native-stack bound is independent of admitted logical-value
+depth and is demonstrably safe. A logical copy or replacement that constructs
+new content MUST enforce the value limits before the result becomes observable
+and MUST preserve the atomicity and error rules specified elsewhere in this
+document.
 
 The value depth, node, string-scalar, and list-item limits bound each admitted
 logical value; they do not by themselves define a byte allocator, process
-resident-set limit, or execution-wide live-heap quota. Implementations MAY
-enforce additional host resource controls outside the Gantry language, but
-MUST NOT report an implementation allocation count or byte estimate as though
-it were one of those portable logical limits. A future portable live-storage
-budget would require a separately named, identity-bound configuration field,
-canonical accounting that does not depend on physical representation, specified
-charging and release points, a stable failure code, and durable resume rules.
-In the absence of such a field in v1, host physical-memory exhaustion has no
-portable Gantry runtime category, code, source-visible condition, or recovery
-promise. An implementation MAY expose it only through an embedding-defined
-outcome outside Gantry's source failure model, but MUST NOT make it catchable
-by `attempt` or translate it into a successful Gantry value.
+resident-set limit, or execution-wide live-storage quota. Implementations MAY
+enforce additional host resource controls, but MUST NOT present an
+implementation allocation count or byte estimate as one of these portable
+logical limits. A future portable live-storage budget would require a
+separately named, identity-bound configuration field, canonical accounting that
+does not depend on physical representation, specified charging and release
+points, a stable failure code, and durable resume rules. Until then, host
+physical-memory exhaustion has no portable Gantry runtime category, code,
+source-visible condition, or recovery guarantee; any resulting behavior is
+implementation- or embedding-defined and is not catchable by `attempt`.
 <a id="GNT-5.14"></a>
 
 14. `const` is excluded from v1. Runtime initialization of immutable bindings is
