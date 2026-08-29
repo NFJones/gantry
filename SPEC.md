@@ -85,6 +85,13 @@ the repository commit containing `SPEC.md` or the lowercase hexadecimal
 SHA-256 digest of the exact `SPEC.md` bytes. The claim applies to the complete
 identified revision, not to a selected subset of its requirements.
 
+This repository revision does not include the publication index or protocol
+artifacts required by Section 15.8. It is therefore an incomplete draft for
+embedding interoperability and cannot by itself support a conforming Gantry v1
+deployment claim. The source-language contract remains reviewable and
+implementable in stages under the profiles below, but interoperability claims
+must wait for those versioned schemas, fixtures, and conformance artifacts.
+
 Sections 1.1 through 1.4 and Section 14 are non-normative reading and
 authoring aids. The remainder of Sections 1 through 13 and all of Section 15
 are normative unless a passage is explicitly labeled non-normative. Examples
@@ -565,13 +572,6 @@ valid:
 - Keep each `action` invocation equally prominent. An ordinary call is always
   an interpreter-managed workflow call; the `action` keyword is the visible
   indication that execution crosses into a harness capability.
-- Treat each visible integration operation as logically singular but physically
-  repeatable. Validation repair and interruption recovery can dispatch the
-  same operation more than once, so harness actions with external side effects
-  should use the stable operation ID as their deduplication key whenever the
-  integration can do so. Distinct dispatch IDs identify physical attempts for
-  audit; using a dispatch ID as the deduplication key would not suppress a
-  repeated attempt of the same logical operation.
 - Prefer one model operation per statement or trailing expression. Keep the
   `prompt` or `decide` keyword, its modifiers, template, and result annotation
   as one visibly continuous construct; do not rely on unusual line breaks to
@@ -1216,13 +1216,16 @@ wrong arity, a non-callable value, or a type mismatch.
 are analyzed left to right in the order specified by Sections 6 and 7. Let
 `op_result(prompt,τ)=τ`, `op_result(decide)=Decision`, and
 `op_result(action f)=result(Σ(f))`; let `direct(m)` be `prompt`, `decide`, or
-the action's declared class:
+the action's declared class. Let `session_effect(m)` be `{session}` when a
+prompt or decide operation selects `fork` or `new`, and the empty set for an
+omitted or `inline` directive and for every action:
 
 ```text
 Ω0=Ω    Σ;Γ;Ωi-1 ⊢ ei:τi ! εi ⇒ Ωi
 operation_ok(Σ,m,τ1...τn)    op_result(m)=τ
 ──────────────────────────────────────────────── T-Operation
-Σ;Γ;Ω ⊢ operation(m,e1...en):τ ! (⋃i εi)∪{direct(m)} ⇒ Ωn
+Σ;Γ;Ω ⊢ operation(m,e1...en):τ
+       ! (⋃i εi)∪{direct(m)}∪session_effect(m) ⇒ Ωn
 
 Σ;Γ;Ω ⊢ operation(m,e...):τ ! ε ⇒ Ω'
 ──────────────────────────────────────────────── T-Attempt
@@ -1241,6 +1244,9 @@ the operation's effects or catch another failure category.
 
 **[GNT-3-T-CONTEXT] Agent and session contexts.**
 
+For a session directive `d`, let `session_effect(d)` be `{session}` when `d`
+is `fork` or `new`, and the empty set when `d` is `inline`.
+
 ```text
 a∈agents(Σ)    Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
 ──────────────────────────────────────── T-With-Agent
@@ -1248,7 +1254,7 @@ a∈agents(Σ)    Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
 
 d∈{inline,fork,new}    Σ;Γ;Ω ⊢ e:τ ! ε ⇒ Ω'
 ──────────────────────────────────────── T-With-Session
-Σ;Γ;Ω ⊢ with-session(d,e):τ ! ε∪{session} ⇒ Ω'
+Σ;Γ;Ω ⊢ with-session(d,e):τ ! ε∪session_effect(d) ⇒ Ω'
 
 a∈agents(Σ)    Σ;Γ;Ω ⊢ c ! ε ⇒ Φ
 ──────────────────────────────────────── T-With-Agent-Command
@@ -1256,14 +1262,14 @@ a∈agents(Σ)    Σ;Γ;Ω ⊢ c ! ε ⇒ Φ
 
 d∈{inline,fork,new}    Σ;Γ;Ω ⊢ c ! ε ⇒ Φ
 ──────────────────────────────────────── T-With-Session-Command
-Σ;Γ;Ω ⊢ with-session(d,c) ! ε∪{session} ⇒ Φ
+Σ;Γ;Ω ⊢ with-session(d,c) ! ε∪session_effect(d) ⇒ Φ
 ```
 
 The command rules preserve every completion-map entry and its ownership
 environment; the context changes only while evaluating the body. Selecting an
-agent is not itself an effect; creating or dynamically selecting a session is.
-All four rules restore the previous dynamic context on normal completion,
-control transfer, or failure.
+agent and explicitly reusing the active session are not effects; selecting a
+forked or new session is. All four rules restore the previous dynamic context
+on normal completion, control transfer, or failure.
 
 <a id="GNT-3-T-MATCH"></a>
 
@@ -1303,10 +1309,11 @@ join_type(τ1...τn)=τ    Ω'=Ω[hi↦joined(κi,τi)]i
 
 `join-all(h1...hn)` uses the same rule and `joinall_type`; its ordered vector
 is exactly the statically computed set for that program point. For an empty
-vector it lowers to `Unit`, has no `join` effect, and leaves `Ω` unchanged. The
+vector it lowers to `Unit`, has effect `{join}`, and leaves `Ω` unchanged. It
+creates no dynamic join frame, ownership transition, or child wait. The
 partial result functions enforce the Unit/value and homogeneous/heterogeneous
-rules in Section 10. A discharged, repeated, foreign, or path-dependent
-handle has no derivation.
+rules in Section 10. A discharged, repeated, foreign, or path-dependent handle
+has no derivation.
 
 ### 3.3 Control-flow, ownership, and package validity
 
@@ -2655,9 +2662,10 @@ defined here and in Section 7 cross the integration boundary.
    action invocation contribute their correspondingly named effects; `spawn`
    contributes `spawn`; every `join(...)` and `joinall()` contributes `join`,
    including a `joinall()` whose statically selected task set is empty;
-   `detach(...)` contributes `background`; every explicit lexical, loop, or
-   operation-local session modifier contributes `session`; and `attempt`
-   contributes `attempt` in addition to the wrapped operation's effect.
+   `detach(...)` contributes `background`; every lexical, loop, or operation-
+   local `fork` or `new` session selection contributes `session`, while an
+   omitted or explicit `inline` directive does not; and `attempt` contributes
+   `attempt` in addition to the wrapped operation's effect.
    Runtime-created root and spawned-task sessions do not independently add a
    source effect. One source site MAY therefore contribute more than one
    effect. Canonical effect order is the order shown in the effect domain in
@@ -3264,6 +3272,13 @@ operation identity, failure categories, and propagation.
 16. Every dynamic operation identity MUST correspond to a logical execution path
    consisting of the execution ID, task path, workflow-call path, canonical
     core operation-site ID, branch arm, and enclosing loop iteration counters.
+    The path is an ordered sequence of typed frames from the execution root to
+    the operation site. Task, call, branch, and loop frames appear in their
+    dynamic nesting order; a component that has no corresponding enclosing
+    construct is omitted rather than represented by a sentinel value. A loop
+    frame distinguishes condition evaluation from body execution and carries
+    the applicable zero-based occurrence counter. These rules apply to the
+    logical path before any implementation-specific encoding or hashing.
     A core site ID is derived from canonical module and workflow paths plus the
     construct's structural position in canonical IR; comments, whitespace,
     file paths, line endings, and source spans do not affect it.
@@ -5665,11 +5680,13 @@ is empty; it does not change evaluation. A workflow that returns a model
 judgment uses the ordinary `-> Decision` annotation. `mut` on a non-receiver parameter permits mutation of that
 workflow's deep-copied local argument; it does not affect the caller. A method
 always has a receiver as its first parameter. Associated functions without a
-receiver are excluded from v1. The `self` token is valid only within the lexical body of an
-inherent method, including nested blocks and spawned blocks inside that method;
-it is an analysis error in a free function, field default,
-or module-level declaration. A spawned block captures `self` under the copy
-rules in Section 10 rather than introducing a new receiver.
+receiver are excluded from v1. The standalone `self` primary expression and
+`self` assignment target are valid only within the lexical body of an inherent
+method, including nested blocks and spawned blocks inside that method; either
+form is an analysis error in a free function, field default, or module-level
+declaration. This restriction does not apply to `self::` as the current-module
+root of a `qualified_path`. A spawned block captures a receiver `self` under
+the copy rules in Section 10 rather than introducing a new receiver.
 The root module's function named `main` is additionally restricted by Section
 4 to zero parameters or exactly one typed parameter; this is an entry-point
 semantic constraint rather than a separate function grammar.
