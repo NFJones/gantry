@@ -2427,27 +2427,30 @@ Task handles are governed by Section 10 and are not source values.
 <a id="GNT-5.13-automatic-storage"></a>
 
 **13a. Automatic storage management.** Gantry has automatic storage
-management. The language exposes no pointers, references, borrowing, explicit
-allocation or deallocation, allocation addresses, object identity, reference
-counts, weak references, destructors, finalizers, or other reclamation hooks.
-A program therefore cannot observe whether two logical values share physical
-storage, when storage is reclaimed, or whether reclamation occurs eagerly,
-incrementally, at a suspension point, or when an interpreter run ends.
+management. Source programs expose no pointers, value references, borrowing,
+explicit allocation or deallocation, allocation addresses, object identity,
+reference counts, weak references, destructors, finalizers, or other
+reclamation hooks. This does not restrict the protocol references defined
+elsewhere in this specification. A program therefore cannot observe whether
+two logical values share physical storage, when storage is reclaimed, or
+whether reclamation occurs eagerly, incrementally, at a suspension point, or
+when an interpreter run ends.
 The act of reclaiming or retaining physical storage MUST NOT dispatch an
 integration operation, write a journal record, emit an event, run source code,
 change a logical session, settle or cancel a task, consume a deterministic
 budget, or otherwise alter the labelled transition system in Section 3.
 
-Logical retention follows the abstract state and protocol obligations, not
-implementation pointers. Gantry MUST preserve the canonical content needed for
-a future abstract transition or required protocol delivery. This includes a
-value held by a live binding, workflow frame, continuation, task capture, or
-unjoined task result; canonical value content in a pending operation, session,
-embedding request, or embedding result that Gantry still owns; and content
-required by durable evidence or a recovery projection. A task, session,
-operation, request, result, or recovery projection retains only the canonical
-values its defined logical state contains; it does not make arbitrary
-integration resources or physical backing logically retained.
+Logical retention follows abstract state and protocol obligations, not
+implementation pointers. Gantry MUST preserve the canonical content needed by
+a future abstract transition, a required embedding or event delivery, or
+durable recovery. Such content includes values held by live bindings, workflow
+frames, continuations, task captures, or unsettled task results; canonical
+values in pending operations, sessions, and embedding requests or results that
+Gantry still owns; and values in required durable evidence or a recovery
+projection. A task, session, operation, request, result, event obligation, or
+recovery projection logically retains only the canonical values its defined
+state or payload contains. It does not logically retain arbitrary integration
+resources or physical backing.
 
 Sections 11 and 12 define the retention periods for durable evidence and event
 payloads. They do not require an original in-memory representation to remain
@@ -2456,19 +2459,19 @@ equivalent logical value. Conversely, an implementation MAY retain physically
 unreachable storage for caching, allocation, or collection purposes, provided
 that retention and later reclamation have no observable effect.
 
-Every source-visible value is finite and acyclic and has the deep, nonaliasing
-semantics of item 13. An implementation MAY represent a logical value as a
-tree, an immutable directed acyclic graph with shared nodes, a persistent data
-structure, or another equivalent form. It MAY use copying, copy-on-write,
+Every source-visible value is a finite, acyclic logical tree with the deep,
+nonaliasing semantics of item 13. An implementation MAY represent a logical
+tree as an immutable directed acyclic graph with shared nodes, a persistent
+data structure, or another equivalent form. It MAY use copying, copy-on-write,
 reference counting, tracing collection, arenas, or a combination of those
-techniques. Internal sharing MUST be immutable. Mutation through a mutable
-root MUST construct the complete replacement logical value atomically; it MAY
-path-copy only the changed route and share untouched subvalues. Internal cycles,
-caches, interning tables, journal buffers, and integration objects MAY retain
-physical state, but MUST NOT add a logical value root or cause content absent
-from abstract state and required durable evidence to reappear in equality,
-serialization, hashing, operation input, cancellation, failure, durability, or
-resume behavior.
+techniques. Internal sharing MUST be immutable. Mutation through a mutable root
+MUST construct and publish the complete replacement logical value atomically;
+it MAY path-copy only the changed route and share untouched subvalues. Internal
+cycles, caches, interning tables, journal buffers, and integration objects MAY
+retain physical state, but MUST NOT create logical reachability or cause
+content absent from both abstract state and required durable evidence to
+reappear in equality, serialization, hashing, operation input, cancellation,
+failure, durability, or resume behavior.
 
 **Reference-Rust implementation guidance (non-normative).** A Rust reference
 interpreter should use immutable, atomically reference-counted persistent
@@ -2482,17 +2485,17 @@ journals, events, diagnostics, and embedding results MUST encode logical values
 rather than allocation addresses, implementation handles, sharing topology, or
 reference counts.
 
-All operations that can visit or release a value—including copy, path
-replacement, equality, normalization, validation, hashing, serialization,
+All operations that can visit or release a value—including construction, copy,
+path replacement, equality, normalization, validation, hashing, serialization,
 journaling, recovery, and reclamation—MUST remain safe for every value admitted
 by the effective `maximum_value_nesting_depth` and `maximum_value_nodes`.
 Implementations MUST NOT rely on one native call-stack frame per value level,
 including indirectly through a recursive destructor. They MAY use explicit
 work stacks, bounded recursion proven safe for the effective depth limit,
 deferred destruction, or equivalent depth-safe techniques. A logical copy or
-replacement MUST enforce the value limits before the result becomes
-observable and MUST preserve the atomicity and error rules specified elsewhere
-in this document.
+replacement that constructs new content MUST enforce the value limits before
+the result becomes observable and MUST preserve the atomicity and error rules
+specified elsewhere in this document.
 
 The value depth, node, string-scalar, and list-item limits bound each admitted
 logical value; they do not by themselves define a byte allocator, process
