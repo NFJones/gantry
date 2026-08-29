@@ -3269,9 +3269,11 @@ operation identity, failure categories, and propagation.
    session. Every session owns a Gantry-defined
    canonical transcript consisting only of accepted model exchanges. Each turn
    is a `TranscriptTurnV1` record containing exactly: `operation_kind`
-   (`prompt` or `decide`); `authored_template` and `rendered_prompt` Strings;
-   separate ordered `interpolation_inputs` and `using_inputs` arrays in the
-   request shapes defined by item 5; `selected_agent`; and `accepted_result`.
+   (`prompt` or `decide`); `template_representation`, using the redacted
+   literal-segment and interpolation-placeholder vector from item 5;
+   `rendered_prompt`, a String; separate ordered `interpolation_inputs` and
+   `using_inputs` arrays in the request shapes defined by item 5;
+   `selected_agent`; and `accepted_result`.
    `accepted_result` contains the result kind, canonical type descriptor, and
    normalized strict-JSON value. A canonical transcript value is an object
    containing protocol major `1`, protocol minor `0`, and a `turns` array of
@@ -3608,11 +3610,13 @@ operation modifiers defined in Sections 6 and 13.
    `Decision` uses the exact `decision` and nonempty `rationale` object shape
    in Section 9. Operation identity is observability metadata and is not part
    of that JSON value. `OperationError` uses the same strict tagged encoding
-   as an enum. Its first six variants carry their message as the JSON String
-   `value`; `UnknownOutcome` carries a two-item JSON array containing operation
-   ID and message. Because operation and entry result contracts cannot contain
-   `OperationError`, this encoding is used only for source values, explicit
-   operation inputs, journals, events, and diagnostics.
+   as an enum. `Declined`, `ProviderFailure`, `Timeout`, `PolicyDenied`, and
+   `Cancelled` carry their message as the JSON String `value`;
+   `InvalidOutput` has no `value`; and `UnknownOutcome` carries a two-item JSON
+   array containing operation ID and message. Because operation and entry
+   result contracts cannot contain `OperationError`, this encoding is used
+   only for source values, explicit operation inputs, journals, events, and
+   diagnostics.
 <a id="GNT-8.6"></a>
 
 6. Gantry MUST derive JSON Schema Draft 2020-12 from declared output types
@@ -4147,8 +4151,10 @@ owner. It MUST NOT be described as a structured child after transfer.
    `joinall()` waits and yields `()`. Mixing value-producing
    and Unit tasks in one `joinall()` is an analysis error; Gantry MUST NOT
    silently discard the value-producing results merely because another task
-   returns `Unit`. With zero included tasks, `joinall()` is a Unit no-op.
-   Semantic analysis MUST
+   returns `Unit`. With zero included tasks, `joinall()` yields Unit without
+   waiting or changing task ownership. It still counts as an executed
+   `joinall()` site for effect analysis and the join event required by Section
+   12. Semantic analysis MUST
    determine the included handle set and resulting type at that program point.
    Analysis computes that set as follows: start with spawn declarations whose
    declarations are direct children of the current lexical block and precede
@@ -4176,7 +4182,8 @@ owner. It MUST NOT be described as a structured child after transfer.
    declaration order. It MUST determine its ordered result or aggregate failure
    before source execution consumes it. With the durable-runtime profile, both
    transitions MUST be committed at those respective boundaries. A zero-task
-   `joinall()` requires no ownership evidence.
+   `joinall()` requires no ownership evidence, but its deterministic reduction
+   is the causal transition for its required join event.
 <a id="GNT-10.7"></a>
 
 7. A child failure does not immediately cancel siblings. A named child's
@@ -5117,9 +5124,10 @@ nonrecursive sink-delivery exception still applies.
    neutral. Gantry derives a separate delivery projection keyed by event ID,
    sink ID, and the obligation's frozen capabilities; that projection marks
    each reference `available`, `redacted`, or `not-applicable`. Operation
-   request content includes authored and rendered prompts,
-   expected schemas, interpolation arguments, named inputs, action arguments,
-   logical-session identifiers, and the canonical session transcript. A sink receives that content only
+   request content includes redacted template representations and rendered
+   prompts, expected schemas, interpolation arguments, named inputs, action
+   arguments, logical-session identifiers, and the canonical session
+   transcript. A sink receives that content only
    when its frozen `operation_request_content` capability is true. Operation
    result content includes normalized values from every operation kind and
    both visible fields of a sealed `Decision`; a sink receives that content
@@ -6032,7 +6040,7 @@ pattern                 = "_"
                         | enum_variant_pattern
                         | tuple_pattern ;
 operation_error_pattern = "OperationError", "::", identifier_token,
-                          "(", pattern, ")" ;
+                          [ "(", pattern, ")" ] ;
 enum_variant_pattern    = path_segment, "::", path_segment,
                           { "::", path_segment },
                           [ "(", pattern, ")" ]
@@ -6108,10 +6116,12 @@ unqualified segment, or to a declared unit enum variant. Enum patterns use the
 same root and module lookup rules as `qualified_path` and MUST resolve to an
 enum variant. An
 `operation_error_pattern` is valid only for the seven exact variants in
-Section 5; the first six require a `String` payload pattern and
-`UnknownOutcome` requires a `Tuple<String,String>` payload pattern. This
-special production exists because `OperationError` is a reserved sealed type,
-not an ordinary declared enum. Failure to find
+Section 5. `InvalidOutput` is unit-like and takes no payload pattern;
+`Declined`, `ProviderFailure`, `Timeout`, `PolicyDenied`, and `Cancelled`
+require a `String` payload pattern; and `UnknownOutcome` requires a
+`Tuple<String,String>` payload pattern. This special production exists because
+`OperationError` is a reserved sealed type, not an ordinary declared enum.
+Failure to find
 the required item kind, or finding more than one valid interpretation, is an
 analysis error.
 
