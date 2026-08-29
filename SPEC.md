@@ -190,9 +190,16 @@ claim additionally covers sequential execution, integration operations,
 sessions, validation, and root-task cancellation. A concurrent-evaluator-
 profile claim additionally covers spawned tasks, joins, detachment, and their
 cancellation semantics. A durable-runtime-profile claim additionally covers
-journaling, resume, migration, durable events, and delivery recovery. An
+journaling, resume, durable events, and delivery recovery. An
 embedding-profile claim covers the host interfaces in Section 15 and the
 integration-facing obligations used by the evaluator profile it embeds.
+The normative dependency graph is: analyzer requires frontend; evaluator
+requires analyzer; concurrent-evaluator and durable-runtime each require
+evaluator but neither requires the other; embedding is orthogonal and MUST
+name the evaluator capabilities it exposes. Thus a sequential durable runtime
+is a valid claim, and concurrency requirements apply to it only if it also
+claims concurrent-evaluator. The publication index MUST encode these same
+dependency edges and allowed combinations.
 Requirements for an earlier capability also apply to profiles defined as
 adding to it. Requirements for a later or orthogonal capability do not: for
 example, a frontend-only implementation need not execute hooks or provide a
@@ -992,12 +999,14 @@ The metavariables are:
 
 ```text
 τ ::= Unit | Bool | Int | Float | String | D
-    | Option<τ> | Result<τ,τ> | List<τ> | Tuple<τ,...,τ>
+    | Option<τ> | Result<τ1,τ2> | List<τ> | Tuple<τ1,...,τn>
     | Decision | OperationError
 ```
 
-`D` is a resolved declared struct or enum path, and every type satisfies
-Section 5's well-formedness restrictions. Values are exactly the finite,
+`D` is a resolved declared struct or enum path, `n ≥ 2`, and distinct indexed
+metavariables denote independently chosen types unless a rule explicitly
+requires equality. Every type satisfies Section 5's well-formedness
+restrictions. Values are exactly the finite,
 normalized inhabitants described by Section 5. A task handle is not a value.
 The ownership environment maps each handle visible to the current task to one
 of `attached(κ, τ)`, `joined(κ, τ)`, `detached(κ, τ)`, or
@@ -1063,6 +1072,12 @@ trailing expressions, operation modifiers, and implicit Unit returns lower to
 these terms while preserving Section 6's evaluation order. Lowering MUST
 retain a distinct core site for every operation, spawn, join, detachment,
 branch, loop, return target, and cancellation point.
+For a prompt or decision, the core operation node separately retains the
+ordered interpolation expressions and ordered named-input expressions; `m`
+continues to contain only static operation metadata. The operands are not
+flattened into one list: all interpolations complete in source order before
+any named input begins. An action node retains only its ordered positional
+arguments. This phase distinction is part of core IR and request capture.
 For `let b pat:τ=e`, `b` is `mutable` exactly when the surface declaration is
 the single-name form `let mut`; every other binding is `immutable`. The
 frontend evaluates `e` exactly once and then applies the irrefutable binding
@@ -1264,7 +1279,7 @@ join_type(τ1...τn)=τ    Ω'=Ω[hi↦joined(κi,τi)]i
 
 `join-all(h1...hn)` uses the same rule and `joinall_type`; its ordered vector
 is exactly the statically computed set for that program point. For an empty
-vector it has type `Unit`, effect `{join}`, and leaves `Ω` unchanged. The
+vector it lowers to `Unit`, has no `join` effect, and leaves `Ω` unchanged. The
 partial result functions enforce the Unit/value and homogeneous/heterogeneous
 rules in Section 10. A discharged, repeated, foreign, or path-dependent
 handle has no derivation.
@@ -1365,25 +1380,36 @@ code.
 ```text
 Σ;Γ;Ω ⊢ e:τc ! ε0 ⇒ Ω0    τc∈{Bool,Decision}
 Σ;Γ;Ω0 ⊢ c1 ! ε1 ⇒ Φ1    Σ;Γ;Ω0 ⊢ c2 ! ε2 ⇒ Φ2
+select_fact(e,Φ1,Φ2)=Φ
 ──────────────────────────────────────────────── T-If
-Σ;Γ;Ω ⊢ if e then c1 else c2 ! ε0∪ε1∪ε2 ⇒ Φ1⊔Φ2
+Σ;Γ;Ω ⊢ if e then c1 else c2 ! ε0∪ε1∪ε2 ⇒ Φ
 ```
 
 An omitted `else` is `skip`. `if let` is a two-arm pattern match. Statement
 `match` uses the scrutinee and pattern premises of `T-Match`, analyzes each arm
-as a command, and merges all completion maps with `⊔`. Only the literal facts
-listed in Section 9 remove an arm from the merge.
+as a command, and merges all feasible completion maps with `⊔`. Define
+`bool_fact(e)` as `true`, `false`, or `unknown` using exactly the compile-time
+Boolean facts in Section 9. `select_fact(e,Φ1,Φ2)` is `Φ1` when that fact is
+`true`, `Φ2` when it is `false`, and `Φ1⊔Φ2` otherwise. Both arms are still
+analyzed for local validity. The same feasibility rule applies to `if let` and
+statement `match` using the pattern facts in Section 9. Effects still include
+both locally valid arms, so static effect summaries do not depend on constant-
+folding beyond the explicit flow rule.
 
 <a id="GNT-3-T-LOOP"></a>
 
 **[GNT-3-T-LOOP] Loops and finite iteration.** A loop body is analyzed from
 one invariant ownership environment `ΩI`. Every reachable `Co` and every
 normal back edge must equal `ΩI`; every reachable `Br` becomes normal loop
-completion. For `while`, zero iterations contributes `{N↦ΩI}`. For `until`,
-the body runs once before its test. An unbroken `loop` has no normal
+completion. For `while`, zero iterations contributes `{N↦ΩI}` unless
+`bool_fact(condition)=true`; when the fact is `false`, body completions are
+checked locally but excluded from the enclosing completion map. For `until`,
+the body runs once before its test; a literal post-test fact removes only the
+corresponding infeasible repeat or exit edge. An unbroken `loop` has no normal
 completion. Conditions have type `Bool` or `Decision`, and their ownership
 output must equal `ΩI`. Effects are the union of condition, body, and
-`{session}` when a non-inline loop session is selected.
+`{session}` when a non-inline loop session is selected, including locally
+valid code excluded only by a compile-time fact.
 
 For `for x in e do c`, first derive `e:List<τ> ⇒ ΩI`; analyze `c` under a
 fresh immutable `x:τ` from `ΩI`; require normal and continue outputs to equal
@@ -1469,6 +1495,11 @@ execution and per-task budgets. `R` contains the active durable agent and
 action mapping revisions and every compatible mutable execution-policy
 revision that a later transition can observe. Values in `ρ` and `μ` are
 normalized deep values; no machine component contains a source-visible alias.
+The initial root task sets `a` to the package's resolved default agent and `s`
+to the resolved root session before entering `main`. A package with a model-
+operation site has no initial machine unless its default agent is valid and
+preflight has resolved that agent. Spawned tasks inherit the active agent and
+fork the active session as specified by `M-Spawn`.
 
 <a id="GNT-3-M-LABELS"></a>
 
@@ -1518,11 +1549,15 @@ E ::= [] | aggregate(v*,E,e*) | project(E,k) | prim(v*,E,e*)
 
 Short-circuit Boolean operators lower to branches and therefore have no
 right-operand context until the left value requires it. Constructor fields,
-interpolations, named inputs, call arguments, receivers, and action arguments
-occur in their mandated source order. A failure in `E` removes every frame
-for later operands, so no later operand executes. Command evaluation similarly
-places exactly one expression in an evaluation frame before applying the
-command rule that consumes its value.
+call arguments, receivers, and action arguments occur in their mandated source
+order. Prompt and decision input contexts have two ordered phases: every
+interpolation is evaluated and captured first, followed by every named input.
+A failure in either phase removes every frame for later operands, so no later
+input executes and named-input evaluation never begins after an interpolation
+failure. A join has no value operand context; its start transition below
+resolves lexical handles directly. Command evaluation similarly places exactly
+one expression in an evaluation frame before applying the command rule that
+consumes its value.
 
 <a id="GNT-3-M-VALUES"></a>
 
@@ -1581,16 +1616,30 @@ store unchanged.
 `if false` its second, and a `Decision` selects by its `decision` field.
 `match(v,pat=>c...)` chooses the first matching arm, atomically installs copies
 of that pattern's bindings, and starts that arm. Exhaustiveness guarantees one
-arm. Loop control lowers as follows: `while` tests before each body; `until`
-runs the body before each test; `loop` repeats after each normal body; and
-`for` evaluates and copies its list once, then installs one copied item at each
+arm. Expression `match(v,pat=>e...)` performs the same first-match selection,
+pushes an expression-scope frame containing copies of the selected pattern
+bindings, and evaluates that arm. On a value, it removes the frame and plugs a
+copy into the enclosing expression context; on failure it removes the frame
+without producing a value. These steps emit `deterministic`.
+
+Loop control lowers as follows: `while` tests before each body; `until` runs
+the body before each test; `loop` repeats after each normal body; and `for`
+evaluates and copies its list once, then installs one copied item at each
 ascending index. An `until` post-test whose Boolean value is `true` exits the
 loop normally; `false` proceeds toward the next body entry. `continue` reaches
-the applicable test or next item and
-`break` exits. A source limit is checked before body entry. Cancellation and
-the loop-entry budget are checked at every condition, item binding, body
-entry, and back edge. Successful selection emits `deterministic`; exhausted
-limits use `M-Fail` and never synthesize normal completion.
+the applicable test or next item and `break` exits. Loop frames retain the
+session directive and restore the enclosing session after each iteration or
+loop exit. `inline` reuses the enclosing session. `new` creates one empty
+session on loop entry and uses it for every condition and body. `fork` creates
+the per-condition or per-body child at exactly the points defined in Section
+9.6, using the then-current committed parent transcript. Limit and budget
+checks precede session creation wherever Section 9.6 requires. Every created
+session is recorded before a model operation can use it.
+
+A source limit is checked before body entry. Cancellation and the loop-entry
+budget are checked at every condition, item binding, body entry, and back edge.
+Successful selection emits `deterministic`; exhausted limits use `M-Fail` and
+never synthesize normal completion.
 
 <a id="GNT-3-M-CONTEXT-SCOPE"></a>
 
@@ -1675,16 +1724,25 @@ same child as failed and never creates a replacement identity or handle.
 **[GNT-3-M-TASK-SETTLE] Settlement and all-settled join.** Returning `v` from
 a spawned block, uncaught failure, or durable cancellation changes that task
 exactly once from running to `succeeded(v)`, `failed(error)`, or `cancelled`
-and emits `task-settled`. A named `join` atomically changes every selected
-attached dynamic handle resolved through `χ` to joined and emits one
-`ownership-transferred(...,join)` per handle in argument order before waiting.
-`join-all` does the same for the dynamic handles resolved from its static
-lexical-name vector in the current environment. The owner then blocks until
-every selected task is settled.
-If all succeed, one deterministic step constructs the Section 10 result in
-argument or declaration order. Otherwise one `M-Fail` produces the ordered
-aggregate `task-join-failure`. Timing never changes either ordering. Joined
-handles have no later source transition.
+and emits `task-settled`.
+
+For `E[join(h...)]` or `E[join-all(h...)]`, `M-Join-Start` resolves the static
+lexical-name vector through `χ`, verifies that every dynamic handle is attached
+to the current owner, atomically changes all selected handles to joined, emits
+one `ownership-transferred(...,join)` label in source or declaration order,
+and replaces the redex with a blocked join frame containing that ordered
+vector and destination context. An empty `join-all` instead reduces directly
+to `E[()]` as one deterministic step and creates no join frame or ownership
+label. Cancellation after ownership transfer cancels and drains the selected
+attached descendants under Section 10 rather than restoring their handles.
+
+The blocked owner becomes runnable only after every selected task is settled.
+`M-Join-Resolve` then either constructs the Section 10 result in argument or
+declaration order and plugs it into `E`, or applies `M-Fail` with the ordered
+aggregate `task-join-failure`. A durable runtime commits the aggregate result
+or failure and its causal settlement references before source consumption.
+Timing never changes either ordering. Joined handles have no later source
+transition.
 
 <a id="GNT-3-M-DETACH"></a>
 
@@ -1732,7 +1790,9 @@ Let `A = ℓ1…ℓn` be an abstract trace and let durable state `D` contain an
 authoritative committed logical-evidence prefix, its causal graph, and a
 recovery projection `recover(D)`. Write `D ≈ M` when replaying that evidence
 through the published recovery projection reconstructs `M`, modulo physical
-storage layout, integration resources, and telemetry.
+storage layout, integration resources, and telemetry. The recovery projection
+is a normative versioned algorithm in the `gantry.journal` artifact, not an
+implementation-private interpretation of the evidence schemas.
 
 <a id="GNT-3-D-SIMULATION"></a>
 
@@ -1999,9 +2059,11 @@ identifier policy, canonical paths, and immutable source snapshots.
     free-function signature is `fn PATH(P1,P2,...)->R`; an action signature is
     `action[CLASS] PATH(P1,P2,...)->R`; and a method signature is
     `fn METHOD_PATH(RECEIVER[,P1,P2,...])->R`. `RECEIVER` is exactly `self` or
-    `mut self`. Each non-receiver parameter descriptor is its type descriptor,
-    prefixed by `mut ` when the source parameter is mutable. `R` is the
-    declared result descriptor or `Unit` when the annotation is omitted. The encoding contains
+    `mut self`. Each function or method parameter descriptor is its type
+    descriptor, prefixed by `mut ` when the source parameter is mutable.
+    Action parameter descriptors are unmodified type descriptors because
+    action declarations have no mutable parameters. `R` is the declared result
+    descriptor or `Unit` when the annotation is omitted. The encoding contains
     no whitespace except the one space in `mut ` or `mut self`, contains no
     parameter names, and preserves declaration order. Examples are
     `fn crate::main(String)->crate::domain::Report`,
@@ -2054,15 +2116,18 @@ Task handles are governed by Section 10 and are not source values.
    are not implicitly `Int` values.
 <a id="GNT-5.2"></a>
 
-2. Parameters and returned values MAY be `Unit`, `Bool`, `Int`, `Float`,
+2. Workflow and method parameters and results, action parameters, spawned-
+   block results, bindings, aggregates, and struct fields MAY be `Unit`,
+   `Bool`, `Int`, `Float`,
    `String`, a declared struct or enum type, `Option<T>`, `Result<T, E>`,
    `List<T>`,
    `Tuple<T1, T2, ..., Tn>`, `Decision`, or `OperationError`. Every member of a constructed type
    MUST itself be a permitted value type. A function, method, prompt, action,
    or spawned block that returns no information has result type `Unit`. An ordinary function, method,
    binding, aggregate, or struct
-   MAY carry `Decision` or `OperationError`, but an expected `prompt` or
-   `action` output type MUST NOT contain either sealed type at any nesting depth.
+   MAY carry `Decision` or `OperationError`, but a prompt result annotation or
+   action declaration result type MUST NOT contain either sealed type at any
+   nesting depth.
    Entry parameters and results have the same restriction. Only an executed `decide`
    operation can originate a new sealed `Decision`; an ordinary workflow,
    method, or spawned block may return or forward a `Decision` obtained from a
@@ -2561,8 +2626,9 @@ defined here and in Section 7 cross the integration boundary.
    call edges.
    Direct syntax contributes effects as follows: `prompt`, `decide`, and an
    action invocation contribute their correspondingly named effects; `spawn`
-   contributes `spawn`; both `join(...)` and `joinall()` contribute `join`;
-   `detach(...)` contributes `background`; every explicit lexical, loop, or
+   contributes `spawn`; `join(...)` and a statically nonempty `joinall()`
+   contribute `join`, while a statically empty `joinall()` contributes no
+   effect; `detach(...)` contributes `background`; every explicit lexical, loop, or
    operation-local session modifier contributes `session`; and `attempt`
    contributes `attempt` in addition to the wrapped operation's effect.
    Runtime-created root and spawned-task sessions do not independently add a
@@ -2703,7 +2769,9 @@ defined here and in Section 7 cross the integration boundary.
    the declared identifier; a declaration therefore uses an identifier, while
    an invocation may use a qualified path to reach that item. An action has one
    mandatory recovery class, typed positional parameters, an optional result
-    type, and no Gantry body. The recovery class is exactly `read_only`,
+    type, and no Gantry body. Its declared result type MUST NOT contain
+    `Decision` or `OperationError` at any nesting depth. The recovery class is
+    exactly `read_only`,
     `idempotent`, or `non_idempotent`. An
     action invocation MUST use the `action` keyword and MUST resolve to one
     declared action; writing the same path as an ordinary call is an analysis
@@ -4162,8 +4230,8 @@ MUST NOT be described as a structured child after transfer.
 <a id="GNT-11.0"></a>
 
 Items 1 through 5 define durable commit boundaries for interpreter and hook
-state. Items 6 through 9 define package identity, migration, recovery, and
-logical evidence envelopes. Item 10 defines execution-start state and the
+state. Items 6 through 9 define package identity, recovery, and logical
+evidence envelopes. Item 10 defines execution-start state and the
 configuration fields that are immutable or durably revisable across resume.
 Item 11 clarifies the boundary between resumption and replay.
 
@@ -4347,16 +4415,14 @@ Item 11 clarifies the boundary between resumption and replay.
    but cosmetic source changes do not prevent resume when they lower to the
    same canonical IR identity.
 
-   If a new package has a different IR identity, resume MUST reject it unless
-   the caller supplies an explicit versioned migration accepted by the
-   embedding API. A migration maps old core continuation points, static sites,
-   value schemas, session transcripts, task ownership, and remaining budgets
-   to the new IR. It MUST be deterministic, side-effect-free, schema-validated,
-   and durably committed with old and new identities and a migration ID before
-   recovered execution advances. It MUST NOT alter committed outcomes,
-   resurrect consumed handles, reset budgets, or map an indeterminate
-   non-idempotent action to a redispatchable state. Failure leaves the old
-   execution prefix unchanged and is `source-or-configuration-incompatibility`.
+   V1 does not define workflow migration. Resume MUST use canonical core IR
+   with the exact recorded identity. Supplying a package with a different IR
+   identity is a `source-or-configuration-incompatibility` resume-start
+   failure, even if source-level declarations or schemas appear compatible.
+   A future language version may define migration only together with a
+   normative transformation representation, verifier, resource limits, and
+   old/new conformance fixtures; an embedding-specific transform MUST NOT be
+   represented as portable Gantry v1 resume.
 <a id="GNT-11.7"></a>
 
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
@@ -4415,7 +4481,7 @@ Item 11 clarifies the boundary between resumption and replay.
 <a id="GNT-11.9"></a>
 
 9. The journal protocol MUST publish stable versioned schemas for the logical
-   evidence kinds: execution and migration state, session transcript state,
+   evidence kinds: execution state, session transcript state,
    operation dispatch/outcome/validation/result, abstract interpreter
    transition or checkpoint, task ownership and settlement, event and delivery
    state, and terminal execution. Each envelope identifies journal, execution,
@@ -4425,7 +4491,14 @@ Item 11 clarifies the boundary between resumption and replay.
    references, or incompatible payloads are journal-format failures. Physical
    storage MAY combine logical envelopes in an atomic batch or materialized
    snapshot; it MUST reproduce the same authoritative logical prefix to a
-   durable reader.
+   durable reader. The `gantry.journal` artifact MUST additionally publish the
+   normative recovery projection: envelope application order, duplicate and
+   conflict handling, snapshot state and frontier rules, causal-reference
+   handling after compaction, and reconstruction of continuations, stores,
+   sessions, budgets, operations, tasks, ownership, events, and delivery
+   obligations. It MUST include golden recovery cases proving that an
+   uncompacted prefix and every permitted snapshot or compacted representation
+   reconstruct equivalent machine state.
 <a id="GNT-11.10"></a>
 
 10. A new-execution request MUST identify a fresh journal target through an
@@ -4477,9 +4550,9 @@ Item 11 clarifies the boundary between resumption and replay.
     {
       "configuration_protocol": { "major": 1, "minor": 0 },
       "source_language": { "major": 1, "minor": 0 },
-      "hook_protocol_major": 1,
-      "journal_protocol_major": 1,
-      "event_protocol_major": 1,
+      "hook_protocol": { "major": 1, "minor": 0 },
+      "journal_protocol": { "major": 1, "minor": 0 },
+      "event_protocol": { "major": 1, "minor": 0 },
       "maximum_directive_integer": "9223372036854775807",
       "root_session": {
         "id": "logical-session-id",
@@ -4549,6 +4622,12 @@ Item 11 clarifies the boundary between resumption and replay.
     properties shown; these resolved values, rather than the policy ID alone,
     govern protected-data delivery and are frozen into event obligations under
     Sections 12 and 15.
+    The complete selected major and minor version of every protocol family is
+    identity-bound. A new execution selects only published versions supported
+    by every required peer. Resume MUST reuse those exact versions for outgoing
+    envelopes and delivery obligations; it MUST NOT silently adopt a newer
+    minor version. Because v1 has no workflow migration, changing one of these
+    selected versions on resume is `source-or-configuration-incompatibility`.
     `maximum_entry_input_bytes` limits the
     raw entry-input byte sequence before UTF-8 decoding.
     `maximum_hook_output_bytes` limits each raw `Completed` outcome before
@@ -4573,7 +4652,7 @@ Item 11 clarifies the boundary between resumption and replay.
     entry, operation, construction, parsing, task-creation, frame-entry,
     resume, or deterministic-evaluation boundary. Budget counters and their
     effective maxima are part of execution identity and MUST NOT change on
-    resume or migration. `model_retry_limit`
+    resume. `model_retry_limit`
     applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
     retries after the initial attempt. `source_language` MUST equal the version
@@ -4648,17 +4727,21 @@ Gantry exposes four strictly separated observation layers: (1) source-visible
 values and errors, (2) one logical trace over abstract machine labels, (3) a
 physical trace of dispatch, retry, recovery, persistence, and delivery
 attempts, and (4) nonsemantic telemetry such as timing and provider metrics.
-Only layer 1 is readable by Gantry source. Layers 2 and 3 are durable evidence
-used to enforce causality, recovery, deduplication, and delivery guarantees;
-they MUST refine, rather than add behavior to, the abstract source semantics.
-Layer 4 may be sampled or dropped. Layers 2 through 4 MUST NOT be injected
-into fulfiller input or otherwise alter fulfillment, and every event schema
-MUST identify its layer. Standard v1 event envelopes use layer `logical` for
+Only layer 1 is readable by Gantry source. Layers 2 and 3 are logical evidence
+and MUST refine, rather than add behavior to, the abstract source semantics.
+They are durable only for the durable-runtime profile; a nondurable evaluator
+may lose them when its interpreter process ends and provides neither replay nor
+delivery recovery. Layer 4 may be sampled or dropped. Layers 2 through 4 MUST
+NOT be injected into fulfiller input or otherwise alter fulfillment, and every
+standard event schema MUST identify its layer. Standard v1 event envelopes use layer `logical` for
 source and abstract-machine occurrences and layer `physical` for dispatch,
-completion, validation-failure, retry, persistence, delivery, and shutdown
-occurrences. Optional telemetry uses layer `telemetry`. One causal transition
-MAY produce linked logical and physical events, but each occurrence has one
-layer and its own stable event ID.
+completion, validation-failure, retry, and shutdown occurrences. Journal
+commits and event-delivery attempts are represented by journal and delivery
+evidence, not by recursive standard events. Provider metrics and other
+telemetry use an implementation-defined telemetry interface outside
+`EventSink`; the closed v1 event-kind enum does not encode them. One causal
+transition MAY produce linked logical and physical events, but each occurrence
+has one layer and its own stable event ID.
 
 <a id="GNT-12.1"></a>
 
@@ -4808,11 +4891,14 @@ layer and its own stable event ID.
    be identified as out-of-band reporting rather than a Gantry event.
 <a id="GNT-12.4"></a>
 
-4. Canonical protected event records for completed operations MUST make raw
-   integration output available. A sink receives raw output only when it
-   explicitly declares that capability and the embedder enables it for that
-   sink. Other sinks receive the same event identity with the raw field
-   redacted. Operation request content includes authored and rendered prompts,
+4. Canonical protected event records for completed operations MUST contain a
+   stable protected reference for raw integration output. A sink receives raw
+   output only when it explicitly declares that capability and the embedder
+   enables it for that sink. The stored event record is immutable and sink-
+   neutral. Gantry derives a separate delivery projection keyed by event ID,
+   sink ID, and the obligation's frozen capabilities; that projection marks
+   each reference `available`, `redacted`, or `not-applicable`. Operation
+   request content includes authored and rendered prompts,
    expected schemas, interpolation arguments, named inputs, action arguments,
    logical-session identifiers, and the canonical session transcript. A sink receives that content only
    when its frozen `operation_request_content` capability is true. Operation
@@ -5000,13 +5086,14 @@ layer and its own stable event ID.
 <a id="GNT-12.7"></a>
 
 7. Every event envelope MUST identify its protocol version, event and activity
-   IDs, optional execution ID, event kind, event layer (`logical`, `physical`,
-   or `telemetry`), source location when source-backed,
+   IDs, optional execution ID, event kind, event layer (`logical` or
+   `physical`), source location when source-backed,
    task and operation identities when applicable, causal parent IDs, per-task
    sequence when task-backed, timestamp, a kind-specific payload or stable
-   payload reference. Redaction state is represented per protected reference
-   as `available`, `redacted`, or `not-applicable`, together with the frozen
-   permission class that governs it; there is no ambiguous envelope-wide
+   payload reference. The canonical envelope records the permission class for
+   each protected reference but no sink-specific redaction state. The separate
+   delivery projection defined in item 4 records `available`, `redacted`, or
+   `not-applicable` for each reference; there is no ambiguous envelope-wide
    redaction Boolean. A timestamp MUST be the event's
    creation time encoded as an RFC 3339 UTC string and MUST remain unchanged
    across delivery retries. Prompt templates, schemas, and raw integration
@@ -5831,18 +5918,13 @@ indexing another type is an analysis error. `Unit` has no fields, methods, or
 index operation, so an attempted postfix suffix on `()` is rejected by those
 ordinary rules.
 
-As a semantic disambiguation rule applied after parsing, a struct constructor
-in an `if` (including an `else if`) or `while` condition, an `if let`
-scrutinee, or a `match` scrutinee MUST occur inside an already-opened delimiter
-pair: parentheses, call arguments, an index, or an aggregate. For example,
-`if (Policy { enabled: true }).enabled { ... }` and
-`if check(Policy { enabled: true }) { ... }` are valid, while
-`if Policy { enabled: true }.enabled { ... }` is rejected. A constructor
-nested in one of those delimited expressions needs no additional parentheses.
-An `until` condition is not subject to this rule because it follows the body
-and ends at `;`. This local rule gives parsers and readers one interpretation
-of a path followed immediately by `{` at a control-flow boundary without
-imposing recursive punctuation on otherwise unambiguous expressions.
+At a control-flow boundary, the parser MUST parse the complete controlling
+expression according to the ordinary expression grammar before treating the
+following block brace as the control construct's body. Struct constructors are
+therefore valid in controlling expressions without extra parentheses, as in
+`if Policy { enabled: true }.enabled { ... }`. Parentheses remain available
+when an author wants to emphasize the boundary, but they do not change source
+validity.
 
 ### 13.7 Prompts and interpolation
 
@@ -7131,7 +7213,7 @@ thread safety, and protected-data handling. It does not introduce additional
 Gantry source forms.
 
 Interface requirements are capability-scoped as defined in Section 1. A
-nondurable embedding omits journal storage, resume, migration, durable
+nondurable embedding omits journal storage, resume, durable
 observation, and delivery recovery. A concurrent embedding exposes task and
 detachment lifecycle behavior only when it embeds the concurrent evaluator.
 Sections 15.1 and 15.5 explicitly distinguish the durable and nondurable
@@ -7178,15 +7260,14 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    Execution cancellation accepts an execution ID and a `CancellationReason`, is
    idempotent, and implements Section 10 rather than requiring the embedder to
    manipulate executor handles directly. A resume request MUST identify the
-   execution or journal to load
-   and provide a candidate package identity plus an optional versioned
-   migration. Gantry MUST reconstruct state only from the authoritative
-   durable record prefix and the exact verified recovery artifacts required by
-   Section 11. It MUST obtain exclusive execution ownership before migration
-   validation or recovered execution advances. If the candidate identity
-   differs, Gantry MUST validate and commit the supplied migration under
-   Section 11 before advancing; an absent or rejected migration is
-   `source-or-configuration-incompatibility`.
+   journal to load and provide a candidate package identity. Gantry MUST verify
+   that the journal's execution-start record contains the expected execution
+   ID when the caller also supplies one. It MUST reconstruct state only from
+   the authoritative durable record prefix and the exact verified recovery
+   artifacts required by Section 11, and MUST obtain exclusive execution
+   ownership before recovered execution advances. A candidate package identity
+   that differs from the recorded identity is
+   `source-or-configuration-incompatibility`; v1 accepts no migration payload.
 
 **New execution and entry input.**
 
@@ -7296,8 +7377,10 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    the execution ID allows the embedder to correlate their later events and
    terminal state. Every evaluator embedding MUST support in-process foreground
    and terminal awaits. A durable embedding MUST additionally permit the
-   embedder to query an execution's latest durable foreground and terminal
-   states by execution ID. Foreground-await and terminal-await results MUST
+   embedder to query a journal's latest durable foreground and terminal states
+   by journal ID. A query MAY also supply an expected execution ID, which MUST
+   match the journal's execution-start record. Foreground-await and terminal-
+   await results MUST
    represent the Gantry language outcome separately from the
    `required-event-delivery-failure` barrier status. A delivery-barrier failure
    MUST NOT masquerade as, replace, or erase a durable foreground or terminal
@@ -7565,13 +7648,14 @@ All public protocol envelopes MUST carry a major and minor version. A major
 
 The v1 publication MUST provide canonical JSON Schemas and RFC 8785 golden
 encodings for hook requests/outcomes, canonical transcripts, events,
-diagnostics, configuration, canonical IR/source maps, migrations, journal
+diagnostics, configuration, canonical IR/source maps, journal
 logical evidence, and the conformance manifest. It MUST provide a versioned
 requirement-ID registry and
 an executable conformance corpus covering lexer/parser boundaries, positive
 and negative static semantics, schema/hash goldens, RFC 8785 differential
 cases, cross-implementation logical traces, crash injection at every commit
-cut, idempotency and unknown outcomes, Unicode security, workflow migration,
+cut, idempotency and unknown outcomes, Unicode security, recovery projection
+and compaction equivalence,
 and property/model tests for linear task ownership and single result
 consumption. A profile claim maps every applicable requirement ID to at least
 one corpus test and publishes the results.
@@ -7584,7 +7668,7 @@ versioned URI for each:
 | `gantry.embedding` | Lifecycle, preflight, hook, cancellation, executor, journal, event-delivery, and observation request/result envelopes from Sections 15.1 through 15.7 |
 | `gantry.values` | Canonical value, transcript, diagnostic, event, configuration, and protected-reference schemas |
 | `gantry.ir` | Canonical core IR and source-map schemas and desugaring fixtures |
-| `gantry.journal` | Logical evidence, migration, ownership, and commit schemas |
+| `gantry.journal` | Logical evidence, ownership, and commit schemas; normative recovery projection and recovery/compaction goldens |
 | `gantry.conformance` | Requirement-ID registry, manifest schema, corpus index, and published results |
 | `gantry.authoring` | Executable positive and negative fixtures corresponding to the examples and common errors in Section 14 |
 
