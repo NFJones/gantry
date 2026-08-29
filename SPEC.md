@@ -960,7 +960,7 @@ defined in Sections 3.1 through 3.6.
     mapping revisions and compatible mutable execution-policy revisions. One
     abstract transition is written
     `configuration --label--> configuration'`. The portable labels are
-    deterministic, operation-prepared, operation-outcome, operation-accepted,
+    deterministic, operation-prepared, operation-outcome, operation-result,
     task-created, task-settled, task-ownership-changed, cancellation, failure,
     and foreground/terminal completion. Integration code may choose an
     operation outcome only after an operation-prepared label; executor
@@ -1077,7 +1077,8 @@ can enter.
 categories. `prim` is one sealed deterministic primitive whose domain and
 result are fixed by Section 5, `pat` is a pattern, `m` is an operation
 descriptor containing all static modifiers, and `d` is `inline`, `fork`, or
-`new`.
+`new`. This is abstract core notation rather than surface grammar: punctuation
+such as the parentheses in surface `detach(h);` is intentionally omitted.
 
 ```text
 e ::= v | x | aggregate(e...) | project(e,k) | prim(e...)
@@ -1548,10 +1549,10 @@ and fork the active session as specified by `M-Spawn`.
 deterministic(t,site,kind)
 operation-prepared(t,o,q,attempt,recovery)
 operation-outcome(t,o,q,outcome)
-operation-accepted(t,o,result-kind)
+operation-result(t,o,ok|err,result-kind)
 task-created(t,parent,spawn-site)
 task-settled(t,status)
-task-ownership-changed(owner,t,join|detach)
+task-ownership-changed(owner,[t...],join|detach)
 cancellation(t,reason)
 failure(t,category,code?)
 foreground-completion(result)
@@ -1706,6 +1707,8 @@ commit rule in Section 3.6 before an operation can use it.
 absent
 prepared(request,q,validation-attempt,recovery-dispatch,retries-left)
 outcome(request,q,host-outcome,retries-left)
+retry-waiting(request,errors,delay,next-validation-attempt,
+              recovery-dispatch,retries-left)
 accepted(request,v)
 failed(request,error)
 ```
@@ -1729,18 +1732,25 @@ outcome from Section 7, changes the state to `outcome`, and emits
 
 For `Completed(bytes)`, `M-Validate` applies Section 8's ordered decoding,
 resource, schema, and normalization functions. Success changes `Q(o)` to
-`accepted`, emits `operation-accepted`, and only then plugs a copy of `v` into
-the suspended expression. A prompt or decision acceptance extends its active
-session with exactly one canonical transcript turn in the same transition.
-Validation failure with retries remaining records the canonical errors and
-delay, decrements the retry count, creates a fresh `q`, increments only the
-validation-attempt number, returns to `prepared`, and emits another
-`operation-prepared`. Exhaustion applies `M-Operation-Fail`.
+`accepted`, emits `operation-result(...,ok,...)`, and only then plugs a copy of
+`v` into the suspended expression. A prompt or decision acceptance extends
+its active session with exactly one canonical transcript turn in the same
+transition. Validation failure with retries remaining records the canonical
+errors and selected delay, decrements the retry count, and enters
+`retry-waiting(request,errors,delay,next-validation-attempt,recovery-dispatch,
+retries-left)`. That transition is deterministic and does not allocate a
+dispatch ID or emit `operation-prepared`. After the complete recorded delay,
+Gantry creates a fresh `q`, changes the state to `prepared`, and emits
+`operation-prepared`; interruption before that transition causes recovery to
+wait the complete recorded delay again. Exhaustion applies
+`M-Operation-Fail`.
 
 `Declined` and `Failed` apply `M-Operation-Fail` without validation. In an
 `attempt` frame, that rule changes `Q(o)` to `failed`, constructs the exact
-`OperationError`, and returns `Err(error)` to source. Without that frame it
-uses `M-Fail`. A successful operation in an `attempt` frame returns `Ok(v)`.
+`OperationError`, emits `operation-result(...,err,operation-error)`, and
+returns `Err(error)` to source. Without that frame it uses `M-Fail`. A
+successful operation in an `attempt` frame returns `Ok(v)` and retains the
+successful operation's `operation-result(...,ok,...)` label.
 No journal, executor, deterministic, event-persistence, or invariant failure
 enters this conversion. A completed or failed operation state has no rule that
 dispatches it again during uninterrupted execution.
@@ -1768,12 +1778,13 @@ and emits `task-settled`.
 For `E[join(h...)]` or `E[join-all(h...)]`, `M-Join-Start` resolves the static
 lexical-name vector through `χ`, verifies that every dynamic handle is attached
 to the current owner, atomically changes all selected handles to joined, emits
-one `task-ownership-changed(...,join)` label in source or declaration order,
-and replaces the redex with a blocked join frame containing that ordered
-vector and destination context. An empty `join-all` instead reduces directly
-to `E[()]` as one deterministic step and creates no join frame or ownership
-label. Cancellation after ownership transfer cancels and drains the selected
-attached descendants under Section 10 rather than restoring their handles.
+one `task-ownership-changed(owner,[t...],join)` label whose nonempty task vector
+uses source or declaration order, and replaces the redex with a blocked join
+frame containing that ordered vector and destination context. An empty
+`join-all` instead reduces directly to `E[()]` as one deterministic step and
+creates no join frame or ownership label. Cancellation
+after ownership transfer cancels and drains the selected attached descendants
+under Section 10 rather than restoring their handles.
 
 The blocked owner becomes runnable only after every selected task is settled.
 `M-Join-Resolve` then either constructs the Section 10 result in argument or
@@ -1787,8 +1798,8 @@ transition.
 
 **[GNT-3-M-DETACH] Background ownership.** `detach h` resolves `h` through
 `χ`, changes exactly that attached dynamic handle to detached execution-owned
-work, emits
-`task-ownership-changed(...,detach)`, and advances the parent without waiting.
+work, emits `task-ownership-changed(owner,[t],detach)` with a singleton task
+vector, and advances the parent without waiting.
 The detached result is never returned to source. Its settlement still uses
 `M-Task-Settle` and contributes to terminal outcome according to Section 10.
 A joined or detached handle has no join or detach rule.
@@ -3193,7 +3204,10 @@ operation identity, failure categories, and propagation.
 11. A hook MUST return one of three host-level outcomes:
    `Completed(raw_output)`, `Declined(reason)`, or
    `Failed(category, message)`. `category` is exactly `provider-failure`,
-   `timeout`, `policy-denied`, or `cancelled`. `Completed` contains raw bytes;
+   `timeout`, `policy-denied`, `cancelled`, or `unknown-outcome`.
+   `unknown-outcome` is valid only for an action when transport or provider
+   evidence cannot establish whether that action began or completed.
+   `Completed` contains raw bytes;
    Gantry alone owns decoding, validation, normalization, and repair. Reasons
    and messages MUST be nonempty bounded Unicode strings under the effective
    hook-output and String limits. Invalid diagnostic data is a bounded
@@ -3201,8 +3215,15 @@ operation identity, failure categories, and propagation.
    `Declined` is an operation failure for every expected type, including
    `Option<T>` and `Unit`; it never manufactures `None`. An enclosing `attempt`
    converts it to `OperationError::Declined`. `Failed` maps its category to the
-   corresponding `OperationError` under `attempt`, or otherwise fails the task
-   in the applicable runtime category. `Failed(cancelled, message)` is
+   corresponding `OperationError` under `attempt`. Without `attempt`,
+   `provider-failure`, `timeout`, and `policy-denied` fail the task in the
+   runtime category with the same exact spelling, while `cancelled` uses the
+   `cancellation` runtime category. For an action, `unknown-outcome` becomes
+   `OperationError::UnknownOutcome` under `attempt` or the
+   `unknown-action-outcome` runtime category otherwise. Invalid diagnostic
+   data instead uses the distinct `hook-failure` category with code
+   `hook-contract-violation`.
+   `Failed(cancelled, message)` is
    catchable only when it is a hook-reported operation outcome received while
    the containing Gantry task remains active. Once Gantry task cancellation is
    signalled, the cancellation rules in Sections 3 and 10 win: the task cannot
@@ -3229,7 +3250,13 @@ operation identity, failure categories, and propagation.
    dispatches, validation diagnostics, actions,
    workflow frames, branch or loop history, task ancestry, and telemetry are
    excluded. Gantry MUST commit a turn before a later inline operation can
-   observe it.
+   observe it. Before accepting a model result, Gantry MUST construct and
+   validate the complete transcript with the proposed turn against those
+   limits. If it would exceed a limit, Gantry MUST NOT accept the result or
+   append the turn; the task fails with runtime category
+   `logical-session-transcript-limit`. This interpreter failure bypasses
+   `attempt` because retrying the already valid model result cannot reduce the
+   committed transcript prefix.
 
    `inline` reuses the active session. `fork` allocates a stable child ID and
    snapshots the complete committed transcript prefix of its parent at the
@@ -3278,9 +3305,13 @@ operation identity, failure categories, and propagation.
     actions. An indeterminate `non_idempotent` action MUST become
     `OperationError::UnknownOutcome` when enclosed by `attempt`, or the
     `unknown-action-outcome` runtime error otherwise; it MUST NOT be
-    redispatched automatically. Prompt and decide repair remains safe because
-    item 14 prohibits external mutation. A dispatch ID identifies one physical
-    attempt for audit and is never the deduplication key.
+    redispatched automatically. This rule applies during uninterrupted
+    execution as well as recovery: after ambiguous delivery, an integration
+    MUST return `Failed(unknown-outcome, message)` and MUST NOT internally
+    redispatch a `non_idempotent` action unless it can prove the prior attempt
+    did not begin. Prompt and decide repair remains safe because item 14
+    prohibits external mutation. A dispatch ID identifies one physical attempt
+    for audit and is never the deduplication key.
 <a id="GNT-7.16"></a>
 
 16. Every dynamic operation identity MUST correspond to a logical execution path
@@ -3347,6 +3378,8 @@ operation identity, failure categories, and propagation.
     errors MUST expose a stable category and MAY expose a more specific stable
     code plus structured details. The exact v1 runtime category values are
     `logical-session-setup`, `hook-creation`, `hook-failure`,
+    `logical-session-transcript-limit`,
+    `provider-failure`, `timeout`, `policy-denied`,
     `required-result-decline`, `structured-output-exhaustion`,
     `unknown-action-outcome`, `deterministic-evaluation-failure`,
     `executor-failure`, `cancellation`, `journal-failure`,
@@ -4303,11 +4336,15 @@ owner. It MUST NOT be described as a structured child after transfer.
     terminal category MUST follow the precedence in item 9: it is
     `cancellation` unless a foreground failure, detached-task failure, or
     durably recordable execution-wide runtime error already takes precedence.
-    Repeating a cancellation request is idempotent; requesting cancellation of
-    an already terminal execution returns its existing terminal state without
-    changing it. A journal failure while recording cancellation takes
-    precedence and is reported under Section 11. Cancellation of one execution
-    MUST NOT cancel unrelated executions owned by the same interpreter.
+    The first durably committed cancellation request and reason win. Repeating
+    a request with the same or a different reason returns the existing
+    cancellation status and effective reason without creating another
+    cancellation transition or replacing canonical evidence. Requesting
+    cancellation of an already terminal execution returns its existing
+    terminal state without changing it. A journal failure while recording
+    cancellation takes precedence and is reported under Section 11.
+    Cancellation of one execution MUST NOT cancel unrelated executions owned
+    by the same interpreter.
 
 ## 11. Durable Execution and Resume
 
@@ -4470,7 +4507,11 @@ Item 11 clarifies the boundary between resumption and replay.
    operation ID. An indeterminate `non_idempotent` action is never
    redispatched: it becomes `OperationError::UnknownOutcome` under `attempt` or
    fails with `unknown-action-outcome`. This distinction is durable and cannot
-   be changed by a later integration mapping.
+   be changed by a later integration mapping. A recovered `retry-waiting`
+   state is not an indeterminate dispatch because no next dispatch ID has been
+   allocated. Gantry MUST wait its complete recorded delay, then allocate the
+   next dispatch ID and commit the corresponding prepared state before
+   invoking the hook.
 <a id="GNT-11.5"></a>
 
 5. A consumable logical result derived from a committed `Completed` outcome
@@ -4874,7 +4915,13 @@ applies.
    boundary is available. A journal failure that makes a resumable execution's
    event stream unwritable is reported through the structured embedding error
    required by Sections 11 and 15 rather than by fabricating an undurable
-   standard event.
+   standard event. A failure of the UTC clock service required to create an
+   event timestamp is likewise reported as `executor-failure` through the
+   embedding result and the bounded emergency diagnostic callback when one is
+   configured; Gantry MUST NOT create a malformed or falsely timestamped
+   standard event for that clock failure. This is the only clock-failure
+   exception to standard event creation, and already created events retain
+   their sequence and causal identities.
    Operation-dispatch events MUST reference the applicable prompt and schema
    payloads. Event and journal envelopes MUST be explicitly versioned from the
    first public release, and consumers MUST reject unsupported major versions.
@@ -5239,10 +5286,11 @@ applies.
      (`prepared` in v1), operation and result kinds, validation-attempt number,
      recovery-dispatch number, and schema and operation-body references. A
      prompt or decide operation additionally identifies its selected agent,
-     active agent-mapping revision, logical session, request session directive,
-     active-session creation directive and parent session when applicable, and
-     prompt reference. An action instead identifies its canonical path and
-     signature and active action-mapping revision;
+     active agent-mapping revision, request session directive, active-session
+     creation directive, whether a parent session exists, prompt reference,
+     and a protected operation-request reference containing the actual logical
+     session and parent-session identifiers. An action instead identifies its
+     canonical path and signature and active action-mapping revision;
    - `operation-completion`: operation and dispatch IDs, outcome variant, and
      a protected raw-output reference for `Completed`, or a protected
      integration-diagnostic reference for a decline or failure reason. A
@@ -5259,8 +5307,10 @@ applies.
    - `structured-output-validation-failure`: operation and dispatch IDs plus
      the structured validation errors defined in Section 8;
    - `retry`: operation ID, preceding and next dispatch IDs when assigned,
-     validation-attempt and recovery-dispatch numbers, retry class, and
-     selected delay;
+     validation-attempt and recovery-dispatch numbers, and retry class. A
+     validation retry additionally carries its selected delay; a recovery
+     redispatch has no selected delay and identifies the indeterminate
+     preceding dispatch;
    - `branch-decision`: conditional, match, or loop identity; condition kind
      (`decision`, `bool`, or `pattern`); selected arm or loop transition; and
      the inline outcome for a `bool` or `pattern` condition. When the condition
@@ -5523,9 +5573,9 @@ simple EBNF notation used here.
 Block comments nest. An unterminated block comment, quoted string, raw string,
 escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
 Unicode scalar value and contain one through six hexadecimal digits. A normal
-string may contain a literal newline. A string token MUST retain both its
-authored body and the decoded semantic text needed by later phases; this is
-required because prompt interpolation is recognized before escape decoding.
+string may contain a literal newline. An ordinary string token retains its
+decoded semantic text; a contextual prompt-template token instead retains the
+authored literal segments and interpolation islands required by Section 13.7.
 The lexer performs no indentation normalization. Outside string tokens,
 `\r\n` is one line terminator rather than two. Inside ordinary, raw, and block
 prompt strings, authored line-ending scalars are content and are preserved
@@ -5816,10 +5866,13 @@ Bindings require explicit types in v1. `mut` is valid only on a single-name
 binding, and tuple destructuring introduces immutable bindings. `_` may appear
 inside a tuple pattern to ignore selected members; ignoring the complete
 initializer uses `discard expression;` rather than a second wildcard-binding
-form. A trailing expression is distinguished
-from an expression statement by the absence of `;` immediately before the
-closing brace. A bare expression statement MUST have type `Unit`; every other
-intentionally ignored value uses `discard expression;`. `discard` evaluates
+form. Within `block` and `value_block`, the parser first parses a complete
+expression. It classifies that expression as an `expression_statement` only
+when the next token is `;`; otherwise it is the trailing expression and the
+next token MUST be `}`. This terminating-token rule resolves the repetition in
+the EBNF without changing expression precedence. A bare expression statement
+MUST have type `Unit`; every other intentionally ignored value uses
+`discard expression;`. `discard` evaluates
 its operand exactly once before discarding it and does not suppress the
 operand's effects or failures. `return;` is sugar for `return ();` and is valid
 only in a `Unit` function, method, or spawned block.
@@ -6059,8 +6112,9 @@ prompt_modifier         = "session", "=", session_directive
                         | retry_modifier ;
 retry_modifier          = "retry_limit", "=", directive_integer_token ;
 session_directive       = "inline" | "fork" | "new" ;
-prompt_template         = string_token | raw_string_token
-                        | block_prompt_token ;
+prompt_template         = prompt_string_template_token
+                        | prompt_raw_template_token
+                        | prompt_block_template_token ;
 
 using_clause            = "using", "{", named_input,
                           { ",", named_input }, [ "," ], "}" ;
@@ -6128,19 +6182,26 @@ interpolation_tuple     = "(", interpolation_expression, ",",
                           { ",", interpolation_expression }, [ "," ], ")" ;
 ```
 
-`interpolation` is a contextual scanner production embedded within a
-`prompt_template`; it is intentionally not referenced as an ordinary parser
-nonterminal. The contextual scan produces one template syntax value while
-retaining its ordered literal segments and interpolation islands. This keeps a
-generic non-prompt `string_token` free of interpolation semantics.
+`prompt_string_template_token`, `prompt_raw_template_token`, and
+`prompt_block_template_token` are contextual lexical metavariables whose
+delimiters respectively match `string_token`, `raw_string_token`, and
+`block_prompt_token`. They are distinct from those ordinary tokens because an
+outer template delimiter is ignored while the scanner tokenizes an
+interpolation island. `interpolation` is a contextual scanner production
+embedded within one of these template tokens; it is intentionally not
+referenced as an ordinary parser nonterminal. The contextual scan produces one
+template syntax value while retaining its ordered literal segments and
+interpolation islands. This keeps a generic non-prompt `string_token` free of
+interpolation semantics.
 
 When the parser expects the prompt template immediately following `prompt` or
 `decide`, the lexer MUST enter contextual template mode. It identifies the
 opening delimiter and then scans literal segments, `$$` escapes, and balanced
-interpolation islands together; it MUST NOT first terminate a generic string
-token and search its completed body afterward. An outer closing delimiter is
-recognized only while scanning a literal segment, never while scanning an
-interpolation island. Within an island, ordinary Gantry tokens—including
+interpolation islands together; it MUST NOT emit or terminate an ordinary
+`string_token`, `raw_string_token`, or `block_prompt_token` for the outer
+template. An outer closing delimiter is recognized only while scanning a
+literal segment, never while scanning an interpolation island. Within an
+island, ordinary Gantry tokens—including
 quoted and raw strings—use their normal lexical rules. This makes source such
 as `${Some("draft")}` valid inside an ordinary quoted prompt without requiring
 the island's quotes to be escaped for the outer template. Structural opening
@@ -7186,9 +7247,10 @@ if answer {
 let approved: Bool = answer.decision;
 ```
 
-Only `prompt` writes an output annotation at an invocation site. A `decide`
-always returns `Decision`; an action's output annotation belongs to its
-declaration, and an action invocation gets its result type from there:
+Among integration-operation invocations, only `prompt` permits a result
+annotation. A `decide` always returns `Decision`; an action's output annotation
+belongs to its declaration, and an action invocation gets its result type from
+there:
 
 ```gantry
 action read_only load_report(id: String) -> Report;
@@ -7443,8 +7505,9 @@ the detailed start, resume, observation, and shutdown rules below:
   invokes no integration operation.
 - `CancelExecution` accepts an execution ID and `CancellationReason` and
   returns `accepted`, `already-terminal`, or `not-found`. Repetition with the
-  same reason returns the existing cancellation status and creates no second
-  cancellation transition.
+  same or a different reason returns the existing cancellation status and the
+  first committed effective reason, and creates no second cancellation
+  transition.
 - `AwaitForeground` and `AwaitTerminal` accept an in-process execution handle
   and resolve once the respective state is known. Cancelling an await request
   stops only that waiter; it does not cancel the execution. Their result
@@ -7456,8 +7519,10 @@ the detailed start, resume, observation, and shutdown rules below:
   expected execution ID. An unknown identity returns `not-found`, not a
   fabricated execution state.
 - `Shutdown` is idempotent after shutdown begins and returns the same completed
-  shutdown report to later callers. Its request supplies the finite graceful
-  and drain durations required by Section 10.12; its result separately reports
+  shutdown report to later callers. The first request snapshots its supplied
+  finite graceful and drain durations, or the interpreter-configuration
+  defaults when either override is omitted. Later calls cannot change those
+  effective durations. Its result separately reports
   task and execution outcomes, journal-release failures, and event-delivery
   barrier or exhaustion status.
 
@@ -7670,8 +7735,11 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    operation complete even when the bytes later fail Gantry validation.
    Provider transport failures, timeouts, policy denials, cancellation, and
    integration-internal retry exhaustion MUST instead be represented as
-   `Failed(category, message)` with the category defined in Section 7; they MUST NOT
-   be encoded as synthetic malformed model output merely to enter Gantry's
+   `Failed(category, message)` with the category defined in Section 7. An
+   ambiguous transport outcome for an action MUST use `unknown-outcome`; for a
+   `non_idempotent` action the integration MUST NOT retry after ambiguity
+   unless it can prove that the prior invocation did not begin. Failures MUST
+   NOT be encoded as synthetic malformed model output merely to enter Gantry's
    structured-output retry path.
 ### 15.3 Cancellation
 
