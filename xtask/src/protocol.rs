@@ -1,5 +1,6 @@
 //! Deterministic one-way generation from canonical protocol inputs.
 
+mod embedding;
 mod portable;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,11 +34,12 @@ struct ProfileInput {
 /// Generates all currently materialized protocol bindings.
 pub(crate) fn generate(root: &Path) -> Result<(), String> {
     let profiles_changed = generate_protocol(root)?;
+    let embedding_changed = embedding::generate(root)?;
     let portable_changed = portable::generate(root)?;
     if profiles_changed {
         println!("generated {OUTPUT_PATH}");
     }
-    if !profiles_changed && !portable_changed {
+    if !profiles_changed && !embedding_changed && !portable_changed {
         println!("protocol bindings are already current");
     }
     Ok(())
@@ -55,6 +57,7 @@ pub(crate) fn check_generated(root: &Path) -> Result<(), String> {
             "{OUTPUT_PATH} is stale; run `cargo run --locked -p xtask -- generate protocol`"
         ));
     }
+    embedding::check_generated(root)?;
     portable::check_generated(root)?;
     println!("generated protocol bindings are current");
     Ok(())

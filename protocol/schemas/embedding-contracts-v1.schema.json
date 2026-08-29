@@ -1,0 +1,185 @@
+{
+  "$id": "https://gantry.example/protocol/schemas/embedding-contracts-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "catalog": { "const": "gantry.embedding-contracts" },
+    "major": { "const": 1 },
+    "minor": { "const": 0 },
+    "specification_revision": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "operations": {
+      "items": { "$ref": "#/$defs/operation" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "failure_matrix": {
+      "items": { "$ref": "#/$defs/failure" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "trait_bounds": {
+      "items": { "$ref": "#/$defs/traitBound" },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "catalog",
+    "major",
+    "minor",
+    "specification_revision",
+    "operations",
+    "failure_matrix",
+    "trait_bounds"
+  ],
+  "$defs": {
+    "wireName": {
+      "pattern": "^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "rustName": {
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "type": "string"
+    },
+    "requirements": {
+      "items": {
+        "pattern": "^GNT-[A-Za-z0-9.-]+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "wireNames": {
+      "items": { "$ref": "#/$defs/wireName" },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "operation": {
+      "additionalProperties": false,
+      "properties": {
+        "wire": { "$ref": "#/$defs/wireName" },
+        "rust": { "$ref": "#/$defs/rustName" },
+        "service": {
+          "enum": [
+            "event",
+            "executor",
+            "hook",
+            "identity",
+            "journal",
+            "lifecycle",
+            "preflight"
+          ]
+        },
+        "role": {
+          "enum": [
+            "event-sink",
+            "executor-adapter",
+            "hook-factory",
+            "identity-source",
+            "integration-preflight",
+            "interpreter",
+            "journal-storage",
+            "operation-hook"
+          ]
+        },
+        "applicable_profiles": {
+          "items": {
+            "enum": [
+              "analyzer",
+              "concurrent-evaluator",
+              "durable-runtime",
+              "embedding",
+              "evaluator",
+              "frontend"
+            ]
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "request_fields": { "$ref": "#/$defs/wireNames" },
+        "optional_request_fields": { "$ref": "#/$defs/wireNames" },
+        "result_variants": {
+          "items": { "$ref": "#/$defs/wireName" },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "error_categories": { "$ref": "#/$defs/wireNames" },
+        "acceptance": { "$ref": "#/$defs/wireName" },
+        "idempotency": { "$ref": "#/$defs/wireName" },
+        "cancellation": { "$ref": "#/$defs/wireName" },
+        "async_kind": {
+          "enum": ["borrowed-future", "owned-task-future", "synchronous"]
+        },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": [
+        "wire",
+        "rust",
+        "service",
+        "role",
+        "applicable_profiles",
+        "request_fields",
+        "optional_request_fields",
+        "result_variants",
+        "error_categories",
+        "acceptance",
+        "idempotency",
+        "cancellation",
+        "async_kind",
+        "requirements"
+      ],
+      "type": "object"
+    },
+    "failure": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": { "$ref": "#/$defs/wireName" },
+        "boundary": { "$ref": "#/$defs/wireName" },
+        "mapping": { "$ref": "#/$defs/wireName" },
+        "poison_scope": { "$ref": "#/$defs/wireName" },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": [
+        "origin",
+        "boundary",
+        "mapping",
+        "poison_scope",
+        "requirements"
+      ],
+      "type": "object"
+    },
+    "traitBound": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "event-sink",
+            "executor-adapter",
+            "hook-factory",
+            "identity-source",
+            "integration-preflight",
+            "journal-storage",
+            "operation-hook"
+          ]
+        },
+        "send": { "type": "boolean" },
+        "sync": { "type": "boolean" },
+        "returned_future": { "enum": ["send-borrowed", "synchronous"] },
+        "requirements": { "$ref": "#/$defs/requirements" }
+      },
+      "required": ["role", "send", "sync", "returned_future", "requirements"],
+      "type": "object"
+    }
+  },
+  "title": "Gantry v1 embedding contract catalog",
+  "type": "object"
+}

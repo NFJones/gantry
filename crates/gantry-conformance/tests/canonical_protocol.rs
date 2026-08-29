@@ -3,8 +3,14 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use gantry::PROFILE_DEFINITIONS;
+use gantry::host::contracts::{EmbeddingVersion, EnvelopeError, HostRequest};
+use gantry::host::embedding::{
+    EMBEDDING_OPERATIONS, EMBEDDING_SPECIFICATION_REVISION, EmbeddingOperation, FAILURE_BOUNDARIES,
+    TRAIT_BOUNDS,
+};
 use gantry::identity::ProtocolIdentity;
 use gantry::portable::{
     CONFIGURATION_FIELDS, EVENT_KINDS, IDENTITY_KINDS, IdentityKind, MAXIMUM_DIRECTIVE_INTEGER,
@@ -58,6 +64,22 @@ struct IdentityDerivationVector {
     kind: String,
     canonical_key: String,
     expected: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmbeddingNegativeVectors {
+    format: String,
+    cases: Vec<EmbeddingNegativeCase>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmbeddingNegativeCase {
+    name: String,
+    major: u64,
+    minor: u64,
+    operation: String,
 }
 
 #[test]
@@ -313,6 +335,84 @@ fn portable_identity_vectors_cover_derivation_and_strict_rejection() {
             ProtocolIdentity::parse(&invalid).is_err(),
             "accepted {invalid}"
         );
+    }
+}
+
+#[test]
+fn embedding_catalog_matches_its_golden_schema_and_public_binding() {
+    let root = protocol_root();
+    let catalog: serde_json::Value = read_json(&root.join("catalogs/embedding-contracts-v1.json"));
+    let golden: serde_json::Value =
+        read_json(&root.join("goldens/embedding-contracts-v1.canonical.json"));
+    let schema: serde_json::Value =
+        read_json(&root.join("schemas/embedding-contracts-v1.schema.json"));
+
+    assert_eq!(catalog, golden);
+    assert_eq!(catalog["catalog"], "gantry.embedding-contracts");
+    assert_eq!(catalog["major"], 1);
+    assert_eq!(catalog["minor"], 0);
+    assert_eq!(
+        catalog["specification_revision"],
+        EMBEDDING_SPECIFICATION_REVISION
+    );
+    assert_eq!(
+        schema["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    assert_eq!(schema["additionalProperties"], false);
+
+    let operations = catalog["operations"]
+        .as_array()
+        .unwrap_or_else(|| unreachable!("embedding operations are an array"));
+    assert_eq!(operations.len(), EMBEDDING_OPERATIONS.len());
+    for (canonical, public) in operations.iter().zip(EMBEDDING_OPERATIONS) {
+        assert_eq!(canonical["wire"], public.operation.wire_name());
+        assert_eq!(canonical["service"], public.service.wire_name());
+        assert_eq!(canonical["role"], public.role.wire_name());
+        assert_eq!(canonical["acceptance"], public.acceptance);
+        assert_eq!(canonical["idempotency"], public.idempotency);
+        assert_eq!(canonical["cancellation"], public.cancellation);
+        assert_eq!(canonical["async_kind"], public.async_kind.wire_name());
+    }
+
+    assert_eq!(
+        catalog["failure_matrix"].as_array().map(Vec::len),
+        Some(FAILURE_BOUNDARIES.len())
+    );
+    assert_eq!(
+        catalog["trait_bounds"].as_array().map(Vec::len),
+        Some(TRAIT_BOUNDS.len())
+    );
+}
+
+#[test]
+fn embedding_negative_vectors_reject_versions_and_unknown_operations() {
+    let vectors: EmbeddingNegativeVectors =
+        read_json(&protocol_root().join("goldens/embedding-envelope-negatives-v1.json"));
+    assert_eq!(vectors.format, "gantry.embedding-envelope-negatives/v1");
+
+    for case in vectors.cases {
+        let version = EmbeddingVersion {
+            major: case.major,
+            minor: case.minor,
+        };
+        let operation = EmbeddingOperation::from_wire_name(&case.operation);
+        match operation {
+            Some(operation) => assert_eq!(
+                HostRequest::new(version, operation, Arc::from(&b"{}"[..])),
+                Err(EnvelopeError::UnsupportedVersion),
+                "accepted {}",
+                case.name
+            ),
+            None => assert!(
+                matches!(
+                    case.name.as_str(),
+                    "unknown-operation" | "wrong-operation-case"
+                ),
+                "unexpected unknown operation fixture {}",
+                case.name
+            ),
+        }
     }
 }
 

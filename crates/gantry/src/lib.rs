@@ -5,6 +5,7 @@
 //! empty until the corresponding conformance gate closes.
 
 pub use gantry_core::{identity, portable, profile, protocol};
+pub use gantry_host as host;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 
 /// Facade features compiled into the current build.

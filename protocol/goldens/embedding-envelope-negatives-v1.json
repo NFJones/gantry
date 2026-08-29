@@ -1,0 +1,29 @@
+{
+  "format": "gantry.embedding-envelope-negatives/v1",
+  "cases": [
+    {
+      "name": "unsupported-major",
+      "major": 2,
+      "minor": 0,
+      "operation": "validate-package"
+    },
+    {
+      "name": "unsupported-minor",
+      "major": 1,
+      "minor": 1,
+      "operation": "validate-package"
+    },
+    {
+      "name": "unknown-operation",
+      "major": 1,
+      "minor": 0,
+      "operation": "unknown-operation"
+    },
+    {
+      "name": "wrong-operation-case",
+      "major": 1,
+      "minor": 0,
+      "operation": "Validate-Package"
+    }
+  ]
+}
