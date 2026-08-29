@@ -2426,7 +2426,7 @@ Task handles are governed by Section 10 and are not source values.
 
 <a id="GNT-5.13-automatic-storage"></a>
 
-**Automatic storage management.** Gantry source has automatic storage
+**13a. Automatic storage management.** Gantry source has automatic storage
 duration. The language exposes no pointers, references, borrowing, explicit
 allocation or deallocation, allocation addresses, object identity, reference
 counts, weak references, destructors, finalizers, or other reclamation hooks.
@@ -2436,14 +2436,18 @@ incrementally, at a suspension point, or when an interpreter run ends.
 Reclaiming an unreachable value MUST NOT dispatch an integration operation,
 write a journal record, emit an event, run source code, change a logical
 session, settle or cancel a task, consume a deterministic budget, or otherwise
-alter the labelled transition system in Section 3. A value remains reachable
-while it is needed by any live binding, workflow frame, continuation, task
-capture, unsettled join result, pending logical operation, session state,
-required event or journal payload, recovery projection, embedding input, or
-embedding result.
+alter the labelled transition system in Section 3. A logical value is
+storage-live while the running interpreter must retain its logical content for
+a live binding, workflow frame, continuation, task capture, unsettled join
+result, pending logical operation, session state, recovery projection,
+embedding input, or embedding result. A journal or event record that must
+retain a value's canonical logical content has the retention obligations
+specified in Sections 11 and 12, but does not require the original in-memory
+value representation to remain allocated; an implementation MAY serialize,
+copy, and later reconstruct an equivalent value when needed.
 
-The source-visible value graph is finite, acyclic, and has the deep,
-nonaliasing semantics of item 13. An implementation MAY represent it as a
+The logical graph of every source-visible value is finite, acyclic, and has
+the deep, nonaliasing semantics of item 13. An implementation MAY represent it as a
 tree, an immutable directed acyclic graph with shared nodes, a persistent data
 structure, or another equivalent form. It MAY use copying, copy-on-write,
 reference counting, tracing collection, arenas, or a combination of those
@@ -2456,9 +2460,9 @@ serialization, hashing, operation input, cancellation, failure, durability,
 or resume behavior.
 
 The reference interpreter SHOULD represent strings and aggregate value nodes
-as immutable, atomically reference-counted persistent data, keep economical
-scalars inline, clone shared ownership for logical copies, and use
-copy-on-write or path copying for mutable-root replacement. Its representation
+as immutable, atomically reference-counted persistent data, keep scalar values
+inline where practical, clone shared ownership for logical copies, and use
+copy-on-write or path-copying for mutable-root replacement. Its representation
 MUST be safe to transfer across the `Send` task and hook boundaries required
 by Sections 7 and 15; a thread-confined reference-counting representation by
 itself does not satisfy that obligation. This recommendation is not part of
@@ -2486,11 +2490,13 @@ enforce additional host resource controls outside the Gantry language, but
 MUST NOT report an implementation allocation count or byte estimate as though
 it were one of those portable logical limits. A future portable live-storage
 budget would require a separately named, identity-bound configuration field,
-canonical accounting over logically reachable values, specified charging and
-release points, a stable failure code, and durable resume rules. In the
-absence of such a field in v1, physical memory exhaustion is not a portable
-source-visible condition and MUST NOT be made catchable by `attempt` or
-translated into a successful Gantry value.
+canonical accounting that does not depend on physical representation, specified
+charging and release points, a stable failure code, and durable resume rules.
+In the absence of such a field in v1, host physical-memory exhaustion has no
+portable Gantry runtime category, code, source-visible condition, or recovery
+promise. An implementation MAY report it through an out-of-band embedding
+failure, but MUST NOT make it catchable by `attempt` or translate it into a
+successful Gantry value.
 <a id="GNT-5.14"></a>
 
 14. `const` is excluded from v1. Runtime initialization of immutable bindings is
