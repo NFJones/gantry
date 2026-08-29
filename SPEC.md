@@ -2427,14 +2427,16 @@ Task handles are governed by Section 10 and are not source values.
 <a id="GNT-5.13-automatic-storage"></a>
 
 **13a. Automatic storage management.** Gantry has automatic storage
-management. Source programs expose no pointers, value references, borrowing,
-explicit allocation or deallocation, allocation addresses, object identity,
-reference counts, weak references, destructors, finalizers, or other
-reclamation hooks. This does not restrict the protocol references defined
-elsewhere in this specification. A program therefore cannot observe whether
-two logical values share physical storage, when storage is reclaimed, or
-whether reclamation occurs eagerly, incrementally, at a suspension point, or
-when an interpreter run ends.
+management for first-class values. Source programs expose no pointers,
+references or borrowing of first-class values, explicit allocation or
+deallocation, allocation addresses, storage identity, reference counts, weak
+references, destructors, finalizers, or other reclamation hooks. This does not
+restrict the semantic task identities, task handles, operation identities,
+session identities, or protocol references defined elsewhere in this
+specification. A program therefore cannot observe whether two logical values
+share physical storage, when storage is reclaimed, or whether reclamation
+occurs eagerly, incrementally, at a suspension point, or when an interpreter
+run ends.
 Retention or reclamation of physical storage by itself MUST NOT dispatch an
 integration operation, write a journal record, emit an event, run source code,
 change a logical session, settle or cancel a task, consume a deterministic
@@ -2459,19 +2461,20 @@ equivalent logical value. Conversely, an implementation MAY retain physically
 unreachable storage for caching, allocation, or collection purposes, provided
 that retention and later reclamation have no observable effect.
 
-Every source-visible value is a finite, acyclic logical tree with the deep,
+Every first-class value is a finite, acyclic logical tree with the deep,
 nonaliasing semantics of item 13. An implementation MAY represent a logical
 tree as an immutable directed acyclic graph with shared nodes, a persistent
 data structure, or another equivalent form. It MAY use copying, copy-on-write,
 reference counting, tracing collection, arenas, or a combination of those
-techniques. Internal sharing MUST be immutable. Mutation through a mutable root
-MUST construct and publish the complete replacement logical value atomically;
-it MAY path-copy only the changed route and share untouched subvalues. Internal
-cycles, caches, interning tables, journal buffers, and integration objects MAY
-retain physical state, but MUST NOT create logical reachability or cause
-content absent from both abstract state and required durable evidence to
-reappear in equality, serialization, hashing, operation input, cancellation,
-failure, durability, or resume behavior.
+techniques. Storage shared by two logical values MUST NOT permit an update to
+one value to change what the other value observes. A successful mutable-root
+update MUST replace the complete logical root only after its replacement has
+been constructed and validated; it MAY path-copy only the changed route and
+share untouched subvalues. Internal cycles, caches, interning tables, journal
+buffers, and integration objects MAY retain physical state, but MUST NOT create
+logical reachability or cause content absent from both abstract state and
+required durable evidence to reappear in equality, serialization, hashing,
+operation input, cancellation, failure, durability, or resume behavior.
 
 **Reference-Rust implementation guidance (non-normative).** A Rust reference
 interpreter should use an acyclic, immutable persistent representation:
@@ -2494,11 +2497,11 @@ journaling, recovery, and reclamation—MUST remain safe for every value admitte
 by the effective `maximum_value_nesting_depth` and `maximum_value_nodes`.
 Implementations MUST NOT rely on one native call-stack frame per value level,
 including indirectly through a recursive destructor. They MAY use explicit
-work stacks, bounded recursion proven safe for the effective depth limit,
-deferred destruction, or equivalent depth-safe techniques. A logical copy or
-replacement that constructs new content MUST enforce the value limits before
-the result becomes observable and MUST preserve the atomicity and error rules
-specified elsewhere in this document.
+work stacks, deferred destruction, or recursion whose native-stack bound is
+independent of admitted logical-value depth and is demonstrably safe. A logical
+copy or replacement that constructs new content MUST enforce the value limits
+before the result becomes observable and MUST preserve the atomicity and error
+rules specified elsewhere in this document.
 
 The value depth, node, string-scalar, and list-item limits bound each admitted
 logical value; they do not by themselves define a byte allocator, process
