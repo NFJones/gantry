@@ -2435,7 +2435,7 @@ elsewhere in this specification. A program therefore cannot observe whether
 two logical values share physical storage, when storage is reclaimed, or
 whether reclamation occurs eagerly, incrementally, at a suspension point, or
 when an interpreter run ends.
-The act of reclaiming or retaining physical storage MUST NOT dispatch an
+Retention or reclamation of physical storage by itself MUST NOT dispatch an
 integration operation, write a journal record, emit an event, run source code,
 change a logical session, settle or cancel a task, consume a deterministic
 budget, or otherwise alter the labelled transition system in Section 3.
@@ -2444,13 +2444,13 @@ Logical retention follows abstract state and protocol obligations, not
 implementation pointers. Gantry MUST preserve the canonical content needed by
 a future abstract transition, a required embedding or event delivery, or
 durable recovery. Such content includes values held by live bindings, workflow
-frames, continuations, task captures, or unsettled task results; canonical
-values in pending operations, sessions, and embedding requests or results that
-Gantry still owns; and values in required durable evidence or a recovery
-projection. A task, session, operation, request, result, event obligation, or
-recovery projection logically retains only the canonical values its defined
-state or payload contains. It does not logically retain arbitrary integration
-resources or physical backing.
+frames, continuations, task captures, or settled task results that the machine
+state still requires; canonical values in pending operations, sessions, and
+embedding request or result payloads that Gantry must still retain; and values
+in required durable evidence or a recovery projection. A task, session,
+operation, request, result, event obligation, or recovery projection logically
+retains only the canonical values its defined state or payload contains. It
+does not logically retain arbitrary integration resources or physical backing.
 
 Sections 11 and 12 define the retention periods for durable evidence and event
 payloads. They do not require an original in-memory representation to remain
@@ -2474,15 +2474,18 @@ reappear in equality, serialization, hashing, operation input, cancellation,
 failure, durability, or resume behavior.
 
 **Reference-Rust implementation guidance (non-normative).** A Rust reference
-interpreter should use immutable, atomically reference-counted persistent
-strings and aggregate nodes, inline scalar values where practical, shared
-ownership for logical copies, and copy-on-write or path-copying for
-mutable-root replacement. Task state that crosses an executor thread boundary
-must use a representation safe for that transfer; Rust's `Arc` is suitable,
-whereas a thread-confined reference-counting representation alone is not.
-This guidance is not part of the language ABI. Public protocols, canonical IR,
-journals, events, diagnostics, and embedding results MUST encode logical values
-rather than allocation addresses, implementation handles, sharing topology, or
+interpreter should use an acyclic, immutable persistent representation:
+atomically reference-counted backing for strings and aggregate nodes, inline
+scalar values where practical, shared ownership for logical copies, and
+copy-on-write or path-copying for mutable-root replacement. Value nodes should
+not contain strong parent links, backreferences, or other strong cycles. For
+task state crossing an executor thread boundary, a thread-safe shared form is
+needed; Rust's `Arc` is suitable, whereas a thread-confined reference-counting
+representation alone is not. This guidance is not part of the language ABI.
+
+Regardless of representation, public protocols, canonical IR, journals,
+events, diagnostics, and embedding results MUST encode logical values rather
+than allocation addresses, implementation handles, sharing topology, or
 reference counts.
 
 All operations that can visit or release a value—including construction, copy,
@@ -2508,9 +2511,9 @@ canonical accounting that does not depend on physical representation, specified
 charging and release points, a stable failure code, and durable resume rules.
 In the absence of such a field in v1, host physical-memory exhaustion has no
 portable Gantry runtime category, code, source-visible condition, or recovery
-promise. An implementation MAY report it through an out-of-band embedding
-failure, but MUST NOT make it catchable by `attempt` or translate it into a
-successful Gantry value.
+promise. An implementation MAY expose it only through an embedding-defined
+outcome outside Gantry's source failure model, but MUST NOT make it catchable
+by `attempt` or translate it into a successful Gantry value.
 <a id="GNT-5.14"></a>
 
 14. `const` is excluded from v1. Runtime initialization of immutable bindings is
