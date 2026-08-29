@@ -210,6 +210,16 @@ governs. A conformance manifest MUST map every requirement identifier to each
 applicable claimed profile, or record a profile-based `not-applicable`
 justification.
 
+Durability language follows the same capability boundary throughout this
+document. A clause that requires a journal record, durable commit, recovery,
+or resume applies only when the durable-runtime profile is claimed. A
+nondurable evaluator MUST still perform the corresponding abstract state
+transition before dependent work can observe it, but keeps that state only for
+the current interpreter lifetime and MUST NOT claim crash recovery. This rule
+does not make the source construct optional: for example, a concurrent
+evaluator still implements `detach`, while durability determines whether its
+detached work can survive interruption and resume in another process.
+
 Every normative requirement has a stable identifier in one of two forms:
 `GNT-<section>.<item>[-<label>]` for prose blocks, or
 `GNT-3-<family>-<label>` for named formal rules, where `<family>` is `F`, `T`,
@@ -530,8 +540,8 @@ in later sections:
   from context. `Unit` and `()` represent no-information results.
 - Attached concurrency is structured and ownership-visible. A spawned task
   must be joined, joined through `joinall()`, or explicitly transferred to
-  durable background ownership with `detach` on every normal path before its
-  handle leaves scope.
+  execution-scoped background ownership with `detach` on every normal path
+  before its handle leaves scope.
 
 V1 also keeps integration protocol controls out of the source language unless
 they change portable orchestration semantics. Provider selection, credentials,
@@ -685,8 +695,9 @@ activity throughout this specification:
   start record or after a resume begins advancing recovered state. Runtime
   errors are task-local unless a rule explicitly makes one execution-wide.
 - A **foreground outcome** is the completion of root `main`. A **terminal
-  outcome** is known only after foreground and detached work have
-  settled and required terminal state is durable. Foreground success can
+  outcome** is known only after foreground and detached work have settled.
+  Under the durable-runtime profile, Gantry must also commit the required
+  terminal state before reporting that outcome. Foreground success can
   therefore precede a terminal detached-task failure.
 
 ## 2. Normative Language
@@ -3873,14 +3884,15 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 
 <a id="GNT-10.0"></a>
 
-This section defines attached structured tasks and explicit durable background
+This section defines attached structured tasks and explicit background
 work. `spawn` creates one owned attached handle. `join` and `joinall()` are
 all-settled operations: they consume their selected attached handles and wait
 for every selected child before returning values or an aggregate failure.
 `detach` leaves structured concurrency by visibly transferring lifetime and
 failure ownership to execution-scoped background work. Detached work may
-outlive lexical parents, foreground completion, and an interpreter process and
-MUST NOT be described as a structured child after transfer.
+outlive lexical parents and foreground completion. With the durable-runtime
+profile, it may also outlive an interpreter process and be resumed by a later
+owner. It MUST NOT be described as a structured child after transfer.
 
 <a id="GNT-10.1"></a>
 
@@ -4055,11 +4067,15 @@ MUST NOT be described as a structured child after transfer.
 <a id="GNT-10.8"></a>
 
 8. `detach(task)` consumes one attached task handle and transfers foreground
-   ownership to Gantry on behalf of the task's originating execution and
-   journal, without waiting for it. That ownership is durable execution state,
-   not state tied to the lifetime of the current interpreter instance; an
-   unfinished detached task is recovered by a later execution owner under
-   Section 11. Detaching an
+   ownership to Gantry on behalf of the task's originating execution, without
+   waiting for it. In a nondurable concurrent evaluator, that ownership lasts
+   for the current interpreter lifetime: the task may outlive its lexical
+   parent and foreground completion, but an unclean interpreter interruption
+   provides no recovery guarantee. When the durable-runtime profile is also
+   claimed, the ownership is durable execution state associated with the
+   execution journal rather than one interpreter instance, and an unfinished
+   detached task is recovered by a later execution owner under Section 11.
+   Detaching an
    already consumed handle is an analysis error. An attached, unconsumed task
    at lexical scope exit is an analysis error; v1 never detaches work
    implicitly. Detached tasks and nested spawns are permitted, and a top-level
@@ -4091,10 +4107,12 @@ MUST NOT be described as a structured child after transfer.
    nested `with` or `session` block.
 <a id="GNT-10.9"></a>
 
-9. A detached-task failure MUST be journaled and emitted as a failure event. It
-   MUST NOT abort foreground execution or change an already returned foreground
-   outcome, regardless of whether it settles before or after that outcome is
-   returned. It does, however, make the eventual terminal execution category
+9. A detached-task failure MUST be emitted as a failure event. Under the
+   durable-runtime profile, it MUST also be journaled before dependent terminal
+   state can observe it. It MUST NOT abort foreground execution or change an
+   already returned foreground outcome, regardless of whether it settles
+   before or after that outcome is returned. It does, however, make the
+   eventual terminal execution category
    `detached-task-failure` unless a durably recordable execution-wide runtime
    error takes precedence under this item. For this rule, an
    **execution-wide runtime error** is one that another normative requirement
@@ -6843,8 +6861,9 @@ fn audit_selected(report: Report) {
 
 Background work is explicit. `detach(background)` consumes the scoped handle
 and transfers the task to its originating execution. The task may outlive the
-current foreground workflow or process and remains recoverable from its
-journal until terminal execution:
+current foreground workflow. With a durable runtime it may also outlive the
+current process and remains recoverable from its journal until terminal
+execution:
 
 ```gantry
 fn launch_background(report: Report) {
