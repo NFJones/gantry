@@ -6041,13 +6041,16 @@ analysis MUST reject a bare path that resolves to any such item other than a
 unit enum variant. Task handles are legal only in `join`,
 `joinall()`, and `detach`, never as primary expressions.
 
-Path interpretation follows the next source token. A path followed by `{`
-MUST resolve to a struct type and begins a struct constructor. A path followed
-by `(` MUST resolve to exactly one callable workflow, declared enum payload
-variant, or permitted built-in. A path with no such suffix in value position
-MUST resolve to a visible binding when it has one unqualified segment, or to a
-declared unit enum variant. Enum patterns use the same root and module lookup
-rules as `qualified_path` and MUST resolve to an enum variant. An
+Path interpretation follows the next source token. Except at the outermost
+control-flow boundary defined below, a path followed by `{` MUST resolve to a
+struct type and begins a struct constructor. At that boundary, the `{` begins
+the enclosing block or match arms, so an intended struct constructor must be
+grouped. A path followed by `(` MUST resolve to exactly one callable workflow,
+declared enum payload variant, or permitted built-in. A path with no such
+suffix in value position MUST resolve to a visible binding when it has one
+unqualified segment, or to a declared unit enum variant. Enum patterns use the
+same root and module lookup rules as `qualified_path` and MUST resolve to an
+enum variant. An
 `operation_error_pattern` is valid only for the seven exact variants in
 Section 5; the first six require a `String` payload pattern and
 `UnknownOutcome` requires a `Tuple<String,String>` payload pattern. This
@@ -6091,13 +6094,19 @@ indexing another type is an analysis error. `Unit` has no fields, methods, or
 index operation, so an attempted postfix suffix on `()` is rejected by those
 ordinary rules.
 
-At a control-flow boundary, the parser MUST parse the complete controlling
-expression according to the ordinary expression grammar before treating the
-following block brace as the control construct's body. Struct constructors are
-therefore valid in controlling expressions without extra parentheses, as in
-`if Policy { enabled: true }.enabled { ... }`. Parentheses remain available
-when an author wants to emphasize the boundary, but they do not change source
-validity.
+At a control-flow boundary where an expression is followed by a block or match
+arms, the first `{` outside an already-open expression delimiter begins that
+control construct rather than a struct constructor. This makes common heads
+such as `if allowed { ... }` parse without type-directed lookahead. An intended
+struct constructor whose opening `{` occurs outside parentheses, brackets, or
+another constructor MUST therefore be parenthesized, as in
+`if (Policy { enabled: true }).enabled { ... }`. Constructors inside a call
+argument, list or tuple literal, index expression, or another constructor
+retain the ordinary expression grammar because their opening brace occurs
+inside an existing delimiter. This rule applies to `if` conditions and `if
+let` scrutinees, `match` scrutinees, `while` conditions, and `for` iterable
+expressions. It does not apply to an `until` post-test because that expression
+is terminated by `;`, not followed by a block brace.
 
 ### 13.7 Prompts and interpolation
 
@@ -6353,9 +6362,9 @@ grammar:
 Only `Unit` expressions may be bare expression statements; other values use
 explicit `discard`. A Unit operation or workflow call therefore ends in `;`,
 whereas a statement-only braced control construct does not. Section 13.6 also
-defines how a struct constructor in an `if`, `while`, `if let`, or `match`
-controlling expression is parsed before the control construct's body. Section
-14.14 illustrates this less-obvious boundary rule.
+requires grouping when a struct constructor is the outermost expression in an
+`if`, `while`, `if let`, `match`, or `for` control head. Section 14.14
+illustrates this boundary rule.
 
 ### 14.1 Minimal package entry point
 
@@ -7342,18 +7351,18 @@ if minimum < value && value < maximum {
 }
 ```
 
-The parser consumes a complete controlling expression before treating the
-following block as the control-flow body. A struct constructor may therefore
-appear without extra parentheses; grouping is optional when it improves
-readability:
+At an outermost control-head boundary, `{` begins the control block or match
+arms. Parenthesize a struct constructor used in that position so an ordinary
+binding condition such as `if enabled { ... }` remains unambiguous:
 
 ```gantry
-// Valid: the first brace constructs Policy; the second begins the if body.
+// Syntax error: the first brace begins the if body, so this is not parsed as
+// a Policy constructor followed by field projection.
 if Policy { enabled: true }.enabled {
     prompt "Apply the policy.";
 }
 
-// Also valid: grouping may make the boundary easier to scan.
+// Valid: grouping makes the constructor part of the controlling expression.
 if (Policy { enabled: true }).enabled {
     prompt "Apply the policy.";
 }
