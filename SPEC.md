@@ -5121,13 +5121,22 @@ layer and its own stable event ID.
     message, and a primary package-relative source span when the problem is
     source-backed. The canonical v1 categories are `lexical`, `syntax`,
     `package`, `name-resolution`, `type`, `control-flow`, `task-ownership`,
-    `schema`, and `identifier-security`. Diagnostic code namespaces are
-    implementation-defined in v1, but
-    each implementation MUST publish its code registry and MUST NOT reuse one
-    code for a different meaning while supporting the same protocol major
-    version. The canonical category, source spans, and structured fields are
-    the portable cross-implementation contract; clients MUST NOT assume that
-    two implementations assign the same code to the same condition. A
+    `schema`, and `identifier-security`. Severity is exactly `error` or
+    `warning`. A syntax-validation or analysis activity succeeds only when it
+    produces no `error` diagnostic; `warning` diagnostics do not reject source
+    or prevent execution. Every violation of a source-validity requirement
+    MUST therefore be reported as an `error`; advisory authoring or security
+    guidance MAY be reported as a `warning`.
+
+    Diagnostic code namespaces are implementation-defined in v1 except where
+    this specification assigns an exact code. Each implementation MUST publish
+    its code registry and MUST NOT reuse one code for a different meaning while
+    supporting the same protocol major version. An exact code assigned by this
+    specification is portable and reserved for its stated condition. For all
+    other diagnostics, the canonical category, severity, source spans, and
+    structured fields are the portable cross-implementation contract; clients
+    MUST NOT assume that two implementations assign the same code to the same
+    condition. A
     diagnostic SHOULD include labeled related spans for conflicting
     declarations or ownership paths. A syntax diagnostic SHOULD identify the
     encountered token or end of input and the expected token classes when that
@@ -5259,16 +5268,18 @@ MUST NOT equal a reserved word.
 Identifiers use the UAX #31 default identifier profile for Unicode 16.0.0,
 narrowed by NFC and the grammar above. An identifier MUST NOT contain a
 Default_Ignorable_Code_Point, join control, variation selector, or bidi
-formatting/control scalar, even if a broad library classifies it as XID.
+formatting/control scalar, even if a broad library classifies it as XID. A
+violation is an `identifier-security` analysis error.
 Analysis MUST compute the Unicode 16.0.0 UTS #39 confusable skeleton for every
 identifier. Two distinct spellings with the same skeleton in one lookup
-namespace are an analysis diagnostic with category `identifier-security` and
-the stable portable code `identifier-confusable-collision`. Collisions
-across separate namespaces and identifiers containing scripts outside one
-Recommended single-script set MUST produce an `identifier-security` diagnostic
-that lists the exact scripts, skeleton, and related spans. Diagnostics MUST
-render control scalars by code point and MUST NOT allow bidi reordering to hide
-the authored token.
+namespace MUST produce an analysis warning with category
+`identifier-security` and the exact portable code
+`identifier-confusable-collision`. Collisions across separate namespaces and
+identifiers containing scripts outside one Recommended single-script set MUST
+produce an `identifier-security` warning that lists the exact scripts,
+skeleton, and related spans. These warnings do not make an otherwise
+source-valid package invalid. Diagnostics MUST render control scalars by code
+point and MUST NOT allow bidi reordering to hide the authored token.
 
 `directive_integer_token` is a contextual classification used only where the
 grammar expects the value of `retry_limit` or loop `limit`. In those positions,
