@@ -2426,50 +2426,53 @@ Task handles are governed by Section 10 and are not source values.
 
 <a id="GNT-5.13-automatic-storage"></a>
 
-**13a. Automatic storage management.** Gantry source has automatic storage
-duration. The language exposes no pointers, references, borrowing, explicit
+**13a. Automatic storage management.** Gantry has automatic storage
+management. The language exposes no pointers, references, borrowing, explicit
 allocation or deallocation, allocation addresses, object identity, reference
 counts, weak references, destructors, finalizers, or other reclamation hooks.
 A program therefore cannot observe whether two logical values share physical
 storage, when storage is reclaimed, or whether reclamation occurs eagerly,
 incrementally, at a suspension point, or when an interpreter run ends.
-Reclaiming an unreachable value MUST NOT dispatch an integration operation,
-write a journal record, emit an event, run source code, change a logical
-session, settle or cancel a task, consume a deterministic budget, or otherwise
-alter the labelled transition system in Section 3. A logical value is
-storage-live while the running interpreter must retain its logical content for
-a live binding, workflow frame, continuation, task capture, unsettled join
-result, pending logical operation, session state, recovery projection,
-embedding input, or embedding result. A journal or event record that must
-retain a value's canonical logical content has the retention obligations
-specified in Sections 11 and 12, but does not require the original in-memory
-value representation to remain allocated; an implementation MAY serialize,
-copy, and later reconstruct an equivalent value when needed.
+Reclamation and implementation retention MUST NOT dispatch an integration
+operation, write a journal record, emit an event, run source code, change a
+logical session, settle or cancel a task, consume a deterministic budget, or
+otherwise alter the labelled transition system in Section 3.
 
-The logical graph of every source-visible value is finite, acyclic, and has
-the deep, nonaliasing semantics of item 13. An implementation MAY represent it as a
+A value's logical content is semantically retained while it is reachable from
+the abstract machine's live bindings, workflow frames, continuations, task
+captures, completed-but-unconsumed task results, pending logical operations,
+sessions, or an embedding request or result that Gantry still owns. Durable
+evidence and recovery projections retain canonical logical content according
+to Sections 11 and 12, but do not require an original in-memory representation
+to remain allocated: an implementation MAY serialize, discard, and later
+reconstruct an equivalent value. Conversely, an implementation MAY retain
+unreachable physical storage for caching, allocation, or collection purposes,
+provided that retention and its later reclamation have no observable effect.
+
+Every source-visible value is finite and acyclic and has the deep, nonaliasing
+semantics of item 13. An implementation MAY represent a logical value as a
 tree, an immutable directed acyclic graph with shared nodes, a persistent data
 structure, or another equivalent form. It MAY use copying, copy-on-write,
 reference counting, tracing collection, arenas, or a combination of those
 techniques. Internal sharing MUST be immutable. Mutation through a mutable
 root MUST construct the complete replacement logical value atomically; it MAY
-path-copy only the changed route and share untouched subvalues. No internal
-cycle, cache, interning table, journal buffer, or integration object may make
-otherwise unreachable source state observable or change equality,
-serialization, hashing, operation input, cancellation, failure, durability,
-or resume behavior.
+path-copy only the changed route and share untouched subvalues. Internal cycles,
+caches, interning tables, journal buffers, and integration objects are
+implementation details and MUST NOT make source state observable after its
+semantic lifetime or change equality, serialization, hashing, operation input,
+cancellation, failure, durability, or resume behavior.
 
 The reference interpreter SHOULD represent strings and aggregate value nodes
 as immutable, atomically reference-counted persistent data, keep scalar values
 inline where practical, clone shared ownership for logical copies, and use
-copy-on-write or path-copying for mutable-root replacement. Its representation
-MUST be safe to transfer across the `Send` task and hook boundaries required
-by Sections 7 and 15; a thread-confined reference-counting representation by
-itself does not satisfy that obligation. This recommendation is not part of
-the language ABI: public protocols, canonical IR, journals, events,
-diagnostics, and embedding results MUST encode logical values rather than
-allocation addresses, implementation handles, sharing topology, or reference
-counts.
+copy-on-write or path-copying for mutable-root replacement. Value state owned
+by a Gantry task and submitted to the executor MUST satisfy the `Send +
+'static` task-boundary requirement of Sections 7 and 15; a thread-confined
+reference-counting representation alone does not satisfy that obligation.
+This recommendation is not part of the language ABI: public protocols,
+canonical IR, journals, events, diagnostics, and embedding results MUST encode
+logical values rather than allocation addresses, implementation handles,
+sharing topology, or reference counts.
 
 All operations that can visit or release a value—including copy, path
 replacement, equality, normalization, validation, hashing, serialization,
