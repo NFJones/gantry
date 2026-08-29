@@ -730,17 +730,19 @@ this document.
 
 <a id="GNT-2.1"></a>
 
-A **requirement block** is the smallest independently anchored normative unit
-in this document. Every normative statement belongs to exactly one requirement
-block and inherits that block's stable identifier. A numbered normative item
-is one block, including its subordinate paragraphs, lists, tables, and code
-fences. An unnumbered normative section introduction is its section's `.0`
-block. Each unnumbered grammar or embedding subsection is one block. Each
-bracketed, anchored formal-rule heading such as `[GNT-3-T-VALUE]` is one named
-formal-rule block. Labels inside its inference figure, such as `T-Value`,
-`T-Name`, and `T-None`, are subrules of that block and inherit its identifier;
-they are not independently registered blocks. Non-normative Sections 1.1
-through 1.4 and 14 have no requirement identifiers.
+A **requirement block** is a stable, independently anchored editorial unit in
+this document. A block may contain several related testable clauses; its
+identifier names the complete block rather than pretending to identify each
+sentence as a separate requirement. Every normative statement belongs to
+exactly one requirement block and inherits that block's stable identifier. A
+numbered normative item is one block, including its subordinate paragraphs,
+lists, tables, and code fences. An unnumbered normative section introduction
+is its section's `.0` block. Each unnumbered grammar or embedding subsection is
+one block. Each bracketed, anchored formal-rule heading such as
+`[GNT-3-T-VALUE]` is one named formal-rule block. Labels inside its inference
+figure, such as `T-Value`, `T-Name`, and `T-None`, are subrules of that block
+and inherit its identifier; they are not independently registered blocks.
+Non-normative Sections 1.1 through 1.4 and 14 have no requirement identifiers.
 
 Every block begins with an inline HTML anchor whose `id` is its requirement
 identifier. The anchors, rather than mutable line numbers or Markdown heading
@@ -767,9 +769,11 @@ than one block.
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10` |
 
-Adding an independently testable obligation to an existing block SHOULD add a
-descriptive child identifier by appending a suffix such as `-request-header`
-to its parent identifier; moving existing text without changing its meaning
+Adding a substantial obligation with different applicability or an
+independent compatibility lifecycle SHOULD add a descriptive child identifier
+by appending a suffix such as `-request-header` to its parent identifier.
+Related clauses MAY remain in one block and be covered by several conformance
+tests mapped to that block. Moving existing text without changing its meaning
 preserves its identifier. Splitting a block
 retires the parent or retains it as an umbrella while assigning new child
 identifiers. Merging blocks retires all but one identifier. Retired identifiers
@@ -3164,13 +3168,15 @@ operation identity, failure categories, and propagation.
 
 8. Ordinary quoted strings MUST support `\\`, `\"`, `\n`, `\r`, `\t`, `\0`, and
    Rust-style Unicode scalar escapes of the form `\u{HEX}`. Unknown,
-   incomplete, or invalid escapes are syntax errors. A quoted prompt literal
-   MAY contain literal newline characters. Literal newlines and all indentation
-   MUST be preserved exactly; Gantry performs no implicit indentation
-   stripping. Gantry MUST also support Rust-style raw strings `r"..."` and
-   hash-delimited forms such as `r#"..."#`. Raw strings disable backslash
-   escape processing but do not disable `${...}` interpolation or `$$`
-   escaping.
+   incomplete, or invalid escapes are syntax errors. An ordinary quoted string
+   or prompt template MUST NOT contain a literal line terminator; authors use
+   `\n` or `\r` escapes for short explicit line breaks and a raw string or
+   triple-quoted block prompt for multiline text. Raw strings preserve literal
+   newlines and indentation exactly. Gantry performs no implicit indentation
+   stripping outside the explicit block-prompt dedentation rule. Gantry MUST
+   support Rust-style raw strings `r"..."` and hash-delimited forms such as
+   `r#"..."#`. Raw strings disable backslash escape processing but do not
+   disable `${...}` interpolation or `$$` escaping.
 <a id="GNT-7.9"></a>
 
 9. Hooks MUST receive the expected output schema as a separate machine-readable
@@ -5572,14 +5578,16 @@ simple EBNF notation used here.
 
 Block comments nest. An unterminated block comment, quoted string, raw string,
 escape, or Unicode escape is a syntax error. A Unicode escape MUST identify a
-Unicode scalar value and contain one through six hexadecimal digits. A normal
-string may contain a literal newline. An ordinary string token retains its
-decoded semantic text; a contextual prompt-template token instead retains the
-authored literal segments and interpolation islands required by Section 13.7.
-The lexer performs no indentation normalization. Outside string tokens,
-`\r\n` is one line terminator rather than two. Inside ordinary, raw, and block
-prompt strings, authored line-ending scalars are content and are preserved
-exactly except for the structural block-prompt delimiters described below.
+Unicode scalar value and contain one through six hexadecimal digits. An
+ordinary quoted string cannot contain a literal line terminator; a line break
+must use an escape, a raw string, or, in prompt position, a block prompt. An
+ordinary string token retains its decoded semantic text; a contextual prompt-
+template token instead retains the authored literal segments and interpolation
+islands required by Section 13.7. The lexer performs no indentation
+normalization. Outside string tokens,
+`\r\n` is one line terminator rather than two. Inside raw strings and block
+prompts, authored line-ending scalars are content and are preserved exactly
+except for the structural block-prompt delimiters described below.
 
 `trivia` is a lexical skip production rather than a syntactic nonterminal.
 Outside string and prompt-template tokens, the lexer discards zero or more
@@ -5590,9 +5598,9 @@ delimiter, or fixed multicharacter terminal such as `::` or `->`. Maximal munch 
 requires trivia between a reserved word and an immediately following
 identifier character when they are intended as separate tokens.
 
-`string_character` is any Unicode scalar value other than `"`, `\`, or
-U+FEFF; newline characters are included. `block_prompt_body` and
-`raw_string_body` likewise exclude U+FEFF under the file-wide rule above.
+`string_character` is any Unicode scalar value other than `"`, `\`, U+000A,
+U+000D, or U+FEFF. `block_prompt_body` and `raw_string_body` likewise exclude
+U+FEFF under the file-wide rule above, but they may contain line terminators.
 `block_prompt_body` uses the same escape sequences as
 an ordinary string. While scanning it, a backslash followed by a valid escape
 suffix consumes the complete escape sequence before delimiter recognition.
@@ -6702,21 +6710,20 @@ fn summarize(topic: String, report: Report) -> String {
 ```
 
 The hook receives `topic` as plain string content and `report` as compact JSON.
-The final marker is the literal text `${topic}`. An ordinary quoted multiline
-prompt preserves all indentation shown in the source:
+The final marker is the literal text `${topic}`. For a short prompt, escaped
+line breaks keep the complete template in one quoted source token:
 
 ```gantry
 fn explain(report: Report) -> String {
-    prompt "Explain this report:
-        ${report}
-    Keep the answer concise." -> String
+    prompt "Explain this report:\n${report}\nKeep the answer concise." -> String
 }
 ```
 
-Triple-quoted block prompts provide explicit dedentation for clean source
-layout. The following sends `Explain this report:`, the compact JSON report,
-and `Keep the answer concise.` without the source indentation before those
-lines and without adding structural leading or trailing newlines:
+Ordinary quoted strings do not admit literal line terminators. Triple-quoted
+block prompts provide explicit dedentation for readable multiline source. The
+following sends `Explain this report:`, the compact JSON report, and `Keep the
+answer concise.` without the source indentation before those lines and without
+adding structural leading or trailing newlines:
 
 ```gantry
 fn explain_cleanly(report: Report) -> String {
