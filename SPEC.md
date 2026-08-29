@@ -1104,12 +1104,12 @@ flattened into one list: all interpolations complete in source order before
 any named input begins. An action node retains only its ordered positional
 arguments. This phase distinction is part of core IR and request capture.
 For `let b pat:τ=e`, `b` is `mutable` exactly when the surface declaration is
-the single-name form `let mut`; every other binding is `immutable`. The
-frontend evaluates `e` exactly once and then applies the irrefutable binding
-pattern atomically. If evaluation completes, every name in `pat` becomes
-visible with its projected value and mutability `b` at the same sequence
-boundary; if evaluation fails, none becomes visible. A mutable tuple pattern
-has no lowering because Section 13.5 prohibits that surface form.
+the single-name form `let mut`; every other binding is `immutable`. At
+execution time, Gantry evaluates `e` exactly once and then applies the
+irrefutable binding pattern atomically. If evaluation completes, every name in
+`pat` becomes visible with its projected value and mutability `b` at the same
+sequence boundary; if evaluation fails, none becomes visible. A mutable tuple
+pattern has no lowering because Section 13.5 prohibits that surface form.
 
 <a id="GNT-3-F-AUX"></a>
 
@@ -1879,12 +1879,17 @@ objects; they do not require one physical row, append, file write, or flush.
 
 <a id="GNT-3-D-PROPERTIES"></a>
 
-**[GNT-3-D-PROPERTIES] Proof and conformance obligations.** For the static and
-dynamic relations above, a conforming implementation must document a proof or
-machine-checked model argument and map executable conformance cases to each of
-these properties: (1) progress to a rule or specified runtime error for a
-well-typed nonterminal configuration; (2) preservation of expression types,
-store typing, and ownership consistency after every transition; (3) one
+**[GNT-3-D-PROPERTIES] Proof and conformance obligations.** For each claimed
+profile, a conforming implementation MUST document a proof or machine-checked
+model argument and map executable conformance cases only for the properties
+implemented by that profile. Static package-validity properties apply to
+analyzer-profile claims; transition, ownership, cancellation, and accepted-
+result properties apply to evaluator-profile claims; concurrency properties
+apply to concurrent-evaluator-profile claims; and recovery-prefix and terminal-
+completion properties apply to durable-runtime-profile claims. Within those
+scopes, the properties are: (1) progress to a rule or specified runtime error
+for a well-typed nonterminal configuration; (2) preservation of expression
+types, store typing, and ownership consistency after every transition; (3) one
 attached handle has at most one join or detach transition; (4) one logical
 operation has at most one source-consumable accepted result; (5) a cancelled
 task consumes no later operation outcome; (6) every recovered state simulates
@@ -2952,12 +2957,14 @@ operation identity, failure categories, and propagation.
    nested workflow calls and validation retries, and MUST NOT be invoked
    concurrently with itself. A spawned child receives a distinct hook instance
    if it reaches an operation. `HookFactory::create` MUST receive a
-   `TaskContext` containing task and execution identity; the
-   task's base logical session ID; the root logical session ID and provenance;
-   the enclosing session ID and fork provenance when the task was spawned; and
-   the inherited agent selection. Workflow frames, branch history, task
-   ancestry, and value provenance are observability data and MUST NOT be
-   supplied through `TaskContext` or otherwise influence hook fulfillment.
+   `TaskContext` containing task and execution identity; the task's base
+   logical session ID; the root logical session ID and provenance; and the
+   inherited agent selection. When the task's base logical session is forked,
+   `TaskContext` MUST additionally contain only that session's parent logical-
+   session ID, root logical-session ID, and session-creation mode. Workflow
+   frames, branch history, parent-task identity, task ancestry, and value
+   provenance are observability data and MUST NOT be supplied through
+   `TaskContext` or otherwise influence hook fulfillment.
    The base session is the root session for the root task and the automatically
    forked child session for a spawned task. It is fixed when the task is
    created and MUST NOT be replaced by a transient `session(...)` context that
@@ -2975,9 +2982,11 @@ operation identity, failure categories, and propagation.
    the integration MUST make a best effort to honor.
    Public asynchronous extension traits MUST use executor-independent boxed
    futures or equivalent stable abstractions. The executor adapter MUST provide
-   task spawning, task joining, task abortion, and asynchronous sleeping for
-   backoff. Gantry MUST retain its own cancellation semantics rather than
-   treating executor abortion as cooperative hook cancellation.
+   the services required by Section 15.4: every evaluator provides sleep,
+   yield, and deadline racing, while task spawn, join, and abort are required
+   only for the concurrent-evaluator profile. Gantry MUST retain its own
+   cancellation semantics rather than treating executor abortion as
+   cooperative hook cancellation.
    “Task lifetime” in this interface means one in-process execution or resume
    run. Hook instances are integration resources and MUST NOT be serialized in
    the journal. After process restart and the session-resolution preflight in
@@ -3662,12 +3671,16 @@ operation modifiers defined in Sections 6 and 13.
    Gantry.
 <a id="GNT-8.9"></a>
 
-9. UTF-8 decoding failures, malformed JSON, schema-invalid output, and output
-   exceeding the effective raw-byte, value-depth, value-node, String, or List
-   resource limits MUST be returned to the integration as validation guidance
-   and retried up to the configured retry limit. A retry request MUST include
-   the preceding
-   validation errors but MUST NOT return the preceding raw output to the hook.
+9. For every `Completed` outcome that fails UTF-8 decoding, JSON parsing,
+   schema validation, or an effective raw-byte, value-depth, value-node,
+   String, or List resource limit, Gantry MUST produce the canonical validation
+   errors defined above without exposing the raw output. If the effective retry
+   limit permits another dispatch, Gantry MUST send those errors as validation
+   guidance in that repair dispatch and retry up to the limit. If no retry
+   remains, Gantry MUST retain the errors for diagnostics and apply exhaustion
+   without issuing validation guidance to a hook. A retry request MUST include
+   the preceding validation errors but MUST NOT return the preceding raw output
+   to the hook.
    A validation retry is another physical dispatch of the same logical
    operation, not a reevaluation of the source expression. Gantry MUST reuse
    the selected agent, logical session, authored template, interpolated
@@ -3783,9 +3796,13 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 <a id="GNT-9.3"></a>
 
 3. Conditional and match arm selection is deterministic after the controlling
-   value is available. Analysis MUST reject unreachable or duplicate match arms
-   and prove exhaustive coverage of `Option`, `Result`, declared enums, and
-   tuple products unless a final irrefutable arm covers the remainder. Branch
+   value is available. Within a reachable `match`, analysis MUST reject an arm
+   made unreachable by preceding ordered patterns, reject duplicate arms, and
+   prove exhaustive coverage of `Option`, `Result`, declared enums, and tuple
+   products unless a final irrefutable arm covers the remainder. A `match`
+   nested in an enclosing branch excluded by a compile-time Boolean fact is
+   still analyzed under item 11 but is not rejected solely because its
+   enclosing branch is unreachable. Branch
    outcomes and rationales MAY be journaled and emitted as protected logical
    trace, but MUST NOT become implicit input to a later hook.
 
@@ -3818,9 +3835,9 @@ finite iteration, explicit source limits, and mandatory execution budgets.
 <a id="GNT-9.6"></a>
 
 6. Loop session behavior is `inline` by default. For `while(session = fork)`,
-   Gantry creates and durably records one child session before each condition
+   Gantry creates one child session before each condition
    evaluation; that condition and its body, when admitted, share the child.
-   A false condition therefore leaves one recorded session with no body entry.
+   A false condition therefore leaves one session with no body entry.
    For `until(session = fork)`, Gantry creates the child before each body entry,
    and that body and its following condition share the child. For
    `loop(session = fork)`, Gantry creates the child before each body entry.
@@ -3828,27 +3845,34 @@ finite iteration, explicit source limits, and mandatory execution budgets.
    body entry occurs before that entry's child session is created. For `while`,
    the child already exists because its condition must use that session; if a
    true condition is followed by a limit or budget failure, no body is entered
-   but the recorded child remains. `new` creates and durably records one empty
+   but the created child remains. `new` creates one empty
    session on loop entry and reuses it for every condition and body. `inline`
    allocates no loop session. Operation-local session modifiers override only
    that operation. These creation points determine transcript lineage,
-   operation identity context, establishment ordering, and resume behavior.
+   operation identity context, and establishment ordering. With the durable-
+   runtime profile, Gantry durably records each created session before its
+   associated condition or body work, and these same points determine resume
+   behavior.
 
 <a id="GNT-9.7"></a>
 
-7. Every execution MUST enforce identity-bound positive budgets for
-   deterministic transitions, logical operations, and loop body entries. A
-   deterministic transition, the `M-Prepare` transition defined in Section
-   3.5, or body entry
-   decrements its corresponding durable counter before the transition becomes
+7. Every execution MUST enforce positive budgets for deterministic
+   transitions, logical operations, and loop body entries. Each deterministic
+   transition decrements the deterministic-transition counter before becoming
+   observable. Each `M-Prepare` transition defined in Section 3.5 decrements
+   the logical-operation counter before becoming observable. Each admitted
+   loop body entry decrements the loop-iteration counter before becoming
    observable. Exhaustion fails with `deterministic-transition-budget`,
    `operation-budget`, or `loop-iteration-budget`, respectively, in the
    `deterministic-evaluation-failure` category. Budgets apply even to source
-   marked `unbounded`, are restored exactly on resume, and MUST NOT be converted
-   into normal loop completion or caught by `attempt`. Input evaluation before
-   `M-Prepare` does not consume the logical-operation budget. Validation
-   retries and recovery redispatches remain transitions of the same prepared
-   logical operation and MUST NOT consume that budget again.
+   marked `unbounded` and MUST NOT be converted into normal loop completion or
+   caught by `attempt`. A nondurable evaluator captures the effective maxima at
+   execution start and keeps counters for that interpreter lifetime. With the
+   durable-runtime profile, the maxima and counters are bound to the execution-
+   start identity in Section 11.10 and restored exactly on resume. Input
+   evaluation before `M-Prepare` does not consume the logical-operation budget.
+   Validation retries and recovery redispatches remain transitions of the same
+   prepared logical operation and MUST NOT consume that budget again.
 
 <a id="GNT-9.8"></a>
 
@@ -3934,29 +3958,28 @@ owner. It MUST NOT be described as a structured child after transfer.
    handles and keeps every join or detach visibly controlled by the task that
    created the work. One execution MUST create no more than the configured
    `maximum_tasks_per_execution`, counting the root task and every distinct
-   child task occurrence durably created during that execution, including
-   children that have already settled. This cumulative definition is
-   independent of executor timing and is recoverable from the journal. Gantry
-   MUST fail the spawning task with a `task-count-limit` deterministic-
-   evaluation runtime error before creating a child whose occurrence would
-   exceed the limit. No task identity, session, hook, task-state record, or
-   executor submission is created for that rejected child. Before submitting
-   an admitted child to the executor or invoking its `HookFactory`, Gantry MUST
-   commit task-creation evidence containing
-   the child's stable task identity, parent identity, source spawn occurrence,
-   copied captures, inherited agent selection, and forked-session identity. The
-   record MAY also contain structural ancestry for protected observability,
-   but that metadata MUST NOT be presented to later operation fulfillers. The
-   handle becomes visible to the parent only after that record is durable. This
-   ordering prevents a child from performing model-backed work that recovery
-   cannot identify. If executor submission then fails, the child MUST settle as
-   failed with an executor error; Gantry MUST commit that settlement
-   before the parent can observe it. The handle remains attached and visible,
-   and its owner MUST still consume it through `join`, `joinall()`, or `detach`
-   on every normal path. Recovery MUST reuse the durable failed settlement and
-   MUST NOT submit a second child for the same spawn occurrence. If Gantry
-   cannot durably record the submission failure, the execution instead fails
-   with the journal error under Section 11.
+   child task occurrence created during that execution, including children
+   that have already settled. This cumulative definition is independent of
+   executor timing. Gantry MUST fail the spawning task with a `task-count-limit`
+   deterministic-evaluation runtime error before creating a child whose
+   occurrence would exceed the limit. No task identity, session, hook, task
+   state, or executor submission is created for that rejected child.
+   Before an admitted child becomes runnable, Gantry MUST create task state
+   containing the child's stable task identity, parent identity, source spawn
+   occurrence, copied captures, inherited agent selection, and forked-session
+   identity. The state MAY also contain structural ancestry for protected
+   observability, but that metadata MUST NOT be presented to later operation
+   fulfillers. Only then does the handle become visible to the parent. If
+   executor submission fails, the child MUST settle as failed with an executor
+   error before the parent can observe it. The handle remains attached and
+   visible, and its owner MUST still consume it through `join`, `joinall()`, or
+   `detach` on every normal path.
+   With the durable-runtime profile, Gantry MUST commit the task-creation state
+   before executor submission or `HookFactory` invocation and MUST commit an
+   executor-submission failure before the parent can observe it. The task limit
+   is recoverable from the journal; recovery MUST reuse a durable failed
+   settlement and MUST NOT submit a second child for the same spawn occurrence.
+   Failure to commit the submission failure is a journal error under Section 11.
 <a id="GNT-10.3"></a>
 
 3. A spawned block captures outer variables by copy and MUST NOT mutate outer
@@ -3980,9 +4003,10 @@ owner. It MUST NOT be described as a structured child after transfer.
    resolved package-wide and are not captures; task handles owned by another
    task are prohibited by item 2.
    Gantry MUST snapshot every captured value and its binding mutability before
-   the child becomes runnable, and the durable task-state record in item 2 MUST
-   contain that complete snapshot. Evaluation of a `spawn` therefore cannot
-   observe a mixture of parent values from before and after child submission.
+   the child becomes runnable. Evaluation of a `spawn` therefore cannot observe
+   a mixture of parent values from before and after child submission. With the
+   durable-runtime profile, the task-creation state committed under item 2 MUST
+   contain that complete snapshot.
 <a id="GNT-10.4"></a>
 
 4. A spawned block that yields information MUST declare its result type with
@@ -4001,11 +4025,11 @@ owner. It MUST NOT be described as a structured child after transfer.
 5. `join(task)` waits for one named child and yields that child's typed block
    value. A join result MAY be bound as `let result: T = join(task);`. Joining
    a Unit block is a waiting statement and yields `()`. Every admitted join
-   consumes each selected task handle durably before waiting; consumption is
-   not rolled back when a child or aggregate join fails. Every task handle MAY be joined at most once;
-   repeated handles in one join, joins of already consumed handles, and uses of
-   handles that may have been consumed on an incoming control-flow path are
-   analysis errors. `join()` with no task names is invalid.
+   consumes each selected task handle before waiting; consumption is not rolled
+   back when a child or aggregate join fails. Every task handle MAY be joined
+   at most once; repeated handles in one join, joins of already consumed
+   handles, and uses of handles that may have been consumed on an incoming
+   control-flow path are analysis errors. `join()` with no task names is invalid.
    A join of two or more named children waits for every named child and yields
    an ordered `List<T>` of their successful block values in argument order when
    every joined task has the same non-`Unit` result type. When two or more named
@@ -4016,20 +4040,21 @@ owner. It MUST NOT be described as a structured child after transfer.
    named join is an analysis error; Gantry MUST NOT silently discard selected
    values merely because another named task returns `Unit`. Every named join
    waits until every named task settles even after a failure. Before waiting,
-   Gantry MUST commit task-ownership evidence that identifies
-   the join form, source location, named handles in argument order, and their
-   transition from attached to consumed-by-join. Only then are the handles
-   consumed. This transition includes handles for successful tasks in a join
-   where another task fails. After settlement, Gantry MUST commit the ordered
-   result, successful Unit settlement, or aggregate failure before returning
-   it to source execution.
+   Gantry MUST transition the named handles in argument order from attached to
+   consumed-by-join. This transition includes handles for successful tasks in a
+   join where another task fails. After settlement, Gantry MUST determine the
+   ordered result, successful Unit settlement, or aggregate failure before
+   returning it to source execution. With the durable-runtime profile, Gantry
+   MUST commit both transitions before waiting or returning, respectively; the
+   ownership evidence identifies the join form, source location, and named
+   handles in argument order.
    Consuming a handle for a join changes its source-level ownership state but
    does not detach the child: until it settles, the child remains an attached
    descendant for cancellation and cleanup under items 10 and 14.
    Failures abort the current Gantry task with one aggregate
    `task-join-failure` runtime error
    ordered by join argument, never by completion time. A failed single-task
-   join likewise consumes its handle durably and fails the current Gantry task
+   join likewise consumes its handle and fails the current Gantry task
    with `task-join-failure`. Propagation beyond that task follows Section 7
    rather than implicitly aborting unrelated parallel work.
 <a id="GNT-10.6"></a>
@@ -4073,11 +4098,12 @@ owner. It MUST NOT be described as a structured child after transfer.
    state on all incoming control-flow paths. A handle that is consumed or
    detached on only some incoming paths is an analysis error rather than a
    conditionally included `joinall()` member.
-   Before waiting, a nonempty `joinall()` MUST commit the same consumed-by-join
-   task-state transition required for a named join, listing included handles
-   in declaration order. Its ordered result or aggregate failure MUST likewise
-   be committed before source execution consumes it. A zero-task `joinall()`
-   requires no ownership evidence.
+   Before waiting, a nonempty `joinall()` MUST perform the same consumed-by-join
+   task-state transition required for a named join, listing included handles in
+   declaration order. It MUST determine its ordered result or aggregate failure
+   before source execution consumes it. With the durable-runtime profile, both
+   transitions MUST be committed at those respective boundaries. A zero-task
+   `joinall()` requires no ownership evidence.
 <a id="GNT-10.7"></a>
 
 7. A child failure does not immediately cancel siblings. A named child's
@@ -4102,11 +4128,12 @@ owner. It MUST NOT be described as a structured child after transfer.
    Requiring an explicit `detach` keeps background execution visible to humans,
    agents, analysis, and recovery tooling.
    Before releasing the child from parent cancellation constraints or allowing
-   the enclosing scope to continue, Gantry MUST commit task-ownership evidence
-   that identifies the source `detach`, child task, previous owner, and
-   transition to interpreter-owned detached work. Failure to commit that
-   transfer is a journal failure; the task remains attached for cancellation
-   and cleanup purposes.
+   the enclosing scope to continue, Gantry MUST transition the child to
+   interpreter-owned detached work. With the durable-runtime profile, Gantry
+   MUST first commit task-ownership evidence identifying the source `detach`,
+   child task, previous owner, and transition. Failure to commit that transfer
+   is a journal failure; the task remains attached for cancellation and cleanup
+   purposes.
    Detaching a value-producing task intentionally discards its eventual value;
    completion, failure, and observability remain governed by items 9 and 10.
    Semantic analysis MUST model each handle on every reachable path as exactly
@@ -4116,9 +4143,10 @@ owner. It MUST NOT be described as a structured child after transfer.
    unavailable after the merge; those paths MAY differ between
    consumed-by-join and consumed-by-detach because both visibly discharge the
    source-level ownership obligation. A merge between an attached path and any
-   consumed path is an analysis error. The path-specific durable ownership
-   transition remains join or detach and MUST NOT be collapsed in journals or
-   events. A `return`, `break`, or `continue` that exits a handle's lexical
+   consumed path is an analysis error. The path-specific ownership transition
+   remains join or detach and MUST NOT be collapsed in state or events. With
+   the durable-runtime profile, it likewise MUST NOT be collapsed in journals.
+   A `return`, `break`, or `continue` that exits a handle's lexical
    scope is valid only when the handle is consumed on that path. Runtime
    failure, cancellation, shutdown, and unclean interpreter drop are exempt because
    items 9 through 13 define their cleanup and ownership consequences. These
@@ -4792,6 +4820,40 @@ telemetry use an implementation-defined telemetry interface outside
 `EventSink`; the closed v1 event-kind enum does not encode them. One causal
 transition MAY produce linked logical and physical events, but each occurrence
 has one layer and its own stable event ID.
+
+The following table fixes the layer and occurrence represented by every v1
+event kind. “One per” is a cardinality rule; an event from a later transition
+does not replace an earlier event with a different kind.
+
+| Event kind | Layer | One event per |
+| --- | --- | --- |
+| `parse` | `physical` | completed syntax-validation phase |
+| `analysis` | `physical` | completed semantic-analysis phase |
+| `workflow-start` | `logical` | dynamic workflow-frame entry |
+| `workflow-end` | `logical` | dynamic workflow-frame settlement |
+| `operation-dispatch` | `physical` | prepared physical dispatch attempt |
+| `operation-completion` | `physical` | accepted host-level hook outcome |
+| `operation-result` | `logical` | source-consumable logical operation result |
+| `structured-output-validation-failure` | `physical` | failed validation of one completed dispatch |
+| `retry` | `physical` | admitted validation-repair or recovery redispatch |
+| `branch-decision` | `logical` | selected conditional, match, or loop transition |
+| `spawn` | `logical` | admitted child-task creation |
+| `join` | `logical` | dynamically executed named `join` or `joinall()` site |
+| `detach` | `logical` | successful ownership transfer |
+| `mutation` | `logical` | successful source assignment |
+| `cancellation` | `logical` | cancellation request and resulting terminal cancellation transition |
+| `foreground-completion` | `logical` | execution foreground settlement |
+| `task-completion` | `logical` | Gantry task settlement |
+| `terminal-execution` | `logical` | execution terminal settlement |
+| `shutdown` | `physical` | completed interpreter shutdown invocation |
+| `failure` | `logical` | runtime-error transition that settles a task or execution |
+
+A `failure` event accompanies rather than replaces the applicable
+`workflow-end`, `task-completion`, `foreground-completion`, or
+`terminal-execution` event. Hook outcomes, validation failures, and delivery
+failures do not independently create `failure` events unless they cause such a
+runtime-error transition. Item 6's nonrecursive sink-delivery exception still
+applies.
 
 <a id="GNT-12.1"></a>
 
@@ -5670,7 +5732,7 @@ parameter               = [ "mut" ], identifier_token, ":", value_type ;
 impl_declaration        = "impl", qualified_path, "{",
                           { method_declaration }, "}" ;
 method_declaration      = [ "pure" ], "fn", identifier_token, "(", receiver,
-                          [ ",", parameter_list ], ")",
+                          [ ",", parameter, { ",", parameter } ], [ "," ], ")",
                           [ result_annotation ], block ;
 receiver                = "self" | "mut", "self" ;
 ```
@@ -6189,8 +6251,10 @@ examples, or focused fragments, as recorded by the companion fixture corpus.
 A focused fragment assumes that referenced types, agents, defaults, and helper
 workflows are declared elsewhere in the package; it is not necessarily
 pasteable as a standalone `main.gnt`. Unless an inline comment explicitly
-labels a case invalid, each shown form uses only v1 syntax. A single fence in
-Section 14.14 may contain both an invalid case and its valid correction.
+labels a case invalid, each excerpt is syntactically valid. Complete-positive
+examples are source-valid as their identified fixture packages; focused
+fragments are source-valid only in their identified fixture context. A single
+fence in Section 14.14 may contain both an invalid case and its valid correction.
 Comments beginning with `//` explain or classify the case and are valid Gantry
 comments.
 
@@ -7341,6 +7405,40 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    that differs from the recorded identity is
    `source-or-configuration-incompatibility`; v1 accepts no migration payload.
 
+**Lifecycle operation contracts.**
+
+The protocol operations have the following minimum behavior in addition to
+the detailed start, resume, observation, and shutdown rules below:
+
+- `ValidatePackage` accepts a package root and selected source-language
+  version, performs package discovery and syntax-only validation, and returns
+  a success status plus ordered lexical and syntax diagnostics. It is
+  repeatable, creates no execution, and invokes no integration operation.
+- `AnalyzePackage` accepts the same inputs, performs syntax validation and
+  semantic analysis, and returns source-valid or source-invalid status,
+  ordered diagnostics, canonical schemas, and inferred workflow effects when
+  analysis can produce them. It is repeatable, creates no execution, and
+  invokes no integration operation.
+- `CancelExecution` accepts an execution ID and `CancellationReason` and
+  returns `accepted`, `already-terminal`, or `not-found`. Repetition with the
+  same reason returns the existing cancellation status and creates no second
+  cancellation transition.
+- `AwaitForeground` and `AwaitTerminal` accept an in-process execution handle
+  and resolve once the respective state is known. Cancelling an await request
+  stops only that waiter; it does not cancel the execution. Their result
+  envelopes separate the language outcome, delivery-barrier status, and
+  operational owner status as specified under “Execution observation.”
+- `QueryExecution` returns a point-in-time foreground, terminal, delivery, and
+  owner-state snapshot without advancing execution. An in-process query uses
+  an execution ID; a durable query uses a journal ID and may also require the
+  expected execution ID. An unknown identity returns `not-found`, not a
+  fabricated execution state.
+- `Shutdown` is idempotent after shutdown begins and returns the same completed
+  shutdown report to later callers. Its request supplies the finite graceful
+  and drain durations required by Section 10.12; its result separately reports
+  task and execution outcomes, journal-release failures, and event-delivery
+  barrier or exhaustion status.
+
 **New execution and entry input.**
 
    In a durable embedding, a new-execution request MUST identify a fresh
@@ -7411,14 +7509,16 @@ An `Interpreter` accepts a package root, an explicitly selected supported
 
 **Start and resume outcomes.**
 
-   `StartExecution` MUST return a `StartResult`. Its nondurable form is either
-   `accepted(execution_id, handle)` or `rejected(start_failure)` and carries no
-   journal ID. Its durable form always carries the caller-supplied stable
-   journal ID and an acceptance union that is either
-   `accepted(execution_id, handle)` or `rejected(start_failure)`; the rejected
-   variant carries no execution ID. For a durable execution, the acceptance
-   boundary is the committed execution-start evidence; for a nondurable
-   execution, it is successful preflight. Syntax, analysis, entry-input,
+   `StartExecution` MUST return a `StartResult` with one of these canonical
+   shapes: the nondurable form is `accepted(execution_id, handle)` or
+   `rejected(start_failure)` and carries no journal ID; the durable form is
+   `{ journal_id, result }`, where `result` is
+   `accepted(execution_id, handle)` or `rejected(start_failure)`. The rejected
+   variant carries no execution ID. The `gantry.embedding` artifact MUST encode
+   these envelope and variant discriminants explicitly. For a durable
+   execution, the acceptance boundary is the committed execution-start
+   evidence; for a nondurable execution, it is successful preflight. Syntax,
+   analysis, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
    and required-event-delivery failures during pre-execution validation or
    analysis are start failures when applicable to the embedded profile.
