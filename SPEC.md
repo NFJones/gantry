@@ -1758,7 +1758,114 @@ commit rule in Section 3.6 before an operation can use it.
 
 <a id="GNT-3-M-LIFECYCLES"></a>
 
-**[GNT-3-M-LIFECYCLES] External and concurrent lifecycles.**
+**[GNT-3-M-LIFECYCLES] External and concurrent lifecycles.** For lifecycle
+reasoning, an interpreter state is the tuple
+
+```text
+L = ⟨I,A,X⟩
+
+I ::= running
+    | shutting-down(cause,effective-grace,effective-drain,cohort)
+    | terminated(report)
+
+cause ::= requested | poisoned
+```
+
+`A` is the finite set of admitted public invocations that have not yet
+completed or transferred their continuing work into an accepted execution.
+`X(e)` is the lifecycle projection of accepted execution `e`: its machine
+configuration `M`; its root, attached, joined, and detached task states from
+`C` and `H`; monotonic cancellation state; foreground and terminal states;
+required-delivery barrier state; and, when durability is enabled, current-run
+status and journal-owner status. The exact public result variants and owner,
+barrier, and run-status values are those in Sections 10, 11, 12, and 15. They
+are separate coordinates: an operational journal, owner-release, or delivery
+failure does not replace an already fixed language outcome. A package-only
+validation or analysis invocation may be in `A` but never creates an `X`
+entry.
+
+Construction publishes `I = running`. Every public operation has one
+admission linearization point. An invocation allowed in the observed `I` by
+Section 15 is inserted into `A`; this includes the cancellation, await, and
+query operations that remain available for a shutdown-cohort execution while
+`I` is `shutting-down`. An invocation rejected at admission changes neither
+`A` nor `X`. The first admitted shutdown, or an applicable invariant failure,
+monotonically changes `I` to `shutting-down` with the cause, effective finite
+durations, and initial cohort defined by Sections 10 and 15. That cohort grows
+monotonically when an already admitted start or resume later accepts an
+execution and when an included execution creates further owned work permitted
+during its grace period. `poisoned` may replace `requested` but no transition
+returns to `running`. Exactly one shutdown coordinator advances that state to
+`terminated(report)` after the required task, journal-owner, and delivery
+obligations settle or reach their specified terminal failures. Repeated
+shutdown calls join that coordinator, or observe its immutable completed
+report after termination, and return the same report. Admission, rejection,
+registration or cancellation of one waiter, and a point-in-time query are
+stuttering steps for every `M`: they introduce no label from
+`GNT-3-M-LABELS` and cannot change source state.
+
+`StartExecution` and `ResumeExecution` create or reattach an `X(e)` entry only
+at their acceptance boundary in Section 15. A rejected invocation creates no
+accepted execution state or execution identity, even when its result retains
+a caller-supplied journal identity. Once accepted, task and execution
+lifecycle changes occur only through the following existing labels and rules:
+
+- `task-created` introduces the one `submitting` child and attached handle
+  defined by `M-Spawn`; submission resolution makes that child runnable or
+  settles it as the specified failure without replacing its identity;
+- `task-ownership-changed` monotonically consumes attached handles through
+  join or transfers them through detach; no consumed handle becomes attached
+  again;
+- `cancellation` monotonically marks exactly the tasks selected by
+  `M-Cancel` and Section 10; no mark is cleared and no marked task performs a
+  later source-consuming transition;
+- `task-settled` changes one task exactly once from its permitted nonterminal
+  state to `succeeded`, `failed`, or `cancelled`;
+- `foreground-completion` fixes the execution's foreground outcome exactly
+  once after root settlement and attached-descendant drain; and
+- `terminal-completion` fixes the terminal language category exactly once
+  after the root and all execution-owned detached work settle, using Section
+  10's precedence. No later barrier, release, event, or adapter result changes
+  either fixed outcome.
+
+Await operations observe the applicable fixed coordinate and do not advance
+`M`; cancelling an await removes only that waiter. A query returns one
+linearizable projection of `X(e)` and cannot combine coordinates from opposite
+sides of one transition. Execution cancellation is one monotonic request: the
+first effective nondurable reason, or first durably committed reason when the
+durable profile applies, wins. Repetition creates no second cancellation
+transition. Shutdown uses the same cancellation and settlement rules for its
+cohort rather than introducing a fourth task status or another execution
+machine. The final interpreter-wide shutdown event is physical observation,
+not a source-machine label.
+
+The base evaluator applies this rule with one root task and no
+`task-created` or `task-ownership-changed` transition. The concurrent profile
+adds the task, handle, attached-descendant, detached-work, and split
+foreground/terminal behavior above. The durable profile, independently of
+concurrency, refines every applicable lifecycle label and acceptance boundary
+through Section 3.6 and Section 11: state required to cross a commit boundary
+is observable only after its causal evidence is durable, recovery projects
+one authoritative prefix back to the same `L` and `M`, and journal failure
+cannot fabricate a new durable settlement or terminal outcome. An embedding
+applies the admission, reentrancy, observation, cancellation, and shutdown
+rules to exactly the public operations and capabilities it exposes.
+
+For every claimed evaluator or embedding profile, the required semantic
+argument and executable traces MUST establish: monotonic and linearizable
+interpreter admission; isolation of package activities, waiters, and accepted
+executions; legal task-status and handle-ownership transitions; at-most-once
+task settlement, foreground completion, and terminal completion; cancellation
+nonconsumption and reason stability; internally consistent observation;
+shutdown-cohort closure and unique coordination; and preservation of fixed
+language outcomes across barrier and owner-status changes. Concurrent claims
+must additionally establish these properties for every schedule under the
+fairness boundary in `GNT-3.15-liveness`. Durable claims must additionally
+establish commit-before-observation and recovery-prefix simulation for every
+applicable lifecycle transition. The detailed premises, result categories,
+precedence, event obligations, and commit cuts remain those in Sections 10
+through 12 and 15; this rule does not create additional portable labels or
+protocol variants.
 
 <a id="GNT-3-M-OPERATION"></a>
 
