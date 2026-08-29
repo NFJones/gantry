@@ -152,7 +152,9 @@ conformance profiles:
   in Section 3. It need not implement spawned tasks, persist, or resume
   executions. A package whose `main` effect set includes any of those three
   effects remains source-valid but is outside this profile's execution
-  capability; unused workflows do not restrict execution capability.
+  capability; unused workflows do not restrict execution capability. Every
+  authored `join(...)` or `joinall()` site contributes `join`, including a
+  `joinall()` whose statically selected task set is empty.
 - A **concurrent-evaluator-profile implementation** additionally implements
   tasks, cancellation, joins, and background ownership transfer under Section
   10.
@@ -1655,10 +1657,11 @@ the applicable test or next item and `break` exits. Loop frames retain the
 session directive and restore the enclosing session after each iteration or
 loop exit. `inline` reuses the enclosing session. `new` creates one empty
 session on loop entry and uses it for every condition and body. `fork` creates
-the per-condition or per-body child at exactly the points defined in Section
-9.6, using the then-current committed parent transcript. Limit and budget
-checks precede session creation wherever Section 9.6 requires. Every created
-session is recorded before a model operation can use it.
+the per-condition or per-body child at exactly the points defined by
+requirement `GNT-9.6`, using the then-current committed parent transcript.
+Limit and budget checks precede session creation wherever that requirement
+requires. Every created session is recorded before a model operation can use
+it.
 
 A source limit is checked before body entry. Cancellation and the loop-entry
 budget are checked at every condition, item binding, body entry, and back edge.
@@ -2650,9 +2653,9 @@ defined here and in Section 7 cross the integration boundary.
    call edges.
    Direct syntax contributes effects as follows: `prompt`, `decide`, and an
    action invocation contribute their correspondingly named effects; `spawn`
-   contributes `spawn`; `join(...)` and a statically nonempty `joinall()`
-   contribute `join`, while a statically empty `joinall()` contributes no
-   effect; `detach(...)` contributes `background`; every explicit lexical, loop, or
+   contributes `spawn`; every `join(...)` and `joinall()` contributes `join`,
+   including a `joinall()` whose statically selected task set is empty;
+   `detach(...)` contributes `background`; every explicit lexical, loop, or
    operation-local session modifier contributes `session`; and `attempt`
    contributes `attempt` in addition to the wrapped operation's effect.
    Runtime-created root and spawned-task sessions do not independently add a
@@ -6228,6 +6231,9 @@ struct Request {
 struct Report {
     text: String,
 }
+
+agents { worker }
+default agent = worker;
 
 fn main(request: Request) -> Report {
     prompt "Write about ${request.topic} for ${request.audience}."
