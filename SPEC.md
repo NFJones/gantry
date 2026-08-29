@@ -354,7 +354,7 @@ The source surface is organized around these families:
 | Bindings and deterministic updates | `let`, `mut`, assignment | Sections 5 and 6 | Sections 14.4 and 14.7 |
 | Reusable orchestration | `fn`, `pure fn`, `impl` | Section 6 | Sections 14.4 and 14.6 |
 | Model-backed work | `prompt`, `decide` | Sections 6 through 8 | Sections 14.1 and 14.6 |
-| Harness capabilities | `action read_only name(...);`, `action name(...)` | Sections 6 through 8 | Section 14.12 |
+| Harness capabilities | `action read_only name(...);` (or `idempotent` / `non_idempotent`) | Sections 6 through 8 | Section 14.12 |
 | Explicit operation failure handling | `attempt` | Sections 5, 7, and 8 | Section 14.13 |
 | Model context | `with`, `session` | Sections 6 and 7 | Sections 14.4 through 14.7 |
 | Sequential routing | `if`, `if let`, `match` | Section 9 | Sections 14.3 and 14.6 |
