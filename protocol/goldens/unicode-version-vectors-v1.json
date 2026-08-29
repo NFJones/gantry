@@ -1,0 +1,27 @@
+{
+  "format": "gantry.unicode-version-vectors/v1",
+  "unicode_version": [16, 0, 0],
+  "cases": [
+    {
+      "code_point": "U+105C0",
+      "property": "XID_Start",
+      "unicode_15_1": false,
+      "unicode_16_0": true,
+      "unicode_17_0": true
+    },
+    {
+      "code_point": "U+088F",
+      "property": "XID_Start",
+      "unicode_15_1": false,
+      "unicode_16_0": false,
+      "unicode_17_0": true
+    },
+    {
+      "code_point": "U+1ACF",
+      "property": "XID_Continue",
+      "unicode_15_1": false,
+      "unicode_16_0": false,
+      "unicode_17_0": true
+    }
+  ]
+}

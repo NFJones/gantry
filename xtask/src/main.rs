@@ -2,6 +2,7 @@
 
 mod protocol;
 mod requirements;
+mod unicode;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -53,14 +54,18 @@ fn run() -> Result<(), String> {
         [command, subject] if command == "generate" && subject == "requirements" => {
             requirements::generate(&workspace_root()?)
         }
+        [command, subject] if command == "generate" && subject == "unicode" => {
+            unicode::generate(&workspace_root()?)
+        }
         [command, subject] if command == "check" && subject == "generated" => {
             let root = workspace_root()?;
             protocol::check_generated(&root)?;
-            requirements::check_generated(&root)
+            requirements::check_generated(&root)?;
+            unicode::check_generated(&root)
         }
         [command, subject] if command == "check" && subject == "workspace" => check_workspace(),
         _ => Err(
-            "usage: cargo run --locked -p xtask -- generate {protocol|requirements} | check generated | check workspace"
+            "usage: cargo run --locked -p xtask -- generate {protocol|requirements|unicode} | check generated | check workspace"
                 .to_owned(),
         ),
     }

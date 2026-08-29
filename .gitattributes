@@ -1,2 +1,3 @@
 *.gnt linguist-language=Rust
 *.gantry linguist-language=Rust
+third_party/unicode/16.0.0/** whitespace=-trailing-space
