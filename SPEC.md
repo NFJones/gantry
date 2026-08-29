@@ -4086,8 +4086,10 @@ owner. It MUST NOT be described as a structured child after transfer.
    Analysis computes that set as follows: start with spawn declarations whose
    declarations are direct children of the current lexical block and precede
    the `joinall()`; remove a handle only when every incoming path has already
-   consumed it by `join` or `detach`; reject the program when consumption
-   differs across incoming paths. Declarations inside an `if`, loop, `match`,
+   consumed it by `join` or `detach`; reject the program when some incoming
+   path leaves it attached and another consumes it. Paths that all consume a
+   handle may use different visible modes (`join` or `detach`), as specified
+   in item 8. Declarations inside an `if`, loop, `match`,
    `with`, `session`, or nested spawn block belong to that nested block and are
    never members of an enclosing block's `joinall()`. Runtime completion order
    never adds, removes, or reorders members.
@@ -6260,6 +6262,12 @@ to be source-valid packages; focused fragments are valid only with their stated
 or implied surrounding declarations. A single fence in Section 14.14 may
 contain both an invalid case and its valid correction. Comments beginning with
 `//` explain or classify the case and are valid Gantry comments.
+
+Section 14.1 contains standalone entry packages, and Section 14.2 contains
+one complete multi-file package. Every later valid excerpt is a focused
+fragment unless its surrounding prose explicitly supplies a wider package
+context. This keeps the examples short while making clear that a useful local
+idiom is not, by itself, a runnable package.
 
 The versioned companion fixture corpus required for a v1 publication is not
 included in this repository revision (Section 1). Until it is published, this
