@@ -6247,16 +6247,23 @@ grammar, and examples relate; Sections 5, 6, 9, 10, and 13 govern when a form
 shown here is source-valid.*
 
 The examples in this section are complete positive examples, complete negative
-examples, or focused fragments, as recorded by the companion fixture corpus.
-A focused fragment assumes that referenced types, agents, defaults, and helper
-workflows are declared elsewhere in the package; it is not necessarily
-pasteable as a standalone `main.gnt`. Unless an inline comment explicitly
-labels a case invalid, each excerpt is syntactically valid. Complete-positive
-examples are source-valid as their identified fixture packages; focused
-fragments are source-valid only in their identified fixture context. A single
-fence in Section 14.14 may contain both an invalid case and its valid correction.
-Comments beginning with `//` explain or classify the case and are valid Gantry
-comments.
+examples, or focused fragments. A focused fragment assumes that referenced
+types, agents, defaults, and helper workflows are declared elsewhere in the
+package; it is not necessarily pasteable as a standalone `main.gnt`. Unless an
+inline comment explicitly labels a case invalid, an excerpt is intended to
+illustrate syntactically valid source. Complete-positive examples are intended
+to be source-valid packages; focused fragments are valid only with their stated
+or implied surrounding declarations. A single fence in Section 14.14 may
+contain both an invalid case and its valid correction. Comments beginning with
+`//` explain or classify the case and are valid Gantry comments.
+
+The versioned companion fixture corpus required for a v1 publication is not
+included in this repository revision (Section 1). Until it is published, this
+section is illustrative rather than fixture evidence: source validity and
+meaning are determined by the normative sections cited above. The published
+corpus MUST classify each excerpt and validate complete examples or embed each
+focused fragment in an executable positive or negative context, as required by
+Section 1.
 
 The following matrix highlights the result-position rules most likely to be
 missed when reading Rust-inspired braces. It is a navigation aid, not a second
