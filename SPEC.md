@@ -1020,13 +1020,18 @@ or deterministic timestamps. The per-task yield quantum prevents one
 deterministic task from intentionally monopolizing a cooperative executor, but
 it cannot compensate for an executor that never polls another runnable task.
 
-Every asynchronous adapter operation other than `DispatchOperation` MUST
-either settle or remain pending only while its documented external
-prerequisite is genuinely pending. When this specification requires a
-deadline, cancellation, abort, or ownership-fencing response, a conforming
-adapter MUST eventually return the required success or structured failure
-after that condition is reached. `DispatchOperation` MAY remain pending
-indefinitely when no
+Every Gantry-facing asynchronous adapter operation other than
+`DispatchOperation` MUST either produce its protocol result or remain pending
+only while its documented external prerequisite is genuinely pending. When
+this specification requires a deadline, cancellation, abort, or ownership-
+fencing response, the executor and adapter contracts MUST allow Gantry
+eventually to observe that response or classify the operation with the
+specified structured failure. A cancellation-aware race under Section 15.4
+may stop polling its losing future; that resolves the enclosing Gantry
+operation and does not require the losing future itself to return `Ready`.
+Disposing of such a future MUST NOT block indefinitely, and an unwind during
+its cancellation or destruction follows Section 15.9. `DispatchOperation` MAY
+remain pending indefinitely when no
 integration-owned timeout, Gantry cancellation, or shutdown applies; Gantry v1
 does not impose a default operation timeout. Likewise, a source execution may
 wait indefinitely for integration work that is permitted to remain pending.
@@ -2244,9 +2249,12 @@ source, token, and diagnostic limits but need not generate a package-source
 manifest, canonical IR, source map, or schemas merely to exercise their
 limits. `AnalyzePackage`, `StartExecution`, and a resume with candidate source
 enforce each artifact limit if and when they successfully reach the phase that
-produces that artifact. An earlier source diagnostic or resource-limit result
-MUST NOT be replaced by a limit for an artifact that was never required or
-constructed.
+produces that artifact. If an operation is permitted to omit an optional
+artifact, such as a manifest on a source-invalid analysis, it MAY omit that
+artifact instead of constructing it solely to test its size. If it returns or
+retains the optional artifact, the applicable limit is mandatory. An earlier
+source diagnostic or resource-limit result MUST NOT be replaced by a limit for
+an artifact that was never required or constructed.
 
 All byte and token arithmetic MUST be checked and MUST NOT wrap. A file-byte
 limit is checked before decoding that file. The package-file and cumulative
@@ -3688,11 +3696,17 @@ resume-start failure; after execution begins it is the runtime category
 or deliver a colliding identity.
 
 Derived task, operation, and non-root session identities do not call
-`IdentitySource` and do not use collision retries. During one live execution,
-deriving the same identity from two different canonical keys is an
-`internal-invariant-failure`; retrying cannot change the digest. Re-deriving
-the same identity from the same key is required during deterministic replay
-and is not a collision.
+`IdentitySource` and do not use collision retries. Before using one, Gantry
+MUST compare it with every same-kind identity already associated with the
+execution. Re-deriving the same identity from the same canonical key is
+required during deterministic replay and is not a collision. Deriving the
+same identity from two different canonical keys, or deriving a non-root
+session identity that equals a fresh or caller-supplied root session identity,
+is an `internal-invariant-failure` during live execution; retrying cannot
+change the digest. During recovery validation, retained history that
+associates one derived identity with different canonical keys or with a
+different identity origin is malformed durable history and MUST be rejected
+with `journal-read-or-format` before recovered interpretation begins.
 
 Failure to allocate an activity ID for standalone validation or analysis is an
 operational `identity-generation-failure`; no package judgment or diagnostic
@@ -4662,11 +4676,15 @@ owner. It MUST NOT be described as a structured child after transfer.
     finish naturally until the timeout expires. It MUST then signal
     cancellation to all remaining work, abort tasks that do not finish within
     a bounded drain period, commit pending journal and required event state,
-    and return
-    a shutdown report covering every execution and detached task that was
-    active when shutdown began, plus any execution accepted by a start or
-    resume call whose admission linearized before shutdown began. This set is
-    the shutdown cohort. After that report's task and journal content is fixed,
+    and return a shutdown report for the **shutdown cohort**. The cohort
+    contains every execution with foreground or detached work active when
+    shutdown began, plus every execution accepted after shutdown began by a
+    start or resume call whose admission had already linearized. It also
+    contains every foreground, attached, or detached task owned by those
+    executions before they settle, including a task spawned during the grace
+    period. An execution already terminal before shutdown began is not added
+    merely because its start call was admitted earlier. After that report's
+    task and journal content is fixed,
     and while the executor adapter and event sinks remain available,
     Gantry MUST create exactly one final interpreter-wide `shutdown` event for
     that completed shutdown invocation and satisfy the required-sink barrier
@@ -5020,11 +5038,12 @@ recorded canonical IR and source map resolve from the journal, resume does not
 require source files or a newly generated manifest.
 
 The `gantry.ir` artifact in Section 15 MUST publish the manifest JSON Schema,
-canonical encodings for empty-child and multi-module packages, and negative
+canonical encodings for root-only and multi-file packages, and negative
 fixtures for ordering, path, length, digest, duplicate-file, unsupported-
-version, and size-limit failures. The manifest schema follows the source-
-language major version; changing a field's meaning or canonical ordering
-requires a source-language major version change.
+version, and size-limit failures. Once a manifest schema has appeared in a
+complete publication set, it follows the source-language major version;
+changing a field's meaning or canonical ordering requires a source-language
+major version change.
 <a id="GNT-11.7"></a>
 
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
@@ -5823,8 +5842,9 @@ nonrecursive sink-delivery exception still applies.
      primary failure reference when one exists;
    - `shutdown`: the shutdown activity identity, configured graceful and drain
      durations, counts of executions and tasks observed at shutdown start,
-     counts completed naturally, cancelled, and aborted, required-state commit
-     status, and a shutdown-report reference;
+     counts admitted into the shutdown cohort afterward, counts completed
+     naturally, cancelled, and aborted, required-state commit status, and a
+     shutdown-report reference;
    - `failure`: the runtime-error category, structured causal identities, and
      redacted diagnostic details.
    An implementation MAY add optional fields under the minor-version rules,
@@ -8093,14 +8113,17 @@ Several accepted executions MAY advance concurrently and share the configured
 thread-safe adapters. Each package operation uses its own immutable source
 snapshot and frontend-limit counters. Mutable execution state is isolated by
 execution identity; durable advancement is additionally isolated by journal
-ownership. Concurrent starts naming the same journal target race under the
-empty-target rule in Section 11, and concurrent resumes naming the same journal
-race under its exclusive fencing rule. Ownership acquisition is linearizable:
-at most one caller holds authority to advance a journal at a time. A caller
-that loses the acquisition race returns the applicable structured ownership
-failure and MUST NOT dispatch a hook or mutate the owner's state; a later call
-may acquire authority only after the prior owner has released or lost it under
-Section 11.
+ownership. Any concurrent owner-acquisition calls naming the same journal are
+one race, including start versus start, resume versus resume, and start versus
+resume. The start candidate is subject to the empty-target rule in Section 11,
+and a resume candidate is subject to its existing-history and fencing rules.
+Ownership acquisition is linearizable: at most one caller holds authority to
+advance a journal at a time. A caller that loses the acquisition race, or whose
+operation kind is incompatible with the journal state observed at its
+linearization point, returns the applicable structured ownership or journal-
+state failure and MUST NOT dispatch a hook or mutate the owner's state. A later
+call may acquire authority only after the prior owner has released or lost it
+under Section 11.
 
 `CancelExecution`, `AwaitForeground`, `AwaitTerminal`, and in-process
 `QueryExecution` MAY run concurrently for the same execution. The first
@@ -8639,8 +8662,15 @@ artifact defines no protocol family. `uri` is absolute and versioned;
 string; and `sha256` is 64 lowercase hexadecimal digits over the exact
 artifact bytes. `profiles` and `requirements` are arrays of strings ordered by
 unsigned UTF-8 bytes. Decimal strings use no sign or leading zero except `0`.
-Artifact entries are ordered by unsigned UTF-8 artifact ID and duplicate IDs
-or URIs are invalid.
+The numeric major and minor values are nonnegative integers no greater than
+`2^53 - 1`. Every protocol family MUST be a published family defined by an
+indexed artifact. Every profile MUST be one of the named profiles in Section
+1, and every requirement string MUST be a registered normative identifier;
+the arrays MUST contain no duplicates. Artifact entries are ordered by
+unsigned UTF-8 artifact ID, and duplicate IDs or URIs are invalid. Across the
+complete index, one protocol family and exact version MUST have one normative
+definition; companion artifacts MAY reference it but MUST NOT claim a second
+definition.
 
 The index MUST contain exactly one entry for each stable artifact ID in the
 table above. It MAY contain additional companion artifacts only when each has
@@ -8714,11 +8744,14 @@ Integration-provided identity sources, hook factories, executor adapters,
 
 **Boundary failure and panic containment.** A normal adapter failure is one
 returned through the adapter's documented result type. An **integration
-panic** is an unwind initiated while Gantry calls an integration method,
-invokes a configured callback, or polls a future returned by integration code.
-A **Gantry invariant panic** is an unwind initiated by Gantry implementation
-code because an internal invariant was violated. These conditions are distinct
-and MUST NOT be collapsed into provider text or an ordinary source error.
+panic** is an unwind originating in integration-owned code while Gantry calls
+an integration method, invokes a configured callback, polls or cancels a
+future returned by integration code, or destroys an integration-owned value.
+A **Gantry invariant panic** is an unwind originating in Gantry implementation
+code, whether from an explicit invariant assertion or another implementation
+defect. The catch boundary at which an unwind is observed does not by itself
+change its origin. These conditions are distinct and MUST NOT be collapsed
+into provider text or an ordinary source error.
 
 A Rust embedding-profile implementation MUST establish an unwind boundary
 around every call into integration code, every poll of an integration future,
