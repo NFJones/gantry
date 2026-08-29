@@ -307,12 +307,13 @@ fn main(topic: String) -> String {
 The declarations identify the available agent and default selection, `main`
 defines the typed entry point, `${topic}` performs deterministic textual
 interpolation, and `prompt ... -> String` is the one visible model operation
-and its output contract. Deterministic-only and action-only packages need no
-agent declarations.
+and its output contract. Deterministic-only and action-only packages omit both
+the `agents` and `default agent` declarations.
 
 The core authoring model is deliberately small:
 
-1. Declare agents and typed harness capabilities, data, and workflows.
+1. Declare the agents and typed harness capabilities the package uses, along
+   with its data and workflows.
 2. Use ordinary expressions and control flow for facts the interpreter can
    compute.
 3. Use `prompt` for model-generated values, `decide` for model judgment, and
@@ -999,8 +1000,8 @@ The metavariables are:
   task handles, and `ε` for effects;
 - `ρ` for a task-local environment from value names to store roots, `χ` for a
   frame-local environment from lexical handle names to dynamic handle
-  identities, `μ` for the task-local value store, `a` for active agent
-  selection, and `s` for active logical-session identity; and
+  identities, `μ` for the task-local value store, `a` for an optional active
+  agent selection, and `s` for active logical-session identity; and
 - `N`, `R`, `Br`, and `Co` for normal, return, break, and continue completion.
 
 <a id="GNT-3-F-DOMAINS"></a>
@@ -1494,7 +1495,8 @@ the package-valid judgment.
 The dynamic semantics is a small-step relation over
 `M = ⟨P,C,K,H,S,Q,B,R⟩`. `P` is immutable typed core IR. `C(t)` is one task's
 control, value environment `ρ`, lexical handle environment `χ`, value store
-`μ`, active agent `a`, active session `s`, cancellation state, and status.
+`μ`, optional active agent `a`, active session `s`, cancellation state, and
+status.
 `K(t)` is its stack of evaluation, workflow-return, dynamic-context, loop, and
 task-result frames, including suspended lexical environments. `H` maps each
 stable dynamic handle identity `η` to its child task, owner, result type, and
@@ -1505,11 +1507,12 @@ execution and per-task budgets. `R` contains the active durable agent and
 action mapping revisions and every compatible mutable execution-policy
 revision that a later transition can observe. Values in `ρ` and `μ` are
 normalized deep values; no machine component contains a source-visible alias.
-The initial root task sets `a` to the package's resolved default agent and `s`
-to the resolved root session before entering `main`. A package with a model-
-operation site has no initial machine unless its default agent is valid and
-preflight has resolved that agent. Spawned tasks inherit the active agent and
-fork the active session as specified by `M-Spawn`.
+The initial root task sets `a` to the package's resolved default agent when one
+is declared, or to no selection for an agentless package, and sets `s` to the
+resolved root session before entering `main`. A package with a model-operation
+site has no initial machine unless its default agent is valid and preflight has
+resolved that agent. Spawned tasks inherit the optional active agent selection
+and fork the active session as specified by `M-Spawn`.
 
 <a id="GNT-3-M-LABELS"></a>
 
