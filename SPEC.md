@@ -998,6 +998,49 @@ defined in Sections 3.1 through 3.6.
     obligations even though provider outcomes and cross-task schedules remain
     nondeterministic.
 
+<a id="GNT-3.15-liveness"></a>
+
+**15a. Liveness boundary and fairness assumptions.** The progress property in
+item 15 is a property of the abstract machine, not an unconditional wall-clock
+termination guarantee. It applies when a well-typed nonterminal configuration
+has an enabled Gantry transition and is not waiting for an integration result,
+timer, executor action, journal operation, event-delivery attempt, ownership
+operation, or another host future. In that state, the implementation MUST
+eventually take a transition, yield under item 6, or produce the specified
+runtime error. A conforming implementation MUST NOT leave an enabled
+interpreter transition permanently unexecuted merely because no integration
+future completes.
+
+The embedding executor MUST provide weak fairness for Gantry work: every
+Gantry future that remains runnable MUST eventually be polled, a task that
+yields MUST make other runnable work eligible to run, and a ready timer or
+completed adapter future MUST eventually be observed. Weak fairness does not
+define a cross-task order, equal CPU allocation, a maximum scheduling latency,
+or deterministic timestamps. The per-task yield quantum prevents one
+deterministic task from intentionally monopolizing a cooperative executor, but
+it cannot compensate for an executor that never polls another runnable task.
+
+Every integration operation other than an operation-hook dispatch MUST either
+settle or remain pending only while its documented external prerequisite is
+genuinely pending. When this specification requires a deadline, cancellation,
+abort, or ownership-fencing response, a conforming adapter MUST eventually
+return the required success or structured failure after that condition is
+reached. An operation hook MAY remain pending indefinitely when no
+integration-owned timeout, Gantry cancellation, or shutdown applies; Gantry v1
+does not impose a default operation timeout. Likewise, a source execution may
+wait indefinitely for integration work that is permitted to remain pending.
+
+Mandatory finite loop, transition, operation, task, and workflow-depth budgets
+ensure that deterministic source work cannot perform an unbounded number of
+admitted interpreter steps without completion or a specified limit error.
+They do not guarantee successful termination, impose a wall-clock execution
+deadline, or make an unresponsive host service conforming. Shutdown's bounded
+language behavior assumes the executor and adapters honor the cancellation,
+abort, deadline, commit, delivery, and release contracts in Sections 10
+through 15. If a process is forcibly terminated or a host service violates
+those contracts, only the authoritative durable-prefix guarantees in Section
+11 survive; Gantry MUST NOT fabricate successful completion or cancellation.
+
 ### 3.1 Formal domains and core language
 
 <a id="GNT-3-F-META"></a>
@@ -2167,6 +2210,86 @@ identifier policy, canonical paths, and immutable source snapshots.
     identity mismatch. This requirement does not promise an atomic snapshot of
     unrelated host files, but it prevents one Gantry activity from having
     internally inconsistent source text and identity.
+
+<a id="GNT-4.17-frontend-resource-limits"></a>
+
+**17a. Frontend resource limits.** Every frontend, analyzer, evaluator, and
+embedding profile MUST accept and enforce the following finite positive
+frontend limits for each package activity:
+
+- `maximum_package_files` counts distinct selected `.gnt` files, including
+  `main.gnt`;
+- `maximum_source_file_bytes` counts the exact bytes in each selected file
+  before UTF-8 decoding;
+- `maximum_package_source_bytes` is the sum of those exact file byte lengths,
+  counting each selected file once;
+- `maximum_source_tokens` counts all nontrivia lexical tokens across the
+  package, excluding whitespace, comments, and end of input; one invalid
+  maximal token occurrence counts before its lexical diagnostic is produced;
+- `maximum_diagnostics_per_activity` counts error and warning diagnostics
+  together;
+- `maximum_package_source_manifest_bytes` limits the RFC 8785 canonical bytes
+  of the manifest defined in Section 11;
+- `maximum_canonical_ir_bytes` and `maximum_source_map_bytes` limit the
+  canonical encoded artifacts defined in Sections 3 and 11; and
+- `maximum_generated_schema_bytes` limits one canonical object whose keys are
+  the distinct generated canonical type descriptors in unsigned UTF-8 order
+  and whose values are their schemas from Section 8. A schema referenced at
+  several operation or embedding boundaries counts once in this object.
+
+All byte and token arithmetic MUST be checked and MUST NOT wrap. A file-byte
+limit is checked before decoding that file. The package-file and cumulative
+package-byte limits are checked as the immutable module graph is discovered;
+an implementation MAY stop loading once no successful result is possible.
+Token limits MUST be enforced while lexing rather than after constructing an
+unbounded token stream. Artifact byte limits MUST be enforced by bounded or
+streaming canonical encoding before the oversized artifact is returned,
+hashed, journaled, or accepted for execution. Implementations MUST represent
+recursive schema references with the finite canonical reference mechanism in
+Section 8 rather than repeatedly inline-expand them.
+
+Exceeding one of these limits is an operational
+`frontend-resource-limit` result, not evidence that the package is
+source-invalid. Its exact code is respectively `package-file-count-limit`,
+`source-file-byte-limit`, `package-source-byte-limit`, `source-token-limit`,
+`diagnostic-count-limit`, `package-source-manifest-byte-limit`,
+`canonical-ir-byte-limit`, `source-map-byte-limit`, or
+`generated-schema-byte-limit`. The result MUST identify the configured limit
+and observed count when that count can be reported without exceeding the same
+limit. A diagnostic-count failure returns the bounded diagnostics already
+produced plus the operational failure; it MUST NOT append a synthetic source
+diagnostic beyond the cap. No such failure creates an execution, invokes
+integration preflight or a hook, or writes an execution-start record.
+
+`ValidatePackage` and `AnalyzePackage` expose this result separately from their
+source-valid or source-invalid status. During `StartExecution`, it is the
+`frontend-resource-limit` start-failure category in Section 7. Raising a limit
+may permit a later activity to decide the package judgment, but MUST NOT change
+the lexical, syntactic, or static meaning of source that both activities
+admit. Frontend limits are activity policy and are not durable execution
+identity; resume uses the recorded canonical IR and source map and MUST NOT
+reparse retained source merely to reapply a different frontend limit.
+
+When `ResumeExecution` includes optional candidate package source, these limits
+apply to analyzing that candidate. Exceeding one is a nonterminal
+`frontend-resource-limit` resume-start failure and leaves the durable execution
+unchanged; the caller MAY retry with adequate limits or omit candidate source
+when the recorded canonical IR and source map remain resolvable. A safely
+detected implementation-specific exhaustion during the same work is instead
+`implementation-resource-exhaustion`. Neither failure permits Gantry to skip
+verification of the recorded recovery artifacts.
+
+These portable counters bound package ingress and emitted frontend artifacts;
+they are not allocator-byte, resident-memory, parser-stack, or CPU-step
+budgets. Frontend operations MUST be native-stack-safe for every package
+admitted by these limits. An implementation MAY apply an additional host
+deadline or physical resource policy, but a safely detected exhaustion of
+such an implementation-specific policy MUST be reported as a distinct
+`implementation-resource-exhaustion` operational failure and MUST NOT be
+reported as source invalidity or as one of the portable counters above. Host
+physical-memory exhaustion that cannot be safely reported remains within the
+implementation-defined boundary in requirement
+`GNT-5.13-automatic-storage`.
 
 ## 5. Values, Bindings, Structs, and Tagged Types
 
@@ -3474,6 +3597,85 @@ operation identity, failure categories, and propagation.
     positions required by Section 9. These counters are logical interpreter
     state and MUST be checkpointed or reconstructible from the durable prefix;
     wall-clock order and executor completion order MUST NOT influence them.
+
+<a id="GNT-7.16-protocol-identities"></a>
+
+**16a. Protocol identity generation and collision handling.** Every v1
+occurrence identity governed by this item has one canonical UTF-8 wire form:
+`KIND:HEX`, where `KIND` is the exact lowercase kind token below and `HEX` is
+64 lowercase hexadecimal digits encoding 256 bits. Uppercase hexadecimal,
+omitted leading zeroes, surrounding whitespace, and a kind token that does not
+match the field are invalid. The v1 kind tokens are `execution`, `activity`,
+`event`, `task`, `operation`, `dispatch`, `delivery-attempt`, `session`, and
+`evidence`. Typed protocol fields MUST NOT compare identities as untyped
+strings or accept an identity of another kind.
+
+An embedding-profile implementation MUST obtain fresh identity material from
+one configured `IdentitySource`. The source synchronously returns 256 bits or
+a structured failure, MUST be safe for concurrent use, and MUST NOT derive
+output solely from wall-clock time, process ID, a restart-local counter, or
+another value that can repeat after process restart. Its integration identity
+domain includes every interpreter, process, and restart whose identities can
+reach the same journal store or event sink, and it MUST NOT repeat material in
+that domain. Gantry supplies the kind to the source and applies the canonical
+kind prefix; the source does not choose protocol text. Concrete operating-
+system or hardware random sources and durable namespace-plus-counter sources
+are permitted. Protocol identities are correlation and deduplication keys,
+not authorization secrets, so v1 requires non-repetition rather than
+unpredictability.
+
+Execution, activity, event, dispatch, delivery-attempt, and Gantry-created root
+session IDs use fresh source material. A caller-supplied root session ID MUST
+already be a canonical `session` identity and MUST be rejected during
+preflight if it is known to identify another logical session in the same
+integration domain. Evidence IDs are assigned by `JournalStorage` and MUST be
+canonical `evidence` identities fresh within that store's complete durable
+domain. Storage MUST reject a duplicate evidence ID atomically rather than
+alias two records. Journal IDs, sink IDs, mapping revisions, policy IDs, and
+protected-payload reference keys remain explicitly typed integration
+identifiers; they are not Gantry occurrence identities and MUST NOT be
+silently coerced to or from this format.
+
+Task, operation, and non-root session identities are stable logical
+identities, not random identities regenerated on recovery. Gantry MUST derive
+their 256-bit portion as SHA-256 over the published canonical identity-key
+encoding in `gantry.embedding`, prefixed by the ASCII domain separator
+`gantry-v1-identity`, a zero byte, the kind token, and a zero byte. A task key
+contains its execution ID and canonical dynamic task path. An operation key
+contains its execution ID and the complete logical operation path in item 16.
+A non-root session key contains its execution ID, creation mode, parent or
+root session ID as applicable, creator task ID, canonical creation site, and
+zero-based dynamic occurrence counters. The artifact MUST define these keys
+as versioned canonical JSON objects and provide derivation goldens. Recovery
+MUST reproduce the same derived identity and MUST reject a journal whose
+stored identity disagrees with its reconstructed key.
+
+Before publishing or committing a newly generated identity, Gantry MUST check
+it against every same-kind identity already known in the interpreter and, for
+a durable execution, in the authoritative journal state. On a collision it
+MUST discard the candidate and request fresh material, for at most three
+source calls for one identity allocation. Source failure, malformed material,
+or three colliding candidates is `identity-generation-failure`: before an
+execution is accepted it is an `integration-preflight` start failure with code
+`identity-source-failure`; during resume preflight it is the corresponding
+`integration-preflight` resume-start failure; after execution begins it is the
+runtime category `identity-generation-failure`. Gantry MUST NOT publish,
+commit, dispatch with, or deliver a colliding identity. A collision involving
+a deterministic derived identity and a different canonical key is instead an
+`internal-invariant-failure`, because retrying cannot change that identity.
+
+Failure to allocate an activity ID for standalone validation or analysis is an
+operational `identity-generation-failure`; no package judgment or diagnostic
+activity is fabricated. After execution begins, failure to allocate a task,
+operation, session, or dispatch identity fails the Gantry task that requires
+it under item 18, before the identified object or external dispatch exists.
+Failure to allocate an event or delivery-attempt identity follows the event-
+creation or delivery-barrier failure rules in Section 12 and MUST NOT erase an
+already fixed language outcome. Failure to allocate the shutdown activity or
+final shutdown-event identity makes the shutdown result non-orderly with an
+`identity-generation-failure` operational detail; shutdown cleanup still
+continues as far as the remaining adapters permit. Evidence-ID allocation and
+collision remain journal failures because `JournalStorage` owns that boundary.
 <a id="GNT-7.17"></a>
 
 17. Hook outcomes and Gantry failures are separate domains. A hook outcome is
@@ -3482,6 +3684,8 @@ operation identity, failure categories, and propagation.
     Before a new execution is accepted and its execution ID is returned to the
     embedder, structured start failures MUST use one of the following exact
     category values when applicable: `syntax`, `analysis`,
+    `frontend-resource-limit`, `implementation-resource-exhaustion`,
+    `lifecycle`, `internal`,
     `entry-input-validation`, `integration-preflight`,
     `initial-journal-ownership`, `execution-start-persistence`, or
     `required-event-delivery`. The last category applies to required delivery
@@ -3494,6 +3698,8 @@ operation identity, failure categories, and propagation.
     execution ID already exists. A resume-start failure MUST use one of the
     following exact category values when applicable: `journal-read-or-format`,
     `ownership-acquisition`, `source-or-configuration-incompatibility`,
+    `frontend-resource-limit`, `implementation-resource-exhaustion`,
+    `integration-preflight`, `lifecycle`, `internal`,
     `unresolved-agent-mapping`, `unresolved-action-mapping`,
     `unresolved-logical-session`, or `unavailable-required-event-sink`.
     Such a failure means recovered interpretation never began: Gantry MUST NOT
@@ -3509,6 +3715,7 @@ operation identity, failure categories, and propagation.
     errors MUST expose a stable category and MAY expose a more specific stable
     code plus structured details. The exact v1 runtime category values are
     `logical-session-setup`, `hook-creation`, `hook-failure`,
+    `identity-generation-failure`,
     `logical-session-transcript-limit`,
     `provider-failure`, `timeout`, `policy-denied`,
     `required-result-decline`, `structured-output-exhaustion`,
@@ -4695,6 +4902,83 @@ Item 11 clarifies the boundary between resumption and replay.
    normative transformation representation, verifier, resource limits, and
    old/new conformance fixtures; an embedding-specific transform MUST NOT be
    represented as portable Gantry v1 resume.
+
+<a id="GNT-11.6-package-source-manifest"></a>
+
+**6a. Package-source manifest.** Every successful package analysis MUST
+produce one versioned package-source manifest from the immutable snapshot in
+Section 4. The manifest is audit and diagnostic provenance; it records which
+source bytes were analyzed, but it is not the v1 resume-compatibility key.
+Its version follows the selected source-language version rather than adding an
+independent protocol family. Its canonical JSON object has exactly this shape
+before RFC 8785 encoding:
+
+```json
+{
+  "source_language": { "major": 1, "minor": 0 },
+  "root_file": "main.gnt",
+  "files": [
+    {
+      "module_path": "crate",
+      "package_path": "main.gnt",
+      "byte_length": "1234",
+      "sha256": "64-lowercase-hex-digits"
+    }
+  ],
+  "total_byte_length": "1234"
+}
+```
+
+`source_language` MUST equal the major and minor version selected for the
+package activity. `root_file` is exactly `main.gnt`. `files` contains every
+selected source file exactly once and no unselected file. It is ordered by the
+unsigned UTF-8 bytes of `package_path`. `package_path` is the slash-separated
+path relative to the package root selected by the module-resolution rules in
+Section 4; it is never absolute, contains no empty, `.` or `..` component, and
+uses the exact NFC and case-sensitive spelling observed in the immutable
+snapshot. `module_path` is
+the canonical `crate`-rooted module path, using `crate` for `main.gnt` and
+`crate::name` forms for child modules. Each selected file MUST have exactly one
+canonical module path and package path; a duplicate or conflicting mapping is
+an analysis error under Section 4.
+
+`byte_length` is the unsigned decimal length of that file's exact snapshot
+bytes, with no sign or leading zero except the value `0`. `sha256` is the
+lowercase hexadecimal SHA-256 digest of those exact bytes. `total_byte_length`
+uses the same decimal form and is the checked sum of all file byte lengths.
+It MUST equal the package-byte count used by requirement
+`GNT-4.17-frontend-resource-limits`. The manifest itself MUST satisfy
+`maximum_package_source_manifest_bytes` before it is returned, hashed, or
+retained. Unknown properties and unsupported versions are invalid.
+
+The **package-source-manifest identity** is the lowercase hexadecimal SHA-256
+digest of the RFC 8785 canonical manifest bytes. The **execution package
+identity** remains the canonical-core-IR digest defined in item 6. An
+execution-start record MUST retain both identities and either the exact
+manifest bytes or a content-addressed protected-payload reference that resolves
+to bytes reproducing the recorded manifest identity. The package source
+identity named elsewhere in this specification is the record containing these
+two explicitly labeled digests; it is not one digest substituted for the
+other.
+
+Resume MUST verify the recorded canonical IR and its digest. When a caller
+also supplies a candidate source package, Gantry MUST analyze one immutable
+snapshot and compare both digests. A different canonical-IR digest is the
+`source-or-configuration-incompatibility` failure in item 6. A different
+manifest digest with the same canonical-IR digest is a cosmetic source change:
+it MUST NOT block resume, replace the originally recorded manifest, or alter
+source locations already retained in durable evidence. The resume result MUST
+report that provenance differs and MAY expose the candidate manifest through
+protected diagnostics. If no candidate source is supplied and the exact
+recorded canonical IR and source map resolve from the journal, resume does not
+require source files or a newly generated manifest.
+
+The `gantry.ir` artifact in Section 15 MUST publish the manifest JSON Schema,
+canonical encodings for empty-child and multi-module packages, and negative
+fixtures for ordering, path, length, digest, duplicate-file, unsupported-
+version, and size-limit failures. The manifest schema follows the source-
+language major version; changing a field's meaning or canonical ordering
+requires a source-language major version change.
 <a id="GNT-11.7"></a>
 
 7. Recovery MUST restore scopes, instruction positions, call frames, loop
@@ -4832,7 +5116,7 @@ Item 11 clarifies the boundary between resumption and replay.
       "recovery_projection_protocol": { "major": 1, "minor": 0 },
       "maximum_directive_integer": "9223372036854775807",
       "root_session": {
-        "id": "logical-session-id",
+        "id": "session:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "provenance": "embedder-supplied"
       },
       "structured_output": {
@@ -7625,8 +7909,9 @@ MUST define the required and optional fields and stable discriminants for
 `CancelExecution`, `AwaitForeground`, `AwaitTerminal`, `QueryExecution`, and
 `Shutdown`; the `IntegrationPreflight` operations `ResolveMappings`,
 `ResolveSessions`, and `EstablishSession`; `CreateHook` and
-`DispatchOperation`; journal ownership, read, commit, payload-resolution, and
-release operations; and `DeliverEvent`. The prose below defines their
+`DispatchOperation`; the identity-source operation; journal ownership, read,
+commit, payload-resolution, and release operations; and `DeliverEvent`. The
+prose below defines their
 behavior. A publication that omits this artifact is a draft design and is not
 independently sufficient for an embedding-profile interoperability claim.
 
@@ -7638,8 +7923,9 @@ independently sufficient for an embedding-profile interoperability claim.
 
 An `Interpreter` accepts a package root, an explicitly selected
    `ProtocolSelection`, interpreter configuration (which includes the executor
-   adapter), a hook factory, an `IntegrationPreflight` implementation, zero or
-   more event sinks, and, for a durable embedding, journal storage. The
+   adapter and identity source), a hook factory, an `IntegrationPreflight`
+   implementation, zero or more event sinks, and, for a durable embedding,
+   journal storage. The
    selection contains the exact published major and minor versions of the
    source-language, embedding, hook, journal, event, configuration, value,
    canonical-IR, source-map, and recovery-projection protocols. The
@@ -7660,29 +7946,40 @@ An `Interpreter` accepts a package root, an explicitly selected
    Execution cancellation accepts an execution ID and a `CancellationReason`, is
    idempotent, and implements Section 10 rather than requiring the embedder to
    manipulate executor handles directly. A resume request MUST identify the
-   journal to load and provide a candidate package identity. Gantry MUST verify
+   journal to load and MAY provide a candidate package root. When a candidate
+   root is supplied, Gantry MUST analyze one immutable snapshot, produce the
+   two package identities in Section 11, and apply their distinct compatibility
+   and provenance rules. When it is omitted, journal storage MUST resolve the
+   recorded canonical IR and source map before resume can be accepted. Gantry
+   MUST verify
    that the journal's execution-start record contains the expected execution
    ID when the caller also supplies one. It MUST reconstruct state only from
    the authoritative durable record prefix and the exact verified recovery
    artifacts required by Section 11, and MUST obtain exclusive execution
-   ownership before recovered execution advances. A candidate package identity
-   that differs from the recorded identity is
-   `source-or-configuration-incompatibility`; v1 accepts no migration payload.
+   ownership before recovered execution advances. A different candidate
+   canonical-IR identity is `source-or-configuration-incompatibility`; a
+   different manifest identity with the same canonical-IR identity is the
+   reportable cosmetic provenance difference in Section 11. V1 accepts no
+   migration payload.
 
 **Lifecycle operation contracts.**
 
 The protocol operations have the following minimum behavior in addition to
 the detailed start, resume, observation, and shutdown rules below:
 
-- `ValidatePackage` accepts a package root and selected source-language
-  version, performs package discovery and syntax-only validation, and returns
-  a success status plus ordered lexical and syntax diagnostics. It is
+- `ValidatePackage` accepts a package root, selected source-language
+  version, and frontend limits, performs package discovery and syntax-only
+  validation, and returns a success status plus ordered lexical and syntax
+  diagnostics, or the separate operational frontend failure defined in
+  Section 4. It is
   repeatable, creates no execution, and invokes no integration operation.
 - `AnalyzePackage` accepts the same inputs, performs syntax validation and
   semantic analysis, and returns source-valid or source-invalid status,
-  ordered diagnostics, canonical schemas, and inferred workflow effects when
-  analysis can produce them. It is repeatable, creates no execution, and
-  invokes no integration operation.
+  ordered diagnostics, the package-source manifest, canonical IR and source
+  map, canonical schemas, and inferred workflow effects when analysis can
+  produce them, or the separate operational frontend failure defined in
+  Section 4. It is repeatable, creates no execution, and invokes no
+  integration operation.
 - `CancelExecution` accepts an execution ID and `CancellationReason` and
   returns `accepted(effective_reason, terminal_state)`,
   `already-terminal(terminal_state)`, `not-found`, or
@@ -7711,6 +8008,72 @@ the detailed start, resume, observation, and shutdown rules below:
   effective durations. Its result separately reports
   task and execution outcomes, journal-release failures, and event-delivery
   barrier or exhaustion status.
+
+<a id="GNT-15.1-concurrency-and-reentrancy"></a>
+
+**Lifecycle concurrency and reentrancy.** One `Interpreter` has exactly three
+monotonic lifecycle states: `running`, `shutting-down`, and `terminated`.
+Construction publishes `running`; the first admitted `Shutdown` atomically
+changes it to `shutting-down`; completion of that invocation publishes
+`terminated`. No transition returns to an earlier state. Every public
+operation MUST have one linearization point at which it observes and, when
+applicable, changes lifecycle or execution-admission state. Internal locking
+MUST NOT make protocol behavior depend on thread arrival order beyond the
+races explicitly permitted below.
+
+While `running`, an embedding MUST permit independent
+`ValidatePackage`, `AnalyzePackage`, `StartExecution`, `ResumeExecution`,
+`CancelExecution`, await, and query operations to be called concurrently.
+Several accepted executions MAY advance concurrently and share the configured
+thread-safe adapters. Each package operation uses its own immutable source
+snapshot and frontend-limit counters. Mutable execution state is isolated by
+execution identity; durable advancement is additionally isolated by journal
+ownership. Two starts naming the same journal race under the empty-target rule
+in Section 11, and two resumes naming the same journal race under its exclusive
+fencing rule. At most one can acquire authority to advance that journal. The
+loser returns the applicable structured ownership failure and MUST NOT dispatch
+a hook or mutate the winner's state.
+
+`CancelExecution`, `AwaitForeground`, `AwaitTerminal`, and in-process
+`QueryExecution` MAY run concurrently for the same execution. The first
+durably committed cancellation reason still wins. Awaiters are independent
+observers and cancelling one waiter never changes execution state.
+`QueryExecution` returns one internally consistent point-in-time snapshot; it
+MUST NOT combine fields from states on opposite sides of one transition.
+Concurrent start or resume requests for different execution or journal
+identities do not acquire a global semantic order, although shared adapters
+may serialize their own calls.
+
+A start, resume, validation, or analysis request races shutdown at its
+admission linearization point. If admitted while the interpreter is
+`running`, it may finish and shutdown MUST account for any execution it
+accepts. A package-only activity admitted before shutdown may finish, but it
+creates no execution outcome and is not included in the shutdown report.
+Shutdown MUST wait until every previously admitted public call has either
+completed or transferred its continuing work into execution state covered by
+that report before releasing adapters on which that call depends. A request
+whose admission linearizes after `shutting-down` begins is rejected with
+pre-execution category `lifecycle` and code `interpreter-shutting-down`.
+During shutdown, cancellation, await, and query operations for already admitted
+executions remain available until their state is included in the fixed
+shutdown report. After `terminated`, only repeated `Shutdown` calls and reads
+of immutable results already returned to the caller are valid; every other
+operation fails with category `lifecycle` and code
+`interpreter-terminated`.
+
+An adapter call has a **reentrant extent** from immediately before Gantry
+invokes or polls integration code until that invocation or poll returns.
+Integration code MUST NOT call a public operation on the same interpreter on
+the same synchronous call chain during that extent, directly or through a
+callback. Gantry MUST detect such a same-chain attempt without waiting for a
+lock or adapter result and return category `lifecycle` with code
+`reentrant-interpreter-call`; the rejected call has no semantic effect. A call
+made by an independently scheduled task or thread is an ordinary concurrent
+call even while another adapter future is pending, and work scheduled after
+the adapter extent ends is likewise an ordinary caller. Gantry MUST NOT hold
+an internal mutex or borrow needed to enter any permitted public operation
+while awaiting integration code. These rules prohibit recursive interpreter
+entry while allowing normal multithreaded control and observation.
 
 **New execution and entry input.**
 
@@ -7791,7 +8154,8 @@ the detailed start, resume, observation, and shutdown rules below:
    these envelope and variant discriminants explicitly. For a durable
    execution, the acceptance boundary is the committed execution-start
    evidence; for a nondurable execution, it is successful preflight. Syntax,
-   analysis, entry-input,
+   analysis, `frontend-resource-limit`,
+   `implementation-resource-exhaustion`, `lifecycle`, `internal`, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
    and required-event-delivery failures during pre-execution validation or
    analysis are start failures when applicable to the embedded profile.
@@ -7803,8 +8167,10 @@ the detailed start, resume, observation, and shutdown rules below:
    `ResumeExecution` MUST likewise return either
    `accepted(execution_id, handle)` or `rejected(resume_start_failure)`. It
    returns the existing execution ID rather than allocating another. A
-   resume-start failure under Section 7 leaves the execution's durable state
-   unchanged and MUST permit a later corrected resume attempt.
+   `frontend-resource-limit`, `implementation-resource-exhaustion`,
+   `lifecycle`, `internal`, or other resume-start failure under Section 7
+   leaves the execution's durable state unchanged and MUST permit a later
+   corrected resume attempt.
    Once recovered interpretation begins, resume returns the same execution
    handle and foreground-outcome categories as a new execution. If foreground
    completion is already durable, resume MUST expose that preserved outcome
@@ -8075,15 +8441,25 @@ Each event sink declares a stable identity, its required/best-effort class,
 Interpreter configuration MUST include the default model-output
    retry limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
-   executor adapter, graceful-shutdown timeout, post-cancellation drain
-   duration, maximum entry-input bytes, maximum hook-output bytes, maximum
+   executor adapter, identity source, graceful-shutdown timeout,
+   post-cancellation drain duration, maximum package files, maximum source-file
+   bytes, maximum package-source bytes, maximum source tokens, maximum
+   diagnostics per activity, maximum package-source-manifest bytes, maximum
+   canonical-IR bytes, maximum source-map bytes, maximum generated-schema
+   bytes, maximum entry-input bytes, maximum hook-output bytes, maximum
    value nesting depth, maximum value nodes, maximum String scalar count,
    maximum List item count, maximum workflow-call depth, maximum tasks per
    execution, maximum deterministic transitions per execution, maximum logical
    operations per execution, maximum loop body entries per task, and the finite
    nonzero deterministic-transition yield quantum
-   required by Section 3. These value and interpreter limits MUST satisfy
-   Sections 3, 5, 8, 10, and 11. Implementations
+   required by Section 3. The frontend limits are activity policy under
+   Section 4 and are deliberately excluded from durable execution identity.
+   The identity-source implementation is also an operational dependency rather
+   than an execution-identity field. Identity treatment for the remaining
+   configuration follows Section 11. These
+   frontend, value, and interpreter limits MUST satisfy Sections 3, 4, 5, 8,
+   10, and 11.
+   Implementations
    MUST accept directive integers through `2^63 - 1` and MUST reject larger
    directive tokens during analysis. First-class `Int` values used for list
    projection retain the exact range in Section 5; tuple projection requires
@@ -8093,8 +8469,9 @@ Interpreter configuration MUST include the default model-output
    finite and positive. Configured retry limits and whole-microsecond duration
    values MUST be no greater than `2^63 - 1`. Embedders MAY override shutdown
    and drain with finite nonnegative durations; zero requests immediate
-   cancellation or immediate return after cancellation, respectively. The
-   deterministic-transition yield quantum counts transitions, MUST be no
+   cancellation or immediate return after cancellation, respectively. Every
+   frontend limit MUST be positive and no greater than `2^63 - 1`.
+   The deterministic-transition yield quantum counts transitions, MUST be no
    greater than `2^63 - 1`, and remains subject to the nonzero requirement in
    Section 3.
 ### 15.8 Protocol versioning
@@ -8138,6 +8515,7 @@ versioned URI for each:
 
 | Artifact ID | Required contents |
 | --- | --- |
+| `gantry.spec` | Exact normative `SPEC.md` bytes for this publication revision |
 | `gantry.embedding` | Lifecycle, preflight, hook, cancellation, executor, journal, event-delivery, and observation request/result envelopes from Sections 15.1 through 15.7 |
 | `gantry.values` | Canonical value, transcript, diagnostic, event, configuration, and protected-reference schemas |
 | `gantry.ir` | Canonical core IR and source-map schemas and desugaring fixtures |
@@ -8153,12 +8531,67 @@ either form.
 Sections 15.1 through 15.7 refer to these logical IDs; repository paths and
 transport URLs may change only through a new publication index that preserves
 their versioned identities.
+
+<a id="GNT-15.8-publication-integrity"></a>
+
+**Publication-set completeness and integrity.** The publication index is an
+RFC 8785 canonical JSON object and the root of one immutable Gantry release.
+Its properties are exactly `source_language`, `publication_revision`, and
+`artifacts`. `source_language` is exactly an object containing numeric `major`
+and `minor`; `publication_revision` is a nonempty immutable string; and
+`artifacts` is an array. Each array entry has exactly `id`, `uri`,
+`media_type`, `byte_length`, `sha256`, `profiles`, and `requirements`, plus a
+`protocol` property exactly when the artifact belongs to a protocol family.
+`protocol`, when present, is exactly an object containing string `family` and
+numeric `major` and `minor`. `uri` is absolute and versioned; `media_type` is
+an IANA media type; `byte_length` is an unsigned decimal string; and `sha256`
+is 64 lowercase hexadecimal digits over the exact artifact bytes. `profiles`
+and `requirements` are arrays of strings ordered by unsigned UTF-8 bytes.
+Decimal strings use no sign or leading zero except `0`. Artifact entries are
+ordered by unsigned UTF-8 artifact ID and duplicate IDs or URIs are invalid.
+
+The index MUST contain exactly one entry for each stable artifact ID in the
+table above. It MAY contain additional companion artifacts only when each has
+a distinct stable ID and the same integrity metadata. Every URI MUST resolve
+to bytes whose length and digest match the entry. Artifact content MUST refer
+to another publication artifact by stable ID and digest, not by an unversioned
+path alone, and the resulting artifact-digest reference graph MUST be acyclic.
+The lowercase hexadecimal SHA-256 digest of the canonical index bytes is the
+**publication-set identity**. The `gantry.spec` entry binds the exact normative
+specification bytes and revision into that identity. Changing any indexed
+byte, schema, golden, corpus case, result, URI, or normative specification
+revision creates a different publication-set identity even when protocol
+versions do not change.
+
+A publication set is complete only when all indexed artifacts resolve and
+verify; every JSON Schema is valid under its declared published metaschema,
+accepts every corresponding positive golden, and rejects every corresponding
+negative golden; every canonical encoding reproduces its published bytes and
+digest; the requirement registry contains every normative identifier exactly
+once; and the conformance manifest maps every applicable identifier and
+claimed profile to executable corpus evidence or an explicit profile-based
+`not-applicable` justification. A missing artifact, unresolved URI, digest or
+length mismatch, schema/golden inconsistency, duplicate or unknown requirement
+ID, or incomplete profile mapping invalidates the complete publication set. An
+implementation MUST reject that set during protocol selection and MUST NOT
+advertise an embedding-interoperability or conformance claim from a partially
+verified set.
+
+The `gantry.conformance` artifact MUST publish the canonical JSON Schema and
+positive and negative goldens for this index. A verifier SHOULD emit a report
+that identifies the publication-set identity and every verified artifact
+digest, but that report is derived output and MUST NOT be part of an indexed
+artifact whose digest contributes to the same publication-set identity. This
+separation avoids a recursive identity cycle. Repository layout, archive
+packaging, and transport remain nonsemantic after the indexed bytes and URIs
+satisfy these rules.
 ### 15.9 Thread safety
 
 <a id="GNT-15.9"></a>
 
-Integration-provided hook factories, executor adapters, journal stores, and
-   event sinks MUST be `Send + Sync` and safe for Gantry to access from its
+Integration-provided identity sources, hook factories, executor adapters,
+   journal stores, and event sinks MUST be
+   `Send + Sync` and safe for Gantry to access from its
    multithreaded tasks. This is a baseline requirement of every Rust embedding-
    profile implementation, including one that embeds only the sequential
    evaluator profile; it is not a separate unnamed conformance profile. An
@@ -8167,6 +8600,73 @@ Integration-provided hook factories, executor adapters, journal stores, and
    by these interfaces MUST be `Send` for the lifetime of their borrows. Gantry
    MUST package all borrowed state into owned task state before submitting a
    `Send + 'static` future to the executor.
+
+<a id="GNT-15.9-boundary-failure-containment"></a>
+
+**Boundary failure and panic containment.** A normal adapter failure is one
+returned through the adapter's documented result type. An **integration
+panic** is an unwind initiated while Gantry calls an integration method,
+invokes a configured callback, or polls a future returned by integration code.
+A **Gantry invariant panic** is an unwind initiated by Gantry implementation
+code because an internal invariant was violated. These conditions are distinct
+and MUST NOT be collapsed into provider text or an ordinary source error.
+
+A Rust embedding-profile implementation MUST establish an unwind boundary
+around every call into integration code and every poll of an integration
+future. It MUST also establish an outer unwind boundary around each owned
+Gantry task and each public protocol operation. A recoverable Rust panic MUST
+NOT unwind through the public Gantry API, cross an executor task boundary
+unclassified, or unwind from one Gantry task into another. Panic payloads and
+backtraces are protected integration diagnostics: a structured result MAY
+carry a stable code and protected diagnostic reference, but default display
+text, events, hooks, and unprivileged sinks MUST NOT receive the payload.
+
+An integration panic is converted according to the boundary that panicked:
+
+- `IdentitySource` uses `identity-generation-failure`;
+- mapping and session preflight use `integration-preflight` before acceptance;
+- hook-factory and session-establishment panics use `hook-creation` and
+  `logical-session-setup`, respectively, after acceptance;
+- an operation-hook panic uses `hook-failure` with code
+  `integration-panic`, except that a panic after dispatch of a
+  `non_idempotent` action is an ambiguous outcome and MUST use
+  `unknown-action-outcome` or `OperationError::UnknownOutcome` under
+  `attempt`;
+- executor, clock, timer, and sampling panics use `executor-failure`;
+- journal-storage panics use the journal start, resume-start, or runtime
+  failure applicable at that commit or ownership boundary; and
+- an event-sink panic is a terminal failed delivery attempt for that poisoned
+  sink instance; Gantry MUST NOT retry the same instance, and the required- or
+  best-effort-sink exhaustion rules apply. The emergency diagnostic callback
+  remains best-effort, so its panic is contained and ignored.
+
+Once an adapter panics, Gantry MUST NOT call that adapter instance again during
+the same interpreter run unless the adapter contract explicitly provides a
+successful reset operation; no v1 adapter defines one. Gantry MUST fail or
+cancel all work that requires the poisoned instance, preserve independent work
+that does not, and include the adapter class and stable configured identity
+when one exists in protected operational diagnostics. For shared executor or
+journal infrastructure, the ordinary executor- and journal-failure rules
+determine the affected execution set; Gantry MUST NOT claim durable state that
+was not confirmed before the panic.
+
+A caught Gantry invariant panic becomes `internal-invariant-failure` for the
+affected task or execution. Gantry MUST signal cancellation to its dependent
+work and, while journal integrity remains usable, record the failure before
+claiming a durable terminal outcome. If the implementation proves that the
+violated invariant and every affected adapter are isolated to that execution,
+unrelated executions MAY continue. Otherwise it MUST atomically poison the
+interpreter, transition its lifecycle to `shutting-down`, reject new work with
+lifecycle code `interpreter-poisoned`, begin the shutdown cleanup rules for
+every active execution, and return a non-orderly shutdown report. A poisoned
+interpreter can never return to `running`.
+
+Process abort, forced termination, stack overflow before a boundary can catch
+it, and physical-memory exhaustion that aborts the process are not Rust
+unwinds and have no portable in-process result. After such a loss, Gantry
+promises only recovery from the authoritative durable prefix. An
+implementation MUST NOT describe an abort as a caught panic, a successful
+shutdown, or a durably recorded cancellation.
 ### 15.10 Protected data
 
 <a id="GNT-15.10"></a>
