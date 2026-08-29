@@ -504,10 +504,10 @@ in later sections:
 - `Map<T>` and an opaque artifact-reference type are deferred. They require
   lookup, lifetime, authorization, and resume contracts that v1 does not need
   to express typed model and action control flow.
-- A struct field default is a source-construction convenience. Operation
-  output must still contain every non-optional field, even when that field has
-  a source default; only `Option<T>` properties may be omitted from hook
-  output.
+- A struct field default is a source-construction convenience. Entry input and
+  operation output must still contain every non-optional field, even when that
+  field has a source default; only `Option<T>` properties may be omitted at
+  those external JSON boundaries.
 - `None` is exclusively the absent `Option<T>` value whose type must be known
   from context. `Unit` and `()` represent no-information results.
 - Attached concurrency is structured and ownership-visible. A spawned task
@@ -1829,10 +1829,13 @@ identifier policy, canonical paths, and immutable source snapshots.
    trailing-data, duplicate-member, Unicode-scalar, and value-nesting-depth
    rejection rules that Section 8 applies to hook output.
    Gantry MUST then validate the parsed value against the parameter's generated
-   schema before execution begins. After validation, Gantry MUST normalize the
-   entry value exactly as it normalizes hook output: omitted optional struct
-   fields receive their declared defaults when present and otherwise become
-   `None`, and every runtime struct contains all declared fields. An embedding
+   schema before execution begins. Entry validation uses the same struct-schema
+   required-field rule as hook-output validation: every non-`Option<T>` field
+   is required even when it has a source default, while an `Option<T>` field
+   may be omitted. After validation, Gantry MUST normalize the entry value
+   exactly as it normalizes hook output: omitted optional struct fields receive
+   their declared defaults when present and otherwise become `None`, and every
+   runtime struct contains all declared fields. An embedding
    API MUST NOT require callers to preparse the entry input through a JSON
    representation that can erase those errors. When `main` has no parameter,
    supplying entry bytes is an error.
@@ -6109,11 +6112,13 @@ fn main(request: Request) -> Report {
 }
 ```
 
-For example, `{"topic":"task ownership"}` supplies `audience = None` and
-the declared `dry_run = false` default. Gantry, not the embedder, parses and
-normalizes those raw bytes. A `main` parameter or result containing `Decision`
-or `OperationError` at any nesting depth is invalid; authors must copy any
-data they intend to export into an ordinary declared type. Requirement
+For example, `{"topic":"task ownership","dry_run":false}` supplies
+`audience = None`. The non-optional `dry_run` field remains required at this
+external JSON boundary even though source constructors may omit it and use its
+declared default. Gantry, not the embedder, parses and normalizes those raw
+bytes. A `main` parameter or result containing `Decision` or `OperationError`
+at any nesting depth is invalid; authors must copy any data they intend to
+export into an ordinary declared type. Requirement
 `GNT-4.2` and Section 15.1 define this boundary normatively.
 
 ### 14.2 Modules, imports, and package-wide agents
