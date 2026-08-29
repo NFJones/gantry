@@ -533,7 +533,8 @@ in later sections:
   interpolate, and project them. Tuples additionally support pattern
   destructuring. Lists expose deterministic `len()` and dynamic `Int`
   indexing, enabling explicit bounded traversal with `while`; list-pattern
-  destructuring and aggregate mutation remain excluded.
+  destructuring and list or tuple mutation remain excluded. Struct fields may
+  still be updated through the assignment rules in Section 6.
 - `Result<T, E>` represents a declared, expected source-level outcome. Hook
   failure, invalid structured output, cancellation, journal failure, and retry
   exhaustion are never implicitly converted to `Err`; only an explicit
@@ -591,8 +592,10 @@ valid:
   for one focused structural case. Use `decide` instead when the branch depends
   on interpretation, quality, intent, policy, or another semantic judgment.
 - Use `Bool` for known mechanical facts and `Decision` for model judgment.
-  Project `.decision` only when composing a judgment with deterministic policy;
-  retain `.rationale` when later operations need the model's explanation.
+  A `Decision` may be used directly as a condition; Gantry then uses its
+  `.decision` field. Project `.decision` when composing a judgment with other
+  deterministic policy, and retain `.rationale` when later operations need
+  the model's explanation.
 - Use deterministic String operations for exact text composition, inspection,
   and scalar parsing. Use `decide` rather than a String predicate when routing
   depends on meaning, quality, intent, policy, or another semantic judgment.
@@ -6271,7 +6274,7 @@ grammar:
 
 | Source context | Body form | Trailing value | Semicolon after closing brace |
 | --- | --- | --- | --- |
-| Function, method, or spawned block | ordinary block | Optional, but required on each reachable normal completion of a value-returning body | No |
+| Function, method, or spawned block | ordinary block | Optional for `Unit`; required on each reachable normal completion of a value-returning body | No |
 | `if`, loop, or effect-only `match` arm | statement-only block | Prohibited | No |
 | Value-producing `match` arm | value block | Required | No within an enclosing expression; `discard match ...;` requires `;` after the complete match |
 | Statement-only `with` or `session` | statement-only block | Prohibited | No |
@@ -6756,9 +6759,12 @@ fn retain_decision(report: Report) -> String {
 }
 ```
 
-The `decide` operation in the `else if` condition receives only its explicit prompt, inputs, and canonical session transcript. The `else if` syntax
-does not create a hook by itself. Conditional blocks do not themselves form
-value expressions in v1, so each selected branch returns its value explicitly.
+The `decide` operation in the `else if` condition receives only its explicit
+prompt, inputs, and canonical session transcript. The `else if` syntax does
+not create a hook by itself. A `Decision` used as a condition supplies its
+`.decision` field; retaining it first, as in `retain_decision`, also preserves
+its rationale for later use. Conditional blocks do not themselves form value
+expressions in v1, so each selected branch returns its value explicitly.
 
 An early decision return is also valid:
 
