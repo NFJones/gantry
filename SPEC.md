@@ -6157,9 +6157,9 @@ grammar:
 Only `Unit` expressions may be bare expression statements; other values use
 explicit `discard`. A Unit operation or workflow call therefore ends in `;`,
 whereas a statement-only braced control construct does not. Section 13.6 also
-requires a struct constructor at an `if`, `while`, `if let`, or `match`
-boundary to be parenthesized where specified. Section 14.14 gives paired
-invalid and valid forms for these less-obvious rules.
+defines how a struct constructor in an `if`, `while`, `if let`, or `match`
+controlling expression is parsed before the control construct's body. Section
+14.14 illustrates this less-obvious boundary rule.
 
 ### 14.1 Minimal package entry point
 
@@ -7124,16 +7124,18 @@ if minimum < value && value < maximum {
 }
 ```
 
-Struct constructors at control-flow boundaries are parenthesized so the first
-unparenthesized `{` always begins the control-flow body or match arms:
+The parser consumes a complete controlling expression before treating the
+following block as the control-flow body. A struct constructor may therefore
+appear without extra parentheses; grouping is optional when it improves
+readability:
 
 ```gantry
-// Analysis error: the constructor brace conflicts with the `if` body boundary.
+// Valid: the first brace constructs Policy; the second begins the if body.
 if Policy { enabled: true }.enabled {
     prompt "Apply the policy.";
 }
 
-// Valid: grouping makes the complete condition explicit.
+// Also valid: grouping may make the boundary easier to scan.
 if (Policy { enabled: true }).enabled {
     prompt "Apply the policy.";
 }
