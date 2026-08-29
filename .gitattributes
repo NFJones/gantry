@@ -1,0 +1,2 @@
+*.gnt linguist-language=Rust
+*.gantry linguist-language=Rust
