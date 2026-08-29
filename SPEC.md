@@ -1972,15 +1972,16 @@ analyzer-profile claims; transition, ownership, cancellation, and accepted-
 result properties apply to evaluator-profile claims; concurrency properties
 apply to concurrent-evaluator-profile claims; and recovery-prefix and terminal-
 completion properties apply to durable-runtime-profile claims. Within those
-scopes, the properties are: (1) progress to a rule or specified runtime error
-for a well-typed nonterminal configuration; (2) preservation of expression
-types, store typing, and ownership consistency after every transition; (3) one
-attached handle has at most one join or detach transition; (4) one logical
-operation has at most one source-consumable accepted result; (5) a cancelled
-task consumes no later operation outcome; (6) every recovered state simulates
-one causally closed prefix; and (7) terminal completion is unique. Provider
-outcomes and cross-task scheduling are quantified nondeterministically; they
-are not assumptions of deterministic replay.
+scopes, the properties are: (1) progress under `GNT-3.15-liveness` when a
+well-typed nonterminal configuration has an enabled Gantry transition and is
+not waiting on host work; (2) preservation of expression types, store typing,
+and ownership consistency after every transition; (3) one attached handle has
+at most one join or detach transition; (4) one logical operation has at most
+one source-consumable accepted result; (5) a cancelled task consumes no later
+operation outcome; (6) every recovered state simulates one causally closed
+prefix; and (7) terminal completion is unique. Provider outcomes, host-future
+completion, and cross-task scheduling are quantified nondeterministically;
+they are not assumptions of deterministic replay or wall-clock termination.
 
 ## 4. Source Organization
 
@@ -3640,17 +3641,45 @@ strings or accept an identity of another kind.
 
 An embedding-profile implementation MUST obtain fresh identity material from
 one configured `IdentitySource`. The source synchronously returns 256 bits or
-a structured failure, MUST be safe for concurrent use, and MUST NOT derive
-output solely from wall-clock time, process ID, a restart-local counter, or
-another value that can repeat after process restart. Its integration identity
-domain includes every interpreter, process, and restart whose identities can
-reach the same journal store or event sink, and it MUST NOT repeat material in
-that domain. Gantry supplies the kind to the source and applies the canonical
-kind prefix; the source does not choose protocol text. Concrete operating-
-system or hardware random sources and durable namespace-plus-counter sources
-are permitted. Protocol identities are correlation and deduplication keys,
-not authorization secrets, so v1 requires non-repetition rather than
-unpredictability.
+a structured failure and MUST be safe for concurrent use. Its integration
+identity domain includes every interpreter, process, and restart whose
+identities can reach the same journal store or event sink. Gantry supplies the
+kind to the source and applies the canonical kind prefix; the source does not
+choose protocol text.
+
+For each integration identity domain, the source MUST use and document one of
+these two generation strategies:
+
+- **coordinated uniqueness:** atomically reserve each returned 256-bit value in
+  a durable namespace shared by the complete domain and never return a value
+  already reserved there; or
+- **cryptographic-random uniqueness:** independently sample all 256 bits from a
+  cryptographically secure random source whose state cannot repeat after a
+  process restart. Under this strategy, the protocol treats correctly sampled
+  material as fresh; practical global uniqueness relies on the negligible
+  collision probability of the 256-bit space rather than an exhaustive lookup
+  of every occurrence in the distributed domain.
+
+A source MUST NOT derive material solely from wall-clock time, process ID, a
+restart-local counter, a deterministic generator whose state can repeat after
+restart, or another restart-repeating value. An operating-system or hardware
+random source is permitted only under the cryptographic-random strategy; a
+durable namespace-plus-counter source is permitted under coordinated
+uniqueness. Protocol identities are correlation and deduplication keys, not
+authorization secrets. Unpredictability is required only as the means by which
+the cryptographic-random strategy obtains collision resistance; it does not
+make an identity a credential.
+
+The selected strategy and its integration-domain assumptions MUST be
+documented with the embedding. An observed same-kind collision is always a
+failure under the rules below, regardless of strategy. A coordinated source
+that repeats reserved material, or a random source whose state repeats or that
+intentionally reuses material, violates its integration contract. A collision
+discovered only after both occurrences were published is an integration
+identity-integrity failure: the implementation MUST stop creating dependent
+records or deliveries, MUST surface protected operational diagnostics, and
+MUST NOT claim that the two logical occurrences are one occurrence. Gantry v1
+does not define automatic repair or reassignment of a published identity.
 
 Execution, activity, event, dispatch, delivery-attempt, and Gantry-created root
 session IDs use fresh source material. A caller-supplied root session ID MUST
@@ -3684,9 +3713,11 @@ begins.
 Before publishing or committing fresh material obtained from `IdentitySource`,
 Gantry MUST check it against every same-kind identity already known in the
 interpreter and, for a durable execution, in the authoritative journal state.
-On a collision it MUST discard the candidate and request fresh material, for
-at most three source calls for one identity allocation. Source failure,
-malformed material, or three colliding candidates is
+This local check supplements the source strategy; it does not claim exhaustive
+knowledge of other processes or journals. On a collision Gantry MUST discard
+the candidate and request fresh material, for at most three source calls for
+one identity allocation. Source failure, malformed material, or three
+colliding candidates is
 `identity-generation-failure`. For standalone validation or analysis it is an
 operational failure. Before a new execution is accepted it is an
 `integration-preflight` start failure with code `identity-source-failure`;
