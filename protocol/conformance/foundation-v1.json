@@ -1,0 +1,290 @@
+{
+  "format": "gantry.foundation-evidence/v1",
+  "gate": "GNT-GATE-000",
+  "status": "verified",
+  "specification": {
+    "path": "SPEC.md",
+    "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+  },
+  "prerequisites": [
+    {
+      "issue": "GNT-FND-001",
+      "commit": "625e69bbcf1f1cc5a0ccbe57df0445a6fc89091d",
+      "subject": "Bootstrap the v1 workspace graph."
+    },
+    {
+      "issue": "GNT-FND-002",
+      "commit": "12cf93199e32340ef753b7445b2a51c87302dbbc",
+      "subject": "Establish canonical protocol generation."
+    },
+    {
+      "issue": "GNT-FND-003",
+      "commit": "69e29999108d3d5c203ad88332cda93a89f5ebdd",
+      "subject": "Build the reviewed requirement ledger."
+    },
+    {
+      "issue": "GNT-FND-004",
+      "commit": "92d8cc73076150abd18004653f4261e2f39046d6",
+      "subject": "Freeze portable protocol contracts"
+    },
+    {
+      "issue": "GNT-FND-005",
+      "commit": "534733c6f97a289df88ef015f05850cd4e1183c7",
+      "subject": "Define embedding protocol contracts"
+    },
+    {
+      "issue": "GNT-FND-006",
+      "commit": "612a75808b834481474abebb2533f92606fae5cf",
+      "subject": "Pin Unicode 16 data and tables"
+    },
+    {
+      "issue": "GNT-FND-007",
+      "commit": "aadd46fdf22ca9c396b22fdfe061fdc2f9981d2c",
+      "subject": "Establish external conformance harness"
+    },
+    {
+      "issue": "GNT-FND-008",
+      "commit": "bb9039c85df99764305a45ef4dab5017499cf1df",
+      "subject": "Establish dependency and CI governance"
+    },
+    {
+      "issue": "GNT-SPEC-001",
+      "commit": "4976e758eb2cc681527998b662f3e204eef13b1d",
+      "subject": "Define the lifecycle formal kernel."
+    }
+  ],
+  "lifecycle_resolution": {
+    "requirement": "GNT-3-M-LIFECYCLES",
+    "status": "resolved",
+    "body_sha256": "62fd16b22631829d08007a8daf2a39501124cbd02c97da694dfc1b2b71d817df",
+    "clause_count": 9
+  },
+  "requirements": {
+    "path": "protocol/requirements/generated/requirements-v1.json",
+    "sha256": "10a9bb6748e42901738ee3368807cc6d3d13019e384b6bf7d5d42150b968264c",
+    "requirement_count": 229,
+    "clause_count": 464,
+    "section14_excerpt_count": 49
+  },
+  "next_profile": {
+    "name": "frontend",
+    "applicable_clause_count": 128,
+    "review_states": [
+      "planned"
+    ],
+    "implementation_complete": false
+  },
+  "publication_skeleton": {
+    "path": "protocol/publication/artifacts-v1.json",
+    "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548",
+    "required_artifact_ids": [
+      "gantry.authoring",
+      "gantry.conformance",
+      "gantry.embedding",
+      "gantry.ir",
+      "gantry.journal",
+      "gantry.spec",
+      "gantry.values"
+    ]
+  },
+  "dependencies": {
+    "ledger_path": "governance/dependency-ledger-v1.json",
+    "ledger_sha256": "bbcf253df483ee39b472d912d519e01daecfdcdeec0c1fb5e27b29d9cf1c135c",
+    "product_lockfile_sha256": "7847520a099654d87a29798cabe27cd443f225245f41be05a7882a14c3308cbf",
+    "fuzz_lockfile_sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899",
+    "decision_count": 5,
+    "selected_count": 4,
+    "rejected_count": 1
+  },
+  "artifacts": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "e846617e75c11fb2c8b872b62622675915536bc0f543a0684e5d8e9d7ad1f007"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "7847520a099654d87a29798cabe27cd443f225245f41be05a7882a14c3308cbf"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "bc6fb2a2b259517b3218449ee40f093254aef1478f01d78570778526bfd3edb0"
+    },
+    {
+      "path": "Justfile",
+      "sha256": "b36d1858c101b228f666ac91ec395a28e15ec0adf83de2f64d39568d95ac7626"
+    },
+    {
+      "path": "SPEC.md",
+      "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    },
+    {
+      "path": "crates/gantry-core/src/generated/portable.rs",
+      "sha256": "b78d3ae68124ff112549e794d67c49ab35dcb1b7c9d2329d15a856734d3ef2c3"
+    },
+    {
+      "path": "crates/gantry-core/src/generated/profiles.rs",
+      "sha256": "17f1f72db1644b729e88f5233f999946b8a723ca20716044e41f570543336109"
+    },
+    {
+      "path": "crates/gantry-core/src/generated/unicode.rs",
+      "sha256": "6fe2e889ee0d69300c79f8b447f48c11986c5f7fd7cd0398b9bc2aea9b529d73"
+    },
+    {
+      "path": "crates/gantry-host/src/generated/embedding.rs",
+      "sha256": "766e50b8838c08f6ae6a76b63bbf1d2236c2a6187565a43303e1ec9aaf49c7bc"
+    },
+    {
+      "path": "deny.toml",
+      "sha256": "8c44ff148d4b5c3f16bf80b58903d7f0d14c92fe6f699390e32cee39dfc3a306"
+    },
+    {
+      "path": "fuzz/Cargo.lock",
+      "sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899"
+    },
+    {
+      "path": "governance/dependency-ledger-v1.json",
+      "sha256": "bbcf253df483ee39b472d912d519e01daecfdcdeec0c1fb5e27b29d9cf1c135c"
+    },
+    {
+      "path": "governance/fixtures/negative-policy-v1.json",
+      "sha256": "0f655d54486f8a98816c7db7f6a1cf02ec7e44551b3ffe8fb4f7a0fda5d74ccb"
+    },
+    {
+      "path": "protocol/catalogs/embedding-contracts-v1.json",
+      "sha256": "4d53dbd1dcc8ad22e98193a4a52ce30b65d54ca43269d6326c0c738c1e5d7ef3"
+    },
+    {
+      "path": "protocol/catalogs/portable-contracts-v1.json",
+      "sha256": "3a29b112eb5d67c66eb72fb95fca87e72679040e7ae7d375e5cb2da9ddc6d789"
+    },
+    {
+      "path": "protocol/catalogs/profiles-v1.json",
+      "sha256": "fc9f75a1d396c7a23942ae1218d03b69c66a0e34489fe6bec4f5ad310a4a2b94"
+    },
+    {
+      "path": "protocol/goldens/embedding-contracts-v1.canonical.json",
+      "sha256": "303e2b4865b40e63033359c8f2e0f09baaa499259461d67f3c730d2800860aa6"
+    },
+    {
+      "path": "protocol/goldens/embedding-envelope-negatives-v1.json",
+      "sha256": "6b770fd92aaaab9b60e54af6a4d881a86e9bf033874b189de9f102d2902425c8"
+    },
+    {
+      "path": "protocol/goldens/portable-contract-vectors-v1.json",
+      "sha256": "f2e027e27c8d5e00ac8e761d1e8fb4de42bdac0d1d6da5c2c806b373826fda3b"
+    },
+    {
+      "path": "protocol/goldens/portable-contracts-v1.canonical.json",
+      "sha256": "4925042220c5cb120d13c5e1a7c4aae70b212e18da18de76d0a1f5600854a678"
+    },
+    {
+      "path": "protocol/goldens/profiles-v1.canonical.json",
+      "sha256": "c1c5c7090e5681e418b5003b49fea77d06a17dc367891366986f3d7640f31bbb"
+    },
+    {
+      "path": "protocol/goldens/unicode-version-vectors-v1.json",
+      "sha256": "dc018305d902d7e18dec6ec4b851e6404db483c3f356b1fa4cf58f03206a9290"
+    },
+    {
+      "path": "protocol/publication/artifacts-v1.json",
+      "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
+    },
+    {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "10a9bb6748e42901738ee3368807cc6d3d13019e384b6bf7d5d42150b968264c"
+    },
+    {
+      "path": "protocol/requirements/reviewed-v1.json",
+      "sha256": "e098416ff68268f3623de778a9a7081cefeb93fc33bb7b44fe5e169d9fde57f1"
+    },
+    {
+      "path": "protocol/requirements/section14-v1.json",
+      "sha256": "397c3b9ede2d00e8c29275f095c3b7b4b46be029e7ddcd2e3c1c1aed4fa10b99"
+    },
+    {
+      "path": "protocol/schemas/embedding-contracts-v1.schema.json",
+      "sha256": "ffcd20287b26366ba06ee2cd9a461e9b375581986746587c7193f89e340545aa"
+    },
+    {
+      "path": "protocol/schemas/portable-contracts-v1.schema.json",
+      "sha256": "04c66871dbc4b162b095b56fbce16b5e66b0bfbc938937042acb4745b30ca5ed"
+    },
+    {
+      "path": "protocol/schemas/profile-catalog-v1.schema.json",
+      "sha256": "53dd2e1994ec3cfcc64965289d7f44cbf8f1e63e7e01861d048c7760e59e83a7"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "sha256": "d77718ea6bac6c35c4bebcf784a65531b890abb6155e7014af9e074cd64b23de"
+    },
+    {
+      "path": "third_party/unicode/16.0.0/LICENSE",
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+    },
+    {
+      "path": "third_party/unicode/16.0.0/SHA256SUMS",
+      "sha256": "3dc603236fa7284bd645ac67af79a16f4acdc55e2a3818aabcaa2db97abf9330"
+    },
+    {
+      "path": "third_party/unicode/16.0.0/SOURCES",
+      "sha256": "e620ec3be390adfa24c76af8d8172f3638d7eaec5ced2da8d8b815cbc8ef193b"
+    }
+  ],
+  "evidence_suites": [
+    {
+      "id": "canonical-protocol",
+      "kind": "public-facade",
+      "path": "crates/gantry-conformance/tests/canonical_protocol.rs"
+    },
+    {
+      "id": "external-facade-matrix",
+      "kind": "external-consumer",
+      "path": "crates/gantry-conformance/tests/external_facade_matrix.rs"
+    },
+    {
+      "id": "governance-policy",
+      "kind": "repository-policy",
+      "path": "xtask/src/governance.rs"
+    },
+    {
+      "id": "harness-self-tests",
+      "kind": "negative-and-positive",
+      "path": "crates/gantry-conformance/tests/harness.rs"
+    },
+    {
+      "id": "requirement-ledger",
+      "kind": "independent-requirement-validation",
+      "path": "crates/gantry-conformance/tests/requirements_ledger.rs"
+    },
+    {
+      "id": "unicode-16",
+      "kind": "independent-data-validation",
+      "path": "crates/gantry-conformance/tests/unicode_16.rs"
+    },
+    {
+      "id": "workspace-generation",
+      "kind": "generator-and-workspace-policy",
+      "path": "xtask/src/main.rs"
+    }
+  ],
+  "claim": {
+    "phase": "phase-0-contract-foundation",
+    "profiles": [],
+    "permits_profile_implementation": true,
+    "advertises_profile": false
+  },
+  "validation_commands": [
+    "cargo deny check advisories bans licenses sources",
+    "cargo run --locked -p xtask -- check generated",
+    "cargo run --locked -p xtask -- check governance",
+    "cargo run --locked -p xtask -- check workspace",
+    "cargo test --locked -p gantry-conformance",
+    "just check",
+    "just clippy",
+    "just fmt",
+    "timeout 180 just test"
+  ],
+  "environment_gaps": [
+    "The stable macOS product lane is declared in CI and requires a hosted macOS runner."
+  ]
+}
