@@ -326,8 +326,9 @@ fn main(topic: String) -> String {
 The declarations identify the available agent and default selection, `main`
 defines the typed entry point, `${topic}` performs deterministic textual
 interpolation, and `prompt ... -> String` is the one visible model operation
-and its output contract. Deterministic-only and action-only packages omit both
-the `agents` and `default agent` declarations.
+and its output contract. Deterministic-only and action-only packages may omit
+both the `agents` and `default agent` declarations; they must do so when they
+declare no agents.
 
 The core authoring model is deliberately small:
 
@@ -353,7 +354,7 @@ The source surface is organized around these families:
 | Bindings and deterministic updates | `let`, `mut`, assignment | Sections 5 and 6 | Sections 14.4 and 14.7 |
 | Reusable orchestration | `fn`, `pure fn`, `impl` | Section 6 | Sections 14.4 and 14.6 |
 | Model-backed work | `prompt`, `decide` | Sections 6 through 8 | Sections 14.1 and 14.6 |
-| Harness capabilities | `action read_only name(...);`, `action path(...)` | Sections 6 through 8 | Section 14.12 |
+| Harness capabilities | `action read_only name(...);`, `action name(...)` | Sections 6 through 8 | Section 14.12 |
 | Explicit operation failure handling | `attempt` | Sections 5, 7, and 8 | Section 14.13 |
 | Model context | `with`, `session` | Sections 6 and 7 | Sections 14.4 through 14.7 |
 | Sequential routing | `if`, `if let`, `match` | Section 9 | Sections 14.3 and 14.6 |
