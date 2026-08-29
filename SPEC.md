@@ -1755,9 +1755,10 @@ wait the complete recorded delay again. Exhaustion applies
 returns `Err(error)` to source. Without that frame it uses `M-Fail`. A
 successful operation in an `attempt` frame returns `Ok(v)` and retains the
 successful operation's `operation-result(...,ok,...)` label.
-No journal, executor, deterministic, event-persistence, or invariant failure
-enters this conversion. A completed or failed operation state has no rule that
-dispatches it again during uninterrupted execution.
+No journal, executor, deterministic-evaluation, required-event-delivery, or
+internal-invariant failure enters this conversion. A completed or failed
+operation state has no rule that dispatches it again during uninterrupted
+execution.
 
 <a id="GNT-3-M-SPAWN"></a>
 
@@ -2322,9 +2323,11 @@ Task handles are governed by Section 10 and are not source values.
    prevents the cancelled task from consuming an `Err` or any other later
    operation result. `OperationError::Cancelled` therefore represents only an
    operation-level integration outcome, never recovery from task cancellation.
-   Journal, event-persistence, executor, deterministic-evaluation, and
+   Journal, executor, deterministic-evaluation, required-event-delivery, and
    internal-invariant failures bypass `attempt`. An unattempted operation
-   failure retains the runtime-error propagation in Section 7.
+   failure retains the runtime-error propagation in Section 7. These names
+   describe the failure domains; Section 7 defines their exact runtime
+   category spellings.
 <a id="GNT-5.10"></a>
 
 10. `Decision` is a sealed first-class value with read-only fields `decision:
@@ -3175,8 +3178,11 @@ operation identity, failure categories, and propagation.
    newlines and indentation exactly. Gantry performs no implicit indentation
    stripping outside the explicit block-prompt dedentation rule. Gantry MUST
    support Rust-style raw strings `r"..."` and hash-delimited forms such as
-   `r#"..."#`. Raw strings disable backslash escape processing but do not
-   disable `${...}` interpolation or `$$` escaping.
+   `r#"..."#`. Raw strings always disable backslash escape processing. In the
+   contextual prompt-template position after `prompt` or `decide`, a raw
+   template still recognizes `${...}` interpolation and `$$` escaping. In an
+   ordinary String expression, the same raw-string spelling has no
+   interpolation semantics, as specified in Section 13.7.
 <a id="GNT-7.9"></a>
 
 9. Hooks MUST receive the expected output schema as a separate machine-readable
@@ -3781,9 +3787,9 @@ operation modifiers defined in Sections 6 and 13.
 
 11. When retries are exhausted, an enclosing `attempt` yields
    `OperationError::InvalidOutput`; without `attempt`, the current task fails
-    with `structured-output-exhaustion`. `attempt` does not catch journal,
-    executor, deterministic-evaluation, event-persistence, or invariant
-    failures. Parallel propagation follows Section 10.
+   with `structured-output-exhaustion`. `attempt` does not catch journal,
+   executor, deterministic-evaluation, required-event-delivery, or internal-
+   invariant failures. Parallel propagation follows Section 10.
 <a id="GNT-8.12"></a>
 
 12. Transport failures and their retry policy are integration concerns, not
@@ -6347,6 +6353,12 @@ fragment unless its surrounding prose explicitly supplies a wider package
 context. This keeps the examples short while making clear that a useful local
 idiom is not, by itself, a runnable package.
 
+For the shortest authoring path, read Section 14.1 for a complete package,
+then Section 14.14 for the invalid forms most likely to be produced by analogy
+with Rust or a general-purpose language. Consult Sections 14.2 through 14.13
+only for the feature being authored. In particular, do not infer unlisted Rust
+syntax or semantics from Gantry's Rust-inspired punctuation.
+
 The versioned companion fixture corpus required for a v1 publication is not
 included in this repository revision (Section 1). Until it is published, this
 section is illustrative rather than fixture evidence: source validity and
@@ -7213,10 +7225,11 @@ fn summarize_with_fallback(report: Report) -> String {
 
 The `Err` branch handles only failure of the first prompt. A failure from the
 fallback prompt still propagates normally. `attempt` cannot wrap a workflow
-call, a join, or a larger expression, and it does not catch deterministic,
-journal, executor, event-persistence, invariant, or Gantry task-cancellation
-failures. To handle an operation reached inside a workflow, place `attempt`
-around that operation in the workflow body rather than around the call.
+call, a join, or a larger expression, and it does not catch deterministic-
+evaluation, journal, executor, required-event-delivery, internal-invariant, or
+Gantry task-cancellation failures. To handle an operation reached inside a
+workflow, place `attempt` around that operation in the workflow body rather
+than around the call.
 
 ### 14.14 Common invalid forms and their corrections
 
