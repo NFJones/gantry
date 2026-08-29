@@ -1,0 +1,31 @@
+{
+  "$id": "https://gantry.example/protocol/schemas/profile-catalog-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "catalog": { "const": "gantry.profiles" },
+    "major": { "const": 1 },
+    "minor": { "const": 0 },
+    "profiles": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": { "pattern": "^[a-z]+(?:-[a-z]+)*$", "type": "string" },
+          "requires": {
+            "items": { "pattern": "^[a-z]+(?:-[a-z]+)*$", "type": "string" },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "rust_name": { "pattern": "^[A-Z][A-Za-z0-9]*$", "type": "string" }
+        },
+        "required": ["name", "requires", "rust_name"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": ["catalog", "major", "minor", "profiles"],
+  "title": "Gantry v1 profile catalog input",
+  "type": "object"
+}

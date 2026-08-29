@@ -1,5 +1,7 @@
 //! Repository development commands for Gantry.
 
+mod protocol;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::{Path, PathBuf};
@@ -44,8 +46,17 @@ fn main() -> ExitCode {
 fn run() -> Result<(), String> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     match arguments.as_slice() {
+        [command, subject] if command == "generate" && subject == "protocol" => {
+            protocol::generate(&workspace_root()?)
+        }
+        [command, subject] if command == "check" && subject == "generated" => {
+            protocol::check_generated(&workspace_root()?)
+        }
         [command, subject] if command == "check" && subject == "workspace" => check_workspace(),
-        _ => Err("usage: cargo run --locked -p xtask -- check workspace".to_owned()),
+        _ => Err(
+            "usage: cargo run --locked -p xtask -- generate protocol | check generated | check workspace"
+                .to_owned(),
+        ),
     }
 }
 

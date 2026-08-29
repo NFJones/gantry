@@ -1,0 +1,12 @@
+{
+  "publication_index": { "major": 1, "minor": 0 },
+  "required_artifact_ids": [
+    "gantry.authoring",
+    "gantry.conformance",
+    "gantry.embedding",
+    "gantry.ir",
+    "gantry.journal",
+    "gantry.spec",
+    "gantry.values"
+  ]
+}

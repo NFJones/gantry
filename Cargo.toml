@@ -19,6 +19,8 @@ license = "Apache-2.0"
 gantry = { path = "crates/gantry", default-features = false }
 gantry-core = { path = "crates/gantry-core" }
 gantry-host = { path = "crates/gantry-host" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 
 [workspace.lints.rust]
 missing_docs = "warn"

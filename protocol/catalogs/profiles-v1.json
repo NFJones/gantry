@@ -1,0 +1,37 @@
+{
+  "catalog": "gantry.profiles",
+  "major": 1,
+  "minor": 0,
+  "profiles": [
+    {
+      "name": "analyzer",
+      "requires": ["frontend"],
+      "rust_name": "Analyzer"
+    },
+    {
+      "name": "concurrent-evaluator",
+      "requires": ["evaluator"],
+      "rust_name": "ConcurrentEvaluator"
+    },
+    {
+      "name": "durable-runtime",
+      "requires": ["evaluator"],
+      "rust_name": "DurableRuntime"
+    },
+    {
+      "name": "embedding",
+      "requires": [],
+      "rust_name": "Embedding"
+    },
+    {
+      "name": "evaluator",
+      "requires": ["analyzer"],
+      "rust_name": "Evaluator"
+    },
+    {
+      "name": "frontend",
+      "requires": [],
+      "rust_name": "Frontend"
+    }
+  ]
+}

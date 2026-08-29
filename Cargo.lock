@@ -55,6 +55,8 @@ name = "gantry-conformance"
 version = "0.1.0"
 dependencies = [
  "gantry",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -193,6 +195,8 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

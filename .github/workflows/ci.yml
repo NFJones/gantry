@@ -28,6 +28,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: cargo fmt --all --check
+      - name: Check generated protocol bindings
+        run: cargo run --locked -p xtask -- check generated
+      - name: Check workspace graph and facade features
+        run: cargo run --locked -p xtask -- check workspace
       - name: Build
         run: cargo build --workspace --all-targets --all-features
       - name: Lint
