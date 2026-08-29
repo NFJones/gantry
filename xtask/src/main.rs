@@ -19,6 +19,7 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "gantry-core",
     "gantry-frontend",
     "gantry-host",
+    "gantry-observe",
     "xtask",
 ];
 
@@ -26,10 +27,13 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry", "gantry-core"),
     ("gantry", "gantry-frontend"),
     ("gantry", "gantry-host"),
+    ("gantry", "gantry-observe"),
     ("gantry-cli", "gantry"),
     ("gantry-conformance", "gantry"),
     ("gantry-frontend", "gantry-core"),
     ("gantry-host", "gantry-core"),
+    ("gantry-observe", "gantry-core"),
+    ("gantry-observe", "gantry-host"),
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -163,7 +167,10 @@ fn validate_facade_features(metadata: &cargo_metadata::Metadata) -> Result<(), S
         .ok_or_else(|| "gantry facade package is absent".to_owned())?;
     let required = BTreeMap::from([
         ("default", BTreeSet::from(["evaluator"])),
-        ("frontend", BTreeSet::from(["dep:gantry-frontend"])),
+        (
+            "frontend",
+            BTreeSet::from(["dep:gantry-frontend", "dep:gantry-observe"]),
+        ),
         ("analyzer", BTreeSet::from(["frontend"])),
         ("evaluator", BTreeSet::from(["analyzer"])),
         ("concurrent", BTreeSet::from(["evaluator"])),
@@ -242,13 +249,19 @@ mod tests {
             package(
                 "gantry",
                 false,
-                &["gantry-core", "gantry-frontend", "gantry-host"],
+                &[
+                    "gantry-core",
+                    "gantry-frontend",
+                    "gantry-host",
+                    "gantry-observe",
+                ],
             ),
             package("gantry-cli", true, &["gantry"]),
             package("gantry-conformance", true, &["gantry"]),
             package("gantry-core", true, &[]),
             package("gantry-frontend", true, &["gantry-core"]),
             package("gantry-host", true, &["gantry-core"]),
+            package("gantry-observe", true, &["gantry-core", "gantry-host"]),
             package("xtask", true, &[]),
         ]
     }

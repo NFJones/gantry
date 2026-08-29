@@ -13,6 +13,7 @@ use gantry_core::portable::{IdentityKind, IdentityOrigin};
 use gantry_core::timestamp::UtcTimestamp;
 
 use crate::embedding::{EMBEDDING_OPERATIONS, EmbeddingOperation};
+pub use crate::event::EventSink;
 
 /// A borrowed, executor-neutral future returned by a host integration.
 pub type HostFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -302,15 +303,6 @@ pub struct OwnedTaskResult {
 pub trait JournalStorage: Send + Sync {
     /// Performs one ownership, read, commit, payload, or release operation.
     fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>>;
-}
-
-/// Capability-filtered event delivery boundary.
-pub trait EventSink: Send + Sync {
-    /// Delivers one immutable event occurrence and protected projection.
-    fn deliver<'a>(
-        &'a self,
-        request: HostRequest,
-    ) -> HostFuture<'a, Result<HostResponse, HostError>>;
 }
 
 fn validate_operation_version(

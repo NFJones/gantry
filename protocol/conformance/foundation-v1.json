@@ -89,8 +89,8 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "940e4afb09dbf9f14db286036e2c35c8e1b6d82cea8d6d31b8802466987acb4d",
-    "product_lockfile_sha256": "09171bae97d8f67b2a992532c02ad02ec661f05ef8c4dd327fac7340c5be8a5b",
+    "ledger_sha256": "909c3efeef2888511e298025e02bb2313282ac0a776696fa9f2312242e409e40",
+    "product_lockfile_sha256": "d2aa4b1cb36b05f3bd42f594d6dfc120b150aec6c3a0f35665d1602b579726fd",
     "fuzz_lockfile_sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899",
     "decision_count": 7,
     "selected_count": 6,
@@ -103,11 +103,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "09171bae97d8f67b2a992532c02ad02ec661f05ef8c4dd327fac7340c5be8a5b"
+      "sha256": "d2aa4b1cb36b05f3bd42f594d6dfc120b150aec6c3a0f35665d1602b579726fd"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "9e0430ae1563885cddfed7b5f4d888a49844f975cd168539d5d374b2471d789e"
+      "sha256": "86c5064344287621be70b2f2cc13c8f1f0f6a5654db5fffc645601ec0ef64c07"
     },
     {
       "path": "Justfile",
@@ -143,7 +143,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "940e4afb09dbf9f14db286036e2c35c8e1b6d82cea8d6d31b8802466987acb4d"
+      "sha256": "909c3efeef2888511e298025e02bb2313282ac0a776696fa9f2312242e409e40"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -160,6 +160,10 @@
     {
       "path": "protocol/catalogs/profiles-v1.json",
       "sha256": "fc9f75a1d396c7a23942ae1218d03b69c66a0e34489fe6bec4f5ad310a4a2b94"
+    },
+    {
+      "path": "protocol/goldens/activity-observation-vectors-v1.json",
+      "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
     },
     {
       "path": "protocol/goldens/embedding-contracts-v1.canonical.json",
@@ -210,6 +214,10 @@
       "sha256": "397c3b9ede2d00e8c29275f095c3b7b4b46be029e7ddcd2e3c1c1aed4fa10b99"
     },
     {
+      "path": "protocol/schemas/activity-observation-v1.schema.json",
+      "sha256": "24821293533841149e962b77c41c5aab9ebdea09401662180fd9a20ed409d9b1"
+    },
+    {
       "path": "protocol/schemas/embedding-contracts-v1.schema.json",
       "sha256": "ffcd20287b26366ba06ee2cd9a461e9b375581986746587c7193f89e340545aa"
     },
@@ -247,6 +255,11 @@
     }
   ],
   "evidence_suites": [
+    {
+      "id": "activity-observation",
+      "kind": "public-facade",
+      "path": "crates/gantry-conformance/tests/activity_observation.rs"
+    },
     {
       "id": "canonical-protocol",
       "kind": "public-facade",

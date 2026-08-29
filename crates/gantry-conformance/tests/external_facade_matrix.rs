@@ -67,9 +67,14 @@ fn run_external_consumer(name: &str, features: &[&str], expected: [bool; 5]) {
         feature_list
     );
     assert!(fs::write(fixture.join("Cargo.toml"), manifest).is_ok());
+    let frontend_contract = if expected[0] {
+        "    let _ = gantry::event::EventVersion::V1;\n    let _ = gantry::observe::SinkPlan::default();\n"
+    } else {
+        ""
+    };
     let source = format!(
-        "fn main() {{\n    let actual = gantry::compiled_features();\n    assert_eq!([actual.frontend, actual.analyzer, actual.evaluator, actual.concurrent, actual.durable], {:?});\n    assert!(!gantry::advertises_any_profile());\n    let _ = gantry::PROFILE_DEFINITIONS.len();\n    let _ = gantry::host::embedding::EMBEDDING_OPERATIONS.len();\n}}\n",
-        expected
+        "fn main() {{\n    let actual = gantry::compiled_features();\n    assert_eq!([actual.frontend, actual.analyzer, actual.evaluator, actual.concurrent, actual.durable], {:?});\n    assert!(!gantry::advertises_any_profile());\n    let _ = gantry::PROFILE_DEFINITIONS.len();\n    let _ = gantry::host::embedding::EMBEDDING_OPERATIONS.len();\n{frontend_contract}}}\n",
+        expected,
     );
     assert!(fs::write(fixture.join("src/main.rs"), source).is_ok());
 

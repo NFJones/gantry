@@ -4,10 +4,12 @@
 //! implementation layers are compiled, while profile advertisement remains
 //! empty until the corresponding conformance gate closes.
 
-pub use gantry_core::{identity, portable, profile, protocol, source, timestamp, unicode};
+pub use gantry_core::{event, identity, portable, profile, protocol, source, timestamp, unicode};
 #[cfg(feature = "frontend")]
 pub use gantry_frontend as frontend;
 pub use gantry_host as host;
+#[cfg(feature = "frontend")]
+pub use gantry_observe as observe;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 
 /// Facade features compiled into the current build.

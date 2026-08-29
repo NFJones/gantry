@@ -1,0 +1,88 @@
+{
+  "format": "gantry.activity-observation-vectors/v1",
+  "event_completion": {
+    "kind": "parse",
+    "layer": "physical",
+    "activity_material": "0101010101010101010101010101010101010101010101010101010101010101",
+    "event_material": "0202020202020202020202020202020202020202020202020202020202020202",
+    "timestamp": "1970-01-01T00:00:00.000042Z"
+  },
+  "projection_cases": [
+    {
+      "class": "raw-output",
+      "raw_output": true,
+      "operation_request_content": false,
+      "operation_result_content": false,
+      "integration_diagnostics": false,
+      "source_snippets": false,
+      "expected": "available"
+    },
+    {
+      "class": "operation-request",
+      "raw_output": false,
+      "operation_request_content": false,
+      "operation_result_content": true,
+      "integration_diagnostics": true,
+      "source_snippets": true,
+      "expected": "redacted"
+    },
+    {
+      "class": "normalized-value",
+      "raw_output": false,
+      "operation_request_content": false,
+      "operation_result_content": true,
+      "integration_diagnostics": false,
+      "source_snippets": false,
+      "expected": "available"
+    },
+    {
+      "class": "normalized-decision",
+      "raw_output": false,
+      "operation_request_content": false,
+      "operation_result_content": true,
+      "integration_diagnostics": false,
+      "source_snippets": false,
+      "expected": "available"
+    },
+    {
+      "class": "normalized-operation-error",
+      "raw_output": false,
+      "operation_request_content": false,
+      "operation_result_content": true,
+      "integration_diagnostics": false,
+      "source_snippets": false,
+      "expected": "available"
+    },
+    {
+      "class": "integration-diagnostic",
+      "raw_output": false,
+      "operation_request_content": true,
+      "operation_result_content": true,
+      "integration_diagnostics": false,
+      "source_snippets": true,
+      "expected": "redacted"
+    },
+    {
+      "class": "source-snippet",
+      "raw_output": false,
+      "operation_request_content": false,
+      "operation_result_content": false,
+      "integration_diagnostics": false,
+      "source_snippets": true,
+      "expected": "available"
+    }
+  ],
+  "retry_cases": [
+    { "initial_delay_us": 0, "cap_us": 0, "retry_number": 1, "expected_ceiling_us": 0 },
+    { "initial_delay_us": 10, "cap_us": 40, "retry_number": 1, "expected_ceiling_us": 10 },
+    { "initial_delay_us": 10, "cap_us": 40, "retry_number": 2, "expected_ceiling_us": 20 },
+    { "initial_delay_us": 10, "cap_us": 40, "retry_number": 3, "expected_ceiling_us": 40 },
+    { "initial_delay_us": 10, "cap_us": 40, "retry_number": 9223372036854775807, "expected_ceiling_us": 40 }
+  ],
+  "barrier_cases": [
+    { "class": "required", "outcome": "success", "expected_barrier": "delivered" },
+    { "class": "required", "outcome": "terminal", "expected_barrier": "required-exhausted" },
+    { "class": "best-effort", "outcome": "success", "expected_barrier": "delivered" },
+    { "class": "best-effort", "outcome": "terminal", "expected_barrier": "delivered" }
+  ]
+}
