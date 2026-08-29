@@ -313,8 +313,9 @@ The core authoring model is deliberately small:
 4. Wrap one of those explicit operations in `attempt` only when source should
    handle its declared operation failures as data.
 5. Use `spawn` only when work should overlap, then visibly consume every task
-   with `join`, `joinall()`, or `detach`. `joinall()` consumes only direct prior
-   spawns in its current lexical block; it never reaches into nested blocks.
+   with `join`, `joinall()`, or `detach`. `joinall()` consumes only still-
+   attached handles from direct prior spawns in its current lexical block that
+   are definitely available at that point; it never reaches into nested blocks.
 
 The source surface is organized around these families:
 
@@ -437,9 +438,9 @@ workflow summaries required by Section 6.
   `prompt` and `decide` sites inside it.
 - `spawn` makes concurrency explicit. Every spawned handle must be consumed
   visibly by `join`, `joinall()`, or `detach` on every normal path that leaves
-  its scope. `joinall()` consumes only direct prior spawn declarations in the
-  current lexical block; use named `join(...)` when selecting particular
-  handles.
+  its scope. `joinall()` consumes the still-attached, definitely available
+  handles from direct prior spawn declarations in the current lexical block;
+  use named `join(...)` when selecting particular handles.
 - Ordinary call dispatch, assignments, construction, projection, pattern
   routing, and joins are deterministic interpreter work. A called workflow's
   body may reach explicit integration operations. If a dynamic call path
@@ -6655,6 +6656,20 @@ let (headline_text, full_report): Tuple<String, Report> = pair;
 The destructuring is deterministic and does not invoke an operation hook.
 
 ### 14.10 `joinall()`, Unit tasks, and detachment
+
+Join result shape depends on the selected tasks, not on whether source uses a
+named `join(...)` or `joinall()`:
+
+| Selected tasks | Result |
+| --- | --- |
+| One value-producing task with result `T` | `T` |
+| Two or more value-producing tasks, all with result `T` | `List<T>` |
+| Two or more value-producing tasks with differing result types | `Tuple<T1, ..., Tn>` in join or declaration order |
+| Only Unit tasks, or an empty `joinall()` set | `Unit` |
+| Any mixture of Unit and value-producing tasks | Analysis error |
+
+In particular, `joinall()` over one value-producing task returns that task's
+value directly; it does not wrap the value in a one-element list.
 
 ```gantry
 fn collect_all(topic: String) -> List<Report> {
