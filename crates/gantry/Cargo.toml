@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 default = ["evaluator"]
-frontend = []
+frontend = ["dep:gantry-frontend"]
 analyzer = ["frontend"]
 evaluator = ["analyzer"]
 concurrent = ["evaluator"]
@@ -15,6 +15,7 @@ durable = ["evaluator"]
 
 [dependencies]
 gantry-core.workspace = true
+gantry-frontend = { workspace = true, optional = true }
 gantry-host.workspace = true
 
 [lints]

@@ -89,11 +89,11 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "118d659639337e180129821c37e1059fab4a99cd2cabfc5914d8c975f1523492",
-    "product_lockfile_sha256": "7b579d441461daee16f2406915ddee386c6bcd398da30fdd7289fad8b914d337",
+    "ledger_sha256": "940e4afb09dbf9f14db286036e2c35c8e1b6d82cea8d6d31b8802466987acb4d",
+    "product_lockfile_sha256": "09171bae97d8f67b2a992532c02ad02ec661f05ef8c4dd327fac7340c5be8a5b",
     "fuzz_lockfile_sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899",
-    "decision_count": 6,
-    "selected_count": 5,
+    "decision_count": 7,
+    "selected_count": 6,
     "rejected_count": 1
   },
   "artifacts": [
@@ -103,11 +103,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "7b579d441461daee16f2406915ddee386c6bcd398da30fdd7289fad8b914d337"
+      "sha256": "09171bae97d8f67b2a992532c02ad02ec661f05ef8c4dd327fac7340c5be8a5b"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "97c884facbefb417d0a67d84cb186b37d1c049158d61be32696a49ff4e20cb8a"
+      "sha256": "9e0430ae1563885cddfed7b5f4d888a49844f975cd168539d5d374b2471d789e"
     },
     {
       "path": "Justfile",
@@ -143,7 +143,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "118d659639337e180129821c37e1059fab4a99cd2cabfc5914d8c975f1523492"
+      "sha256": "940e4afb09dbf9f14db286036e2c35c8e1b6d82cea8d6d31b8802466987acb4d"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",

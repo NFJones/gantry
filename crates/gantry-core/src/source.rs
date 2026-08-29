@@ -329,6 +329,24 @@ impl SourceLimits {
             maximum_diagnostics_per_activity,
         })
     }
+
+    /// Returns the maximum exact bytes admitted for one selected source file.
+    #[must_use]
+    pub const fn maximum_source_file_bytes(self) -> u64 {
+        self.maximum_source_file_bytes
+    }
+
+    /// Returns the maximum selected source files admitted for one activity.
+    #[must_use]
+    pub const fn maximum_package_files(self) -> u64 {
+        self.maximum_package_files
+    }
+
+    /// Returns the maximum cumulative source bytes admitted for one activity.
+    #[must_use]
+    pub const fn maximum_package_source_bytes(self) -> u64 {
+        self.maximum_package_source_bytes
+    }
 }
 
 /// Invalid source-limit configuration.
@@ -512,6 +530,12 @@ impl SourceSnapshotBuilder {
     /// Returns mutable checked counters for lexer and diagnostic charging.
     pub fn counters_mut(&mut self) -> &mut SourceCounters {
         &mut self.counters
+    }
+
+    /// Returns the current checked counters without permitting mutation.
+    #[must_use]
+    pub const fn counters(&self) -> &SourceCounters {
+        &self.counters
     }
 
     /// Freezes records in unsigned UTF-8 package-path order.

@@ -17,15 +17,18 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "gantry-cli",
     "gantry-conformance",
     "gantry-core",
+    "gantry-frontend",
     "gantry-host",
     "xtask",
 ];
 
 const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry", "gantry-core"),
+    ("gantry", "gantry-frontend"),
     ("gantry", "gantry-host"),
     ("gantry-cli", "gantry"),
     ("gantry-conformance", "gantry"),
+    ("gantry-frontend", "gantry-core"),
     ("gantry-host", "gantry-core"),
 ];
 
@@ -160,7 +163,7 @@ fn validate_facade_features(metadata: &cargo_metadata::Metadata) -> Result<(), S
         .ok_or_else(|| "gantry facade package is absent".to_owned())?;
     let required = BTreeMap::from([
         ("default", BTreeSet::from(["evaluator"])),
-        ("frontend", BTreeSet::new()),
+        ("frontend", BTreeSet::from(["dep:gantry-frontend"])),
         ("analyzer", BTreeSet::from(["frontend"])),
         ("evaluator", BTreeSet::from(["analyzer"])),
         ("concurrent", BTreeSet::from(["evaluator"])),
@@ -236,10 +239,15 @@ mod tests {
 
     fn valid_graph() -> Vec<WorkspacePackage> {
         vec![
-            package("gantry", false, &["gantry-core", "gantry-host"]),
+            package(
+                "gantry",
+                false,
+                &["gantry-core", "gantry-frontend", "gantry-host"],
+            ),
             package("gantry-cli", true, &["gantry"]),
             package("gantry-conformance", true, &["gantry"]),
             package("gantry-core", true, &[]),
+            package("gantry-frontend", true, &["gantry-core"]),
             package("gantry-host", true, &["gantry-core"]),
             package("xtask", true, &[]),
         ]

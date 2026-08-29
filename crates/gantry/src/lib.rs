@@ -5,6 +5,8 @@
 //! empty until the corresponding conformance gate closes.
 
 pub use gantry_core::{identity, portable, profile, protocol, source, timestamp, unicode};
+#[cfg(feature = "frontend")]
+pub use gantry_frontend as frontend;
 pub use gantry_host as host;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 

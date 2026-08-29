@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "7b579d441461daee16f2406915ddee386c6bcd398da30fdd7289fad8b914d337"
+    "sha256": "09171bae97d8f67b2a992532c02ad02ec661f05ef8c4dd327fac7340c5be8a5b"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
@@ -68,6 +68,30 @@
         "crates/gantry-conformance/tests/package_services.rs"
       ],
       "fallback": "Replace the CLI-private adapter with another reviewed operating-system random source that fills all 256 bits and preserves the same public IdentitySource contract."
+    },
+    {
+      "id": "rustix-package-source-provider",
+      "package": "rustix",
+      "status": "selected",
+      "version": "1.1.4",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "features": [
+        "alloc",
+        "fs",
+        "std"
+      ],
+      "owner": "gantry-frontend",
+      "purpose": "Open package roots and source path components relative to pinned directory descriptors with no-follow and file-type checks on supported Unix platforms.",
+      "data_or_protocol_versions": [
+        "GNT-4.6 and GNT-4.17 descriptor-relative no-symlink source access"
+      ],
+      "bounded_spike": "The locked release supports Rust 1.63 or newer and exposes openat, O_NOFOLLOW, O_DIRECTORY, fstat, and bounded descriptor reads on Linux and macOS behind only std and fs features.",
+      "acceptance_evidence": [
+        "crates/gantry-frontend/src/provider.rs",
+        "crates/gantry-conformance/tests/source_provider.rs"
+      ],
+      "fallback": "Keep the SourceProvider contract and replace the leaf implementation with a small audited platform-specific descriptor walk preserving the same no-symlink and one-descriptor semantics."
     },
     {
       "id": "serde-json-private-tooling",
