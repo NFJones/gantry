@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/source-substrate/v1/schema.json",
+  "title": "Gantry portable source substrate vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.source-substrate-vectors/v1" },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "input": { "type": "string" },
+          "accepted": { "type": "boolean" }
+        },
+        "required": ["input", "accepted"]
+      }
+    },
+    "spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": { "type": "string" },
+          "start": { "type": "integer", "minimum": 0 },
+          "end": { "type": "integer", "minimum": 0 },
+          "expected": { "type": ["string", "null"] },
+          "expected_error": { "type": ["string", "null"] }
+        },
+        "required": ["source", "start", "end", "expected", "expected_error"]
+      }
+    },
+    "limits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": ["diagnostics", "file-bytes", "package-bytes", "package-files", "tokens"]
+          },
+          "limit": { "type": "integer", "minimum": 1 },
+          "charges": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 }
+          },
+          "expected_count": { "type": "integer", "minimum": 0 },
+          "expected_error": { "type": ["string", "null"] }
+        },
+        "required": ["kind", "limit", "charges", "expected_count", "expected_error"]
+      }
+    }
+  },
+  "required": ["format", "paths", "spans", "limits"]
+}

@@ -1,0 +1,74 @@
+{
+  "format": "gantry.source-substrate-vectors/v1",
+  "paths": [
+    { "input": "main.gnt", "accepted": true },
+    { "input": "nested/module.gnt", "accepted": true },
+    { "input": "", "accepted": false },
+    { "input": "/main.gnt", "accepted": false },
+    { "input": "../main.gnt", "accepted": false },
+    { "input": "a//b.gnt", "accepted": false },
+    { "input": "a\\b.gnt", "accepted": false },
+    { "input": "main.txt", "accepted": false },
+    { "input": "À.gnt", "accepted": false }
+  ],
+  "spans": [
+    {
+      "source": "aéz",
+      "start": 1,
+      "end": 3,
+      "expected": "é",
+      "expected_error": null
+    },
+    {
+      "source": "aéz",
+      "start": 1,
+      "end": 2,
+      "expected": null,
+      "expected_error": "source span splits a UTF-8 scalar"
+    },
+    {
+      "source": "aéz",
+      "start": 0,
+      "end": 5,
+      "expected": null,
+      "expected_error": "source span exceeds the immutable source"
+    }
+  ],
+  "limits": [
+    {
+      "kind": "package-files",
+      "limit": 2,
+      "charges": [1, 1, 1],
+      "expected_count": 2,
+      "expected_error": "package-file-count-limit"
+    },
+    {
+      "kind": "file-bytes",
+      "limit": 4,
+      "charges": [4, 5],
+      "expected_count": 4,
+      "expected_error": "source-file-byte-limit"
+    },
+    {
+      "kind": "package-bytes",
+      "limit": 7,
+      "charges": [4, 3, 1],
+      "expected_count": 7,
+      "expected_error": "package-source-byte-limit"
+    },
+    {
+      "kind": "tokens",
+      "limit": 2,
+      "charges": [1, 1, 1],
+      "expected_count": 2,
+      "expected_error": "source-token-limit"
+    },
+    {
+      "kind": "diagnostics",
+      "limit": 2,
+      "charges": [1, 1, 1],
+      "expected_count": 2,
+      "expected_error": "diagnostic-count-limit"
+    }
+  ]
+}

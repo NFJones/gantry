@@ -7,5 +7,6 @@ pub mod identity;
 pub mod portable;
 pub mod profile;
 pub mod protocol;
+pub mod source;
 pub mod timestamp;
 pub mod unicode;

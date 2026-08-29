@@ -186,6 +186,10 @@
       "sha256": "c1c5c7090e5681e418b5003b49fea77d06a17dc367891366986f3d7640f31bbb"
     },
     {
+      "path": "protocol/goldens/source-substrate-vectors-v1.json",
+      "sha256": "7b5d656a1b7df33808a5e86b57d32e92debf534744c74d5a5b94b86297523ed2"
+    },
+    {
       "path": "protocol/goldens/unicode-version-vectors-v1.json",
       "sha256": "dc018305d902d7e18dec6ec4b851e6404db483c3f356b1fa4cf58f03206a9290"
     },
@@ -220,6 +224,10 @@
     {
       "path": "protocol/schemas/profile-catalog-v1.schema.json",
       "sha256": "53dd2e1994ec3cfcc64965289d7f44cbf8f1e63e7e01861d048c7760e59e83a7"
+    },
+    {
+      "path": "protocol/schemas/source-substrate-v1.schema.json",
+      "sha256": "e98037704d9a66a3479d30ab726b4968fb4b98cf72dc06effbb406f6ed36595c"
     },
     {
       "path": "rust-toolchain.toml",
