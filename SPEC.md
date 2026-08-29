@@ -62,6 +62,8 @@
     - [15.9 Thread safety](#159-thread-safety)
     - [15.10 Protected data](#1510-protected-data)
 
+<!-- In all code blocks rust syntax highlighting is used deliberately. Eventually, these can be changed to gantry -->
+
 ## 1. Status and Scope
 
 <a id="GNT-1.0"></a>
@@ -314,7 +316,7 @@ the semantic contract is fully specified here.
 
 A complete model-backed program can be this small:
 
-```gantry
+```rust
 agents { worker }
 default agent = worker;
 
@@ -364,7 +366,7 @@ The source surface is organized around these families:
 A representative workflow shows how these forms compose without requiring an
 all-features example:
 
-```gantry
+```rust
 struct Report {
     title: String,
     summary: String,
@@ -6440,7 +6442,7 @@ illustrates this boundary rule.
 
 ### 14.1 Minimal package entry point
 
-```gantry
+```rust
 agents { worker }
 default agent = worker;
 
@@ -6458,7 +6460,7 @@ logical session. A Unit prompt does not perform or record an external action.
 An entry point may instead accept one typed strict-JSON value and return one
 typed value:
 
-```gantry
+```rust
 struct Request {
     topic: String,
     audience: Option<String>,
@@ -6492,7 +6494,7 @@ export into an ordinary declared type. Requirement
 
 `main.gnt`:
 
-```gantry
+```rust
 agents { researcher, writer }
 default agent = researcher;
 
@@ -6509,7 +6511,7 @@ fn main() -> Report {
 
 `domain.gnt`:
 
-```gantry
+```rust
 struct Citation {
     title: String,
     url: String,
@@ -6525,7 +6527,7 @@ struct Report {
 
 `workflows.gnt`:
 
-```gantry
+```rust
 use crate::domain::Report;
 
 fn produce_report(topic: String) -> Report {
@@ -6544,7 +6546,7 @@ agent name is permitted. Only `main.gnt` may declare the default agent.
 
 ### 14.3 Primitive values, structs, tagged values, and structural routing
 
-```gantry
+```rust
 struct Metadata {
     source: String,
     note: Option<String> = None,
@@ -6587,7 +6589,7 @@ second assignment does not roll back the first if its prompt later fails.
 Enums, aggregate literals, patterns, and exact equality provide deterministic
 routing over already validated structure:
 
-```gantry
+```rust
 enum ReviewOutcome {
     Approved(Draft),
     NeedsRevision(String),
@@ -6648,7 +6650,7 @@ An effect-only match uses braced statement arms and no trailing semicolon.
 These Unit prompts add read-only model turns to the logical session; they do
 not persist an external record:
 
-```gantry
+```rust
 fn observe_review_route(outcome: ReviewOutcome) {
     match outcome {
         ReviewOutcome::Approved(_) => {
@@ -6670,7 +6672,7 @@ its selected arm supplies the function's `Draft` result.
 Numeric conversion, precedence, list length, and dynamic indexing support
 bounded deterministic traversal without hiding model work:
 
-```gantry
+```rust
 fn average(scores: List<Float>) -> Option<Float> {
     if scores.len() == 0 {
         return None;
@@ -6697,7 +6699,7 @@ rather than turning it into a checked-arithmetic runtime failure.
 
 ### 14.4 Inherent methods and scoped agent selection
 
-```gantry
+```rust
 struct Report {
     title: String,
     summary: String,
@@ -6738,7 +6740,7 @@ A lexical session context applies one session choice to several explicit
 operations. Here both prompts share one logical child session forked from the
 caller's active session:
 
-```gantry
+```rust
 fn investigate(report: Report) -> Report {
     with researcher {
         session(fork) {
@@ -6761,7 +6763,7 @@ enclosing conversation.
 
 ### 14.5 Prompt strings, interpolation, and escaping
 
-```gantry
+```rust
 fn summarize(topic: String, report: Report) -> String {
     prompt(session = fork, retry_limit = 2)
         "Topic: ${topic}\nReport: ${report}\nLiteral marker: $${topic}"
@@ -6773,7 +6775,7 @@ The hook receives `topic` as plain string content and `report` as compact JSON.
 The final marker is the literal text `${topic}`. For a short prompt, escaped
 line breaks keep the complete template in one quoted source token:
 
-```gantry
+```rust
 fn explain(report: Report) -> String {
     prompt "Explain this report:\n${report}\nKeep the answer concise." -> String
 }
@@ -6785,7 +6787,7 @@ following sends `Explain this report:`, the compact JSON report, and `Keep the
 answer concise.` without the source indentation before those lines and without
 adding structural leading or trailing newlines:
 
-```gantry
+```rust
 fn explain_cleanly(report: Report) -> String {
     prompt """
         Explain this report:
@@ -6797,7 +6799,7 @@ fn explain_cleanly(report: Report) -> String {
 
 Raw strings avoid quote and backslash escapes but still interpolate:
 
-```gantry
+```rust
 fn emit_json_example(report: Report) -> String {
     prompt r#"Describe ${report} using a JSON object such as {"status":"ok"}.
 Write the literal placeholder $${report} once."# -> String
@@ -6807,7 +6809,7 @@ Write the literal placeholder $${report} once."# -> String
 Operations remain visible outside interpolation. Compute a value first rather
 than attempting a call inside `${...}`:
 
-```gantry
+```rust
 fn two_stage(report: Report) -> String {
     let critique: String = prompt "Critique ${report}." -> String;
     prompt "Rewrite ${report} using this critique: ${critique}" -> String
@@ -6817,7 +6819,7 @@ fn two_stage(report: Report) -> String {
 Basic text preparation remains deterministic and visibly separate from model
 judgment:
 
-```gantry
+```rust
 fn prepare_label(mut topic: String, sequence: Int) -> String {
     topic = topic.trim().to_lowercase();
     topic += " #";
@@ -6852,7 +6854,7 @@ fn parse_settings(enabled_text: String, count_text: String)
 `replace` uses nonoverlapping matches. The following deterministic workflow
 keeps the example in a valid executable scope:
 
-```gantry
+```rust
 fn inspect_text() -> Tuple<Int, List<String>, String> {
     let scalar_count: Int = "é".len();
     let parts: List<String> = ",a,,b,".split(",");
@@ -6864,7 +6866,7 @@ fn inspect_text() -> Tuple<Int, List<String>, String> {
 
 ### 14.6 Reusable model judgments and conditional chains
 
-```gantry
+```rust
 fn is_complete(report: Report) -> Decision {
     let checklist: String = prompt
         "Create a completeness checklist for ${report}."
@@ -6888,7 +6890,7 @@ The `decide` expression visibly requests the `Decision` schema and never
 accepts a `->` annotation. The resulting sealed value may be retained and
 reused without another hook dispatch:
 
-```gantry
+```rust
 fn retain_decision(report: Report) -> String {
     let readiness: Decision = decide
         "Is this report ready?"
@@ -6914,7 +6916,7 @@ expressions in v1, so each selected branch returns its value explicitly.
 
 An early decision return is also valid:
 
-```gantry
+```rust
 fn should_stop(report: Option<Report>) -> Decision {
     if decide "Is ${report} absent?" {
         return decide "Given that the report is absent, should work stop?";
@@ -6932,7 +6934,7 @@ operators produce first-class `Bool` values without model dispatch.
 
 Use `for` for a finite traversal when the body does not need an index:
 
-```gantry
+```rust
 fn inspect_all(reports: List<Report>) -> Unit {
     for report in reports {
         prompt "Inspect ${report}; return null after considering any issues.";
@@ -6944,7 +6946,7 @@ fn inspect_all(reports: List<Report>) -> Unit {
 list order. Use the other loop forms when repetition depends on a condition or
 requires an explicit source-level limit.
 
-```gantry
+```rust
 fn refine(mut report: Report) -> Report {
     loop(session = inline, limit = 5) {
         report = prompt "Improve ${report}." -> Report;
@@ -6958,7 +6960,7 @@ fn refine(mut report: Report) -> Report {
 }
 ```
 
-```gantry
+```rust
 fn monitor(mut state: String) -> String {
     while(session = fork, limit = 10)
         decide(retry_limit = 2) "Should monitoring continue for ${state}?" {
@@ -6975,7 +6977,7 @@ fn monitor(mut state: String) -> String {
 }
 ```
 
-```gantry
+```rust
 fn converge(mut draft: String) -> String {
     until(session = new, limit = 4) {
         draft = prompt "Revise ${draft}." -> String;
@@ -6993,7 +6995,7 @@ limit; mandatory execution budgets still apply.
 
 ### 14.8 Parallel homogeneous work and `List<T>` joins
 
-```gantry
+```rust
 fn parallel_research(topic: String) -> List<Report> {
     spawn primary -> Report {
         with researcher {
@@ -7020,7 +7022,7 @@ position is needed, for example `let primary_report: Report = reports[0];`.
 
 ### 14.9 Parallel heterogeneous work and `Tuple<...>` joins
 
-```gantry
+```rust
 fn research_pair(topic: String) -> Tuple<String, Report> {
     spawn headline -> String {
         prompt "Write a headline for ${topic}." -> String
@@ -7038,7 +7040,7 @@ fn research_pair(topic: String) -> Tuple<String, Report> {
 Tuple positions follow the explicit join argument order. V1 code can pass,
 return, project, or destructure `pair`:
 
-```gantry
+```rust
 // Inside an executable block where `pair` is in scope:
 let (headline_text, full_report): Tuple<String, Report> = pair;
 ```
@@ -7061,7 +7063,7 @@ named `join(...)` or `joinall()`:
 In particular, `joinall()` over one value-producing task returns that task's
 value directly; it does not wrap the value in a one-element list.
 
-```gantry
+```rust
 fn collect_all(topic: String) -> List<Report> {
     spawn first -> Report {
         prompt "Investigate the first perspective on ${topic}." -> Report
@@ -7076,7 +7078,7 @@ fn collect_all(topic: String) -> List<Report> {
 }
 ```
 
-```gantry
+```rust
 fn audit_in_parallel(report: Report) {
     spawn security_audit {
         prompt "Perform a security audit of ${report}.";
@@ -7092,7 +7094,7 @@ fn audit_in_parallel(report: Report) {
 
 Named joins can wait for a selected set of Unit tasks and return `()`:
 
-```gantry
+```rust
 fn audit_selected(report: Report) {
     spawn security_audit {
         prompt "Perform a security audit of ${report}.";
@@ -7112,7 +7114,7 @@ current foreground workflow. With a durable runtime it may also outlive the
 current process and remains recoverable from its journal until terminal
 execution:
 
-```gantry
+```rust
 fn launch_background(report: Report) {
     if decide "Should a background audit be launched for ${report}?" {
         spawn background {
@@ -7128,7 +7130,7 @@ Control flow may deliberately choose whether to wait for work or leave it in
 the background. Both branches consume the handle, so it is unavailable after
 the conditional even though the durable consumption mode differs by path:
 
-```gantry
+```rust
 fn launch_or_wait(report: Report) {
     spawn audit {
         prompt "Audit ${report}.";
@@ -7144,7 +7146,7 @@ fn launch_or_wait(report: Report) {
 
 ### 14.11 Nested modules and qualified paths
 
-```gantry
+```rust
 struct Input {
     text: String,
 }
@@ -7181,7 +7183,7 @@ and `super::` moves to the parent module. Unprefixed paths such as
 
 The equivalent imported form is:
 
-```gantry
+```rust
 use quality::Finding;
 use quality::inspect;
 
@@ -7195,7 +7197,7 @@ fn run_imported_check(input: Input) -> Finding {
 Actions declare typed harness capabilities and remain visually distinct from
 ordinary workflow calls:
 
-```gantry
+```rust
 struct SearchRequest {
     query: String,
 }
@@ -7255,7 +7257,7 @@ state-changing capabilities require a declared action recovery class.
 explicit `Result<T, OperationError>`. The wrapped `prompt`, `decide`, or
 `action` remains visible and keeps its normal validation and retry policy:
 
-```gantry
+```rust
 fn summarize_with_fallback(report: Report) -> String {
     let outcome: Result<String, OperationError> =
         attempt prompt "Summarize the supplied report."
@@ -7292,7 +7294,7 @@ these boundaries visible is part of Gantry's clean-syntax goal.
 An interpolation cannot contain a workflow or source-defined method call,
 whether or not that call can reach a model operation:
 
-```gantry
+```rust
 // Analysis error: workflow calls are not permitted inside interpolation.
 prompt "Rewrite this critique: ${make_critique(report)}" -> Report
 
@@ -7304,7 +7306,7 @@ prompt "Rewrite this critique: ${critique}" -> Report
 An unannotated prompt returns `Unit`. `Decision` is first-class but is not a
 `String` or an ordinary `Bool`:
 
-```gantry
+```rust
 // Analysis error: the prompt returns Unit, not String.
 let summary: String = prompt "Summarize the report.";
 
@@ -7329,7 +7331,7 @@ annotation. A `decide` always returns `Decision`; an action's output annotation
 belongs to its declaration, and an action invocation gets its result type from
 there:
 
-```gantry
+```rust
 action read_only load_report(id: String) -> Report;
 
 // Syntax error: `decide` has a fixed result type and no result annotation.
@@ -7346,7 +7348,7 @@ let report: Report = action load_report(report_id);
 A previously evaluated non-`Unit` value cannot be “used” by writing it as a
 standalone statement. Every ignored non-`Unit` result requires `discard`:
 
-```gantry
+```rust
 // Analysis error: this performs no operation and does not emit the rationale again.
 answer;
 
@@ -7363,7 +7365,7 @@ Any non-`Unit` expression, including an operation, requires explicit `discard`
 when its value is intentionally ignored. Larger deterministic expressions obey
 the same type-directed rule:
 
-```gantry
+```rust
 // Analysis error: a non-Unit arithmetic result is a bare expression statement.
 (prompt "Return the next count." -> Int) + 1;
 
@@ -7378,7 +7380,7 @@ discard prompt "Return the next count." -> Int;
 Harness actions cannot be called with ordinary workflow-call syntax, even
 when an action and workflow would otherwise have similar signatures:
 
-```gantry
+```rust
 action non_idempotent publish(report: Report) -> Unit;
 
 // Analysis error: an action declaration is not an ordinary callable workflow.
@@ -7391,7 +7393,7 @@ action publish(report);
 String operations never perform implicit conversion, and empty split or
 replacement patterns are deterministic runtime errors:
 
-```gantry
+```rust
 // Analysis error: `retry_count` is not implicitly converted to String.
 let label: String = "attempt " + retry_count;
 
@@ -7407,7 +7409,7 @@ Ordering and equality operators are intentionally non-associative so
 model-authored source cannot accidentally rely on a surprising chained
 comparison:
 
-```gantry
+```rust
 // Syntax error: Gantry does not interpret this as a mathematical range test.
 if minimum < value < maximum {
     prompt "Handle the in-range value.";
@@ -7423,7 +7425,7 @@ At an outermost control-head boundary, `{` begins the control block or match
 arms. Parenthesize a struct constructor used in that position so an ordinary
 binding condition such as `if enabled { ... }` remains unambiguous:
 
-```gantry
+```rust
 // Syntax error: the first brace begins the if body, so this is not parsed as
 // a Policy constructor followed by field projection.
 if Policy { enabled: true }.enabled {
@@ -7439,7 +7441,7 @@ if (Policy { enabled: true }).enabled {
 Task handles are linear ownership markers rather than ordinary values. Every
 normal path leaving their scope must visibly join or detach them:
 
-```gantry
+```rust
 // Analysis error: `audit` remains attached when the function returns.
 fn start_invalid(report: Report) {
     spawn audit {
@@ -7459,7 +7461,7 @@ fn start_background(report: Report) {
 Consumption must also agree at control-flow merges. A handle cannot remain
 attached on one incoming path after another path has consumed it:
 
-```gantry
+```rust
 // Analysis error: `audit` is consumed only when `publish_now` is true.
 spawn audit {
     prompt "Audit ${report}.";
@@ -7482,7 +7484,7 @@ join(routed_audit);
 Mechanical option inspection is deterministic; semantic judgment remains
 model-backed:
 
-```gantry
+```rust
 // Valid: structural presence check, with no hook dispatch.
 if let Some(report) = maybe_report {
     prompt "Publish ${report}.";
