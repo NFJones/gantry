@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/package-services/v1/schema.json",
+  "title": "Gantry package identity and UTC service values v1",
+  "$defs": {
+    "fresh_identity_material": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{6}Z$"
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/fresh_identity_material" },
+    { "$ref": "#/$defs/utc_timestamp" }
+  ]
+}

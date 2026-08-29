@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "7847520a099654d87a29798cabe27cd443f225245f41be05a7882a14c3308cbf"
+    "sha256": "7b579d441461daee16f2406915ddee386c6bcd398da30fdd7289fad8b914d337"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
@@ -48,6 +48,26 @@
         "xtask/src/main.rs"
       ],
       "fallback": "Invoke `cargo metadata --format-version 1` and validate the decoded stable fields in repository tooling."
+    },
+    {
+      "id": "getrandom-cli-identity-source",
+      "package": "getrandom",
+      "status": "selected",
+      "version": "0.3.4",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "features": [],
+      "owner": "gantry-cli",
+      "purpose": "Fill all 256 bits for every CLI fresh-identity request from the operating-system random source without time, process, counter, or restart-local fallback.",
+      "data_or_protocol_versions": [
+        "GNT-7.16-protocol-identities cryptographic-random uniqueness"
+      ],
+      "bounded_spike": "The locked release supports Rust 1.63 or newer, exposes a full-buffer fill API, and has Linux and macOS operating-system backends behind a CLI-private IdentitySource adapter.",
+      "acceptance_evidence": [
+        "crates/gantry-cli/src/services.rs",
+        "crates/gantry-conformance/tests/package_services.rs"
+      ],
+      "fallback": "Replace the CLI-private adapter with another reviewed operating-system random source that fills all 256 bits and preserves the same public IdentitySource contract."
     },
     {
       "id": "serde-json-private-tooling",

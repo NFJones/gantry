@@ -89,11 +89,11 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "bbcf253df483ee39b472d912d519e01daecfdcdeec0c1fb5e27b29d9cf1c135c",
-    "product_lockfile_sha256": "7847520a099654d87a29798cabe27cd443f225245f41be05a7882a14c3308cbf",
+    "ledger_sha256": "118d659639337e180129821c37e1059fab4a99cd2cabfc5914d8c975f1523492",
+    "product_lockfile_sha256": "7b579d441461daee16f2406915ddee386c6bcd398da30fdd7289fad8b914d337",
     "fuzz_lockfile_sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899",
-    "decision_count": 5,
-    "selected_count": 4,
+    "decision_count": 6,
+    "selected_count": 5,
     "rejected_count": 1
   },
   "artifacts": [
@@ -103,11 +103,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "7847520a099654d87a29798cabe27cd443f225245f41be05a7882a14c3308cbf"
+      "sha256": "7b579d441461daee16f2406915ddee386c6bcd398da30fdd7289fad8b914d337"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "bc6fb2a2b259517b3218449ee40f093254aef1478f01d78570778526bfd3edb0"
+      "sha256": "97c884facbefb417d0a67d84cb186b37d1c049158d61be32696a49ff4e20cb8a"
     },
     {
       "path": "Justfile",
@@ -143,7 +143,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "bbcf253df483ee39b472d912d519e01daecfdcdeec0c1fb5e27b29d9cf1c135c"
+      "sha256": "118d659639337e180129821c37e1059fab4a99cd2cabfc5914d8c975f1523492"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -168,6 +168,10 @@
     {
       "path": "protocol/goldens/embedding-envelope-negatives-v1.json",
       "sha256": "6b770fd92aaaab9b60e54af6a4d881a86e9bf033874b189de9f102d2902425c8"
+    },
+    {
+      "path": "protocol/goldens/package-service-vectors-v1.json",
+      "sha256": "c841e4e8121ee93867bd7b76dc6da2bc595a92981758271eaab85533a2320813"
     },
     {
       "path": "protocol/goldens/portable-contract-vectors-v1.json",
@@ -204,6 +208,10 @@
     {
       "path": "protocol/schemas/embedding-contracts-v1.schema.json",
       "sha256": "ffcd20287b26366ba06ee2cd9a461e9b375581986746587c7193f89e340545aa"
+    },
+    {
+      "path": "protocol/schemas/package-services-v1.schema.json",
+      "sha256": "f3477f288c65ac8583322c5ff05b02ed30baab0f560797c380c39b49c1153036"
     },
     {
       "path": "protocol/schemas/portable-contracts-v1.schema.json",

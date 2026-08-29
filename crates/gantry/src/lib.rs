@@ -4,7 +4,7 @@
 //! implementation layers are compiled, while profile advertisement remains
 //! empty until the corresponding conformance gate closes.
 
-pub use gantry_core::{identity, portable, profile, protocol, unicode};
+pub use gantry_core::{identity, portable, profile, protocol, timestamp, unicode};
 pub use gantry_host as host;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 

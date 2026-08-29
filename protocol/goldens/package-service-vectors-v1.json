@@ -1,0 +1,83 @@
+{
+  "format": "gantry.package-service-vectors/v1",
+  "timestamps": [
+    {
+      "seconds": 0,
+      "microseconds": 0,
+      "expected": "1970-01-01T00:00:00.000000Z",
+      "expected_error": null
+    },
+    {
+      "seconds": 951827696,
+      "microseconds": 123456,
+      "expected": "2000-02-29T12:34:56.123456Z",
+      "expected_error": null
+    },
+    {
+      "seconds": -1,
+      "microseconds": 999999,
+      "expected": "1969-12-31T23:59:59.999999Z",
+      "expected_error": null
+    },
+    {
+      "seconds": -62167219200,
+      "microseconds": 0,
+      "expected": "0000-01-01T00:00:00.000000Z",
+      "expected_error": null
+    },
+    {
+      "seconds": 253402300799,
+      "microseconds": 999999,
+      "expected": "9999-12-31T23:59:59.999999Z",
+      "expected_error": null
+    },
+    {
+      "seconds": 0,
+      "microseconds": 1000000,
+      "expected": null,
+      "expected_error": "timestamp microsecond fraction is out of range"
+    },
+    {
+      "seconds": 253402300800,
+      "microseconds": 0,
+      "expected": null,
+      "expected_error": "timestamp is outside the portable UTC range"
+    }
+  ],
+  "identity_allocations": [
+    {
+      "kind": "activity",
+      "scripted_material": [
+        "0101010101010101010101010101010101010101010101010101010101010101"
+      ],
+      "expected": "activity:0101010101010101010101010101010101010101010101010101010101010101",
+      "expected_error": null,
+      "expected_calls": 1
+    },
+    {
+      "kind": "event",
+      "scripted_material": [
+        "0202020202020202020202020202020202020202020202020202020202020202"
+      ],
+      "expected": "event:0202020202020202020202020202020202020202020202020202020202020202",
+      "expected_error": null,
+      "expected_calls": 1
+    },
+    {
+      "kind": "delivery-attempt",
+      "scripted_material": [
+        "0303030303030303030303030303030303030303030303030303030303030303"
+      ],
+      "expected": "delivery-attempt:0303030303030303030303030303030303030303030303030303030303030303",
+      "expected_error": null,
+      "expected_calls": 1
+    },
+    {
+      "kind": "activity",
+      "scripted_material": ["failure"],
+      "expected": null,
+      "expected_error": "identity-generation-failure",
+      "expected_calls": 1
+    }
+  ]
+}

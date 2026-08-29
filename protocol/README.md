@@ -9,6 +9,8 @@ must never be used to recreate or redefine them.
 - `goldens/` contains exact canonical encodings and negative fixtures.
 - `publication/` contains inputs used to assemble, but not impersonate, a
   complete publication index.
+- `conformance/` contains digest-bound gate evidence assembled from canonical
+  inputs and independently checked public surfaces.
 - `requirements/` contains reviewed normative-span, applicability, clause,
   and Section 14 excerpt classifications plus their generated digest inventory.
 

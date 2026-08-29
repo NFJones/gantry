@@ -20,6 +20,7 @@ license = "Apache-2.0"
 gantry = { path = "crates/gantry", version = "=0.1.0", default-features = false }
 gantry-core = { path = "crates/gantry-core", version = "=0.1.0" }
 gantry-host = { path = "crates/gantry-host", version = "=0.1.0" }
+getrandom = { version = "=0.3.4", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"

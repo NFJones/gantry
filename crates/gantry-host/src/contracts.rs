@@ -6,9 +6,11 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use gantry_core::portable::IdentityKind;
+use gantry_core::identity::ProtocolIdentity;
+use gantry_core::portable::{IdentityKind, IdentityOrigin};
+use gantry_core::timestamp::UtcTimestamp;
 
 use crate::embedding::{EMBEDDING_OPERATIONS, EmbeddingOperation};
 
@@ -162,6 +164,83 @@ pub trait IdentitySource: Send + Sync {
     fn fresh_material(&self, kind: IdentityKind) -> Result<[u8; 32], HostError>;
 }
 
+/// Executor-neutral source of current UTC event time.
+pub trait UtcClock: Send + Sync {
+    /// Returns one checked canonical UTC timestamp or an executor failure.
+    fn utc_now<'a>(&'a self) -> HostFuture<'a, Result<UtcTimestamp, HostError>>;
+}
+
+/// Thread-safe registry and allocator for fresh protocol identities.
+#[derive(Debug, Default)]
+pub struct FreshIdentityAllocator {
+    known: Mutex<std::collections::BTreeSet<ProtocolIdentity>>,
+}
+
+impl FreshIdentityAllocator {
+    /// Records an identity already known by this interpreter or activity.
+    pub fn reserve(&self, identity: ProtocolIdentity) -> Result<bool, IdentityAllocationError> {
+        self.known
+            .lock()
+            .map_err(|_| IdentityAllocationError::RegistryUnavailable)
+            .map(|mut known| known.insert(identity))
+    }
+
+    /// Allocates one fresh identity with the required three-call collision bound.
+    pub fn allocate(
+        &self,
+        source: &dyn IdentitySource,
+        kind: IdentityKind,
+    ) -> Result<ProtocolIdentity, IdentityAllocationError> {
+        if !matches!(
+            kind.origin(),
+            IdentityOrigin::Fresh | IdentityOrigin::FreshOrDerived
+        ) {
+            return Err(IdentityAllocationError::WrongOrigin);
+        }
+
+        for _ in 0..3 {
+            let material = source
+                .fresh_material(kind)
+                .map_err(IdentityAllocationError::Source)?;
+            let identity = ProtocolIdentity::from_fresh_material(kind, material)
+                .map_err(|_| IdentityAllocationError::WrongOrigin)?;
+            if self.reserve(identity)? {
+                return Ok(identity);
+            }
+        }
+        Err(IdentityAllocationError::CollisionLimit)
+    }
+}
+
+/// Failure while allocating a fresh protocol identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IdentityAllocationError {
+    /// The requested identity kind is derived or storage-owned.
+    WrongOrigin,
+    /// The configured identity source returned a structured failure.
+    Source(HostError),
+    /// Three source calls all collided with known same-kind identities.
+    CollisionLimit,
+    /// The interpreter-local identity registry is unavailable.
+    RegistryUnavailable,
+}
+
+impl IdentityAllocationError {
+    /// Returns the exact portable package-operation failure category.
+    #[must_use]
+    pub const fn portable_code(&self) -> &'static str {
+        "identity-generation-failure"
+    }
+}
+
+impl std::fmt::Display for IdentityAllocationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.portable_code())
+    }
+}
+
+impl std::error::Error for IdentityAllocationError {}
+
 /// Pre-execution mapping and logical-session resolution boundary.
 ///
 /// The specification does not impose `Send + Sync` on a separately owned
@@ -257,7 +336,7 @@ mod tests {
     use super::{
         CancellationToken, EmbeddingVersion, EnvelopeError, EventSink, ExecutorAdapter,
         HookFactory, HostRequest, IdentitySource, IntegrationPreflight, JournalStorage,
-        OperationHook, SubmittedTask,
+        OperationHook, SubmittedTask, UtcClock,
     };
     use crate::embedding::EmbeddingOperation;
 
@@ -297,6 +376,7 @@ mod tests {
         assert_send_sync::<dyn IdentitySource>();
         assert_send_sync::<dyn JournalStorage>();
         assert_send_sync::<dyn SubmittedTask>();
+        assert_send_sync::<dyn UtcClock>();
         assert_send::<dyn OperationHook>();
 
         fn accepts_preflight(_: Option<&dyn IntegrationPreflight>) {}

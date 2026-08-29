@@ -6,12 +6,19 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = ["evaluator"]
+frontend = ["gantry/frontend"]
+analyzer = ["frontend", "gantry/analyzer"]
+evaluator = ["analyzer", "gantry/evaluator"]
+
 [[bin]]
 name = "gantry"
 path = "src/main.rs"
 
 [dependencies]
-gantry = { workspace = true, features = ["evaluator"] }
+gantry.workspace = true
+getrandom.workspace = true
 
 [lints]
 workspace = true
