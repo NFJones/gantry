@@ -42,7 +42,7 @@
     - [14.4 Inherent methods and scoped agent selection](#144-inherent-methods-and-scoped-agent-selection)
     - [14.5 Prompt strings, interpolation, and escaping](#145-prompt-strings-interpolation-and-escaping)
     - [14.6 Reusable model judgments and conditional chains](#146-reusable-model-judgments-and-conditional-chains)
-    - [14.7 General, pre-test, and post-test loops](#147-general-pre-test-and-post-test-loops)
+    - [14.7 Finite, general, pre-test, and post-test loops](#147-finite-general-pre-test-and-post-test-loops)
     - [14.8 Parallel homogeneous work and `List<T>` joins](#148-parallel-homogeneous-work-and-listt-joins)
     - [14.9 Parallel heterogeneous work and `Tuple<...>` joins](#149-parallel-heterogeneous-work-and-tuple-joins)
     - [14.10 `joinall()`, Unit tasks, and detachment](#1410-joinall-unit-tasks-and-detachment)
@@ -312,7 +312,7 @@ agent declarations.
 
 The core authoring model is deliberately small:
 
-1. Declare typed data and workflows.
+1. Declare agents and typed harness capabilities, data, and workflows.
 2. Use ordinary expressions and control flow for facts the interpreter can
    compute.
 3. Use `prompt` for model-generated values, `decide` for model judgment, and
@@ -330,12 +330,14 @@ The source surface is organized around these families:
 | --- | --- | --- | --- |
 | Package structure | `mod`, `use` | Section 4 | Sections 14.2 and 14.11 |
 | Typed data | `struct`, `enum`, `Option`, `Result`, `List`, `Tuple` | Section 5 | Section 14.3 |
-| Reusable orchestration | `fn`, `impl` | Section 6 | Sections 14.4 and 14.6 |
-| Integration-backed work | `prompt`, `decide`, `action` | Sections 6 through 8 | Sections 14.1, 14.6, and 14.12 |
+| Bindings and deterministic updates | `let`, `mut`, assignment | Sections 5 and 6 | Sections 14.4 and 14.7 |
+| Reusable orchestration | `fn`, `pure fn`, `impl` | Section 6 | Sections 14.4 and 14.6 |
+| Model-backed work | `prompt`, `decide` | Sections 6 through 8 | Sections 14.1 and 14.6 |
+| Harness capabilities | `action read_only name(...);`, `action path(...)` | Sections 6 through 8 | Section 14.12 |
 | Explicit operation failure handling | `attempt` | Sections 5, 7, and 8 | Section 14.13 |
 | Model context | `with`, `session` | Sections 6 and 7 | Sections 14.4 through 14.7 |
 | Sequential routing | `if`, `if let`, `match` | Section 9 | Sections 14.3 and 14.6 |
-| Repetition | `loop`, `while`, `until` | Section 9 | Section 14.7 |
+| Repetition | `for`, `loop`, `while`, `until` | Section 9 | Section 14.7 |
 | Parallel work | `spawn`, `join`, `joinall`, `detach` | Section 10 | Sections 14.8 through 14.10 |
 
 A representative workflow shows how these forms compose without requiring an
@@ -398,6 +400,7 @@ most important when humans or models author Gantry source:
 | Author intent | Canonical source shape | What it does |
 | --- | --- | --- |
 | Define a workflow | `fn name(...) -> T { ... }` | Creates interpreter-managed orchestration; only explicit operations reached in its body cross the integration boundary. |
+| Assert a workflow has no effects | `pure fn name(...) -> T { ... }` | Requires analysis to prove that the workflow's transitive inferred effect set is empty; it does not change evaluation. |
 | Request a model-produced value | `prompt "..." -> T` | Performs one logical model operation and validates its output as `T`. |
 | Request model judgment | `decide "..."` | Performs one logical model operation and returns a sealed `Decision`. |
 | Invoke a harness capability | `action path(...)`, `action(retry_limit = N) path(...)` | Performs one logical action operation against a declared action signature; the optional modifier overrides validation retries. |
@@ -426,7 +429,10 @@ workflow summaries required by Section 6.
 - `action <path>(...)` visibly invokes a source-declared, typed harness action.
   Its result type is written on the action declaration, not at the invocation
   site. It is distinct from an ordinary workflow call and from model
-  selection.
+  selection. Every action declaration states one recovery class:
+  `read_only`, `idempotent`, or `non_idempotent`. The class describes whether
+  dispatch may safely be repeated during validation or recovery; it does not
+  describe the action's domain-level success or result type.
 - `attempt` wraps exactly one syntactic `prompt`, `decide`, or `action`
   expression. It does not catch failures from a workflow call, deterministic
   evaluation, journaling, the executor, or task cancellation.
@@ -435,6 +441,10 @@ workflow summaries required by Section 6.
 - `${...}` computes deterministic prompt input. It can read and construct
   values, but cannot hide another external operation, mutation, join, or
   control-flow transfer.
+- `mut` permits assignment to a local binding, copied parameter, or copied
+  method receiver. Gantry values do not alias: mutating a parameter or
+  `mut self` changes only that workflow's local copy, so a caller retains a
+  changed value only by receiving and assigning the workflow's result.
 - `Bool` expressions, `match`, and `if let` route validated structure
   deterministically. Use them when the answer follows mechanically from
   available values. Use `decide` when the answer requires interpretation,
@@ -6650,7 +6660,21 @@ This example asks for semantic judgment. Mechanical option presence checks can
 instead use `if let` or `match`, while ordinary comparisons and Boolean
 operators produce first-class `Bool` values without model dispatch.
 
-### 14.7 General, pre-test, and post-test loops
+### 14.7 Finite, general, pre-test, and post-test loops
+
+Use `for` for a finite traversal when the body does not need an index:
+
+```gantry
+fn inspect_all(reports: List<Report>) -> Unit {
+    for report in reports {
+        prompt "Record any issues in ${report}.";
+    }
+}
+```
+
+`for` evaluates its list expression once and visits the resulting snapshot in
+list order. Use the other loop forms when repetition depends on a condition or
+requires an explicit source-level limit.
 
 ```gantry
 fn refine(mut report: Report) -> Report {
