@@ -102,10 +102,10 @@ passages remain part of the language and operational contract.
 
 The source language is designed around three priorities, in order:
 
-1. **Visible operation sites.** Model and harness work is marked by `prompt`,
-   `decide`, or `action` where that work is defined. An ordinary workflow call
-   may reach such a site in the called body, so this guarantee is source-local
-   visibility rather than a claim that call sites are effect-free.
+1. **Visible operation sites.** Each integration operation is marked by
+   `prompt`, `decide`, or `action` at the site that requests it. An ordinary
+   workflow call may reach such a site in the called body, so this guarantee is
+   source-local visibility rather than a claim that call sites are effect-free.
 2. **Readable control flow.** Familiar blocks, typed values, pattern routing,
    loops, and structured concurrency should make execution order and ownership
    apparent without specialized notation.
@@ -338,7 +338,7 @@ The core authoring model is deliberately small:
 3. Use `prompt` for model-generated values, `decide` for model judgment, and
    `action` for harness capabilities.
 4. Wrap one of those explicit operations in `attempt` only when source should
-   handle its declared operation failures as data.
+   handle the operation failures that `attempt` converts as data.
 5. Use `spawn` only when work should overlap, then visibly consume every task
    with `join`, `joinall()`, or `detach`. `joinall()` consumes only still-
    attached handles from direct prior spawns in its current lexical block that
@@ -405,12 +405,13 @@ fn main(topic: String) -> Report {
 }
 ```
 
-Every integration crossing remains visible: `action` invokes the declared
-harness capability, each `prompt` requests model output, and `decide` requests
-model judgment. Construction, assignment, routing, workflow calls, and joins
-are interpreter operations, although a called workflow can reach explicit
-integration operations in its body. Section 14 provides focused examples for
-the remaining syntax instead of combining every construct into one program.
+Every integration-operation site in this example remains visible: `action`
+invokes the declared harness capability, each `prompt` requests model output,
+and `decide` requests model judgment. Construction, assignment, routing,
+workflow calls, and joins are interpreter operations, although a called
+workflow can reach explicit integration operations in its body. Section 14
+provides focused examples for the remaining syntax instead of combining every
+construct into one program.
 
 ### 1.2 Reading the surface syntax
 
@@ -956,7 +957,7 @@ defined in Sections 3.1 through 3.6.
     abstract transition is written
     `configuration --label--> configuration'`. The portable labels are
     deterministic, operation-prepared, operation-outcome, operation-accepted,
-    task-created, task-settled, ownership-transferred, cancellation, failure,
+    task-created, task-settled, task-ownership-changed, cancellation, failure,
     and foreground/terminal completion. Integration code may choose an
     operation outcome only after an operation-prepared label; executor
     scheduling may choose among runnable tasks but MUST preserve each task's
@@ -1546,7 +1547,7 @@ operation-outcome(t,o,q,outcome)
 operation-accepted(t,o,result-kind)
 task-created(t,parent,spawn-site)
 task-settled(t,status)
-ownership-transferred(owner,t,join|detach)
+task-ownership-changed(owner,t,join|detach)
 cancellation(t,reason)
 failure(t,category,code?)
 foreground-completion(result)
@@ -1763,7 +1764,7 @@ and emits `task-settled`.
 For `E[join(h...)]` or `E[join-all(h...)]`, `M-Join-Start` resolves the static
 lexical-name vector through `χ`, verifies that every dynamic handle is attached
 to the current owner, atomically changes all selected handles to joined, emits
-one `ownership-transferred(...,join)` label in source or declaration order,
+one `task-ownership-changed(...,join)` label in source or declaration order,
 and replaces the redex with a blocked join frame containing that ordered
 vector and destination context. An empty `join-all` instead reduces directly
 to `E[()]` as one deterministic step and creates no join frame or ownership
@@ -1783,7 +1784,7 @@ transition.
 **[GNT-3-M-DETACH] Background ownership.** `detach h` resolves `h` through
 `χ`, changes exactly that attached dynamic handle to detached execution-owned
 work, emits
-`ownership-transferred(...,detach)`, and advances the parent without waiting.
+`task-ownership-changed(...,detach)`, and advances the parent without waiting.
 The detached result is never returned to source. Its settlement still uses
 `M-Task-Settle` and contributes to terminal outcome according to Section 10.
 A joined or detached handle has no join or detach rule.
@@ -7138,7 +7139,7 @@ when its value is intentionally ignored. Larger deterministic expressions obey
 the same type-directed rule:
 
 ```gantry
-// Analysis error: the arithmetic result is discarded by the outer expression.
+// Analysis error: a non-Unit arithmetic result is a bare expression statement.
 (prompt "Return the next count." -> Int) + 1;
 
 // Valid: bind the operation result, then make the computation explicit.
@@ -7158,7 +7159,7 @@ action non_idempotent publish(report: Report) -> Unit;
 // Analysis error: an action declaration is not an ordinary callable workflow.
 publish(report);
 
-// Valid: the integration boundary remains explicit.
+// Valid: the action keyword marks the integration-operation site.
 action publish(report);
 ```
 
