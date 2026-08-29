@@ -53,8 +53,15 @@ application logic in `main.rs`.
   passes afterward.
 - Tests should explain what behavior they cover and why it matters.
 - Behavior or language changes must update `SPEC.md` and relevant `docs/`.
-- Documentation-only research belongs in `docs/reference/`; do not stage or
-  commit material in that local-reference directory.
+- When behavior or configuration changes affect user workflows, update the
+  relevant examples and configuration samples alongside the implementation.
+- Keep exploratory or documentation-only research in `docs/reference/`; do
+  not stage or commit material in that local-reference directory. Promote
+  conclusions that affect the product to `SPEC.md` or the relevant committed
+  documentation.
+- For refactors or investigations spanning multiple work sessions, maintain a
+  concise progress note in the active issue, pull request, or handoff with
+  completed work, remaining work, and material decisions or risks.
 - Do not commit secrets; use examples for configuration.
 
 ## Architecture, Compatibility, and Security
@@ -71,7 +78,7 @@ application logic in `main.rs`.
 ## Validation and Handoff
 
 - Use `just check` for fast type-checking while developing.
-- Run `just fmt`, `just clippy`, and `just test` before handoff when feasible.
+- Run `just fmt`, `just clippy`, and `just test` successfully before handoff.
 - Prefer end-to-end coverage for user-visible language and runtime behavior
   when practical.
 - Pull requests should summarize the change, list validation results, and note
