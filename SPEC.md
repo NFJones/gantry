@@ -2438,17 +2438,23 @@ integration operation, write a journal record, emit an event, run source code,
 change a logical session, settle or cancel a task, consume a deterministic
 budget, or otherwise alter the labelled transition system in Section 3.
 
-Gantry MUST preserve a value's logical content while the abstract machine
-requires it: while it is reachable from a live binding, workflow frame,
-continuation, task capture, task result awaiting join, pending logical
-operation, session, or an embedding request or result that Gantry still owns.
-Durable evidence and recovery projections retain canonical logical content as
-Sections 11 and 12 require, but do not require the original in-memory
-representation to remain allocated: an implementation MAY serialize, discard,
-and later reconstruct an equivalent value. Conversely, an implementation MAY
-retain unreachable physical storage for caching, allocation, or collection
-purposes, provided that retention and its later reclamation have no observable
-effect.
+Logical retention follows the abstract state and protocol obligations, not
+implementation pointers. Gantry MUST preserve the canonical content needed for
+a future abstract transition or required protocol delivery. This includes a
+value held by a live binding, workflow frame, continuation, task capture, or
+unjoined task result; canonical value content in a pending operation, session,
+embedding request, or embedding result that Gantry still owns; and content
+required by durable evidence or a recovery projection. A task, session,
+operation, request, result, or recovery projection retains only the canonical
+values its defined logical state contains; it does not make arbitrary
+integration resources or physical backing logically retained.
+
+Sections 11 and 12 define the retention periods for durable evidence and event
+payloads. They do not require an original in-memory representation to remain
+allocated: an implementation MAY serialize, discard, and later reconstruct an
+equivalent logical value. Conversely, an implementation MAY retain physically
+unreachable storage for caching, allocation, or collection purposes, provided
+that retention and later reclamation have no observable effect.
 
 Every source-visible value is finite and acyclic and has the deep, nonaliasing
 semantics of item 13. An implementation MAY represent a logical value as a
@@ -2458,22 +2464,23 @@ reference counting, tracing collection, arenas, or a combination of those
 techniques. Internal sharing MUST be immutable. Mutation through a mutable
 root MUST construct the complete replacement logical value atomically; it MAY
 path-copy only the changed route and share untouched subvalues. Internal cycles,
-caches, interning tables, journal buffers, and integration objects are
-implementation details and MUST NOT make source state observable after its
-semantic lifetime or change equality, serialization, hashing, operation input,
-cancellation, failure, durability, or resume behavior.
+caches, interning tables, journal buffers, and integration objects MAY retain
+physical state, but MUST NOT add a logical value root or cause content absent
+from abstract state and required durable evidence to reappear in equality,
+serialization, hashing, operation input, cancellation, failure, durability, or
+resume behavior.
 
-The reference interpreter MAY use immutable, atomically reference-counted
-persistent strings and aggregate nodes, inline scalar values where practical,
-shared ownership for logical copies, and copy-on-write or path-copying for
-mutable-root replacement. Any value state owned by a Gantry task and submitted
-to the executor MUST satisfy the `Send + 'static` task-boundary requirement of
-Sections 7 and 15; a thread-confined reference-counting representation alone
-does not satisfy that obligation. These implementation techniques are not part
-of the language ABI: public protocols, canonical IR, journals, events,
-diagnostics, and embedding results MUST encode logical values rather than
-allocation addresses, implementation handles, sharing topology, or reference
-counts.
+**Reference-Rust implementation guidance (non-normative).** A Rust reference
+interpreter should use immutable, atomically reference-counted persistent
+strings and aggregate nodes, inline scalar values where practical, shared
+ownership for logical copies, and copy-on-write or path-copying for
+mutable-root replacement. Task state that crosses an executor thread boundary
+must use a representation safe for that transfer; Rust's `Arc` is suitable,
+whereas a thread-confined reference-counting representation alone is not.
+This guidance is not part of the language ABI. Public protocols, canonical IR,
+journals, events, diagnostics, and embedding results MUST encode logical values
+rather than allocation addresses, implementation handles, sharing topology, or
+reference counts.
 
 All operations that can visit or release a value—including copy, path
 replacement, equality, normalization, validation, hashing, serialization,
