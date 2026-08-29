@@ -1526,7 +1526,9 @@ The dynamic semantics is a small-step relation over
 `M = ⟨P,C,K,H,S,Q,B,R⟩`. `P` is immutable typed core IR. `C(t)` is one task's
 control, value environment `ρ`, lexical handle environment `χ`, value store
 `μ`, optional active agent `a`, active session `s`, cancellation state, and
-status.
+status. A task status is `submitting`, `running`, `succeeded(v)`,
+`failed(error)`, or `cancelled`; only a newly admitted spawned task may be
+`submitting`, and the root begins as `running`.
 `K(t)` is its stack of evaluation, workflow-return, dynamic-context, loop, and
 task-result frames, including suspended lexical environments. `H` maps each
 stable dynamic handle identity `η` to its child task, owner, result type, and
@@ -1636,10 +1638,14 @@ the caller control and destination context, and starts the typed core body of
 `f`. Method calls additionally copy the receiver into `self`. Frame entry
 first checks cancellation and workflow-depth budget. A `return v` or trailing
 `yield v` copies `v`, discards the callee's locals, restores the return frame,
-and plugs the copy into its destination context. Returning from the root emits
-`foreground-completion`; returning from a spawned block invokes
-`M-Task-Settle`. These steps emit `deterministic`; a depth-limit failure uses
-`M-Fail`. No call or return rule dispatches a hook.
+and plugs the copy into its destination context. Returning from a nonroot
+workflow frame emits `deterministic`. Returning from the root first invokes
+`M-Task-Settle` with `succeeded(v)` and, after its attached descendants have
+drained, emits `foreground-completion(success,v)`. Root failure or cancellation
+likewise settles the root exactly once before the corresponding foreground
+completion is emitted after attached-descendant drain. Returning from a
+spawned block invokes `M-Task-Settle`. A depth-limit failure uses `M-Fail`.
+No call or return rule dispatches a hook.
 
 <a id="GNT-3-M-STORE"></a>
 
@@ -1764,21 +1770,29 @@ execution.
 
 **[GNT-3-M-SPAWN] Task creation.** After cancellation and task-count checks,
 `spawn h:τ c` derives a stable child identity, copies the statically determined
-captures and mutability, forks the active session, creates `C(child)` with an
-empty lexical handle environment, derives a fresh stable dynamic handle
-identity `η` from the owner and spawn occurrence, inserts
-`H(η)=attached(child,owner,τ)`, and extends the current lexical environment
-with `χ(h)=η`. It then increments the cumulative execution task count and emits
-`task-created`. The parent advances only after this transition; the child may
-then be scheduled independently. Failure of executor submission settles that
-same child as failed and never creates a replacement identity or handle.
+captures and mutability, forks the active session, creates `C(child)` in a
+`submitting` state with an empty lexical handle environment, derives a fresh
+stable dynamic handle identity `η` from the owner and spawn occurrence, and
+inserts `H(η)=attached(child,owner,τ)`. It then increments the cumulative
+execution task count and emits `task-created`. The parent remains suspended
+and `χ` is not extended until executor submission resolves. Submission success
+changes the child to runnable, extends the parent's current lexical environment
+with `χ(h)=η`, and releases the parent. Submission failure settles that same
+child as failed, then exposes the attached handle to and releases the parent;
+it never creates a replacement identity or handle. The child cannot be
+scheduled while `submitting`.
 
 <a id="GNT-3-M-TASK-SETTLE"></a>
 
 **[GNT-3-M-TASK-SETTLE] Settlement and all-settled join.** Returning `v` from
-a spawned block, uncaught failure, or durable cancellation changes that task
-exactly once from running to `succeeded(v)`, `failed(error)`, or `cancelled`
-and emits `task-settled`.
+the root or a spawned block, uncaught failure, or a cancellation transition
+(durably committed when the durable-runtime profile is claimed) changes that
+task exactly once from a nonterminal state to `succeeded(v)`, `failed(error)`,
+or `cancelled` and emits `task-settled`. A submission failure may make the
+specific transition from `submitting` to `failed(error)`; every other
+settlement starts from `running`. The root is a Gantry task for this rule, so
+its settlement produces `task-completion` in addition to the later execution-
+level `foreground-completion` occurrence.
 
 For `E[join(h...)]` or `E[join-all(h...)]`, `M-Join-Start` resolves the static
 lexical-name vector through `χ`, verifies that every dynamic handle is attached
@@ -2117,18 +2131,21 @@ identifier policy, canonical paths, and immutable source snapshots.
     A canonical workflow or action signature is one UTF-8 string constructed
     from that path and the canonical type descriptors in Section 5. A
     free-function signature is `fn PATH(P1,P2,...)->R`; an action signature is
-    `action[CLASS] PATH(P1,P2,...)->R`; and a method signature is
+    `action[CLASS] PATH(N1:P1,N2:P2,...)->R`; and a method signature is
     `fn METHOD_PATH(RECEIVER[,P1,P2,...])->R`. `RECEIVER` is exactly `self` or
     `mut self`. Each function or method parameter descriptor is its type
     descriptor, prefixed by `mut ` when the source parameter is mutable.
-    Action parameter descriptors are unmodified type descriptors because
-    action declarations have no mutable parameters. `R` is the declared result
+    Each action parameter descriptor is its exact NFC parameter name, a colon,
+    and its unmodified type descriptor; action declarations have no mutable
+    parameters. Parameter names are part of action identity because the action
+    fulfiller receives them as semantic input. `R` is the declared result
     descriptor or `Unit` when the annotation is omitted. The encoding contains
-    no whitespace except the one space in `mut ` or `mut self`, contains no
-    parameter names, and preserves declaration order. Examples are
+    no whitespace except the one space in `mut ` or `mut self`; function and
+    method descriptors omit parameter names, while action descriptors include
+    them and preserve declaration order. Examples are
     `fn crate::main(String)->crate::domain::Report`,
     `fn crate::quality::is_complete(crate::domain::Report)->Decision`,
-    `action[read_only] crate::search(crate::SearchRequest)->Result<List<crate::Source>,crate::SearchFailure>`,
+    `action[read_only] crate::search(request:crate::SearchRequest)->Result<List<crate::Source>,crate::SearchFailure>`,
     and
     `fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report`.
     This format is metadata rather than source syntax.
@@ -2303,15 +2320,17 @@ Task handles are governed by Section 10 and are not source values.
 <a id="GNT-5.9"></a>
 
 9. `OperationError` is a sealed built-in tagged type with the variants
-   `Declined(String)`, `InvalidOutput(String)`, `ProviderFailure(String)`,
+   `Declined(String)`, `InvalidOutput`, `ProviderFailure(String)`,
    `Timeout(String)`, `PolicyDenied(String)`, `Cancelled(String)`, and
-   `UnknownOutcome(Tuple<String,String>)`. The first six payloads are the
-   bounded diagnostic message. The `UnknownOutcome` tuple contains the stable
-   operation ID followed by its diagnostic message. Source can inspect these
-   variants with `match`, including
+   `UnknownOutcome(Tuple<String,String>)`. The five String payloads are bounded
+   diagnostic messages. `InvalidOutput` is unit-like because canonical
+   validation details remain diagnostics rather than portable source data.
+   The `UnknownOutcome` tuple contains the stable operation ID followed by its
+   diagnostic message. Source can inspect these variants with `match`, including
    `OperationError::UnknownOutcome((operation_id, message))`, but cannot
-   construct an `OperationError`. Read-only `.message` returns the applicable
-   message, and `.operation_id` returns `Some(id)` only for `UnknownOutcome`.
+   construct an `OperationError`. Read-only `.message` returns `None` for
+   `InvalidOutput` and `Some(message)` for every other variant;
+   `.operation_id` returns `Some(id)` only for `UnknownOutcome`.
    `attempt OPERATION` evaluates exactly one syntactic `prompt`, `decide`, or
    `action` expression. If the operation accepts a value of type `T`, the
    result is `Ok(value): Result<T, OperationError>`. If it encounters a
@@ -2746,20 +2765,22 @@ defined here and in Section 7 cross the integration boundary.
    interpolation expressions.
    Interpolations are evaluated in
    source order. If any interpolation cannot be evaluated or encoded, the
-   containing prompt MUST remain undispatched and execution MUST fail. The
-   source template and interpolated prompt MUST both be supplied to the hook.
+   containing prompt MUST remain undispatched and execution MUST fail. A
+   redacted template representation and the interpolated prompt MUST both be
+   supplied to the hook.
    Interpolation islands and `$$` escapes MUST be identified from the authored
    template body before ordinary or block-prompt escape decoding, as specified
-   in Section 13.7. The supplied source template is the authored template body
-   after removal of its outer delimiter and any structural block-prompt lines
-   and indentation, but before ordinary or block-prompt escape decoding, `$$`
-   processing, or interpolation replacement. It therefore preserves authored
-   escape spellings and distinguishes `$${name}` from an actual `${name}`
-   island. It is not the complete original source token because delimiters and
-   structural block-prompt layout are omitted. Exact interpolation source text
-   and source spans MUST be retained for diagnostics and protected
-   observability, but MUST NOT be supplied to or used by the operation
-   fulfiller. The hook request carries interpolation arguments and named inputs
+   in Section 13.7. The redacted representation is an ordered vector of literal
+   segments and zero-based interpolation placeholders. Literal segments are
+   taken after removal of outer delimiters and structural block-prompt lines
+   and indentation, but before ordinary or block-prompt escape decoding and
+   `$$` processing; they therefore preserve authored escape spellings.
+   An actual interpolation island is replaced in full by its source-order
+   placeholder and contributes none of its expression text. A `$${name}`
+   escape remains literal template content rather than a placeholder. Exact
+   interpolation source text and source spans MUST be retained only for
+   diagnostics and protected observability and MUST NOT be supplied to or used
+   by the operation fulfiller. The hook request carries interpolation arguments and named inputs
    as the ordered names, canonical type descriptors, and canonical JSON values
    defined in Section 7. An integration MUST make every named input available
    to the selected agent, even when it must render that structured vector into
@@ -3046,7 +3067,7 @@ operation identity, failure categories, and propagation.
    `decision`.
 
    A `prompt` or `decide` body MUST contain the selected agent name and
-   active agent-mapping revision; authored source template and interpolated
+   active agent-mapping revision; redacted template representation and interpolated
    prompt; ordered interpolation-argument vector; ordered named-input vector;
    the active canonical logical-session transcript immediately before the
    current operation; required active and root logical-session IDs; a parent
@@ -3137,8 +3158,8 @@ operation identity, failure categories, and propagation.
    The common semantic fulfillment input is exactly the operation and result
    kinds, expected canonical type and schema, effective output limits,
    generated output guidance, and structured validation errors on a repair
-   dispatch. Model fulfillment additionally receives exactly the authored and
-   rendered prompt, ordered interpolation arguments, ordered `using` inputs,
+   dispatch. Model fulfillment additionally receives exactly the redacted
+   template representation and rendered prompt, ordered interpolation arguments, ordered `using` inputs,
    selected agent, and explicit canonical logical-session transcript. Action
    fulfillment additionally receives exactly the canonical action path and
    signature, recovery class, stable operation ID, and ordered typed
@@ -3646,8 +3667,9 @@ operation modifiers defined in Sections 6 and 13.
    breaks shown here are not part of canonical serialization.
    `Result<T,E>` produces exactly
    `{"oneOf":[PAYLOAD("Ok",T),PAYLOAD("Err",E)]}`. `OperationError`
-   produces exactly one `oneOf` array containing `PAYLOAD(NAME,String)` for
-   `Declined`, `InvalidOutput`, `ProviderFailure`, `Timeout`, `PolicyDenied`,
+   produces exactly one `oneOf` array containing
+   `PAYLOAD("Declined",String)`, `UNIT("InvalidOutput")`, then
+   `PAYLOAD(NAME,String)` for `ProviderFailure`, `Timeout`, `PolicyDenied`,
    and `Cancelled`, in that order, followed by
    `PAYLOAD("UnknownOutcome",Tuple<String,String>)`. This `OperationError`
    node is available for protocol and source-value schemas such as the result
@@ -3732,9 +3754,9 @@ operation modifiers defined in Sections 6 and 13.
    to the hook.
    A validation retry is another physical dispatch of the same logical
    operation, not a reevaluation of the source expression. Gantry MUST reuse
-   the selected agent, logical session, authored template, interpolated
-   operation-specific request body, expected type and schema, base guidance,
-   and canonical transcript from the initial dispatch.
+   the selected agent, logical session, redacted template representation,
+   interpolated operation-specific request body, expected type and schema,
+   base guidance, and canonical transcript from the initial dispatch.
    For a prompt or decide operation this includes the logical agent, session,
    canonical transcript, template, interpolation arguments, and named inputs;
    for an action it includes its canonical path, signature, recovery class,
@@ -4371,19 +4393,22 @@ Item 11 clarifies the boundary between resumption and replay.
 <a id="GNT-11.1"></a>
 
 1. The durable profile MUST commit a causally closed prefix of the abstract
-   transitions in Section 3. Before source execution or an external observer
-   can
-   depend on a transition, durable state MUST establish its label, identities,
-   continuation, values, linear handle state, session transcripts, remaining
-   budgets, and causal predecessor. A transition and its canonical event MAY be
-   committed atomically. Dedicated operation, task, session, checkpoint, event,
-   and terminal schemas are logical evidence types, not a requirement to write
-   duplicate physical rows. An implementation MAY batch labels, use atomic
-   transactions, snapshot a prefix, group-commit concurrent tasks, or compact
-   old evidence when retained identities and protected references remain
-   resolvable. Recovery MUST reconstruct exactly one causally closed prefix,
-   never consume an uncommitted operation result, and never apply one logical
-   ownership or mutation transition twice.
+   transitions in Section 3. Durable state MUST establish a transition's label,
+   identities, continuation, values, linear handle state, session transcripts,
+   remaining budgets, and causal predecessors before hook entry, executor
+   submission, source-visible operation-result consumption, ownership
+   visibility, event delivery, foreground or terminal return, or dependence by
+   another external observer. Deterministic transitions after the latest
+   checkpoint MAY remain an in-memory suffix and be replayed after recovery
+   when none of those boundaries crosses the suffix. A transition and its
+   canonical event MAY be committed atomically. Dedicated operation, task,
+   session, checkpoint, event, and terminal schemas are logical evidence types,
+   not a requirement to write duplicate physical rows. An implementation MAY
+   batch labels, use atomic transactions, snapshot a prefix, group-commit
+   concurrent tasks, or compact old evidence when retained identities and
+   protected references remain resolvable. Recovery MUST reconstruct exactly
+   one causally closed prefix, never consume an uncommitted operation result,
+   and never apply one logical ownership or mutation transition twice.
 <a id="GNT-11.2"></a>
 
 2. Gantry MUST expose durable-prefix reading, exclusive fenced ownership,
@@ -4393,15 +4418,21 @@ Item 11 clarifies the boundary between resumption and replay.
    A storage adapter MAY implement this as an append log with a durability
    barrier, one transaction, a snapshot-plus-log update, or an equivalent
    primitive. Concurrent commits are
-   linearizable; the first sequence is one and there are no committed gaps.
-   A durable read MUST identify a journal and return its authoritative committed
-   prefix in strictly increasing sequence order, optionally beginning after a
-   caller-supplied sequence number. It MUST also report the greatest sequence
-   known durable. Records physically present beyond that durability watermark
-   MUST NOT be returned as committed state or used during resume. A duplicate
-   sequence, a gap within the returned durable prefix, a changed record for an
-   already observed sequence, or a record whose envelope identifies another
-   journal is a journal failure. These read semantics are required for resume;
+   linearizable; the first uncompacted sequence is one and there are no
+   committed gaps. A durable read MUST identify a journal and return exactly
+   one of two authoritative forms. `FullPrefix` contains envelopes beginning
+   at sequence one, in strictly increasing order, and `committed_through`.
+   `SnapshotPrefix` contains a versioned snapshot, its sequence frontier, the
+   retained evidence-ID and causal-reference map required by the recovery
+   projection, a suffix contiguous from `frontier + 1`, and
+   `committed_through`. Either form MAY continue after a caller-supplied full-
+   prefix sequence or snapshot frontier and suffix sequence, but every page
+   MUST identify its form and immutable basis. Records physically present
+   beyond the durability watermark MUST NOT be returned as committed state or
+   used during resume. A duplicate sequence, a gap after the applicable start
+   or snapshot frontier, a changed record for an already observed sequence, or
+   a record whose envelope identifies another journal is a journal failure.
+   These read semantics are required for resume;
    they do not add another storage mutation primitive. Before committing after
    recovery, storage MUST discard or otherwise make unreachable every
    physically present record beyond the durability watermark, and the next
@@ -4544,8 +4575,9 @@ Item 11 clarifies the boundary between resumption and replay.
    flow, static operation and task sites, and modifiers, but excludes comments,
    whitespace, physical file paths, line endings, and diagnostic spans. The
    durable execution record MUST retain the exact canonical IR and source map,
-   or a content-addressed reference through which the embedding can retrieve
-   their exact bytes and verify the recorded identity. Missing, unavailable, or
+   or a content-addressed protected-payload reference that `JournalStorage`
+   resolves by journal ID and stable reference key. The resolved bytes MUST
+   reproduce the recorded digest before use. Missing, unavailable, or
    mismatched recovery artifacts are a
    `source-or-configuration-incompatibility` resume-start failure. Gantry SHOULD
    retain the original immutable source snapshot by content address for audit,
@@ -4655,9 +4687,9 @@ Item 11 clarifies the boundary between resumption and replay.
     a hook, Gantry MUST allocate a fresh execution ID and commit exactly one
     execution-start evidence envelope as the journal's first logical item. That
     record MUST have sequence number one and MUST contain the package source
-    identity, the selected source-language major and minor version, the
-    effective-configuration identity and fields defined below, the selected
-    root-session identity, provenance, and normalized canonical transcript,
+    identity, the complete selected `ProtocolSelection`, the effective-
+    configuration identity and fields defined below, the selected root-session
+    identity, provenance, and normalized canonical transcript,
     each applicable agent- or action-mapping revision from Section 7, the
     canonical signature of `main` defined in Section 4, and
     either a no-entry-input marker or the validated and normalized canonical
@@ -4687,9 +4719,14 @@ Item 11 clarifies the boundary between resumption and replay.
     {
       "configuration_protocol": { "major": 1, "minor": 0 },
       "source_language": { "major": 1, "minor": 0 },
+      "embedding_protocol": { "major": 1, "minor": 0 },
       "hook_protocol": { "major": 1, "minor": 0 },
       "journal_protocol": { "major": 1, "minor": 0 },
       "event_protocol": { "major": 1, "minor": 0 },
+      "value_protocol": { "major": 1, "minor": 0 },
+      "canonical_ir_protocol": { "major": 1, "minor": 0 },
+      "source_map_protocol": { "major": 1, "minor": 0 },
+      "recovery_projection_protocol": { "major": 1, "minor": 0 },
       "maximum_directive_integer": "9223372036854775807",
       "root_session": {
         "id": "logical-session-id",
@@ -4792,8 +4829,9 @@ Item 11 clarifies the boundary between resumption and replay.
     resume. `model_retry_limit`
     applies to `prompt`
     and `decide`, while `action_retry_limit` applies to `action`. Both count
-    retries after the initial attempt. `source_language` MUST equal the version
-    selected for the execution and MUST match the execution-start record.
+    retries after the initial attempt. Every protocol-version property MUST
+    equal its component of the `ProtocolSelection` selected for the execution
+    and MUST match the execution-start record.
     `root_session.provenance` is exactly `embedder-supplied` or
     `gantry-created`. `jitter` is exactly `none` or `full`; a future mode
     requires a protocol change. Required sinks MUST be ordered by the unsigned
@@ -4900,19 +4938,23 @@ does not replace an earlier event with a different kind.
 | `join` | `logical` | dynamically executed named `join` or `joinall()` site |
 | `detach` | `logical` | successful ownership transfer |
 | `mutation` | `logical` | successful source assignment |
-| `cancellation` | `logical` | cancellation request and resulting terminal cancellation transition |
+| `cancellation` | `logical` | accepted execution-level cancellation request, or task-target cancellation label |
 | `foreground-completion` | `logical` | execution foreground settlement |
 | `task-completion` | `logical` | Gantry task settlement |
 | `terminal-execution` | `logical` | execution terminal settlement |
 | `shutdown` | `physical` | completed interpreter shutdown invocation |
-| `failure` | `logical` | runtime-error transition that settles a task or execution |
+| `failure` | `logical` | emitted `failure(...)` machine label |
 
-A `failure` event accompanies rather than replaces the applicable
-`workflow-end`, `task-completion`, `foreground-completion`, or
-`terminal-execution` event. Hook outcomes, validation failures, and delivery
-failures do not independently create `failure` events unless they cause such a
-runtime-error transition. Item 6's nonrecursive sink-delivery exception still
-applies.
+One execution-level `cancellation` event represents each accepted cancellation
+request, and one task-target `cancellation` event represents each newly emitted
+`cancellation(t,reason)` label. Task, foreground, and terminal completion events
+represent the resulting settlements; there is no separate terminal-
+cancellation event. A `failure` event is emitted once per `failure(...)` label
+and accompanies rather than replaces the applicable `workflow-end`, `task-
+completion`, `foreground-completion`, or `terminal-execution` event. Hook
+outcomes, validation failures, and delivery failures do not independently
+create `failure` events unless they cause that machine label. Item 6's
+nonrecursive sink-delivery exception still applies.
 
 <a id="GNT-12.1"></a>
 
@@ -5640,8 +5682,8 @@ begin the nested opener `/*` or closing delimiter `*/`.
 followed by `matching_raw_hashes`. The lexer consumes that quote and exactly
 the opening delimiter's number of `#` characters as the close; any immediately
 following additional `#` characters are outside the raw-string token. Thus
-`r#"x"##` tokenizes as the raw string `r#"x"#` followed by `#`, which is an
-error unless another surrounding production admits that token. Lexing uses maximal munch for
+`r#"x"##` tokenizes as the raw string `r#"x"#` followed by `#`, which is a
+syntax error. Lexing uses maximal munch for
 identifiers, directive integers, `::`, and `->`. A raw-string token takes
 precedence over an identifier only when `r` is immediately followed by zero or
 more `#` characters and a quote. A block-prompt token takes precedence over an
@@ -6029,7 +6071,7 @@ primitive formatting, String query/transformation/parsing, `List<T>.len()`,
 and `List<String>.join(separator)`. Postfix `.name`
 accesses a struct field, selects a method, selects the read-only
 `Decision.decision` or `Decision.rationale` field, or selects the read-only
-`OperationError.message: String` or
+`OperationError.message: Option<String>` or
 `OperationError.operation_id: Option<String>` field. Postfix `[expression]`
 projects a list when the index has type `Int`; tuple projection still requires
 a nonnegative compile-time integer literal so its result type is statically
@@ -6392,22 +6434,16 @@ illustrates this boundary rule.
 agents { worker }
 default agent = worker;
 
-fn main() {
-    prompt "Inspect the current assignment and carry it out.";
+fn main() -> String {
+    prompt "Summarize the current assignment and the next concrete step."
+        -> String
 }
 ```
 
-The omitted prompt annotation and omitted function result both mean `Unit`.
-The complete explicit equivalent is:
-
-```gantry
-agents { worker }
-default agent = worker;
-
-fn main() -> Unit {
-    prompt "Inspect the current assignment and carry it out." -> Unit;
-}
-```
+The explicit `String` result makes the model-produced value visible to the
+caller. Omitting both result annotations instead means `Unit`: the hook must
+return JSON `null`, and the operation contributes only a model turn to its
+logical session. A Unit prompt does not perform or record an external action.
 
 An entry point may instead accept one typed strict-JSON value and return one
 typed value:
@@ -6554,7 +6590,7 @@ fn route_review(draft: Draft) -> Draft {
     let (title, copied_labels): Tuple<String, List<String>> = pair;
 
     if let Some(note) = draft.metadata.note {
-        prompt "Record the existing editorial note."
+        prompt "Consider the existing editorial note before classification."
             using { note, title, copied_labels };
     }
 
@@ -6598,19 +6634,21 @@ extra nesting. `if let`, `match`, Boolean algebra, and equality do not dispatch 
 the visible `prompt` operations still perform the semantic classification and
 revision work.
 
-An effect-only match uses braced statement arms and no trailing semicolon:
+An effect-only match uses braced statement arms and no trailing semicolon.
+These Unit prompts add read-only model turns to the logical session; they do
+not persist an external record:
 
 ```gantry
-fn record_review_route(outcome: ReviewOutcome) {
+fn observe_review_route(outcome: ReviewOutcome) {
     match outcome {
         ReviewOutcome::Approved(_) => {
-            prompt "Record approval.";
+            prompt "Acknowledge the approved route and return null.";
         },
         ReviewOutcome::NeedsRevision(feedback) => {
-            prompt "Record revision feedback: ${feedback}.";
+            prompt "Consider revision feedback ${feedback}, then return null.";
         },
         ReviewOutcome::Cancelled => {
-            prompt "Record cancellation.";
+            prompt "Acknowledge the cancelled route and return null.";
         },
     }
 }
@@ -6667,7 +6705,7 @@ impl Report {
 
     fn review(self) {
         with reviewer {
-            prompt "Review ${self} and record any concerns.";
+            prompt "Review ${self}; return null after considering concerns.";
         }
     }
 }
@@ -6887,7 +6925,7 @@ Use `for` for a finite traversal when the body does not need an index:
 ```gantry
 fn inspect_all(reports: List<Report>) -> Unit {
     for report in reports {
-        prompt "Record any issues in ${report}.";
+        prompt "Inspect ${report}; return null after considering any issues.";
     }
 }
 ```
@@ -6920,7 +6958,7 @@ fn monitor(mut state: String) -> String {
             continue;
         }
 
-        prompt "Record monitoring observations for ${state}.";
+        prompt "Observe ${state}; return null after considering its status.";
     }
 
     state
@@ -7492,10 +7530,13 @@ independently sufficient for an embedding-profile interoperability claim.
 
 **Construction and operations.**
 
-An `Interpreter` accepts a package root, an explicitly selected supported
-   source-language version, interpreter configuration (which includes the
-   executor adapter), a hook factory, an `IntegrationPreflight` implementation,
-   zero or more event sinks, and, for a durable embedding, journal storage. The
+An `Interpreter` accepts a package root, an explicitly selected
+   `ProtocolSelection`, interpreter configuration (which includes the executor
+   adapter), a hook factory, an `IntegrationPreflight` implementation, zero or
+   more event sinks, and, for a durable embedding, journal storage. The
+   selection contains the exact published major and minor versions of the
+   source-language, embedding, hook, journal, event, configuration, value,
+   canonical-IR, source-map, and recovery-projection protocols. The
    hook factory MAY also
    implement `IntegrationPreflight`, but the interpreter MUST have an
    explicit reference through which it can invoke the mapping, root-session,
@@ -7503,9 +7544,13 @@ An `Interpreter` accepts a package root, an explicitly selected supported
    MUST expose syntax-only validation, semantic analysis, execution, execution
    cancellation, and terminal asynchronous shutdown operations. A durable
    embedding MUST additionally expose resume. Dry-run, analysis, and new
-   execution MUST use the selected source-language version. Resume MUST use
-   the version stored in the execution-start record and MUST reject an
-   incompatible caller selection as a resume-start compatibility failure.
+   execution MUST use the selected protocol tuple. Resume MUST use the tuple
+   stored in the execution-start record and MUST reject an incompatible caller
+   selection as a resume-start compatibility failure. Every configured adapter
+   MUST advertise its supported exact protocol versions during construction or
+   preflight. A new execution selects only a tuple supported by every required
+   peer; resume verifies support for the recorded tuple without renegotiating
+   or upgrading it.
    Execution cancellation accepts an execution ID and a `CancellationReason`, is
    idempotent, and implements Section 10 rather than requiring the embedder to
    manipulate executor handles directly. A resume request MUST identify the
@@ -7533,10 +7578,16 @@ the detailed start, resume, observation, and shutdown rules below:
   analysis can produce them. It is repeatable, creates no execution, and
   invokes no integration operation.
 - `CancelExecution` accepts an execution ID and `CancellationReason` and
-  returns `accepted`, `already-terminal`, or `not-found`. Repetition with the
-  same or a different reason returns the existing cancellation status and the
-  first committed effective reason, and creates no second cancellation
-  transition.
+  returns `accepted(effective_reason, terminal_state)`,
+  `already-terminal(terminal_state)`, `not-found`, or
+  `failed(operational_error)`. The operation is asynchronous: `accepted`
+  means the request was admitted and the resulting terminal state required by
+  Section 10 is now known and, for the durable-runtime profile, durably
+  recorded; it does not merely mean that cancellation was queued.
+  `failed` includes journal failure and owner-state failure that prevent that
+  guarantee. Repetition with the same or a different reason waits for and
+  returns the existing cancellation status and first committed effective
+  reason, and creates no second cancellation transition.
 - `AwaitForeground` and `AwaitTerminal` accept an in-process execution handle
   and resolve once the respective state is known. Cancelling an await request
   stops only that waiter; it does not cancel the execution. Their result
@@ -7736,11 +7787,15 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    logical session created outside an operation request, including lexical-
    block, loop, and automatic spawned-task sessions. Gantry supplies the
    durable session descriptor: execution and session IDs, `new` or `fork`,
-   enclosing and root session IDs, creator task ID, and creation provenance.
-   The integration MUST establish an empty conversation for `new` or a child
-   conversation initialized from the identified enclosing session for `fork`.
-   The call MUST be safe to repeat for the same execution and session ID and
-   MUST resolve the same context across retry or process restart. Gantry makes
+   enclosing and root session IDs, creator task ID, creation provenance, and
+   the child's canonical creation-time transcript. The integration MUST
+   establish a conversation whose semantic transcript exactly equals that
+   supplied snapshot: empty for `new`, or the enclosing session's committed
+   prefix at the fork point for `fork`. It MUST NOT initialize a fork from the
+   enclosing provider context's later current contents. The call MUST be safe
+   to repeat for the same execution and session ID and MUST resolve the same
+   context across retry or process restart. `ResolveSessions` MUST apply the
+   same exact-transcript rule during resume. Gantry makes
    the call only after the session-state record is durable and before the
    session's first model use or use as another session's parent. Operation-
    local `new` and `fork` sessions are instead established by the
@@ -7793,7 +7848,15 @@ A cancellation token is cloneable, safe to observe from multiple threads,
 Every evaluator embedding's executor adapter provides asynchronous sleep and
    explicit scheduler-yield capabilities. An embedding claiming the
    concurrent-evaluator profile MUST additionally provide task spawn, join,
-   and abort. Every evaluator adapter MUST also provide a
+   and idempotent abort. Abort returns exactly `stopped`, `already-settled`, or
+   `failed(error)`. `stopped` confirms that the task future will no longer be
+   polled; `already-settled` preserves its existing settlement. After a
+   successful stop, Gantry settles the task as `cancelled` only after the
+   applicable cancellation transition is committed when durability is
+   enabled. `failed(error)` becomes `executor-failure` and MUST NOT fabricate
+   cancellation settlement. “Aborted” in shutdown reports describes this
+   executor action and is not a fourth Gantry task status. Every evaluator
+   adapter MUST also provide a
    cancellation-aware race against a monotonic deadline. Completion wins when
    the raced future completes no later than the deadline; otherwise timeout
    wins, the adapter stops polling the losing future, and Gantry may invoke an
@@ -7826,24 +7889,30 @@ durable-runtime profile. Journal storage asynchronously provides durable-prefix
    contract. Every commit MUST be associated with the current opaque ownership
    token so a superseded process cannot advance the journal. A batch contains
    one or more unfinalized versioned logical evidence bodies without evidence
-   IDs or sequence numbers and MAY contain protected payload entries. Each
+   IDs or sequence numbers and MAY contain protected payload entries. Every
+   body has a caller-assigned `batch_local_id` unique within that batch. A
+   causal or other evidence reference in a body targets either an existing
+   stable evidence ID or a `batch_local_id` in the same batch. Unresolved,
+   duplicate, or cyclic local evidence references reject the complete batch
+   atomically. Each
    protected payload entry contains a caller-assigned stable reference key
    unique within the journal, its protected-data class, and its exact bytes.
    A logical evidence body in the same or a later batch refers to that key.
    Commit MUST reject a duplicate key with different class or bytes and MUST
    atomically store every new payload before any reference to it becomes
    visible. Repeating the same key, class, and bytes is idempotent.
-   Commit atomically assigns evidence IDs and sequence numbers, stores the
-   finalized immutable envelopes and payload entries, and returns a receipt
-   containing the assigned stable evidence IDs and contiguous sequence range
-   from the per-journal linearizable ordering. A read returns those finalized
-   immutable envelopes in sequence order together with the committed-through
-   sequence and supports continuation after a supplied sequence. Journal
+   Commit atomically assigns evidence IDs and sequence numbers, resolves all
+   batch-local references, stores the finalized immutable envelopes and
+   payload entries, and returns a receipt mapping every `batch_local_id` to its
+   stable evidence ID and sequence number plus the contiguous sequence range
+   from the per-journal linearizable ordering. A read returns exactly the
+   `FullPrefix` or `SnapshotPrefix` form defined in Section 11, including its
+   committed-through sequence and form-specific continuation basis. Journal
    storage MUST also resolve a protected payload by journal ID and stable
-   reference key for Gantry's capability-filtered event delivery. Resolution
-   returns the exact stored class and bytes or a structured missing-payload
-   error; a missing payload referenced by retained evidence is malformed
-   durable history. Compaction or deletion MUST retain a payload while any
+   reference key for Gantry's capability-filtered event delivery and recovery
+   artifacts. Resolution returns the exact stored class and bytes or a
+   structured missing-payload error; a missing payload referenced by retained
+   evidence is malformed durable history. Compaction or deletion MUST retain a payload while any
    retained evidence refers to it or Section 12 still requires it for an
    unsettled delivery obligation. Owner release invalidates the supplied
    fencing token atomically and MUST NOT commit, update, or delete logical
@@ -7936,6 +8005,13 @@ All public protocol envelopes MUST carry a major and minor version. A major
    that exact definition MUST reject the newer minor version; an instance
    cannot self-attest that its unknown fields are optional. Unknown required
    fields and unknown enum variants MUST be rejected.
+
+Every adapter and protocol endpoint MUST advertise the finite set of exact
+published versions it supports for each protocol family it implements. The
+`ProtocolSelection` in Section 15.1 is valid only when each selected version is
+in every required peer's advertised set. An adapter MUST reject an envelope
+whose exact version it did not advertise, even when another selected protocol
+family has the same major and minor numbers.
 
 The v1 publication MUST provide canonical JSON Schemas and RFC 8785 golden
 encodings for hook requests/outcomes, canonical transcripts, events,
