@@ -90,11 +90,11 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "db8f453c9bf8754e4dd7deb2bc7de219969c7d3f203d9b2d79f4aa3538a7fa39",
-    "product_lockfile_sha256": "9685b8e313cbb84207d153178b3a6cf23333177b87ad490285e87de04c094d35",
+    "ledger_sha256": "27d638e661ee285c181701de6d3e28e7cb724c2320835fd2a144bbf488b9c333",
+    "product_lockfile_sha256": "8b0691f2fea2833c8b72776b9321420fb2038aee5c3df8844f55b6ba0f8c941d",
     "fuzz_lockfile_sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb",
-    "decision_count": 7,
-    "selected_count": 6,
+    "decision_count": 8,
+    "selected_count": 7,
     "rejected_count": 1
   },
   "artifacts": [
@@ -104,11 +104,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "9685b8e313cbb84207d153178b3a6cf23333177b87ad490285e87de04c094d35"
+      "sha256": "8b0691f2fea2833c8b72776b9321420fb2038aee5c3df8844f55b6ba0f8c941d"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "af32e8f5dd3f97fa2e169ff709c5a35b035e8c11b94bb7005e4dd080b6f034c3"
+      "sha256": "e6ad281013efc8d3ba39b09faecfa596f48870ed7baebb2879bc629d21c3ec2f"
     },
     {
       "path": "Justfile",
@@ -117,6 +117,10 @@
     {
       "path": "SPEC.md",
       "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    },
+    {
+      "path": "crates/gantry-adapter-tokio/Cargo.toml",
+      "sha256": "a9a2032cb53b1dc16264540edddcf3db5bcfca4a5d3dfc42c5006dbef21275f9"
     },
     {
       "path": "crates/gantry-analysis/Cargo.toml",
@@ -137,6 +141,10 @@
     {
       "path": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",
       "sha256": "1c213d589191b4afa7f3a3498f4dd0acc3d23ad07060bdf2136f4cabd07aedb2"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/executor_services.rs",
+      "sha256": "abb74db441b8a1da94dd42ee6f5760f36c19b58be60d282f085aa20cf7660232"
     },
     {
       "path": "crates/gantry-conformance/tests/ir_contracts.rs",
@@ -192,7 +200,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "db8f453c9bf8754e4dd7deb2bc7de219969c7d3f203d9b2d79f4aa3538a7fa39"
+      "sha256": "27d638e661ee285c181701de6d3e28e7cb724c2320835fd2a144bbf488b9c333"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -235,6 +243,10 @@
       "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
     },
     {
+      "path": "protocol/conformance/executor-services-v1.json",
+      "sha256": "2eab30814bee2e4732c43785db391e42268d2e3825a1d1e066ac8d7707c59e3e"
+    },
+    {
       "path": "protocol/conformance/persistent-values-v1.json",
       "sha256": "f27ca60d2e45f91ed4644283f1e8b70752af9362639ea1387e06e080ff6b636d"
     },
@@ -265,6 +277,10 @@
     {
       "path": "protocol/goldens/embedding-envelope-negatives-v1.json",
       "sha256": "6b770fd92aaaab9b60e54af6a4d881a86e9bf033874b189de9f102d2902425c8"
+    },
+    {
+      "path": "protocol/goldens/executor-services-v1.json",
+      "sha256": "5764e27628b327e6676d8cc282aceeb0cbeb909890816c291de22cf848766965"
     },
     {
       "path": "protocol/goldens/ir-artifact-vectors-v1.json",
@@ -339,6 +355,10 @@
       "sha256": "ffcd20287b26366ba06ee2cd9a461e9b375581986746587c7193f89e340545aa"
     },
     {
+      "path": "protocol/schemas/executor-services-v1.schema.json",
+      "sha256": "faa8639a53003eb236f69d653551833ecaf9a043d01409aa6364efe135aaddcd"
+    },
+    {
       "path": "protocol/schemas/generated-schema-object-v1.schema.json",
       "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
     },
@@ -410,6 +430,11 @@
       "id": "diagnostic-presentation",
       "kind": "public-facade-and-reviewed-goldens",
       "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs"
+    },
+    {
+      "id": "executor-services",
+      "kind": "public-facade-and-caller-owned-adapter",
+      "path": "crates/gantry-conformance/tests/executor_services.rs"
     },
     {
       "id": "external-facade-matrix",

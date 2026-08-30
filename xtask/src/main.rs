@@ -14,6 +14,7 @@ use cargo_metadata::MetadataCommand;
 
 const EXPECTED_PACKAGES: &[&str] = &[
     "gantry",
+    "gantry-adapter-tokio",
     "gantry-analysis",
     "gantry-cli",
     "gantry-conformance",
@@ -36,6 +37,8 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry", "gantry-runtime"),
     ("gantry-cli", "gantry"),
     ("gantry-conformance", "gantry"),
+    ("gantry-conformance", "gantry-adapter-tokio"),
+    ("gantry-adapter-tokio", "gantry-host"),
     ("gantry-analysis", "gantry-core"),
     ("gantry-analysis", "gantry-frontend"),
     ("gantry-analysis", "gantry-ir"),
@@ -290,8 +293,13 @@ mod tests {
                 true,
                 &["gantry-core", "gantry-frontend", "gantry-ir"],
             ),
+            package("gantry-adapter-tokio", true, &["gantry-host"]),
             package("gantry-cli", true, &["gantry"]),
-            package("gantry-conformance", true, &["gantry"]),
+            package(
+                "gantry-conformance",
+                true,
+                &["gantry", "gantry-adapter-tokio"],
+            ),
             package("gantry-core", true, &[]),
             package("gantry-frontend", true, &["gantry-core"]),
             package("gantry-host", true, &["gantry-core"]),

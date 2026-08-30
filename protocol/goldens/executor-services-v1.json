@@ -1,0 +1,17 @@
+{
+  "format": "gantry.executor-service-vectors/v1",
+  "duration_minimum_micros": 0,
+  "duration_maximum_micros": 9223372036854775807,
+  "inclusive_jitter_range": [2, 7],
+  "deadline_outcomes": [
+    "completed",
+    "cancelled",
+    "timed-out",
+    "failed"
+  ],
+  "executor_failure_code": "executor-failure",
+  "caller_owned_runtime_kinds": [
+    "current-thread",
+    "multi-thread"
+  ]
+}

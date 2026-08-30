@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/executor-services/v1/schema.json",
+  "title": "Gantry executor-service conformance vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.executor-service-vectors/v1" },
+    "duration_minimum_micros": { "const": 0 },
+    "duration_maximum_micros": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "inclusive_jitter_range": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9223372036854775807
+      }
+    },
+    "deadline_outcomes": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "enum": ["completed", "cancelled", "timed-out", "failed"]
+      }
+    },
+    "executor_failure_code": { "const": "executor-failure" },
+    "caller_owned_runtime_kinds": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "enum": ["current-thread", "multi-thread"] }
+    }
+  },
+  "required": [
+    "format",
+    "duration_minimum_micros",
+    "duration_maximum_micros",
+    "inclusive_jitter_range",
+    "deadline_outcomes",
+    "executor_failure_code",
+    "caller_owned_runtime_kinds"
+  ]
+}

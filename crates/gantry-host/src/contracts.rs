@@ -6,7 +6,9 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{Poll, Waker};
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{IdentityKind, IdentityOrigin};
@@ -159,6 +161,132 @@ pub trait CancellationToken: Send + Sync {
     fn is_cancelled(&self) -> bool;
 }
 
+/// Monotonic cancellation signal owned by Gantry.
+///
+/// Clones observe the same one-way state transition. Registered waiters are
+/// woken when cancellation first becomes effective.
+#[derive(Clone, Debug, Default)]
+pub struct CancellationSignal {
+    state: Arc<CancellationState>,
+}
+
+#[derive(Debug, Default)]
+struct CancellationState {
+    cancelled: AtomicBool,
+    waiters: Mutex<Vec<Waker>>,
+}
+
+impl CancellationSignal {
+    /// Makes cancellation effective and wakes every current waiter.
+    ///
+    /// Returns whether this call performed the first effective transition.
+    pub fn cancel(&self) -> bool {
+        if self.state.cancelled.swap(true, Ordering::AcqRel) {
+            return false;
+        }
+        let waiters = self
+            .state
+            .waiters
+            .lock()
+            .map(|mut waiters| waiters.drain(..).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for waiter in waiters {
+            waiter.wake();
+        }
+        true
+    }
+
+    /// Waits until cancellation becomes effective.
+    pub fn cancelled(&self) -> HostFuture<'_, ()> {
+        Box::pin(std::future::poll_fn(move |context| {
+            if self.is_cancelled() {
+                return Poll::Ready(());
+            }
+            let Ok(mut waiters) = self.state.waiters.lock() else {
+                return Poll::Ready(());
+            };
+            if self.is_cancelled() {
+                return Poll::Ready(());
+            }
+            if !waiters
+                .iter()
+                .any(|waiter| waiter.will_wake(context.waker()))
+            {
+                waiters.push(context.waker().clone());
+            }
+            Poll::Pending
+        }))
+    }
+}
+
+impl CancellationToken for CancellationSignal {
+    fn is_cancelled(&self) -> bool {
+        self.state.cancelled.load(Ordering::Acquire)
+    }
+}
+
+/// Checked whole-microsecond duration accepted by executor services.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DurationMicros(u64);
+
+impl DurationMicros {
+    /// Maximum portable configured duration.
+    pub const MAXIMUM: u64 = i64::MAX as u64;
+
+    /// Admits a nonnegative duration no greater than `2^63 - 1` microseconds.
+    #[must_use]
+    pub const fn new(value: u64) -> Option<Self> {
+        if value <= Self::MAXIMUM {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the exact whole-microsecond value.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Checked inclusive whole-microsecond sampling range.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InclusiveJitterRange {
+    minimum: u64,
+    maximum: u64,
+}
+
+impl InclusiveJitterRange {
+    /// Constructs one ordered portable range.
+    #[must_use]
+    pub const fn new(minimum: u64, maximum: u64) -> Option<Self> {
+        if minimum <= maximum && maximum <= DurationMicros::MAXIMUM {
+            Some(Self { minimum, maximum })
+        } else {
+            None
+        }
+    }
+
+    /// Returns the inclusive minimum.
+    #[must_use]
+    pub const fn minimum(self) -> u64 {
+        self.minimum
+    }
+
+    /// Returns the inclusive maximum.
+    #[must_use]
+    pub const fn maximum(self) -> u64 {
+        self.maximum
+    }
+}
+
+/// Thread-safe source of unbiased inclusive whole-microsecond samples.
+pub trait JitterSource: Send + Sync {
+    /// Samples uniformly from the complete inclusive range.
+    fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError>;
+}
+
 /// Synchronous, thread-safe source of fresh 256-bit occurrence material.
 pub trait IdentitySource: Send + Sync {
     /// Returns fresh material for the supplied typed identity kind.
@@ -274,11 +402,63 @@ pub trait OperationHook: Send {
     ) -> HostFuture<'a, Result<HostResponse, HostError>>;
 }
 
-/// Executor-neutral runtime services used by Gantry.
+/// Base executor-neutral runtime services used by every evaluator.
 pub trait ExecutorAdapter: Send + Sync {
-    /// Performs sleep, yield, deadline, time, jitter, join, or abort service.
-    fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>>;
+    /// Waits using a monotonic timer. Zero remains a timer wait, not a yield.
+    fn sleep<'a>(&'a self, duration: DurationMicros) -> HostFuture<'a, Result<(), HostError>>;
 
+    /// Performs one explicit scheduler yield.
+    fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>>;
+
+    /// Samples uniformly from an inclusive whole-microsecond range.
+    fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError>;
+}
+
+/// Completion-first result of racing work against cancellation and a deadline.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeadlineOutcome<T> {
+    /// Work completed no later than the deadline.
+    Completed(T),
+    /// Cancellation became effective while work remained pending.
+    Cancelled,
+    /// The monotonic deadline elapsed while work remained pending.
+    TimedOut,
+    /// The executor timer failed.
+    Failed(HostError),
+}
+
+/// Races one borrowed future against cancellation and a monotonic timeout.
+///
+/// Polling always checks completion first, so completion wins when it and the
+/// deadline are ready in the same poll. Returning drops the losing futures.
+pub fn deadline_race<'a, T: Send + 'a>(
+    executor: &'a dyn ExecutorAdapter,
+    completion: HostFuture<'a, T>,
+    timeout: DurationMicros,
+    cancellation: Option<&'a CancellationSignal>,
+) -> HostFuture<'a, DeadlineOutcome<T>> {
+    let mut completion = completion;
+    let mut timer = executor.sleep(timeout);
+    let mut cancellation = cancellation.map(CancellationSignal::cancelled);
+    Box::pin(std::future::poll_fn(move |context| {
+        if let Poll::Ready(value) = completion.as_mut().poll(context) {
+            return Poll::Ready(DeadlineOutcome::Completed(value));
+        }
+        if let Some(future) = cancellation.as_mut()
+            && future.as_mut().poll(context).is_ready()
+        {
+            return Poll::Ready(DeadlineOutcome::Cancelled);
+        }
+        match timer.as_mut().poll(context) {
+            Poll::Ready(Ok(())) => Poll::Ready(DeadlineOutcome::TimedOut),
+            Poll::Ready(Err(error)) => Poll::Ready(DeadlineOutcome::Failed(error)),
+            Poll::Pending => Poll::Pending,
+        }
+    }))
+}
+
+/// Concurrent task services added by the concurrent evaluator refinement.
+pub trait ConcurrentExecutorAdapter: ExecutorAdapter {
     /// Submits an owned `Send + 'static` task future.
     fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError>;
 }
@@ -326,9 +506,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        CancellationToken, EmbeddingVersion, EnvelopeError, EventSink, ExecutorAdapter,
-        HookFactory, HostRequest, IdentitySource, IntegrationPreflight, JournalStorage,
-        OperationHook, SubmittedTask, UtcClock,
+        CancellationToken, ConcurrentExecutorAdapter, EmbeddingVersion, EnvelopeError, EventSink,
+        ExecutorAdapter, HookFactory, HostRequest, IdentitySource, IntegrationPreflight,
+        JitterSource, JournalStorage, OperationHook, SubmittedTask, UtcClock,
     };
     use crate::embedding::EmbeddingOperation;
 
@@ -362,10 +542,12 @@ mod tests {
     #[test]
     fn integration_traits_have_the_required_auto_traits_and_are_object_safe() {
         assert_send_sync::<dyn CancellationToken>();
+        assert_send_sync::<dyn ConcurrentExecutorAdapter>();
         assert_send_sync::<dyn EventSink>();
         assert_send_sync::<dyn ExecutorAdapter>();
         assert_send_sync::<dyn HookFactory>();
         assert_send_sync::<dyn IdentitySource>();
+        assert_send_sync::<dyn JitterSource>();
         assert_send_sync::<dyn JournalStorage>();
         assert_send_sync::<dyn SubmittedTask>();
         assert_send_sync::<dyn UtcClock>();

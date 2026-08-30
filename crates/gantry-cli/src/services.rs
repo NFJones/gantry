@@ -3,7 +3,9 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gantry::host::contracts::{HostError, HostFuture, IdentitySource, UtcClock};
+use gantry::host::contracts::{
+    HostError, HostFuture, IdentitySource, InclusiveJitterRange, JitterSource, UtcClock,
+};
 use gantry::portable::IdentityKind;
 use gantry::timestamp::UtcTimestamp;
 
@@ -25,6 +27,19 @@ impl UtcClock for SystemUtcClock {
     }
 }
 
+/// CLI-private unbiased operating-system jitter source.
+#[allow(
+    dead_code,
+    reason = "the evaluator CLI composition that selects this source is owned by GNT-CLI-001"
+)]
+pub(crate) struct SystemJitterSource;
+
+impl JitterSource for SystemJitterSource {
+    fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
+        sample_inclusive_with(range, getrandom::fill)
+    }
+}
+
 fn fill_identity_material<E>(
     fill: impl FnOnce(&mut [u8]) -> Result<(), E>,
 ) -> Result<[u8; 32], HostError> {
@@ -34,6 +49,29 @@ fn fill_identity_material<E>(
         protected_diagnostic: None,
     })?;
     Ok(material)
+}
+
+#[allow(
+    dead_code,
+    reason = "the evaluator CLI composition that calls this helper is owned by GNT-CLI-001"
+)]
+fn sample_inclusive_with<E>(
+    range: InclusiveJitterRange,
+    mut fill: impl FnMut(&mut [u8]) -> Result<(), E>,
+) -> Result<u64, HostError> {
+    let width = range.maximum() - range.minimum() + 1;
+    if width == 1 {
+        return Ok(range.minimum());
+    }
+    let acceptance_bound = u64::MAX - (u64::MAX % width);
+    loop {
+        let mut bytes = [0_u8; 8];
+        fill(&mut bytes).map_err(|_| jitter_failure())?;
+        let sample = u64::from_ne_bytes(bytes);
+        if sample < acceptance_bound {
+            return Ok(range.minimum() + sample % width);
+        }
+    }
 }
 
 fn timestamp_from_system_time(now: SystemTime) -> Result<UtcTimestamp, HostError> {
@@ -69,15 +107,29 @@ fn clock_failure() -> HostError {
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "the evaluator CLI composition that calls this helper is owned by GNT-CLI-001"
+)]
+fn jitter_failure() -> HostError {
+    HostError {
+        code: Arc::from("executor-failure"),
+        protected_diagnostic: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::process::Command;
     use std::time::Duration;
 
-    use gantry::host::contracts::IdentitySource;
+    use gantry::host::contracts::{IdentitySource, InclusiveJitterRange, JitterSource};
     use gantry::portable::IdentityKind;
 
-    use super::{SystemIdentitySource, fill_identity_material, timestamp_from_system_time};
+    use super::{
+        SystemIdentitySource, SystemJitterSource, fill_identity_material, sample_inclusive_with,
+        timestamp_from_system_time,
+    };
     use std::time::UNIX_EPOCH;
 
     #[test]
@@ -120,6 +172,42 @@ mod tests {
             result.err().map(|error| error.code),
             Some("identity-source-failure".into())
         );
+    }
+
+    #[test]
+    fn jitter_sampling_is_inclusive_unbiased_and_failure_preserving() {
+        let range = InclusiveJitterRange::new(2, 7)
+            .unwrap_or_else(|| unreachable!("fixture range is valid"));
+        let minimum = sample_inclusive_with(range, |buffer| {
+            buffer.copy_from_slice(&0_u64.to_ne_bytes());
+            Ok::<(), ()>(())
+        });
+        assert_eq!(minimum, Ok(2));
+        let maximum = sample_inclusive_with(range, |buffer| {
+            buffer.copy_from_slice(&5_u64.to_ne_bytes());
+            Ok::<(), ()>(())
+        });
+        assert_eq!(maximum, Ok(7));
+
+        let mut calls = 0_u8;
+        let after_rejection = sample_inclusive_with(range, |buffer| {
+            let value = if calls == 0 { u64::MAX } else { 1 };
+            calls = calls.saturating_add(1);
+            buffer.copy_from_slice(&value.to_ne_bytes());
+            Ok::<(), ()>(())
+        });
+        assert_eq!(after_rejection, Ok(3));
+        assert_eq!(calls, 2);
+
+        let failure = sample_inclusive_with(range, |_| Err(()));
+        assert_eq!(
+            failure.err().map(|error| error.code),
+            Some("executor-failure".into())
+        );
+
+        let singleton = InclusiveJitterRange::new(9, 9)
+            .unwrap_or_else(|| unreachable!("singleton range is valid"));
+        assert_eq!(SystemJitterSource.sample_inclusive(singleton), Ok(9));
     }
 
     #[test]

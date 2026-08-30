@@ -67,6 +67,15 @@ covered by this foundation; host dispatch, complete operation policy,
 concurrent scheduling, durability, and profile closeout remain with later
 issues.
 
+Executor-service vectors in `goldens/executor-services-v1.json` freeze checked
+whole-microsecond bounds, inclusive jitter endpoints, deadline outcomes,
+executor failure classification, and the caller-owned Tokio runtime variants.
+The paired `schemas/executor-services-v1.schema.json` freezes only that narrow
+envelope, while `conformance/executor-services-v1.json` records direct public
+contract and adapter evidence. Evaluator composition, concurrent spawn/join/
+abort, durable persistence, and provider-specific timeout behavior remain with
+their owning issues.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

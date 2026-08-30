@@ -1,0 +1,21 @@
+{
+  "format": "gantry.executor-services-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-EMB-001",
+  "capabilities": [
+    {
+      "id": "base-contracts",
+      "evidence": "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact"
+    },
+    {
+      "id": "caller-owned-tokio-adapter",
+      "evidence": "crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers"
+    }
+  ],
+  "exclusions": [
+    "Concurrent task spawn, join, and abort remain owned by the concurrent-evaluator implementation.",
+    "Evaluator cancellation checkpoints and scheduler-yield composition remain owned by evaluator integration.",
+    "Persistence and recovery of selected delays and timestamps remain owned by durable-runtime work.",
+    "Provider timeouts and provider-specific cancellation remain integration-owned and are not supplied implicitly."
+  ]
+}

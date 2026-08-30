@@ -2,6 +2,7 @@
 members = [
     "crates/gantry",
     "crates/gantry-analysis",
+    "crates/gantry-adapter-tokio",
     "crates/gantry-cli",
     "crates/gantry-conformance",
     "crates/gantry-core",
@@ -24,6 +25,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 gantry = { path = "crates/gantry", version = "=0.1.0", default-features = false }
 gantry-analysis = { path = "crates/gantry-analysis", version = "=0.1.0" }
+gantry-adapter-tokio = { path = "crates/gantry-adapter-tokio", version = "=0.1.0" }
 gantry-core = { path = "crates/gantry-core", version = "=0.1.0" }
 gantry-frontend = { path = "crates/gantry-frontend", version = "=0.1.0" }
 gantry-host = { path = "crates/gantry-host", version = "=0.1.0" }
@@ -35,6 +37,7 @@ rustix = { version = "=1.1.4", default-features = false, features = ["fs", "std"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
+tokio = { version = "=1.53.1", default-features = false }
 
 [workspace.lints.rust]
 missing_docs = "warn"
