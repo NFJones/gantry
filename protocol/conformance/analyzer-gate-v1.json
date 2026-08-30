@@ -1,0 +1,196 @@
+{
+  "format": "gantry.analyzer-gate-evidence/v1",
+  "gate": "GNT-GATE-300",
+  "status": "verified",
+  "specification": {
+    "path": "SPEC.md",
+    "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+  },
+  "profile": "analyzer",
+  "prerequisites": [
+    {
+      "issue": "GNT-AN-001",
+      "commit": "51b4a96a17c587ef9b2b347e6485c5ee222ea4a0",
+      "subject": "Establish canonical IR contracts"
+    },
+    {
+      "issue": "GNT-AN-002",
+      "commit": "cee8550650c3278e9584e6212c478c4159002184",
+      "subject": "Implement analyzer symbol resolution."
+    },
+    {
+      "issue": "GNT-AN-003",
+      "commit": "e95632ed31695240b7113ffbd4e8f5322418238d",
+      "subject": "Implement analyzer type and completion analysis"
+    },
+    {
+      "issue": "GNT-AN-004",
+      "commit": "b4b22c5a8442ea10de7d304fbe895a0513f738ad",
+      "subject": "Implement analyzer workflow ownership and inventories"
+    },
+    {
+      "issue": "GNT-AN-005",
+      "commit": "7095dbc9244128bce1fd12005b4e2d60cb390f4c",
+      "subject": "Implement canonical analyzer lowering artifacts"
+    },
+    {
+      "issue": "GNT-AN-006",
+      "commit": "081ba1ab60b70efbb2b00c1f313c9e45863f209b",
+      "subject": "Expose package analysis through the public facade."
+    },
+    {
+      "issue": "GNT-AN-007",
+      "commit": "8882f04631578ebe80c16be3e3a03b087550995e",
+      "subject": "Document the analyzer package-validity argument."
+    },
+    {
+      "issue": "GNT-FND-007",
+      "commit": "aadd46fdf22ca9c396b22fdfe061fdc2f9981d2c",
+      "subject": "Establish external conformance harness"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "crates/gantry-analysis/Cargo.toml",
+      "sha256": "86fa16729069efb563c4c9b26cf0dab479bbd64e4a5446ec4bd15de2e647a99d"
+    },
+    {
+      "path": "docs/analyzer-package-validity.md",
+      "sha256": "acbc256ebce407f3e9c2b14ecdb87cd457ba107b4299c7acf8d1eb626f930110"
+    },
+    {
+      "path": "protocol/catalogs/ir-contracts-v1.json",
+      "sha256": "40a0162dfb85c97691035e6791d781c1da7b704486dbfa29f9358ff34ba65274"
+    },
+    {
+      "path": "protocol/catalogs/profiles-v1.json",
+      "sha256": "fc9f75a1d396c7a23942ae1218d03b69c66a0e34489fe6bec4f5ad310a4a2b94"
+    },
+    {
+      "path": "protocol/conformance/analyzer-ir-v1.json",
+      "sha256": "1f3996c212dbd3c86a565d10e20d051ca3efbfc30b1477a13f54ad4850cca97c"
+    },
+    {
+      "path": "protocol/conformance/analyzer-lowering-v1.json",
+      "sha256": "f2bd947b3cd0151d5b05b16053abba6e6795d8bb666c4d6b89e17a40b63df3a1"
+    },
+    {
+      "path": "protocol/conformance/analyzer-package-v1.json",
+      "sha256": "5b29c5be4bd5a05aea132357422186391d4e63d40340585beb863492bd10406b"
+    },
+    {
+      "path": "protocol/conformance/analyzer-symbols-v1.json",
+      "sha256": "f0b94629a72f8870762f34b3a90b31852f36e466be6a75170aaee64605a6eb5a"
+    },
+    {
+      "path": "protocol/conformance/analyzer-types-v1.json",
+      "sha256": "9c396303cf423f5cbba21f948ee3bb27c8445587a2753395053190249c61c9fa"
+    },
+    {
+      "path": "protocol/conformance/analyzer-validity-v1.json",
+      "sha256": "a62a5f69fd1beb2364fc450bf513a5b337fb6f4db17c49238b6e4233f3c5af47"
+    },
+    {
+      "path": "protocol/conformance/analyzer-workflows-v1.json",
+      "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
+    },
+    {
+      "path": "protocol/conformance/frontend-gate-v1.json",
+      "sha256": "b54a228975b78cec2ef12e5a3f730f5f885779d73f5705f71059ace503447833"
+    },
+    {
+      "path": "protocol/goldens/activity-observation-vectors-v1.json",
+      "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
+    },
+    {
+      "path": "protocol/goldens/analyzer-validity-model-v1.json",
+      "sha256": "3a5b7bb07b849821dd40c73bb833f4882c4117b09b5c76e9adc1c19372b7db82"
+    },
+    {
+      "path": "protocol/goldens/ir-artifact-vectors-v1.json",
+      "sha256": "5625b08c1953a3602a0b3afcbf45bc9cec628dd9297f2dd802c1e160ff728085"
+    },
+    {
+      "path": "protocol/goldens/ir-contracts-v1.canonical.json",
+      "sha256": "2e970a1c8fc4b3fd01e09f9fe3cfd157d7c1e4d7f9dd483ede9fa78f11cf3819"
+    },
+    {
+      "path": "protocol/goldens/profiles-v1.canonical.json",
+      "sha256": "c1c5c7090e5681e418b5003b49fea77d06a17dc367891366986f3d7640f31bbb"
+    },
+    {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "ee56a3d20a6d7587848894e76749913a72aa053dc77da55e89131230ccbaf881"
+    },
+    {
+      "path": "protocol/requirements/reviewed-v1.json",
+      "sha256": "548d69341494afa67abcec9e5c0210b383a44d64666583b38841650ca334572b"
+    },
+    {
+      "path": "protocol/requirements/section14-v1.json",
+      "sha256": "67dd6bc831afdfc92be61f16a60e7f6c0efb77fb65bb078700c476ecb65ff976"
+    },
+    {
+      "path": "protocol/schemas/activity-observation-v1.schema.json",
+      "sha256": "24821293533841149e962b77c41c5aab9ebdea09401662180fd9a20ed409d9b1"
+    },
+    {
+      "path": "protocol/schemas/canonical-ir-v1.schema.json",
+      "sha256": "f83c9ba0fc0c11c8fc0af6f984690cec33160828264a27d1d87f210e282f911b"
+    },
+    {
+      "path": "protocol/schemas/generated-schema-object-v1.schema.json",
+      "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
+    },
+    {
+      "path": "protocol/schemas/package-services-v1.schema.json",
+      "sha256": "f3477f288c65ac8583322c5ff05b02ed30baab0f560797c380c39b49c1153036"
+    },
+    {
+      "path": "protocol/schemas/package-source-manifest-v1.schema.json",
+      "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
+    },
+    {
+      "path": "protocol/schemas/profile-catalog-v1.schema.json",
+      "sha256": "53dd2e1994ec3cfcc64965289d7f44cbf8f1e63e7e01861d048c7760e59e83a7"
+    },
+    {
+      "path": "protocol/schemas/source-map-v1.schema.json",
+      "sha256": "9ee63df1fcd9c19cf6cfc6fa06873706db085c918572ebca73528d6f2dfc5e35"
+    }
+  ],
+  "review_summary": {
+    "applicable_clause_count": 342,
+    "covered_count": 275,
+    "not_applicable_count": 67
+  },
+  "section14_excerpt_count": 49,
+  "claim": {
+    "profiles": [
+      "analyzer",
+      "frontend"
+    ],
+    "advertises_profiles": [
+      "analyzer",
+      "frontend"
+    ],
+    "excludes_profiles": [
+      "concurrent-evaluator",
+      "durable-runtime",
+      "embedding",
+      "evaluator"
+    ]
+  },
+  "validation_commands": [
+    "cargo run --locked -p xtask -- check generated",
+    "cargo run --locked -p xtask -- check governance",
+    "cargo run --locked -p xtask -- check workspace",
+    "cargo check --locked --workspace --all-targets",
+    "cargo clippy --locked --workspace --all-targets -- -D warnings",
+    "cargo fmt --all -- --check",
+    "cargo test --locked --workspace"
+  ],
+  "environment_gaps": [
+    "The stable-macOS analyzer and source-provider lanes execute in hosted CI; this Linux gate run does not claim a local macOS result."
+  ]
+}

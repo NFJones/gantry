@@ -92,8 +92,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -150,8 +152,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -208,8 +212,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -266,8 +272,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -324,8 +332,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -382,8 +392,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -440,8 +452,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -498,8 +512,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -556,8 +572,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -614,8 +632,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -672,8 +692,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -730,8 +752,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -788,8 +812,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -846,8 +872,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -904,8 +932,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -962,8 +992,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1020,8 +1052,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1078,8 +1112,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1136,8 +1172,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+              ],
               "rationale": null
             },
             {
@@ -1195,8 +1234,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1253,8 +1294,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1336,8 +1379,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1394,8 +1439,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1477,8 +1524,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1535,8 +1584,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1618,8 +1669,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1676,8 +1729,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1734,8 +1789,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1792,8 +1849,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1871,8 +1930,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1942,8 +2003,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2013,8 +2076,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2084,9 +2149,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2155,9 +2220,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2226,9 +2291,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2297,9 +2362,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2368,9 +2433,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2439,9 +2504,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2510,8 +2575,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2581,8 +2648,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2725,8 +2794,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2796,9 +2867,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2867,9 +2938,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -2938,8 +3009,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3009,9 +3082,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -3057,9 +3130,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -3105,9 +3178,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -3153,9 +3226,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -3224,8 +3297,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3272,8 +3347,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3320,8 +3397,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3368,8 +3447,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3439,8 +3520,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3487,8 +3570,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3535,8 +3620,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3583,8 +3670,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3631,8 +3720,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3679,8 +3770,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3727,8 +3820,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3798,8 +3893,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3846,8 +3943,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3894,8 +3993,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3965,8 +4066,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4036,8 +4139,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4084,8 +4189,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4155,8 +4262,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4203,8 +4312,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4251,8 +4362,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4322,8 +4435,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4370,8 +4485,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4418,8 +4535,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4489,8 +4608,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4537,8 +4658,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4585,8 +4708,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4656,8 +4781,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4704,8 +4831,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4752,8 +4881,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4823,8 +4954,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4871,8 +5004,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4919,8 +5054,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4990,8 +5127,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5038,8 +5177,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5086,8 +5227,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5134,8 +5277,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5205,8 +5350,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5253,8 +5400,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5301,8 +5450,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5545,8 +5696,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5593,8 +5746,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5664,8 +5819,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5712,8 +5869,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5760,8 +5919,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5831,8 +5992,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5879,8 +6042,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5927,8 +6092,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5998,8 +6165,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6046,8 +6215,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6094,8 +6265,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6165,8 +6338,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6213,8 +6388,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6261,8 +6438,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6455,8 +6634,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6503,8 +6684,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6551,8 +6734,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6622,8 +6807,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6693,8 +6880,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6741,8 +6930,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6789,8 +6980,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -8755,8 +8948,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -8828,8 +9023,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -8977,8 +9174,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -9199,8 +9398,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -9424,8 +9625,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -9495,8 +9698,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -9721,8 +9927,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_rejects_executable_top_level_statements"
+              ],
               "rationale": null
             },
             {
@@ -9794,8 +10002,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -10061,8 +10271,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -10451,9 +10663,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -10575,8 +10787,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -10646,8 +10860,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -10717,8 +10933,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -10788,8 +11006,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -10859,8 +11079,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -10930,8 +11152,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11001,8 +11225,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11072,8 +11298,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11143,8 +11371,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11214,8 +11444,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11285,8 +11517,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11356,8 +11590,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11427,8 +11663,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11498,9 +11736,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11569,9 +11807,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11617,9 +11855,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11665,9 +11903,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11713,9 +11951,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11761,9 +11999,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11817,9 +12055,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11873,9 +12111,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11921,9 +12159,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -11992,8 +12230,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12063,8 +12303,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12113,8 +12355,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12163,8 +12407,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12234,8 +12480,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12307,9 +12555,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -12378,8 +12626,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12522,8 +12772,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12591,8 +12843,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12784,8 +13038,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12847,8 +13103,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12975,8 +13233,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13038,8 +13298,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13101,8 +13363,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13164,8 +13428,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13227,8 +13493,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13290,8 +13558,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13353,8 +13623,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13420,9 +13692,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -13493,8 +13765,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13566,9 +13840,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -13639,8 +13913,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13712,9 +13988,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -13785,9 +14061,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -13834,9 +14110,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -13883,9 +14159,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -13956,9 +14232,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14005,9 +14281,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14054,9 +14330,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14127,8 +14403,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14200,8 +14478,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14273,9 +14553,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14346,9 +14626,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14419,9 +14699,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14492,9 +14772,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14541,9 +14821,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14614,9 +14894,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -14687,8 +14967,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14760,8 +15042,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14833,8 +15117,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14908,8 +15194,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14957,8 +15245,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15006,8 +15296,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15055,8 +15347,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15104,8 +15398,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15153,8 +15449,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15202,8 +15500,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15251,8 +15551,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15300,8 +15602,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15349,8 +15653,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15398,8 +15704,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15471,9 +15779,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -15520,9 +15828,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -15569,9 +15877,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -15642,9 +15950,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -15715,9 +16023,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -15788,8 +16096,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15849,8 +16159,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15898,8 +16210,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15971,8 +16285,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16044,8 +16360,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16117,8 +16435,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16190,8 +16510,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16239,8 +16561,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16474,8 +16798,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16555,9 +16881,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -16628,9 +16954,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -16701,9 +17027,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -16774,9 +17100,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -16847,8 +17173,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16916,8 +17244,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16979,8 +17309,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17042,8 +17374,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17083,8 +17417,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17124,8 +17460,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17187,8 +17525,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17250,8 +17590,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17313,8 +17655,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17376,8 +17720,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17439,9 +17785,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -17504,8 +17850,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17567,9 +17915,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -17630,8 +17978,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17693,8 +18043,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17756,9 +18108,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -17823,8 +18175,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17896,8 +18250,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17969,8 +18325,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18042,8 +18400,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18115,8 +18475,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18338,9 +18700,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -18486,9 +18848,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -18559,9 +18921,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -18632,9 +18994,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -18705,9 +19067,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -18778,9 +19140,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -18851,9 +19213,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -20310,8 +20672,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#valid_and_invalid_packages_each_expose_one_parse_occurrence",
+                "crates/gantry-conformance/tests/validate_package.rs#identity_source_and_clock_failures_preserve_phase_ordering",
+                "crates/gantry-conformance/tests/activity_observation.rs#canonical_event_completion_uses_public_occurrence_contracts"
+              ],
               "rationale": null
             },
             {
@@ -20537,9 +20903,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -20593,9 +20959,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -20674,8 +21040,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/activity_observation.rs#canonical_projection_and_retry_vectors_match_the_public_kernel",
+                "crates/gantry-conformance/tests/activity_observation.rs#canonical_barrier_vectors_keep_required_failure_activity_scoped",
+                "crates/gantry-conformance/tests/validate_package.rs#required_sink_exhaustion_is_an_operational_failure_after_parse"
+              ],
               "rationale": null
             },
             {
@@ -20734,9 +21104,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -20790,9 +21160,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -20846,9 +21216,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -20927,8 +21297,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#required_sink_exhaustion_is_an_operational_failure_after_parse"
+              ],
               "rationale": null
             },
             {
@@ -20985,9 +21357,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -21041,9 +21413,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs runtime execution, integration, durability, or embedding behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -21209,8 +21581,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#valid_and_invalid_packages_each_expose_one_parse_occurrence"
+              ],
               "rationale": null
             },
             {
@@ -21607,8 +21981,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -21681,8 +22058,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -21731,8 +22110,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -21781,8 +22162,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -21831,8 +22214,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -21904,8 +22289,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -21954,8 +22341,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22054,8 +22443,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22104,8 +22495,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22154,8 +22547,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22204,8 +22599,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22254,8 +22651,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22304,8 +22703,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22354,8 +22755,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22404,8 +22807,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22454,8 +22859,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -22504,8 +22911,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22554,8 +22963,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22604,8 +23015,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -22677,8 +23090,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -22727,8 +23142,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -22854,8 +23272,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -22904,8 +23324,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -22978,8 +23401,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23028,8 +23453,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -23102,8 +23530,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23152,8 +23582,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -23200,8 +23632,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -23248,8 +23682,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -23299,8 +23736,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -23350,8 +23790,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -23398,8 +23840,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -23449,8 +23894,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -23500,8 +23948,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23550,8 +24000,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23600,8 +24052,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -23648,8 +24102,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -23722,8 +24179,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23772,8 +24231,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -23822,8 +24283,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -23872,8 +24335,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -23922,8 +24387,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -23996,8 +24464,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24046,8 +24516,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -24120,8 +24593,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24170,8 +24645,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {

@@ -1,4 +1,4 @@
-//! Independent validation of the frontend profile evidence index.
+//! Independent validation of the analyzer profile evidence index.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -9,7 +9,7 @@ use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const MANIFEST_PATH: &str = "protocol/conformance/frontend-gate-v1.json";
+const MANIFEST_PATH: &str = "protocol/conformance/analyzer-gate-v1.json";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -98,15 +98,24 @@ struct Section14Excerpt {
     evidence: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ValidityManifest {
+    specification_sha256: String,
+    profile: String,
+    argument: String,
+    model: String,
+    evidence_manifests: Vec<String>,
+}
+
 #[test]
-fn checked_in_frontend_profile_gate_is_current() {
+fn checked_in_analyzer_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
     assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
-fn frontend_profile_gate_rejects_stale_artifacts_and_overclaiming() {
+fn analyzer_profile_gate_rejects_stale_artifacts_and_overclaiming() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
 
@@ -118,34 +127,34 @@ fn frontend_profile_gate_rejects_stale_artifacts_and_overclaiming() {
     );
 
     let mut overclaim = manifest;
-    overclaim.claim.profiles.push("analyzer".to_owned());
+    overclaim.claim.profiles.push("evaluator".to_owned());
     assert!(
         validate_manifest(&root, &overclaim)
-            .is_err_and(|message| message.contains("frontend claim is invalid"))
+            .is_err_and(|message| message.contains("analyzer claim is invalid"))
     );
 }
 
 fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
-    if manifest.format != "gantry.frontend-gate-evidence/v1"
-        || manifest.gate != "GNT-GATE-200"
+    if manifest.format != "gantry.analyzer-gate-evidence/v1"
+        || manifest.gate != "GNT-GATE-300"
         || manifest.status != "verified"
-        || manifest.profile != "frontend"
+        || manifest.profile != "analyzer"
     {
-        return Err("frontend gate identity or status is invalid".to_owned());
+        return Err("analyzer gate identity or status is invalid".to_owned());
     }
-    if manifest.claim.profiles != ["frontend"]
-        || manifest.claim.advertises_profiles != ["frontend"]
+    if manifest.claim.profiles != ["analyzer", "frontend"]
+        || manifest.claim.advertises_profiles != ["analyzer", "frontend"]
         || manifest.claim.excludes_profiles
             != [
-                "analyzer",
                 "concurrent-evaluator",
                 "durable-runtime",
                 "embedding",
                 "evaluator",
             ]
-        || !gantry::advertised_profiles().contains(&ConformanceProfile::Frontend)
+        || gantry::advertised_profiles()
+            != [ConformanceProfile::Analyzer, ConformanceProfile::Frontend]
     {
-        return Err("frontend claim is invalid or overstates another profile".to_owned());
+        return Err("analyzer claim is invalid or overstates a later profile".to_owned());
     }
 
     validate_file_digest(root, &manifest.specification, "specification")?;
@@ -177,7 +186,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     if review.specification_sha256 != manifest.specification.sha256
         || section14.specification_sha256 != manifest.specification.sha256
     {
-        return Err("frontend evidence uses another specification revision".to_owned());
+        return Err("analyzer evidence uses another specification revision".to_owned());
     }
 
     let mut applicable_clause_count = 0_usize;
@@ -185,17 +194,17 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     let mut not_applicable_count = 0_usize;
     for requirement in &review.requirements {
         for clause in &requirement.clauses {
-            if !clause.profiles.iter().any(|profile| profile == "frontend") {
+            if !clause.profiles.iter().any(|profile| profile == "analyzer") {
                 continue;
             }
             applicable_clause_count += 1;
             let profile_review = clause
                 .profile_reviews
                 .iter()
-                .find(|profile_review| profile_review.profile == "frontend")
+                .find(|profile_review| profile_review.profile == "analyzer")
                 .ok_or_else(|| {
                     format!(
-                        "frontend review is missing: {}:{}",
+                        "analyzer review is missing: {}:{}",
                         requirement.id, clause.key
                     )
                 })?;
@@ -217,7 +226,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
                 }
                 _ => {
                     return Err(format!(
-                        "frontend review is not closed: {}:{}",
+                        "analyzer review is not closed: {}:{}",
                         requirement.id, clause.key
                     ));
                 }
@@ -229,7 +238,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         || manifest.review_summary.not_applicable_count != not_applicable_count
         || applicable_clause_count != covered_count + not_applicable_count
     {
-        return Err("frontend review summary differs from reviewed applicability".to_owned());
+        return Err("analyzer review summary differs from reviewed applicability".to_owned());
     }
 
     if manifest.section14_excerpt_count != section14.excerpts.len()
@@ -239,6 +248,21 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
             .any(|excerpt| excerpt.state != "covered" || excerpt.evidence.is_empty())
     {
         return Err("Section 14 authoring evidence is incomplete".to_owned());
+    }
+
+    let validity: ValidityManifest =
+        read_json(&root.join("protocol/conformance/analyzer-validity-v1.json"));
+    if validity.specification_sha256 != manifest.specification.sha256
+        || validity.profile != "analyzer"
+        || !root.join(&validity.argument).is_file()
+        || !root.join(&validity.model).is_file()
+        || validity.evidence_manifests.len() != 6
+        || validity
+            .evidence_manifests
+            .iter()
+            .any(|path| !root.join(path).is_file())
+    {
+        return Err("analyzer validity evidence is incomplete".to_owned());
     }
     if manifest.validation_commands.is_empty() || manifest.environment_gaps.len() != 1 {
         return Err("validation commands or environment gaps are incomplete".to_owned());

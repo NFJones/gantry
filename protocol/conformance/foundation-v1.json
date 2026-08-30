@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "3a30591a59c7fa9b76883e6811ee99bcc6c87ac3a213896ed8d2485967a68f9f",
+    "sha256": "ee56a3d20a6d7587848894e76749913a72aa053dc77da55e89131230ccbaf881",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -125,6 +125,10 @@
     {
       "path": "crates/gantry-analysis/Cargo.toml",
       "sha256": "86fa16729069efb563c4c9b26cf0dab479bbd64e4a5446ec4bd15de2e647a99d"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
+      "sha256": "1a44ef1e969362d817fac162db7ce47c0ca2929d94bc81dd8683bbcd60e49491"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
@@ -237,6 +241,10 @@
     {
       "path": "protocol/catalogs/profiles-v1.json",
       "sha256": "fc9f75a1d396c7a23942ae1218d03b69c66a0e34489fe6bec4f5ad310a4a2b94"
+    },
+    {
+      "path": "protocol/conformance/analyzer-gate-v1.json",
+      "sha256": "bf6db74e4e52e250d47e03ef46dfa7ef1c9caa6b149ee82a5971d6b5c80331b7"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -364,11 +372,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "3a30591a59c7fa9b76883e6811ee99bcc6c87ac3a213896ed8d2485967a68f9f"
+      "sha256": "ee56a3d20a6d7587848894e76749913a72aa053dc77da55e89131230ccbaf881"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "8706a08fece925f7d170827cbc79cda0da2e5b45726a4d4d9dabad97e198f947"
+      "sha256": "548d69341494afa67abcec9e5c0210b383a44d64666583b38841650ca334572b"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -452,6 +460,11 @@
       "id": "activity-observation",
       "kind": "public-facade",
       "path": "crates/gantry-conformance/tests/activity_observation.rs"
+    },
+    {
+      "id": "analyzer-gate",
+      "kind": "profile-gate-and-reviewed-evidence",
+      "path": "crates/gantry-conformance/tests/analyzer_gate.rs"
     },
     {
       "id": "analyzer-package",

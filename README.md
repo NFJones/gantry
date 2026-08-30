@@ -97,6 +97,10 @@ concurrent-evaluator, durable-runtime, and embedding profiles describe which
 parts of the contract an implementation or integration provides. This lets a
 deployment make precise capability claims without changing source meaning.
 
+This revision advertises the frontend and analyzer profiles when analysis is
+compiled. Evaluator, concurrent-evaluator, durable-runtime, and embedding
+claims remain gated by their later conformance closeouts.
+
 ## Getting started
 
 Create a package directory with a `main.gnt` entry point, then check it with
