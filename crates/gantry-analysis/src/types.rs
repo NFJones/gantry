@@ -289,7 +289,9 @@ fn resolve_type_node(
                     )?);
                     None
                 }
-                Err(TypeDescriptorError::TupleArity) => return Err(AnalysisError::Invariant),
+                Err(
+                    TypeDescriptorError::TupleArity | TypeDescriptorError::InvalidCanonicalString,
+                ) => return Err(AnalysisError::Invariant),
             }
         }
         Some("List") => {

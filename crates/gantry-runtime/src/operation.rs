@@ -13,8 +13,10 @@ use gantry_host::embedding::EmbeddingOperation;
 
 use crate::{
     AdapterPoison, BoundaryFailure, CapturedOperationRequestV1, HookRequestError,
-    InterpreterLifecycle, Machine, MachineLabel, OperationCompletionError, PreparedHookDispatch,
-    ValidationErrorV1, drop_integration,
+    InterpreterLifecycle, LogicalSessionV1, Machine, MachineLabel, ModelSessionUseV1,
+    OperationCompletionError, PreparedHookDispatch, SessionCreationModeV1, SessionEstablisher,
+    SessionEstablishmentError, SessionEstablishmentV1, TranscriptError, TranscriptResultKindV1,
+    TranscriptTurnV1, ValidationErrorV1, drop_integration,
 };
 
 /// One task-owned hook boundary for one in-process execution or resume run.
@@ -48,6 +50,15 @@ pub enum TaskHookError {
     Host(HostError),
     /// Integration code panicked while being invoked, polled, or destroyed.
     Boundary(BoundaryFailure),
+}
+
+/// Failure while enforcing session setup before one model-hook dispatch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskHookSessionError {
+    /// Required logical-session establishment failed before hook construction.
+    Session(SessionEstablishmentError),
+    /// Hook construction or dispatch failed after session setup succeeded.
+    Hook(TaskHookError),
 }
 
 /// Public projection of one logical operation's current lifecycle state.
@@ -102,6 +113,8 @@ pub enum OperationLifecycleError {
     },
     /// The normalized result could not enter the matching machine operation.
     Completion(OperationCompletionError),
+    /// The complete proposed model transcript was invalid or exceeded a limit.
+    Transcript(TranscriptError),
 }
 
 /// One logical operation from immutable capture through source-result acceptance.
@@ -251,6 +264,34 @@ impl OperationLifecycle {
         Ok(label)
     }
 
+    /// Atomically appends one accepted model turn and makes its result source-consumable.
+    ///
+    /// The complete proposed transcript is validated first. The session is
+    /// published only after the matching machine operation accepts the value.
+    pub fn accept_model(
+        &mut self,
+        machine: &mut Machine,
+        session: &mut LogicalSessionV1,
+        turn: &TranscriptTurnV1,
+        limits: gantry_core::value::ValueLimits,
+        value: LogicalValue,
+    ) -> Result<MachineLabel, OperationLifecycleError> {
+        self.require_state(OperationStateKind::Outcome)?;
+        validate_model_acceptance(self.captured(), session, turn, &value)
+            .map_err(OperationLifecycleError::Transcript)?;
+        let mut proposed = session.transcript.clone();
+        proposed
+            .append(turn, limits)
+            .map_err(OperationLifecycleError::Transcript)?;
+        let operation = self.captured.header().operation_id;
+        let label = machine
+            .complete_operation(operation, value)
+            .map_err(OperationLifecycleError::Completion)?;
+        session.transcript = proposed;
+        self.state = OperationRuntimeState::Accepted;
+        Ok(label)
+    }
+
     fn require_state(&self, expected: OperationStateKind) -> Result<(), OperationLifecycleError> {
         let actual = self.state().kind();
         if actual == expected {
@@ -263,6 +304,63 @@ impl OperationLifecycle {
 
 fn invalid_state(actual: OperationStateKind) -> OperationLifecycleError {
     OperationLifecycleError::InvalidState { actual }
+}
+
+fn validate_model_acceptance(
+    captured: &CapturedOperationRequestV1,
+    session: &LogicalSessionV1,
+    turn: &TranscriptTurnV1,
+    value: &LogicalValue,
+) -> Result<(), TranscriptError> {
+    let CapturedOperationRequestV1::Model { header, body } = captured else {
+        return Err(TranscriptError::Invalid);
+    };
+    let expected_kind = match header.expected_type.kind() {
+        gantry_ir::generated::TypeKind::Unit => TranscriptResultKindV1::Unit,
+        gantry_ir::generated::TypeKind::Decision => TranscriptResultKindV1::Decision,
+        _ => TranscriptResultKindV1::Value,
+    };
+    if session.execution_id != header.execution_id
+        || session.id != body.active_session_id
+        || session.parent != body.parent_session_id
+        || session.root != body.root_session_id
+        || session.transcript != body.transcript
+        || turn.operation_kind != header.kind
+        || turn.template_representation != body.template_segments
+        || turn.rendered_prompt != body.rendered_prompt
+        || turn.interpolation_inputs != body.interpolation_inputs
+        || turn.using_inputs != body.named_inputs
+        || turn.selected_agent != body.selected_agent
+        || turn.accepted_result.kind != expected_kind
+        || turn.accepted_result.ty != header.expected_type
+        || turn.accepted_result.value != value.canonical_json()
+    {
+        return Err(TranscriptError::Invalid);
+    }
+    match (&body.session_use, session.establishment, session.mode) {
+        (ModelSessionUseV1::Inline, _, _) => Ok(()),
+        (
+            ModelSessionUseV1::Create {
+                mode,
+                session_id,
+                parent_session_id,
+                root_session_id,
+                ..
+            },
+            SessionEstablishmentV1::OperationRequest,
+            session_mode,
+        ) if *session_id == session.id
+            && Some(*parent_session_id) == session.parent
+            && *root_session_id == session.root
+            && matches!(
+                (mode.as_ref(), session_mode),
+                ("new", SessionCreationModeV1::New) | ("fork", SessionCreationModeV1::Fork)
+            ) =>
+        {
+            Ok(())
+        }
+        (ModelSessionUseV1::Create { .. }, _, _) => Err(TranscriptError::Invalid),
+    }
 }
 
 impl<'a> TaskHook<'a> {
@@ -294,6 +392,26 @@ impl<'a> TaskHook<'a> {
     #[must_use]
     pub const fn is_ready(&self) -> bool {
         matches!(self.state, HookState::Ready(_))
+    }
+
+    /// Establishes the active model session before lazy hook creation and dispatch.
+    pub async fn dispatch_model(
+        &mut self,
+        request: HostRequest,
+        cancellation: &dyn CancellationToken,
+        establisher: &mut SessionEstablisher<'_>,
+        execution_id: ProtocolIdentity,
+        session: &LogicalSessionV1,
+    ) -> Result<HostResponse, TaskHookSessionError> {
+        require_request(&request, EmbeddingOperation::DispatchOperation)
+            .map_err(TaskHookSessionError::Hook)?;
+        establisher
+            .establish(execution_id, session)
+            .await
+            .map_err(TaskHookSessionError::Session)?;
+        self.dispatch(request, cancellation)
+            .await
+            .map_err(TaskHookSessionError::Hook)
     }
 
     /// Lazily creates the task hook and performs one serial operation dispatch.

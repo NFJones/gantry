@@ -19,8 +19,8 @@ use gantry_host::embedding::EmbeddingOperation;
 use gantry_ir::TypeDescriptor;
 use gantry_observe::SinkPlan;
 use gantry_runtime::{
-    AcceptExecutionError, AdapterPoison, AdmissionKind, BoundaryFailure, ExecutionHandle,
-    InterpreterConfiguration, InterpreterLifecycle, LifecycleError,
+    AcceptExecutionError, AdapterPoison, AdmissionKind, BoundaryFailure, CanonicalTranscriptV1,
+    ExecutionHandle, InterpreterConfiguration, InterpreterLifecycle, LifecycleError,
 };
 
 use crate::{
@@ -65,7 +65,7 @@ pub struct RootSessionState {
     /// Identity ownership class.
     pub provenance: RootSessionProvenance,
     /// Complete normalized canonical transcript JSON.
-    pub transcript: CanonicalJson,
+    pub transcript: CanonicalTranscriptV1,
 }
 
 /// One validated and normalized raw entry input.
@@ -290,35 +290,24 @@ impl<'a> StartExecutionCoordinator<'a> {
         &self,
         specification: RootSessionSpecification<'_>,
     ) -> Result<RootSessionState, StartExecutionFailure> {
-        let limits = json_limits(
-            self.configuration,
-            self.configuration.required().maximum_entry_input_bytes,
-        );
         if specification.id.kind() != IdentityKind::Session {
             return Err(failure(
                 StartFailureCategory::IntegrationPreflight,
                 "invalid-root-session-identity",
             ));
         }
-        let bytes = specification.transcript.unwrap_or(b"[]");
-        let document = StrictJsonDocument::decode(bytes, limits).map_err(|_| {
-            failure(
-                StartFailureCategory::IntegrationPreflight,
-                "invalid-root-session-transcript",
-            )
-        })?;
-        if !matches!(document.node(document.root()), Some(JsonNode::Array(_))) {
-            return Err(failure(
-                StartFailureCategory::IntegrationPreflight,
-                "invalid-root-session-transcript",
-            ));
-        }
-        let transcript = CanonicalJson::from_document(&document).map_err(|_| {
-            failure(
-                StartFailureCategory::IntegrationPreflight,
-                "invalid-root-session-transcript",
-            )
-        })?;
+        let transcript = match specification.transcript {
+            Some(bytes) => {
+                CanonicalTranscriptV1::decode(bytes, self.configuration.required().value_limits)
+                    .map_err(|_| {
+                        failure(
+                            StartFailureCategory::IntegrationPreflight,
+                            "invalid-root-session-transcript",
+                        )
+                    })?
+            }
+            None => CanonicalTranscriptV1::empty(),
+        };
         Ok(RootSessionState {
             id: specification.id,
             provenance: RootSessionProvenance::EmbedderSupplied,
@@ -331,15 +320,7 @@ impl<'a> StartExecutionCoordinator<'a> {
             .allocator
             .allocate(self.configuration.identity_source(), IdentityKind::Session)
             .map_err(|error| identity_failure(error, "root-session-identity-source-failure"))?;
-        let limits = json_limits(
-            self.configuration,
-            self.configuration.required().maximum_entry_input_bytes,
-        );
-        let transcript = StrictJsonDocument::decode(&b"[]"[..], limits)
-            .and_then(|document| {
-                CanonicalJson::from_document(&document).map_err(|_| JsonError::Syntax { offset: 0 })
-            })
-            .map_err(|_| failure(StartFailureCategory::Internal, "root-session-invariant"))?;
+        let transcript = CanonicalTranscriptV1::empty();
         Ok(RootSessionState {
             id,
             provenance: RootSessionProvenance::GantryCreated,

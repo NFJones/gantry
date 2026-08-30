@@ -262,7 +262,7 @@ fn main(value: Input) -> Input { value }
         .unwrap_or_else(|error| panic!("session identity failed: {error}"));
     let root_session = RootSessionSpecification {
         id: session_id,
-        transcript: Some(b"[]"),
+        transcript: Some(b"{\"protocol\":{\"major\":1,\"minor\":0},\"turns\":[]}"),
         opaque_lookup_material: Some(b"lookup"),
     };
 

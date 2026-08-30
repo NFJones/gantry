@@ -203,6 +203,21 @@ impl TypeDescriptor {
         output
     }
 
+    /// Decodes one exact canonical descriptor without native recursion.
+    pub fn from_canonical_string(value: &str) -> Result<Self, TypeDescriptorError> {
+        if value.is_empty() || value.bytes().any(|byte| byte.is_ascii_whitespace()) {
+            return Err(TypeDescriptorError::InvalidCanonicalString);
+        }
+        let mut parser = DescriptorParser::new(value);
+        let descriptor = parser
+            .parse()
+            .map_err(|_| TypeDescriptorError::InvalidCanonicalString)?;
+        if descriptor.canonical_string() != value {
+            return Err(TypeDescriptorError::InvalidCanonicalString);
+        }
+        Ok(descriptor)
+    }
+
     fn into_tokens(self) -> Vec<TypeToken> {
         if self.tokens.is_empty() {
             vec![TypeToken::Primitive(self.kind)]
@@ -249,6 +264,8 @@ pub enum TypeDescriptorError {
     InvalidOptionMember,
     /// A tuple has fewer than two members.
     TupleArity,
+    /// Input is not one exact canonical v1 type descriptor.
+    InvalidCanonicalString,
 }
 
 impl fmt::Display for TypeDescriptorError {
@@ -256,11 +273,191 @@ impl fmt::Display for TypeDescriptorError {
         formatter.write_str(match self {
             Self::InvalidOptionMember => "option member is not permitted",
             Self::TupleArity => "tuple requires at least two members",
+            Self::InvalidCanonicalString => "type descriptor is not canonical",
         })
     }
 }
 
 impl std::error::Error for TypeDescriptorError {}
+
+#[derive(Clone, Copy)]
+enum ContainerKind {
+    Option,
+    Result,
+    List,
+    Tuple,
+}
+
+struct ContainerFrame {
+    kind: ContainerKind,
+    members: Vec<TypeDescriptor>,
+}
+
+struct DescriptorParser<'a> {
+    source: &'a str,
+    cursor: usize,
+    frames: Vec<ContainerFrame>,
+    value: Option<TypeDescriptor>,
+}
+
+impl<'a> DescriptorParser<'a> {
+    fn new(source: &'a str) -> Self {
+        Self {
+            source,
+            cursor: 0,
+            frames: Vec::new(),
+            value: None,
+        }
+    }
+
+    fn parse(&mut self) -> Result<TypeDescriptor, TypeDescriptorError> {
+        loop {
+            if self.value.is_none() {
+                self.parse_atom()?;
+                continue;
+            }
+            let value = self
+                .value
+                .take()
+                .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+            let delimiter = self.byte();
+            let Some(frame) = self.frames.last_mut() else {
+                if self.cursor == self.source.len() {
+                    return Ok(value);
+                }
+                return Err(TypeDescriptorError::InvalidCanonicalString);
+            };
+            frame.members.push(value);
+            match frame.kind {
+                ContainerKind::Option | ContainerKind::List => {
+                    if frame.members.len() != 1 || delimiter != Some(b'>') {
+                        return Err(TypeDescriptorError::InvalidCanonicalString);
+                    }
+                    self.cursor += 1;
+                    self.close_frame()?;
+                }
+                ContainerKind::Result => match (frame.members.len(), delimiter) {
+                    (1, Some(b',')) => self.cursor += 1,
+                    (2, Some(b'>')) => {
+                        self.cursor += 1;
+                        self.close_frame()?;
+                    }
+                    _ => return Err(TypeDescriptorError::InvalidCanonicalString),
+                },
+                ContainerKind::Tuple => match delimiter {
+                    Some(b',') => self.cursor += 1,
+                    Some(b'>') if frame.members.len() >= 2 => {
+                        self.cursor += 1;
+                        self.close_frame()?;
+                    }
+                    _ => return Err(TypeDescriptorError::InvalidCanonicalString),
+                },
+            }
+        }
+    }
+
+    fn parse_atom(&mut self) -> Result<(), TypeDescriptorError> {
+        for (name, descriptor) in [
+            ("Unit", Self::primitive(TypeDescriptor::UNIT)),
+            ("Bool", Self::primitive(TypeDescriptor::BOOL)),
+            ("Int", Self::primitive(TypeDescriptor::INT)),
+            ("Float", Self::primitive(TypeDescriptor::FLOAT)),
+            ("String", Self::primitive(TypeDescriptor::STRING)),
+            ("Decision", Self::primitive(TypeDescriptor::DECISION)),
+            (
+                "OperationError",
+                Self::primitive(TypeDescriptor::OPERATION_ERROR),
+            ),
+        ] {
+            if self.consume_word(name) {
+                self.value = Some(descriptor);
+                return Ok(());
+            }
+        }
+        for (prefix, kind) in [
+            ("Option<", ContainerKind::Option),
+            ("Result<", ContainerKind::Result),
+            ("List<", ContainerKind::List),
+            ("Tuple<", ContainerKind::Tuple),
+        ] {
+            if self.source[self.cursor..].starts_with(prefix) {
+                self.cursor += prefix.len();
+                self.frames.push(ContainerFrame {
+                    kind,
+                    members: Vec::new(),
+                });
+                return Ok(());
+            }
+        }
+        let end = self.source[self.cursor..]
+            .find([',', '>'])
+            .map_or(self.source.len(), |offset| self.cursor + offset);
+        let path = self
+            .source
+            .get(self.cursor..end)
+            .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+        let path =
+            CanonicalPath::new(path).map_err(|_| TypeDescriptorError::InvalidCanonicalString)?;
+        self.cursor = end;
+        self.value = Some(TypeDescriptor::declared(path));
+        Ok(())
+    }
+
+    fn close_frame(&mut self) -> Result<(), TypeDescriptorError> {
+        let frame = self
+            .frames
+            .pop()
+            .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+        self.value = Some(match frame.kind {
+            ContainerKind::Option => TypeDescriptor::option(
+                frame
+                    .members
+                    .into_iter()
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?,
+            )?,
+            ContainerKind::Result => {
+                let mut members = frame.members.into_iter();
+                let ok = members
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+                let error = members
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+                TypeDescriptor::result(ok, error)
+            }
+            ContainerKind::List => TypeDescriptor::list(
+                frame
+                    .members
+                    .into_iter()
+                    .next()
+                    .ok_or(TypeDescriptorError::InvalidCanonicalString)?,
+            ),
+            ContainerKind::Tuple => TypeDescriptor::tuple(frame.members)?,
+        });
+        Ok(())
+    }
+
+    fn consume_word(&mut self, word: &str) -> bool {
+        if !self.source[self.cursor..].starts_with(word) {
+            return false;
+        }
+        let end = self.cursor + word.len();
+        if !matches!(self.source.as_bytes().get(end), None | Some(b',' | b'>')) {
+            return false;
+        }
+        self.cursor = end;
+        true
+    }
+
+    fn byte(&self) -> Option<u8> {
+        self.source.as_bytes().get(self.cursor).copied()
+    }
+
+    const fn primitive(value: TypeDescriptor) -> TypeDescriptor {
+        value
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -333,5 +530,36 @@ mod tests {
         assert_eq!(members[1].canonical_string(), "Option<String>");
         assert_eq!(members[1].immediate_members(), [TypeDescriptor::STRING]);
         assert!(TypeDescriptor::INT.immediate_members().is_empty());
+    }
+
+    #[test]
+    fn canonical_descriptors_round_trip_and_reject_noncanonical_forms() {
+        for value in [
+            "Unit",
+            "crate::domain::Report",
+            "Option<String>",
+            "Result<List<crate::domain::Report>,Tuple<Int,String>>",
+        ] {
+            assert_eq!(
+                TypeDescriptor::from_canonical_string(value)
+                    .map(|descriptor| descriptor.canonical_string()),
+                Ok(value.to_owned())
+            );
+        }
+        for value in [
+            "",
+            " String",
+            "Option<Unit>",
+            "Option<Option<String>>",
+            "Result<Int>",
+            "Tuple<Int>",
+            "List<Int>>",
+            "crate::bad-name",
+        ] {
+            assert_eq!(
+                TypeDescriptor::from_canonical_string(value),
+                Err(TypeDescriptorError::InvalidCanonicalString)
+            );
+        }
     }
 }

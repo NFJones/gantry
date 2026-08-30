@@ -21,10 +21,10 @@ use gantry::ir::{
 };
 use gantry::portable::{IdentityKind, OperationStateKind};
 use gantry::runtime::{
-    ActionOperationRequestV1, AdapterPoison, CapturedOperationRequestV1, Instruction,
-    InstructionKind, InterpolationInputV1, InterpreterConfiguration, InterpreterLifecycle, Machine,
-    MachineLabel, MachineLimits, MachineProgram, MachineStatus, MachineStep,
-    ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationLifecycle,
+    ActionOperationRequestV1, AdapterPoison, CanonicalTranscriptV1, CapturedOperationRequestV1,
+    Instruction, InstructionKind, InterpolationInputV1, InterpreterConfiguration,
+    InterpreterLifecycle, Machine, MachineLabel, MachineLimits, MachineProgram, MachineStatus,
+    MachineStep, ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationLifecycle,
     OperationLifecycleError, OperationRequestHeaderV1, RequiredConfiguration,
     RootSessionProvenanceV1, TaskContextV1, TaskHook, TaskHookError, TaskSessionContextV1,
     TypedActionArgumentV1, Workflow,
@@ -389,7 +389,7 @@ fn model_request() -> CapturedOperationRequestV1 {
                 ty: TypeDescriptor::BOOL,
                 value: canonical(b"true"),
             }],
-            transcript: canonical(b"[]"),
+            transcript: CanonicalTranscriptV1::empty(),
             active_session_id: fresh(IdentityKind::Session, 3),
             parent_session_id: None,
             root_session_id: fresh(IdentityKind::Session, 3),

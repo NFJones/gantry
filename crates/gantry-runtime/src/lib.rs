@@ -12,6 +12,7 @@ mod machine;
 mod operation;
 mod primitive;
 mod program;
+mod session;
 
 pub use configuration::{
     ConfigurationError, ConfigurationErrorKind, InterpreterConfiguration, RequiredConfiguration,
@@ -41,11 +42,17 @@ pub use machine::{
 };
 pub use operation::{
     OperationLifecycle, OperationLifecycleError, OperationLifecycleState, TaskHook, TaskHookError,
+    TaskHookSessionError,
 };
 pub use primitive::{Comparison, Primitive};
 pub use program::{
     AggregateKind, Instruction, InstructionKind, LoopPhase, MachineProgram, Parameter,
     ProgramError, Projection, Workflow,
+};
+pub use session::{
+    AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,
+    SessionCreationModeV1, SessionError, SessionEstablisher, SessionEstablishmentError,
+    SessionEstablishmentV1, TranscriptError, TranscriptResultKindV1, TranscriptTurnV1,
 };
 
 #[cfg(test)]

@@ -15,6 +15,8 @@ use gantry_host::embedding::EmbeddingOperation;
 use gantry_ir::generated::{OperationSiteKind, RecoveryClass, TypeKind};
 use gantry_ir::{CanonicalPath, CanonicalSignature, StructuralPosition, TypeDescriptor};
 
+use crate::CanonicalTranscriptV1;
+
 /// Root-session ownership retained in a task context.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RootSessionProvenanceV1 {
@@ -206,7 +208,7 @@ pub struct ModelOperationRequestV1 {
     /// Captured named inputs in source order.
     pub named_inputs: Vec<NamedInputV1>,
     /// Canonical transcript before this operation.
-    pub transcript: CanonicalJson,
+    pub transcript: CanonicalTranscriptV1,
     /// Active logical-session identity.
     pub active_session_id: ProtocolIdentity,
     /// Optional active-session parent.
@@ -558,7 +560,7 @@ fn push_model_body(output: &mut String, body: &ModelOperationRequestV1) {
         push_json_string(output, segment);
     }
     output.push_str("],\"transcript\":");
-    push_canonical(output, &body.transcript);
+    push_canonical(output, body.transcript.canonical_json());
 }
 
 fn push_session_use(output: &mut String, session_use: &ModelSessionUseV1) {
