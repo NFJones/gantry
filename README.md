@@ -1,12 +1,38 @@
-# Gantry
+<div align="center">
+<p align="center">
+  <picture>
+    <source
+      srcset="./resources/gantry-light.png"
+      media="(prefers-color-scheme: dark)"
+    />
+    <source
+      srcset="./resources/gantry-dark.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <img
+      src="./resources/gantry-dark.png"
+      width="500"
+      alt="Gantry logo"
+    />
+  </picture>
+</p>
+<p align="center">
+  <a href="https://github.com/NFJones/gantry/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/NFJones/gantry?style=flat-square"></a>
+  <a href="https://github.com/NFJones/gantry/forks"><img alt="GitHub forks" src="https://img.shields.io/github/forks/NFJones/gantry?style=flat-square"></a>
+  <a href="https://github.com/NFJones/gantry/issues"><img alt="GitHub issues" src="https://img.shields.io/github/issues/NFJones/gantry?style=flat-square"></a>
+  <a href="https://github.com/NFJones/gantry/actions"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/NFJones/gantry/ci.yml?style=flat-square"></a>
+</p>
+</div>
 
-Gantry is a Rust-inspired language for orchestrating model-backed agents and
-typed host capabilities. It makes the work that crosses an integration
+***
+
+Gantry is a language for orchestrating model-backed agents and
+typed host capabilities. It makes the work that crosses an agent integration
 boundary explicit, so an agent workflow can be read, reviewed, validated, and
 run with clear control-flow and recovery semantics.
 
 A Gantry program uses ordinary typed expressions for deterministic work and
-three visible operations for integration-backed work:
+three visible operations for agent integration-backed work:
 
 - `prompt` asks a selected agent to produce a value that satisfies a declared
   type.
