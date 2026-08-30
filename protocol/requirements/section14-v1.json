@@ -7,8 +7,10 @@
       "start_line": 7027,
       "end_line": 7035,
       "classification": "complete-positive",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-002",
@@ -16,8 +18,10 @@
       "start_line": 7045,
       "end_line": 7064,
       "classification": "complete-positive",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-003",
@@ -25,8 +29,10 @@
       "start_line": 7079,
       "end_line": 7092,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-004",
@@ -34,8 +40,10 @@
       "start_line": 7096,
       "end_line": 7108,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-005",
@@ -43,8 +51,10 @@
       "start_line": 7112,
       "end_line": 7122,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-006",
@@ -52,8 +62,10 @@
       "start_line": 7131,
       "end_line": 7166,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-007",
@@ -61,8 +73,10 @@
       "start_line": 7174,
       "end_line": 7222,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-008",
@@ -70,8 +84,10 @@
       "start_line": 7235,
       "end_line": 7249,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-009",
@@ -79,8 +95,10 @@
       "start_line": 7257,
       "end_line": 7277,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-010",
@@ -88,8 +106,10 @@
       "start_line": 7284,
       "end_line": 7312,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-011",
@@ -97,8 +117,10 @@
       "start_line": 7325,
       "end_line": 7339,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-012",
@@ -106,8 +128,10 @@
       "start_line": 7348,
       "end_line": 7354,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-013",
@@ -115,8 +139,10 @@
       "start_line": 7360,
       "end_line": 7364,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-014",
@@ -124,8 +150,10 @@
       "start_line": 7372,
       "end_line": 7380,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-015",
@@ -133,8 +161,10 @@
       "start_line": 7384,
       "end_line": 7389,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-016",
@@ -142,8 +172,10 @@
       "start_line": 7394,
       "end_line": 7399,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-017",
@@ -151,8 +183,10 @@
       "start_line": 7404,
       "end_line": 7433,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-018",
@@ -160,8 +194,10 @@
       "start_line": 7439,
       "end_line": 7447,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-019",
@@ -169,8 +205,10 @@
       "start_line": 7451,
       "end_line": 7469,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-020",
@@ -178,8 +216,10 @@
       "start_line": 7475,
       "end_line": 7490,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-021",
@@ -187,8 +227,10 @@
       "start_line": 7501,
       "end_line": 7509,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-022",
@@ -196,8 +238,10 @@
       "start_line": 7519,
       "end_line": 7525,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-023",
@@ -205,8 +249,10 @@
       "start_line": 7531,
       "end_line": 7543,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-024",
@@ -214,8 +260,10 @@
       "start_line": 7545,
       "end_line": 7560,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-025",
@@ -223,8 +271,10 @@
       "start_line": 7562,
       "end_line": 7570,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-026",
@@ -232,8 +282,10 @@
       "start_line": 7580,
       "end_line": 7597,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-027",
@@ -241,8 +293,10 @@
       "start_line": 7607,
       "end_line": 7620,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-028",
@@ -250,8 +304,10 @@
       "start_line": 7625,
       "end_line": 7628,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-029",
@@ -259,8 +315,10 @@
       "start_line": 7648,
       "end_line": 7661,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-030",
@@ -268,8 +326,10 @@
       "start_line": 7663,
       "end_line": 7675,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-031",
@@ -277,8 +337,10 @@
       "start_line": 7679,
       "end_line": 7691,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-032",
@@ -286,8 +348,10 @@
       "start_line": 7699,
       "end_line": 7709,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-033",
@@ -295,8 +359,10 @@
       "start_line": 7715,
       "end_line": 7727,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-034",
@@ -304,8 +370,10 @@
       "start_line": 7731,
       "end_line": 7760,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-035",
@@ -313,8 +381,10 @@
       "start_line": 7768,
       "end_line": 7775,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-036",
@@ -322,8 +392,10 @@
       "start_line": 7782,
       "end_line": 7826,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-037",
@@ -331,8 +403,10 @@
       "start_line": 7842,
       "end_line": 7856,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-038",
@@ -340,8 +414,10 @@
       "start_line": 7879,
       "end_line": 7886,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-039",
@@ -349,8 +425,10 @@
       "start_line": 7891,
       "end_line": 7909,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-040",
@@ -358,8 +436,10 @@
       "start_line": 7916,
       "end_line": 7928,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-041",
@@ -367,8 +447,10 @@
       "start_line": 7933,
       "end_line": 7944,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-042",
@@ -376,8 +458,10 @@
       "start_line": 7950,
       "end_line": 7960,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-043",
@@ -385,8 +469,10 @@
       "start_line": 7965,
       "end_line": 7973,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-044",
@@ -394,8 +480,10 @@
       "start_line": 7978,
       "end_line": 7988,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-045",
@@ -403,8 +491,10 @@
       "start_line": 7994,
       "end_line": 8004,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-046",
@@ -412,8 +502,10 @@
       "start_line": 8010,
       "end_line": 8021,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-047",
@@ -421,8 +513,10 @@
       "start_line": 8026,
       "end_line": 8041,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-048",
@@ -430,8 +524,10 @@
       "start_line": 8046,
       "end_line": 8064,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-049",
@@ -439,8 +535,10 @@
       "start_line": 8069,
       "end_line": 8079,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     }
   ]
 }

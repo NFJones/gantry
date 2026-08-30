@@ -11275,8 +11275,10 @@
           "key": "clause-001",
           "start_line": 6069,
           "end_line": 6071,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11294,8 +11296,10 @@
           "key": "clause-002",
           "start_line": 6072,
           "end_line": 6089,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11313,8 +11317,10 @@
           "key": "clause-003",
           "start_line": 6090,
           "end_line": 6097,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11603,8 +11609,10 @@
           "key": "clause-012",
           "start_line": 6301,
           "end_line": 6307,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11706,8 +11714,10 @@
           "key": "clause-001",
           "start_line": 6336,
           "end_line": 6406,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11784,8 +11794,10 @@
           "key": "clause-001",
           "start_line": 6428,
           "end_line": 6443,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11843,8 +11855,10 @@
           "key": "clause-001",
           "start_line": 6464,
           "end_line": 6512,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11902,8 +11916,10 @@
           "key": "clause-001",
           "start_line": 6537,
           "end_line": 6644,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12054,8 +12070,10 @@
           "key": "clause-009",
           "start_line": 6721,
           "end_line": 6727,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12073,8 +12091,10 @@
           "key": "clause-010",
           "start_line": 6728,
           "end_line": 6735,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12151,8 +12171,10 @@
           "key": "clause-001",
           "start_line": 6764,
           "end_line": 6843,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12273,8 +12295,10 @@
           "key": "clause-001",
           "start_line": 6909,
           "end_line": 6934,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12332,8 +12356,10 @@
           "key": "clause-001",
           "start_line": 6948,
           "end_line": 6957,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",

@@ -11709,8 +11709,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -11728,8 +11730,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -11747,8 +11751,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12039,8 +12045,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12144,8 +12152,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12224,8 +12234,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12285,8 +12297,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12346,8 +12360,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12498,8 +12514,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12517,8 +12535,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12597,8 +12617,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12721,8 +12743,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -12782,8 +12806,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+          ],
           "rationale": null
         },
         {
@@ -13944,8 +13970,10 @@
       "end_line": 7035,
       "sha256": "ccbd99df5505e06f091ced81435a26122772e7c01bda867d160356df74de93ab",
       "classification": "complete-positive",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-002",
@@ -13954,8 +13982,10 @@
       "end_line": 7064,
       "sha256": "5f069a147cd7ee60ad98d82b033e4988db5084acaa106afd0575b688cf45bbbd",
       "classification": "complete-positive",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-003",
@@ -13964,8 +13994,10 @@
       "end_line": 7092,
       "sha256": "0deafc3f1d08320625eae2ee42e67a7e1038fa715384b9610f1e6e8aea6b9c5e",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-004",
@@ -13974,8 +14006,10 @@
       "end_line": 7108,
       "sha256": "67e552cabff93dc691285c192b56c725e865539531b17c95a41e014d9454ed2a",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-005",
@@ -13984,8 +14018,10 @@
       "end_line": 7122,
       "sha256": "6ca9a8c761d108094de2fca32dc05f8474e23c9ad1a6ed9a301d7f175b151dce",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-006",
@@ -13994,8 +14030,10 @@
       "end_line": 7166,
       "sha256": "ea640c13a9d7ee3e6c8149ff3304ac675a0c7197ef499bea13bf7e30919ed71e",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-007",
@@ -14004,8 +14042,10 @@
       "end_line": 7222,
       "sha256": "1591c75764f64f33eb60ae446d0cc32ddd9690d1f48795817a869324295b0c02",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-008",
@@ -14014,8 +14054,10 @@
       "end_line": 7249,
       "sha256": "53c54cbbf6ea5f13f59fd69ac43f9350c58f67db3a4b18ce0c18c39a6f018d9d",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-009",
@@ -14024,8 +14066,10 @@
       "end_line": 7277,
       "sha256": "3e2357a5dd9e980589e24fc7818e2d567f05f52e794bf8abc616b1763837bf63",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-010",
@@ -14034,8 +14078,10 @@
       "end_line": 7312,
       "sha256": "e95a57f43e4c520ae9a98462f8d9e7e0f96a7acdf8494d946d666f680402517c",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-011",
@@ -14044,8 +14090,10 @@
       "end_line": 7339,
       "sha256": "1c65be81490e8d98bbfdcb5f13751b8a9464ddabd2cff6da90965a0f6ccb3796",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-012",
@@ -14054,8 +14102,10 @@
       "end_line": 7354,
       "sha256": "ed46314f10949b95752eecf7bf7e4a487f6d7c3fbb96b0396584fd756852ab00",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-013",
@@ -14064,8 +14114,10 @@
       "end_line": 7364,
       "sha256": "c321569ead1a0e1bf99882244cc5ff521304850a7508ac6e9f44a33b3e8cb558",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-014",
@@ -14074,8 +14126,10 @@
       "end_line": 7380,
       "sha256": "d26cd73479228151d9d2d45f75572ed4c85fb4bbd326a39b77a5fc919f37cd83",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-015",
@@ -14084,8 +14138,10 @@
       "end_line": 7389,
       "sha256": "96e31c5cd1b65ed3abec3e59d0a5bfd4c318cf4311d9c9f6ed79651dfae2b152",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-016",
@@ -14094,8 +14150,10 @@
       "end_line": 7399,
       "sha256": "ce540e51403d12077ffa23565d13d7b0ecd91de5d5156ea6ebaa92c2eded76bb",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-017",
@@ -14104,8 +14162,10 @@
       "end_line": 7433,
       "sha256": "75b2c20cf74050ea2a637d7e15b5f6c2cf3e9ee467f999b29632ea0a403bd4ad",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-018",
@@ -14114,8 +14174,10 @@
       "end_line": 7447,
       "sha256": "b27fa29af404ae5584c89ab6abee389359edab7cb015b01b01eea02b02b99996",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-019",
@@ -14124,8 +14186,10 @@
       "end_line": 7469,
       "sha256": "eb3f5ac3af79ee9dc2f3120b3331bc010ea4dd376a0fc715299485d7965da83b",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-020",
@@ -14134,8 +14198,10 @@
       "end_line": 7490,
       "sha256": "067f5413a5803ba1f178fc6b92b06d3a199b6f9a7aee4ccf168f766f9e411094",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-021",
@@ -14144,8 +14210,10 @@
       "end_line": 7509,
       "sha256": "a8af207923b50eb7d63f3d274472881b3107dbd0717e37d36b2036c5ba4e47d4",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-022",
@@ -14154,8 +14222,10 @@
       "end_line": 7525,
       "sha256": "2db69ea9cefd1b9e45752fa0e406261c833fa0e3ca2501b605dd6f97ebca70a6",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-023",
@@ -14164,8 +14234,10 @@
       "end_line": 7543,
       "sha256": "c716af52c434849d32ec56cef71b015fdd240c6072745c066ecfa0beee363853",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-024",
@@ -14174,8 +14246,10 @@
       "end_line": 7560,
       "sha256": "952c04bf1e4d64c35dc6086ea072b5fe97aebdeef0153edc41d9263226ee9f80",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-025",
@@ -14184,8 +14258,10 @@
       "end_line": 7570,
       "sha256": "c9ad553bd7b532094c2cf9c2f739dd4db417b8757b43f3d32c8b51b30b847715",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-026",
@@ -14194,8 +14270,10 @@
       "end_line": 7597,
       "sha256": "579f32b958d3912c4f1b5bf232fe92e05657c153b646637956549eb868995b9e",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-027",
@@ -14204,8 +14282,10 @@
       "end_line": 7620,
       "sha256": "0a4d711a2df85fc48a70a3e955537711e0be27f52d65627334d66fdf09d69c9d",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-028",
@@ -14214,8 +14294,10 @@
       "end_line": 7628,
       "sha256": "5cec72c241e99cea752a297fff189f154222a63c4d132c21bbeb52108d58337d",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-029",
@@ -14224,8 +14306,10 @@
       "end_line": 7661,
       "sha256": "76e7901ccffb172f6e731c418c14d521af36c9f141af2ba4315efd65f1d38b63",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-030",
@@ -14234,8 +14318,10 @@
       "end_line": 7675,
       "sha256": "31352c931f92a3fb906d7ef835c91426e25d8f82926f2f69d4d32142cbbbbcc7",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-031",
@@ -14244,8 +14330,10 @@
       "end_line": 7691,
       "sha256": "06ecc0abcdf0e25dfa344cc6eb65489d42c0c310e5eb8803b0ae7fb582b41fe0",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-032",
@@ -14254,8 +14342,10 @@
       "end_line": 7709,
       "sha256": "d8c6a67fc95833306f7814dc7a5501b05f264847852dfc47079877150022a6ff",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-033",
@@ -14264,8 +14354,10 @@
       "end_line": 7727,
       "sha256": "b49ee7c0491cd290d3b7fc34fa508baacb2106d2360c75c5cb2f8b3e306d1b19",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-034",
@@ -14274,8 +14366,10 @@
       "end_line": 7760,
       "sha256": "aa021fc82781956803dc864e46115ba44e3c3ea850cb34147c3c545ef20cda65",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-035",
@@ -14284,8 +14378,10 @@
       "end_line": 7775,
       "sha256": "b32c165dc7351212fc9e7756d10949d6284f9678b24eb99266c0ddfffb93283e",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-036",
@@ -14294,8 +14390,10 @@
       "end_line": 7826,
       "sha256": "fa3e7c5a655f8ddcfd6c70380311747c8c8cab6b5fdfaca11b2ac9d4bab86d69",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-037",
@@ -14304,8 +14402,10 @@
       "end_line": 7856,
       "sha256": "da1aefe2f64ebaa245d542b296026593ff3a6a5f46e49eb9befe9cad5dc5fe13",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-038",
@@ -14314,8 +14414,10 @@
       "end_line": 7886,
       "sha256": "80980ef3372c47cd1ba4b581ff559e6d0522029fb31fe6f93db0d389190e3e2b",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-039",
@@ -14324,8 +14426,10 @@
       "end_line": 7909,
       "sha256": "58c91f4f512bfc0a65b64da4d347e4c79f12b7ec95dd76bda10418db22812b42",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-040",
@@ -14334,8 +14438,10 @@
       "end_line": 7928,
       "sha256": "a8661d3d2736956ce2588ae879d0b17c26fb158b05e089d5db07077050d3484f",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-041",
@@ -14344,8 +14450,10 @@
       "end_line": 7944,
       "sha256": "5d38f98bf556c643f8376f2417ff5a19c6b9042070117d2b2c69204626b9a663",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-042",
@@ -14354,8 +14462,10 @@
       "end_line": 7960,
       "sha256": "2c89ee9b6f656903376fd2334b990b9967b7b8780ef07d382704bb54af69afc2",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-043",
@@ -14364,8 +14474,10 @@
       "end_line": 7973,
       "sha256": "1e97ca49c7a4736db4b090dab7401dbf81b4874374cc7492730eff86418913e1",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-044",
@@ -14374,8 +14486,10 @@
       "end_line": 7988,
       "sha256": "24b63e359c4506046c3d66e16c5d7768ddc1f6d9d4e1215074c28147f1b8d953",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-045",
@@ -14384,8 +14498,10 @@
       "end_line": 8004,
       "sha256": "179a0a57771f26b749110ef96df05acd9fa79fefd7a0a0a372f43dc029b5a868",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-046",
@@ -14394,8 +14510,10 @@
       "end_line": 8021,
       "sha256": "6d91fc305936df5ad9f0bd849f16bba6c85796cbb07e7a3f83bdfa80f99492c9",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-047",
@@ -14404,8 +14522,10 @@
       "end_line": 8041,
       "sha256": "34f0d5989a9986c5b744533d2f67233841b4f4ce72bd49fd58b4cc19367697e0",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-048",
@@ -14414,8 +14534,10 @@
       "end_line": 8064,
       "sha256": "e23a2620ec8b22b8b577d09ca162d82a7cea5f3ec540d15b207e149eeac0d88c",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-049",
@@ -14424,8 +14546,10 @@
       "end_line": 8079,
       "sha256": "b0e9d8ad162911a2e6c295f1e1ad49ce413b10ea62e4b167fb3254e123b3bbf3",
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     }
   ]
 }

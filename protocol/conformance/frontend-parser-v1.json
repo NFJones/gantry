@@ -1,0 +1,21 @@
+{
+  "format": "gantry.frontend-parser-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-FE-002",
+  "grammar_entries": [
+    { "requirement": "GNT-13.1", "clause": "clause-001" },
+    { "requirement": "GNT-13.1", "clause": "clause-002" },
+    { "requirement": "GNT-13.1", "clause": "clause-003" },
+    { "requirement": "GNT-13.2", "clause": "clause-012" },
+    { "requirement": "GNT-13.3", "clause": "clause-001" },
+    { "requirement": "GNT-13.4", "clause": "clause-001" },
+    { "requirement": "GNT-13.5", "clause": "clause-001" },
+    { "requirement": "GNT-13.6", "clause": "clause-001" },
+    { "requirement": "GNT-13.6", "clause": "clause-009" },
+    { "requirement": "GNT-13.6", "clause": "clause-010" },
+    { "requirement": "GNT-13.7", "clause": "clause-001" },
+    { "requirement": "GNT-13.8", "clause": "clause-001" },
+    { "requirement": "GNT-13.9", "clause": "clause-001" }
+  ],
+  "section14_excerpt_count": 49
+}

@@ -281,7 +281,9 @@ enum Task {
         count: usize,
     },
     PatternPathTail,
-    PromptTail,
+    PromptTail {
+        allow_result_annotation: bool,
+    },
     UsingList {
         count: usize,
     },
@@ -431,7 +433,9 @@ impl<'a> Machine<'a> {
             Task::Pattern => self.parse_pattern()?,
             Task::PatternList { count } => self.parse_pattern_list(count)?,
             Task::PatternPathTail => self.parse_pattern_path_tail()?,
-            Task::PromptTail => self.parse_prompt_tail()?,
+            Task::PromptTail {
+                allow_result_annotation,
+            } => self.parse_prompt_tail(allow_result_annotation)?,
             Task::UsingList { count } => self.parse_using_list(count)?,
             Task::MatchArms { statement, count } => self.parse_match_arms(statement, count)?,
             Task::MatchArmBody { statement } => self.parse_match_arm_body(statement)?,
@@ -1365,7 +1369,7 @@ impl<'a> Machine<'a> {
     fn parse_postfix_tail(&mut self, mode: ExpressionMode) -> Result<(), SyntaxFault> {
         if self.consume_if_punctuation(Punctuation::Dot)? {
             self.wrap_last_child(SyntaxForm::PostfixExpression)?;
-            if self.at_identifier() || self.at_word("join") {
+            if self.at_identifier() || self.at_word("join") || self.at_integer() {
                 self.consume_current()?;
             } else {
                 return Err(self.expected("postfix member name"));
@@ -1563,7 +1567,9 @@ impl<'a> Machine<'a> {
         }
         self.consume_current()?;
         self.tasks.push(Task::Finish);
-        self.tasks.push(Task::PromptTail);
+        self.tasks.push(Task::PromptTail {
+            allow_result_annotation: !decide,
+        });
         Ok(())
     }
 
@@ -1594,17 +1600,22 @@ impl<'a> Machine<'a> {
         Ok(())
     }
 
-    fn parse_prompt_tail(&mut self) -> Result<(), SyntaxFault> {
+    fn parse_prompt_tail(&mut self, allow_result_annotation: bool) -> Result<(), SyntaxFault> {
         if self.at_word("using") {
             self.begin(SyntaxForm::UsingClause);
             self.consume_current()?;
             self.expect_punctuation(Punctuation::LeftBrace)?;
-            self.tasks.push(Task::PromptTail);
+            self.tasks.push(Task::PromptTail {
+                allow_result_annotation,
+            });
             self.tasks.push(Task::Finish);
             self.tasks
                 .push(Task::ExpectPunctuation(Punctuation::RightBrace));
             self.tasks.push(Task::UsingList { count: 0 });
         } else if self.consume_if_punctuation(Punctuation::ThinArrow)? {
+            if !allow_result_annotation {
+                return Err(self.expected("no result annotation after `decide`"));
+            }
             self.tasks.push(Task::ValueType);
         }
         Ok(())
