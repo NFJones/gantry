@@ -4456,8 +4456,10 @@
           "key": "clause-001",
           "start_line": 2146,
           "end_line": 2149,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11330,8 +11332,10 @@
           "key": "clause-004",
           "start_line": 6098,
           "end_line": 6105,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11370,8 +11374,10 @@
           "key": "clause-001",
           "start_line": 6109,
           "end_line": 6156,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11389,8 +11395,10 @@
           "key": "clause-002",
           "start_line": 6157,
           "end_line": 6168,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11427,8 +11435,10 @@
           "key": "clause-004",
           "start_line": 6185,
           "end_line": 6194,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11446,8 +11456,10 @@
           "key": "clause-005",
           "start_line": 6195,
           "end_line": 6210,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11465,8 +11477,10 @@
           "key": "clause-006",
           "start_line": 6211,
           "end_line": 6218,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11484,8 +11498,10 @@
           "key": "clause-007",
           "start_line": 6219,
           "end_line": 6231,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11503,8 +11519,10 @@
           "key": "clause-008",
           "start_line": 6232,
           "end_line": 6240,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11522,8 +11540,10 @@
           "key": "clause-009",
           "start_line": 6241,
           "end_line": 6286,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11541,8 +11561,10 @@
           "key": "clause-010",
           "start_line": 6287,
           "end_line": 6295,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11560,8 +11582,10 @@
           "key": "clause-011",
           "start_line": 6296,
           "end_line": 6300,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11598,8 +11622,10 @@
           "key": "clause-013",
           "start_line": 6308,
           "end_line": 6309,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11617,8 +11643,10 @@
           "key": "clause-014",
           "start_line": 6310,
           "end_line": 6324,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -11636,8 +11664,10 @@
           "key": "clause-015",
           "start_line": 6325,
           "end_line": 6332,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12140,8 +12170,10 @@
           "key": "clause-002",
           "start_line": 6844,
           "end_line": 6855,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12159,8 +12191,10 @@
           "key": "clause-003",
           "start_line": 6856,
           "end_line": 6873,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -12178,8 +12212,10 @@
           "key": "clause-004",
           "start_line": 6874,
           "end_line": 6888,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",

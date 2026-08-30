@@ -4612,8 +4612,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         }
       ]
@@ -11764,8 +11766,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         }
       ]
@@ -11806,8 +11810,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11825,8 +11831,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11863,8 +11871,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11882,8 +11892,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11901,8 +11913,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11920,8 +11934,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11939,8 +11955,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11958,8 +11976,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11977,8 +11997,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -11996,8 +12018,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -12034,8 +12058,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -12053,8 +12079,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -12072,8 +12100,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         }
       ]
@@ -12586,8 +12616,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -12605,8 +12637,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {
@@ -12624,8 +12658,10 @@
             "harness",
             "implementation"
           ],
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null
         },
         {

@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "10a9bb6748e42901738ee3368807cc6d3d13019e384b6bf7d5d42150b968264c",
+    "sha256": "3cdf63c1d1b19dd07146ce777660ed56ef118a704e92b24fc51bd6ce1edc0744",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -70,6 +70,7 @@
     "name": "frontend",
     "applicable_clause_count": 128,
     "review_states": [
+      "covered",
       "planned"
     ],
     "implementation_complete": false
@@ -211,11 +212,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "10a9bb6748e42901738ee3368807cc6d3d13019e384b6bf7d5d42150b968264c"
+      "sha256": "3cdf63c1d1b19dd07146ce777660ed56ef118a704e92b24fc51bd6ce1edc0744"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "e098416ff68268f3623de778a9a7081cefeb93fc33bb7b44fe5e169d9fde57f1"
+      "sha256": "720efb3e6dfee02a4754445b2c54426de1cdea5448c4551d2817d7b8ee5ed59d"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

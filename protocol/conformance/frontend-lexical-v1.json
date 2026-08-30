@@ -1,0 +1,25 @@
+{
+  "format": "gantry.frontend-lexical-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-FE-001",
+  "entries": [
+    { "requirement": "GNT-13.1", "clause": "clause-004" },
+    { "requirement": "GNT-13.2", "clause": "clause-001" },
+    { "requirement": "GNT-13.2", "clause": "clause-002" },
+    { "requirement": "GNT-13.2", "clause": "clause-004" },
+    { "requirement": "GNT-13.2", "clause": "clause-005" },
+    { "requirement": "GNT-13.2", "clause": "clause-006" },
+    { "requirement": "GNT-13.2", "clause": "clause-007" },
+    { "requirement": "GNT-13.2", "clause": "clause-008" },
+    { "requirement": "GNT-13.2", "clause": "clause-009" },
+    { "requirement": "GNT-13.2", "clause": "clause-010" },
+    { "requirement": "GNT-13.2", "clause": "clause-011" },
+    { "requirement": "GNT-13.2", "clause": "clause-013" },
+    { "requirement": "GNT-13.2", "clause": "clause-014" },
+    { "requirement": "GNT-13.2", "clause": "clause-015" },
+    { "requirement": "GNT-13.7", "clause": "clause-002" },
+    { "requirement": "GNT-13.7", "clause": "clause-003" },
+    { "requirement": "GNT-13.7", "clause": "clause-004" },
+    { "requirement": "GNT-4.3", "clause": "clause-001" }
+  ]
+}
