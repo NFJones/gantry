@@ -1,14 +1,15 @@
 //! External `ValidatePackage` coverage through the public Gantry facade.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
+use gantry::analysis::AnalysisStatus;
 use gantry::frontend::PackageSyntaxStatus;
 use gantry::host::contracts::{
     FreshIdentityAllocator, HostError, HostFuture, IdentitySource, UtcClock,
@@ -25,7 +26,51 @@ use gantry::portable::{
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
-use gantry::{ValidatePackageCoordinator, ValidatePackageError, ValidatePackageRequest};
+use gantry::{
+    AnalyzePackageCoordinator, AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageStatus,
+    ValidatePackageCoordinator, ValidatePackageError, ValidatePackageRequest,
+};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct AnalyzerPackageEvidence {
+    format: String,
+    specification_sha256: String,
+    issue: String,
+    entries: Vec<AnalyzerPackageEvidenceEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+struct AnalyzerPackageEvidenceEntry {
+    requirement: String,
+    clause: String,
+    evidence: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RequirementReview {
+    specification_sha256: String,
+    requirements: Vec<ReviewedRequirement>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReviewedRequirement {
+    id: String,
+    clauses: Vec<ReviewedClause>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReviewedClause {
+    key: String,
+    profile_reviews: Vec<ProfileReview>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProfileReview {
+    profile: String,
+    state: String,
+    evidence: Vec<String>,
+}
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -192,6 +237,226 @@ fn semantic_errors_remain_outside_syntax_only_validation() {
 }
 
 #[test]
+fn reviewed_analyzer_package_evidence_is_closed() {
+    let root = workspace_root();
+    let manifest: AnalyzerPackageEvidence =
+        read_json(&root.join("protocol/conformance/analyzer-package-v1.json"));
+    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
+
+    assert_eq!(manifest.format, "gantry.analyzer-package-evidence/v1");
+    assert_eq!(manifest.issue, "GNT-AN-006");
+    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
+
+    let mut entries = BTreeMap::<(String, String), Vec<String>>::new();
+    for entry in manifest.entries {
+        entries
+            .entry((entry.requirement, entry.clause))
+            .or_default()
+            .push(entry.evidence);
+    }
+    for ((requirement_id, clause_key), evidence) in entries {
+        let clause = review
+            .requirements
+            .iter()
+            .find(|requirement| requirement.id == requirement_id)
+            .and_then(|requirement| {
+                requirement
+                    .clauses
+                    .iter()
+                    .find(|clause| clause.key == clause_key)
+            })
+            .unwrap_or_else(|| panic!("missing {requirement_id}:{clause_key}"));
+        let analyzer = clause
+            .profile_reviews
+            .iter()
+            .find(|profile| profile.profile == "analyzer")
+            .unwrap_or_else(|| panic!("missing analyzer review for {requirement_id}:{clause_key}"));
+        assert_eq!(analyzer.state, "covered");
+        assert_eq!(analyzer.evidence, evidence);
+    }
+}
+
+#[test]
+fn analyze_package_sequences_phases_and_exposes_valid_artifacts() {
+    let valid = TempDirectory::new(b"fn main() {}");
+    let identities = ScriptedIdentities::new([Ok([1; 32]), Ok([2; 32]), Ok([3; 32])]);
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock(Ok(timestamp()));
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let selection = selection();
+
+    let result = block_on(coordinator.analyze(analyze_request(&valid.0, &selection, None)));
+    assert!(result.is_ok());
+    let result = result.unwrap_or_else(|_| unreachable!("checked above"));
+    assert_eq!(result.status, AnalyzePackageStatus::SourceValid);
+    assert_eq!(result.syntax.status(), PackageSyntaxStatus::Valid);
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .map(|event| event.kind())
+            .collect::<Vec<_>>(),
+        [EventKind::Parse, EventKind::Analysis]
+    );
+    assert!(result.events.iter().all(|event| {
+        event.layer() == EventLayer::Physical
+            && event.activity_id() == result.activity_id
+            && event.execution_id().is_none()
+    }));
+    assert!(
+        std::str::from_utf8(result.events[1].payload().canonical_bytes())
+            .is_ok_and(|payload| payload
+                == "{\"diagnostics\":[],\"phase\":\"analysis\",\"status\":\"source-valid\"}")
+    );
+    let analysis = result
+        .analysis
+        .as_ref()
+        .unwrap_or_else(|| unreachable!("source-valid analysis is retained"));
+    assert_eq!(analysis.status(), AnalysisStatus::Valid);
+    assert!(analysis.manifest().is_some());
+    assert!(analysis.canonical_ir().is_some());
+    assert!(analysis.source_map().is_some());
+    assert!(analysis.schemas().is_some());
+    assert_eq!(
+        identities.calls(),
+        vec![
+            IdentityKind::Activity,
+            IdentityKind::Event,
+            IdentityKind::Event,
+        ]
+    );
+}
+
+#[test]
+fn analyze_package_stops_after_syntax_failure_and_reports_semantic_failure() {
+    let syntax_invalid = TempDirectory::new(b"fn main( {");
+    let identities = ScriptedIdentities::new([Ok([4; 32]), Ok([5; 32])]);
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock(Ok(timestamp()));
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let selection = selection();
+    let result =
+        block_on(coordinator.analyze(analyze_request(&syntax_invalid.0, &selection, None)));
+    assert!(result.is_ok());
+    let result = result.unwrap_or_else(|_| unreachable!("checked above"));
+    assert_eq!(result.status, AnalyzePackageStatus::SourceInvalid);
+    assert!(result.analysis.is_none());
+    assert_eq!(result.events.len(), 1);
+    assert_eq!(result.events[0].kind(), EventKind::Parse);
+    assert_eq!(
+        identities.calls(),
+        vec![IdentityKind::Activity, IdentityKind::Event]
+    );
+
+    let semantic_invalid = TempDirectory::new(b"fn main() -> Int { \"wrong\" }");
+    let identities = ScriptedIdentities::new([Ok([6; 32]), Ok([7; 32]), Ok([8; 32])]);
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let result =
+        block_on(coordinator.analyze(analyze_request(&semantic_invalid.0, &selection, None)));
+    assert!(result.is_ok());
+    let result = result.unwrap_or_else(|_| unreachable!("checked above"));
+    assert_eq!(result.status, AnalyzePackageStatus::SourceInvalid);
+    assert_eq!(result.events.len(), 2);
+    assert_eq!(result.events[1].kind(), EventKind::Analysis);
+    let analysis = result
+        .analysis
+        .as_ref()
+        .unwrap_or_else(|| unreachable!("semantic analysis completed"));
+    assert_eq!(analysis.status(), AnalysisStatus::Invalid);
+    assert!(analysis.canonical_ir().is_none());
+    assert!(analysis.source_map().is_none());
+    assert!(
+        std::str::from_utf8(result.events[1].payload().canonical_bytes())
+            .is_ok_and(|payload| payload.contains("\"status\":\"source-invalid\"")
+                && payload.contains("\"phase\":\"analysis\""))
+    );
+}
+
+#[test]
+fn analyze_package_preserves_event_barrier_and_limit_failure_order() {
+    let root = TempDirectory::new(b"fn main() {}");
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock(Ok(timestamp()));
+    let selection = selection();
+
+    let identities = ScriptedIdentities::new([Ok([9; 32]), Ok([10; 32])]);
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let result = block_on(coordinator.analyze(analyze_request(&root.0, &selection, None)));
+    assert!(matches!(result, Err(AnalyzePackageError::Event(_))));
+    assert_eq!(
+        identities.calls(),
+        vec![
+            IdentityKind::Activity,
+            IdentityKind::Event,
+            IdentityKind::Event,
+        ]
+    );
+
+    let identities = ScriptedIdentities::new([
+        Ok([11; 32]),
+        Ok([12; 32]),
+        Ok([13; 32]),
+        Ok([14; 32]),
+        Ok([15; 32]),
+    ]);
+    let runtime = ImmediateRuntime;
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock)
+        .with_delivery_runtime(&runtime);
+    let plan = required_plan(DeliveryOutcome::Success);
+    let result = block_on(coordinator.analyze(analyze_request(&root.0, &selection, Some(&plan))));
+    assert!(result.is_ok());
+    let result = result.unwrap_or_else(|_| unreachable!("checked above"));
+    assert_eq!(result.deliveries.as_ref().map(Vec::len), Some(2));
+    assert_eq!(
+        identities.calls(),
+        vec![
+            IdentityKind::Activity,
+            IdentityKind::Event,
+            IdentityKind::DeliveryAttempt,
+            IdentityKind::Event,
+            IdentityKind::DeliveryAttempt,
+        ]
+    );
+
+    let identities = ScriptedIdentities::new([Ok([16; 32]), Ok([17; 32]), Ok([18; 32])]);
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock)
+        .with_delivery_runtime(&runtime);
+    let plan = required_plan(DeliveryOutcome::Terminal);
+    let result = block_on(coordinator.analyze(analyze_request(&root.0, &selection, Some(&plan))));
+    assert_eq!(result, Err(AnalyzePackageError::RequiredEventDelivery));
+    assert_eq!(
+        identities.calls(),
+        vec![
+            IdentityKind::Activity,
+            IdentityKind::Event,
+            IdentityKind::DeliveryAttempt,
+        ]
+    );
+
+    let identities = ScriptedIdentities::new([Ok([19; 32]), Ok([20; 32])]);
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let limits = FrontendLimits::new(32, 1_048_576, 4_194_304, 262_144, 256, 1, 1, 1, 1)
+        .unwrap_or_else(|_| unreachable!("positive limits"));
+    let result = block_on(coordinator.analyze(AnalyzePackageRequest {
+        package_root: &root.0,
+        protocol_selection: &selection,
+        frontend_limits: limits,
+        event_delivery: None,
+    }));
+    assert!(matches!(
+        result,
+        Err(AnalyzePackageError::Analysis(
+            gantry::analysis::AnalysisError::ResourceLimit { .. }
+        ))
+    ));
+    assert_eq!(
+        identities.calls(),
+        vec![IdentityKind::Activity, IdentityKind::Event]
+    );
+}
+
+#[test]
 fn complete_frontend_limit_policy_is_public_and_finite() {
     const MAXIMUM: u64 = i64::MAX as u64;
 
@@ -337,6 +602,22 @@ fn request_with_limits<'a>(
     }
 }
 
+fn analyze_request<'a>(
+    root: &'a std::path::Path,
+    selection: &'a ProtocolSelection,
+    event_delivery: Option<&'a SinkPlan>,
+) -> AnalyzePackageRequest<'a> {
+    AnalyzePackageRequest {
+        package_root: root,
+        protocol_selection: selection,
+        frontend_limits: FrontendLimits::new(
+            32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+        )
+        .unwrap_or_else(|_| unreachable!("positive limits")),
+        event_delivery,
+    }
+}
+
 fn selection() -> ProtocolSelection {
     ProtocolSelection::new(
         PORTABLE_SPECIFICATION_REVISION,
@@ -395,4 +676,15 @@ fn block_on<F: Future>(future: F) -> F::Output {
             Poll::Pending => std::thread::yield_now(),
         }
     }
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> T {
+    let bytes =
+        fs::read(path).unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()));
+    serde_json::from_slice(&bytes)
+        .unwrap_or_else(|error| panic!("could not decode {}: {error}", path.display()))
 }

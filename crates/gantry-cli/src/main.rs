@@ -23,6 +23,8 @@ use gantry::portable::{PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITI
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 #[cfg(feature = "frontend")]
 use gantry::source::FrontendLimits;
+#[cfg(feature = "analyzer")]
+use gantry::{AnalyzePackageCoordinator, AnalyzePackageRequest, AnalyzePackageStatus};
 #[cfg(feature = "frontend")]
 use gantry::{ValidatePackageCoordinator, ValidatePackageRequest};
 
@@ -52,8 +54,14 @@ fn run(arguments: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) -
         [command, package_root] if command == "check" => {
             check_command(std::path::Path::new(package_root), stdout, stderr)
         }
+        [command] if command == "analyze" => {
+            analyze_command(std::path::Path::new("."), stdout, stderr)
+        }
+        [command, package_root] if command == "analyze" => {
+            analyze_command(std::path::Path::new(package_root), stdout, stderr)
+        }
         _ => {
-            let _ = writeln!(stderr, "usage: gantry check [PACKAGE_ROOT]");
+            let _ = writeln!(stderr, "usage: gantry (check|analyze) [PACKAGE_ROOT]");
             EXIT_USAGE
         }
     }
@@ -138,6 +146,84 @@ fn check_command(
     stderr: &mut dyn Write,
 ) -> u8 {
     let _ = writeln!(stderr, "operational-failure[frontend-unavailable]");
+    EXIT_OPERATIONAL_FAILURE
+}
+
+#[cfg(feature = "analyzer")]
+fn analyze_command(
+    package_root: &std::path::Path,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    let selection = published_selection();
+    let limits = FrontendLimits::new(
+        4_096,
+        16_777_216,
+        268_435_456,
+        4_194_304,
+        4_096,
+        268_435_456,
+        268_435_456,
+        268_435_456,
+        268_435_456,
+    )
+    .unwrap_or_else(|_| unreachable!("fixed CLI limits are valid"));
+    let allocator = FreshIdentityAllocator::default();
+    let identity_source = services::SystemIdentitySource;
+    let clock = services::SystemUtcClock;
+    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identity_source, &clock);
+    let result = block_on(coordinator.analyze(AnalyzePackageRequest {
+        package_root,
+        protocol_selection: &selection,
+        frontend_limits: limits,
+        event_delivery: None,
+    }));
+    match result {
+        Ok(result) => {
+            let diagnostics = result.analysis.as_ref().map_or_else(
+                || result.syntax.diagnostics(),
+                |analysis| analysis.diagnostics(),
+            );
+            for diagnostic in diagnostics {
+                match render_diagnostic(
+                    diagnostic,
+                    result.syntax.snapshot(),
+                    DiagnosticRenderOptions::default(),
+                ) {
+                    Ok(rendered) => {
+                        if write!(stderr, "{}", rendered.text).is_err() {
+                            return EXIT_OPERATIONAL_FAILURE;
+                        }
+                    }
+                    Err(_) => {
+                        let _ = writeln!(stderr, "operational-failure[diagnostic-render-failure]");
+                        return EXIT_OPERATIONAL_FAILURE;
+                    }
+                }
+            }
+            if writeln!(stdout, "{}", result.status.wire_name()).is_err() {
+                return EXIT_OPERATIONAL_FAILURE;
+            }
+            if result.status == AnalyzePackageStatus::SourceValid {
+                EXIT_SUCCESS
+            } else {
+                EXIT_SOURCE_INVALID
+            }
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "operational-failure[{}]", error.code());
+            EXIT_OPERATIONAL_FAILURE
+        }
+    }
+}
+
+#[cfg(not(feature = "analyzer"))]
+fn analyze_command(
+    _package_root: &std::path::Path,
+    _stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    let _ = writeln!(stderr, "operational-failure[analyzer-unavailable]");
     EXIT_OPERATIONAL_FAILURE
 }
 
@@ -309,6 +395,42 @@ mod tests {
             run(&[OsString::from("unknown")], &mut stdout, &mut stderr),
             EXIT_USAGE
         );
-        assert!(String::from_utf8_lossy(&stderr).contains("usage: gantry check"));
+        assert!(String::from_utf8_lossy(&stderr).contains("usage: gantry (check|analyze)"));
+    }
+
+    #[cfg(feature = "analyzer")]
+    #[test]
+    fn analyze_command_maps_source_valid_and_invalid_results() {
+        let valid = TempDirectory::new(b"fn main() {}");
+        let invalid = TempDirectory::new(b"fn main() -> Int { \"wrong\" }");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        assert_eq!(
+            run(
+                &[OsString::from("analyze"), valid.0.clone().into_os_string()],
+                &mut stdout,
+                &mut stderr,
+            ),
+            EXIT_SUCCESS
+        );
+        assert_eq!(stdout, b"source-valid\n");
+        assert!(stderr.is_empty());
+
+        stdout.clear();
+        stderr.clear();
+        assert_eq!(
+            run(
+                &[
+                    OsString::from("analyze"),
+                    invalid.0.clone().into_os_string(),
+                ],
+                &mut stdout,
+                &mut stderr,
+            ),
+            EXIT_SOURCE_INVALID
+        );
+        assert_eq!(stdout, b"source-invalid\n");
+        assert!(String::from_utf8_lossy(&stderr).contains("type"));
     }
 }

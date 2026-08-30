@@ -72,8 +72,13 @@ fn run_external_consumer(name: &str, features: &[&str], expected: [bool; 5]) {
     } else {
         ""
     };
+    let analyzer_contract = if expected[1] {
+        "    let _ = std::mem::size_of::<gantry::AnalyzePackageRequest<'static>>();\n    let _: Option<gantry::AnalyzePackageCoordinator<'static>> = None;\n"
+    } else {
+        ""
+    };
     let source = format!(
-        "fn main() {{\n    let actual = gantry::compiled_features();\n    assert_eq!([actual.frontend, actual.analyzer, actual.evaluator, actual.concurrent, actual.durable], {:?});\n    let advertised = gantry::advertised_profiles();\n    if actual.frontend {{\n        assert_eq!(advertised, [gantry::ConformanceProfile::Frontend]);\n        assert!(gantry::advertises_any_profile());\n    }} else {{\n        assert!(advertised.is_empty());\n        assert!(!gantry::advertises_any_profile());\n    }}\n    let _ = gantry::PROFILE_DEFINITIONS.len();\n    let _ = gantry::host::embedding::EMBEDDING_OPERATIONS.len();\n    let _ = gantry::diagnostic::DiagnosticRenderOptions::default();\n{frontend_contract}}}\n",
+        "fn main() {{\n    let actual = gantry::compiled_features();\n    assert_eq!([actual.frontend, actual.analyzer, actual.evaluator, actual.concurrent, actual.durable], {:?});\n    let advertised = gantry::advertised_profiles();\n    if actual.frontend {{\n        assert_eq!(advertised, [gantry::ConformanceProfile::Frontend]);\n        assert!(gantry::advertises_any_profile());\n    }} else {{\n        assert!(advertised.is_empty());\n        assert!(!gantry::advertises_any_profile());\n    }}\n    let _ = gantry::PROFILE_DEFINITIONS.len();\n    let _ = gantry::host::embedding::EMBEDDING_OPERATIONS.len();\n    let _ = gantry::diagnostic::DiagnosticRenderOptions::default();\n{frontend_contract}{analyzer_contract}}}\n",
         expected,
     );
     assert!(fs::write(fixture.join("src/main.rs"), source).is_ok());

@@ -24,10 +24,17 @@ pub use gantry_observe as observe;
 #[cfg(feature = "evaluator")]
 pub use gantry_runtime as runtime;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
+#[cfg(feature = "analyzer")]
+pub use validate::{
+    AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
+};
 #[cfg(feature = "frontend")]
 pub use validate::{
     ValidatePackageCoordinator, ValidatePackageError, ValidatePackageRequest, ValidatePackageResult,
 };
+#[cfg(feature = "analyzer")]
+/// Public semantic-analysis coordinator over the shared package-activity services.
+pub type AnalyzePackageCoordinator<'a> = ValidatePackageCoordinator<'a>;
 
 /// Facade features compiled into the current build.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

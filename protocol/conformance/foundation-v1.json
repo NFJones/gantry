@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "cfd913d8b8bf549a9afecf2f0172d30a5a6dcf3d00797788a6c1820ecb0b820c",
+    "sha256": "a1af168de27b1bf3caebbea04e3a0c76c6099495d2e432a62a43738722aa6f43",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -159,6 +159,10 @@
       "sha256": "2677101e5dffcd74117eb2394dce8ec34902e5885f2e7f482d0513387e0c0a2c"
     },
     {
+      "path": "crates/gantry-conformance/tests/validate_package.rs",
+      "sha256": "3cf8c71fca801e04a22e3799985d91165cf9927161f1aafc9d7e016fbc972700"
+    },
+    {
       "path": "crates/gantry-conformance/tests/value_kernel.rs",
       "sha256": "bd78b21c37cb393cbc40b11bb9a97d382976b3e9574bd42ef7ad87de6b96b678"
     },
@@ -229,6 +233,10 @@
     {
       "path": "protocol/conformance/analyzer-lowering-v1.json",
       "sha256": "f2bd947b3cd0151d5b05b16053abba6e6795d8bb666c4d6b89e17a40b63df3a1"
+    },
+    {
+      "path": "protocol/conformance/analyzer-package-v1.json",
+      "sha256": "5b29c5be4bd5a05aea132357422186391d4e63d40340585beb863492bd10406b"
     },
     {
       "path": "protocol/conformance/analyzer-symbols-v1.json",
@@ -332,11 +340,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "cfd913d8b8bf549a9afecf2f0172d30a5a6dcf3d00797788a6c1820ecb0b820c"
+      "sha256": "a1af168de27b1bf3caebbea04e3a0c76c6099495d2e432a62a43738722aa6f43"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "b56d31252035e6b65bbcf91b972354ba9fef8b51136f0144490021989780a021"
+      "sha256": "2bf35854e81fa3f6515646c1dd46544b0fcddbb04ad3dfc6094009a9e268d630"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -420,6 +428,11 @@
       "id": "activity-observation",
       "kind": "public-facade",
       "path": "crates/gantry-conformance/tests/activity_observation.rs"
+    },
+    {
+      "id": "analyzer-package",
+      "kind": "public-facade-and-reviewed-evidence",
+      "path": "crates/gantry-conformance/tests/validate_package.rs"
     },
     {
       "id": "canonical-protocol",

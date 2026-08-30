@@ -9,7 +9,9 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fmt;
 use std::sync::Arc;
 
-use gantry_core::event::{EventContractError, EventDraft, EventPayload};
+use gantry_core::event::{
+    EventContractError, EventDraft, PackageEventPhase, package_phase_event_payload,
+};
 use gantry_core::portable::EventKind;
 use gantry_core::source::{
     FrontendResourceLimit, PackagePath, SourceError, SourceId, SourceLimits, SourceSnapshot,
@@ -320,9 +322,11 @@ pub fn validate_package_syntax(
     } else {
         PackageSyntaxStatus::Invalid
     };
-    let event_payload =
-        EventPayload::from_validated_canonical_bytes(parse_payload(status, &diagnostics))
-            .map_err(PackageSyntaxError::Event)?;
+    let event_payload = package_phase_event_payload(
+        PackageEventPhase::Parse,
+        status == PackageSyntaxStatus::Valid,
+        &diagnostics,
+    );
     let event_draft = EventDraft::new(EventKind::Parse, event_payload);
     Ok(CompletedSyntaxPhase {
         status,
@@ -442,87 +446,6 @@ fn join_directory(parent: &str, child: &str) -> String {
     } else {
         format!("{parent}/{child}")
     }
-}
-
-fn parse_payload(status: PackageSyntaxStatus, diagnostics: &[StructuredDiagnostic]) -> Arc<[u8]> {
-    let mut json = String::from("{\"diagnostics\":[");
-    for (index, diagnostic) in diagnostics.iter().enumerate() {
-        if index != 0 {
-            json.push(',');
-        }
-        json.push_str("{\"category\":");
-        push_json_string(&mut json, diagnostic.category.wire_name());
-        json.push_str(",\"code\":");
-        push_json_string(&mut json, diagnostic.code.as_str());
-        json.push_str(",\"fields\":{");
-        for (field_index, (key, value)) in diagnostic.fields.iter().enumerate() {
-            if field_index != 0 {
-                json.push(',');
-            }
-            push_json_string(&mut json, key);
-            json.push(':');
-            push_json_string(&mut json, value);
-        }
-        json.push_str("},\"message\":");
-        push_json_string(&mut json, &diagnostic.message);
-        json.push_str(",\"phase\":");
-        push_json_string(&mut json, diagnostic.phase.wire_name());
-        json.push_str(",\"primary\":");
-        if let Some(primary) = &diagnostic.primary {
-            json.push_str("{\"end\":");
-            json.push_str(&primary.bytes().end().to_string());
-            json.push_str(",\"path\":");
-            push_json_string(&mut json, primary.source().package_path().as_str());
-            json.push_str(",\"start\":");
-            json.push_str(&primary.bytes().start().to_string());
-            json.push('}');
-        } else {
-            json.push_str("null");
-        }
-        json.push_str(",\"related\":[");
-        for (related_index, related) in diagnostic.related.iter().enumerate() {
-            if related_index != 0 {
-                json.push(',');
-            }
-            json.push_str("{\"end\":");
-            json.push_str(&related.span.bytes().end().to_string());
-            json.push_str(",\"label\":");
-            push_json_string(&mut json, &related.label);
-            json.push_str(",\"path\":");
-            push_json_string(&mut json, related.span.source().package_path().as_str());
-            json.push_str(",\"start\":");
-            json.push_str(&related.span.bytes().start().to_string());
-            json.push('}');
-        }
-        json.push(']');
-        json.push_str(",\"severity\":");
-        push_json_string(&mut json, diagnostic.severity.wire_name());
-        json.push('}');
-    }
-    json.push_str("],\"phase\":\"parse\",\"status\":");
-    push_json_string(&mut json, status.wire_name());
-    json.push('}');
-    Arc::from(json.into_bytes())
-}
-
-fn push_json_string(output: &mut String, value: &str) {
-    output.push('"');
-    for character in value.chars() {
-        match character {
-            '"' => output.push_str("\\\""),
-            '\\' => output.push_str("\\\\"),
-            '\u{08}' => output.push_str("\\b"),
-            '\u{0c}' => output.push_str("\\f"),
-            '\n' => output.push_str("\\n"),
-            '\r' => output.push_str("\\r"),
-            '\t' => output.push_str("\\t"),
-            value if value <= '\u{1f}' => {
-                output.push_str(&format!("\\u{:04x}", value as u32));
-            }
-            value => output.push(value),
-        }
-    }
-    output.push('"');
 }
 
 #[cfg(test)]

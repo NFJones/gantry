@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::identity::ProtocolIdentity;
 use crate::portable::{EventKind, EventLayer, IdentityKind, ProtectedReferenceClass};
-use crate::source::SourceSpan;
+use crate::source::{SourceSpan, StructuredDiagnostic};
 use crate::timestamp::UtcTimestamp;
 
 /// Exact version of the Gantry event protocol.
@@ -80,6 +80,125 @@ impl EventPayload {
     pub fn canonical_bytes(&self) -> &[u8] {
         &self.0
     }
+}
+
+/// Package phase represented by one physical package-activity event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackageEventPhase {
+    /// Completed whole-package syntax validation, represented by `parse`.
+    Parse,
+    /// Completed whole-package semantic analysis.
+    Analysis,
+}
+
+impl PackageEventPhase {
+    const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Parse => "parse",
+            Self::Analysis => "analysis",
+        }
+    }
+
+    const fn status(self, valid: bool) -> &'static str {
+        match (self, valid) {
+            (Self::Parse, true) => "syntax-valid",
+            (Self::Parse, false) => "syntax-invalid",
+            (Self::Analysis, true) => "source-valid",
+            (Self::Analysis, false) => "source-invalid",
+        }
+    }
+}
+
+/// Encodes one canonical package-phase event payload.
+///
+/// Parse and analysis events intentionally share the same structured diagnostic
+/// representation while retaining their distinct phase and status spellings.
+#[must_use]
+pub fn package_phase_event_payload(
+    phase: PackageEventPhase,
+    valid: bool,
+    diagnostics: &[StructuredDiagnostic],
+) -> EventPayload {
+    let mut json = String::from("{\"diagnostics\":[");
+    for (index, diagnostic) in diagnostics.iter().enumerate() {
+        if index != 0 {
+            json.push(',');
+        }
+        json.push_str("{\"category\":");
+        push_json_string(&mut json, diagnostic.category.wire_name());
+        json.push_str(",\"code\":");
+        push_json_string(&mut json, diagnostic.code.as_str());
+        json.push_str(",\"fields\":{");
+        for (field_index, (key, value)) in diagnostic.fields.iter().enumerate() {
+            if field_index != 0 {
+                json.push(',');
+            }
+            push_json_string(&mut json, key);
+            json.push(':');
+            push_json_string(&mut json, value);
+        }
+        json.push_str("},\"message\":");
+        push_json_string(&mut json, &diagnostic.message);
+        json.push_str(",\"phase\":");
+        push_json_string(&mut json, diagnostic.phase.wire_name());
+        json.push_str(",\"primary\":");
+        if let Some(primary) = &diagnostic.primary {
+            json.push_str("{\"end\":");
+            json.push_str(&primary.bytes().end().to_string());
+            json.push_str(",\"path\":");
+            push_json_string(&mut json, primary.source().package_path().as_str());
+            json.push_str(",\"start\":");
+            json.push_str(&primary.bytes().start().to_string());
+            json.push('}');
+        } else {
+            json.push_str("null");
+        }
+        json.push_str(",\"related\":[");
+        for (related_index, related) in diagnostic.related.iter().enumerate() {
+            if related_index != 0 {
+                json.push(',');
+            }
+            json.push_str("{\"end\":");
+            json.push_str(&related.span.bytes().end().to_string());
+            json.push_str(",\"label\":");
+            push_json_string(&mut json, &related.label);
+            json.push_str(",\"path\":");
+            push_json_string(&mut json, related.span.source().package_path().as_str());
+            json.push_str(",\"start\":");
+            json.push_str(&related.span.bytes().start().to_string());
+            json.push('}');
+        }
+        json.push(']');
+        json.push_str(",\"severity\":");
+        push_json_string(&mut json, diagnostic.severity.wire_name());
+        json.push('}');
+    }
+    json.push_str("],\"phase\":");
+    push_json_string(&mut json, phase.wire_name());
+    json.push_str(",\"status\":");
+    push_json_string(&mut json, phase.status(valid));
+    json.push('}');
+    EventPayload(Arc::from(json.into_bytes()))
+}
+
+fn push_json_string(output: &mut String, value: &str) {
+    output.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\u{08}' => output.push_str("\\b"),
+            '\u{0c}' => output.push_str("\\f"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            value if value <= '\u{1f}' => {
+                output.push_str(&format!("\\u{:04x}", value as u32));
+            }
+            value => output.push(value),
+        }
+    }
+    output.push('"');
 }
 
 /// Typed event data supplied by a semantic owner before occurrence metadata.

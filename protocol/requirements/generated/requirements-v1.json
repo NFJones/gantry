@@ -19873,8 +19873,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -19932,8 +19934,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -19991,8 +19995,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -20050,8 +20056,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -20109,9 +20117,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs evaluator task, foreground, terminal, and failure events rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -20190,8 +20198,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -20359,8 +20369,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_preserves_event_barrier_and_limit_failure_order"
+              ],
               "rationale": null
             },
             {
@@ -20418,9 +20430,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs resume compatibility and durable event-stream failure behavior rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -21084,8 +21096,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/activity_observation.rs#canonical_event_completion_uses_public_occurrence_contracts",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -21338,9 +21353,9 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause governs evaluator execution ordering before hook invocation rather than standalone semantic package analysis; it is outside the analyzer profile projection."
             },
             {
               "profile": "concurrent-evaluator",
@@ -21419,8 +21434,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_stops_after_syntax_failure_and_reports_semantic_failure"
+              ],
               "rationale": null
             },
             {
@@ -21479,8 +21497,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/source_substrate.rs#diagnostics_are_disclosure_neutral_and_deterministically_bounded",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_stops_after_syntax_failure_and_reports_semantic_failure"
+              ],
               "rationale": null
             },
             {

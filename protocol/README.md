@@ -37,6 +37,10 @@ workflow/action/entry inventories are recorded in
 `conformance/analyzer-workflows-v1.json`. Canonical lowering, source-map and
 package-manifest boundaries, portable artifact limits, prompt phases, and
 identity evidence are recorded in `conformance/analyzer-lowering-v1.json`.
+Public `AnalyzePackage` sequencing, parse/analysis activity events, optional
+delivery barriers, source judgments, bounded artifact exposure, and the
+external facade boundary are recorded in
+`conformance/analyzer-package-v1.json`.
 The complete package-validity argument remains owned by later analyzer issues.
 
 Portable value-kernel vectors in `goldens/value-kernel-v1.json` exercise the
