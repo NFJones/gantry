@@ -5,7 +5,7 @@ use std::sync::Arc;
 use gantry_core::source::{
     FrontendResourceLimit, SourceCounters, SourceSpan, StructuredDiagnostic,
 };
-use gantry_ir::CanonicalPath;
+use gantry_ir::{CanonicalPath, TypeDescriptor};
 
 /// Dense deterministic identifier for one discovered source module.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -166,6 +166,57 @@ impl PackageStructure {
     }
 
     /// Returns final package-activity counters after diagnostic charging.
+    #[must_use]
+    pub const fn counters(&self) -> &SourceCounters {
+        &self.counters
+    }
+}
+
+/// One successfully resolved canonical type annotation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeFact {
+    /// Exact source span of the complete type annotation.
+    pub span: SourceSpan,
+    /// Canonical type descriptor after item and import resolution.
+    pub descriptor: TypeDescriptor,
+}
+
+/// Deterministic package result after declaration type analysis.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypedPackage {
+    pub(crate) status: AnalysisStatus,
+    pub(crate) structure: PackageStructure,
+    pub(crate) types: Vec<TypeFact>,
+    pub(crate) diagnostics: Vec<StructuredDiagnostic>,
+    pub(crate) counters: SourceCounters,
+}
+
+impl TypedPackage {
+    /// Returns whether all structural and declaration-type checks passed.
+    #[must_use]
+    pub const fn status(&self) -> AnalysisStatus {
+        self.status
+    }
+
+    /// Returns the preceding module, symbol, and resolution result.
+    #[must_use]
+    pub const fn structure(&self) -> &PackageStructure {
+        &self.structure
+    }
+
+    /// Returns canonical type facts in source-span order.
+    #[must_use]
+    pub fn types(&self) -> &[TypeFact] {
+        &self.types
+    }
+
+    /// Returns all structural and type diagnostics in canonical machine order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[StructuredDiagnostic] {
+        &self.diagnostics
+    }
+
+    /// Returns final package-activity counters after all retained diagnostics.
     #[must_use]
     pub const fn counters(&self) -> &SourceCounters {
         &self.counters

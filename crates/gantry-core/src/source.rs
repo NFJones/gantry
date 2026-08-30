@@ -905,16 +905,52 @@ pub struct DiagnosticCodeDefinition {
 /// Initial Gantry source-substrate diagnostic code registry.
 pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
     DiagnosticCodeDefinition {
+        code: "aggregate-member-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An aggregate member differs from its exact expected type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "ambiguous-constructor-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A tagged constructor has no compatible expected type.",
+    },
+    DiagnosticCodeDefinition {
         code: "ambiguous-module-resolution",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "Both permitted file-module candidates exist, so neither is selected.",
     },
     DiagnosticCodeDefinition {
+        code: "call-argument-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A workflow argument differs from its exact parameter type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "call-arity",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A workflow call has the wrong number of arguments.",
+    },
+    DiagnosticCodeDefinition {
+        code: "condition-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A control-flow condition is neither Bool nor Decision.",
+    },
+    DiagnosticCodeDefinition {
         code: "default-agent-outside-root",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "A default agent declaration occurs outside the package root module.",
+    },
+    DiagnosticCodeDefinition {
+        code: "discard-required",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A non-Unit expression statement requires explicit discard.",
     },
     DiagnosticCodeDefinition {
         code: "duplicate-default-agent",
@@ -941,6 +977,24 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "More than one declaration resolves to the same canonical module path.",
     },
     DiagnosticCodeDefinition {
+        code: "duplicate-struct-field",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A struct constructor supplies one field more than once.",
+    },
+    DiagnosticCodeDefinition {
+        code: "expected-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A type annotation resolves to an item that is not a declared type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "for-source-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A for source is not a List value.",
+    },
+    DiagnosticCodeDefinition {
         code: "identifier-confusable-collision",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::IdentifierSecurity,
@@ -965,10 +1019,34 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An identifier contains a Unicode scalar excluded by Gantry security rules.",
     },
     DiagnosticCodeDefinition {
+        code: "immutable-assignment",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An assignment target is rooted in an immutable binding or receiver.",
+    },
+    DiagnosticCodeDefinition {
         code: "import-name-collision",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "An imported final name collides with another visible item or import.",
+    },
+    DiagnosticCodeDefinition {
+        code: "incompatible-pattern",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A pattern constructor is incompatible with its scrutinee type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "integer-literal-out-of-range",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An integer literal exceeds the inclusive Gantry Int range.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-action-target",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An action invocation resolves to an ordinary workflow.",
     },
     DiagnosticCodeDefinition {
         code: "invalid-block-prompt",
@@ -983,10 +1061,52 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A nonblank block-prompt line does not have the closing indentation prefix.",
     },
     DiagnosticCodeDefinition {
+        code: "invalid-call-target",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An ordinary call resolves to a declared action.",
+    },
+    DiagnosticCodeDefinition {
         code: "invalid-character",
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,
         meaning: "A source scalar cannot begin a Gantry token.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-control-transfer",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::ControlFlow,
+        meaning: "A break or continue statement has no valid enclosing loop target.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-entry-point",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "The package root does not declare exactly one function named main.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-enum-constructor",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An enum constructor does not match its variant payload shape.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-field-default",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A field default differs from its exact declared scalar or optional-member type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-impl-target",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An inherent implementation target is not a package struct.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-loop-limit",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::ControlFlow,
+        meaning: "A numeric loop limit is outside the inclusive range 1 through 2^63-1.",
     },
     DiagnosticCodeDefinition {
         code: "invalid-number",
@@ -995,10 +1115,22 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A numeric token violates the Gantry lexical grammar.",
     },
     DiagnosticCodeDefinition {
+        code: "invalid-option-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An Option has Unit or another Option as its immediate member.",
+    },
+    DiagnosticCodeDefinition {
         code: "invalid-package-path",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
         meaning: "A selected path is not a canonical package-relative path.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-primitive",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A deterministic primitive has no signature for its operand types.",
     },
     DiagnosticCodeDefinition {
         code: "invalid-source-span",
@@ -1049,16 +1181,88 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A discovered module has no containing module in the canonical graph.",
     },
     DiagnosticCodeDefinition {
+        code: "missing-result",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::ControlFlow,
+        meaning: "A value-returning callable has a reachable normal path without a result.",
+    },
+    DiagnosticCodeDefinition {
+        code: "missing-struct-field",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A struct constructor omits a required field.",
+    },
+    DiagnosticCodeDefinition {
         code: "module-cycle",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "The canonical module graph contains a parent cycle.",
     },
     DiagnosticCodeDefinition {
+        code: "nonexhaustive-match",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::ControlFlow,
+        meaning: "A structural match does not cover every value of its scrutinee type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "projection-index-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A list projection index is not Int.",
+    },
+    DiagnosticCodeDefinition {
+        code: "receiver-scope",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "The self receiver is referenced outside an inherent method body.",
+    },
+    DiagnosticCodeDefinition {
+        code: "recursive-enum",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An enum payload recursively contains its declaring enum.",
+    },
+    DiagnosticCodeDefinition {
+        code: "recursive-type-cycle",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A declared-type cycle contains more than one type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "redundant-pattern",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::ControlFlow,
+        meaning: "A match arm is unreachable after preceding ordered patterns.",
+    },
+    DiagnosticCodeDefinition {
+        code: "sealed-type-boundary",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A prompt, action, or entry type contains Decision or OperationError.",
+    },
+    DiagnosticCodeDefinition {
+        code: "sealed-value-operation",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A sealed Decision value is used by a prohibited source operation.",
+    },
+    DiagnosticCodeDefinition {
         code: "shadowed-name",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
         meaning: "A lexical declaration duplicates or shadows a visible name.",
+    },
+    DiagnosticCodeDefinition {
+        code: "tuple-index-out-of-range",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A tuple projection index exceeds its static arity.",
+    },
+    DiagnosticCodeDefinition {
+        code: "type-mismatch",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "An expression type differs from the exact type required by its context.",
     },
     DiagnosticCodeDefinition {
         code: "unclosed-interpolation",
@@ -1077,6 +1281,30 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Syntax,
         category: DiagnosticCategory::Syntax,
         meaning: "A source token does not satisfy the Gantry surface grammar.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unguarded-recursive-type",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A self-recursive struct field is not guarded by Option or List.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unknown-member",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A receiver type has no field or inherent method with the selected name.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unknown-struct-field",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A struct constructor supplies an unknown field.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unreachable-source",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::ControlFlow,
+        meaning: "Source follows a command with no reachable normal completion.",
     },
     DiagnosticCodeDefinition {
         code: "unresolved-agent",

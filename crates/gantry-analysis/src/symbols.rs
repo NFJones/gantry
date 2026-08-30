@@ -1051,7 +1051,7 @@ fn check_statement_references(
     let mut work = vec![statement];
     while let Some(node_id) = work.pop() {
         let node = tree.node(node_id).ok_or(AnalysisError::Invariant)?;
-        if node_id != statement && matches!(node.form(), SyntaxForm::Block) {
+        if node_id != statement && matches!(node.form(), SyntaxForm::Block | SyntaxForm::MatchArm) {
             continue;
         }
         if matches!(node.form(), SyntaxForm::Path) {
@@ -1196,6 +1196,44 @@ fn schedule_nested_scopes(
     let mut scan = vec![root];
     while let Some(node_id) = scan.pop() {
         let node = tree.node(node_id).ok_or(AnalysisError::Invariant)?;
+        if matches!(node.form(), SyntaxForm::MatchArm) {
+            let mut scoped = environment.clone();
+            let declarations = node
+                .children()
+                .iter()
+                .copied()
+                .find(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::Pattern))
+                })
+                .map(|pattern| pattern_bindings(tree, pattern))
+                .transpose()?
+                .unwrap_or_default();
+            admit_bindings(
+                declarations,
+                visible_items,
+                &mut scoped,
+                namespace,
+                diagnostics,
+                bindings,
+            )?;
+            for child in node.children().iter().copied() {
+                let child_node = tree.node(child).ok_or(AnalysisError::Invariant)?;
+                match child_node.form() {
+                    SyntaxForm::Pattern => {}
+                    SyntaxForm::Block => work.push(ScopeEvent::Enter(child, scoped.clone())),
+                    _ => check_statement_references(
+                        tree,
+                        child,
+                        parents,
+                        &scoped,
+                        visible_items,
+                        diagnostics,
+                    )?,
+                }
+            }
+            continue;
+        }
         for child in node.children().iter().rev().copied() {
             let child_node = tree.node(child).ok_or(AnalysisError::Invariant)?;
             if matches!(child_node.form(), SyntaxForm::Block) {
@@ -1478,7 +1516,18 @@ fn resolve_path(
         let found = local.or(imported).copied()?;
         target = Some(found);
         if index + 1 != path.segments.len() {
-            module = *package.symbol_modules.get(&found)?;
+            if let Some(target_module) = package.symbol_modules.get(&found).copied() {
+                module = target_module;
+            } else if package
+                .symbols
+                .get(found.index() as usize)
+                .is_some_and(|symbol| symbol.kind == SymbolKind::Enum)
+                && index + 2 == path.segments.len()
+            {
+                return Some(found);
+            } else {
+                return None;
+            }
         }
     }
     target

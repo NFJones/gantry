@@ -130,6 +130,47 @@ impl TypeDescriptor {
         self.contains_sealed_boundary
     }
 
+    /// Returns the outermost closed type kind.
+    #[must_use]
+    pub const fn kind(&self) -> TypeKind {
+        self.kind
+    }
+
+    /// Returns the immediate members of one constructed type.
+    ///
+    /// Primitive and declared types have no members. The flat token walk is
+    /// independent of descriptor nesting depth and does not recurse.
+    #[must_use]
+    pub fn immediate_members(&self) -> Vec<Self> {
+        if self.tokens.len() < 3 || !matches!(self.tokens.first(), Some(TypeToken::Open(_))) {
+            return Vec::new();
+        }
+        let mut members = Vec::new();
+        let mut start = 1_usize;
+        let mut depth = 0_usize;
+        for index in 1..self.tokens.len().saturating_sub(1) {
+            match &self.tokens[index] {
+                TypeToken::Open(_) => depth = depth.saturating_add(1),
+                TypeToken::Close => depth = depth.saturating_sub(1),
+                TypeToken::Comma if depth == 0 => {
+                    if let Some(member) = Self::from_token_slice(&self.tokens[start..index]) {
+                        members.push(member);
+                    }
+                    start = index.saturating_add(1);
+                }
+                _ => {}
+            }
+        }
+        if let Some(member) = Self::from_token_slice(
+            self.tokens
+                .get(start..self.tokens.len().saturating_sub(1))
+                .unwrap_or_default(),
+        ) {
+            members.push(member);
+        }
+        members
+    }
+
     /// Encodes the exact whitespace-free canonical descriptor without native recursion.
     #[must_use]
     pub fn canonical_string(&self) -> String {
@@ -159,6 +200,30 @@ impl TypeDescriptor {
         } else {
             self.tokens
         }
+    }
+
+    fn from_token_slice(tokens: &[TypeToken]) -> Option<Self> {
+        let kind = match tokens.first()? {
+            TypeToken::Primitive(kind) | TypeToken::Open(kind) => *kind,
+            TypeToken::Declared(_) => TypeKind::Declared,
+            TypeToken::Comma | TypeToken::Close => return None,
+        };
+        let contains_sealed_boundary = tokens.iter().any(|token| {
+            matches!(
+                token,
+                TypeToken::Primitive(TypeKind::Decision | TypeKind::OperationError)
+            )
+        });
+        let tokens = if tokens.len() == 1 && matches!(tokens[0], TypeToken::Primitive(_)) {
+            Vec::new()
+        } else {
+            tokens.to_vec()
+        };
+        Some(Self {
+            kind,
+            tokens,
+            contains_sealed_boundary,
+        })
     }
 }
 
@@ -239,5 +304,20 @@ mod tests {
         let encoded = value.canonical_string();
         assert!(encoded.starts_with("List<List<List<"));
         assert!(encoded.ends_with(">>>"));
+    }
+
+    #[test]
+    fn constructed_members_are_recovered_from_flat_tokens() {
+        let value = TypeDescriptor::result(
+            TypeDescriptor::list(TypeDescriptor::INT),
+            TypeDescriptor::option(TypeDescriptor::STRING)
+                .unwrap_or_else(|_| unreachable!("String is an option member")),
+        );
+        let members = value.immediate_members();
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0].canonical_string(), "List<Int>");
+        assert_eq!(members[1].canonical_string(), "Option<String>");
+        assert_eq!(members[1].immediate_members(), [TypeDescriptor::STRING]);
+        assert!(TypeDescriptor::INT.immediate_members().is_empty());
     }
 }

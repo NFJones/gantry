@@ -1,0 +1,17 @@
+{
+  "format": "gantry.analyzer-type-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-AN-003",
+  "entries": [
+    {
+      "requirement": "GNT-6.1",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_impl_targets_and_receivers_are_typed"
+    },
+    {
+      "requirement": "GNT-6.2",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_impl_targets_and_receivers_are_typed"
+    }
+  ]
+}

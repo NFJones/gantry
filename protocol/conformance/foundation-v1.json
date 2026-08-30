@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "46a7f7b299e3a2f5371a225c0829f8f4865a4fc083d342c93f5286e656a1dd78",
+    "sha256": "02e1f92aba4fea0d2e36040677d144ac6f556f5d384e8d2001810423278eedba",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -125,6 +125,10 @@
     {
       "path": "crates/gantry-conformance/tests/analyzer_symbols.rs",
       "sha256": "57901ba73cc380e776ca0dafb7da141da9d40161ad3b4499e758958a65417ba9"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_types.rs",
+      "sha256": "4761c131cce94206147cb1b8ebdb5d5a4724c5d97df3277b5979df9668dbd3e2"
     },
     {
       "path": "crates/gantry-conformance/tests/ir_contracts.rs",
@@ -195,6 +199,10 @@
       "sha256": "f0b94629a72f8870762f34b3a90b31852f36e466be6a75170aaee64605a6eb5a"
     },
     {
+      "path": "protocol/conformance/analyzer-types-v1.json",
+      "sha256": "9c396303cf423f5cbba21f948ee3bb27c8445587a2753395053190249c61c9fa"
+    },
+    {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
       "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
     },
@@ -252,11 +260,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "46a7f7b299e3a2f5371a225c0829f8f4865a4fc083d342c93f5286e656a1dd78"
+      "sha256": "02e1f92aba4fea0d2e36040677d144ac6f556f5d384e8d2001810423278eedba"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "3638edd67c1883e2be895f6b71509dd0f150cbef2793edf42a32515a4dfdc0f6"
+      "sha256": "76e37811f664a002a4d980e2e7df52e14beb237bde3c6f5797f69e2ce3f62f6c"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
