@@ -23,8 +23,9 @@ pub use canonical::{
 };
 pub use effects::{EFFECT_ORDER, EffectSet};
 pub use facts::{
-    CallEdge, OperationSite, OwnershipFact, SiteContractError, StaticSiteId, StructuralPosition,
-    TaskControlSite, WorkflowFacts,
+    ActionEffectContributor, ActionInventory, CallEdge, EntryInventory, OperationSite,
+    OwnershipFact, SiteContractError, StaticSiteId, StructuralPosition, TaskControlSite,
+    WorkflowFacts,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
 pub use path::{CanonicalPath, CanonicalPathError};

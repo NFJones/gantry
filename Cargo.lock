@@ -114,6 +114,7 @@ dependencies = [
  "gantry-core",
  "gantry-frontend",
  "gantry-ir",
+ "sha2",
 ]
 
 [[package]]

@@ -6,7 +6,9 @@
 //! runtime work.
 
 mod bodies;
+mod effects;
 mod model;
+mod schemas;
 mod security;
 mod symbols;
 mod types;
@@ -16,4 +18,4 @@ pub use model::{
     ResolvedReference, Symbol, SymbolId, SymbolKind, TypeFact, TypedPackage,
 };
 pub use symbols::analyze_package_structure;
-pub use types::analyze_package_types;
+pub use types::{analyze_package_types, analyze_package_types_with_artifact_limits};

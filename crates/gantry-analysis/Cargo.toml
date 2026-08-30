@@ -10,6 +10,7 @@ publish = false
 gantry-core.workspace = true
 gantry-frontend.workspace = true
 gantry-ir.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true

@@ -21,6 +21,17 @@ pub struct ArtifactLimits {
     pub generated_schema_bytes: u64,
 }
 
+impl ArtifactLimits {
+    /// Largest portable artifact policy, useful when a caller supplies only
+    /// source-ingress limits and a later coordinator has not yet narrowed it.
+    pub const MAXIMUM: Self = Self {
+        package_source_manifest_bytes: i64::MAX as u64,
+        canonical_ir_bytes: i64::MAX as u64,
+        source_map_bytes: i64::MAX as u64,
+        generated_schema_bytes: i64::MAX as u64,
+    };
+}
+
 impl From<FrontendLimits> for ArtifactLimits {
     fn from(limits: FrontendLimits) -> Self {
         Self {

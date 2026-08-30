@@ -1,0 +1,72 @@
+{
+  "format": "gantry.analyzer-workflow-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-AN-004",
+  "entries": [
+    {
+      "requirement": "GNT-10.5",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+    },
+    {
+      "requirement": "GNT-10.6",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    },
+    {
+      "requirement": "GNT-10.8",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+    },
+    {
+      "requirement": "GNT-12.9",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    },
+    {
+      "requirement": "GNT-3-T-JOIN",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    },
+    {
+      "requirement": "GNT-3-T-JOIN",
+      "clause": "clause-002",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+    },
+    {
+      "requirement": "GNT-3-T-JOIN",
+      "clause": "clause-003",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    },
+    {
+      "requirement": "GNT-3-T-LOOP",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+    },
+    {
+      "requirement": "GNT-3-T-LOOP",
+      "clause": "clause-002",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+    },
+    {
+      "requirement": "GNT-4.2",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    },
+    {
+      "requirement": "GNT-6.5",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    },
+    {
+      "requirement": "GNT-8.6",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    },
+    {
+      "requirement": "GNT-8.7",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+    }
+  ]
+}

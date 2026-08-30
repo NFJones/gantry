@@ -37,6 +37,26 @@ impl CanonicalPath {
         Ok(Self(Arc::from(value)))
     }
 
+    /// Constructs the canonical workflow path for one inherent method.
+    pub fn method(receiver_type: &Self, method: &str) -> Result<Self, CanonicalPathError> {
+        Self::new(receiver_type.as_str())?;
+        if !is_nfc(method) {
+            return Err(CanonicalPathError::NotNfc);
+        }
+        let mut scalars = method.chars();
+        if !scalars
+            .next()
+            .is_some_and(|scalar| scalar == '_' || is_xid_start(scalar))
+            || !scalars.all(is_xid_continue)
+        {
+            return Err(CanonicalPathError::InvalidSegment);
+        }
+        Ok(Self(Arc::from(format!(
+            "<{}>::{method}",
+            receiver_type.as_str()
+        ))))
+    }
+
     /// Returns the exact canonical spelling.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -89,6 +109,20 @@ mod tests {
             Ok("crate::quality::Résumé".to_owned())
         );
         assert!(CanonicalPath::new("crate::_private::item_2").is_ok());
+    }
+
+    #[test]
+    fn constructs_exact_method_workflow_paths() {
+        let receiver = CanonicalPath::new("crate::domain::Report")
+            .unwrap_or_else(|_| unreachable!("constant path is canonical"));
+        assert_eq!(
+            CanonicalPath::method(&receiver, "revise").map(|path| path.to_string()),
+            Ok("<crate::domain::Report>::revise".to_owned())
+        );
+        assert_eq!(
+            CanonicalPath::method(&receiver, "bad-name"),
+            Err(CanonicalPathError::InvalidSegment)
+        );
     }
 
     #[test]

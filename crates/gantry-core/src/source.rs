@@ -941,6 +941,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A control-flow condition is neither Bool nor Decision.",
     },
     DiagnosticCodeDefinition {
+        code: "consumed-task-handle",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::TaskOwnership,
+        meaning: "A task handle is consumed more than once.",
+    },
+    DiagnosticCodeDefinition {
         code: "default-agent-outside-root",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
@@ -983,6 +989,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A struct constructor supplies one field more than once.",
     },
     DiagnosticCodeDefinition {
+        code: "duplicate-task-handle",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::TaskOwnership,
+        meaning: "A task handle appears more than once in one consumption.",
+    },
+    DiagnosticCodeDefinition {
         code: "expected-type",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
@@ -993,6 +1005,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "A for source is not a List value.",
+    },
+    DiagnosticCodeDefinition {
+        code: "foreign-task-handle",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::TaskOwnership,
+        meaning: "A spawned task references a handle owned by another task.",
     },
     DiagnosticCodeDefinition {
         code: "identifier-confusable-collision",
@@ -1031,10 +1049,22 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "An imported final name collides with another visible item or import.",
     },
     DiagnosticCodeDefinition {
+        code: "impure-workflow",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A pure workflow has a nonempty transitive inferred effect set.",
+    },
+    DiagnosticCodeDefinition {
         code: "incompatible-pattern",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,
         meaning: "A pattern constructor is incompatible with its scrutinee type.",
+    },
+    DiagnosticCodeDefinition {
+        code: "inconsistent-task-ownership",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::TaskOwnership,
+        meaning: "A task handle is attached on some control-flow paths and consumed on others.",
     },
     DiagnosticCodeDefinition {
         code: "integer-literal-out-of-range",
@@ -1193,6 +1223,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A struct constructor omits a required field.",
     },
     DiagnosticCodeDefinition {
+        code: "mixed-task-results",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::TaskOwnership,
+        meaning: "A join mixes Unit and value-producing task results.",
+    },
+    DiagnosticCodeDefinition {
         code: "module-cycle",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::NameResolution,
@@ -1269,6 +1305,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,
         meaning: "A prompt interpolation has no closing brace.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unconsumed-task-handle",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::TaskOwnership,
+        meaning: "An attached task handle reaches lexical scope exit.",
     },
     DiagnosticCodeDefinition {
         code: "unexpected-byte-order-mark",

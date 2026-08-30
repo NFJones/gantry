@@ -1530,6 +1530,16 @@ fn infer_expression(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(expression).ok_or(AnalysisError::Invariant)?;
+    if let Some(join) = node.children().iter().copied().find(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::JoinExpression | SyntaxForm::JoinAllExpression
+            )
+        })
+    }) {
+        return infer_join_expression(tree, join, facts, diagnostics);
+    }
     if node_has_reserved_word(tree, node, "self") {
         let Some(receiver) = environment.get("self") else {
             diagnostics.push(body_diagnostic(
@@ -1777,6 +1787,200 @@ fn infer_expression(
     }
     let _ = facts;
     Ok(None)
+}
+
+fn infer_join_expression(
+    tree: &SyntaxTree,
+    join: NodeId,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let node = tree.node(join).ok_or(AnalysisError::Invariant)?;
+    let mut blocks = tree
+        .nodes()
+        .iter()
+        .filter(|candidate| {
+            matches!(candidate.form(), SyntaxForm::Block)
+                && span_contains(candidate.span(), node.span())
+        })
+        .collect::<Vec<_>>();
+    blocks.sort_by_key(|candidate| span_width(candidate.span()));
+    if blocks.is_empty() {
+        return Err(AnalysisError::Invariant);
+    }
+    let mut available = BTreeMap::<Arc<str>, TypeDescriptor>::new();
+    let selected_names = matches!(node.form(), SyntaxForm::JoinExpression)
+        .then(|| direct_identifiers(tree, join))
+        .transpose()?
+        .unwrap_or_default();
+    for block in blocks {
+        for statement in block.children().iter().copied() {
+            let statement_node = tree.node(statement).ok_or(AnalysisError::Invariant)?;
+            if statement_node.span().bytes().start() >= node.span().bytes().start()
+                || span_contains(statement_node.span(), node.span())
+            {
+                break;
+            }
+            if matches!(statement_node.form(), SyntaxForm::SpawnStatement) {
+                let name = direct_identifier(tree, statement)?.ok_or(AnalysisError::Invariant)?;
+                let result = direct_child_form(tree, statement_node, SyntaxForm::ValueType)
+                    .and_then(|type_node| facts.get(&type_node))
+                    .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
+                available.insert(name, result);
+                continue;
+            }
+            apply_static_task_consumptions(tree, statement, &mut available)?;
+        }
+        if matches!(node.form(), SyntaxForm::JoinAllExpression)
+            || selected_names
+                .iter()
+                .all(|handle| available.contains_key(handle))
+        {
+            break;
+        }
+    }
+
+    let selected = match node.form() {
+        SyntaxForm::JoinExpression => selected_names
+            .into_iter()
+            .filter_map(|handle| available.get(&handle).cloned())
+            .collect::<Vec<_>>(),
+        SyntaxForm::JoinAllExpression => available.into_values().collect::<Vec<_>>(),
+        _ => return Err(AnalysisError::Invariant),
+    };
+    join_result_type(selected, node.span().clone(), diagnostics).map(Some)
+}
+
+fn apply_static_task_consumptions(
+    tree: &SyntaxTree,
+    root: NodeId,
+    available: &mut BTreeMap<Arc<str>, TypeDescriptor>,
+) -> Result<(), AnalysisError> {
+    let node = tree.node(root).ok_or(AnalysisError::Invariant)?;
+    match node.form() {
+        SyntaxForm::JoinExpression | SyntaxForm::DetachStatement => {
+            for consumed in direct_identifiers(tree, root)? {
+                available.remove(&consumed);
+            }
+            return Ok(());
+        }
+        SyntaxForm::JoinAllExpression => {
+            available.clear();
+            return Ok(());
+        }
+        SyntaxForm::SpawnStatement => return Ok(()),
+        SyntaxForm::IfStatement => {
+            let mut branches = node
+                .children()
+                .iter()
+                .copied()
+                .filter(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::Block))
+                })
+                .map(|block| {
+                    let mut branch = available.clone();
+                    apply_static_task_consumptions(tree, block, &mut branch)?;
+                    Ok(branch)
+                })
+                .collect::<Result<Vec<_>, AnalysisError>>()?;
+            let has_else = node.children().iter().any(|child| {
+                tree.node(*child).is_some_and(|node| {
+                    matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "else")
+                })
+            });
+            if !has_else {
+                branches.push(available.clone());
+            }
+            retain_definitely_available(available, &branches);
+            return Ok(());
+        }
+        SyntaxForm::MatchStatement | SyntaxForm::MatchExpression => {
+            let mut branches = Vec::new();
+            for arm in node.children().iter().copied().filter(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::MatchArm))
+            }) {
+                let arm_node = tree.node(arm).ok_or(AnalysisError::Invariant)?;
+                let mut branch = available.clone();
+                for child in arm_node.children().iter().copied().filter(|child| {
+                    tree.node(*child).is_some_and(|node| {
+                        matches!(node.form(), SyntaxForm::Expression | SyntaxForm::Block)
+                    })
+                }) {
+                    apply_static_task_consumptions(tree, child, &mut branch)?;
+                }
+                branches.push(branch);
+            }
+            retain_definitely_available(available, &branches);
+            return Ok(());
+        }
+        SyntaxForm::WithStatement
+        | SyntaxForm::SessionStatement
+        | SyntaxForm::WithExpression
+        | SyntaxForm::SessionExpression => {
+            let block =
+                direct_child_form(tree, node, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
+            return apply_static_task_consumptions(tree, block, available);
+        }
+        SyntaxForm::ForStatement
+        | SyntaxForm::LoopStatement
+        | SyntaxForm::WhileStatement
+        | SyntaxForm::UntilStatement => return Ok(()),
+        _ => {}
+    }
+
+    for child in node.children().iter().copied().filter(|child| {
+        tree.node(*child)
+            .is_some_and(|node| !matches!(node.form(), SyntaxForm::Token(_)))
+    }) {
+        apply_static_task_consumptions(tree, child, available)?;
+    }
+    Ok(())
+}
+
+fn retain_definitely_available(
+    available: &mut BTreeMap<Arc<str>, TypeDescriptor>,
+    branches: &[BTreeMap<Arc<str>, TypeDescriptor>],
+) {
+    if !branches.is_empty() {
+        available.retain(|handle, _| branches.iter().all(|branch| branch.contains_key(handle)));
+    }
+}
+
+fn join_result_type(
+    selected: Vec<TypeDescriptor>,
+    span: SourceSpan,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<TypeDescriptor, AnalysisError> {
+    if selected.is_empty()
+        || selected
+            .iter()
+            .all(|result| *result == TypeDescriptor::UNIT)
+    {
+        return Ok(TypeDescriptor::UNIT);
+    }
+    if selected.contains(&TypeDescriptor::UNIT) {
+        diagnostics.push(body_diagnostic(
+            "mixed-task-results",
+            DiagnosticCategory::TaskOwnership,
+            "a join mixes Unit and value-producing task results",
+            span,
+            [] as [(&str, &str); 0],
+        )?);
+        return Ok(TypeDescriptor::UNIT);
+    }
+    if selected.len() == 1 {
+        return selected.into_iter().next().ok_or(AnalysisError::Invariant);
+    }
+    if selected.windows(2).all(|pair| pair[0] == pair[1]) {
+        return selected
+            .into_iter()
+            .next()
+            .map(TypeDescriptor::list)
+            .ok_or(AnalysisError::Invariant);
+    }
+    TypeDescriptor::tuple(selected).map_err(|_| AnalysisError::Invariant)
 }
 
 fn infer_unary_expression(

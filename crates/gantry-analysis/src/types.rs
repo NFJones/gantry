@@ -16,9 +16,11 @@ use gantry_frontend::{
     CompletedSyntaxPhase, NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind,
 };
 use gantry_ir::generated::TypeKind;
-use gantry_ir::{TypeDescriptor, TypeDescriptorError};
+use gantry_ir::{ArtifactLimits, TypeDescriptor, TypeDescriptorError};
 
 use crate::bodies::check_package_bodies;
+use crate::effects::analyze_workflow_facts;
+use crate::schemas::{SchemaAnalysisError, analyze_generated_schemas};
 use crate::{
     AnalysisError, AnalysisStatus, PackageStructure, Symbol, SymbolId, SymbolKind, TypeFact,
     TypedPackage, analyze_package_structure,
@@ -43,6 +45,15 @@ struct TypeEdge {
 /// Resolves and validates package declaration types without performing body
 /// expression typing, ownership inference, effects, or lowering.
 pub fn analyze_package_types(phase: &CompletedSyntaxPhase) -> Result<TypedPackage, AnalysisError> {
+    analyze_package_types_with_artifact_limits(phase, ArtifactLimits::MAXIMUM)
+}
+
+/// Resolves and validates a package while enforcing the supplied analyzer
+/// artifact limits during generated-schema construction.
+pub fn analyze_package_types_with_artifact_limits(
+    phase: &CompletedSyntaxPhase,
+    artifact_limits: ArtifactLimits,
+) -> Result<TypedPackage, AnalysisError> {
     let structure = analyze_package_structure(phase)?;
     let mut diagnostics = structure.diagnostics().to_vec();
     let mut type_diagnostics = Vec::new();
@@ -80,6 +91,27 @@ pub fn analyze_package_types(phase: &CompletedSyntaxPhase) -> Result<TypedPackag
         &structure,
         &mut type_diagnostics,
     )?;
+    let (workflows, actions) = analyze_workflow_facts(
+        phase.parsed_sources(),
+        &facts_by_source,
+        &structure,
+        &mut type_diagnostics,
+    )?;
+    let has_semantic_errors = diagnostics
+        .iter()
+        .chain(&type_diagnostics)
+        .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error);
+    let schema_result = if has_semantic_errors {
+        Ok((None, None))
+    } else {
+        analyze_generated_schemas(
+            phase.parsed_sources(),
+            &facts_by_source,
+            &structure,
+            &workflows,
+            artifact_limits,
+        )
+    };
 
     facts.sort_by(|left, right| left.span.cmp(&right.span));
     facts.dedup_by(|left, right| left.span == right.span);
@@ -106,10 +138,24 @@ pub fn analyze_package_types(phase: &CompletedSyntaxPhase) -> Result<TypedPackag
     } else {
         AnalysisStatus::Valid
     };
+    let (entry, schemas) = match schema_result {
+        Ok(inventory) => inventory,
+        Err(SchemaAnalysisError::ResourceLimit(error)) => {
+            return Err(AnalysisError::ResourceLimit {
+                error,
+                diagnostics: retained,
+            });
+        }
+        Err(SchemaAnalysisError::Invariant) => return Err(AnalysisError::Invariant),
+    };
     Ok(TypedPackage {
         status,
         structure,
         types: facts,
+        workflows,
+        actions,
+        entry,
+        schemas,
         diagnostics: retained,
         counters,
     })
@@ -800,11 +846,13 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    use gantry_core::portable::FrontendResourceCode;
     use gantry_core::source::SourceLimits;
     use gantry_frontend::validate_package_syntax;
+    use gantry_ir::ArtifactLimits;
 
-    use super::analyze_package_types;
-    use crate::AnalysisStatus;
+    use super::{analyze_package_types, analyze_package_types_with_artifact_limits};
+    use crate::{AnalysisError, AnalysisStatus};
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
@@ -1628,6 +1676,8 @@ fn main() {}
 fn check() {
     spawn first -> Int { 1 }
     spawn second { return; }
+    discard join(first);
+    discard join(second);
 }
 fn main() {}
 "#,
@@ -1720,5 +1770,1020 @@ fn main() {}
             "{:?}",
             invalid.diagnostics()
         );
+    }
+
+    #[test]
+    fn workflow_facts_include_direct_and_transitive_effects() {
+        let package = analyze(
+            r#"
+action read_only inspect() -> String;
+fn leaf() {
+    discard prompt "Generate." -> String;
+    discard action inspect();
+}
+fn wrapper() { leaf(); }
+pure fn invalid() { wrapper(); }
+pure fn clean() {}
+fn main() {}
+"#,
+        );
+        assert_eq!(package.status(), AnalysisStatus::Invalid);
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "impure-workflow")
+        );
+
+        let workflows = package
+            .workflows()
+            .iter()
+            .map(|workflow| {
+                (
+                    workflow.path.as_str(),
+                    workflow
+                        .effects
+                        .iter()
+                        .map(|effect| effect.wire_name())
+                        .collect::<Vec<_>>(),
+                    workflow.calls.len(),
+                    workflow.operations.len(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            workflows,
+            [
+                ("crate::clean", vec![], 0, 0),
+                ("crate::invalid", vec!["prompt", "action(read_only)"], 1, 0,),
+                ("crate::leaf", vec!["prompt", "action(read_only)"], 0, 2,),
+                ("crate::main", vec![], 0, 0),
+                ("crate::wrapper", vec!["prompt", "action(read_only)"], 1, 0,),
+            ]
+        );
+        let contributors = package
+            .workflows()
+            .iter()
+            .map(|workflow| {
+                (
+                    workflow.path.as_str(),
+                    workflow
+                        .action_contributors
+                        .iter()
+                        .map(|contributor| {
+                            (
+                                contributor.site.workflow().as_str(),
+                                contributor.action.as_str(),
+                                contributor.recovery.wire_name(),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            contributors,
+            [
+                ("crate::clean", vec![]),
+                (
+                    "crate::invalid",
+                    vec![("crate::leaf", "crate::inspect", "read_only")],
+                ),
+                (
+                    "crate::leaf",
+                    vec![("crate::leaf", "crate::inspect", "read_only")],
+                ),
+                ("crate::main", vec![]),
+                (
+                    "crate::wrapper",
+                    vec![("crate::leaf", "crate::inspect", "read_only")],
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn workflow_facts_include_methods_and_method_call_effects() {
+        let package = analyze(
+            r#"
+struct Worker { value: Int }
+impl Worker {
+    fn leaf(self) { discard prompt "Generate." -> String; }
+    fn wrapper(self) { self.leaf(); }
+}
+pure fn invalid(worker: Worker) { worker.wrapper(); }
+fn main() {}
+"#,
+        );
+        assert_eq!(package.status(), AnalysisStatus::Invalid);
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "impure-workflow")
+        );
+
+        let workflows = package
+            .workflows()
+            .iter()
+            .map(|workflow| {
+                (
+                    workflow.path.as_str(),
+                    workflow.signature.as_str(),
+                    workflow
+                        .effects
+                        .iter()
+                        .map(|effect| effect.wire_name())
+                        .collect::<Vec<_>>(),
+                    workflow.calls.len(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            workflows,
+            [
+                (
+                    "<crate::Worker>::leaf",
+                    "fn <crate::Worker>::leaf(self)->Unit",
+                    vec!["prompt"],
+                    0,
+                ),
+                (
+                    "<crate::Worker>::wrapper",
+                    "fn <crate::Worker>::wrapper(self)->Unit",
+                    vec!["prompt"],
+                    1,
+                ),
+                (
+                    "crate::invalid",
+                    "fn crate::invalid(crate::Worker)->Unit",
+                    vec!["prompt"],
+                    1,
+                ),
+                ("crate::main", "fn crate::main()->Unit", vec![], 0,),
+            ]
+        );
+    }
+
+    #[test]
+    fn workflow_effects_are_stable_across_scc_and_declaration_order() {
+        fn projected(source: &str) -> Vec<(String, Vec<&'static str>, Vec<String>)> {
+            let package = analyze(source);
+            assert_eq!(
+                package.status(),
+                AnalysisStatus::Valid,
+                "{:?}",
+                package.diagnostics()
+            );
+            package
+                .workflows()
+                .iter()
+                .map(|workflow| {
+                    (
+                        workflow.path.to_string(),
+                        workflow
+                            .effects
+                            .iter()
+                            .map(|effect| effect.wire_name())
+                            .collect(),
+                        workflow
+                            .calls
+                            .iter()
+                            .map(|call| call.callee.to_string())
+                            .collect(),
+                    )
+                })
+                .collect()
+        }
+
+        let first = projected(
+            r#"
+action read_only inspect() -> Unit;
+fn alpha() { beta(); }
+fn beta() { gamma(); }
+fn gamma() { alpha(); action inspect(); }
+fn main() {}
+"#,
+        );
+        let reordered = projected(
+            r#"
+fn gamma() { alpha(); action inspect(); }
+fn main() {}
+fn beta() { gamma(); }
+action read_only inspect() -> Unit;
+fn alpha() { beta(); }
+"#,
+        );
+        assert_eq!(first, reordered);
+        assert_eq!(
+            first,
+            [
+                (
+                    "crate::alpha".to_owned(),
+                    vec!["action(read_only)"],
+                    vec!["crate::beta".to_owned()],
+                ),
+                (
+                    "crate::beta".to_owned(),
+                    vec!["action(read_only)"],
+                    vec!["crate::gamma".to_owned()],
+                ),
+                (
+                    "crate::gamma".to_owned(),
+                    vec!["action(read_only)"],
+                    vec!["crate::alpha".to_owned()],
+                ),
+                ("crate::main".to_owned(), vec![], vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn deep_effect_schema_and_ownership_graphs_are_stack_safe() {
+        let call_depth = 256;
+        let mut callables = (0..call_depth)
+            .map(|index| {
+                if index + 1 == call_depth {
+                    format!("fn step{index}() {{ discard prompt \"done\" -> Unit; }}")
+                } else {
+                    format!("fn step{index}() {{ step{}(); }}", index + 1)
+                }
+            })
+            .collect::<Vec<_>>();
+        callables.push("fn main() { step0(); }".to_owned());
+        let calls = analyze(&callables.join("\n"));
+        assert_eq!(
+            calls.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            calls.diagnostics()
+        );
+        assert!(calls.workflows().iter().all(|workflow| {
+            workflow.path.as_str() == "crate::main"
+                || workflow
+                    .effects
+                    .iter()
+                    .any(|effect| effect.wire_name() == "prompt")
+        }));
+
+        let schema_depth = 256;
+        let descriptor = format!(
+            "{}String{}",
+            "List<".repeat(schema_depth),
+            ">".repeat(schema_depth)
+        );
+        let schemas = analyze(&format!(
+            "fn main(value: {descriptor}) -> {descriptor} {{ value }}"
+        ));
+        assert_eq!(
+            schemas.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            schemas.diagnostics()
+        );
+        assert_eq!(
+            schemas.schemas().map(|object| object.entries().len()),
+            Some(1)
+        );
+
+        let handle_count = 256;
+        let mut ownership = String::from("fn controls() {\n");
+        for index in 0..handle_count {
+            ownership.push_str(&format!("spawn task{index} {{ return; }}\n"));
+        }
+        ownership.push_str("discard joinall();\n}\nfn main() {}\n");
+        let ownership = analyze(&ownership);
+        assert_eq!(
+            ownership.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            ownership.diagnostics()
+        );
+        let joinall = ownership
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::controls")
+            .and_then(|workflow| {
+                workflow
+                    .task_controls
+                    .iter()
+                    .find(|site| site.kind.wire_name() == "joinall")
+            })
+            .unwrap_or_else(|| unreachable!("joinall site is present"));
+        assert_eq!(joinall.handles.len(), handle_count);
+    }
+
+    #[test]
+    fn entry_inventory_retains_exact_bounded_generated_schemas() {
+        let package = analyze(
+            r#"
+fn main(values: List<Int>) -> Option<String> {
+    discard values;
+    None
+}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+
+        let entry = package
+            .entry()
+            .unwrap_or_else(|| unreachable!("valid package has an entry inventory"));
+        assert_eq!(entry.path.as_str(), "crate::main");
+        assert_eq!(
+            entry.parameter.as_ref().map(|ty| ty.canonical_string()),
+            Some("List<Int>".to_owned())
+        );
+        assert_eq!(entry.result.canonical_string(), "Option<String>");
+
+        let schemas = package
+            .schemas()
+            .unwrap_or_else(|| unreachable!("entry boundaries require schemas"));
+        assert_eq!(
+            schemas
+                .entries()
+                .iter()
+                .map(|(ty, schema)| (
+                    ty.canonical_string(),
+                    std::str::from_utf8(schema).unwrap_or_else(|_| unreachable!("schema is UTF-8"))
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "List<Int>".to_owned(),
+                    "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"items\":{\"maximum\":9007199254740991,\"minimum\":-9007199254740991,\"type\":\"integer\"},\"type\":\"array\"}",
+                ),
+                (
+                    "Option<String>".to_owned(),
+                    "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"anyOf\":[{\"type\":\"null\"},{\"type\":\"string\"}]}",
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn declared_schemas_include_reachable_defs_defaults_and_exact_limits() {
+        let source = r#"
+enum Choice { Empty, Number(Int) }
+struct Report { choice: Choice, note: Option<String> = "fallback" }
+fn main(value: Report) -> Report { value }
+"#;
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let schemas = package
+            .schemas()
+            .unwrap_or_else(|| unreachable!("entry boundaries require schemas"));
+        assert_eq!(schemas.entries().len(), 1);
+        assert_eq!(schemas.entries()[0].0.canonical_string(), "crate::Report");
+        assert_eq!(
+            std::str::from_utf8(&schemas.entries()[0].1),
+            Ok(concat!(
+                "{\"$defs\":{",
+                "\"657e379315699414210b6d15b0da71d04a728697c220ea85f85795c9b27a9f87\":",
+                "{\"additionalProperties\":false,\"properties\":{",
+                "\"choice\":{\"$ref\":\"#/$defs/d1439d073a2f85be47d37f944e1bfd35fbe9a32bdba66cd73807801470415a28\"},",
+                "\"note\":{\"anyOf\":[{\"type\":\"null\"},{\"type\":\"string\"}],\"default\":\"fallback\"}",
+                "},\"required\":[\"choice\"],\"type\":\"object\"},",
+                "\"d1439d073a2f85be47d37f944e1bfd35fbe9a32bdba66cd73807801470415a28\":",
+                "{\"oneOf\":[",
+                "{\"additionalProperties\":false,\"properties\":{\"variant\":{\"const\":\"Empty\",\"type\":\"string\"}},\"required\":[\"variant\"],\"type\":\"object\"},",
+                "{\"additionalProperties\":false,\"properties\":{\"value\":{\"maximum\":9007199254740991,\"minimum\":-9007199254740991,\"type\":\"integer\"},\"variant\":{\"const\":\"Number\",\"type\":\"string\"}},\"required\":[\"variant\",\"value\"],\"type\":\"object\"}",
+                "]}},",
+                "\"$ref\":\"#/$defs/657e379315699414210b6d15b0da71d04a728697c220ea85f85795c9b27a9f87\",",
+                "\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"}"
+            ))
+        );
+
+        let root = TempDirectory::new();
+        root.write(source);
+        let syntax = validate_package_syntax(
+            &root.0,
+            SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
+                .unwrap_or_else(|_| unreachable!("positive limits")),
+        )
+        .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
+        let result = analyze_package_types_with_artifact_limits(
+            &syntax,
+            ArtifactLimits {
+                generated_schema_bytes: 1,
+                ..ArtifactLimits::MAXIMUM
+            },
+        );
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("the generated schema object must exceed one byte"),
+        };
+        assert!(matches!(
+            error,
+            AnalysisError::ResourceLimit { error, diagnostics }
+                if error.code == FrontendResourceCode::GeneratedSchemaByteLimit
+                    && diagnostics.is_empty()
+        ));
+    }
+
+    #[test]
+    fn workflow_facts_record_task_controls_and_composite_effects() {
+        let package = analyze(
+            r#"
+action idempotent write(value: Int) -> Unit;
+fn controls() {
+    spawn joined { return; }
+    discard join(joined);
+    spawn background { return; }
+    detach(background);
+    discard joinall();
+    session(new) {}
+    discard attempt action write(1);
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let controls = package
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::controls")
+            .unwrap_or_else(|| unreachable!("controls workflow is present"));
+        assert_eq!(
+            controls
+                .effects
+                .iter()
+                .map(|effect| effect.wire_name())
+                .collect::<Vec<_>>(),
+            [
+                "action(idempotent)",
+                "spawn",
+                "join",
+                "background",
+                "session",
+                "attempt",
+            ]
+        );
+        assert_eq!(
+            controls
+                .task_controls
+                .iter()
+                .map(|site| site.kind.wire_name())
+                .collect::<Vec<_>>(),
+            ["spawn", "join", "spawn", "detach", "joinall"]
+        );
+        assert_eq!(controls.operations.len(), 1);
+        assert_eq!(
+            controls.operations[0]
+                .action
+                .as_ref()
+                .map(gantry_ir::CanonicalPath::as_str),
+            Some("crate::write")
+        );
+        assert_eq!(
+            package
+                .actions()
+                .iter()
+                .map(|action| (
+                    action.path.as_str(),
+                    action.signature.as_str(),
+                    action.recovery.wire_name(),
+                    action.result.canonical_string(),
+                ))
+                .collect::<Vec<_>>(),
+            [(
+                "crate::write",
+                "action[idempotent] crate::write(value:Int)->Unit",
+                "idempotent",
+                "Unit".to_owned(),
+            )]
+        );
+    }
+
+    #[test]
+    fn task_control_sites_retain_static_handle_membership() {
+        let package = analyze(
+            r#"
+fn controls() {
+    spawn zebra -> Int { 1 }
+    spawn alpha -> Int { 2 }
+    detach(zebra);
+    let values: Int = joinall();
+    discard values;
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let controls = package
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::controls")
+            .unwrap_or_else(|| unreachable!("controls workflow is present"));
+        assert_eq!(
+            controls
+                .task_controls
+                .iter()
+                .map(|site| {
+                    (
+                        site.kind.wire_name(),
+                        site.handles.iter().map(AsRef::as_ref).collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            [
+                ("spawn", vec!["zebra"]),
+                ("spawn", vec!["alpha"]),
+                ("detach", vec!["zebra"]),
+                ("joinall", vec!["alpha"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn joinall_membership_excludes_handles_consumed_on_every_path() {
+        let package = analyze(
+            r#"
+fn controls(flag: Bool) -> String {
+    spawn consumed -> Int { 1 }
+    spawn selected -> String { "selected" }
+    if flag {
+        discard join(consumed);
+    } else {
+        detach(consumed);
+    }
+    joinall()
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let controls = package
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::controls")
+            .unwrap_or_else(|| unreachable!("controls workflow is present"));
+        let joinall = controls
+            .task_controls
+            .iter()
+            .find(|site| site.kind.wire_name() == "joinall")
+            .unwrap_or_else(|| unreachable!("joinall site is present"));
+        assert_eq!(
+            joinall
+                .handles
+                .iter()
+                .map(AsRef::as_ref)
+                .collect::<Vec<_>>(),
+            ["selected"]
+        );
+    }
+
+    #[test]
+    fn straight_line_task_handles_are_consumed_exactly_once() {
+        let valid = analyze(
+            r#"
+fn controls() {
+    spawn joined -> Int { 1 }
+    let value: Int = join(joined);
+    discard value;
+    spawn background { return; }
+    detach(background);
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+
+        let invalid = analyze(
+            r#"
+fn leaked() { spawn task { return; } }
+fn repeated() { spawn task { return; } discard join(task); detach(task); }
+fn duplicate() { spawn task { return; } discard join(task, task); }
+fn foreign() {
+    spawn parent { return; }
+    spawn child { discard join(parent); }
+    discard joinall();
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        let codes = invalid
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&"unconsumed-task-handle"), "{codes:?}");
+        assert!(codes.contains(&"consumed-task-handle"), "{codes:?}");
+        assert!(codes.contains(&"duplicate-task-handle"), "{codes:?}");
+        assert!(codes.contains(&"foreign-task-handle"), "{codes:?}");
+    }
+
+    #[test]
+    fn task_ownership_merges_all_control_flow_paths() {
+        let valid = analyze(
+            r#"
+fn controls(flag: Bool) {
+    spawn task { return; }
+    if flag {
+        discard join(task);
+    } else {
+        detach(task);
+    }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+
+        let invalid = analyze(
+            r#"
+fn controls(flag: Bool) {
+    spawn task { return; }
+    if flag {
+        discard join(task);
+    }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        assert!(
+            invalid
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "inconsistent-task-ownership"),
+            "{:?}",
+            invalid.diagnostics()
+        );
+    }
+
+    #[test]
+    fn task_ownership_tracks_early_return_paths() {
+        let valid = analyze(
+            r#"
+fn controls(flag: Bool) {
+    spawn task { return; }
+    if flag {
+        discard join(task);
+        return;
+    }
+    discard join(task);
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+
+        let invalid = analyze(
+            r#"
+fn controls(flag: Bool) {
+    spawn task { return; }
+    if flag { return; }
+    discard join(task);
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        assert!(
+            invalid
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "unconsumed-task-handle"),
+            "{:?}",
+            invalid.diagnostics()
+        );
+    }
+
+    #[test]
+    fn task_ownership_tracks_loop_transfer_paths() {
+        let valid = analyze(
+            r#"
+fn controls(flags: List<Bool>) {
+    for flag in flags {
+        spawn task { return; }
+        if flag {
+            discard join(task);
+            continue;
+        }
+        detach(task);
+    }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+
+        let invalid = analyze(
+            r#"
+fn controls(flags: List<Bool>) {
+    for flag in flags {
+        spawn task { return; }
+        if flag { continue; }
+        discard join(task);
+    }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        assert!(
+            invalid
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "unconsumed-task-handle"),
+            "{:?}",
+            invalid.diagnostics()
+        );
+    }
+
+    #[test]
+    fn task_ownership_flows_through_nested_contexts_and_branches() {
+        let package = analyze(
+            r#"
+agents { worker }
+default agent = worker;
+fn controls(first: Bool, second: Bool) {
+    spawn nested { return; }
+    if first {
+        if second { discard join(nested); } else { detach(nested); }
+    } else {
+        discard join(nested);
+    }
+    spawn scoped { return; }
+    with worker { session(inline) { discard join(scoped); } }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+
+    #[test]
+    fn task_ownership_checks_handles_declared_in_nested_branches() {
+        let invalid = analyze(
+            r#"
+fn controls(flag: Bool) {
+    if flag {
+        spawn leaked { return; }
+    } else {
+        spawn consumed { return; }
+        discard join(consumed);
+    }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        assert!(
+            invalid
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "unconsumed-task-handle"),
+            "{:?}",
+            invalid.diagnostics()
+        );
+
+        let foreign = analyze(
+            r#"
+fn controls(flag: Bool) {
+    spawn parent { return; }
+    if flag {
+        spawn child { discard join(parent); }
+        discard join(child);
+    }
+    discard join(parent);
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(foreign.status(), AnalysisStatus::Invalid);
+        assert!(
+            foreign
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "foreign-task-handle"),
+            "{:?}",
+            foreign.diagnostics()
+        );
+    }
+
+    #[test]
+    fn task_ownership_flows_through_value_contexts_and_matches() {
+        let package = analyze(
+            r#"
+agents { worker }
+default agent = worker;
+fn matched(value: Option<Int>) -> Int {
+    spawn task -> Int { 1 }
+    match value {
+        Some(_) => join(task),
+        None => join(task),
+    }
+}
+fn scoped() -> Int {
+    spawn task -> Int { 1 }
+    with worker { session(inline) { join(task) } }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+
+    #[test]
+    fn task_ownership_flows_through_call_arguments() {
+        let valid = analyze(
+            r#"
+fn consume(value: Int) { discard value; }
+fn controls() {
+    spawn task -> Int { 1 }
+    consume(join(task));
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+
+        let invalid = analyze(
+            r#"
+fn consume(value: Int) { discard value; }
+fn controls() {
+    spawn task -> Int { 1 }
+    consume(join(task));
+    discard join(task);
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        assert!(
+            invalid
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "consumed-task-handle"),
+            "{:?}",
+            invalid.diagnostics()
+        );
+    }
+
+    #[test]
+    fn join_results_follow_static_handle_membership() {
+        let valid = analyze(
+            r#"
+fn named() -> Tuple<Int,String> {
+    spawn first -> Int { 1 }
+    spawn second -> String { "two" }
+    join(first, second)
+}
+fn scoped() -> List<Int> {
+    spawn first -> Int { 1 }
+    spawn second -> Int { 2 }
+    joinall()
+}
+fn empty() { discard joinall(); }
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+
+        let invalid = analyze(
+            r#"
+fn wrong() {
+    spawn task -> Int { 1 }
+    let value: String = join(task);
+}
+fn mixed() {
+    spawn unit { return; }
+    spawn value -> Int { 1 }
+    discard joinall();
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        let codes = invalid
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&"type-mismatch"), "{codes:?}");
+        assert!(codes.contains(&"mixed-task-results"), "{codes:?}");
+    }
+
+    #[test]
+    fn task_ownership_is_checked_through_matches_and_loops() {
+        let valid = analyze(
+            r#"
+fn matched(value: Option<Int>) {
+    spawn task { return; }
+    match value {
+        Some(_) => { discard join(task); },
+        None => { detach(task); },
+    }
+}
+fn loop_local(values: List<Int>) {
+    for value in values {
+        spawn task { return; }
+        discard join(task);
+    }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+
+        let invalid = analyze(
+            r#"
+fn partial(value: Option<Int>) {
+    spawn task { return; }
+    match value {
+        Some(_) => { discard join(task); },
+        None => {},
+    }
+}
+fn loop_consume(flag: Bool) {
+    spawn task { return; }
+    while flag { discard join(task); }
+}
+fn loop_leak(values: List<Int>) {
+    for value in values { spawn task { return; } }
+}
+fn main() {}
+"#,
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        let codes = invalid
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<Vec<_>>();
+        assert!(codes.contains(&"inconsistent-task-ownership"), "{codes:?}");
+        assert!(codes.contains(&"unconsumed-task-handle"), "{codes:?}");
     }
 }

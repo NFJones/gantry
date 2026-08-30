@@ -56,6 +56,15 @@ impl TypeDescriptor {
         }
     }
 
+    /// Returns the canonical path when this is a declared package type.
+    #[must_use]
+    pub fn declared_path(&self) -> Option<&CanonicalPath> {
+        match self.tokens.first() {
+            Some(TypeToken::Declared(path)) => Some(path),
+            _ => None,
+        }
+    }
+
     /// Constructs `Option<T>`, rejecting the two wire-ambiguous immediate members.
     pub fn option(member: Self) -> Result<Self, TypeDescriptorError> {
         if matches!(member.kind, TypeKind::Unit | TypeKind::Option) {
@@ -267,7 +276,7 @@ mod tests {
         let pair = TypeDescriptor::tuple(vec![TypeDescriptor::INT, TypeDescriptor::STRING]);
         assert!(pair.is_ok());
         let result = TypeDescriptor::result(
-            TypeDescriptor::list(report),
+            TypeDescriptor::list(report.clone()),
             TypeDescriptor::option(TypeDescriptor::STRING)
                 .unwrap_or_else(|_| unreachable!("String is an option member")),
         );
@@ -275,6 +284,11 @@ mod tests {
             result.canonical_string(),
             "Result<List<crate::domain::Report>,Option<String>>"
         );
+        assert_eq!(
+            report.declared_path().map(CanonicalPath::as_str),
+            Some("crate::domain::Report")
+        );
+        assert_eq!(TypeDescriptor::STRING.declared_path(), None);
     }
 
     #[test]

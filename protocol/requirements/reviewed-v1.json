@@ -5293,8 +5293,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -5341,8 +5343,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -5389,8 +5393,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -6235,8 +6241,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -6283,8 +6291,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -8712,8 +8722,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -12595,8 +12607,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -15913,8 +15927,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -15984,8 +16000,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -17711,8 +17729,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -17782,8 +17802,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -17924,8 +17946,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -20730,8 +20754,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {

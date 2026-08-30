@@ -78,6 +78,8 @@ pub struct OperationSite {
     pub result: TypeDescriptor,
     /// Required only for action sites.
     pub recovery: Option<RecoveryClass>,
+    /// Canonical action path, required only for action sites.
+    pub action: Option<CanonicalPath>,
     /// Authored source location retained by the source map.
     pub source: SourceSpan,
 }
@@ -89,9 +91,12 @@ impl OperationSite {
         kind: OperationSiteKind,
         result: TypeDescriptor,
         recovery: Option<RecoveryClass>,
+        action: Option<CanonicalPath>,
         source: SourceSpan,
     ) -> Result<Self, SiteContractError> {
-        if matches!(kind, OperationSiteKind::Action) != recovery.is_some() {
+        if matches!(kind, OperationSiteKind::Action) != (recovery.is_some() && action.is_some())
+            || recovery.is_some() != action.is_some()
+        {
             return Err(SiteContractError::RecoveryClassMismatch);
         }
         Ok(Self {
@@ -99,9 +104,23 @@ impl OperationSite {
             kind,
             result,
             recovery,
+            action,
             source,
         })
     }
+}
+
+/// One source action site contributing to a workflow's transitive action effects.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActionEffectContributor {
+    /// Canonical static identity of the contributing action invocation.
+    pub site: StaticSiteId,
+    /// Canonical invoked action path.
+    pub action: CanonicalPath,
+    /// Declared action recovery class.
+    pub recovery: RecoveryClass,
+    /// Authored action invocation location.
+    pub source: SourceSpan,
 }
 
 /// One direct task-control site.
@@ -111,7 +130,24 @@ pub struct TaskControlSite {
     pub id: StaticSiteId,
     /// Spawn, join, joinall, or detach classification.
     pub kind: TaskControlSiteKind,
+    /// Exact statically selected handle names in source or declaration order.
+    pub handles: Vec<Arc<str>>,
     /// Authored source location retained by the source map.
+    pub source: SourceSpan,
+}
+
+/// Canonical declaration inventory for one harness action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActionInventory {
+    /// Canonical action path.
+    pub path: CanonicalPath,
+    /// Canonical action signature including parameter names and recovery class.
+    pub signature: CanonicalSignature,
+    /// Declared recovery class.
+    pub recovery: RecoveryClass,
+    /// Exact declared result type, including implicit `Unit`.
+    pub result: TypeDescriptor,
+    /// Authored action declaration location.
     pub source: SourceSpan,
 }
 
@@ -124,6 +160,17 @@ pub struct OwnershipFact {
     pub state: TaskHandleState,
     /// Source location establishing the fact.
     pub source: SourceSpan,
+}
+
+/// Canonical package-entry types consumed by embedding validation and results.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntryInventory {
+    /// Canonical root entry workflow path.
+    pub path: CanonicalPath,
+    /// Optional single entry-input type.
+    pub parameter: Option<TypeDescriptor>,
+    /// Exact entry-result type, including implicit `Unit`.
+    pub result: TypeDescriptor,
 }
 
 /// Complete portable facts for one workflow before canonical lowering.
@@ -141,6 +188,8 @@ pub struct WorkflowFacts {
     pub operations: Vec<OperationSite>,
     /// Direct task-control sites in structural-site order.
     pub task_controls: Vec<TaskControlSite>,
+    /// Direct and transitively reachable action-effect origins in canonical site order.
+    pub action_contributors: Vec<ActionEffectContributor>,
 }
 
 impl WorkflowFacts {
@@ -152,10 +201,17 @@ impl WorkflowFacts {
         calls: Vec<CallEdge>,
         operations: Vec<OperationSite>,
         task_controls: Vec<TaskControlSite>,
+        action_contributors: Vec<ActionEffectContributor>,
     ) -> Result<Self, SiteContractError> {
         validate_sites(&path, calls.iter().map(|site| &site.site))?;
         validate_sites(&path, operations.iter().map(|site| &site.id))?;
         validate_sites(&path, task_controls.iter().map(|site| &site.id))?;
+        if action_contributors
+            .windows(2)
+            .any(|pair| pair[0].site >= pair[1].site)
+        {
+            return Err(SiteContractError::NoncanonicalSiteOrder);
+        }
         Ok(Self {
             path,
             signature,
@@ -163,6 +219,7 @@ impl WorkflowFacts {
             calls,
             operations,
             task_controls,
+            action_contributors,
         })
     }
 }

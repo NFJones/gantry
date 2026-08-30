@@ -32,8 +32,11 @@ evidence is recorded separately in `conformance/analyzer-symbols-v1.json`.
 That manifest covers only the clauses exercised through the public analyzer
 facade. Type and receiver evidence is recorded in
 `conformance/analyzer-types-v1.json`; it likewise covers only clauses exercised
-through the public analyzer facade. Ownership/effects, lowering, artifacts,
-and package validity remain owned by later analyzer issues.
+through the public analyzer facade. Ownership, effects, generated schemas, and
+workflow/action/entry inventories are recorded in
+`conformance/analyzer-workflows-v1.json`. Lowering, canonical IR/source-map
+construction, and complete package-validity evidence remain owned by later
+analyzer issues.
 
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while

@@ -5,7 +5,10 @@ use std::sync::Arc;
 use gantry_core::source::{
     FrontendResourceLimit, SourceCounters, SourceSpan, StructuredDiagnostic,
 };
-use gantry_ir::{CanonicalPath, TypeDescriptor};
+use gantry_ir::{
+    ActionInventory, CanonicalPath, EntryInventory, GeneratedSchemaObject, TypeDescriptor,
+    WorkflowFacts,
+};
 
 /// Dense deterministic identifier for one discovered source module.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -187,6 +190,10 @@ pub struct TypedPackage {
     pub(crate) status: AnalysisStatus,
     pub(crate) structure: PackageStructure,
     pub(crate) types: Vec<TypeFact>,
+    pub(crate) workflows: Vec<WorkflowFacts>,
+    pub(crate) actions: Vec<ActionInventory>,
+    pub(crate) entry: Option<EntryInventory>,
+    pub(crate) schemas: Option<GeneratedSchemaObject>,
     pub(crate) diagnostics: Vec<StructuredDiagnostic>,
     pub(crate) counters: SourceCounters,
 }
@@ -208,6 +215,30 @@ impl TypedPackage {
     #[must_use]
     pub fn types(&self) -> &[TypeFact] {
         &self.types
+    }
+
+    /// Returns workflow facts in canonical workflow-path order.
+    #[must_use]
+    pub fn workflows(&self) -> &[WorkflowFacts] {
+        &self.workflows
+    }
+
+    /// Returns action declarations in canonical action-path order.
+    #[must_use]
+    pub fn actions(&self) -> &[ActionInventory] {
+        &self.actions
+    }
+
+    /// Returns the canonical root entry inventory when one was resolved.
+    #[must_use]
+    pub const fn entry(&self) -> Option<&EntryInventory> {
+        self.entry.as_ref()
+    }
+
+    /// Returns the deduplicated bounded schemas for entry and operation boundaries.
+    #[must_use]
+    pub const fn schemas(&self) -> Option<&GeneratedSchemaObject> {
+        self.schemas.as_ref()
     }
 
     /// Returns all structural and type diagnostics in canonical machine order.
