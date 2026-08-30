@@ -46,6 +46,16 @@ paired `schemas/value-kernel-v1.schema.json` freezes that vector envelope, and
 `conformance/value-kernel-v1.json` maps the implemented portable subset to its
 profile-specific reviewed clauses without closing later runtime obligations.
 
+Persistent-value vectors in `goldens/persistent-values-v1.json` exercise
+immutable logical values, representation-independent equality, hashing and
+canonical bytes, atomic path-copy replacement, exact per-value limits,
+generated-schema validation, thread-safe sharing, and depth-safe copy and
+reclamation. The paired `schemas/persistent-values-v1.schema.json` freezes the
+vector envelope, while `conformance/persistent-values-v1.json` deliberately
+maps only the directly exercised automatic-storage clauses; runtime retention,
+transcript, journal, recovery, and host-exhaustion obligations remain with
+their owning issues.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

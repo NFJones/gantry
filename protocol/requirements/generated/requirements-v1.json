@@ -11733,26 +11733,34 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             }
           ]
@@ -11781,26 +11789,34 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing"
+              ],
               "rationale": null
             }
           ]

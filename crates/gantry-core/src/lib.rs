@@ -15,3 +15,4 @@ pub mod source;
 pub mod strict_json;
 pub mod timestamp;
 pub mod unicode;
+pub mod value;

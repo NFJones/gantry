@@ -12,7 +12,7 @@ mod validate;
 pub use gantry_analysis as analysis;
 pub use gantry_core::{
     canonical_json, event, identity, numeric, portable, profile, protocol, schema, source,
-    strict_json, timestamp, unicode,
+    strict_json, timestamp, unicode, value,
 };
 #[cfg(feature = "frontend")]
 pub use gantry_frontend as frontend;

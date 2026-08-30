@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "be63c58fbd7bbebe070138037bbfaa8a23bdd52c814ad0f32c2ffe7b7c30f880",
+    "sha256": "1519bce0402f740b3f572cb70e3d592f799c58747dc39acae6da56092e2f004d",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -141,6 +141,10 @@
     {
       "path": "crates/gantry-conformance/tests/ir_contracts.rs",
       "sha256": "30e1d75ce7ae5b19f6ca7e4d16adf0093f16a844d6f75e5e754003ddf7e4db15"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/persistent_values.rs",
+      "sha256": "2c37d483058371da75633e62839412cde721d310768f236c3ed7e8e60153c1b4"
     },
     {
       "path": "crates/gantry-conformance/tests/value_kernel.rs",
@@ -223,6 +227,10 @@
       "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
     },
     {
+      "path": "protocol/conformance/persistent-values-v1.json",
+      "sha256": "f27ca60d2e45f91ed4644283f1e8b70752af9362639ea1387e06e080ff6b636d"
+    },
+    {
       "path": "protocol/conformance/value-kernel-v1.json",
       "sha256": "df61e073ac06704806c1b27b8dff737d4e0d0061a9fc4fac09f436ca925e9b59"
     },
@@ -259,6 +267,10 @@
       "sha256": "c841e4e8121ee93867bd7b76dc6da2bc595a92981758271eaab85533a2320813"
     },
     {
+      "path": "protocol/goldens/persistent-values-v1.json",
+      "sha256": "27320708677ee79c3ee2833ba4b8794a3997f742f436a57b6b7c3785730e08f2"
+    },
+    {
       "path": "protocol/goldens/portable-contract-vectors-v1.json",
       "sha256": "f2e027e27c8d5e00ac8e761d1e8fb4de42bdac0d1d6da5c2c806b373826fda3b"
     },
@@ -288,11 +300,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "be63c58fbd7bbebe070138037bbfaa8a23bdd52c814ad0f32c2ffe7b7c30f880"
+      "sha256": "1519bce0402f740b3f572cb70e3d592f799c58747dc39acae6da56092e2f004d"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "1e227bc443be49a6e74befeee5e3d1a058eb6a412f965022860bf5be87914c79"
+      "sha256": "5a1eeee876266fca4e1c590eb5680642703f1ce94be5ccde5c53eed241165440"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -321,6 +333,10 @@
     {
       "path": "protocol/schemas/package-source-manifest-v1.schema.json",
       "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
+    },
+    {
+      "path": "protocol/schemas/persistent-values-v1.schema.json",
+      "sha256": "0fcfe43ebad46de60e96ab4d73ebc33df081dc60e28fb378d21facb542f61aed"
     },
     {
       "path": "protocol/schemas/portable-contracts-v1.schema.json",
@@ -389,6 +405,11 @@
       "id": "harness-self-tests",
       "kind": "negative-and-positive",
       "path": "crates/gantry-conformance/tests/harness.rs"
+    },
+    {
+      "id": "persistent-values",
+      "kind": "public-facade-and-reviewed-goldens",
+      "path": "crates/gantry-conformance/tests/persistent_values.rs"
     },
     {
       "id": "requirement-ledger",

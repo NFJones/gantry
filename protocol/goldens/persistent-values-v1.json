@@ -1,0 +1,14 @@
+{
+  "format": "gantry.persistent-values-vectors/v1",
+  "original_canonical": "{\"status\":{\"value\":{\"decision\":true,\"rationale\":\"ready\"},\"variant\":\"Ok\"},\"values\":[{\"flag\":false,\"label\":\"é\"},{\"flag\":false,\"label\":\"é\"}]}",
+  "original_sha256": "d2d836d3e5c1c8cc5ddc6309a28b41a4cf674e85cec57e3c11836414e3a949ff",
+  "updated_canonical": "{\"status\":{\"value\":{\"decision\":true,\"rationale\":\"ready\"},\"variant\":\"Ok\"},\"values\":[{\"flag\":true,\"label\":\"é\"},{\"flag\":false,\"label\":\"é\"}]}",
+  "updated_sha256": "b3b5cc397664e1f97f2fb1023c87d7b2ce82552dc63aeeba78acd7dbbb4b10c8",
+  "metrics": {
+    "nesting_depth": 4,
+    "nodes": 13,
+    "maximum_string_scalars": 5,
+    "maximum_list_items": 2
+  },
+  "deep_nesting": 8192
+}

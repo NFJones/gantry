@@ -19,11 +19,16 @@ impl CanonicalJson {
     /// Canonicalizes one admitted strict JSON tree without recursive host calls.
     pub fn from_document(document: &StrictJsonDocument) -> Result<Self, CanonicalJsonError> {
         let bytes = encode_document(document)?;
+        Ok(Self::from_encoded_bytes(bytes))
+    }
+
+    /// Retains already canonical bytes and computes their exact SHA-256 identity.
+    pub(crate) fn from_encoded_bytes(bytes: Vec<u8>) -> Self {
         let sha256 = Sha256::digest(&bytes).into();
-        Ok(Self {
+        Self {
             bytes: Arc::from(bytes),
             sha256,
-        })
+        }
     }
 
     /// Returns the complete RFC 8785 UTF-8 encoding.

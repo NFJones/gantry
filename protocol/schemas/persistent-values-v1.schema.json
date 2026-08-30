@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/persistent-values/v1/schema.json",
+  "title": "Gantry persistent-value conformance vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.persistent-values-vectors/v1" },
+    "original_canonical": { "type": "string" },
+    "original_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "updated_canonical": { "type": "string" },
+    "updated_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nesting_depth": { "type": "integer", "minimum": 1 },
+        "nodes": { "type": "integer", "minimum": 1 },
+        "maximum_string_scalars": { "type": "integer", "minimum": 0 },
+        "maximum_list_items": { "type": "integer", "minimum": 0 }
+      },
+      "required": [
+        "nesting_depth",
+        "nodes",
+        "maximum_string_scalars",
+        "maximum_list_items"
+      ]
+    },
+    "deep_nesting": { "type": "integer", "minimum": 1 }
+  },
+  "required": [
+    "format",
+    "original_canonical",
+    "original_sha256",
+    "updated_canonical",
+    "updated_sha256",
+    "metrics",
+    "deep_nesting"
+  ]
+}
