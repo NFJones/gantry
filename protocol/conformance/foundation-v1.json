@@ -166,6 +166,14 @@
       "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
     },
     {
+      "path": "protocol/goldens/diagnostic-machine-v1.json",
+      "sha256": "456fa349437d36d2d9f0c5ae310f1a539f9ba9c492b14a4449f2f84190704bab"
+    },
+    {
+      "path": "protocol/goldens/diagnostic-presentation-v1.json",
+      "sha256": "27b2a321347f99fe5376277a7af7323d6b8e0ec04fc4ee976ff7b834688c3351"
+    },
+    {
       "path": "protocol/goldens/embedding-contracts-v1.canonical.json",
       "sha256": "303e2b4865b40e63033359c8f2e0f09baaa499259461d67f3c730d2800860aa6"
     },
@@ -264,6 +272,11 @@
       "id": "canonical-protocol",
       "kind": "public-facade",
       "path": "crates/gantry-conformance/tests/canonical_protocol.rs"
+    },
+    {
+      "id": "diagnostic-presentation",
+      "kind": "public-facade-and-reviewed-goldens",
+      "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs"
     },
     {
       "id": "external-facade-matrix",

@@ -73,7 +73,7 @@ fn run_external_consumer(name: &str, features: &[&str], expected: [bool; 5]) {
         ""
     };
     let source = format!(
-        "fn main() {{\n    let actual = gantry::compiled_features();\n    assert_eq!([actual.frontend, actual.analyzer, actual.evaluator, actual.concurrent, actual.durable], {:?});\n    assert!(!gantry::advertises_any_profile());\n    let _ = gantry::PROFILE_DEFINITIONS.len();\n    let _ = gantry::host::embedding::EMBEDDING_OPERATIONS.len();\n{frontend_contract}}}\n",
+        "fn main() {{\n    let actual = gantry::compiled_features();\n    assert_eq!([actual.frontend, actual.analyzer, actual.evaluator, actual.concurrent, actual.durable], {:?});\n    assert!(!gantry::advertises_any_profile());\n    let _ = gantry::PROFILE_DEFINITIONS.len();\n    let _ = gantry::host::embedding::EMBEDDING_OPERATIONS.len();\n    let _ = gantry::diagnostic::DiagnosticRenderOptions::default();\n{frontend_contract}}}\n",
         expected,
     );
     assert!(fs::write(fixture.join("src/main.rs"), source).is_ok());

@@ -457,6 +457,8 @@ fn expected_artifacts() -> Vec<&'static str> {
         "protocol/catalogs/portable-contracts-v1.json",
         "protocol/catalogs/profiles-v1.json",
         "protocol/goldens/activity-observation-vectors-v1.json",
+        "protocol/goldens/diagnostic-machine-v1.json",
+        "protocol/goldens/diagnostic-presentation-v1.json",
         "protocol/goldens/embedding-contracts-v1.canonical.json",
         "protocol/goldens/embedding-envelope-negatives-v1.json",
         "protocol/goldens/package-service-vectors-v1.json",

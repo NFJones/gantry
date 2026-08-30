@@ -1,0 +1,10 @@
+{
+  "format": "gantry.diagnostic-presentation/v1",
+  "case": "bidi-source-disclosure",
+  "source": {
+    "path": "main.gnt",
+    "text": "α\nlet secret = ‮hidden;\n"
+  },
+  "hidden": "error[unexpected-token] syntax/syntax: ⁨unexpected <U+202E> token⁩\n  --> ⁨main.gnt:2:5-2:11⁩\n  expected: ⁨identifier<U+000A>name⁩\n",
+  "disclosed": "error[unexpected-token] syntax/syntax: ⁨unexpected <U+202E> token⁩\n  --> ⁨main.gnt:2:5-2:11⁩\n  | ⁨let secret = <U+202E>hidden;⁩\n  expected: ⁨identifier<U+000A>name⁩\n"
+}

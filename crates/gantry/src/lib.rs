@@ -4,6 +4,8 @@
 //! implementation layers are compiled, while profile advertisement remains
 //! empty until the corresponding conformance gate closes.
 
+pub mod diagnostic;
+
 pub use gantry_core::{event, identity, portable, profile, protocol, source, timestamp, unicode};
 #[cfg(feature = "frontend")]
 pub use gantry_frontend as frontend;

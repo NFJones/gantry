@@ -1,0 +1,19 @@
+{
+  "format": "gantry.diagnostic-machine/v1",
+  "case": "bidi-source-disclosure",
+  "diagnostic": {
+    "phase": "syntax",
+    "severity": "error",
+    "category": "syntax",
+    "code": "unexpected-token",
+    "message": "unexpected ‮ token",
+    "primary": {
+      "path": "main.gnt",
+      "start": 7,
+      "end": 13
+    },
+    "fields": {
+      "expected": "identifier\nname"
+    }
+  }
+}
