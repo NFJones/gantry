@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/canonical-ir/v1/schema.json",
+  "title": "Gantry canonical IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "canonical_ir": { "$ref": "#/$defs/version" },
+    "workflows": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/workflow" }
+    }
+  },
+  "required": ["canonical_ir", "workflows"],
+  "$defs": {
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "major": { "const": 1 },
+        "minor": { "const": 0 }
+      },
+      "required": ["major", "minor"]
+    },
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "position": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/decimal" }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/position" }
+        },
+        "form": {
+          "enum": [
+            "aggregate", "assignment", "attempt", "background-transfer", "branch",
+            "call", "cancellation-check", "join", "literal", "loop", "operation",
+            "projection", "return", "sequence", "session-scope", "spawn", "variable",
+            "with-scope"
+          ]
+        },
+        "position": { "$ref": "#/$defs/position" },
+        "type": { "type": "string", "minLength": 1 }
+      },
+      "required": ["children", "form", "position", "type"]
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "effects": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "prompt", "decide", "action(read_only)", "action(idempotent)",
+              "action(non_idempotent)", "spawn", "join", "background", "session", "attempt"
+            ]
+          }
+        },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+        "path": { "type": "string", "pattern": "^crate::.+$" },
+        "signature": { "type": "string", "minLength": 1 }
+      },
+      "required": ["effects", "nodes", "path", "signature"]
+    }
+  }
+}

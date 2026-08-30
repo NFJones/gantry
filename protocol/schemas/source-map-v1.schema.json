@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/source-map/v1/schema.json",
+  "title": "Gantry canonical source map v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "end": { "$ref": "#/$defs/decimal" },
+          "path": { "type": "string", "pattern": "^[^/].*\\.gnt$" },
+          "position": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/decimal" }
+          },
+          "start": { "$ref": "#/$defs/decimal" },
+          "workflow": { "type": "string", "pattern": "^crate::.+$" }
+        },
+        "required": ["end", "path", "position", "start", "workflow"]
+      }
+    },
+    "source_map": { "$ref": "#/$defs/version" }
+  },
+  "required": ["entries", "source_map"],
+  "$defs": {
+    "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "major": { "const": 1 },
+        "minor": { "const": 0 }
+      },
+      "required": ["major", "minor"]
+    }
+  }
+}

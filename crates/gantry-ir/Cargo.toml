@@ -1,5 +1,5 @@
 [package]
-name = "gantry-conformance"
+name = "gantry-ir"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,11 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-gantry = { workspace = true, features = ["analyzer"] }
-
-[dev-dependencies]
-serde.workspace = true
-serde_json.workspace = true
+gantry-core.workspace = true
 sha2.workspace = true
 
 [lints]

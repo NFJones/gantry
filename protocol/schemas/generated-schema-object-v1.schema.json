@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/generated-schema-object/v1/schema.json",
+  "title": "Gantry deduplicated generated schema object v1",
+  "type": "object",
+  "propertyNames": { "type": "string", "minLength": 1 },
+  "additionalProperties": { "type": "object" }
+}

@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "54aa0b73f1c08e366adae3b829b15e8cca5461c71b577c1f2655dc55c467d849",
+    "sha256": "ed627385d81227e838392f4d17d756a21a74d35250692211844db9535d04a8be",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -90,8 +90,8 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "b9d13481647ee5c25dd9015c77fe12593ade724507ff06629322dba7f2a5db3b",
-    "product_lockfile_sha256": "d2aa4b1cb36b05f3bd42f594d6dfc120b150aec6c3a0f35665d1602b579726fd",
+    "ledger_sha256": "a2bf70c129247e18370a8d320710a3aefec016bee66fdb1ee0c0779fb4ee7472",
+    "product_lockfile_sha256": "ba54ca0fb42b3fad98242f5a37464d98812423dbb00cffff9c2f2468c0015f17",
     "fuzz_lockfile_sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb",
     "decision_count": 7,
     "selected_count": 6,
@@ -104,11 +104,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "d2aa4b1cb36b05f3bd42f594d6dfc120b150aec6c3a0f35665d1602b579726fd"
+      "sha256": "ba54ca0fb42b3fad98242f5a37464d98812423dbb00cffff9c2f2468c0015f17"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "86c5064344287621be70b2f2cc13c8f1f0f6a5654db5fffc645601ec0ef64c07"
+      "sha256": "f6d9a1be8348284244300555abb2c61af3ea6206452702ed71d17cc887813405"
     },
     {
       "path": "Justfile",
@@ -117,6 +117,10 @@
     {
       "path": "SPEC.md",
       "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/ir_contracts.rs",
+      "sha256": "596a8119bc03e3e01e6b1eb634022162627f4773ffd1e4a599b622d2d315657e"
     },
     {
       "path": "crates/gantry-core/src/generated/portable.rs",
@@ -135,6 +139,14 @@
       "sha256": "766e50b8838c08f6ae6a76b63bbf1d2236c2a6187565a43303e1ec9aaf49c7bc"
     },
     {
+      "path": "crates/gantry-ir/Cargo.toml",
+      "sha256": "eab9ca7257ea90cf9533d21a74755be2b2c1ca857f2aa62a7d374e5f14832da3"
+    },
+    {
+      "path": "crates/gantry-ir/src/generated/contracts.rs",
+      "sha256": "9681a74c1c0f65bf9f90cca9b4a16f61f9e08cca14b0a68717874aed75de6b60"
+    },
+    {
       "path": "deny.toml",
       "sha256": "8c44ff148d4b5c3f16bf80b58903d7f0d14c92fe6f699390e32cee39dfc3a306"
     },
@@ -144,7 +156,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "b9d13481647ee5c25dd9015c77fe12593ade724507ff06629322dba7f2a5db3b"
+      "sha256": "a2bf70c129247e18370a8d320710a3aefec016bee66fdb1ee0c0779fb4ee7472"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -155,12 +167,20 @@
       "sha256": "4d53dbd1dcc8ad22e98193a4a52ce30b65d54ca43269d6326c0c738c1e5d7ef3"
     },
     {
+      "path": "protocol/catalogs/ir-contracts-v1.json",
+      "sha256": "40a0162dfb85c97691035e6791d781c1da7b704486dbfa29f9358ff34ba65274"
+    },
+    {
       "path": "protocol/catalogs/portable-contracts-v1.json",
       "sha256": "3a29b112eb5d67c66eb72fb95fca87e72679040e7ae7d375e5cb2da9ddc6d789"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
       "sha256": "fc9f75a1d396c7a23942ae1218d03b69c66a0e34489fe6bec4f5ad310a4a2b94"
+    },
+    {
+      "path": "protocol/conformance/analyzer-ir-v1.json",
+      "sha256": "1f3996c212dbd3c86a565d10e20d051ca3efbfc30b1477a13f54ad4850cca97c"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -181,6 +201,14 @@
     {
       "path": "protocol/goldens/embedding-envelope-negatives-v1.json",
       "sha256": "6b770fd92aaaab9b60e54af6a4d881a86e9bf033874b189de9f102d2902425c8"
+    },
+    {
+      "path": "protocol/goldens/ir-artifact-vectors-v1.json",
+      "sha256": "550e9949e9ef7be922bd25d36362efda28ee8e49acc425ef5c4881bc8bbfdf20"
+    },
+    {
+      "path": "protocol/goldens/ir-contracts-v1.canonical.json",
+      "sha256": "2e970a1c8fc4b3fd01e09f9fe3cfd157d7c1e4d7f9dd483ede9fa78f11cf3819"
     },
     {
       "path": "protocol/goldens/package-service-vectors-v1.json",
@@ -212,11 +240,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "54aa0b73f1c08e366adae3b829b15e8cca5461c71b577c1f2655dc55c467d849"
+      "sha256": "ed627385d81227e838392f4d17d756a21a74d35250692211844db9535d04a8be"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "a36e4e5b54725915c5829794c3a708b9304507c6b277640044fad6a8fbd82db7"
+      "sha256": "e93b368f894c6f5d337bd4e1dbc31568c631cb47bc4eee20b34b2eaa8536c8a6"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -227,12 +255,24 @@
       "sha256": "24821293533841149e962b77c41c5aab9ebdea09401662180fd9a20ed409d9b1"
     },
     {
+      "path": "protocol/schemas/canonical-ir-v1.schema.json",
+      "sha256": "131f16ac7cd6ba95bf5f0e32a6ea5bd682ef4b758a82f9a0861545a2998b468e"
+    },
+    {
       "path": "protocol/schemas/embedding-contracts-v1.schema.json",
       "sha256": "ffcd20287b26366ba06ee2cd9a461e9b375581986746587c7193f89e340545aa"
     },
     {
+      "path": "protocol/schemas/generated-schema-object-v1.schema.json",
+      "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
+    },
+    {
       "path": "protocol/schemas/package-services-v1.schema.json",
       "sha256": "f3477f288c65ac8583322c5ff05b02ed30baab0f560797c380c39b49c1153036"
+    },
+    {
+      "path": "protocol/schemas/package-source-manifest-v1.schema.json",
+      "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
     },
     {
       "path": "protocol/schemas/portable-contracts-v1.schema.json",
@@ -241,6 +281,10 @@
     {
       "path": "protocol/schemas/profile-catalog-v1.schema.json",
       "sha256": "53dd2e1994ec3cfcc64965289d7f44cbf8f1e63e7e01861d048c7760e59e83a7"
+    },
+    {
+      "path": "protocol/schemas/source-map-v1.schema.json",
+      "sha256": "9ee63df1fcd9c19cf6cfc6fa06873706db085c918572ebca73528d6f2dfc5e35"
     },
     {
       "path": "protocol/schemas/source-substrate-v1.schema.json",

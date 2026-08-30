@@ -20,6 +20,13 @@ checked-in outputs match their canonical inputs without modifying the tree.
 Every protocol change requires explicit version, schema, golden, generated
 binding, and publication-impact review.
 
+Analyzer/runtime contract inputs live in `catalogs/ir-contracts-v1.json`.
+Its canonical catalog golden and generated Rust binding freeze the closed IR
+vocabularies. The four artifact schemas and `goldens/ir-artifact-vectors-v1.json`
+separately freeze canonical IR, source-map, package-source-manifest, and
+generated-schema-object encodings; `conformance/analyzer-ir-v1.json` records
+only the analyzer clauses covered by the public contract suite.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

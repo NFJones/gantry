@@ -9876,8 +9876,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract"
+              ],
               "rationale": null
             },
             {
@@ -9924,8 +9926,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract"
+              ],
               "rationale": null
             },
             {
@@ -12347,8 +12351,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract"
+              ],
               "rationale": null
             },
             {

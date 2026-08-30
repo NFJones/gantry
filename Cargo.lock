@@ -102,6 +102,7 @@ dependencies = [
  "gantry-core",
  "gantry-frontend",
  "gantry-host",
+ "gantry-ir",
  "gantry-observe",
 ]
 
@@ -143,6 +144,14 @@ name = "gantry-host"
 version = "0.1.0"
 dependencies = [
  "gantry-core",
+]
+
+[[package]]
+name = "gantry-ir"
+version = "0.1.0"
+dependencies = [
+ "gantry-core",
+ "sha2",
 ]
 
 [[package]]
