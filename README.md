@@ -1,57 +1,109 @@
 # Gantry
 
-Gantry is a Rust-inspired, agent-control language for coordinating
-model-backed agents in Mezzanine. It makes integration operations, routing,
-and control flow explicit, reviewable parts of a program.
+Gantry is a Rust-inspired language for orchestrating model-backed agents and
+typed host capabilities. It makes the work that crosses an integration
+boundary explicit, so an agent workflow can be read, reviewed, validated, and
+run with clear control-flow and recovery semantics.
 
-The language is specified for portable behavior across validation, execution,
-observation, cancellation, and resume. The current implementation is an
-early, profile-scoped implementation rather than a complete Gantry runtime.
+A Gantry program uses ordinary typed expressions for deterministic work and
+three visible operations for integration-backed work:
 
-## Current status
+- `prompt` asks a selected agent to produce a value that satisfies a declared
+  type.
+- `decide` asks an agent for a structured judgment that can guide control
+  flow.
+- `action` invokes a typed capability supplied by the embedding harness.
 
-Gantry implements and advertises the **frontend profile** for source language
-1.0 at this [`SPEC.md`](SPEC.md) revision:
+Packages also provide typed structs, enums, options, results, modules,
+workflows, pattern routing, loops, sessions, and structured parallel work.
+`spawn` creates a child task; every task is visibly consumed with `join`,
+`joinall()`, or `detach`.
 
-`78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22`
+## Example
 
-The frontend discovers packages, performs lexical and syntactic validation,
-emits structured diagnostics and parse events, and exposes both the Rust
-`ValidatePackage` API and the `gantry check` command. It does not yet
-advertise the analyzer, evaluator, concurrent-evaluator, durable-runtime, or
-embedding profiles.
+This complete package researches a topic through a harness action, asks a
+research agent to draft a brief, and lets an editor revise it when a model
+judgment calls for revision:
 
-## Quick start
+```rust
+struct Brief {
+    title: String,
+    summary: String,
+}
 
-Gantry is a Rust 2024 workspace and requires Rust 1.91 or newer. Run the
-syntax checker against a package directory (the current directory by default):
+agents { researcher, editor }
+default agent = researcher;
+
+action read_only search(topic: String) -> List<String>;
+
+fn main(topic: String) -> Brief {
+    let sources: List<String> = action search(topic);
+    let brief: Brief = prompt "Write a concise brief about ${topic}."
+        using { sources }
+        -> Brief;
+
+    if decide "Does this brief need editorial revision?" using { brief } {
+        return with editor {
+            prompt "Revise this brief for clarity." using { brief } -> Brief
+        };
+    }
+
+    brief
+}
+```
+
+The `action`, `prompt`, and `decide` sites are the only integration requests.
+Bindings, branching, and the `with editor` scope are deterministic Gantry
+orchestration. An embedding maps `researcher` and `editor` to its agents and
+implements the declared `search` capability.
+
+## Language model
+
+Gantry separates portable source semantics from embedding-specific policy.
+The language defines package validation, typed structured output, operation
+retries and failure handling, agent and session context, cancellation,
+concurrency, durability, resume, and observation. The embedding supplies
+models, tools, credentials, transports, resource policies, persistence, and
+event delivery.
+
+Conformance is profile-based: frontend, analyzer, evaluator,
+concurrent-evaluator, durable-runtime, and embedding profiles describe which
+parts of the contract an implementation or integration provides. This lets a
+deployment make precise capability claims without changing source meaning.
+
+## Getting started
+
+Create a package directory with a `main.gnt` entry point, then check it with
+the command-line tool:
 
 ```sh
 just run -- check [PACKAGE_ROOT]
 ```
 
-The command prints `syntax-valid` for a valid package; invalid source produces
+`PACKAGE_ROOT` defaults to the current directory. The command prints
+`syntax-valid` when its source is syntactically valid; otherwise it reports
 diagnostics, prints `syntax-invalid`, and exits with status 1.
 
-For local development:
+For repository development:
 
 ```sh
 just check
 just test
 ```
 
-Run `just help` for all workspace commands.
+Run `just help` to list all development commands.
 
-## Documentation and contributing
+## Documentation
 
-- [`SPEC.md`](SPEC.md) is the normative language and runtime contract. Source
-  authors can start with its introduction and Section 14 examples.
+- [`SPEC.md`](SPEC.md) is the normative Gantry language, execution, and
+  embedding contract. Start with Sections 1.1 and 1.2, then use Section 14 for
+  focused authoring examples.
 - [`docs/`](docs/README.md) indexes language, user, and contributor
   documentation.
-- [`AGENTS.md`](AGENTS.md) defines the repository workflow, validation, and
-  contribution requirements.
-- [`protocol/`](protocol/README.md) contains canonical protocol inputs,
-  schemas, generated bindings, and conformance evidence.
+- [`AGENTS.md`](AGENTS.md) describes repository workflow and contribution
+  requirements.
+- [`protocol/`](protocol/README.md) contains versioned protocol inputs,
+  schemas, generated bindings, and conformance material.
 
 ## License
 
