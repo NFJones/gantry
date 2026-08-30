@@ -13,6 +13,15 @@ use crate::token::TokenKind;
 pub struct NodeId(pub(crate) usize);
 
 impl NodeId {
+    /// Constructs an identifier for an existing arena index.
+    ///
+    /// Callers must still resolve the result through [`SyntaxTree::node`]; an
+    /// out-of-range index is not admitted by the tree.
+    #[must_use]
+    pub const fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+
     /// Returns the zero-based arena index.
     #[must_use]
     pub const fn index(self) -> usize {

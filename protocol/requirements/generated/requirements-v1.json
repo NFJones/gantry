@@ -9002,8 +9002,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+              ],
               "rationale": null
             },
             {
@@ -9073,8 +9075,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+              ],
               "rationale": null
             },
             {
@@ -9220,8 +9224,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+              ],
               "rationale": null
             },
             {
@@ -9294,8 +9300,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+              ],
               "rationale": null
             },
             {
@@ -9513,8 +9521,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+              ],
               "rationale": null
             },
             {
@@ -9587,8 +9597,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+              ],
               "rationale": null
             },
             {
@@ -9805,8 +9817,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+              ],
               "rationale": null
             },
             {
@@ -21831,8 +21845,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+              ],
               "rationale": null
             },
             {
@@ -22603,8 +22619,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+              ],
               "rationale": null
             },
             {

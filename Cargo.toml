@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/gantry",
+    "crates/gantry-analysis",
     "crates/gantry-cli",
     "crates/gantry-conformance",
     "crates/gantry-core",
@@ -21,6 +22,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 gantry = { path = "crates/gantry", version = "=0.1.0", default-features = false }
+gantry-analysis = { path = "crates/gantry-analysis", version = "=0.1.0" }
 gantry-core = { path = "crates/gantry-core", version = "=0.1.0" }
 gantry-frontend = { path = "crates/gantry-frontend", version = "=0.1.0" }
 gantry-host = { path = "crates/gantry-host", version = "=0.1.0" }

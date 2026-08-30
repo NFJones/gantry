@@ -99,11 +99,21 @@ dependencies = [
 name = "gantry"
 version = "0.1.0"
 dependencies = [
+ "gantry-analysis",
  "gantry-core",
  "gantry-frontend",
  "gantry-host",
  "gantry-ir",
  "gantry-observe",
+]
+
+[[package]]
+name = "gantry-analysis"
+version = "0.1.0"
+dependencies = [
+ "gantry-core",
+ "gantry-frontend",
+ "gantry-ir",
 ]
 
 [[package]]

@@ -14,6 +14,7 @@ use cargo_metadata::MetadataCommand;
 
 const EXPECTED_PACKAGES: &[&str] = &[
     "gantry",
+    "gantry-analysis",
     "gantry-cli",
     "gantry-conformance",
     "gantry-core",
@@ -25,6 +26,7 @@ const EXPECTED_PACKAGES: &[&str] = &[
 ];
 
 const ALLOWED_EDGES: &[(&str, &str)] = &[
+    ("gantry", "gantry-analysis"),
     ("gantry", "gantry-core"),
     ("gantry", "gantry-frontend"),
     ("gantry", "gantry-host"),
@@ -32,6 +34,9 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry", "gantry-observe"),
     ("gantry-cli", "gantry"),
     ("gantry-conformance", "gantry"),
+    ("gantry-analysis", "gantry-core"),
+    ("gantry-analysis", "gantry-frontend"),
+    ("gantry-analysis", "gantry-ir"),
     ("gantry-frontend", "gantry-core"),
     ("gantry-host", "gantry-core"),
     ("gantry-ir", "gantry-core"),
@@ -174,7 +179,10 @@ fn validate_facade_features(metadata: &cargo_metadata::Metadata) -> Result<(), S
             "frontend",
             BTreeSet::from(["dep:gantry-frontend", "dep:gantry-observe"]),
         ),
-        ("analyzer", BTreeSet::from(["dep:gantry-ir", "frontend"])),
+        (
+            "analyzer",
+            BTreeSet::from(["dep:gantry-analysis", "dep:gantry-ir", "frontend"]),
+        ),
         ("evaluator", BTreeSet::from(["analyzer"])),
         ("concurrent", BTreeSet::from(["evaluator"])),
         ("durable", BTreeSet::from(["evaluator"])),
@@ -253,12 +261,18 @@ mod tests {
                 "gantry",
                 false,
                 &[
+                    "gantry-analysis",
                     "gantry-core",
                     "gantry-frontend",
                     "gantry-host",
                     "gantry-ir",
                     "gantry-observe",
                 ],
+            ),
+            package(
+                "gantry-analysis",
+                true,
+                &["gantry-core", "gantry-frontend", "gantry-ir"],
             ),
             package("gantry-cli", true, &["gantry"]),
             package("gantry-conformance", true, &["gantry"]),

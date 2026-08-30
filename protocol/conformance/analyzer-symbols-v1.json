@@ -1,0 +1,52 @@
+{
+  "format": "gantry.analyzer-symbol-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-AN-002",
+  "entries": [
+    {
+      "requirement": "GNT-13.2",
+      "clause": "clause-003",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+    },
+    {
+      "requirement": "GNT-13.3",
+      "clause": "clause-003",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+    },
+    {
+      "requirement": "GNT-4.11",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+    },
+    {
+      "requirement": "GNT-4.12",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+    },
+    {
+      "requirement": "GNT-4.15",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+    },
+    {
+      "requirement": "GNT-4.4",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+    },
+    {
+      "requirement": "GNT-4.5",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+    },
+    {
+      "requirement": "GNT-4.7",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+    },
+    {
+      "requirement": "GNT-4.8",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+    }
+  ]
+}

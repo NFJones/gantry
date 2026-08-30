@@ -16,8 +16,8 @@ mod token;
 pub use ast::{NodeId, SyntaxForm, SyntaxNode, SyntaxTree};
 pub use lexer::{LexContext, LexError, Lexer};
 pub use package::{
-    CompletedSyntaxPhase, PackageSyntaxError, PackageSyntaxStatus, ParsedSource,
-    validate_package_syntax,
+    CompletedSyntaxPhase, ModuleResolutionIssue, ModuleResolutionIssueKind, PackageSyntaxError,
+    PackageSyntaxStatus, ParsedSource, validate_package_syntax,
 };
 pub use parser::{ParseError, ParseOutcome, Parser};
 pub use prompt::{InterpolationIsland, PromptDelimiter, PromptTemplate};

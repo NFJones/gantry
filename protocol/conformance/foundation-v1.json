@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "ed627385d81227e838392f4d17d756a21a74d35250692211844db9535d04a8be",
+    "sha256": "46a7f7b299e3a2f5371a225c0829f8f4865a4fc083d342c93f5286e656a1dd78",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -90,8 +90,8 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "a2bf70c129247e18370a8d320710a3aefec016bee66fdb1ee0c0779fb4ee7472",
-    "product_lockfile_sha256": "ba54ca0fb42b3fad98242f5a37464d98812423dbb00cffff9c2f2468c0015f17",
+    "ledger_sha256": "02e4b802a088e981a03f685fef9007625c5990d34dad49c235f897c166161776",
+    "product_lockfile_sha256": "260e9d1455af9a0eb54a7ee9423b580b5f4ad483218144dad40cf64461000cb4",
     "fuzz_lockfile_sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb",
     "decision_count": 7,
     "selected_count": 6,
@@ -104,11 +104,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "ba54ca0fb42b3fad98242f5a37464d98812423dbb00cffff9c2f2468c0015f17"
+      "sha256": "260e9d1455af9a0eb54a7ee9423b580b5f4ad483218144dad40cf64461000cb4"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "f6d9a1be8348284244300555abb2c61af3ea6206452702ed71d17cc887813405"
+      "sha256": "91d22c81148453312d7c1ba86ea6c886206ef5e235aed711bc688db7ac38f16f"
     },
     {
       "path": "Justfile",
@@ -117,6 +117,14 @@
     {
       "path": "SPEC.md",
       "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    },
+    {
+      "path": "crates/gantry-analysis/Cargo.toml",
+      "sha256": "628b588606eb10b58caeaefdf158487afe0ac2a6534392115d5185ea42cc187e"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_symbols.rs",
+      "sha256": "57901ba73cc380e776ca0dafb7da141da9d40161ad3b4499e758958a65417ba9"
     },
     {
       "path": "crates/gantry-conformance/tests/ir_contracts.rs",
@@ -156,7 +164,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "a2bf70c129247e18370a8d320710a3aefec016bee66fdb1ee0c0779fb4ee7472"
+      "sha256": "02e4b802a088e981a03f685fef9007625c5990d34dad49c235f897c166161776"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -181,6 +189,10 @@
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
       "sha256": "1f3996c212dbd3c86a565d10e20d051ca3efbfc30b1477a13f54ad4850cca97c"
+    },
+    {
+      "path": "protocol/conformance/analyzer-symbols-v1.json",
+      "sha256": "f0b94629a72f8870762f34b3a90b31852f36e466be6a75170aaee64605a6eb5a"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -240,11 +252,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "ed627385d81227e838392f4d17d756a21a74d35250692211844db9535d04a8be"
+      "sha256": "46a7f7b299e3a2f5371a225c0829f8f4865a4fc083d342c93f5286e656a1dd78"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "e93b368f894c6f5d337bd4e1dbc31568c631cb47bc4eee20b34b2eaa8536c8a6"
+      "sha256": "3638edd67c1883e2be895f6b71509dd0f150cbef2793edf42a32515a4dfdc0f6"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

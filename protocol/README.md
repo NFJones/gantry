@@ -27,6 +27,12 @@ separately freeze canonical IR, source-map, package-source-manifest, and
 generated-schema-object encodings; `conformance/analyzer-ir-v1.json` records
 only the analyzer clauses covered by the public contract suite.
 
+Module-graph, symbol, import-resolution, no-shadowing, and Unicode-security
+evidence is recorded separately in `conformance/analyzer-symbols-v1.json`.
+That manifest covers only the clauses exercised through the public analyzer
+facade; typing, ownership/effects, lowering, artifacts, and package validity
+remain owned by later analyzer issues.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

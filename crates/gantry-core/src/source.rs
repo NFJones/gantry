@@ -905,6 +905,72 @@ pub struct DiagnosticCodeDefinition {
 /// Initial Gantry source-substrate diagnostic code registry.
 pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
     DiagnosticCodeDefinition {
+        code: "ambiguous-module-resolution",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "Both permitted file-module candidates exist, so neither is selected.",
+    },
+    DiagnosticCodeDefinition {
+        code: "default-agent-outside-root",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "A default agent declaration occurs outside the package root module.",
+    },
+    DiagnosticCodeDefinition {
+        code: "duplicate-default-agent",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "The package contains more than one default agent declaration.",
+    },
+    DiagnosticCodeDefinition {
+        code: "duplicate-item",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "One module declares the same ordinary item name more than once.",
+    },
+    DiagnosticCodeDefinition {
+        code: "duplicate-member",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "One receiver declares a duplicate field or inherent method name.",
+    },
+    DiagnosticCodeDefinition {
+        code: "duplicate-module-resolution",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "More than one declaration resolves to the same canonical module path.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-confusable-collision",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "Distinct identifier spellings share one Unicode 16 confusable skeleton.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-not-nfc",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "An identifier spelling is not already Unicode 16 NFC.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-script-warning",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "An identifier is outside one Recommended single-script set.",
+    },
+    DiagnosticCodeDefinition {
+        code: "identifier-security",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::IdentifierSecurity,
+        meaning: "An identifier contains a Unicode scalar excluded by Gantry security rules.",
+    },
+    DiagnosticCodeDefinition {
+        code: "import-name-collision",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "An imported final name collides with another visible item or import.",
+    },
+    DiagnosticCodeDefinition {
         code: "invalid-block-prompt",
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,
@@ -971,6 +1037,30 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A prompt interpolation closes nested delimiters out of order.",
     },
     DiagnosticCodeDefinition {
+        code: "missing-module-source",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "A module declaration has no discovered source or inline body.",
+    },
+    DiagnosticCodeDefinition {
+        code: "missing-parent-module",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "A discovered module has no containing module in the canonical graph.",
+    },
+    DiagnosticCodeDefinition {
+        code: "module-cycle",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "The canonical module graph contains a parent cycle.",
+    },
+    DiagnosticCodeDefinition {
+        code: "shadowed-name",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "A lexical declaration duplicates or shadows a visible name.",
+    },
+    DiagnosticCodeDefinition {
         code: "unclosed-interpolation",
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,
@@ -987,6 +1077,24 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Syntax,
         category: DiagnosticCategory::Syntax,
         meaning: "A source token does not satisfy the Gantry surface grammar.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unresolved-agent",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "An agent selection does not name a package-wide declared agent.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unresolved-import",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "A use declaration does not resolve to one importable package item.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unresolved-reference",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::NameResolution,
+        meaning: "A required package-item path does not resolve uniquely.",
     },
     DiagnosticCodeDefinition {
         code: "unterminated-block-comment",

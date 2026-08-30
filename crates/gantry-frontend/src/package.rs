@@ -62,6 +62,55 @@ impl ParsedSource {
     }
 }
 
+/// Analyzer-owned outcome from resolving one syntactically valid file-module declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModuleResolutionIssue {
+    directory: Arc<str>,
+    name: Arc<str>,
+    span: gantry_core::source::SourceSpan,
+    kind: ModuleResolutionIssueKind,
+}
+
+impl ModuleResolutionIssue {
+    /// Returns the declaring module directory relative to the package root.
+    #[must_use]
+    pub fn directory(&self) -> &str {
+        &self.directory
+    }
+
+    /// Returns the exact NFC module name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the authored module-name span.
+    #[must_use]
+    pub const fn span(&self) -> &gantry_core::source::SourceSpan {
+        &self.span
+    }
+
+    /// Returns the deterministic resolution outcome.
+    #[must_use]
+    pub const fn kind(&self) -> &ModuleResolutionIssueKind {
+        &self.kind
+    }
+}
+
+/// Closed analyzer-owned file-module resolution failures.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ModuleResolutionIssueKind {
+    /// Neither permitted module source candidate exists.
+    Missing,
+    /// Both permitted candidates exist, so neither is selected.
+    Ambiguous {
+        /// Flat `name.gnt` candidate.
+        flat: PackagePath,
+        /// Nested `name/mod.gnt` candidate.
+        nested: PackagePath,
+    },
+}
+
 /// Completed syntax-validation phase before occurrence metadata is allocated.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompletedSyntaxPhase {
@@ -69,6 +118,7 @@ pub struct CompletedSyntaxPhase {
     diagnostics: Vec<StructuredDiagnostic>,
     snapshot: SourceSnapshot,
     parsed_sources: Vec<ParsedSource>,
+    module_resolution_issues: Vec<ModuleResolutionIssue>,
     event_draft: EventDraft,
 }
 
@@ -95,6 +145,12 @@ impl CompletedSyntaxPhase {
     #[must_use]
     pub fn parsed_sources(&self) -> &[ParsedSource] {
         &self.parsed_sources
+    }
+
+    /// Returns analyzer-owned missing and ambiguous module-resolution facts.
+    #[must_use]
+    pub fn module_resolution_issues(&self) -> &[ModuleResolutionIssue] {
+        &self.module_resolution_issues
     }
 
     /// Returns the canonical physical-layer parse event draft.
@@ -191,6 +247,7 @@ pub fn validate_package_syntax(
     let mut pending = VecDeque::from([root]);
     let mut seen_requests = BTreeSet::new();
     let mut parsed_sources = Vec::new();
+    let mut module_resolution_issues = Vec::new();
     let mut diagnostics = Vec::new();
 
     while let Some(source) = pending.pop_front() {
@@ -228,9 +285,29 @@ pub fn validate_package_syntax(
             let read_limits = loader
                 .next_source_read_limits()
                 .map_err(|error| package_source_error(error, &diagnostics))?;
-            let resolution = provider
-                .resolve_module_bounded(&declaring, &request.name, read_limits)
-                .map_err(|error| package_source_error(error, &diagnostics))?;
+            let resolution =
+                match provider.resolve_module_bounded(&declaring, &request.name, read_limits) {
+                    Ok(resolution) => resolution,
+                    Err(SourceProviderError::NotFound) => {
+                        module_resolution_issues.push(ModuleResolutionIssue {
+                            directory: Arc::from(request.directory),
+                            name: Arc::from(request.name),
+                            span: request.span,
+                            kind: ModuleResolutionIssueKind::Missing,
+                        });
+                        continue;
+                    }
+                    Err(SourceProviderError::AmbiguousModule { flat, nested }) => {
+                        module_resolution_issues.push(ModuleResolutionIssue {
+                            directory: Arc::from(request.directory),
+                            name: Arc::from(request.name),
+                            span: request.span,
+                            kind: ModuleResolutionIssueKind::Ambiguous { flat, nested },
+                        });
+                        continue;
+                    }
+                    Err(error) => return Err(package_source_error(error, &diagnostics)),
+                };
             let child = loader
                 .add_resolution(resolution)
                 .map_err(|error| package_source_error(error, &diagnostics))?;
@@ -252,6 +329,7 @@ pub fn validate_package_syntax(
         diagnostics,
         snapshot: loader.finish(),
         parsed_sources,
+        module_resolution_issues,
         event_draft,
     })
 }
@@ -276,6 +354,7 @@ fn package_source_error(
 struct ModuleRequest {
     directory: String,
     name: String,
+    span: gantry_core::source::SourceSpan,
 }
 
 fn file_module_requests(
@@ -298,12 +377,14 @@ fn file_module_requests(
         if !matches!(node.form(), SyntaxForm::ModuleDeclaration) {
             continue;
         }
-        let name = node
+        let (name, span) = node
             .children()
             .iter()
             .filter_map(|child| tree.node(*child))
             .find_map(|child| match child.form() {
-                SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.to_string()),
+                SyntaxForm::Token(TokenKind::Identifier(value)) => {
+                    Some((value.to_string(), child.span().clone()))
+                }
                 _ => None,
             })
             .ok_or(PackageSyntaxError::Invariant)?;
@@ -318,7 +399,11 @@ fn file_module_requests(
                 )
             });
         if file_module {
-            requests.push(ModuleRequest { directory, name });
+            requests.push(ModuleRequest {
+                directory,
+                name,
+                span,
+            });
             continue;
         }
         let nested_directory = join_directory(&directory, &name);
