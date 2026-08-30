@@ -41,7 +41,10 @@ Public `AnalyzePackage` sequencing, parse/analysis activity events, optional
 delivery barriers, source judgments, bounded artifact exposure, and the
 external facade boundary are recorded in
 `conformance/analyzer-package-v1.json`.
-The complete package-validity argument remains owned by later analyzer issues.
+The profile-scoped written argument and bounded six-obligation model are bound
+by `conformance/analyzer-validity-v1.json`, with reviewed replay inputs in
+`goldens/analyzer-validity-model-v1.json`. The model states its assumptions and
+bounds explicitly and is not presented as an exhaustive proof over all source.
 
 Portable value-kernel vectors in `goldens/value-kernel-v1.json` exercise the
 Gantry-owned strict JSON decoder, exact numeric normalization and primitives,

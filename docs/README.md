@@ -22,3 +22,7 @@ The revised v1 contract makes integration behavior source-explicit:
 Section 14 of `SPEC.md` contains the canonical authoring examples and common
 error corrections. Repository implementation status remains documented in the
 top-level `README.md`.
+
+The analyzer profile's written static argument, explicit assumptions, bounded
+model, and counterexample-replay links are documented in
+[`analyzer-package-validity.md`](analyzer-package-validity.md).

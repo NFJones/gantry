@@ -1,0 +1,62 @@
+{
+  "format": "gantry.analyzer-validity-model/v1",
+  "maximum_depth": 6,
+  "explored_state_count": 64,
+  "expected_conforming_states": 1,
+  "obligations": [
+    "module-resolution-security",
+    "types-patterns-completion-schemas",
+    "linear-task-ownership",
+    "effects-and-purity",
+    "canonical-lowering",
+    "bounded-artifact-admission"
+  ],
+  "assumptions": [
+    "The package snapshot is immutable, completely selected, and syntax-valid.",
+    "Protocol versions and the specification digest are the reviewed Gantry v1 values.",
+    "The Boolean model abstracts finite implementation judgments and is not an enumeration of all source programs."
+  ],
+  "counterexamples": [
+    {
+      "id": "artifact-limit",
+      "source": "fn main() {}",
+      "outcome": "operational-failure",
+      "expected_code": "canonical-ir-byte-limit"
+    },
+    {
+      "id": "effects-purity",
+      "source": "pure fn main() { discard prompt \"x\" -> String; }",
+      "outcome": "source-invalid",
+      "expected_code": "impure-workflow"
+    },
+    {
+      "id": "linear-ownership",
+      "source": "fn main() { spawn task { return; } }",
+      "outcome": "source-invalid",
+      "expected_code": "unconsumed-task-handle"
+    },
+    {
+      "id": "module-resolution",
+      "source": "mod absent;\nfn main() {}",
+      "outcome": "source-invalid",
+      "expected_code": "missing-module-source"
+    },
+    {
+      "id": "name-resolution",
+      "source": "fn main() { missing_name; }",
+      "outcome": "source-invalid",
+      "expected_code": "unresolved-reference"
+    },
+    {
+      "id": "type-completion",
+      "source": "fn main(flag: Bool) -> Int { if flag { return 1; } }",
+      "outcome": "source-invalid",
+      "expected_code": "missing-result"
+    }
+  ],
+  "canonicalization": {
+    "compact": "fn main() { discard prompt \"x\" -> String; }",
+    "cosmetic": "// layout-only change\nfn main() {\n    discard prompt \"x\" -> String;\n}",
+    "semantic": "fn main() { discard prompt \"y\" -> String; }"
+  }
+}

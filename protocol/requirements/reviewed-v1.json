@@ -8524,7 +8524,10 @@
       "body_start_line": 2073,
       "body_end_line": 2092,
       "profiles": [
-        "durable-runtime"
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "evaluator"
       ],
       "roles": [
         "harness",
@@ -8536,7 +8539,10 @@
           "start_line": 2073,
           "end_line": 2092,
           "profiles": [
-            "durable-runtime"
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "evaluator"
           ],
           "roles": [
             "harness",
@@ -8544,7 +8550,27 @@
           ],
           "profile_reviews": [
             {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "planned",
+              "evidence": [],
+              "rationale": null
+            },
+            {
               "profile": "durable-runtime",
+              "state": "planned",
+              "evidence": [],
+              "rationale": null
+            },
+            {
+              "profile": "evaluator",
               "state": "planned",
               "evidence": [],
               "rationale": null

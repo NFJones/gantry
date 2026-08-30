@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "a1af168de27b1bf3caebbea04e3a0c76c6099495d2e432a62a43738722aa6f43",
+    "sha256": "3a30591a59c7fa9b76883e6811ee99bcc6c87ac3a213896ed8d2485967a68f9f",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -139,6 +139,10 @@
       "sha256": "4761c131cce94206147cb1b8ebdb5d5a4724c5d97df3277b5979df9668dbd3e2"
     },
     {
+      "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
+      "sha256": "c470903d30abdd0c9af5cdf5ee27c6c7751ced4ad8b0734266b658ce4c5beecf"
+    },
+    {
       "path": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",
       "sha256": "1c213d589191b4afa7f3a3498f4dd0acc3d23ad07060bdf2136f4cabd07aedb2"
     },
@@ -199,6 +203,10 @@
       "sha256": "8c44ff148d4b5c3f16bf80b58903d7f0d14c92fe6f699390e32cee39dfc3a306"
     },
     {
+      "path": "docs/analyzer-package-validity.md",
+      "sha256": "c04779d092f716b0d479208272974a469e87fdb6cbcf5c4b43e37ab73f139a33"
+    },
+    {
       "path": "fuzz/Cargo.lock",
       "sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb"
     },
@@ -247,6 +255,10 @@
       "sha256": "9c396303cf423f5cbba21f948ee3bb27c8445587a2753395053190249c61c9fa"
     },
     {
+      "path": "protocol/conformance/analyzer-validity-v1.json",
+      "sha256": "6b372e39358eee5f27f6d2e1fed90eceef0c15e8fe2bb704fbe22320e463bd5d"
+    },
+    {
       "path": "protocol/conformance/analyzer-workflows-v1.json",
       "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
     },
@@ -269,6 +281,10 @@
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
       "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
+    },
+    {
+      "path": "protocol/goldens/analyzer-validity-model-v1.json",
+      "sha256": "68bc4ed45e4f757c2fd87bedadb7d417209ac25487e2d0c27c40f627de3eba2e"
     },
     {
       "path": "protocol/goldens/diagnostic-machine-v1.json",
@@ -340,11 +356,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "a1af168de27b1bf3caebbea04e3a0c76c6099495d2e432a62a43738722aa6f43"
+      "sha256": "3a30591a59c7fa9b76883e6811ee99bcc6c87ac3a213896ed8d2485967a68f9f"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "2bf35854e81fa3f6515646c1dd46544b0fcddbb04ad3dfc6094009a9e268d630"
+      "sha256": "8706a08fece925f7d170827cbc79cda0da2e5b45726a4d4d9dabad97e198f947"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -433,6 +449,11 @@
       "id": "analyzer-package",
       "kind": "public-facade-and-reviewed-evidence",
       "path": "crates/gantry-conformance/tests/validate_package.rs"
+    },
+    {
+      "id": "analyzer-validity",
+      "kind": "bounded-model-and-written-argument",
+      "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs"
     },
     {
       "id": "canonical-protocol",

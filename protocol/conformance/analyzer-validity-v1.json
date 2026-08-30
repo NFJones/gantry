@@ -1,0 +1,22 @@
+{
+  "format": "gantry.analyzer-validity-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-AN-007",
+  "profile": "analyzer",
+  "argument": "docs/analyzer-package-validity.md",
+  "model": "protocol/goldens/analyzer-validity-model-v1.json",
+  "model_evidence": "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay",
+  "evidence_manifests": [
+    "protocol/conformance/analyzer-ir-v1.json",
+    "protocol/conformance/analyzer-lowering-v1.json",
+    "protocol/conformance/analyzer-package-v1.json",
+    "protocol/conformance/analyzer-symbols-v1.json",
+    "protocol/conformance/analyzer-types-v1.json",
+    "protocol/conformance/analyzer-workflows-v1.json"
+  ],
+  "exclusions": [
+    "The six-obligation Boolean search is bounded and is not an exhaustive proof over all Gantry source programs.",
+    "Evaluator transition preservation, scheduling, cancellation, accepted-result, recovery-prefix, and terminal-completion properties remain owned by later profile arguments.",
+    "Host allocation failure and non-unwind process loss are outside the portable analyzer model."
+  ]
+}
