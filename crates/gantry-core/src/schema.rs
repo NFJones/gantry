@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::canonical_json::{CanonicalJson, CanonicalJsonError};
 use crate::strict_json::{JsonError, JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 
 /// One deterministic generated-schema validation failure.
@@ -34,6 +35,19 @@ pub enum SchemaError {
     },
     /// Validation encountered a reference cycle that did not consume instance structure.
     ReferenceCycle,
+}
+
+/// Failure while validating and canonically normalizing one generated-schema value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NormalizationError {
+    /// The admitted instance violates its generated schema.
+    Validation(Vec<ValidationError>),
+    /// The generated schema could not be evaluated.
+    Schema(SchemaError),
+    /// The complete normalized value violates an effective JSON/value limit.
+    Json(JsonError),
+    /// The normalized exact-number tree cannot be represented canonically.
+    Canonical(CanonicalJsonError),
 }
 
 /// One admitted generated schema ready to validate strict JSON instances.
@@ -76,9 +90,295 @@ impl SchemaValidator {
         &self,
         instance: &StrictJsonDocument,
     ) -> Result<Vec<ValidationError>, SchemaError> {
-        let mut work = vec![Task::Check {
+        self.validate_node_from(instance, instance.root(), self.schema.root())
+    }
+
+    /// Validates and normalizes one strict JSON value into canonical Gantry JSON.
+    ///
+    /// Omitted optional object properties are materialized from their generated
+    /// schema default or as JSON `null`. Validation and normalization complete
+    /// before any bytes are returned.
+    pub fn normalize(
+        &self,
+        instance: &StrictJsonDocument,
+        limits: JsonLimits,
+    ) -> Result<CanonicalJson, NormalizationError> {
+        let errors = self
+            .validate(instance)
+            .map_err(NormalizationError::Schema)?;
+        if !errors.is_empty() {
+            return Err(NormalizationError::Validation(errors));
+        }
+        let bytes = self
+            .normalize_valid(instance)
+            .map_err(NormalizationError::Schema)?;
+        let normalized =
+            StrictJsonDocument::decode(bytes, limits).map_err(NormalizationError::Json)?;
+        CanonicalJson::from_document(&normalized).map_err(NormalizationError::Canonical)
+    }
+
+    fn normalize_valid(&self, instance: &StrictJsonDocument) -> Result<Vec<u8>, SchemaError> {
+        let mut output = Vec::new();
+        let mut work = vec![NormalizeTask::Instance {
             schema: self.schema.root(),
             instance: instance.root(),
+        }];
+        while let Some(task) = work.pop() {
+            match task {
+                NormalizeTask::Byte(byte) => output.push(byte),
+                NormalizeTask::Null => output.extend_from_slice(b"null"),
+                NormalizeTask::String(value) => push_json_string(&mut output, &value),
+                NormalizeTask::Raw { document, node } => {
+                    self.expand_raw(instance, document, node, &mut output, &mut work)?;
+                }
+                NormalizeTask::Instance {
+                    schema,
+                    instance: instance_id,
+                } => {
+                    let schema = self.normalization_schema(instance, instance_id, schema)?;
+                    let schema_object =
+                        object(&self.schema, schema).ok_or_else(|| SchemaError::InvalidSchema {
+                            location: Arc::from(""),
+                        })?;
+                    match instance
+                        .node(instance_id)
+                        .ok_or_else(|| SchemaError::InvalidSchema {
+                            location: Arc::from(""),
+                        })? {
+                        JsonNode::Array(items) => {
+                            let prefix = member(schema_object, "prefixItems")
+                                .map(|id| {
+                                    array(&self.schema, id).ok_or_else(|| {
+                                        SchemaError::InvalidSchema {
+                                            location: Arc::from("/prefixItems"),
+                                        }
+                                    })
+                                })
+                                .transpose()?
+                                .unwrap_or_default();
+                            let item_schema = member(schema_object, "items");
+                            output.push(b'[');
+                            work.push(NormalizeTask::Byte(b']'));
+                            let mut sequence = Vec::with_capacity(items.len().saturating_mul(2));
+                            for (index, item) in items.iter().copied().enumerate() {
+                                if index > 0 {
+                                    sequence.push(NormalizeTask::Byte(b','));
+                                }
+                                let child_schema =
+                                    prefix.get(index).copied().or(item_schema).ok_or_else(
+                                        || SchemaError::InvalidSchema {
+                                            location: Arc::from("/items"),
+                                        },
+                                    )?;
+                                sequence.push(NormalizeTask::Instance {
+                                    schema: child_schema,
+                                    instance: item,
+                                });
+                            }
+                            work.extend(sequence.into_iter().rev());
+                        }
+                        JsonNode::Object(values) => {
+                            let properties = member(schema_object, "properties")
+                                .map(|id| {
+                                    object(&self.schema, id).ok_or_else(|| {
+                                        SchemaError::InvalidSchema {
+                                            location: Arc::from("/properties"),
+                                        }
+                                    })
+                                })
+                                .transpose()?
+                                .unwrap_or_default();
+                            let required = member(schema_object, "required")
+                                .map(|id| schema_string_set(&self.schema, id, "", "required"))
+                                .transpose()?
+                                .unwrap_or_default();
+                            let present = values
+                                .iter()
+                                .map(|(name, id)| (name.as_ref(), *id))
+                                .collect::<BTreeMap<_, _>>();
+                            let property_names = properties
+                                .iter()
+                                .map(|(name, _)| name.as_ref())
+                                .collect::<BTreeSet<_>>();
+                            let mut fields = Vec::<(Arc<str>, NormalizeTask)>::new();
+                            for (name, property_schema) in properties {
+                                if let Some(value) = present.get(name.as_ref()) {
+                                    fields.push((
+                                        name.clone(),
+                                        NormalizeTask::Instance {
+                                            schema: *property_schema,
+                                            instance: *value,
+                                        },
+                                    ));
+                                } else if !required.contains(name) {
+                                    let value = object(&self.schema, *property_schema)
+                                        .and_then(|schema| member(schema, "default"))
+                                        .map_or(NormalizeTask::Null, |node| NormalizeTask::Raw {
+                                            document: NormalizeDocument::Schema,
+                                            node,
+                                        });
+                                    fields.push((name.clone(), value));
+                                }
+                            }
+                            for (name, value) in values {
+                                if !property_names.contains(name.as_ref()) {
+                                    fields.push((
+                                        name.clone(),
+                                        NormalizeTask::Raw {
+                                            document: NormalizeDocument::Instance,
+                                            node: *value,
+                                        },
+                                    ));
+                                }
+                            }
+                            output.push(b'{');
+                            work.push(NormalizeTask::Byte(b'}'));
+                            let mut sequence = Vec::with_capacity(fields.len().saturating_mul(4));
+                            for (index, (name, value)) in fields.into_iter().enumerate() {
+                                if index > 0 {
+                                    sequence.push(NormalizeTask::Byte(b','));
+                                }
+                                sequence.push(NormalizeTask::String(name));
+                                sequence.push(NormalizeTask::Byte(b':'));
+                                sequence.push(value);
+                            }
+                            work.extend(sequence.into_iter().rev());
+                        }
+                        _ => work.push(NormalizeTask::Raw {
+                            document: NormalizeDocument::Instance,
+                            node: instance_id,
+                        }),
+                    }
+                }
+            }
+        }
+        Ok(output)
+    }
+
+    fn normalization_schema(
+        &self,
+        instance: &StrictJsonDocument,
+        instance_id: JsonNodeId,
+        mut schema_id: JsonNodeId,
+    ) -> Result<JsonNodeId, SchemaError> {
+        for _ in 0..=self.schema.nodes().len() {
+            let schema =
+                object(&self.schema, schema_id).ok_or_else(|| SchemaError::InvalidSchema {
+                    location: Arc::from(""),
+                })?;
+            if let Some(reference_id) = member(schema, "$ref") {
+                let reference = string(&self.schema, reference_id).ok_or_else(|| {
+                    SchemaError::InvalidSchema {
+                        location: Arc::from("/$ref"),
+                    }
+                })?;
+                let key = reference
+                    .strip_prefix("#/$defs/")
+                    .and_then(decode_pointer_component)
+                    .ok_or_else(|| SchemaError::InvalidReference {
+                        reference: Arc::from(reference),
+                    })?;
+                schema_id = self.definitions.get(key.as_str()).copied().ok_or_else(|| {
+                    SchemaError::InvalidReference {
+                        reference: Arc::from(reference),
+                    }
+                })?;
+                continue;
+            }
+            let branches = ["anyOf", "oneOf"]
+                .into_iter()
+                .find_map(|keyword| member(schema, keyword));
+            let Some(branches) = branches else {
+                return Ok(schema_id);
+            };
+            let branches =
+                array(&self.schema, branches).ok_or_else(|| SchemaError::InvalidSchema {
+                    location: Arc::from(""),
+                })?;
+            let mut matching_branch = None;
+            for branch in branches.iter().copied() {
+                if self
+                    .validate_node_from(instance, instance_id, branch)?
+                    .is_empty()
+                {
+                    matching_branch = Some(branch);
+                    break;
+                }
+            }
+            schema_id = matching_branch.ok_or_else(|| SchemaError::InvalidSchema {
+                location: Arc::from(""),
+            })?;
+        }
+        Err(SchemaError::ReferenceCycle)
+    }
+
+    fn expand_raw(
+        &self,
+        instance: &StrictJsonDocument,
+        document: NormalizeDocument,
+        node: JsonNodeId,
+        output: &mut Vec<u8>,
+        work: &mut Vec<NormalizeTask>,
+    ) -> Result<(), SchemaError> {
+        let document_ref = match document {
+            NormalizeDocument::Instance => instance,
+            NormalizeDocument::Schema => &self.schema,
+        };
+        match document_ref
+            .node(node)
+            .ok_or_else(|| SchemaError::InvalidSchema {
+                location: Arc::from(""),
+            })? {
+            JsonNode::Null => output.extend_from_slice(b"null"),
+            JsonNode::Bool(true) => output.extend_from_slice(b"true"),
+            JsonNode::Bool(false) => output.extend_from_slice(b"false"),
+            JsonNode::Number(number) => output.extend_from_slice(number.lexeme().as_bytes()),
+            JsonNode::String(value) => push_json_string(output, value),
+            JsonNode::Array(items) => {
+                output.push(b'[');
+                work.push(NormalizeTask::Byte(b']'));
+                let mut sequence = Vec::with_capacity(items.len().saturating_mul(2));
+                for (index, item) in items.iter().copied().enumerate() {
+                    if index > 0 {
+                        sequence.push(NormalizeTask::Byte(b','));
+                    }
+                    sequence.push(NormalizeTask::Raw {
+                        document,
+                        node: item,
+                    });
+                }
+                work.extend(sequence.into_iter().rev());
+            }
+            JsonNode::Object(values) => {
+                output.push(b'{');
+                work.push(NormalizeTask::Byte(b'}'));
+                let mut sequence = Vec::with_capacity(values.len().saturating_mul(4));
+                for (index, (name, value)) in values.iter().enumerate() {
+                    if index > 0 {
+                        sequence.push(NormalizeTask::Byte(b','));
+                    }
+                    sequence.push(NormalizeTask::String(name.clone()));
+                    sequence.push(NormalizeTask::Byte(b':'));
+                    sequence.push(NormalizeTask::Raw {
+                        document,
+                        node: *value,
+                    });
+                }
+                work.extend(sequence.into_iter().rev());
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_node_from(
+        &self,
+        instance: &StrictJsonDocument,
+        instance_root: JsonNodeId,
+        schema_root: JsonNodeId,
+    ) -> Result<Vec<ValidationError>, SchemaError> {
+        let mut work = vec![Task::Check {
+            schema: schema_root,
+            instance: instance_root,
             instance_path: Arc::from(""),
             schema_path: Arc::from(""),
         }];
@@ -563,6 +863,26 @@ struct CheckSpec {
     schema_path: Arc<str>,
 }
 
+#[derive(Clone, Copy)]
+enum NormalizeDocument {
+    Instance,
+    Schema,
+}
+
+enum NormalizeTask {
+    Instance {
+        schema: JsonNodeId,
+        instance: JsonNodeId,
+    },
+    Raw {
+        document: NormalizeDocument,
+        node: JsonNodeId,
+    },
+    String(Arc<str>),
+    Byte(u8),
+    Null,
+}
+
 enum Task {
     Check {
         schema: JsonNodeId,
@@ -750,6 +1070,29 @@ fn decode_pointer_component(value: &str) -> Option<String> {
     Some(output)
 }
 
+fn push_json_string(output: &mut Vec<u8>, value: &str) {
+    output.push(b'"');
+    for scalar in value.chars() {
+        match scalar {
+            '"' => output.extend_from_slice(b"\\\""),
+            '\\' => output.extend_from_slice(b"\\\\"),
+            '\u{08}' => output.extend_from_slice(b"\\b"),
+            '\u{09}' => output.extend_from_slice(b"\\t"),
+            '\u{0a}' => output.extend_from_slice(b"\\n"),
+            '\u{0c}' => output.extend_from_slice(b"\\f"),
+            '\u{0d}' => output.extend_from_slice(b"\\r"),
+            value if value <= '\u{1f}' => {
+                output.extend_from_slice(format!("\\u{:04x}", value as u32).as_bytes());
+            }
+            value => {
+                let mut encoded = [0_u8; 4];
+                output.extend_from_slice(value.encode_utf8(&mut encoded).as_bytes());
+            }
+        }
+    }
+    output.push(b'"');
+}
+
 fn validation_error(
     instance_location: Arc<str>,
     schema_location: Arc<str>,
@@ -852,5 +1195,42 @@ mod tests {
                 .unwrap_or_else(|error| panic!("validation failed: {error:?}"))
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn normalization_materializes_nested_optional_defaults_and_nulls_atomically() {
+        let schema = br##"{
+            "$defs":{
+                "item":{
+                    "type":"object",
+                    "properties":{
+                        "count":{"type":"integer"},
+                        "empty":{"anyOf":[{"type":"null"},{"type":"boolean"}]},
+                        "note":{"anyOf":[{"type":"null"},{"type":"string"}],"default":"fallback"}
+                    },
+                    "required":["count"],
+                    "additionalProperties":false
+                }
+            },
+            "type":"array",
+            "items":{"$ref":"#/$defs/item"}
+        }"##;
+        let validator = SchemaValidator::compile(&schema[..], limits())
+            .unwrap_or_else(|error| panic!("schema failed: {error:?}"));
+        let instance = document(br#"[{"count":1e0},{"count":2,"note":null}]"#);
+        let normalized = validator
+            .normalize(&instance, limits())
+            .unwrap_or_else(|error| panic!("normalization failed: {error:?}"));
+
+        assert_eq!(
+            normalized.bytes(),
+            br#"[{"count":1,"empty":null,"note":"fallback"},{"count":2,"empty":null,"note":null}]"#
+        );
+
+        let invalid = document(br#"[{"count":"wrong"}]"#);
+        assert!(matches!(
+            validator.normalize(&invalid, limits()),
+            Err(super::NormalizationError::Validation(errors)) if !errors.is_empty()
+        ));
     }
 }

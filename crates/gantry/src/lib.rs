@@ -5,6 +5,8 @@
 //! only layers whose conformance gates have closed.
 
 pub mod diagnostic;
+#[cfg(feature = "evaluator")]
+mod start;
 #[cfg(feature = "frontend")]
 mod validate;
 
@@ -24,6 +26,12 @@ pub use gantry_observe as observe;
 #[cfg(feature = "evaluator")]
 pub use gantry_runtime as runtime;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
+#[cfg(feature = "evaluator")]
+pub use start::{
+    RootSessionProvenance, RootSessionSpecification, RootSessionState, StartExecutionAccepted,
+    StartExecutionCoordinator, StartExecutionFailure, StartExecutionRequest, StartExecutionResult,
+    ValidatedEntryInput,
+};
 #[cfg(feature = "analyzer")]
 pub use validate::{
     AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,

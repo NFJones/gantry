@@ -378,6 +378,26 @@ impl<'a> ValidatePackageCoordinator<'a> {
         })
     }
 
+    #[cfg(feature = "evaluator")]
+    pub(crate) async fn deliver_completed_events(
+        &self,
+        events: &[EventEnvelope],
+        plan: Option<&SinkPlan>,
+    ) -> Result<Option<Vec<ActivityDeliveryResult>>, AnalyzePackageError> {
+        let Some(plan) = plan else {
+            return Ok(None);
+        };
+        let mut deliveries = Vec::with_capacity(events.len());
+        for event in events {
+            deliveries.push(
+                self.deliver_completed_event(event.clone(), plan)
+                    .await
+                    .map_err(AnalyzePackageError::from)?,
+            );
+        }
+        Ok(Some(deliveries))
+    }
+
     async fn complete_and_deliver(
         &self,
         activity_id: ProtocolIdentity,
@@ -388,29 +408,35 @@ impl<'a> ValidatePackageCoordinator<'a> {
             .complete(activity_id, draft)
             .await
             .map_err(PackageEventError::Event)?;
-        let delivery = if let Some(plan) = plan {
-            if plan.registrations().is_empty() {
-                Some(ActivityDeliveryResult {
-                    barrier: ActivityBarrier::Delivered,
-                    settlements: Vec::new(),
-                })
-            } else {
-                let runtime = self
-                    .delivery_runtime
-                    .ok_or(PackageEventError::MissingDeliveryRuntime)?;
-                let result = DeliveryKernel::new(self.allocator, self.identity_source, runtime)
-                    .deliver(event.clone(), &[], plan)
-                    .await
-                    .map_err(PackageEventError::Delivery)?;
-                if matches!(result.barrier, ActivityBarrier::RequiredExhausted { .. }) {
-                    return Err(PackageEventError::RequiredEventDelivery);
-                }
-                Some(result)
-            }
-        } else {
-            None
+        let delivery = match plan {
+            Some(plan) => Some(self.deliver_completed_event(event.clone(), plan).await?),
+            None => None,
         };
         Ok((event, delivery))
+    }
+
+    async fn deliver_completed_event(
+        &self,
+        event: EventEnvelope,
+        plan: &SinkPlan,
+    ) -> Result<ActivityDeliveryResult, PackageEventError> {
+        if plan.registrations().is_empty() {
+            return Ok(ActivityDeliveryResult {
+                barrier: ActivityBarrier::Delivered,
+                settlements: Vec::new(),
+            });
+        }
+        let runtime = self
+            .delivery_runtime
+            .ok_or(PackageEventError::MissingDeliveryRuntime)?;
+        let result = DeliveryKernel::new(self.allocator, self.identity_source, runtime)
+            .deliver(event, &[], plan)
+            .await
+            .map_err(PackageEventError::Delivery)?;
+        if matches!(result.barrier, ActivityBarrier::RequiredExhausted { .. }) {
+            return Err(PackageEventError::RequiredEventDelivery);
+        }
+        Ok(result)
     }
 }
 
