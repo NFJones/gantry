@@ -10,8 +10,9 @@ use gantry_core::portable::{IdentityKind, StartFailureCategory};
 use gantry_core::protocol::{ProtocolAdvertisement, ProtocolSelection};
 use gantry_core::schema::{NormalizationError, SchemaValidator, ValidationError};
 use gantry_core::strict_json::{JsonError, JsonLimits, JsonNode, StrictJsonDocument};
+pub use gantry_host::contracts::{ActionMappingRevision, AgentMappingRevision, MappingRevisions};
 use gantry_host::contracts::{
-    EmbeddingVersion, EnvelopeError, FreshIdentityAllocator, HostError, HostRequest,
+    EmbeddingVersion, EnvelopeError, FreshIdentityAllocator, HostError, HostRequest, HostResponse,
     IdentityAllocationError, IntegrationPreflight,
 };
 use gantry_host::embedding::EmbeddingOperation;
@@ -105,6 +106,8 @@ pub struct StartExecutionAccepted {
     pub entry_input: Option<ValidatedEntryInput>,
     /// Root session fixed for the accepted execution.
     pub root_session: RootSessionState,
+    /// Agent/action mapping revisions fixed by preflight for this run.
+    pub mapping_revisions: MappingRevisions,
 }
 
 /// Structured rejection before any execution identity becomes accepted.
@@ -213,9 +216,10 @@ impl<'a> StartExecutionCoordinator<'a> {
                 Ok(input) => input,
                 Err(failure) => return rejected(failure, Some(package_activity)),
             };
-        if let Err(failure) = self.resolve_mappings(analysis).await {
-            return rejected(failure, Some(package_activity));
-        }
+        let mapping_revisions = match self.resolve_mappings(analysis).await {
+            Ok(revisions) => revisions,
+            Err(failure) => return rejected(failure, Some(package_activity)),
+        };
         let supplied_root = if let Some(specification) = request.root_session {
             let root = match self.supplied_root_session(specification) {
                 Ok(root) => root,
@@ -278,6 +282,7 @@ impl<'a> StartExecutionCoordinator<'a> {
             package_activity: Box::new(package_activity),
             entry_input,
             root_session,
+            mapping_revisions,
         }))
     }
 
@@ -342,7 +347,10 @@ impl<'a> StartExecutionCoordinator<'a> {
         })
     }
 
-    async fn resolve_mappings(&self, analysis: &TypedPackage) -> Result<(), StartExecutionFailure> {
+    async fn resolve_mappings(
+        &self,
+        analysis: &TypedPackage,
+    ) -> Result<MappingRevisions, StartExecutionFailure> {
         let agents = analysis
             .structure()
             .agents()
@@ -355,15 +363,17 @@ impl<'a> StartExecutionCoordinator<'a> {
             .map(|action| action.signature.as_str())
             .collect::<Vec<_>>();
         if agents.is_empty() && actions.is_empty() {
-            return Ok(());
+            return Ok(MappingRevisions::default());
         }
         let payload = format!(
             "{{\"action_signatures\":{},\"agent_names\":{}}}",
             json_string_array(&actions),
             json_string_array(&agents),
         );
-        self.call_preflight(EmbeddingOperation::ResolveMappings, payload)
-            .await
+        let response = self
+            .call_preflight(EmbeddingOperation::ResolveMappings, payload)
+            .await?;
+        decode_mapping_revisions(&response, !agents.is_empty(), !actions.is_empty())
     }
 
     async fn resolve_root_session(
@@ -381,15 +391,17 @@ impl<'a> StartExecutionCoordinator<'a> {
             json_string(root.provenance.wire_name()),
             json_string(&root.id.to_string()),
         );
-        self.call_preflight(EmbeddingOperation::ResolveSessions, payload)
-            .await
+        let response = self
+            .call_preflight(EmbeddingOperation::ResolveSessions, payload)
+            .await?;
+        require_resolved(&response)
     }
 
     async fn call_preflight(
         &self,
         operation: EmbeddingOperation,
         payload: String,
-    ) -> Result<(), StartExecutionFailure> {
+    ) -> Result<HostResponse, StartExecutionFailure> {
         let request = HostRequest::new(
             EmbeddingVersion::V1,
             operation,
@@ -406,17 +418,97 @@ impl<'a> StartExecutionCoordinator<'a> {
             .await
             .map_err(boundary_failure)?
             .map_err(host_failure)?;
-        if response.version() != EmbeddingVersion::V1
-            || response.operation() != operation
-            || response.canonical_bytes() != b"{\"result\":\"resolved\"}"
-        {
+        if response.version() != EmbeddingVersion::V1 || response.operation() != operation {
             return Err(failure(
                 StartFailureCategory::IntegrationPreflight,
-                "unresolved-preflight-dependency",
+                "invalid-preflight-response",
             ));
         }
-        Ok(())
+        Ok(response)
     }
+}
+
+fn decode_mapping_revisions(
+    response: &HostResponse,
+    expects_agent: bool,
+    expects_action: bool,
+) -> Result<MappingRevisions, StartExecutionFailure> {
+    let bytes = response.canonical_bytes();
+    let length = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    let document = StrictJsonDocument::decode(
+        bytes,
+        JsonLimits {
+            maximum_bytes: length,
+            maximum_nesting_depth: 2,
+            maximum_nodes: 4,
+            maximum_string_scalars: length,
+            maximum_list_items: 1,
+        },
+    )
+    .map_err(|_| invalid_preflight_response())?;
+    let canonical =
+        CanonicalJson::from_document(&document).map_err(|_| invalid_preflight_response())?;
+    if canonical.bytes() != bytes {
+        return Err(invalid_preflight_response());
+    }
+    let JsonNode::Object(members) = document
+        .node(document.root())
+        .ok_or_else(invalid_preflight_response)?
+    else {
+        return Err(invalid_preflight_response());
+    };
+    let mut result = None;
+    let mut agent = None;
+    let mut action = None;
+    for (name, value) in members {
+        let JsonNode::String(value) = document
+            .node(*value)
+            .ok_or_else(invalid_preflight_response)?
+        else {
+            return Err(invalid_preflight_response());
+        };
+        match name.as_ref() {
+            "result" => result = Some(value.as_ref()),
+            "agent_mapping_revision" if expects_agent && !value.is_empty() => {
+                agent = Some(
+                    AgentMappingRevision::new(Arc::clone(value))
+                        .map_err(|_| invalid_preflight_response())?,
+                );
+            }
+            "action_mapping_revision" if expects_action && !value.is_empty() => {
+                action = Some(
+                    ActionMappingRevision::new(Arc::clone(value))
+                        .map_err(|_| invalid_preflight_response())?,
+                );
+            }
+            _ => return Err(invalid_preflight_response()),
+        }
+    }
+    if result != Some("resolved")
+        || expects_agent != agent.is_some()
+        || expects_action != action.is_some()
+    {
+        return Err(invalid_preflight_response());
+    }
+    Ok(MappingRevisions { agent, action })
+}
+
+fn require_resolved(response: &HostResponse) -> Result<(), StartExecutionFailure> {
+    if response.canonical_bytes() == b"{\"result\":\"resolved\"}" {
+        Ok(())
+    } else {
+        Err(failure(
+            StartFailureCategory::IntegrationPreflight,
+            "unresolved-preflight-dependency",
+        ))
+    }
+}
+
+fn invalid_preflight_response() -> StartExecutionFailure {
+    failure(
+        StartFailureCategory::IntegrationPreflight,
+        "invalid-preflight-response",
+    )
 }
 
 fn validate_entry_input(

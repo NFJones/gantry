@@ -117,6 +117,7 @@ struct RecordingPreflight {
     services: Arc<Services>,
     calls: Mutex<Vec<PreflightCall>>,
     failure: Option<&'static str>,
+    malformed_mapping: bool,
 }
 
 impl RecordingPreflight {
@@ -125,6 +126,7 @@ impl RecordingPreflight {
             services,
             calls: Mutex::new(Vec::new()),
             failure: None,
+            malformed_mapping: false,
         }
     }
 
@@ -133,6 +135,16 @@ impl RecordingPreflight {
             services,
             calls: Mutex::new(Vec::new()),
             failure: Some(code),
+            malformed_mapping: false,
+        }
+    }
+
+    fn malformed_mapping(services: Arc<Services>) -> Self {
+        Self {
+            services,
+            calls: Mutex::new(Vec::new()),
+            failure: None,
+            malformed_mapping: true,
         }
     }
 
@@ -156,16 +168,20 @@ impl IntegrationPreflight for RecordingPreflight {
             calls.push(call);
         }
         let failure = self.failure;
+        let malformed_mapping = self.malformed_mapping;
         Box::pin(async move {
             if let Some(code) = failure {
                 return Err(host_failure(code));
             }
-            HostResponse::new(
-                EmbeddingVersion::V1,
-                operation,
-                Arc::from(&b"{\"result\":\"resolved\"}"[..]),
-            )
-            .map_err(|_| host_failure("response-invariant"))
+            let bytes = if operation == EmbeddingOperation::ResolveMappings && malformed_mapping {
+                &b"{\"result\":\"resolved\"}"[..]
+            } else if operation == EmbeddingOperation::ResolveMappings {
+                &b"{\"action_mapping_revision\":\"actions-v1\",\"agent_mapping_revision\":\"agents-v1\",\"result\":\"resolved\"}"[..]
+            } else {
+                &b"{\"result\":\"resolved\"}"[..]
+            };
+            HostResponse::new(EmbeddingVersion::V1, operation, Arc::from(bytes))
+                .map_err(|_| host_failure("response-invariant"))
         })
     }
 }
@@ -274,6 +290,22 @@ fn main(value: Input) -> Input { value }
     );
     assert_eq!(accepted.execution_id.kind(), IdentityKind::Execution);
     assert_eq!(accepted.handle.execution_id(), accepted.execution_id);
+    assert_eq!(
+        accepted
+            .mapping_revisions
+            .agent
+            .as_ref()
+            .map(|revision| revision.as_str()),
+        Some("agents-v1")
+    );
+    assert_eq!(
+        accepted
+            .mapping_revisions
+            .action
+            .as_ref()
+            .map(|revision| revision.as_str()),
+        Some("actions-v1")
+    );
     assert!(
         lifecycle
             .query_execution(accepted.execution_id)
@@ -354,6 +386,44 @@ fn preflight_failure_allocates_no_root_or_execution_identity() {
     };
     assert_eq!(failure.category, StartFailureCategory::IntegrationPreflight);
     assert_eq!(&*failure.code, "mapping-provider-failure");
+    assert_eq!(preflight.calls().len(), 1);
+    assert_eq!(
+        services.calls(),
+        [
+            IdentityKind::Activity,
+            IdentityKind::Event,
+            IdentityKind::Event,
+        ]
+    );
+}
+
+#[test]
+fn malformed_mapping_revision_response_rejects_before_execution_identity() {
+    let root = TempDirectory::new(
+        b"agents { worker } default agent = worker; fn main() { with worker {} }",
+    );
+    let services = Arc::new(Services::default());
+    let configuration = configuration(Arc::clone(&services));
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock;
+    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let preflight = RecordingPreflight::malformed_mapping(Arc::clone(&services));
+    let coordinator = StartExecutionCoordinator::new(
+        &package,
+        &lifecycle,
+        &configuration,
+        &allocator,
+        &preflight,
+    );
+    let selection = selection();
+
+    let result = block_on(coordinator.start(request(&root.0, &selection, None, None)));
+    let StartExecutionResult::Rejected(failure) = result else {
+        panic!("malformed mapping response was accepted");
+    };
+    assert_eq!(failure.category, StartFailureCategory::IntegrationPreflight);
+    assert_eq!(&*failure.code, "invalid-preflight-response");
     assert_eq!(preflight.calls().len(), 1);
     assert_eq!(
         services.calls(),

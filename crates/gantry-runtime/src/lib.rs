@@ -6,8 +6,10 @@
 
 mod configuration;
 mod containment;
+mod hook_request;
 mod lifecycle;
 mod machine;
+mod operation;
 mod primitive;
 mod program;
 
@@ -18,6 +20,12 @@ pub use configuration::{
 pub use containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
     contain_gantry_future, contain_integration_future, drop_integration,
+};
+pub use hook_request::{
+    ActionOperationRequestV1, CapturedOperationRequestV1, HookRequestError, InterpolationInputV1,
+    ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationRequestHeaderV1,
+    PreparedHookDispatch, RootSessionProvenanceV1, TaskContextV1, TaskSessionContextV1,
+    TypedActionArgumentV1, ValidationErrorCategoryV1, ValidationErrorV1,
 };
 pub use lifecycle::{
     AcceptExecutionError, AdmissionKind, CancellationCausalIdentity, CancellationReason,
@@ -30,6 +38,9 @@ pub use lifecycle::{
 pub use machine::{
     Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
     MachineStatus, MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
+};
+pub use operation::{
+    OperationLifecycle, OperationLifecycleError, OperationLifecycleState, TaskHook, TaskHookError,
 };
 pub use primitive::{Comparison, Primitive};
 pub use program::{

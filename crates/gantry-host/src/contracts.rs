@@ -380,6 +380,64 @@ pub trait IntegrationPreflight {
     fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>>;
 }
 
+/// Opaque stable agent-mapping revision returned by integration preflight.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentMappingRevision(Arc<str>);
+
+impl AgentMappingRevision {
+    /// Validates one nonempty integration-owned revision identifier.
+    pub fn new(value: impl Into<Arc<str>>) -> Result<Self, MappingRevisionError> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err(MappingRevisionError::Empty);
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the exact integration-owned revision identifier.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Opaque stable action-mapping revision returned by integration preflight.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActionMappingRevision(Arc<str>);
+
+impl ActionMappingRevision {
+    /// Validates one nonempty integration-owned revision identifier.
+    pub fn new(value: impl Into<Arc<str>>) -> Result<Self, MappingRevisionError> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err(MappingRevisionError::Empty);
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the exact integration-owned revision identifier.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Complete run-scoped mapping revisions fixed before execution acceptance.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MappingRevisions {
+    /// Present exactly when the package declares at least one agent.
+    pub agent: Option<AgentMappingRevision>,
+    /// Present exactly when the package declares at least one action.
+    pub action: Option<ActionMappingRevision>,
+}
+
+/// Rejection of an invalid opaque mapping revision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MappingRevisionError {
+    /// Mapping revision identifiers are nonempty.
+    Empty,
+}
+
 /// Lazily creates task-owned operation hooks.
 pub trait HookFactory: Send + Sync {
     /// Creates one hook for a validated task context.

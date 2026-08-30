@@ -28,9 +28,9 @@ pub use gantry_runtime as runtime;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 #[cfg(feature = "evaluator")]
 pub use start::{
-    RootSessionProvenance, RootSessionSpecification, RootSessionState, StartExecutionAccepted,
-    StartExecutionCoordinator, StartExecutionFailure, StartExecutionRequest, StartExecutionResult,
-    ValidatedEntryInput,
+    ActionMappingRevision, AgentMappingRevision, MappingRevisions, RootSessionProvenance,
+    RootSessionSpecification, RootSessionState, StartExecutionAccepted, StartExecutionCoordinator,
+    StartExecutionFailure, StartExecutionRequest, StartExecutionResult, ValidatedEntryInput,
 };
 #[cfg(feature = "analyzer")]
 pub use validate::{
