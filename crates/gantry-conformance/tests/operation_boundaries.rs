@@ -9,9 +9,8 @@ use std::task::{Context, Poll, Waker};
 use gantry::canonical_json::CanonicalJson;
 use gantry::host::contracts::{
     ActionMappingRevision, AgentMappingRevision, CancellationSignal, CancellationToken,
-    DurationMicros, EmbeddingVersion, ExecutorAdapter, FreshIdentityAllocator, HookFactory,
-    HostError, HostFuture, HostRequest, HostResponse, IdentitySource, InclusiveJitterRange,
-    OperationHook,
+    DurationMicros, ExecutorAdapter, FreshIdentityAllocator, HookFactory, HookOutcomeV1, HostError,
+    HostFuture, HostRequest, IdentitySource, InclusiveJitterRange, OperationHook,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::identity::ProtocolIdentity;
@@ -25,9 +24,9 @@ use gantry::runtime::{
     Instruction, InstructionKind, InterpolationInputV1, InterpreterConfiguration,
     InterpreterLifecycle, Machine, MachineLabel, MachineLimits, MachineProgram, MachineStatus,
     MachineStep, ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationLifecycle,
-    OperationLifecycleError, OperationRequestHeaderV1, RequiredConfiguration,
-    RootSessionProvenanceV1, TaskContextV1, TaskHook, TaskHookError, TaskSessionContextV1,
-    TypedActionArgumentV1, Workflow,
+    OperationLifecycleError, OperationRequestHeaderV1, OperationRetryPolicyV1,
+    ProcessedHookOutcomeV1, RequiredConfiguration, RootSessionProvenanceV1, TaskContextV1,
+    TaskHook, TaskHookError, TaskSessionContextV1, TypedActionArgumentV1, Workflow,
 };
 use gantry::source::FrontendLimits;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -90,18 +89,11 @@ impl OperationHook for RecordingHook {
         &'a mut self,
         request: HostRequest,
         _: &'a dyn CancellationToken,
-    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
+    ) -> HostFuture<'a, Result<HookOutcomeV1, HostError>> {
         if let Ok(mut recorded) = self.requests.lock() {
             recorded.push(request.canonical_bytes().to_vec());
         }
-        Box::pin(async {
-            HostResponse::new(
-                EmbeddingVersion::V1,
-                EmbeddingOperation::DispatchOperation,
-                Arc::from(&b"{\"result\":\"completed\"}"[..]),
-            )
-            .map_err(|_| host_error("response-invariant"))
-        })
+        Box::pin(async { Ok(HookOutcomeV1::Completed(Arc::from(&b"null"[..]))) })
     }
 }
 
@@ -237,6 +229,16 @@ fn public_operation_lifecycle_is_lazy_serial_and_single_consumption() {
         factory.requests.lock().map_or(0, |requests| requests.len()),
         2
     );
+    let policy = OperationRetryPolicyV1::for_request(
+        operation.captured(),
+        configuration.retry_defaults(),
+        None,
+    )
+    .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+    assert!(matches!(
+        operation.process_outcome(policy, services.as_ref(), &cancellation),
+        Ok(ProcessedHookOutcomeV1::Accepted(_))
+    ));
     assert!(matches!(
         operation.accept(&mut machine, LogicalValue::unit()),
         Ok(MachineLabel::OperationResult { operation }) if operation == occurrence.identity
@@ -285,7 +287,18 @@ fn public_cancellation_after_outcome_prevents_source_consumption() {
             &[],
         )
         .unwrap_or_else(|error| panic!("preparation failed: {error:?}"));
-    assert!(block_on(operation.dispatch(&mut hook, &CancellationSignal::default())).is_ok());
+    let cancellation = CancellationSignal::default();
+    assert!(block_on(operation.dispatch(&mut hook, &cancellation)).is_ok());
+    let policy = OperationRetryPolicyV1::for_request(
+        operation.captured(),
+        configuration.retry_defaults(),
+        None,
+    )
+    .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+    assert!(matches!(
+        operation.process_outcome(policy, services.as_ref(), &cancellation),
+        Ok(ProcessedHookOutcomeV1::Accepted(_))
+    ));
     assert!(machine.cancel("caller").is_some());
     assert!(matches!(
         operation.accept(&mut machine, LogicalValue::unit()),

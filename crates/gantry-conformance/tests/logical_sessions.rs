@@ -9,8 +9,9 @@ use std::task::{Context, Poll, Waker};
 use gantry::canonical_json::CanonicalJson;
 use gantry::host::contracts::{
     AgentMappingRevision, CancellationSignal, CancellationToken, DurationMicros, EmbeddingVersion,
-    ExecutorAdapter, FreshIdentityAllocator, HookFactory, HostError, HostFuture, HostRequest,
-    HostResponse, IdentitySource, InclusiveJitterRange, IntegrationPreflight, OperationHook,
+    ExecutorAdapter, FreshIdentityAllocator, HookFactory, HookOutcomeV1, HostError, HostFuture,
+    HostRequest, HostResponse, IdentitySource, InclusiveJitterRange, IntegrationPreflight,
+    OperationHook,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::identity::ProtocolIdentity;
@@ -22,10 +23,11 @@ use gantry::runtime::{
     Instruction, InstructionKind, InterpreterConfiguration, InterpreterLifecycle,
     LogicalSessionRegistryV1, Machine, MachineLabel, MachineLimits, MachineProgram, MachineStatus,
     MachineStep, ModelOperationRequestV1, ModelSessionUseV1, OperationLifecycle,
-    OperationLifecycleError, OperationRequestHeaderV1, RequiredConfiguration,
-    RootSessionProvenanceV1, SessionCreationModeV1, SessionEstablisher, SessionEstablishmentError,
-    SessionEstablishmentV1, TaskContextV1, TaskHook, TaskHookSessionError, TaskSessionContextV1,
-    TranscriptError, TranscriptResultKindV1, TranscriptTurnV1, Workflow,
+    OperationLifecycleError, OperationRequestHeaderV1, OperationRetryPolicyV1,
+    ProcessedHookOutcomeV1, RequiredConfiguration, RootSessionProvenanceV1, SessionCreationModeV1,
+    SessionEstablisher, SessionEstablishmentError, SessionEstablishmentV1, TaskContextV1, TaskHook,
+    TaskHookSessionError, TaskSessionContextV1, TranscriptError, TranscriptResultKindV1,
+    TranscriptTurnV1, Workflow,
 };
 use gantry::source::FrontendLimits;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -114,19 +116,12 @@ impl OperationHook for OrderedHook {
         &'a mut self,
         request: HostRequest,
         _: &'a dyn CancellationToken,
-    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
+    ) -> HostFuture<'a, Result<HookOutcomeV1, HostError>> {
         assert_eq!(request.operation(), EmbeddingOperation::DispatchOperation);
         if let Ok(mut order) = self.order.lock() {
             order.push("dispatch-operation");
         }
-        Box::pin(async {
-            HostResponse::new(
-                EmbeddingVersion::V1,
-                EmbeddingOperation::DispatchOperation,
-                Arc::from(&b"{\"result\":\"completed\"}"[..]),
-            )
-            .map_err(|_| host_error("response-invariant"))
-        })
+        Box::pin(async { Ok(HookOutcomeV1::Completed(Arc::from(&b"\"ok\""[..]))) })
     }
 }
 
@@ -399,7 +394,18 @@ fn public_model_acceptance_appends_atomically_after_machine_acceptance() {
         task_context(execution, root),
     )
     .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
-    assert!(block_on(operation.dispatch(&mut hook, &CancellationSignal::default())).is_ok());
+    let cancellation = CancellationSignal::default();
+    assert!(block_on(operation.dispatch(&mut hook, &cancellation)).is_ok());
+    let policy = OperationRetryPolicyV1::for_request(
+        operation.captured(),
+        configuration.retry_defaults(),
+        None,
+    )
+    .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+    assert!(matches!(
+        operation.process_outcome(policy, services.as_ref(), &cancellation),
+        Ok(ProcessedHookOutcomeV1::Accepted(_))
+    ));
     let session = registry
         .get_mut(root)
         .unwrap_or_else(|| panic!("root session was absent"));

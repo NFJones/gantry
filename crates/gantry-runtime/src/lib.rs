@@ -10,6 +10,7 @@ mod hook_request;
 mod lifecycle;
 mod machine;
 mod operation;
+mod outcome;
 mod primitive;
 mod program;
 mod session;
@@ -41,8 +42,13 @@ pub use machine::{
     MachineStatus, MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
 };
 pub use operation::{
-    OperationLifecycle, OperationLifecycleError, OperationLifecycleState, TaskHook, TaskHookError,
-    TaskHookSessionError,
+    OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
+    OperationLifecycleState, TaskHook, TaskHookError, TaskHookSessionError,
+};
+pub use outcome::{
+    HookOutcomeProcessingError, OperationFailureV1, OperationRetryPolicyV1, OperationRetryWaitV1,
+    ProcessedHookOutcomeV1, RetryDelayOutcomeV1, RetryPolicyError, ValidatedHookOutputV1,
+    process_hook_outcome, wait_retry_delay,
 };
 pub use primitive::{Comparison, Primitive};
 pub use program::{

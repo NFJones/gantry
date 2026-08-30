@@ -4,19 +4,22 @@ use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::OperationStateKind;
-use gantry_core::value::LogicalValue;
+use gantry_core::value::{LogicalValue, ValueError};
 use gantry_host::contracts::{
-    CancellationToken, EmbeddingVersion, FreshIdentityAllocator, HookFactory, HostError,
-    HostRequest, HostResponse, IdentitySource, OperationHook,
+    CancellationSignal, CancellationToken, EmbeddingVersion, ExecutorAdapter,
+    FreshIdentityAllocator, HookFactory, HookOutcomeV1, HostError, HostRequest, IdentitySource,
+    OperationHook,
 };
 use gantry_host::embedding::EmbeddingOperation;
 
 use crate::{
-    AdapterPoison, BoundaryFailure, CapturedOperationRequestV1, HookRequestError,
-    InterpreterLifecycle, LogicalSessionV1, Machine, MachineLabel, ModelSessionUseV1,
-    OperationCompletionError, PreparedHookDispatch, SessionCreationModeV1, SessionEstablisher,
-    SessionEstablishmentError, SessionEstablishmentV1, TranscriptError, TranscriptResultKindV1,
-    TranscriptTurnV1, ValidationErrorV1, drop_integration,
+    AdapterPoison, BoundaryFailure, CapturedOperationRequestV1, HookOutcomeProcessingError,
+    HookRequestError, InterpreterLifecycle, LogicalSessionV1, Machine, MachineLabel,
+    ModelSessionUseV1, OperationCompletionError, OperationFailureV1, OperationRetryPolicyV1,
+    OperationRetryWaitV1, PreparedHookDispatch, ProcessedHookOutcomeV1, SessionCreationModeV1,
+    SessionEstablisher, SessionEstablishmentError, SessionEstablishmentV1, TranscriptError,
+    TranscriptResultKindV1, TranscriptTurnV1, ValidatedHookOutputV1, ValidationErrorV1,
+    drop_integration, process_hook_outcome, wait_retry_delay,
 };
 
 /// One task-owned hook boundary for one in-process execution or resume run.
@@ -44,8 +47,6 @@ enum HookState {
 pub enum TaskHookError {
     /// The supplied envelope has the wrong exact version or operation.
     InvalidRequest,
-    /// The integration returned a response for another version or operation.
-    InvalidResponse,
     /// Integration code returned a structured adapter failure.
     Host(HostError),
     /// Integration code panicked while being invoked, polled, or destroyed.
@@ -76,6 +77,11 @@ pub enum OperationLifecycleState {
         /// Physical dispatch that produced the outcome.
         dispatch_id: ProtocolIdentity,
     },
+    /// One recorded validation-repair delay precedes a fresh physical dispatch.
+    RetryWaiting {
+        /// Physical dispatch whose invalid output selected this retry.
+        dispatch_id: ProtocolIdentity,
+    },
     /// One normalized result became source-consumable exactly once.
     Accepted,
     /// The factory or hook boundary failed before result acceptance.
@@ -93,6 +99,7 @@ impl OperationLifecycleState {
             Self::Absent => OperationStateKind::Absent,
             Self::Prepared { .. } => OperationStateKind::Prepared,
             Self::Outcome { .. } => OperationStateKind::Outcome,
+            Self::RetryWaiting { .. } => OperationStateKind::RetryWaiting,
             Self::Accepted => OperationStateKind::Accepted,
             Self::Failed { .. } => OperationStateKind::Failed,
         }
@@ -106,6 +113,8 @@ pub enum OperationLifecycleError {
     Request(HookRequestError),
     /// Hook creation, invocation, response, or integration containment failed.
     Hook(TaskHookError),
+    /// Gantry could not validate or normalize an otherwise typed hook outcome.
+    Outcome(HookOutcomeProcessingError),
     /// The requested transition is not enabled from the current state.
     InvalidState {
         /// Current exact portable state.
@@ -115,6 +124,27 @@ pub enum OperationLifecycleError {
     Completion(OperationCompletionError),
     /// The complete proposed model transcript was invalid or exceeded a limit.
     Transcript(TranscriptError),
+    /// The supplied source value did not equal the validated normalized hook output.
+    InvalidAcceptedValue,
+    /// Construction of an explicit `attempt` result exceeded value invariants or limits.
+    AttemptValue(ValueError),
+    /// The retained failure domain is not catchable by `attempt`.
+    AttemptNotCatchable,
+    /// The retained attempted failure has already been consumed by the machine.
+    AttemptResultConsumed,
+}
+
+/// Retained terminal failure for one logical operation lifecycle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OperationLifecycleFailureV1 {
+    /// Hook construction or dispatch failed at the integration boundary.
+    Hook(TaskHookError),
+    /// A validated typed hook outcome selected an operation-local failure.
+    Operation(OperationFailureV1),
+    /// Gantry could not validate or normalize an otherwise typed hook outcome.
+    Outcome(HookOutcomeProcessingError),
+    /// Fresh retry dispatch preparation failed after its recorded delay elapsed.
+    Request(HookRequestError),
 }
 
 /// One logical operation from immutable capture through source-result acceptance.
@@ -125,15 +155,35 @@ pub struct OperationLifecycle {
 
 enum OperationRuntimeState {
     Absent,
-    Prepared(PreparedHookDispatch),
+    Prepared {
+        dispatch: PreparedHookDispatch,
+        validation_attempt: u64,
+        recovery_dispatch: u64,
+        retries_left: Option<u64>,
+        retry_policy: Option<OperationRetryPolicyV1>,
+    },
     Outcome {
         dispatch_id: ProtocolIdentity,
-        response: HostResponse,
+        outcome: HookOutcomeV1,
+        validation_attempt: u64,
+        recovery_dispatch: u64,
+        retries_left: Option<u64>,
+        retry_policy: Option<OperationRetryPolicyV1>,
+    },
+    Validated {
+        dispatch_id: ProtocolIdentity,
+        output: ValidatedHookOutputV1,
+    },
+    RetryWaiting {
+        dispatch_id: ProtocolIdentity,
+        wait: OperationRetryWaitV1,
+        retry_policy: OperationRetryPolicyV1,
     },
     Accepted,
     Failed {
         dispatch_id: Option<ProtocolIdentity>,
-        error: TaskHookError,
+        failure: OperationLifecycleFailureV1,
+        attempt_consumed: bool,
     },
 }
 
@@ -160,11 +210,17 @@ impl OperationLifecycle {
     pub fn state(&self) -> OperationLifecycleState {
         match &self.state {
             OperationRuntimeState::Absent => OperationLifecycleState::Absent,
-            OperationRuntimeState::Prepared(dispatch) => OperationLifecycleState::Prepared {
+            OperationRuntimeState::Prepared { dispatch, .. } => OperationLifecycleState::Prepared {
                 dispatch_id: dispatch.dispatch_id,
             },
-            OperationRuntimeState::Outcome { dispatch_id, .. } => {
+            OperationRuntimeState::Outcome { dispatch_id, .. }
+            | OperationRuntimeState::Validated { dispatch_id, .. } => {
                 OperationLifecycleState::Outcome {
+                    dispatch_id: *dispatch_id,
+                }
+            }
+            OperationRuntimeState::RetryWaiting { dispatch_id, .. } => {
+                OperationLifecycleState::RetryWaiting {
                     dispatch_id: *dispatch_id,
                 }
             }
@@ -175,11 +231,29 @@ impl OperationLifecycle {
         }
     }
 
-    /// Returns the exact returned hook response while validation is pending.
+    /// Returns the exact typed hook outcome while validation is pending.
     #[must_use]
-    pub fn outcome(&self) -> Option<&HostResponse> {
+    pub fn outcome(&self) -> Option<&HookOutcomeV1> {
         match &self.state {
-            OperationRuntimeState::Outcome { response, .. } => Some(response),
+            OperationRuntimeState::Outcome { outcome, .. } => Some(outcome),
+            _ => None,
+        }
+    }
+
+    /// Returns the normalized output after all ordered validation stages succeed.
+    #[must_use]
+    pub fn validated_output(&self) -> Option<&ValidatedHookOutputV1> {
+        match &self.state {
+            OperationRuntimeState::Validated { output, .. } => Some(output),
+            _ => None,
+        }
+    }
+
+    /// Returns the recorded validation-repair wait before redispatch.
+    #[must_use]
+    pub fn retry_wait(&self) -> Option<&OperationRetryWaitV1> {
+        match &self.state {
+            OperationRuntimeState::RetryWaiting { wait, .. } => Some(wait),
             _ => None,
         }
     }
@@ -188,7 +262,19 @@ impl OperationLifecycle {
     #[must_use]
     pub fn failure(&self) -> Option<&TaskHookError> {
         match &self.state {
-            OperationRuntimeState::Failed { error, .. } => Some(error),
+            OperationRuntimeState::Failed {
+                failure: OperationLifecycleFailureV1::Hook(error),
+                ..
+            } => Some(error),
+            _ => None,
+        }
+    }
+
+    /// Returns the complete retained terminal lifecycle failure.
+    #[must_use]
+    pub fn lifecycle_failure(&self) -> Option<&OperationLifecycleFailureV1> {
+        match &self.state {
+            OperationRuntimeState::Failed { failure, .. } => Some(failure),
             _ => None,
         }
     }
@@ -214,7 +300,13 @@ impl OperationLifecycle {
             )
             .map_err(OperationLifecycleError::Request)?;
         let dispatch_id = dispatch.dispatch_id;
-        self.state = OperationRuntimeState::Prepared(dispatch);
+        self.state = OperationRuntimeState::Prepared {
+            dispatch,
+            validation_attempt,
+            recovery_dispatch,
+            retries_left: None,
+            retry_policy: None,
+        };
         Ok(dispatch_id)
     }
 
@@ -223,18 +315,33 @@ impl OperationLifecycle {
         &mut self,
         hook: &mut TaskHook<'_>,
         cancellation: &dyn CancellationToken,
-    ) -> Result<&HostResponse, OperationLifecycleError> {
+    ) -> Result<&HookOutcomeV1, OperationLifecycleError> {
         self.require_state(OperationStateKind::Prepared)?;
-        let OperationRuntimeState::Prepared(prepared) = &self.state else {
+        let OperationRuntimeState::Prepared {
+            dispatch: prepared,
+            validation_attempt,
+            recovery_dispatch,
+            retries_left,
+            retry_policy,
+        } = &self.state
+        else {
             unreachable!("state check preserves prepared dispatch")
         };
         let dispatch_id = prepared.dispatch_id;
         let request = prepared.request.clone();
+        let validation_attempt = *validation_attempt;
+        let recovery_dispatch = *recovery_dispatch;
+        let retries_left = *retries_left;
+        let retry_policy = *retry_policy;
         match hook.dispatch(request, cancellation).await {
-            Ok(response) => {
+            Ok(outcome) => {
                 self.state = OperationRuntimeState::Outcome {
                     dispatch_id,
-                    response,
+                    outcome,
+                    validation_attempt,
+                    recovery_dispatch,
+                    retries_left,
+                    retry_policy,
                 };
                 self.outcome()
                     .ok_or_else(|| invalid_state(OperationStateKind::Outcome))
@@ -242,11 +349,150 @@ impl OperationLifecycle {
             Err(error) => {
                 self.state = OperationRuntimeState::Failed {
                     dispatch_id: Some(dispatch_id),
-                    error: error.clone(),
+                    failure: OperationLifecycleFailureV1::Hook(error.clone()),
+                    attempt_consumed: false,
                 };
                 Err(OperationLifecycleError::Hook(error))
             }
         }
+    }
+
+    /// Validates one retained typed outcome and selects acceptance, retry, or failure.
+    pub fn process_outcome(
+        &mut self,
+        policy: OperationRetryPolicyV1,
+        executor: &dyn ExecutorAdapter,
+        cancellation: &dyn CancellationToken,
+    ) -> Result<ProcessedHookOutcomeV1, OperationLifecycleError> {
+        self.require_state(OperationStateKind::Outcome)?;
+        let OperationRuntimeState::Outcome {
+            dispatch_id,
+            outcome,
+            validation_attempt,
+            recovery_dispatch,
+            retries_left,
+            retry_policy,
+        } = &self.state
+        else {
+            return Err(invalid_state(OperationStateKind::Outcome));
+        };
+        let dispatch_id = *dispatch_id;
+        let outcome = outcome.clone();
+        let validation_attempt = *validation_attempt;
+        let recovery_dispatch = *recovery_dispatch;
+        let policy = retry_policy.unwrap_or(policy);
+        let retries_left = retries_left.unwrap_or(policy.retry_limit);
+        let processed = match process_hook_outcome(
+            &self.captured,
+            &outcome,
+            policy,
+            validation_attempt,
+            recovery_dispatch,
+            retries_left,
+            executor,
+            cancellation.is_cancelled(),
+        ) {
+            Ok(processed) => processed,
+            Err(error) => {
+                self.state = OperationRuntimeState::Failed {
+                    dispatch_id: Some(dispatch_id),
+                    failure: OperationLifecycleFailureV1::Outcome(error.clone()),
+                    attempt_consumed: false,
+                };
+                return Err(OperationLifecycleError::Outcome(error));
+            }
+        };
+        self.state = match &processed {
+            ProcessedHookOutcomeV1::Accepted(output) => OperationRuntimeState::Validated {
+                dispatch_id,
+                output: output.clone(),
+            },
+            ProcessedHookOutcomeV1::Retry(wait) => OperationRuntimeState::RetryWaiting {
+                dispatch_id,
+                wait: wait.clone(),
+                retry_policy: policy,
+            },
+            ProcessedHookOutcomeV1::Failed(failure) => OperationRuntimeState::Failed {
+                dispatch_id: Some(dispatch_id),
+                failure: OperationLifecycleFailureV1::Operation(failure.clone()),
+                attempt_consumed: false,
+            },
+        };
+        Ok(processed)
+    }
+
+    /// Waits the recorded retry delay and prepares one fresh physical dispatch.
+    ///
+    /// `Ok(None)` means cancellation or executor failure became terminal while
+    /// waiting. The immutable captured semantic request is reused verbatim.
+    pub async fn prepare_after_retry_wait(
+        &mut self,
+        executor: &dyn ExecutorAdapter,
+        cancellation: &CancellationSignal,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+    ) -> Result<Option<ProtocolIdentity>, OperationLifecycleError> {
+        self.require_state(OperationStateKind::RetryWaiting)?;
+        let OperationRuntimeState::RetryWaiting {
+            dispatch_id,
+            wait,
+            retry_policy,
+        } = &self.state
+        else {
+            unreachable!("state check preserves retry wait")
+        };
+        let dispatch_id = *dispatch_id;
+        let wait = wait.clone();
+        let retry_policy = *retry_policy;
+        match wait_retry_delay(executor, wait.delay, cancellation).await {
+            crate::RetryDelayOutcomeV1::Completed => {}
+            crate::RetryDelayOutcomeV1::Cancelled => {
+                self.state = OperationRuntimeState::Failed {
+                    dispatch_id: Some(dispatch_id),
+                    failure: OperationLifecycleFailureV1::Operation(
+                        OperationFailureV1::TaskCancellation,
+                    ),
+                    attempt_consumed: false,
+                };
+                return Ok(None);
+            }
+            crate::RetryDelayOutcomeV1::Failed(error) => {
+                self.state = OperationRuntimeState::Failed {
+                    dispatch_id: Some(dispatch_id),
+                    failure: OperationLifecycleFailureV1::Operation(OperationFailureV1::Executor(
+                        error,
+                    )),
+                    attempt_consumed: false,
+                };
+                return Ok(None);
+            }
+        }
+        let dispatch = match self.captured.prepare_dispatch(
+            allocator,
+            identity_source,
+            wait.next_validation_attempt,
+            wait.recovery_dispatch,
+            &wait.errors,
+        ) {
+            Ok(dispatch) => dispatch,
+            Err(error) => {
+                self.state = OperationRuntimeState::Failed {
+                    dispatch_id: Some(dispatch_id),
+                    failure: OperationLifecycleFailureV1::Request(error.clone()),
+                    attempt_consumed: false,
+                };
+                return Err(OperationLifecycleError::Request(error));
+            }
+        };
+        let next_dispatch_id = dispatch.dispatch_id;
+        self.state = OperationRuntimeState::Prepared {
+            dispatch,
+            validation_attempt: wait.next_validation_attempt,
+            recovery_dispatch: wait.recovery_dispatch,
+            retries_left: Some(wait.retries_left),
+            retry_policy: Some(retry_policy),
+        };
+        Ok(Some(next_dispatch_id))
     }
 
     /// Makes one validated normalized result source-consumable in the machine.
@@ -255,12 +501,68 @@ impl OperationLifecycle {
         machine: &mut Machine,
         value: LogicalValue,
     ) -> Result<MachineLabel, OperationLifecycleError> {
-        self.require_state(OperationStateKind::Outcome)?;
+        self.require_validated_value(&value)?;
         let operation = self.captured.header().operation_id;
         let label = machine
             .complete_operation(operation, value)
             .map_err(OperationLifecycleError::Completion)?;
         self.state = OperationRuntimeState::Accepted;
+        Ok(label)
+    }
+
+    /// Wraps one validated successful operation as the `Ok` result of `attempt`.
+    pub fn accept_attempt(
+        &mut self,
+        machine: &mut Machine,
+        value: LogicalValue,
+    ) -> Result<MachineLabel, OperationLifecycleError> {
+        self.require_validated_value(&value)?;
+        let attempted = LogicalValue::ok(value, self.captured.header().value_limits)
+            .map_err(OperationLifecycleError::AttemptValue)?;
+        let operation = self.captured.header().operation_id;
+        let label = machine
+            .complete_operation(operation, attempted)
+            .map_err(OperationLifecycleError::Completion)?;
+        self.state = OperationRuntimeState::Accepted;
+        Ok(label)
+    }
+
+    /// Consumes one catchable terminal operation failure as `Err(OperationError)`.
+    ///
+    /// The lifecycle remains terminally failed for observability. The source
+    /// result can enter the matching machine operation at most once.
+    pub fn accept_attempt_failure(
+        &mut self,
+        machine: &mut Machine,
+    ) -> Result<MachineLabel, OperationLifecycleError> {
+        let OperationRuntimeState::Failed {
+            failure: OperationLifecycleFailureV1::Operation(failure),
+            attempt_consumed,
+            ..
+        } = &self.state
+        else {
+            return Err(OperationLifecycleError::AttemptNotCatchable);
+        };
+        if *attempt_consumed {
+            return Err(OperationLifecycleError::AttemptResultConsumed);
+        }
+        let operation = self.captured.header().operation_id;
+        let error = failure
+            .attempt_value(&operation.to_string(), self.captured.header().value_limits)
+            .map_err(OperationLifecycleError::AttemptValue)?
+            .ok_or(OperationLifecycleError::AttemptNotCatchable)?;
+        let attempted = LogicalValue::err(error, self.captured.header().value_limits)
+            .map_err(OperationLifecycleError::AttemptValue)?;
+        let label = machine
+            .complete_operation(operation, attempted)
+            .map_err(OperationLifecycleError::Completion)?;
+        let OperationRuntimeState::Failed {
+            attempt_consumed, ..
+        } = &mut self.state
+        else {
+            unreachable!("attempted failure remains terminal")
+        };
+        *attempt_consumed = true;
         Ok(label)
     }
 
@@ -276,7 +578,7 @@ impl OperationLifecycle {
         limits: gantry_core::value::ValueLimits,
         value: LogicalValue,
     ) -> Result<MachineLabel, OperationLifecycleError> {
-        self.require_state(OperationStateKind::Outcome)?;
+        self.require_validated_value(&value)?;
         validate_model_acceptance(self.captured(), session, turn, &value)
             .map_err(OperationLifecycleError::Transcript)?;
         let mut proposed = session.transcript.clone();
@@ -290,6 +592,44 @@ impl OperationLifecycle {
         session.transcript = proposed;
         self.state = OperationRuntimeState::Accepted;
         Ok(label)
+    }
+
+    /// Atomically appends one accepted model turn and returns `Ok(value)` from `attempt`.
+    pub fn accept_model_attempt(
+        &mut self,
+        machine: &mut Machine,
+        session: &mut LogicalSessionV1,
+        turn: &TranscriptTurnV1,
+        limits: gantry_core::value::ValueLimits,
+        value: LogicalValue,
+    ) -> Result<MachineLabel, OperationLifecycleError> {
+        self.require_validated_value(&value)?;
+        validate_model_acceptance(self.captured(), session, turn, &value)
+            .map_err(OperationLifecycleError::Transcript)?;
+        let mut proposed = session.transcript.clone();
+        proposed
+            .append(turn, limits)
+            .map_err(OperationLifecycleError::Transcript)?;
+        let attempted = LogicalValue::ok(value, self.captured.header().value_limits)
+            .map_err(OperationLifecycleError::AttemptValue)?;
+        let operation = self.captured.header().operation_id;
+        let label = machine
+            .complete_operation(operation, attempted)
+            .map_err(OperationLifecycleError::Completion)?;
+        session.transcript = proposed;
+        self.state = OperationRuntimeState::Accepted;
+        Ok(label)
+    }
+
+    fn require_validated_value(&self, value: &LogicalValue) -> Result<(), OperationLifecycleError> {
+        let OperationRuntimeState::Validated { output, .. } = &self.state else {
+            return Err(invalid_state(self.state().kind()));
+        };
+        if value.canonical_json() == *output.canonical_json() {
+            Ok(())
+        } else {
+            Err(OperationLifecycleError::InvalidAcceptedValue)
+        }
     }
 
     fn require_state(&self, expected: OperationStateKind) -> Result<(), OperationLifecycleError> {
@@ -402,7 +742,7 @@ impl<'a> TaskHook<'a> {
         establisher: &mut SessionEstablisher<'_>,
         execution_id: ProtocolIdentity,
         session: &LogicalSessionV1,
-    ) -> Result<HostResponse, TaskHookSessionError> {
+    ) -> Result<HookOutcomeV1, TaskHookSessionError> {
         require_request(&request, EmbeddingOperation::DispatchOperation)
             .map_err(TaskHookSessionError::Hook)?;
         establisher
@@ -419,7 +759,7 @@ impl<'a> TaskHook<'a> {
         &mut self,
         request: HostRequest,
         cancellation: &dyn CancellationToken,
-    ) -> Result<HostResponse, TaskHookError> {
+    ) -> Result<HookOutcomeV1, TaskHookError> {
         require_request(&request, EmbeddingOperation::DispatchOperation)?;
         self.ensure_created().await?;
 
@@ -432,13 +772,11 @@ impl<'a> TaskHook<'a> {
             HookState::Failed(error) => return Err(error.clone()),
             HookState::Uninitialized => unreachable!("successful creation installs one hook"),
         };
-        let response = lifecycle
+        lifecycle
             .contain_adapter_future(future, poison)
             .await
             .map_err(TaskHookError::Boundary)?
-            .map_err(TaskHookError::Host)?;
-        require_response(&response, EmbeddingOperation::DispatchOperation)?;
-        Ok(response)
+            .map_err(TaskHookError::Host)
     }
 
     async fn ensure_created(&mut self) -> Result<(), TaskHookError> {
@@ -498,23 +836,14 @@ fn require_request(
     }
 }
 
-fn require_response(
-    response: &HostResponse,
-    operation: EmbeddingOperation,
-) -> Result<(), TaskHookError> {
-    if response.version() == EmbeddingVersion::V1 && response.operation() == operation {
-        Ok(())
-    } else {
-        Err(TaskHookError::InvalidResponse)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
     use std::sync::Arc;
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use gantry_core::portable::IdentityKind;
+    use gantry_core::portable::{IdentityKind, JitterMode};
     use gantry_core::source::FrontendLimits;
     use gantry_core::value::{DEFAULT_VALUE_LIMITS, ValueLimits};
     use gantry_host::contracts::{
@@ -530,7 +859,7 @@ mod tests {
     use crate::{
         ActionOperationRequestV1, CapturedOperationRequestV1, Instruction, InstructionKind,
         InterpreterConfiguration, MachineLimits, MachineProgram, MachineStep,
-        OperationRequestHeaderV1, RequiredConfiguration, Workflow,
+        OperationRequestHeaderV1, RequiredConfiguration, RetryDefaults, Workflow,
     };
 
     struct Services;
@@ -542,6 +871,34 @@ mod tests {
     }
 
     impl ExecutorAdapter for Services {
+        fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
+            Ok(range.minimum())
+        }
+    }
+
+    #[derive(Default)]
+    struct UniqueServices {
+        next: AtomicUsize,
+    }
+
+    impl IdentitySource for UniqueServices {
+        fn fresh_material(&self, _: IdentityKind) -> Result<[u8; 32], HostError> {
+            let value = self.next.fetch_add(1, Ordering::AcqRel).saturating_add(1);
+            let mut material = [0_u8; 32];
+            material[..8].copy_from_slice(&value.to_be_bytes());
+            Ok(material)
+        }
+    }
+
+    impl ExecutorAdapter for UniqueServices {
         fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
             Box::pin(async { Ok(()) })
         }
@@ -583,20 +940,55 @@ mod tests {
             &'a mut self,
             request: HostRequest,
             _: &'a dyn CancellationToken,
-        ) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        ) -> HostFuture<'a, Result<HookOutcomeV1, HostError>> {
             assert_eq!(request.operation(), EmbeddingOperation::DispatchOperation);
             self.dispatches.fetch_add(1, Ordering::AcqRel);
-            Box::pin(async move {
-                HostResponse::new(
-                    EmbeddingVersion::V1,
-                    EmbeddingOperation::DispatchOperation,
-                    Arc::from(&b"{\"result\":\"completed\"}"[..]),
-                )
-                .map_err(|_| HostError {
-                    code: Arc::from("response-invariant"),
-                    protected_diagnostic: None,
-                })
-            })
+            Box::pin(async move { Ok(HookOutcomeV1::Completed(Arc::from(&b"null"[..]))) })
+        }
+    }
+
+    struct ScriptedFactory {
+        outcomes: Arc<Mutex<VecDeque<HookOutcomeV1>>>,
+        requests: Arc<Mutex<Vec<Vec<u8>>>>,
+    }
+
+    impl HookFactory for ScriptedFactory {
+        fn create_hook<'a>(
+            &'a self,
+            request: HostRequest,
+        ) -> HostFuture<'a, Result<Box<dyn OperationHook>, HostError>> {
+            assert_eq!(request.operation(), EmbeddingOperation::CreateHook);
+            let hook = ScriptedHook {
+                outcomes: Arc::clone(&self.outcomes),
+                requests: Arc::clone(&self.requests),
+            };
+            Box::pin(async move { Ok(Box::new(hook) as Box<dyn OperationHook>) })
+        }
+    }
+
+    struct ScriptedHook {
+        outcomes: Arc<Mutex<VecDeque<HookOutcomeV1>>>,
+        requests: Arc<Mutex<Vec<Vec<u8>>>>,
+    }
+
+    impl OperationHook for ScriptedHook {
+        fn dispatch<'a>(
+            &'a mut self,
+            request: HostRequest,
+            _: &'a dyn CancellationToken,
+        ) -> HostFuture<'a, Result<HookOutcomeV1, HostError>> {
+            assert_eq!(request.operation(), EmbeddingOperation::DispatchOperation);
+            self.requests
+                .lock()
+                .unwrap_or_else(|_| panic!("request recorder was poisoned"))
+                .push(request.canonical_bytes().to_vec());
+            let outcome = self
+                .outcomes
+                .lock()
+                .unwrap_or_else(|_| panic!("outcome script was poisoned"))
+                .pop_front()
+                .unwrap_or_else(|| panic!("outcome script was exhausted"));
+            Box::pin(async move { Ok(outcome) })
         }
     }
 
@@ -693,6 +1085,17 @@ mod tests {
         assert_eq!(creations.load(Ordering::Acquire), 1);
         assert_eq!(dispatches.load(Ordering::Acquire), 1);
 
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            RetryDefaults::default(),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        assert!(matches!(
+            operation.process_outcome(policy, &Services, &cancellation),
+            Ok(ProcessedHookOutcomeV1::Accepted(_))
+        ));
+
         assert!(matches!(
             operation.accept(&mut machine, LogicalValue::unit()),
             Ok(MachineLabel::OperationResult { operation: identity })
@@ -727,7 +1130,18 @@ mod tests {
         operation
             .prepare(&FreshIdentityAllocator::default(), &Services, 0, 0, &[])
             .unwrap_or_else(|error| panic!("operation preparation failed: {error:?}"));
-        assert!(block_on(operation.dispatch(&mut hook, &CancellationSignal::default(),)).is_ok());
+        let cancellation = CancellationSignal::default();
+        assert!(block_on(operation.dispatch(&mut hook, &cancellation)).is_ok());
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            RetryDefaults::default(),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        assert!(matches!(
+            operation.process_outcome(policy, &Services, &cancellation),
+            Ok(ProcessedHookOutcomeV1::Accepted(_))
+        ));
 
         assert!(machine.cancel("caller").is_some());
         assert_eq!(
@@ -740,7 +1154,177 @@ mod tests {
         assert_eq!(machine.status(), crate::MachineStatus::WaitingOperation);
     }
 
+    #[test]
+    fn attempt_consumes_success_or_catchable_failure_exactly_once() {
+        let attempted_type =
+            TypeDescriptor::result(TypeDescriptor::UNIT, TypeDescriptor::OPERATION_ERROR);
+        let (mut success_machine, success_occurrence) =
+            machine_with_operation_type(attempted_type.clone());
+        let mut success = operation_lifecycle(&success_occurrence);
+        let configuration = configuration();
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let factory = RecordingFactory {
+            creations: Arc::new(AtomicUsize::new(0)),
+            dispatches: Arc::new(AtomicUsize::new(0)),
+        };
+        let mut hook = TaskHook::new(
+            &lifecycle,
+            &factory,
+            AdapterPoison::default(),
+            request(EmbeddingOperation::CreateHook),
+        )
+        .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
+        let cancellation = CancellationSignal::default();
+        success
+            .prepare(&FreshIdentityAllocator::default(), &Services, 0, 0, &[])
+            .unwrap_or_else(|error| panic!("success preparation failed: {error:?}"));
+        assert!(block_on(success.dispatch(&mut hook, &cancellation)).is_ok());
+        let success_policy =
+            OperationRetryPolicyV1::for_request(success.captured(), RetryDefaults::default(), None)
+                .unwrap_or_else(|error| panic!("success policy failed: {error:?}"));
+        assert!(matches!(
+            success.process_outcome(success_policy, &Services, &cancellation),
+            Ok(ProcessedHookOutcomeV1::Accepted(_))
+        ));
+        assert!(
+            success
+                .accept_attempt(&mut success_machine, LogicalValue::unit())
+                .is_ok()
+        );
+        assert_eq!(
+            success.accept_attempt(&mut success_machine, LogicalValue::unit()),
+            Err(OperationLifecycleError::InvalidState {
+                actual: OperationStateKind::Accepted,
+            })
+        );
+
+        let (mut failure_machine, failure_occurrence) =
+            machine_with_operation_type(attempted_type.clone());
+        let mut failure = operation_lifecycle(&failure_occurrence);
+        failure.state = OperationRuntimeState::Failed {
+            dispatch_id: None,
+            failure: OperationLifecycleFailureV1::Operation(OperationFailureV1::Declined(
+                Arc::from("not available"),
+            )),
+            attempt_consumed: false,
+        };
+        assert!(failure.accept_attempt_failure(&mut failure_machine).is_ok());
+        assert_eq!(failure.state().kind(), OperationStateKind::Failed);
+        assert_eq!(
+            failure.accept_attempt_failure(&mut failure_machine),
+            Err(OperationLifecycleError::AttemptResultConsumed)
+        );
+
+        let (mut cancelled_machine, cancelled_occurrence) =
+            machine_with_operation_type(attempted_type);
+        let mut cancelled = operation_lifecycle(&cancelled_occurrence);
+        cancelled.state = OperationRuntimeState::Failed {
+            dispatch_id: None,
+            failure: OperationLifecycleFailureV1::Operation(OperationFailureV1::TaskCancellation),
+            attempt_consumed: false,
+        };
+        assert_eq!(
+            cancelled.accept_attempt_failure(&mut cancelled_machine),
+            Err(OperationLifecycleError::AttemptNotCatchable)
+        );
+        assert_eq!(
+            cancelled_machine.status(),
+            crate::MachineStatus::WaitingOperation
+        );
+    }
+
+    #[test]
+    fn structured_output_retry_reuses_capture_and_prepares_a_fresh_dispatch() {
+        let configuration = configuration();
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let outcomes = Arc::new(Mutex::new(VecDeque::from([
+            HookOutcomeV1::Completed(Arc::from(&b"true"[..])),
+            HookOutcomeV1::Completed(Arc::from(&b"null"[..])),
+        ])));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let factory = ScriptedFactory {
+            outcomes,
+            requests: Arc::clone(&requests),
+        };
+        let mut hook = TaskHook::new(
+            &lifecycle,
+            &factory,
+            AdapterPoison::default(),
+            request(EmbeddingOperation::CreateHook),
+        )
+        .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
+        let (mut machine, occurrence) = machine_with_operation();
+        let mut operation = operation_lifecycle(&occurrence);
+        let allocator = FreshIdentityAllocator::default();
+        let services = UniqueServices::default();
+        let cancellation = CancellationSignal::default();
+        let first_dispatch = operation
+            .prepare(&allocator, &services, 0, 0, &[])
+            .unwrap_or_else(|error| panic!("initial preparation failed: {error:?}"));
+        assert!(block_on(operation.dispatch(&mut hook, &cancellation)).is_ok());
+        let policy = OperationRetryPolicyV1 {
+            retry_limit: 1,
+            initial_delay: DurationMicros::new(0).unwrap_or_else(|| unreachable!()),
+            cap: DurationMicros::new(0).unwrap_or_else(|| unreachable!()),
+            jitter: JitterMode::None,
+        };
+        assert!(matches!(
+            operation.process_outcome(policy, &services, &cancellation),
+            Ok(ProcessedHookOutcomeV1::Retry(ref wait))
+                if wait.next_validation_attempt == 1
+                    && wait.recovery_dispatch == 0
+                    && wait.retries_left == 0
+                    && wait.errors[0].category == crate::ValidationErrorCategoryV1::Schema
+        ));
+        assert_eq!(operation.state().kind(), OperationStateKind::RetryWaiting);
+
+        let second_dispatch = block_on(operation.prepare_after_retry_wait(
+            &services,
+            &cancellation,
+            &allocator,
+            &services,
+        ))
+        .unwrap_or_else(|error| panic!("retry preparation failed: {error:?}"))
+        .unwrap_or_else(|| panic!("retry preparation became terminal"));
+        assert_ne!(first_dispatch, second_dispatch);
+        assert!(block_on(operation.dispatch(&mut hook, &cancellation)).is_ok());
+        assert!(matches!(
+            operation.process_outcome(policy, &services, &cancellation),
+            Ok(ProcessedHookOutcomeV1::Accepted(_))
+        ));
+        assert!(operation.accept(&mut machine, LogicalValue::unit()).is_ok());
+
+        let requests = requests
+            .lock()
+            .unwrap_or_else(|_| panic!("request recorder was poisoned"));
+        assert_eq!(requests.len(), 2);
+        let first = std::str::from_utf8(&requests[0])
+            .unwrap_or_else(|error| panic!("initial request was not UTF-8: {error}"));
+        let second = std::str::from_utf8(&requests[1])
+            .unwrap_or_else(|error| panic!("retry request was not UTF-8: {error}"));
+        assert!(first.contains("\"validation_attempt\":0"));
+        assert!(!first.contains("validation_errors"));
+        assert!(second.contains("\"validation_attempt\":1"));
+        assert!(second.contains("\"validation_errors\":"));
+        assert!(!second.contains("true"));
+        for retained in [
+            "\"canonical_path\":\"crate::noop\"",
+            "\"action_mapping_revision\":\"actions-v1\"",
+            "\"recovery_class\":\"read_only\"",
+            "\"recovery_dispatch\":0",
+        ] {
+            assert!(first.contains(retained));
+            assert!(second.contains(retained));
+        }
+    }
+
     fn machine_with_operation() -> (Machine, crate::OperationOccurrence) {
+        machine_with_operation_type(TypeDescriptor::UNIT)
+    }
+
+    fn machine_with_operation_type(
+        expected_type: TypeDescriptor,
+    ) -> (Machine, crate::OperationOccurrence) {
         let workflow_path = CanonicalPath::new("crate::main")
             .unwrap_or_else(|error| panic!("workflow path failed: {error}"));
         let site = StructuralPosition::new(vec![0])
@@ -748,18 +1332,18 @@ mod tests {
         let program = MachineProgram::new(vec![Workflow {
             path: workflow_path.clone(),
             parameters: Vec::new(),
-            result: TypeDescriptor::UNIT,
+            result: expected_type.clone(),
             effects: EffectSet::default(),
             instructions: vec![
                 Instruction {
                     site,
-                    ty: TypeDescriptor::UNIT,
+                    ty: expected_type.clone(),
                     kind: InstructionKind::Operation,
                 },
                 Instruction {
                     site: StructuralPosition::new(vec![1])
                         .unwrap_or_else(|error| panic!("return site failed: {error}")),
-                    ty: TypeDescriptor::UNIT,
+                    ty: expected_type,
                     kind: InstructionKind::Return,
                 },
             ],

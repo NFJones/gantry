@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 
 use gantry_core::identity::ProtocolIdentity;
-use gantry_core::portable::{IdentityKind, IdentityOrigin};
+use gantry_core::portable::{HookFailureCategory, IdentityKind, IdentityOrigin};
 use gantry_core::timestamp::UtcTimestamp;
 
 use crate::embedding::{EMBEDDING_OPERATIONS, EmbeddingOperation};
@@ -447,6 +447,22 @@ pub trait HookFactory: Send + Sync {
     ) -> HostFuture<'a, Result<Box<dyn OperationHook>, HostError>>;
 }
 
+/// Exact typed v1 outcome returned by one operation-hook invocation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HookOutcomeV1 {
+    /// The integration completed and returned uninterpreted raw output bytes.
+    Completed(Arc<[u8]>),
+    /// The integration declined with one bounded diagnostic reason.
+    Declined(Arc<str>),
+    /// The integration failed with one exact portable category and message.
+    Failed {
+        /// Exact closed hook-failure category.
+        category: HookFailureCategory,
+        /// Bounded integration diagnostic.
+        message: Arc<str>,
+    },
+}
+
 /// One serially invoked task-owned operation hook.
 ///
 /// Hooks are `Send` but deliberately need not be `Sync`; Gantry invokes one
@@ -457,7 +473,7 @@ pub trait OperationHook: Send {
         &'a mut self,
         request: HostRequest,
         cancellation: &'a dyn CancellationToken,
-    ) -> HostFuture<'a, Result<HostResponse, HostError>>;
+    ) -> HostFuture<'a, Result<HookOutcomeV1, HostError>>;
 }
 
 /// Base executor-neutral runtime services used by every evaluator.
