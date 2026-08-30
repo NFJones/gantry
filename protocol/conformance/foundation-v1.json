@@ -89,9 +89,9 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "909c3efeef2888511e298025e02bb2313282ac0a776696fa9f2312242e409e40",
+    "ledger_sha256": "b9d13481647ee5c25dd9015c77fe12593ade724507ff06629322dba7f2a5db3b",
     "product_lockfile_sha256": "d2aa4b1cb36b05f3bd42f594d6dfc120b150aec6c3a0f35665d1602b579726fd",
-    "fuzz_lockfile_sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899",
+    "fuzz_lockfile_sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb",
     "decision_count": 7,
     "selected_count": 6,
     "rejected_count": 1
@@ -139,11 +139,11 @@
     },
     {
       "path": "fuzz/Cargo.lock",
-      "sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899"
+      "sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb"
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "909c3efeef2888511e298025e02bb2313282ac0a776696fa9f2312242e409e40"
+      "sha256": "b9d13481647ee5c25dd9015c77fe12593ade724507ff06629322dba7f2a5db3b"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",

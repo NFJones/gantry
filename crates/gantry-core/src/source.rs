@@ -562,6 +562,15 @@ impl SourceSnapshot {
         &self.records
     }
 
+    /// Splits immutable records from the mutable activity counters used by
+    /// later frontend phases.
+    ///
+    /// Lexing and analysis consume the already-frozen source records while
+    /// charging their shared package-activity limits incrementally.
+    pub fn records_and_counters_mut(&mut self) -> (&[SourceRecord], &mut SourceCounters) {
+        (&self.records, &mut self.counters)
+    }
+
     /// Finds a record by its source identity.
     #[must_use]
     pub fn get(&self, id: &SourceId) -> Option<&SourceRecord> {
@@ -797,6 +806,30 @@ pub struct DiagnosticCodeDefinition {
 /// Initial Gantry source-substrate diagnostic code registry.
 pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
     DiagnosticCodeDefinition {
+        code: "invalid-block-prompt",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A block prompt violates its structural delimiter rules.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-block-prompt-indentation",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A nonblank block-prompt line does not have the closing indentation prefix.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-character",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A source scalar cannot begin a Gantry token.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-number",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A numeric token violates the Gantry lexical grammar.",
+    },
+    DiagnosticCodeDefinition {
         code: "invalid-package-path",
         phase: DiagnosticPhase::Package,
         category: DiagnosticCategory::Package,
@@ -813,6 +846,66 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,
         meaning: "An admitted source file is not valid UTF-8.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-string-escape",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A quoted string contains an incomplete or unsupported escape.",
+    },
+    DiagnosticCodeDefinition {
+        code: "invalid-unicode-escape",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A Unicode escape is malformed or does not identify a scalar value.",
+    },
+    DiagnosticCodeDefinition {
+        code: "literal-line-terminator",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A quoted string contains an unescaped line terminator.",
+    },
+    DiagnosticCodeDefinition {
+        code: "mismatched-interpolation-delimiter",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A prompt interpolation closes nested delimiters out of order.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unclosed-interpolation",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A prompt interpolation has no closing brace.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unexpected-byte-order-mark",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A byte-order mark occurs outside the permitted initial source position.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unterminated-block-comment",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A nested block comment has no closing delimiter.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unterminated-prompt-template",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A contextual prompt template has no matching closing delimiter.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unterminated-raw-string",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A raw string has no matching closing delimiter.",
+    },
+    DiagnosticCodeDefinition {
+        code: "unterminated-string",
+        phase: DiagnosticPhase::Lexical,
+        category: DiagnosticCategory::Lexical,
+        meaning: "A quoted string has no closing delimiter.",
     },
 ];
 

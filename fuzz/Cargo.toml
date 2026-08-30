@@ -9,11 +9,19 @@ cargo-fuzz = true
 
 [dependencies]
 gantry-core = { path = "../crates/gantry-core" }
+gantry-frontend = { path = "../crates/gantry-frontend" }
 libfuzzer-sys = "=0.4.9"
 
 [[bin]]
 name = "protocol_identity"
 path = "fuzz_targets/protocol_identity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lexer"
+path = "fuzz_targets/lexer.rs"
 test = false
 doc = false
 bench = false

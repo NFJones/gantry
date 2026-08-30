@@ -6,7 +6,7 @@
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
-    "sha256": "395b05ec6458a483c31986cfd982b09f191d5e24ff4c113e5e432765d173b899"
+    "sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb"
   },
   "allowed_licenses": [
     "Apache-2.0",
