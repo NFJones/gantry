@@ -4376,8 +4376,10 @@
           "key": "clause-001",
           "start_line": 2101,
           "end_line": 2102,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -4578,8 +4580,10 @@
           "key": "clause-001",
           "start_line": 2168,
           "end_line": 2173,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",
@@ -5037,8 +5041,10 @@
           "key": "clause-001",
           "start_line": 2312,
           "end_line": 2327,
-          "state": "planned",
-          "evidence": [],
+          "state": "covered",
+          "evidence": [
+            "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+          ],
           "rationale": null,
           "profiles": [
             "analyzer",

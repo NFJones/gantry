@@ -23,7 +23,7 @@ use gantry::portable::{
     PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS, SinkClass,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
-use gantry::source::SourceLimits;
+use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::{ValidatePackageCoordinator, ValidatePackageError, ValidatePackageRequest};
 
@@ -210,8 +210,10 @@ fn request<'a>(
     ValidatePackageRequest {
         package_root: root,
         protocol_selection: selection,
-        frontend_limits: SourceLimits::new(32, 1_048_576, 4_194_304, 262_144, 256)
-            .unwrap_or_else(|_| unreachable!("positive limits")),
+        frontend_limits: FrontendLimits::new(
+            32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+        )
+        .unwrap_or_else(|_| unreachable!("positive limits")),
         event_delivery,
     }
 }

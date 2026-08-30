@@ -109,6 +109,14 @@ impl CompletedSyntaxPhase {
 pub enum PackageSyntaxError {
     /// Package-root or selected-source discovery failed.
     Source(SourceProviderError),
+    /// A portable frontend limit stopped the activity after retaining the
+    /// deterministic diagnostics produced before exhaustion.
+    FrontendResourceLimit {
+        /// Exact portable limit outcome.
+        error: FrontendResourceLimit,
+        /// Diagnostics retained in deterministic package order.
+        diagnostics: Vec<StructuredDiagnostic>,
+    },
     /// A configured frontend limit or parser invariant prevented completion.
     Parse(ParseError),
     /// The deterministic parse payload violated the core event contract.
@@ -121,6 +129,7 @@ impl fmt::Display for PackageSyntaxError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Source(_) => "package source discovery failed",
+            Self::FrontendResourceLimit { .. } => "package frontend resource limit exceeded",
             Self::Parse(_) => "package syntax phase failed operationally",
             Self::Event(_) => "parse event payload construction failed",
             Self::Invariant => "package syntax invariant failure",
@@ -135,10 +144,22 @@ impl PackageSyntaxError {
     #[must_use]
     pub const fn frontend_resource_limit(&self) -> Option<FrontendResourceLimit> {
         match self {
+            Self::FrontendResourceLimit { error, .. } => Some(*error),
             Self::Source(SourceProviderError::ResourceLimit(error))
-            | Self::Source(SourceProviderError::Source(SourceError::ResourceLimit(error)))
-            | Self::Parse(ParseError::ResourceLimit(error)) => Some(*error),
+            | Self::Source(SourceProviderError::Source(SourceError::ResourceLimit(error))) => {
+                Some(*error)
+            }
             _ => None,
+        }
+    }
+
+    /// Returns the deterministic diagnostic prefix retained before an
+    /// operational frontend limit stopped the package activity.
+    #[must_use]
+    pub fn retained_diagnostics(&self) -> &[StructuredDiagnostic] {
+        match self {
+            Self::FrontendResourceLimit { diagnostics, .. } => diagnostics,
+            _ => &[],
         }
     }
 
@@ -149,6 +170,7 @@ impl PackageSyntaxError {
             return "frontend-resource-limit";
         }
         match self {
+            Self::FrontendResourceLimit { .. } => "frontend-resource-limit",
             Self::Source(_) => "package-source-failure",
             Self::Parse(_) | Self::Event(_) | Self::Invariant => "internal",
         }
@@ -165,7 +187,7 @@ pub fn validate_package_syntax(
     let mut loader = PackageSnapshotLoader::new(&provider, limits);
     let root = loader
         .load("main.gnt")
-        .map_err(PackageSyntaxError::Source)?;
+        .map_err(|error| package_source_error(error, &[]))?;
     let mut pending = VecDeque::from([root]);
     let mut seen_requests = BTreeSet::new();
     let mut parsed_sources = Vec::new();
@@ -174,9 +196,17 @@ pub fn validate_package_syntax(
     while let Some(source) = pending.pop_front() {
         let (record, counters) = loader.record_and_counters_mut(&source);
         let record = record.ok_or(PackageSyntaxError::Invariant)?;
-        let outcome = Parser::new(record, counters)
-            .parse_module()
-            .map_err(PackageSyntaxError::Parse)?;
+        let outcome = match Parser::new(record, counters).parse_module() {
+            Ok(outcome) => outcome,
+            Err(ParseError::ResourceLimit {
+                error,
+                diagnostics: mut retained,
+            }) => {
+                diagnostics.append(&mut retained);
+                return Err(PackageSyntaxError::FrontendResourceLimit { error, diagnostics });
+            }
+            Err(error) => return Err(PackageSyntaxError::Parse(error)),
+        };
         diagnostics.extend_from_slice(outcome.diagnostics());
         let valid = outcome.is_valid();
         let Some(tree) = outcome.recovered_tree().cloned() else {
@@ -197,13 +227,13 @@ pub fn validate_package_syntax(
             let declaring = conceptual_declaring_source(&request.directory)?;
             let read_limits = loader
                 .next_source_read_limits()
-                .map_err(PackageSyntaxError::Source)?;
+                .map_err(|error| package_source_error(error, &diagnostics))?;
             let resolution = provider
                 .resolve_module_bounded(&declaring, &request.name, read_limits)
-                .map_err(PackageSyntaxError::Source)?;
+                .map_err(|error| package_source_error(error, &diagnostics))?;
             let child = loader
                 .add_resolution(resolution)
-                .map_err(PackageSyntaxError::Source)?;
+                .map_err(|error| package_source_error(error, &diagnostics))?;
             pending.push_back(child);
         }
     }
@@ -224,6 +254,22 @@ pub fn validate_package_syntax(
         parsed_sources,
         event_draft,
     })
+}
+
+fn package_source_error(
+    error: SourceProviderError,
+    diagnostics: &[StructuredDiagnostic],
+) -> PackageSyntaxError {
+    match error {
+        SourceProviderError::ResourceLimit(error)
+        | SourceProviderError::Source(SourceError::ResourceLimit(error)) => {
+            PackageSyntaxError::FrontendResourceLimit {
+                error,
+                diagnostics: diagnostics.to_vec(),
+            }
+        }
+        error => PackageSyntaxError::Source(error),
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -427,9 +473,13 @@ mod tests {
         }
     }
 
-    fn limits(files: u64, package_bytes: u64) -> SourceLimits {
-        SourceLimits::new(files, 4_096, package_bytes, 1_024, 32)
+    fn limits_with_diagnostics(files: u64, package_bytes: u64, diagnostics: u64) -> SourceLimits {
+        SourceLimits::new(files, 4_096, package_bytes, 1_024, diagnostics)
             .unwrap_or_else(|_| unreachable!("positive limits"))
+    }
+
+    fn limits(files: u64, package_bytes: u64) -> SourceLimits {
+        limits_with_diagnostics(files, package_bytes, 32)
     }
 
     #[test]
@@ -501,6 +551,69 @@ mod tests {
     }
 
     #[test]
+    fn package_limit_error_preserves_prior_diagnostics_without_continuing() {
+        let root = TempDirectory::new();
+        assert!(
+            fs::write(
+                root.0.join("main.gnt"),
+                b"struct Broken { value Int; }\naction read_only missing( -> String;\nfn good() {}",
+            )
+            .is_ok()
+        );
+
+        let result = validate_package_syntax(&root.0, limits_with_diagnostics(1, 4_096, 1));
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("the second diagnostic must exceed the activity limit"),
+        };
+        assert_eq!(error.code(), "frontend-resource-limit");
+        assert!(matches!(
+            error.frontend_resource_limit(),
+            Some(limit)
+                if limit.code == FrontendResourceCode::DiagnosticCountLimit
+                    && limit.limit == 1
+                    && limit.observed == Some(2)
+        ));
+        assert_eq!(error.retained_diagnostics().len(), 1);
+        assert_eq!(
+            error.retained_diagnostics()[0].code.as_str(),
+            "unexpected-token"
+        );
+    }
+
+    #[test]
+    fn discovery_limit_error_preserves_diagnostics_from_parsed_sources() {
+        let root = TempDirectory::new();
+        let main = b"mod child;\nfn broken( {";
+        assert!(fs::write(root.0.join("main.gnt"), main).is_ok());
+        assert!(fs::write(root.0.join("child.gnt"), b"fn child() {}").is_ok());
+
+        let result = validate_package_syntax(
+            &root.0,
+            limits_with_diagnostics(
+                2,
+                u64::try_from(main.len()).unwrap_or_else(|_| unreachable!("small fixture")),
+                4,
+            ),
+        );
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("the child must exceed the cumulative package-byte limit"),
+        };
+        assert!(matches!(
+            error.frontend_resource_limit(),
+            Some(limit)
+                if limit.code == FrontendResourceCode::PackageSourceByteLimit
+                    && limit.observed.is_some_and(|observed| observed > limit.limit)
+        ));
+        assert_eq!(error.retained_diagnostics().len(), 1);
+        assert_eq!(
+            error.retained_diagnostics()[0].code.as_str(),
+            "unexpected-token"
+        );
+    }
+
+    #[test]
     fn cumulative_module_bytes_fail_as_an_operational_limit() {
         let root = TempDirectory::new();
         assert!(fs::write(root.0.join("main.gnt"), b"mod child;").is_ok());
@@ -509,12 +622,9 @@ mod tests {
         let phase = validate_package_syntax(&root.0, limits(2, 20));
         assert!(matches!(
             phase,
-            Err(PackageSyntaxError::Source(error))
-                if matches!(
-                    error,
-                    crate::SourceProviderError::ResourceLimit(limit)
-                        if limit.code == FrontendResourceCode::PackageSourceByteLimit
-                )
+            Err(PackageSyntaxError::FrontendResourceLimit { error, diagnostics })
+                if error.code == FrontendResourceCode::PackageSourceByteLimit
+                    && diagnostics.is_empty()
         ));
     }
 }

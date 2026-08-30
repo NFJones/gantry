@@ -349,6 +349,96 @@ impl SourceLimits {
     }
 }
 
+/// Complete finite frontend policy accepted by package operations.
+///
+/// Syntax-only validation enforces the embedded source limits and retains the
+/// artifact limits for later analyzer or execution phases without constructing
+/// artifacts that its operation does not own.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrontendLimits {
+    source: SourceLimits,
+    maximum_package_source_manifest_bytes: u64,
+    maximum_canonical_ir_bytes: u64,
+    maximum_source_map_bytes: u64,
+    maximum_generated_schema_bytes: u64,
+}
+
+impl FrontendLimits {
+    /// Constructs the complete positive frontend policy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        maximum_package_files: u64,
+        maximum_source_file_bytes: u64,
+        maximum_package_source_bytes: u64,
+        maximum_source_tokens: u64,
+        maximum_diagnostics_per_activity: u64,
+        maximum_package_source_manifest_bytes: u64,
+        maximum_canonical_ir_bytes: u64,
+        maximum_source_map_bytes: u64,
+        maximum_generated_schema_bytes: u64,
+    ) -> Result<Self, SourceLimitConfigurationError> {
+        let source = SourceLimits::new(
+            maximum_package_files,
+            maximum_source_file_bytes,
+            maximum_package_source_bytes,
+            maximum_source_tokens,
+            maximum_diagnostics_per_activity,
+        )?;
+        let artifact_limits = [
+            maximum_package_source_manifest_bytes,
+            maximum_canonical_ir_bytes,
+            maximum_source_map_bytes,
+            maximum_generated_schema_bytes,
+        ];
+        if artifact_limits.contains(&0) {
+            return Err(SourceLimitConfigurationError::Zero);
+        }
+        if artifact_limits
+            .iter()
+            .any(|value| *value > MAXIMUM_FRONTEND_LIMIT)
+        {
+            return Err(SourceLimitConfigurationError::TooLarge);
+        }
+        Ok(Self {
+            source,
+            maximum_package_source_manifest_bytes,
+            maximum_canonical_ir_bytes,
+            maximum_source_map_bytes,
+            maximum_generated_schema_bytes,
+        })
+    }
+
+    /// Returns the source, token, and diagnostic limits used by validation.
+    #[must_use]
+    pub const fn source_limits(self) -> SourceLimits {
+        self.source
+    }
+
+    /// Returns the package-source-manifest byte limit for later phases.
+    #[must_use]
+    pub const fn maximum_package_source_manifest_bytes(self) -> u64 {
+        self.maximum_package_source_manifest_bytes
+    }
+
+    /// Returns the canonical-IR byte limit for later phases.
+    #[must_use]
+    pub const fn maximum_canonical_ir_bytes(self) -> u64 {
+        self.maximum_canonical_ir_bytes
+    }
+
+    /// Returns the source-map byte limit for later phases.
+    #[must_use]
+    pub const fn maximum_source_map_bytes(self) -> u64 {
+        self.maximum_source_map_bytes
+    }
+
+    /// Returns the generated-schema object byte limit for later phases.
+    #[must_use]
+    pub const fn maximum_generated_schema_bytes(self) -> u64 {
+        self.maximum_generated_schema_bytes
+    }
+}
+
 /// Invalid source-limit configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceLimitConfigurationError {
@@ -950,11 +1040,54 @@ pub struct DiagnosticCodeRegistryError;
 mod tests {
     use super::{
         ByteSpan, DiagnosticBuffer, DiagnosticBufferError, DiagnosticCode, DiagnosticPhase,
-        PackagePath, SourceLimits, SourceSnapshotBuilder, SourceSpan, TextSliceError,
-        validate_diagnostic_code_registry,
+        FrontendLimits, PackagePath, SourceLimitConfigurationError, SourceLimits,
+        SourceSnapshotBuilder, SourceSpan, TextSliceError, validate_diagnostic_code_registry,
     };
     use crate::portable::{DiagnosticCategory, DiagnosticSeverity, FrontendResourceCode};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn complete_frontend_limits_enforce_every_finite_boundary() {
+        const MAXIMUM: u64 = i64::MAX as u64;
+
+        for accepted in [MAXIMUM - 1, MAXIMUM] {
+            let limits = FrontendLimits::new(
+                accepted, accepted, accepted, accepted, accepted, accepted, accepted, accepted,
+                accepted,
+            );
+            assert!(limits.is_ok());
+            let limits = limits.unwrap_or_else(|_| unreachable!("accepted finite limits"));
+            assert_eq!(
+                limits.source_limits(),
+                SourceLimits::new(accepted, accepted, accepted, accepted, accepted)
+                    .unwrap_or_else(|_| unreachable!("accepted source limits"))
+            );
+            assert_eq!(limits.maximum_package_source_manifest_bytes(), accepted);
+            assert_eq!(limits.maximum_canonical_ir_bytes(), accepted);
+            assert_eq!(limits.maximum_source_map_bytes(), accepted);
+            assert_eq!(limits.maximum_generated_schema_bytes(), accepted);
+        }
+
+        for rejected in [0, MAXIMUM + 1] {
+            let expected = if rejected == 0 {
+                SourceLimitConfigurationError::Zero
+            } else {
+                SourceLimitConfigurationError::TooLarge
+            };
+            for index in 0..9 {
+                let mut values = [1; 9];
+                values[index] = rejected;
+                assert_eq!(
+                    FrontendLimits::new(
+                        values[0], values[1], values[2], values[3], values[4], values[5],
+                        values[6], values[7], values[8],
+                    ),
+                    Err(expected),
+                    "limit index {index}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn package_paths_and_snapshots_are_canonical_and_immutable() {

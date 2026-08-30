@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "25728d5851b448c975bc25242dd1c3a8d56a1c9eaf1426b0e735f51d05c60e84",
+    "sha256": "1e1c9615bc28deefe0b69fae0a963041fdb1f4fa8d47bbf44a9b029f75e4da8b",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -212,11 +212,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "25728d5851b448c975bc25242dd1c3a8d56a1c9eaf1426b0e735f51d05c60e84"
+      "sha256": "1e1c9615bc28deefe0b69fae0a963041fdb1f4fa8d47bbf44a9b029f75e4da8b"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "a95b703fd1ad26f19f0454a1050fd340a47ee27128379cc8f608f6572335b8a0"
+      "sha256": "c03e80a46001cb8674af42161e0af95be9033018be21e0b6df4ee75ec25f2074"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

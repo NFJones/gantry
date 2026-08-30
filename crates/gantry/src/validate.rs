@@ -10,7 +10,7 @@ use gantry_core::event::EventEnvelope;
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{IdentityKind, ProtocolFamily};
 use gantry_core::protocol::ProtocolSelection;
-use gantry_core::source::SourceLimits;
+use gantry_core::source::FrontendLimits;
 use gantry_frontend::{CompletedSyntaxPhase, PackageSyntaxError, validate_package_syntax};
 use gantry_host::contracts::{
     FreshIdentityAllocator, IdentityAllocationError, IdentitySource, UtcClock,
@@ -28,7 +28,7 @@ pub struct ValidatePackageRequest<'a> {
     /// Exact complete protocol tuple selected for the activity.
     pub protocol_selection: &'a ProtocolSelection,
     /// Finite positive source, token, and diagnostic limits.
-    pub frontend_limits: SourceLimits,
+    pub frontend_limits: FrontendLimits,
     /// Optional immutable nondurable event sink plan.
     pub event_delivery: Option<&'a SinkPlan>,
 }
@@ -133,8 +133,11 @@ impl<'a> ValidatePackageCoordinator<'a> {
             .allocator
             .allocate(self.identity_source, IdentityKind::Activity)
             .map_err(ValidatePackageError::ActivityIdentity)?;
-        let phase = validate_package_syntax(request.package_root, request.frontend_limits)
-            .map_err(ValidatePackageError::Package)?;
+        let phase = validate_package_syntax(
+            request.package_root,
+            request.frontend_limits.source_limits(),
+        )
+        .map_err(ValidatePackageError::Package)?;
         let draft = phase.event_draft().clone();
         let event = EventCompleter::new(self.allocator, self.identity_source, self.clock)
             .complete(activity_id, draft)
@@ -186,7 +189,7 @@ mod tests {
         EventLayer, IdentityKind, PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS,
     };
     use gantry_core::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
-    use gantry_core::source::SourceLimits;
+    use gantry_core::source::FrontendLimits;
     use gantry_core::timestamp::UtcTimestamp;
     use gantry_frontend::PackageSyntaxStatus;
     use gantry_host::contracts::{HostError, HostFuture, IdentitySource, UtcClock};
@@ -279,8 +282,10 @@ mod tests {
         ValidatePackageRequest {
             package_root: root,
             protocol_selection: selection,
-            frontend_limits: SourceLimits::new(32, 1_048_576, 4_194_304, 262_144, 256)
-                .unwrap_or_else(|_| unreachable!("positive limits")),
+            frontend_limits: FrontendLimits::new(
+                32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+            )
+            .unwrap_or_else(|_| unreachable!("positive limits")),
             event_delivery: None,
         }
     }

@@ -22,7 +22,7 @@ use gantry::portable::{PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITI
 #[cfg(feature = "frontend")]
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 #[cfg(feature = "frontend")]
-use gantry::source::SourceLimits;
+use gantry::source::FrontendLimits;
 #[cfg(feature = "frontend")]
 use gantry::{ValidatePackageCoordinator, ValidatePackageRequest};
 
@@ -75,8 +75,18 @@ fn check_command(
     stderr: &mut dyn Write,
 ) -> u8 {
     let selection = published_selection();
-    let limits = SourceLimits::new(4_096, 16_777_216, 268_435_456, 4_194_304, 4_096)
-        .unwrap_or_else(|_| unreachable!("fixed CLI limits are valid"));
+    let limits = FrontendLimits::new(
+        4_096,
+        16_777_216,
+        268_435_456,
+        4_194_304,
+        4_096,
+        268_435_456,
+        268_435_456,
+        268_435_456,
+        268_435_456,
+    )
+    .unwrap_or_else(|_| unreachable!("fixed CLI limits are valid"));
     let allocator = FreshIdentityAllocator::default();
     let identity_source = services::SystemIdentitySource;
     let clock = services::SystemUtcClock;

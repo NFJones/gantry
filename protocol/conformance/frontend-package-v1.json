@@ -1,0 +1,10 @@
+{
+  "format": "gantry.frontend-package-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-FE-003",
+  "entries": [
+    { "requirement": "GNT-4.1", "clause": "clause-001" },
+    { "requirement": "GNT-4.17", "clause": "clause-001" },
+    { "requirement": "GNT-4.6", "clause": "clause-001" }
+  ]
+}

@@ -63,8 +63,14 @@ impl ParseOutcome {
 /// Resource or invariant failure that prevents a completed syntax judgment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParseError {
-    /// A shared frontend activity limit was exceeded.
-    ResourceLimit(FrontendResourceLimit),
+    /// A shared frontend activity limit was exceeded after retaining the
+    /// deterministic diagnostic prefix produced before exhaustion.
+    ResourceLimit {
+        /// Exact portable limit outcome.
+        error: FrontendResourceLimit,
+        /// Diagnostics retained before the next diagnostic exceeded its cap.
+        diagnostics: Vec<StructuredDiagnostic>,
+    },
     /// A source span could not be represented.
     Span(SpanError),
     /// An internal parser invariant was violated.
@@ -74,7 +80,7 @@ pub enum ParseError {
 impl fmt::Display for ParseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ResourceLimit(error) => error.fmt(formatter),
+            Self::ResourceLimit { error, .. } => error.fmt(formatter),
             Self::Span(error) => error.fmt(formatter),
             Self::Invariant => formatter.write_str("parser invariant failure"),
         }
@@ -151,6 +157,9 @@ fn tokenize(
                 template_state = TemplateState::Normal;
                 continue;
             }
+            Err(LexError::ResourceLimit(error)) => {
+                return Err(ParseError::ResourceLimit { error, diagnostics });
+            }
             Err(error) => return Err(map_lex_error(error)),
         };
         let end = matches!(token.kind(), TokenKind::EndOfFile);
@@ -195,7 +204,10 @@ fn tokenize(
 
 fn map_lex_error(error: LexError) -> ParseError {
     match error {
-        LexError::ResourceLimit(error) => ParseError::ResourceLimit(error),
+        LexError::ResourceLimit(error) => ParseError::ResourceLimit {
+            error,
+            diagnostics: Vec::new(),
+        },
         LexError::Span(error) => ParseError::Span(error),
         LexError::Diagnostic(_) | LexError::Invariant => ParseError::Invariant,
     }
@@ -953,9 +965,12 @@ impl<'a> Machine<'a> {
     }
 
     fn push_syntax_diagnostic(&mut self, fault: SyntaxFault) -> Result<(), ParseError> {
-        self.counters
-            .charge_diagnostic()
-            .map_err(ParseError::ResourceLimit)?;
+        if let Err(error) = self.counters.charge_diagnostic() {
+            return Err(ParseError::ResourceLimit {
+                error,
+                diagnostics: self.diagnostics.clone(),
+            });
+        }
         let diagnostic = StructuredDiagnostic::new(
             DiagnosticMetadata {
                 phase: DiagnosticPhase::Syntax,
@@ -2162,12 +2177,17 @@ fn token_description(kind: &TokenKind) -> Arc<str> {
 
 #[cfg(test)]
 mod tests {
+    use gantry_core::portable::FrontendResourceCode;
     use gantry_core::source::{SourceLimits, SourceSnapshotBuilder};
 
-    use super::Parser;
+    use super::{ParseError, Parser};
     use crate::SyntaxForm;
 
-    fn parse(source: &str, token_limit: u64, diagnostic_limit: u64) -> super::ParseOutcome {
+    fn parse_result(
+        source: &str,
+        token_limit: u64,
+        diagnostic_limit: u64,
+    ) -> Result<super::ParseOutcome, ParseError> {
         let limits = SourceLimits::new(1, 2_000_000, 2_000_000, token_limit, diagnostic_limit)
             .unwrap_or_else(|_| unreachable!("positive limits"));
         let mut builder = SourceSnapshotBuilder::new(limits);
@@ -2177,8 +2197,11 @@ mod tests {
         let record = records
             .first()
             .unwrap_or_else(|| unreachable!("one source"));
-        Parser::new(record, counters)
-            .parse_module()
+        Parser::new(record, counters).parse_module()
+    }
+
+    fn parse(source: &str, token_limit: u64, diagnostic_limit: u64) -> super::ParseOutcome {
+        parse_result(source, token_limit, diagnostic_limit)
             .unwrap_or_else(|error| panic!("syntax phase failed: {error}"))
     }
 
@@ -2248,6 +2271,27 @@ fn main(request: Request) -> String {
                 .windows(2)
                 .all(|pair| pair[0].primary <= pair[1].primary)
         );
+    }
+
+    #[test]
+    fn diagnostic_exhaustion_returns_the_retained_prefix() {
+        let result = parse_result(
+            "struct Broken { value Int; }\naction read_only missing( -> String;\nfn good() {}",
+            128,
+            1,
+        );
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("the second diagnostic must exceed the activity limit"),
+        };
+        let ParseError::ResourceLimit { error, diagnostics } = error else {
+            panic!("expected a diagnostic resource limit");
+        };
+        assert_eq!(error.code, FrontendResourceCode::DiagnosticCountLimit);
+        assert_eq!(error.limit, 1);
+        assert_eq!(error.observed, Some(2));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code.as_str(), "unexpected-token");
     }
 
     #[test]
