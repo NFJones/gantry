@@ -44,10 +44,50 @@
             "with-scope"
           ]
         },
+        "operation": { "$ref": "#/$defs/operation" },
         "position": { "$ref": "#/$defs/position" },
+        "task_control": { "$ref": "#/$defs/task_control" },
         "type": { "type": "string", "minLength": 1 }
       },
       "required": ["children", "form", "position", "type"]
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": { "type": "string", "pattern": "^crate::.+$" },
+        "interpolation_inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/decimal" }
+        },
+        "kind": { "enum": ["prompt", "decide", "action"] },
+        "named_input_names": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "named_inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/position" }
+        },
+        "recovery": { "enum": ["read_only", "idempotent", "non_idempotent"] },
+        "template_segments": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["interpolation_inputs", "kind", "named_input_names", "named_inputs", "template_segments"]
+    },
+    "task_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "handles": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "kind": { "enum": ["spawn", "join", "joinall", "detach"] }
+      },
+      "required": ["handles", "kind"]
     },
     "workflow": {
       "type": "object",

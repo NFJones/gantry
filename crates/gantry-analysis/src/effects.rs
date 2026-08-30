@@ -35,6 +35,7 @@ struct MethodShape {
 struct WorkflowDraft {
     path: CanonicalPath,
     signature: CanonicalSignature,
+    result: TypeDescriptor,
     direct_effects: EffectSet,
     calls: Vec<CallEdge>,
     operations: Vec<OperationSite>,
@@ -222,6 +223,8 @@ pub(crate) fn analyze_workflow_facts(
             WorkflowFacts::new(
                 draft.path,
                 draft.signature,
+                draft.result,
+                draft.span,
                 effects,
                 draft.calls,
                 draft.operations,
@@ -475,6 +478,7 @@ fn analyze_callable(
     Ok(WorkflowDraft {
         path,
         signature,
+        result,
         direct_effects,
         calls,
         operations,

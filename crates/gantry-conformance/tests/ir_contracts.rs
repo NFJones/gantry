@@ -5,11 +5,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gantry::ir::generated::{ArtifactKind, CoreForm, Effect};
+use gantry::ir::generated::{ArtifactKind, CoreForm, Effect, OperationSiteKind};
 use gantry::ir::{
-    ArtifactEncodingError, ArtifactLimits, CanonicalIr, CanonicalNode, CanonicalPath,
-    CanonicalSignature, CanonicalSourceMap, CanonicalWorkflow, GeneratedSchemaObject,
-    PackageSourceManifest, SourceMapEntry, StructuralPosition, TypeDescriptor,
+    ArtifactEncodingError, ArtifactLimits, CanonicalIr, CanonicalNode, CanonicalOperationSite,
+    CanonicalPath, CanonicalSignature, CanonicalSourceMap, CanonicalWorkflow,
+    GeneratedSchemaObject, PackageSourceManifest, SourceMapEntry, StructuralPosition,
+    TypeDescriptor,
 };
 use gantry::protocol::ProtocolVersion;
 use gantry::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
@@ -285,6 +286,16 @@ fn artifacts(
         form: CoreForm::Operation,
         ty: TypeDescriptor::UNIT,
         children: Vec::new(),
+        operation: Some(CanonicalOperationSite {
+            kind: OperationSiteKind::Prompt,
+            action: None,
+            recovery: None,
+            template_segments: Vec::new(),
+            interpolation_inputs: Vec::new(),
+            named_input_names: Vec::new(),
+            named_inputs: Vec::new(),
+        }),
+        task_control: None,
     };
     let workflow = CanonicalWorkflow::new(path.clone(), signature, effects, vec![node])
         .unwrap_or_else(|_| unreachable!("workflow is canonical"));

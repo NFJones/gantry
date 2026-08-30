@@ -1,6 +1,6 @@
 {
   "format": "gantry.ir-artifact-vectors/v1",
-  "canonical_ir": "{\"canonical_ir\":{\"major\":1,\"minor\":0},\"workflows\":[{\"effects\":[\"prompt\",\"attempt\"],\"nodes\":[{\"children\":[],\"form\":\"operation\",\"position\":[\"0\"],\"type\":\"Unit\"}],\"path\":\"crate::main\",\"signature\":\"fn crate::main()->Unit\"}]}",
+  "canonical_ir": "{\"canonical_ir\":{\"major\":1,\"minor\":0},\"workflows\":[{\"effects\":[\"prompt\",\"attempt\"],\"nodes\":[{\"children\":[],\"form\":\"operation\",\"operation\":{\"interpolation_inputs\":[],\"kind\":\"prompt\",\"named_input_names\":[],\"named_inputs\":[],\"template_segments\":[]},\"position\":[\"0\"],\"type\":\"Unit\"}],\"path\":\"crate::main\",\"signature\":\"fn crate::main()->Unit\"}]}",
   "source_map": "{\"entries\":[{\"end\":\"7\",\"path\":\"main.gnt\",\"position\":[\"0\"],\"start\":\"3\",\"workflow\":\"crate::main\"}],\"source_map\":{\"major\":1,\"minor\":0}}",
   "package_source_manifest": "{\"files\":[{\"byte_length\":\"12\",\"package_path\":\"main.gnt\",\"sha256\":\"ef32637cb9c3ec2e3968c9cbdf26a5e9c172be94f88af533e14bd43f892d5297\"}],\"root_file\":\"main.gnt\",\"source_language\":{\"major\":1,\"minor\":0},\"total_byte_length\":\"12\"}",
   "generated_schema_object": "{\"Bool\":{\"type\":\"boolean\"},\"String\":{\"type\":\"string\"}}",

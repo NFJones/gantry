@@ -1,0 +1,47 @@
+{
+  "format": "gantry.analyzer-lowering-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-AN-005",
+  "entries": [
+    {
+      "requirement": "GNT-3.11",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-002",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-003",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-004",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-005",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-006",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+    },
+    {
+      "requirement": "GNT-4.17-frontend-resource-limits",
+      "clause": "clause-008",
+      "evidence": "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+    }
+  ]
+}

@@ -1,12 +1,44 @@
 //! Canonical IR and source-map artifacts over analyzer-owned facts.
 
+use std::sync::Arc;
+
 use gantry_core::source::SourceSpan;
 
 use crate::artifact::{
     ArtifactEncodingError, ArtifactLimits, BoundedArtifact, CanonicalArtifactEncoder,
 };
-use crate::generated::{ArtifactKind, CoreForm};
+use crate::generated::{
+    ArtifactKind, CoreForm, OperationSiteKind, RecoveryClass, TaskControlSiteKind,
+};
 use crate::{CanonicalPath, CanonicalSignature, EffectSet, StructuralPosition, TypeDescriptor};
+
+/// Portable static operation metadata retained by one canonical operation node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalOperationSite {
+    /// Prompt, decision, or harness-action classification.
+    pub kind: OperationSiteKind,
+    /// Canonical action path, present only for harness actions.
+    pub action: Option<CanonicalPath>,
+    /// Declared recovery class, present only for harness actions.
+    pub recovery: Option<RecoveryClass>,
+    /// Decoded prompt-template literal segments in source order.
+    pub template_segments: Vec<Arc<str>>,
+    /// Zero-based interpolation inputs in source evaluation order.
+    pub interpolation_inputs: Vec<u64>,
+    /// Named-input names in source evaluation order.
+    pub named_input_names: Vec<Arc<str>>,
+    /// Named-input expression positions in source evaluation order.
+    pub named_inputs: Vec<StructuralPosition>,
+}
+
+/// Portable static task metadata retained by one canonical task-control node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalTaskControlSite {
+    /// Spawn, named join, joinall, or background transfer.
+    pub kind: TaskControlSiteKind,
+    /// Exact statically selected handles in declaration or source order.
+    pub handles: Vec<Arc<str>>,
+}
 
 /// One typed node in the desugared canonical core language.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -19,6 +51,10 @@ pub struct CanonicalNode {
     pub ty: TypeDescriptor,
     /// Child positions in semantic evaluation order.
     pub children: Vec<StructuralPosition>,
+    /// Operation metadata, present only for operation nodes.
+    pub operation: Option<CanonicalOperationSite>,
+    /// Task metadata, present only for spawn, join, and background-transfer nodes.
+    pub task_control: Option<CanonicalTaskControlSite>,
 }
 
 /// One canonical workflow independent of source spelling and source spans.
@@ -195,8 +231,68 @@ fn encode_ir(
             }
             output.push_str("],\"form\":")?;
             push_json_string(&mut output, node.form.wire_name())?;
+            if let Some(operation) = &node.operation {
+                output.push_str(",\"operation\":{")?;
+                if let Some(action) = &operation.action {
+                    output.push_str("\"action\":")?;
+                    push_json_string(&mut output, action.as_str())?;
+                    output.push_byte(b',')?;
+                }
+                output.push_str("\"interpolation_inputs\":[")?;
+                for (input_index, input) in operation.interpolation_inputs.iter().enumerate() {
+                    if input_index > 0 {
+                        output.push_byte(b',')?;
+                    }
+                    output.push_byte(b'\"')?;
+                    output.push_str(&input.to_string())?;
+                    output.push_byte(b'\"')?;
+                }
+                output.push_str("],\"kind\":")?;
+                push_json_string(&mut output, operation.kind.wire_name())?;
+                output.push_str(",\"named_input_names\":[")?;
+                for (input_index, input) in operation.named_input_names.iter().enumerate() {
+                    if input_index > 0 {
+                        output.push_byte(b',')?;
+                    }
+                    push_json_string(&mut output, input)?;
+                }
+                output.push_byte(b']')?;
+                output.push_str(",\"named_inputs\":[")?;
+                for (input_index, input) in operation.named_inputs.iter().enumerate() {
+                    if input_index > 0 {
+                        output.push_byte(b',')?;
+                    }
+                    push_position(&mut output, input)?;
+                }
+                output.push_byte(b']')?;
+                if let Some(recovery) = operation.recovery {
+                    output.push_str(",\"recovery\":")?;
+                    push_json_string(&mut output, recovery.wire_name())?;
+                }
+                output.push_str(",\"template_segments\":[")?;
+                for (segment_index, segment) in operation.template_segments.iter().enumerate() {
+                    if segment_index > 0 {
+                        output.push_byte(b',')?;
+                    }
+                    push_json_string(&mut output, segment)?;
+                }
+                output.push_byte(b']')?;
+                output.push_byte(b'}')?;
+            }
             output.push_str(",\"position\":")?;
             push_position(&mut output, &node.position)?;
+            if let Some(task_control) = &node.task_control {
+                output.push_str(",\"task_control\":{\"handles\":[")?;
+                for (handle_index, handle) in task_control.handles.iter().enumerate() {
+                    if handle_index > 0 {
+                        output.push_byte(b',')?;
+                    }
+                    push_json_string(&mut output, handle)?;
+                }
+                output.push_str("],\"kind\":")?;
+                push_json_string(&mut output, task_control.kind.wire_name())?;
+                output.push_byte(b'}')?;
+            }
             output.push_str(",\"type\":")?;
             push_json_string(&mut output, &node.ty.canonical_string())?;
             output.push_byte(b'}')?;
@@ -285,9 +381,10 @@ mod tests {
     use gantry_core::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
 
     use super::{
-        CanonicalIr, CanonicalNode, CanonicalSourceMap, CanonicalWorkflow, SourceMapEntry,
+        CanonicalIr, CanonicalNode, CanonicalOperationSite, CanonicalSourceMap, CanonicalWorkflow,
+        SourceMapEntry,
     };
-    use crate::generated::{ArtifactKind, CoreForm, Effect};
+    use crate::generated::{ArtifactKind, CoreForm, Effect, OperationSiteKind};
     use crate::{
         ArtifactLimits, CanonicalPath, CanonicalSignature, EffectSet, StructuralPosition,
         TypeDescriptor,
@@ -316,6 +413,16 @@ mod tests {
             form: CoreForm::Operation,
             ty: TypeDescriptor::UNIT,
             children: Vec::new(),
+            operation: Some(CanonicalOperationSite {
+                kind: OperationSiteKind::Prompt,
+                action: None,
+                recovery: None,
+                template_segments: Vec::new(),
+                interpolation_inputs: Vec::new(),
+                named_input_names: Vec::new(),
+                named_inputs: Vec::new(),
+            }),
+            task_control: None,
         };
         let workflow = CanonicalWorkflow::new(path, signature, effects, vec![node]);
         assert!(workflow.is_ok());

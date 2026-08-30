@@ -2652,8 +2652,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+              ],
               "rationale": null
             },
             {
@@ -10098,8 +10100,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -10148,8 +10152,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -10200,8 +10206,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -10250,8 +10258,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -10301,8 +10311,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -10353,8 +10365,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -10451,8 +10465,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+              ],
               "rationale": null
             },
             {

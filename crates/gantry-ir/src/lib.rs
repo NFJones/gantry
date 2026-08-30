@@ -18,8 +18,8 @@ mod types;
 
 pub use artifact::{ArtifactEncodingError, ArtifactLimits, BoundedArtifact};
 pub use canonical::{
-    CanonicalIr, CanonicalNode, CanonicalSourceMap, CanonicalWorkflow, IrArtifactError,
-    SourceMapEntry,
+    CanonicalIr, CanonicalNode, CanonicalOperationSite, CanonicalSourceMap,
+    CanonicalTaskControlSite, CanonicalWorkflow, IrArtifactError, SourceMapEntry,
 };
 pub use effects::{EFFECT_ORDER, EffectSet};
 pub use facts::{

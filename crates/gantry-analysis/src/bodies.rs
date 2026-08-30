@@ -4,6 +4,7 @@
 //! validates deterministic value flow without performing ownership, effect,
 //! operation, or lowering work owned by later analyzer stages.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -64,6 +65,7 @@ struct BodyContext {
     references: BTreeMap<SourceSpan, SymbolId>,
     structs: BTreeMap<SymbolId, StructShape>,
     enums: BTreeMap<SymbolId, EnumShape>,
+    expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
 }
 
 type PatternAnalysis = (BTreeSet<String>, BTreeMap<Arc<str>, TypeDescriptor>);
@@ -293,6 +295,7 @@ fn build_body_context(
         references,
         structs,
         enums,
+        expression_types: RefCell::new(BTreeMap::new()),
     })
 }
 
@@ -302,8 +305,9 @@ pub(crate) fn check_package_bodies(
     facts: &[BTreeMap<NodeId, TypeFact>],
     structure: &PackageStructure,
     diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<(), AnalysisError> {
+) -> Result<Vec<BTreeMap<NodeId, TypeDescriptor>>, AnalysisError> {
     let context = build_body_context(sources, facts, structure)?;
+    let mut expression_types = Vec::with_capacity(sources.len());
     for (source_index, source) in sources.iter().enumerate() {
         let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
         for (index, node) in source.tree().nodes().iter().enumerate() {
@@ -321,8 +325,9 @@ pub(crate) fn check_package_bodies(
                 diagnostics,
             )?;
         }
+        expression_types.push(context.expression_types.take());
     }
-    Ok(())
+    Ok(expression_types)
 }
 
 fn check_callable(
@@ -1521,6 +1526,33 @@ fn bool_fact(tree: &SyntaxTree, root: NodeId) -> Result<BoolFact, AnalysisError>
 }
 
 fn infer_expression(
+    tree: &SyntaxTree,
+    expression: NodeId,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected: Option<&TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let inferred = infer_expression_inner(
+        tree,
+        expression,
+        facts,
+        environment,
+        expected,
+        context,
+        diagnostics,
+    )?;
+    if let Some(ty) = &inferred {
+        context
+            .expression_types
+            .borrow_mut()
+            .insert(expression, ty.clone());
+    }
+    Ok(inferred)
+}
+
+fn infer_expression_inner(
     tree: &SyntaxTree,
     expression: NodeId,
     facts: &BTreeMap<NodeId, TypeFact>,

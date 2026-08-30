@@ -20,6 +20,7 @@ use gantry_ir::{ArtifactLimits, TypeDescriptor, TypeDescriptorError};
 
 use crate::bodies::check_package_bodies;
 use crate::effects::analyze_workflow_facts;
+use crate::lowering::{LoweringError, lower_package_artifacts, lower_package_manifest};
 use crate::schemas::{SchemaAnalysisError, analyze_generated_schemas};
 use crate::{
     AnalysisError, AnalysisStatus, PackageStructure, Symbol, SymbolId, SymbolKind, TypeFact,
@@ -85,7 +86,7 @@ pub fn analyze_package_types_with_artifact_limits(
         &facts_by_source,
         &mut type_diagnostics,
     )?;
-    check_package_bodies(
+    let body_types = check_package_bodies(
         phase.parsed_sources(),
         &facts_by_source,
         &structure,
@@ -148,6 +149,40 @@ pub fn analyze_package_types_with_artifact_limits(
         }
         Err(SchemaAnalysisError::Invariant) => return Err(AnalysisError::Invariant),
     };
+    let (manifest, canonical_ir, source_map) = if status == AnalysisStatus::Valid {
+        let artifacts = match lower_package_artifacts(
+            phase.snapshot(),
+            phase.parsed_sources(),
+            &body_types,
+            &workflows,
+            artifact_limits,
+        ) {
+            Ok(artifacts) => artifacts,
+            Err(LoweringError::ResourceLimit(error)) => {
+                return Err(AnalysisError::ResourceLimit {
+                    error,
+                    diagnostics: retained,
+                });
+            }
+            Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
+        };
+        (
+            Some(artifacts.manifest),
+            Some(artifacts.canonical_ir),
+            Some(artifacts.source_map),
+        )
+    } else {
+        let manifest = if phase.module_resolution_issues().is_empty() {
+            match lower_package_manifest(phase.snapshot(), artifact_limits) {
+                Ok(manifest) => Some(manifest),
+                Err(LoweringError::ResourceLimit(_)) => None,
+                Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
+            }
+        } else {
+            None
+        };
+        (manifest, None, None)
+    };
     Ok(TypedPackage {
         status,
         structure,
@@ -156,6 +191,9 @@ pub fn analyze_package_types_with_artifact_limits(
         actions,
         entry,
         schemas,
+        manifest,
+        canonical_ir,
+        source_map,
         diagnostics: retained,
         counters,
     })
@@ -881,14 +919,474 @@ mod tests {
     }
 
     fn analyze(source: &str) -> crate::TypedPackage {
+        let syntax = syntax(source);
+        analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"))
+    }
+
+    fn syntax(source: &str) -> gantry_frontend::CompletedSyntaxPhase {
         let root = TempDirectory::new();
         root.write(source);
         let limits = SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
             .unwrap_or_else(|_| unreachable!("positive limits"));
-        let syntax = validate_package_syntax(&root.0, limits)
-            .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
-        analyze_package_types(&syntax)
-            .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"))
+        validate_package_syntax(&root.0, limits)
+            .unwrap_or_else(|error| panic!("syntax failed: {error:?}"))
+    }
+
+    #[test]
+    fn valid_packages_include_bounded_ir_source_map_and_manifest_artifacts() {
+        let package = analyze("fn main() {}");
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+
+        let manifest = package
+            .manifest()
+            .unwrap_or_else(|| unreachable!("valid package has a source manifest"));
+        assert_eq!(manifest.files().len(), 1);
+        assert_eq!(manifest.files()[0].package_path().as_str(), "main.gnt");
+
+        let ir = package
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("valid package has canonical IR"));
+        assert_eq!(ir.workflows().len(), 1);
+        assert_eq!(ir.workflows()[0].path.as_str(), "crate::main");
+        assert_eq!(
+            ir.workflows()[0].signature.as_str(),
+            "fn crate::main()->Unit"
+        );
+
+        let source_map = package
+            .source_map()
+            .unwrap_or_else(|| unreachable!("valid package has a source map"));
+        assert_eq!(source_map.entries().len(), ir.workflows()[0].nodes.len());
+    }
+
+    #[test]
+    fn source_invalid_packages_expose_only_complete_audit_provenance() {
+        let complete = analyze("fn main() -> Int { \"wrong\" }");
+        assert_eq!(complete.status(), AnalysisStatus::Invalid);
+        assert!(complete.manifest().is_some());
+        assert!(complete.canonical_ir().is_none());
+        assert!(complete.source_map().is_none());
+
+        let root = TempDirectory::new();
+        root.write("mod absent; fn main() {}");
+        let syntax = validate_package_syntax(
+            &root.0,
+            SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
+                .unwrap_or_else(|_| unreachable!("positive limits")),
+        )
+        .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
+        let incomplete = analyze_package_types(&syntax)
+            .unwrap_or_else(|error| panic!("analysis failed operationally: {error:?}"));
+        assert_eq!(incomplete.status(), AnalysisStatus::Invalid);
+        assert!(incomplete.manifest().is_none());
+        assert!(incomplete.canonical_ir().is_none());
+        assert!(incomplete.source_map().is_none());
+    }
+
+    #[test]
+    fn canonical_ir_ignores_cosmetic_source_but_artifact_limits_remain_exact() {
+        fn artifacts(source: &str) -> (Vec<u8>, Vec<u8>) {
+            let package = analyze(source);
+            assert_eq!(
+                package.status(),
+                AnalysisStatus::Valid,
+                "{:?}",
+                package.diagnostics()
+            );
+            let ir = package
+                .canonical_ir()
+                .unwrap_or_else(|| unreachable!("valid package has canonical IR"))
+                .artifact()
+                .canonical_bytes()
+                .to_vec();
+            let manifest = package
+                .manifest()
+                .unwrap_or_else(|| unreachable!("valid package has a source manifest"))
+                .artifact()
+                .canonical_bytes()
+                .to_vec();
+            (ir, manifest)
+        }
+
+        let compact = artifacts("fn main() { discard prompt \"x\" -> String; }");
+        let cosmetic = artifacts(
+            r#"
+// Cosmetic source changes affect provenance, not canonical IR.
+fn main() {
+    discard prompt "x" -> String;
+}
+"#,
+        );
+        assert_eq!(compact.0, cosmetic.0);
+        assert_ne!(compact.1, cosmetic.1);
+
+        let semantic = artifacts("fn main() { discard prompt \"different\" -> String; }");
+        assert_ne!(compact.0, semantic.0);
+
+        let root = TempDirectory::new();
+        root.write("fn main() {}");
+        let syntax = validate_package_syntax(
+            &root.0,
+            SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
+                .unwrap_or_else(|_| unreachable!("positive limits")),
+        )
+        .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
+        let result = analyze_package_types_with_artifact_limits(
+            &syntax,
+            ArtifactLimits {
+                canonical_ir_bytes: 1,
+                ..ArtifactLimits::MAXIMUM
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(AnalysisError::ResourceLimit { error, diagnostics })
+                if error.code == FrontendResourceCode::CanonicalIrByteLimit
+                    && diagnostics.is_empty()
+        ));
+    }
+
+    #[test]
+    fn canonical_lowering_preserves_operation_and_task_control_sites() {
+        let package = analyze(
+            r#"
+fn helper() -> String { "value" }
+fn main() {
+    discard helper();
+    discard prompt "Generate." -> String;
+    spawn task { return; }
+    discard join(task);
+}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+
+        let facts = package
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::main")
+            .unwrap_or_else(|| unreachable!("main workflow facts are present"));
+        let ir = package
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("valid package has canonical IR"));
+        let main = ir
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::main")
+            .unwrap_or_else(|| unreachable!("main workflow is present"));
+        let nodes = &main.nodes;
+        for call in &facts.calls {
+            assert!(nodes.iter().any(|node| {
+                node.position == *call.site.position()
+                    && node.form == gantry_ir::generated::CoreForm::Call
+                    && node.ty == gantry_ir::TypeDescriptor::STRING
+            }));
+        }
+        for operation in &facts.operations {
+            assert!(nodes.iter().any(|node| {
+                node.position == *operation.id.position()
+                    && node.form == gantry_ir::generated::CoreForm::Operation
+            }));
+        }
+        for control in &facts.task_controls {
+            let form = match control.kind.wire_name() {
+                "spawn" => gantry_ir::generated::CoreForm::Spawn,
+                "join" | "joinall" => gantry_ir::generated::CoreForm::Join,
+                "detach" => gantry_ir::generated::CoreForm::BackgroundTransfer,
+                _ => unreachable!("closed task-control kind"),
+            };
+            assert!(
+                nodes
+                    .iter()
+                    .any(|node| { node.position == *control.id.position() && node.form == form })
+            );
+        }
+
+        let source_map = package
+            .source_map()
+            .unwrap_or_else(|| unreachable!("valid package has a source map"));
+        assert_eq!(
+            source_map
+                .entries()
+                .iter()
+                .filter(|entry| entry.workflow.as_str() == "crate::main")
+                .count(),
+            nodes.len()
+        );
+    }
+
+    #[test]
+    fn canonical_lowering_covers_core_forms_and_exact_operation_order() {
+        let package = analyze(
+            r#"
+agents { worker }
+default agent = worker;
+action read_only inspect(value: Int) -> String;
+struct Holder { item: Int }
+fn helper(value: Int) -> Int { return value; }
+fn main(flag: Bool) -> Int {
+    let mut value: Int = 1;
+    let holder: Holder = Holder { item: value };
+    value = holder.item;
+    value = helper(value);
+    if flag { value = 2; } else { value = 3; }
+    loop(limit = 1) { break; }
+    with worker { session(inline) { discard attempt action inspect(value); } }
+    spawn joined -> Int { value }
+    value = join(joined);
+    spawn background { return; }
+    detach(background);
+    discard prompt "${value}" using { chosen: value } -> String;
+    value
+}
+"#,
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+
+        let ir = package
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("valid package has canonical IR"));
+        let forms = ir
+            .workflows()
+            .iter()
+            .flat_map(|workflow| workflow.nodes.iter().map(|node| node.form))
+            .collect::<std::collections::BTreeSet<_>>();
+        for expected in [
+            gantry_ir::generated::CoreForm::Aggregate,
+            gantry_ir::generated::CoreForm::Assignment,
+            gantry_ir::generated::CoreForm::Attempt,
+            gantry_ir::generated::CoreForm::BackgroundTransfer,
+            gantry_ir::generated::CoreForm::Branch,
+            gantry_ir::generated::CoreForm::Call,
+            gantry_ir::generated::CoreForm::CancellationCheck,
+            gantry_ir::generated::CoreForm::Join,
+            gantry_ir::generated::CoreForm::Literal,
+            gantry_ir::generated::CoreForm::Loop,
+            gantry_ir::generated::CoreForm::Operation,
+            gantry_ir::generated::CoreForm::Projection,
+            gantry_ir::generated::CoreForm::Return,
+            gantry_ir::generated::CoreForm::Sequence,
+            gantry_ir::generated::CoreForm::SessionScope,
+            gantry_ir::generated::CoreForm::Spawn,
+            gantry_ir::generated::CoreForm::Variable,
+            gantry_ir::generated::CoreForm::WithScope,
+        ] {
+            assert!(forms.contains(&expected), "missing {expected:?}: {forms:?}");
+        }
+
+        for facts in package.workflows() {
+            let workflow = ir
+                .workflows()
+                .iter()
+                .find(|workflow| workflow.path == facts.path)
+                .unwrap_or_else(|| unreachable!("fact workflow has lowered IR"));
+            assert_eq!(
+                workflow
+                    .nodes
+                    .iter()
+                    .filter(|node| node.form == gantry_ir::generated::CoreForm::Operation)
+                    .map(|node| node.position.clone())
+                    .collect::<Vec<_>>(),
+                facts
+                    .operations
+                    .iter()
+                    .map(|operation| operation.id.position().clone())
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        let main = ir
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "crate::main")
+            .unwrap_or_else(|| unreachable!("main workflow is lowered"));
+        let action = main
+            .nodes
+            .iter()
+            .filter_map(|node| node.operation.as_ref())
+            .find(|operation| operation.kind.wire_name() == "action")
+            .unwrap_or_else(|| unreachable!("action operation is retained"));
+        assert_eq!(
+            action.action.as_ref().map(gantry_ir::CanonicalPath::as_str),
+            Some("crate::inspect")
+        );
+        assert_eq!(
+            action.recovery.map(|recovery| recovery.wire_name()),
+            Some("read_only")
+        );
+
+        let prompt = main
+            .nodes
+            .iter()
+            .filter_map(|node| node.operation.as_ref())
+            .find(|operation| operation.kind.wire_name() == "prompt")
+            .unwrap_or_else(|| unreachable!("prompt operation is retained"));
+        assert_eq!(prompt.interpolation_inputs, [0]);
+        assert_eq!(prompt.named_inputs.len(), 1);
+
+        assert_eq!(
+            main.nodes
+                .iter()
+                .filter_map(|node| node.task_control.as_ref())
+                .map(|task| (
+                    task.kind.wire_name(),
+                    task.handles.iter().map(AsRef::as_ref).collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("spawn", vec!["joined"]),
+                ("join", vec!["joined"]),
+                ("spawn", vec!["background"]),
+                ("detach", vec!["background"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn analyzer_artifact_limits_are_exact_at_every_lowering_boundary() {
+        let phase = syntax("fn main() { discard prompt \"bounded\" -> String; }");
+        let baseline = analyze_package_types(&phase)
+            .unwrap_or_else(|error| panic!("baseline analysis failed: {error:?}"));
+        let lengths = [
+            (
+                baseline
+                    .manifest()
+                    .unwrap_or_else(|| unreachable!("manifest is present"))
+                    .artifact()
+                    .canonical_bytes()
+                    .len(),
+                FrontendResourceCode::PackageSourceManifestByteLimit,
+            ),
+            (
+                baseline
+                    .canonical_ir()
+                    .unwrap_or_else(|| unreachable!("IR is present"))
+                    .artifact()
+                    .canonical_bytes()
+                    .len(),
+                FrontendResourceCode::CanonicalIrByteLimit,
+            ),
+            (
+                baseline
+                    .source_map()
+                    .unwrap_or_else(|| unreachable!("source map is present"))
+                    .artifact()
+                    .canonical_bytes()
+                    .len(),
+                FrontendResourceCode::SourceMapByteLimit,
+            ),
+        ];
+
+        for (index, (length, code)) in lengths.into_iter().enumerate() {
+            let length =
+                u64::try_from(length).unwrap_or_else(|_| unreachable!("artifact length fits"));
+            let limits = |limit| {
+                let mut limits = ArtifactLimits::MAXIMUM;
+                match index {
+                    0 => limits.package_source_manifest_bytes = limit,
+                    1 => limits.canonical_ir_bytes = limit,
+                    2 => limits.source_map_bytes = limit,
+                    _ => unreachable!("three lowering artifacts"),
+                }
+                limits
+            };
+            let at = analyze_package_types_with_artifact_limits(&phase, limits(length));
+            assert!(at.is_ok(), "{code:?} must fit at its exact length");
+            let above = analyze_package_types_with_artifact_limits(
+                &phase,
+                limits(length.saturating_add(1)),
+            );
+            assert!(above.is_ok(), "{code:?} must fit one byte above");
+            let below = analyze_package_types_with_artifact_limits(
+                &phase,
+                limits(length.saturating_sub(1)),
+            );
+            assert!(matches!(
+                below,
+                Err(AnalysisError::ResourceLimit { error, diagnostics })
+                    if error.code == code
+                        && error.limit == length.saturating_sub(1)
+                        && diagnostics.is_empty()
+            ));
+        }
+
+        assert_eq!(
+            baseline
+                .manifest()
+                .unwrap_or_else(|| unreachable!("manifest is present"))
+                .artifact()
+                .sha256_hex()
+                .len(),
+            64
+        );
+        assert_eq!(
+            baseline
+                .canonical_ir()
+                .unwrap_or_else(|| unreachable!("IR is present"))
+                .artifact()
+                .sha256_hex()
+                .len(),
+            64
+        );
+        assert_eq!(
+            baseline
+                .source_map()
+                .unwrap_or_else(|| unreachable!("source map is present"))
+                .artifact()
+                .sha256_hex()
+                .len(),
+            64
+        );
+    }
+
+    #[test]
+    fn large_lowering_traversals_are_iterative_and_complete() {
+        let statement_count = 4_096;
+        let mut source = String::from("fn main() { let mut value: Int = 0;");
+        source.push_str(&"value = value;".repeat(statement_count));
+        source.push('}');
+        let package = analyze(&source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let workflow = &package
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("IR is present"))
+            .workflows()[0];
+        assert!(workflow.nodes.len() > statement_count);
+        assert!(
+            workflow
+                .nodes
+                .windows(2)
+                .all(|pair| pair[0].position < pair[1].position)
+        );
+        assert_eq!(
+            package
+                .source_map()
+                .unwrap_or_else(|| unreachable!("source map is present"))
+                .entries()
+                .len(),
+            workflow.nodes.len()
+        );
     }
 
     #[test]

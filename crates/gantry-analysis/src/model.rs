@@ -6,8 +6,8 @@ use gantry_core::source::{
     FrontendResourceLimit, SourceCounters, SourceSpan, StructuredDiagnostic,
 };
 use gantry_ir::{
-    ActionInventory, CanonicalPath, EntryInventory, GeneratedSchemaObject, TypeDescriptor,
-    WorkflowFacts,
+    ActionInventory, CanonicalIr, CanonicalPath, CanonicalSourceMap, EntryInventory,
+    GeneratedSchemaObject, PackageSourceManifest, TypeDescriptor, WorkflowFacts,
 };
 
 /// Dense deterministic identifier for one discovered source module.
@@ -194,6 +194,9 @@ pub struct TypedPackage {
     pub(crate) actions: Vec<ActionInventory>,
     pub(crate) entry: Option<EntryInventory>,
     pub(crate) schemas: Option<GeneratedSchemaObject>,
+    pub(crate) manifest: Option<PackageSourceManifest>,
+    pub(crate) canonical_ir: Option<CanonicalIr>,
+    pub(crate) source_map: Option<CanonicalSourceMap>,
     pub(crate) diagnostics: Vec<StructuredDiagnostic>,
     pub(crate) counters: SourceCounters,
 }
@@ -239,6 +242,24 @@ impl TypedPackage {
     #[must_use]
     pub const fn schemas(&self) -> Option<&GeneratedSchemaObject> {
         self.schemas.as_ref()
+    }
+
+    /// Returns the immutable package-source manifest for a source-valid package.
+    #[must_use]
+    pub const fn manifest(&self) -> Option<&PackageSourceManifest> {
+        self.manifest.as_ref()
+    }
+
+    /// Returns bounded canonical IR only for a source-valid package.
+    #[must_use]
+    pub const fn canonical_ir(&self) -> Option<&CanonicalIr> {
+        self.canonical_ir.as_ref()
+    }
+
+    /// Returns the bounded source map paired with canonical IR.
+    #[must_use]
+    pub const fn source_map(&self) -> Option<&CanonicalSourceMap> {
+        self.source_map.as_ref()
     }
 
     /// Returns all structural and type diagnostics in canonical machine order.

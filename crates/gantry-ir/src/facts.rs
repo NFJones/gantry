@@ -180,6 +180,10 @@ pub struct WorkflowFacts {
     pub path: CanonicalPath,
     /// Canonical callable signature.
     pub signature: CanonicalSignature,
+    /// Exact declared result type, including implicit `Unit`.
+    pub result: TypeDescriptor,
+    /// Authored callable declaration retained outside canonical IR identity.
+    pub source: SourceSpan,
     /// Least-fixed-point inferred effect summary.
     pub effects: EffectSet,
     /// Direct call edges in structural-site order.
@@ -194,9 +198,12 @@ pub struct WorkflowFacts {
 
 impl WorkflowFacts {
     /// Constructs facts only when every site list is strictly ordered and local.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         path: CanonicalPath,
         signature: CanonicalSignature,
+        result: TypeDescriptor,
+        source: SourceSpan,
         effects: EffectSet,
         calls: Vec<CallEdge>,
         operations: Vec<OperationSite>,
@@ -215,6 +222,8 @@ impl WorkflowFacts {
         Ok(Self {
             path,
             signature,
+            result,
+            source,
             effects,
             calls,
             operations,
