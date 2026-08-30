@@ -7,8 +7,13 @@ control flow explicit, reviewable program constructs.
 
 ## Status
 
-This repository contains the initial project scaffold. The language contract
-will be developed in [`SPEC.md`](SPEC.md) before implementation expands.
+The frontend profile is implemented for Gantry source language 1.0 at
+`SPEC.md` SHA-256
+`78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22`.
+It provides complete package discovery, lexical and syntactic validation,
+structured diagnostics, parse events, `ValidatePackage`, and `gantry check`.
+Analyzer, evaluator, concurrent, durable-runtime, and embedding profiles are
+not yet advertised.
 
 ## Development
 

@@ -186,11 +186,10 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         || !manifest.claim.permits_profile_implementation
         || manifest.claim.advertises_profile
         || !manifest.claim.profiles.is_empty()
-        || gantry::advertises_any_profile()
     {
         return Err("foundation gate must not claim a profile".to_owned());
     }
-    if manifest.next_profile.name != "frontend" || manifest.next_profile.implementation_complete {
+    if manifest.next_profile.name != "frontend" || !manifest.next_profile.implementation_complete {
         return Err("next-profile classification overstates implementation".to_owned());
     }
 

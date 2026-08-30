@@ -114,6 +114,15 @@ fn public_parser_reports_bounded_source_backed_recovery_diagnostics() {
 }
 
 #[test]
+fn public_parser_rejects_executable_top_level_statements() {
+    for source in ["let value: Int = 1;", "return;", "prompt \"top level\";"] {
+        let outcome = parse(source, 64, 4);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(!outcome.diagnostics().is_empty());
+    }
+}
+
+#[test]
 fn public_parser_handles_adversarial_nesting_without_native_recursion() {
     let depth = 5_000;
     let mut source = String::from("fn deep(value: ");

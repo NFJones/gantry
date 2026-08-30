@@ -1,8 +1,8 @@
 //! Public facade for Gantry, Mezzanine's agent-control language.
 //!
 //! The facade is the supported Rust API boundary. Feature flags describe which
-//! implementation layers are compiled, while profile advertisement remains
-//! empty until the corresponding conformance gate closes.
+//! implementation layers are compiled, while profile advertisement includes
+//! only layers whose conformance gates have closed.
 
 pub mod diagnostic;
 #[cfg(feature = "frontend")]
@@ -47,19 +47,31 @@ pub const fn compiled_features() -> CompiledFeatures {
     }
 }
 
-/// Reports whether this bootstrap build advertises a conformance profile.
+/// Returns the conformance profiles advertised by this build.
 ///
-/// Feature selection alone is not conformance evidence. This remains `false`
-/// until a later profile gate connects an implemented layer to its reviewed
-/// evidence and publication artifacts.
+/// The frontend profile is advertised only when its implementation is
+/// compiled. Later feature flags do not advertise their profiles until their
+/// own conformance gates close.
+#[must_use]
+pub const fn advertised_profiles() -> &'static [ConformanceProfile] {
+    if cfg!(feature = "frontend") {
+        &[ConformanceProfile::Frontend]
+    } else {
+        &[]
+    }
+}
+
+/// Reports whether this build advertises at least one conformance profile.
 #[must_use]
 pub const fn advertises_any_profile() -> bool {
-    false
+    !advertised_profiles().is_empty()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{advertises_any_profile, compiled_features};
+    use super::{
+        ConformanceProfile, advertised_profiles, advertises_any_profile, compiled_features,
+    };
 
     #[test]
     fn facade_features_preserve_required_implications() {
@@ -72,7 +84,13 @@ mod tests {
     }
 
     #[test]
-    fn feature_selection_does_not_claim_unimplemented_profiles() {
-        assert!(!advertises_any_profile());
+    fn profile_advertisement_is_limited_to_the_closed_frontend_gate() {
+        if compiled_features().frontend {
+            assert_eq!(advertised_profiles(), [ConformanceProfile::Frontend]);
+            assert!(advertises_any_profile());
+        } else {
+            assert!(advertised_profiles().is_empty());
+            assert!(!advertises_any_profile());
+        }
     }
 }

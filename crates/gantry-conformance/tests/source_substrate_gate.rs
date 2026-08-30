@@ -100,7 +100,6 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     if manifest.claim.phase != "phase-1-source-substrate"
         || manifest.claim.advertises_profile
         || !manifest.claim.profiles.is_empty()
-        || gantry::advertises_any_profile()
     {
         return Err("source-substrate gate must not claim a profile".to_owned());
     }

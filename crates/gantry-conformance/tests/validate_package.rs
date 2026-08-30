@@ -19,7 +19,7 @@ use gantry::host::event::{
 };
 use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
-    DeliveryOutcome, EventKind, EventLayer, IdentityKind, JitterMode,
+    DeliveryOutcome, EventKind, EventLayer, FrontendResourceCode, IdentityKind, JitterMode,
     PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS, SinkClass,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
@@ -127,9 +127,17 @@ impl EventDeliveryRuntime for ImmediateRuntime {
 
 #[test]
 fn valid_and_invalid_packages_each_expose_one_parse_occurrence() {
-    for (source, expected) in [
-        (&b"fn main() {}"[..], PackageSyntaxStatus::Valid),
-        (&b"fn main( {"[..], PackageSyntaxStatus::Invalid),
+    for (source, expected, payload) in [
+        (
+            &b"fn main() {}"[..],
+            PackageSyntaxStatus::Valid,
+            "{\"diagnostics\":[],\"phase\":\"parse\",\"status\":\"syntax-valid\"}",
+        ),
+        (
+            &b"fn main( {"[..],
+            PackageSyntaxStatus::Invalid,
+            "\"status\":\"syntax-invalid\"",
+        ),
     ] {
         let root = TempDirectory::new(source);
         let identities = ScriptedIdentities::new([Ok([1; 32]), Ok([2; 32])]);
@@ -145,11 +153,112 @@ fn valid_and_invalid_packages_each_expose_one_parse_occurrence() {
         assert_eq!(result.event.layer(), EventLayer::Physical);
         assert_eq!(result.event.activity_id(), result.activity_id);
         assert!(result.event.execution_id().is_none());
+        let event_payload = std::str::from_utf8(result.event.payload().canonical_bytes());
+        assert!(event_payload.is_ok_and(|actual| {
+            if expected == PackageSyntaxStatus::Valid {
+                actual == payload
+            } else {
+                actual.contains(payload) && actual.contains("\"phase\":\"parse\"")
+            }
+        }));
         assert_eq!(
             identities.calls(),
             vec![IdentityKind::Activity, IdentityKind::Event]
         );
     }
+}
+
+#[test]
+fn semantic_errors_remain_outside_syntax_only_validation() {
+    let root = TempDirectory::new(
+        b"mod child;\nmod child;\nmod nested_scope { mod nested; }\nuse child::thing;\nstruct Duplicate { value: Int, value: Int }\nfn recursive() { recursive(); }\nfn main() { missing_name; child::thing(); }",
+    );
+    assert!(fs::write(root.0.join("child.gnt"), b"fn thing() {}").is_ok());
+    assert!(fs::create_dir(root.0.join("nested_scope")).is_ok());
+    assert!(fs::write(root.0.join("nested_scope/nested.gnt"), b"fn nested() {}").is_ok());
+    let identities = ScriptedIdentities::new([Ok([8; 32]), Ok([9; 32])]);
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock(Ok(timestamp()));
+    let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
+    let selection = selection();
+
+    let result = block_on(coordinator.validate(request(&root.0, &selection, None)));
+    assert!(result.is_ok());
+    let result = result.unwrap_or_else(|_| unreachable!("checked above"));
+    assert_eq!(result.phase.status(), PackageSyntaxStatus::Valid);
+    assert!(result.phase.diagnostics().is_empty());
+    assert_eq!(result.phase.snapshot().records().len(), 3);
+    assert!(result.event.execution_id().is_none());
+}
+
+#[test]
+fn complete_frontend_limit_policy_is_public_and_finite() {
+    const MAXIMUM: u64 = i64::MAX as u64;
+
+    assert!(
+        FrontendLimits::new(
+            MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM
+        )
+        .is_ok()
+    );
+    for index in 0..9 {
+        let mut zero = [1; 9];
+        zero[index] = 0;
+        assert!(
+            FrontendLimits::new(
+                zero[0], zero[1], zero[2], zero[3], zero[4], zero[5], zero[6], zero[7], zero[8]
+            )
+            .is_err()
+        );
+
+        let mut oversized = [1; 9];
+        oversized[index] = MAXIMUM + 1;
+        assert!(
+            FrontendLimits::new(
+                oversized[0],
+                oversized[1],
+                oversized[2],
+                oversized[3],
+                oversized[4],
+                oversized[5],
+                oversized[6],
+                oversized[7],
+                oversized[8]
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn frontend_limit_failure_is_separate_and_retains_diagnostics() {
+    let root = TempDirectory::new(
+        b"struct Broken { value Int; }\naction read_only missing( -> String;\nfn good() {}",
+    );
+    let identities = ScriptedIdentities::new([Ok([10; 32])]);
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock(Ok(timestamp()));
+    let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
+    let selection = selection();
+    let limits = FrontendLimits::new(1, 4_096, 4_096, 128, 1, 4_096, 4_096, 4_096, 4_096)
+        .unwrap_or_else(|_| unreachable!("positive limits"));
+
+    let result =
+        block_on(coordinator.validate(request_with_limits(&root.0, &selection, limits, None)));
+    let error = match result {
+        Err(ValidatePackageError::Package(error)) => error,
+        other => panic!("expected package resource limit, got {other:?}"),
+    };
+    assert_eq!(error.code(), "frontend-resource-limit");
+    assert!(matches!(
+        error.frontend_resource_limit(),
+        Some(limit)
+            if limit.code == FrontendResourceCode::DiagnosticCountLimit
+                && limit.limit == 1
+                && limit.observed == Some(2)
+    ));
+    assert_eq!(error.retained_diagnostics().len(), 1);
+    assert_eq!(identities.calls(), vec![IdentityKind::Activity]);
 }
 
 #[test]
@@ -207,13 +316,23 @@ fn request<'a>(
     selection: &'a ProtocolSelection,
     event_delivery: Option<&'a SinkPlan>,
 ) -> ValidatePackageRequest<'a> {
+    let limits = FrontendLimits::new(
+        32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+    )
+    .unwrap_or_else(|_| unreachable!("positive limits"));
+    request_with_limits(root, selection, limits, event_delivery)
+}
+
+fn request_with_limits<'a>(
+    root: &'a std::path::Path,
+    selection: &'a ProtocolSelection,
+    frontend_limits: FrontendLimits,
+    event_delivery: Option<&'a SinkPlan>,
+) -> ValidatePackageRequest<'a> {
     ValidatePackageRequest {
         package_root: root,
         protocol_selection: selection,
-        frontend_limits: FrontendLimits::new(
-            32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
-        )
-        .unwrap_or_else(|_| unreachable!("positive limits")),
+        frontend_limits,
         event_delivery,
     }
 }
