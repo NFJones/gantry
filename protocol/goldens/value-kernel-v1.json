@@ -1,0 +1,38 @@
+{
+  "format": "gantry.value-kernel-vectors/v1",
+  "canonical_input": "{\"text\":\"𝄞\",\"numbers\":[1.0,-0.0,1e21]}",
+  "canonical_output": "{\"numbers\":[1,0,1e+21],\"text\":\"𝄞\"}",
+  "canonical_sha256": "91b81b285d2df82f5b11e94ce78cd70db11545603d445c9ccdf0a7b64f15a311",
+  "rfc8785_input": "{\"numbers\":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001],\"string\":\"€$\\u000F\\nA'B\\\"\\\\\\\"/\",\"literals\":[null,true,false]}",
+  "rfc8785_output": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"€$\\u000f\\nA'B\\\"\\\\\\\"/\"}",
+  "float_cases": [
+    { "input": "-0", "canonical": "0" },
+    { "input": "5e-324", "canonical": "5e-324" },
+    { "input": "1.7976931348623157e308", "canonical": "1.7976931348623157e+308" },
+    { "input": "1.00000000000000011102230246251565404236316680908203125", "canonical": "1" }
+  ],
+  "rejected_floats": ["1.79769313486231571e308", "1e309"],
+  "schema_cases": [
+    {
+      "schema": "{\"type\":\"array\",\"prefixItems\":[{\"type\":\"integer\"},{\"anyOf\":[{\"type\":\"null\"},{\"type\":\"string\"}]}],\"items\":false,\"minItems\":2,\"maxItems\":2}",
+      "valid": ["[1e0,null]", "[1,\"value\"]"],
+      "invalid": ["[1]", "[1,\"value\",false]", "[1.5,null]"]
+    },
+    {
+      "schema": "{\"oneOf\":[{\"type\":\"object\",\"properties\":{\"variant\":{\"type\":\"string\",\"const\":\"One\"}},\"required\":[\"variant\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"variant\":{\"type\":\"string\",\"const\":\"Two\"},\"value\":{\"type\":\"boolean\"}},\"required\":[\"variant\",\"value\"],\"additionalProperties\":false}]}",
+      "valid": ["{\"variant\":\"One\"}", "{\"variant\":\"Two\",\"value\":true}"],
+      "invalid": ["{\"variant\":\"Three\"}", "{\"variant\":\"One\",\"value\":false}"]
+    },
+    {
+      "schema": "{\"type\":\"object\",\"properties\":{\"decision\":{\"type\":\"boolean\"},\"rationale\":{\"type\":\"string\",\"minLength\":1}},\"required\":[\"decision\",\"rationale\"],\"additionalProperties\":false}",
+      "valid": ["{\"decision\":true,\"rationale\":\"because\"}"],
+      "invalid": ["{\"decision\":true,\"rationale\":\"\"}", "{\"decision\":false}", "{\"decision\":true,\"rationale\":\"x\",\"extra\":null}"]
+    }
+  ],
+  "integer_equivalents": ["1", "1.0", "1e0", "100e-2"],
+  "invalid_json": [
+    { "input": "{\"duplicate\":1,\"duplicate\":2}", "category": "duplicate-member" },
+    { "input": "\"\\uD800\"", "category": "unpaired-surrogate" },
+    { "input": "null true", "category": "trailing-data" }
+  ]
+}

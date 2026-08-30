@@ -39,6 +39,13 @@ package-manifest boundaries, portable artifact limits, prompt phases, and
 identity evidence are recorded in `conformance/analyzer-lowering-v1.json`.
 The complete package-validity argument remains owned by later analyzer issues.
 
+Portable value-kernel vectors in `goldens/value-kernel-v1.json` exercise the
+Gantry-owned strict JSON decoder, exact numeric normalization and primitives,
+generated-schema validator, RFC 8785 encoding, and exact SHA-256 boundary. The
+paired `schemas/value-kernel-v1.schema.json` freezes that vector envelope, and
+`conformance/value-kernel-v1.json` maps the implemented portable subset to its
+profile-specific reviewed clauses without closing later runtime obligations.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

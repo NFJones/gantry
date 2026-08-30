@@ -33,5 +33,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "strict_json"
+path = "fuzz_targets/strict_json.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
 members = ["."]

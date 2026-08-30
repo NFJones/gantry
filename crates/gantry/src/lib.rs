@@ -10,7 +10,10 @@ mod validate;
 
 #[cfg(feature = "analyzer")]
 pub use gantry_analysis as analysis;
-pub use gantry_core::{event, identity, portable, profile, protocol, source, timestamp, unicode};
+pub use gantry_core::{
+    canonical_json, event, identity, numeric, portable, profile, protocol, schema, source,
+    strict_json, timestamp, unicode,
+};
 #[cfg(feature = "frontend")]
 pub use gantry_frontend as frontend;
 pub use gantry_host as host;

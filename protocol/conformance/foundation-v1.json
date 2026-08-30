@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "8354055ec311929b0fa99830c153c670f5750e44cec8bbcef0214dff9ffae799",
+    "sha256": "be63c58fbd7bbebe070138037bbfaa8a23bdd52c814ad0f32c2ffe7b7c30f880",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -143,6 +143,10 @@
       "sha256": "30e1d75ce7ae5b19f6ca7e4d16adf0093f16a844d6f75e5e754003ddf7e4db15"
     },
     {
+      "path": "crates/gantry-conformance/tests/value_kernel.rs",
+      "sha256": "bd78b21c37cb393cbc40b11bb9a97d382976b3e9574bd42ef7ad87de6b96b678"
+    },
+    {
       "path": "crates/gantry-core/src/generated/portable.rs",
       "sha256": "b78d3ae68124ff112549e794d67c49ab35dcb1b7c9d2329d15a856734d3ef2c3"
     },
@@ -219,6 +223,10 @@
       "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
     },
     {
+      "path": "protocol/conformance/value-kernel-v1.json",
+      "sha256": "df61e073ac06704806c1b27b8dff737d4e0d0061a9fc4fac09f436ca925e9b59"
+    },
+    {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
       "sha256": "18f4d18119255eafac8d85a0694d4c4373dea11d8819d2146818568951f1ec26"
     },
@@ -271,16 +279,20 @@
       "sha256": "dc018305d902d7e18dec6ec4b851e6404db483c3f356b1fa4cf58f03206a9290"
     },
     {
+      "path": "protocol/goldens/value-kernel-v1.json",
+      "sha256": "9eadc24b1d9100212b48ea14a3935026b9c18aa7cb0b0286da1db36d191227d5"
+    },
+    {
       "path": "protocol/publication/artifacts-v1.json",
       "sha256": "d3e4e7707cc5de24f5952c63c3b211fe83e11e97bfee5d77178fde2218464548"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "8354055ec311929b0fa99830c153c670f5750e44cec8bbcef0214dff9ffae799"
+      "sha256": "be63c58fbd7bbebe070138037bbfaa8a23bdd52c814ad0f32c2ffe7b7c30f880"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "b9669b4bcf65d7a050413ed789813931bacddbece3d579a3d8f140bd318d462d"
+      "sha256": "1e227bc443be49a6e74befeee5e3d1a058eb6a412f965022860bf5be87914c79"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -325,6 +337,10 @@
     {
       "path": "protocol/schemas/source-substrate-v1.schema.json",
       "sha256": "e98037704d9a66a3479d30ab726b4968fb4b98cf72dc06effbb406f6ed36595c"
+    },
+    {
+      "path": "protocol/schemas/value-kernel-v1.schema.json",
+      "sha256": "1a80dab1078d9542bb53d3df538bf09c8c6f5a34838da6ab9f93978b53295353"
     },
     {
       "path": "rust-toolchain.toml",

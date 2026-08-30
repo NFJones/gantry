@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/value-kernel/v1/schema.json",
+  "title": "Gantry value-kernel conformance vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.value-kernel-vectors/v1" },
+    "canonical_input": { "type": "string" },
+    "canonical_output": { "type": "string" },
+    "canonical_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "rfc8785_input": { "type": "string" },
+    "rfc8785_output": { "type": "string" },
+    "float_cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "input": { "type": "string" },
+          "canonical": { "type": "string" }
+        },
+        "required": ["input", "canonical"]
+      }
+    },
+    "rejected_floats": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "schema_cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema": { "type": "string" },
+          "valid": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          },
+          "invalid": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["schema", "valid", "invalid"]
+      }
+    },
+    "integer_equivalents": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "invalid_json": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "input": { "type": "string" },
+          "category": {
+            "enum": ["duplicate-member", "trailing-data", "unpaired-surrogate"]
+          }
+        },
+        "required": ["input", "category"]
+      }
+    }
+  },
+  "required": [
+    "format",
+    "canonical_input",
+    "canonical_output",
+    "canonical_sha256",
+    "rfc8785_input",
+    "rfc8785_output",
+    "float_cases",
+    "rejected_floats",
+    "schema_cases",
+    "integer_equivalents",
+    "invalid_json"
+  ]
+}

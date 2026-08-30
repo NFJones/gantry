@@ -1,0 +1,27 @@
+{
+  "format": "gantry.value-kernel-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-VAL-001",
+  "entries": [
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "concurrent-evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "concurrent-evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_strict_json_numbers_and_canonical_identity_match_goldens" },
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "durable-runtime", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "durable-runtime", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_strict_json_numbers_and_canonical_identity_match_goldens" },
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "embedding", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "embedding", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_strict_json_numbers_and_canonical_identity_match_goldens" },
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.1", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_strict_json_numbers_and_canonical_identity_match_goldens" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "concurrent-evaluator", "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "concurrent-evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "durable-runtime", "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "durable-runtime", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "embedding", "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "embedding", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts" },
+    { "requirement": "GNT-8.6", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.8", "clause": "clause-001", "profile": "concurrent-evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.8", "clause": "clause-001", "profile": "durable-runtime", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.8", "clause": "clause-001", "profile": "embedding", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" },
+    { "requirement": "GNT-8.8", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe" }
+  ]
+}
