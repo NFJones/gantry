@@ -4,11 +4,12 @@ This is a separate, nightly-only Cargo workspace. Its pinned toolchain and
 dependencies do not change Gantry's Rust 1.91 product MSRV or root publication
 lockfile.
 
-Run the bounded protocol-identity and lexer targets with:
+Run the bounded protocol-identity, lexer, and parser targets with:
 
 ```text
 cargo fuzz run protocol_identity -- -runs=2000 -max_len=256
 cargo fuzz run lexer -- -runs=5000 -max_len=65536
+cargo fuzz run parser -- -runs=5000 -max_len=65536
 ```
 
 Minimize any failure with `cargo fuzz tmin`, copy the smallest reproducer into

@@ -884,6 +884,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A byte-order mark occurs outside the permitted initial source position.",
     },
     DiagnosticCodeDefinition {
+        code: "unexpected-token",
+        phase: DiagnosticPhase::Syntax,
+        category: DiagnosticCategory::Syntax,
+        meaning: "A source token does not satisfy the Gantry surface grammar.",
+    },
+    DiagnosticCodeDefinition {
         code: "unterminated-block-comment",
         phase: DiagnosticPhase::Lexical,
         category: DiagnosticCategory::Lexical,

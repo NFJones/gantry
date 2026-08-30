@@ -1,15 +1,20 @@
 //! Secure package source discovery and syntax-only frontend processing.
 //!
 //! This crate owns package filesystem access, source snapshot construction,
-//! lexical tokenization, and prompt-template scanning. It does not own
-//! semantic analysis, rendering, or ambient integration services.
+//! lexical tokenization, prompt-template scanning, and the authored-order
+//! surface syntax tree. It does not own semantic analysis, rendering, or
+//! ambient integration services.
 
+mod ast;
 mod lexer;
+mod parser;
 mod prompt;
 mod provider;
 mod token;
 
+pub use ast::{NodeId, SyntaxForm, SyntaxNode, SyntaxTree};
 pub use lexer::{LexContext, LexError, Lexer};
+pub use parser::{ParseError, ParseOutcome, Parser};
 pub use prompt::{InterpolationIsland, PromptDelimiter, PromptTemplate};
 
 pub use provider::{
