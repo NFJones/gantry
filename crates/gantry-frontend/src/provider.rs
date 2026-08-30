@@ -7,8 +7,8 @@ use std::path::Path;
 
 use gantry_core::portable::FrontendResourceCode;
 use gantry_core::source::{
-    FrontendResourceLimit, PackagePath, PackagePathError, SourceError, SourceId, SourceLimits,
-    SourceSnapshot, SourceSnapshotBuilder,
+    FrontendResourceLimit, PackagePath, PackagePathError, SourceCounters, SourceError, SourceId,
+    SourceLimits, SourceRecord, SourceSnapshot, SourceSnapshotBuilder,
 };
 use gantry_core::unicode;
 use rustix::fs::{FileType, Mode, OFlags, fstat, open, openat};
@@ -88,6 +88,21 @@ impl RootDirectorySourceProvider {
         module_name: &str,
         maximum_bytes: u64,
     ) -> Result<ModuleResolution, SourceProviderError> {
+        self.resolve_module_bounded(
+            declaring_source,
+            module_name,
+            SourceReadLimits::new(maximum_bytes, 0, maximum_bytes),
+        )
+    }
+
+    /// Resolves one file module while enforcing both file and cumulative
+    /// package byte limits before allocation.
+    pub fn resolve_module_bounded(
+        &self,
+        declaring_source: &PackagePath,
+        module_name: &str,
+        limits: SourceReadLimits,
+    ) -> Result<ModuleResolution, SourceProviderError> {
         validate_module_name(module_name)?;
         let directory = module_directory(declaring_source)?;
         let flat = join_candidate(&directory, &format!("{module_name}.gnt"))?;
@@ -98,11 +113,11 @@ impl RootDirectorySourceProvider {
             (Some(_), Some(_)) => Err(SourceProviderError::AmbiguousModule { flat, nested }),
             (Some(fd), None) => Ok(ModuleResolution {
                 path: flat,
-                bytes: read_bounded(&fd, SourceReadLimits::new(maximum_bytes, 0, maximum_bytes))?,
+                bytes: read_bounded(&fd, limits)?,
             }),
             (None, Some(fd)) => Ok(ModuleResolution {
                 path: nested,
-                bytes: read_bounded(&fd, SourceReadLimits::new(maximum_bytes, 0, maximum_bytes))?,
+                bytes: read_bounded(&fd, limits)?,
             }),
             (None, None) => Err(SourceProviderError::NotFound),
         }
@@ -223,6 +238,50 @@ impl<'a> PackageSnapshotLoader<'a> {
             .map_err(SourceProviderError::Source)?;
         self.loaded.insert(path);
         Ok(id)
+    }
+
+    /// Admits bytes already selected by deterministic module resolution.
+    pub fn add_resolution(
+        &mut self,
+        resolution: ModuleResolution,
+    ) -> Result<SourceId, SourceProviderError> {
+        if self.loaded.contains(&resolution.path) {
+            return Err(SourceProviderError::DuplicatePath(resolution.path));
+        }
+        let id = self
+            .builder
+            .add_file(resolution.path.as_str(), &resolution.bytes)
+            .map_err(SourceProviderError::Source)?;
+        self.loaded.insert(resolution.path);
+        Ok(id)
+    }
+
+    /// Borrows one admitted immutable source together with shared activity
+    /// counters for incremental lexing and parsing.
+    pub fn record_and_counters_mut(
+        &mut self,
+        id: &SourceId,
+    ) -> (Option<&SourceRecord>, &mut SourceCounters) {
+        self.builder.record_and_counters_mut(id)
+    }
+
+    /// Returns the pre-allocation bounds for the next selected source read,
+    /// rejecting the package-file limit before any file bytes are allocated.
+    pub fn next_source_read_limits(&self) -> Result<SourceReadLimits, SourceProviderError> {
+        let (files, package_bytes, _, _) = self.builder.counters().counts();
+        let observed = files.checked_add(1);
+        if observed.is_none_or(|value| value > self.maximum_package_files) {
+            return Err(SourceProviderError::ResourceLimit(FrontendResourceLimit {
+                code: FrontendResourceCode::PackageFileCountLimit,
+                limit: self.maximum_package_files,
+                observed,
+            }));
+        }
+        Ok(SourceReadLimits::new(
+            self.maximum_source_file_bytes,
+            package_bytes,
+            self.maximum_package_source_bytes,
+        ))
     }
 
     /// Finishes the canonically ordered immutable snapshot.

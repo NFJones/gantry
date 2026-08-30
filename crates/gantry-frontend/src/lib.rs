@@ -7,6 +7,7 @@
 
 mod ast;
 mod lexer;
+mod package;
 mod parser;
 mod prompt;
 mod provider;
@@ -14,6 +15,10 @@ mod token;
 
 pub use ast::{NodeId, SyntaxForm, SyntaxNode, SyntaxTree};
 pub use lexer::{LexContext, LexError, Lexer};
+pub use package::{
+    CompletedSyntaxPhase, PackageSyntaxError, PackageSyntaxStatus, ParsedSource,
+    validate_package_syntax,
+};
 pub use parser::{ParseError, ParseOutcome, Parser};
 pub use prompt::{InterpolationIsland, PromptDelimiter, PromptTemplate};
 

@@ -22,7 +22,7 @@ use crate::token::{Punctuation, Token, TokenKind};
 /// One completed syntax phase for a source module.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParseOutcome {
-    tree: Option<SyntaxTree>,
+    recovered_tree: Option<SyntaxTree>,
     diagnostics: Vec<StructuredDiagnostic>,
 }
 
@@ -30,7 +30,21 @@ impl ParseOutcome {
     /// Returns the syntax tree only when lexical and syntax validation passed.
     #[must_use]
     pub const fn tree(&self) -> Option<&SyntaxTree> {
-        self.tree.as_ref()
+        if self.diagnostics.is_empty() {
+            self.recovered_tree.as_ref()
+        } else {
+            None
+        }
+    }
+
+    /// Returns successfully recovered syntax even when another item produced
+    /// a diagnostic.
+    ///
+    /// Package discovery uses this only to follow file-module declarations
+    /// whose complete syntax parsed before or after another malformed item.
+    #[must_use]
+    pub const fn recovered_tree(&self) -> Option<&SyntaxTree> {
+        self.recovered_tree.as_ref()
     }
 
     /// Returns deterministic lexical or syntax diagnostics in source order.
@@ -42,7 +56,7 @@ impl ParseOutcome {
     /// Returns whether the source module is syntactically valid.
     #[must_use]
     pub const fn is_valid(&self) -> bool {
-        self.tree.is_some()
+        self.diagnostics.is_empty() && self.recovered_tree.is_some()
     }
 }
 
@@ -86,7 +100,7 @@ impl<'a> Parser<'a> {
         let (tokens, lexical_diagnostics) = tokenize(self.record, self.counters)?;
         if !lexical_diagnostics.is_empty() {
             return Ok(ParseOutcome {
-                tree: None,
+                recovered_tree: None,
                 diagnostics: lexical_diagnostics,
             });
         }
@@ -339,15 +353,9 @@ impl<'a> Machine<'a> {
         }
         self.consume_current().map_err(|_| ParseError::Invariant)?;
         let root = self.finish()?;
-        if !self.diagnostics.is_empty() {
-            return Ok(ParseOutcome {
-                tree: None,
-                diagnostics: self.diagnostics,
-            });
-        }
         Ok(ParseOutcome {
-            tree: Some(SyntaxTree::new(self.nodes, root)),
-            diagnostics: Vec::new(),
+            recovered_tree: Some(SyntaxTree::new(self.nodes, root)),
+            diagnostics: self.diagnostics,
         })
     }
 

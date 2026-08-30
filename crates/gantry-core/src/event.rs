@@ -182,6 +182,12 @@ impl EventDraft {
     pub const fn kind(&self) -> EventKind {
         self.kind
     }
+
+    /// Returns the validated kind-specific payload bytes.
+    #[must_use]
+    pub const fn payload(&self) -> &EventPayload {
+        &self.payload
+    }
 }
 
 /// One completed immutable standard event occurrence.

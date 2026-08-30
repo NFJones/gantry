@@ -532,6 +532,15 @@ impl SourceSnapshotBuilder {
         &mut self.counters
     }
 
+    /// Borrows one already admitted immutable record together with the shared
+    /// activity counters used by later frontend phases.
+    pub fn record_and_counters_mut(
+        &mut self,
+        id: &SourceId,
+    ) -> (Option<&SourceRecord>, &mut SourceCounters) {
+        (self.records.get(&id.0), &mut self.counters)
+    }
+
     /// Returns the current checked counters without permitting mutation.
     #[must_use]
     pub const fn counters(&self) -> &SourceCounters {

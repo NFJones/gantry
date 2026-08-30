@@ -5,6 +5,8 @@
 //! empty until the corresponding conformance gate closes.
 
 pub mod diagnostic;
+#[cfg(feature = "frontend")]
+mod validate;
 
 pub use gantry_core::{event, identity, portable, profile, protocol, source, timestamp, unicode};
 #[cfg(feature = "frontend")]
@@ -13,6 +15,10 @@ pub use gantry_host as host;
 #[cfg(feature = "frontend")]
 pub use gantry_observe as observe;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
+#[cfg(feature = "frontend")]
+pub use validate::{
+    ValidatePackageCoordinator, ValidatePackageError, ValidatePackageRequest, ValidatePackageResult,
+};
 
 /// Facade features compiled into the current build.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
