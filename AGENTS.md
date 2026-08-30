@@ -92,5 +92,5 @@ application logic in `main.rs`.
 
 ## Commit Requirements
 
-- Commit messages are short, imperative, sentence case, and end with a period.
+- Commit messages are imperative, sentence case, and end with a period.
 - Commit meaningful completed changes with an informative message.
