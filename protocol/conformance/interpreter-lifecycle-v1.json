@@ -1,0 +1,34 @@
+{
+  "format": "gantry.interpreter-lifecycle-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-EMB-002",
+  "capabilities": [
+    {
+      "id": "configuration-contract",
+      "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#public_configuration_defaults_bounds_and_classes_are_exact"
+    },
+    {
+      "id": "lifecycle-admission-shutdown",
+      "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#shutdown_races_transfer_admission_and_snapshot_first_durations"
+    },
+    {
+      "id": "panic-containment",
+      "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#panic_boundaries_preserve_origin_and_apply_exact_poisoning"
+    },
+    {
+      "id": "reentry-and-lock-isolation",
+      "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#reentry_is_chain_local_and_pending_adapters_hold_no_lifecycle_lock"
+    },
+    {
+      "id": "unclean-drop",
+      "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#unclean_drop_signals_work_without_standard_event_claim"
+    }
+  ],
+  "exclusions": [
+    "Pre-execution package analysis, mapping, session, and start-acceptance coordination remain owned by GNT-EMB-003 and operation issues.",
+    "Concurrent task cohorts, executor abort handles, and concurrent scheduler refinement remain owned by the concurrent-evaluator issues.",
+    "Journal ownership, durable cancellation, durable observation, and recovery remain owned by durable-runtime issues.",
+    "Execution event construction, protected delivery, and sink barriers remain owned by GNT-OBS-002; this slice records only final shutdown-event settlement supplied by that owner."
+  ],
+  "profiles": []
+}

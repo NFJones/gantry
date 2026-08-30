@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "8b0691f2fea2833c8b72776b9321420fb2038aee5c3df8844f55b6ba0f8c941d"
+    "sha256": "ea337583965d6ad2063390c980da9b2d857537fda8d4fb21d5006e0b01435028"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",

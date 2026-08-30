@@ -189,6 +189,7 @@ name = "gantry-runtime"
 version = "0.1.0"
 dependencies = [
  "gantry-core",
+ "gantry-host",
  "gantry-ir",
 ]
 

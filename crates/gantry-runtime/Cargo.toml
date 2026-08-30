@@ -13,6 +13,7 @@ durable = []
 
 [dependencies]
 gantry-core.workspace = true
+gantry-host.workspace = true
 gantry-ir.workspace = true
 
 [lints]
