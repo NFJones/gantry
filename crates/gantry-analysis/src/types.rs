@@ -20,6 +20,7 @@ use gantry_ir::{ArtifactLimits, TypeDescriptor, TypeDescriptorError};
 
 use crate::bodies::check_package_bodies;
 use crate::effects::analyze_workflow_facts;
+use crate::executable::lower_executable_program;
 use crate::lowering::{LoweringError, lower_package_artifacts, lower_package_manifest};
 use crate::schemas::{SchemaAnalysisError, analyze_generated_schemas};
 use crate::{
@@ -149,7 +150,7 @@ pub fn analyze_package_types_with_artifact_limits(
         }
         Err(SchemaAnalysisError::Invariant) => return Err(AnalysisError::Invariant),
     };
-    let (manifest, canonical_ir, source_map) = if status == AnalysisStatus::Valid {
+    let (manifest, canonical_ir, executable, source_map) = if status == AnalysisStatus::Valid {
         let artifacts = match lower_package_artifacts(
             phase.snapshot(),
             phase.parsed_sources(),
@@ -166,9 +167,17 @@ pub fn analyze_package_types_with_artifact_limits(
             }
             Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
         };
+        let executable = lower_executable_program(
+            phase.parsed_sources(),
+            &facts_by_source,
+            &body_types,
+            entry.as_ref().ok_or(AnalysisError::Invariant)?,
+            &workflows,
+        )?;
         (
             Some(artifacts.manifest),
             Some(artifacts.canonical_ir),
+            Some(executable),
             Some(artifacts.source_map),
         )
     } else {
@@ -181,7 +190,7 @@ pub fn analyze_package_types_with_artifact_limits(
         } else {
             None
         };
-        (manifest, None, None)
+        (manifest, None, None, None)
     };
     Ok(TypedPackage {
         status,
@@ -193,6 +202,7 @@ pub fn analyze_package_types_with_artifact_limits(
         schemas,
         manifest,
         canonical_ir,
+        executable,
         source_map,
         diagnostics: retained,
         counters,

@@ -79,7 +79,9 @@ pub enum Primitive {
 }
 
 impl Primitive {
-    pub(crate) const fn arity(self) -> usize {
+    /// Returns the exact number of completed operands consumed by this primitive.
+    #[must_use]
+    pub const fn arity(self) -> usize {
         match self {
             Self::Not
             | Self::Negate

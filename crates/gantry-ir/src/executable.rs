@@ -3,11 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::generated::Effect;
+use crate::{CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor};
 use gantry_core::value::{LogicalValue, ValuePathSegment};
-use gantry_ir::generated::Effect;
-use gantry_ir::{CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor};
 
-use crate::primitive::Primitive;
+use crate::Primitive;
 
 /// One analyzed workflow parameter copied into a fresh local root.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -124,6 +124,13 @@ pub enum InstructionKind {
         /// Program counter for the false arm.
         when_false: usize,
     },
+    /// Select an Option arm and expose the present payload to that arm.
+    BranchOption {
+        /// Program counter for the `Some` arm.
+        when_some: usize,
+        /// Program counter for the `None` arm.
+        when_none: usize,
+    },
     /// Enter one dynamic loop condition or body occurrence.
     EnterLoop {
         /// Condition or body phase.
@@ -142,8 +149,13 @@ pub enum InstructionKind {
     },
     /// Return one completed value from the current workflow frame.
     Return,
-    /// Prepare one logical operation and suspend before host dispatch.
+    /// Prepare one logical operation that has no evaluated input values.
     Operation,
+    /// Prepare one logical operation after capturing its completed input values.
+    OperationWithOperands {
+        /// Number of left-to-right values retained for immutable request capture.
+        operands: usize,
+    },
     /// Enter one active-agent dynamic scope.
     EnterAgent(Arc<str>),
     /// Restore the prior active agent.
@@ -183,7 +195,7 @@ pub struct Workflow {
 }
 
 /// One immutable indexed program for the task-neutral machine.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MachineProgram {
     workflows: Vec<Workflow>,
     indexes: BTreeMap<CanonicalPath, usize>,
@@ -226,11 +238,15 @@ impl MachineProgram {
             .and_then(|index| self.workflows.get(*index))
     }
 
-    pub(crate) fn workflow_index(&self, path: &CanonicalPath) -> Option<usize> {
+    /// Returns the stable index of one canonical workflow in this program.
+    #[must_use]
+    pub fn workflow_index(&self, path: &CanonicalPath) -> Option<usize> {
         self.indexes.get(path).copied()
     }
 
-    pub(crate) fn unsupported_effect(&self, root: usize) -> Option<Effect> {
+    /// Returns the first reachable effect unsupported by the base sequential profile.
+    #[must_use]
+    pub fn unsupported_effect(&self, root: usize) -> Option<Effect> {
         let mut pending = vec![root];
         let mut visited = BTreeSet::new();
         while let Some(index) = pending.pop() {
@@ -307,10 +323,16 @@ fn validate_workflow(
             InstructionKind::Jump(target)
             | InstructionKind::Branch {
                 when_true: target, ..
+            }
+            | InstructionKind::BranchOption {
+                when_some: target, ..
             } if *target >= length => {
                 return Err(ProgramError::InvalidTarget(workflow.path.clone()));
             }
             InstructionKind::Branch { when_false, .. } if *when_false >= length => {
+                return Err(ProgramError::InvalidTarget(workflow.path.clone()));
+            }
+            InstructionKind::BranchOption { when_none, .. } if *when_none >= length => {
                 return Err(ProgramError::InvalidTarget(workflow.path.clone()));
             }
             InstructionKind::Call { callee, arguments } => {

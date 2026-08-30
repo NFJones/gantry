@@ -10,11 +10,9 @@ use gantry_core::strict_json::{JsonLimits, JsonNode, StrictJsonDocument};
 use gantry_core::unicode::{is_white_space, to_full_lowercase, to_full_uppercase};
 use gantry_core::value::{LogicalValue, LogicalValueView, ValueError, ValueLimitKind, ValueLimits};
 use gantry_ir::generated::Effect;
-use gantry_ir::{CanonicalPath, StructuralPosition, TypeDescriptor};
-
-use crate::primitive::{Comparison, Primitive};
-use crate::program::{
-    AggregateKind, Instruction, InstructionKind, LoopPhase, MachineProgram, Projection,
+use gantry_ir::{
+    AggregateKind, CanonicalPath, Comparison, Instruction, InstructionKind, LoopPhase,
+    MachineProgram, Primitive, Projection, StructuralPosition, TypeDescriptor,
 };
 
 /// Finite positive limits captured for one machine run.
@@ -262,6 +260,7 @@ struct WorkflowFrame {
 #[derive(Clone, Debug)]
 struct PendingOperation {
     occurrence: OperationOccurrence,
+    operands: usize,
 }
 
 /// One task-neutral explicit-frame machine.
@@ -430,6 +429,11 @@ impl Machine {
         if !value_matches_type(&value, &pending.occurrence.expected_type) {
             return Err(OperationCompletionError::TypeMismatch);
         }
+        let operands = pending.operands;
+        if operands > self.values.len() {
+            return Err(OperationCompletionError::NotWaiting);
+        }
+        self.values.truncate(self.values.len() - operands);
         self.values.push(value);
         self.pending_operation = None;
         self.status = MachineStatus::Running;
@@ -511,6 +515,10 @@ impl Machine {
                 when_true,
                 when_false,
             } => self.branch(&workflow, &site, when_true, when_false),
+            InstructionKind::BranchOption {
+                when_some,
+                when_none,
+            } => self.branch_option(&workflow, &site, when_some, when_none),
             InstructionKind::EnterLoop {
                 phase,
                 source_limit,
@@ -520,7 +528,12 @@ impl Machine {
                 return self.call(workflow, site, callee, arguments);
             }
             InstructionKind::Return => return self.return_value(workflow, site),
-            InstructionKind::Operation => return self.prepare_operation(workflow, instruction),
+            InstructionKind::Operation => {
+                return self.prepare_operation(workflow, instruction, 0);
+            }
+            InstructionKind::OperationWithOperands { operands } => {
+                return self.prepare_operation(workflow, instruction, operands);
+            }
             InstructionKind::EnterAgent(agent) => self.enter_agent(agent),
             InstructionKind::ExitAgent => self.exit_agent(),
             InstructionKind::EnterSession(session) => self.enter_session(session),
@@ -758,6 +771,46 @@ impl Machine {
         Ok(())
     }
 
+    fn branch_option(
+        &mut self,
+        workflow: &CanonicalPath,
+        site: &StructuralPosition,
+        when_some: usize,
+        when_none: usize,
+    ) -> Result<(), RuntimeCode> {
+        let value = self
+            .values
+            .last()
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        let LogicalValueView::Option { is_some } = value.view() else {
+            return Err(RuntimeCode::InternalInvariant);
+        };
+        let payload = if is_some {
+            Some(value.payload().ok_or(RuntimeCode::InternalInvariant)?)
+        } else {
+            None
+        };
+        let arm = usize::from(!is_some);
+        let target = if is_some { when_some } else { when_none };
+        let occurrence = Arc::from(format!(
+            "branch:{}:{}:{arm}",
+            workflow.as_str(),
+            position_key(site)
+        ));
+        self.charge_transition()?;
+        self.values.pop();
+        if let Some(payload) = payload {
+            self.values.push(payload);
+        }
+        self.occurrences.push(occurrence);
+        self.frames
+            .last_mut()
+            .ok_or(RuntimeCode::InternalInvariant)?
+            .pc = target;
+        Ok(())
+    }
+
     fn enter_loop(
         &mut self,
         workflow: &CanonicalPath,
@@ -938,9 +991,13 @@ impl Machine {
         &mut self,
         workflow: CanonicalPath,
         instruction: Instruction,
+        operands: usize,
     ) -> MachineStep {
         if self.remaining_operations == 0 {
             return self.fail_at(RuntimeCode::OperationBudget, workflow, instruction.site);
+        }
+        if self.peek_operands(operands).is_err() {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, instruction.site);
         }
         let operation_frame = self.next_occurrence("operation", &workflow, &instruction.site, None);
         let mut path = self.occurrences.clone();
@@ -965,6 +1022,7 @@ impl Machine {
         };
         self.pending_operation = Some(PendingOperation {
             occurrence: occurrence.clone(),
+            operands,
         });
         self.status = MachineStatus::WaitingOperation;
         self.consecutive_transitions = 0;
@@ -1191,12 +1249,12 @@ fn instruction_name(instruction: &InstructionKind) -> Arc<str> {
         InstructionKind::EnterScope => "scope-enter",
         InstructionKind::ExitScope => "scope-exit",
         InstructionKind::Jump(_) => "jump",
-        InstructionKind::Branch { .. } => "branch",
+        InstructionKind::Branch { .. } | InstructionKind::BranchOption { .. } => "branch",
         InstructionKind::EnterLoop { .. } => "loop",
         InstructionKind::LeaveOccurrence => "occurrence-exit",
         InstructionKind::Call { .. } => "call",
         InstructionKind::Return => "return",
-        InstructionKind::Operation => "operation",
+        InstructionKind::Operation | InstructionKind::OperationWithOperands { .. } => "operation",
         InstructionKind::EnterAgent(_) => "agent-enter",
         InstructionKind::ExitAgent => "agent-exit",
         InstructionKind::EnterSession(_) => "session-enter",

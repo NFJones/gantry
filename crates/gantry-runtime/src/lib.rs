@@ -12,8 +12,6 @@ mod lifecycle;
 mod machine;
 mod operation;
 mod outcome;
-mod primitive;
-mod program;
 mod session;
 
 pub use configuration::{
@@ -31,6 +29,11 @@ pub use event::{
     branch_decision_event, machine_lifecycle_event, mutation_event, operation_completion_event,
     operation_dispatch_event, operation_result_event, report_emergency_diagnostic, shutdown_event,
     structured_output_validation_failure_event, validation_retry_event, workflow_event,
+};
+pub use gantry_ir::Comparison;
+pub use gantry_ir::{
+    AggregateKind, Instruction, InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive,
+    ProgramError, Projection, Workflow,
 };
 pub use hook_request::{
     ActionOperationRequestV1, CapturedOperationRequestV1, HookRequestError, InterpolationInputV1,
@@ -58,11 +61,6 @@ pub use outcome::{
     HookOutcomeProcessingError, OperationFailureV1, OperationRetryPolicyV1, OperationRetryWaitV1,
     ProcessedHookOutcomeV1, RetryDelayOutcomeV1, RetryPolicyError, ValidatedHookOutputV1,
     process_hook_outcome, wait_retry_delay,
-};
-pub use primitive::{Comparison, Primitive};
-pub use program::{
-    AggregateKind, Instruction, InstructionKind, LoopPhase, MachineProgram, Parameter,
-    ProgramError, Projection, Workflow,
 };
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,

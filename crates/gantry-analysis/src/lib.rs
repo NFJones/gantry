@@ -7,6 +7,7 @@
 
 mod bodies;
 mod effects;
+mod executable;
 mod lowering;
 mod model;
 mod schemas;

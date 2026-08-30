@@ -7,7 +7,7 @@ use gantry_core::source::{
 };
 use gantry_ir::{
     ActionInventory, CanonicalIr, CanonicalPath, CanonicalSourceMap, EntryInventory,
-    GeneratedSchemaObject, PackageSourceManifest, TypeDescriptor, WorkflowFacts,
+    GeneratedSchemaObject, MachineProgram, PackageSourceManifest, TypeDescriptor, WorkflowFacts,
 };
 
 /// Dense deterministic identifier for one discovered source module.
@@ -196,6 +196,7 @@ pub struct TypedPackage {
     pub(crate) schemas: Option<GeneratedSchemaObject>,
     pub(crate) manifest: Option<PackageSourceManifest>,
     pub(crate) canonical_ir: Option<CanonicalIr>,
+    pub(crate) executable: Option<MachineProgram>,
     pub(crate) source_map: Option<CanonicalSourceMap>,
     pub(crate) diagnostics: Vec<StructuredDiagnostic>,
     pub(crate) counters: SourceCounters,
@@ -254,6 +255,12 @@ impl TypedPackage {
     #[must_use]
     pub const fn canonical_ir(&self) -> Option<&CanonicalIr> {
         self.canonical_ir.as_ref()
+    }
+
+    /// Returns the validated typed program consumed by the shared runtime machine.
+    #[must_use]
+    pub const fn executable_program(&self) -> Option<&MachineProgram> {
+        self.executable.as_ref()
     }
 
     /// Returns the bounded source map paired with canonical IR.
