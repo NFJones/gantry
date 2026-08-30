@@ -61,6 +61,22 @@ impl SinkPlan {
     pub fn registrations(&self) -> &[SinkRegistration] {
         &self.0
     }
+
+    /// Returns a frozen plan without one exhausted sink obligation.
+    ///
+    /// This is used only for consequence events created while terminating the
+    /// affected activity. Every other registration retains its captured policy
+    /// and canonical sink-ID order.
+    #[must_use]
+    pub fn without_sink(&self, sink_id: &SinkId) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|registration| registration.id() != sink_id)
+                .cloned()
+                .collect(),
+        )
+    }
 }
 
 /// Invalid immutable sink plan.

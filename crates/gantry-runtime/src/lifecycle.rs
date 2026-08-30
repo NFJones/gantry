@@ -14,6 +14,7 @@ use gantry_core::portable::{
     CancellationReasonCategory, IdentityKind, InterpreterState, ShutdownCause,
 };
 use gantry_host::contracts::{CancellationSignal, DurationMicros, HostFuture};
+use gantry_host::event::SinkId;
 
 use crate::containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
@@ -156,6 +157,32 @@ pub struct ExecutionSnapshot {
     pub foreground: Option<MachineOutcome>,
     /// Fixed terminal outcome, when known.
     pub terminal: Option<MachineOutcome>,
+    /// Required-delivery failures retained separately from language outcomes.
+    pub required_delivery_failures: Arc<[RequiredEventDeliveryFailureV1]>,
+}
+
+/// Exact required-sink exhaustion retained by one execution lifecycle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RequiredEventDeliveryFailureV1 {
+    /// Exhausted sink identity.
+    pub sink_id: SinkId,
+    /// Event whose required obligation exhausted.
+    pub event_id: ProtocolIdentity,
+    /// Final physical delivery-attempt identity.
+    pub attempt_id: ProtocolIdentity,
+}
+
+/// Lifecycle effect of recording one required-delivery failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RequiredDeliveryRecordV1 {
+    /// The first required failure started execution cancellation.
+    CancellationStarted,
+    /// Cancellation was already effective when this failure was recorded.
+    CancellationAlreadyActive,
+    /// The terminal language outcome was already fixed and remains unchanged.
+    PostTerminal(MachineOutcome),
+    /// The same sink/event/attempt failure was already recorded.
+    Existing,
 }
 
 /// Result of recording an execution cancellation request.
@@ -192,6 +219,8 @@ pub enum ExecutionTransitionError {
     AlreadyFixed,
     /// Terminal state cannot be fixed before foreground state.
     ForegroundUnknown,
+    /// An internal execution transition received the wrong identity kind.
+    WrongIdentityKind,
 }
 
 /// Immutable in-process handle to one accepted execution.
@@ -219,6 +248,44 @@ impl ExecutionHandle {
             .get(&self.execution_id)
             .map(|execution| execution.cancellation_signal.clone())
             .ok_or(ExecutionTransitionError::NotFound)
+    }
+
+    /// Records a required-delivery barrier without replacing a language outcome.
+    pub fn record_required_delivery_failure(
+        &self,
+        failure: RequiredEventDeliveryFailureV1,
+    ) -> Result<RequiredDeliveryRecordV1, ExecutionTransitionError> {
+        if failure.event_id.kind() != IdentityKind::Event
+            || failure.attempt_id.kind() != IdentityKind::DeliveryAttempt
+        {
+            return Err(ExecutionTransitionError::WrongIdentityKind);
+        }
+        let inner = self
+            .inner
+            .upgrade()
+            .ok_or(ExecutionTransitionError::InterpreterDropped)?;
+        let mut data = inner.lock();
+        let execution = data
+            .executions
+            .get_mut(&self.execution_id)
+            .ok_or(ExecutionTransitionError::NotFound)?;
+        if execution.required_delivery_failures.contains(&failure) {
+            return Ok(RequiredDeliveryRecordV1::Existing);
+        }
+        execution.required_delivery_failures.push(failure);
+        if let Some(terminal) = &execution.terminal {
+            return Ok(RequiredDeliveryRecordV1::PostTerminal(terminal.clone()));
+        }
+        if execution.cancellation.is_some() {
+            return Ok(RequiredDeliveryRecordV1::CancellationAlreadyActive);
+        }
+        execution.cancellation = Some(CancellationReason {
+            category: CancellationReasonCategory::Runtime,
+            message: None,
+            causal_identity: None,
+        });
+        execution.cancellation_signal.cancel();
+        Ok(RequiredDeliveryRecordV1::CancellationStarted)
     }
 }
 
@@ -1071,6 +1138,7 @@ struct ExecutionRecord {
     cancellation: Option<CancellationReason>,
     foreground: Option<MachineOutcome>,
     terminal: Option<MachineOutcome>,
+    required_delivery_failures: Vec<RequiredEventDeliveryFailureV1>,
     waiters: Vec<RegisteredWaiter>,
 }
 
@@ -1086,6 +1154,7 @@ impl ExecutionRecord {
             cancellation: None,
             foreground: None,
             terminal: None,
+            required_delivery_failures: Vec::new(),
             waiters: Vec::new(),
         }
     }
@@ -1096,6 +1165,7 @@ impl ExecutionRecord {
             cancellation: self.cancellation.clone(),
             foreground: self.foreground.clone(),
             terminal: self.terminal.clone(),
+            required_delivery_failures: Arc::from(self.required_delivery_failures.clone()),
         }
     }
 }

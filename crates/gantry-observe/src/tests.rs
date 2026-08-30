@@ -356,6 +356,20 @@ fn sink_plans_are_canonical_unique_and_policy_snapshots_are_immutable() {
             .all(|registration| registration.policy().retry.retry_limit == 1)
     );
 
+    let consequence_plan = plan.without_sink(&sink_id("a"));
+    assert_eq!(
+        consequence_plan
+            .registrations()
+            .iter()
+            .map(|registration| registration.id().as_str())
+            .collect::<Vec<_>>(),
+        vec!["z"]
+    );
+    assert_eq!(
+        consequence_plan.registrations()[0].policy(),
+        plan.registrations()[1].policy()
+    );
+
     let duplicate = SinkPlan::new(vec![
         SinkRegistration::new(
             sink_id("same"),

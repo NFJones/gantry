@@ -191,6 +191,7 @@ dependencies = [
  "gantry-core",
  "gantry-host",
  "gantry-ir",
+ "gantry-observe",
 ]
 
 [[package]]

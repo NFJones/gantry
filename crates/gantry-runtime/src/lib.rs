@@ -6,6 +6,7 @@
 
 mod configuration;
 mod containment;
+mod event;
 mod hook_request;
 mod lifecycle;
 mod machine;
@@ -23,6 +24,14 @@ pub use containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
     contain_gantry_future, contain_integration_future, drop_integration,
 };
+pub use event::{
+    BranchConditionV1, ExecutionDeliveryConsequenceV1, ExecutionEventDraftV1, ExecutionEventError,
+    ExecutionEventOutcomeV1, ExecutionEventPipeline, OperationEventDraftError,
+    OperationResultEventKindV1, ShutdownEventSummaryV1, WorkflowEventPhaseV1,
+    branch_decision_event, machine_lifecycle_event, mutation_event, operation_completion_event,
+    operation_dispatch_event, operation_result_event, report_emergency_diagnostic, shutdown_event,
+    structured_output_validation_failure_event, validation_retry_event, workflow_event,
+};
 pub use hook_request::{
     ActionOperationRequestV1, CapturedOperationRequestV1, HookRequestError, InterpolationInputV1,
     ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationRequestHeaderV1,
@@ -33,9 +42,9 @@ pub use lifecycle::{
     AcceptExecutionError, AdmissionKind, CancellationCausalIdentity, CancellationReason,
     CancellationReasonError, CancellationRecord, ExecutionHandle, ExecutionSnapshot,
     ExecutionTransitionError, ExecutionWait, FinalShutdownEventSettlement, InterpreterLifecycle,
-    LifecycleCode, LifecycleError, LifecycleSnapshot, OperationAdmission, ShutdownAdmission,
-    ShutdownCompletionError, ShutdownCoordinator, ShutdownDurations, ShutdownProgress,
-    ShutdownReport, ShutdownWait,
+    LifecycleCode, LifecycleError, LifecycleSnapshot, OperationAdmission, RequiredDeliveryRecordV1,
+    RequiredEventDeliveryFailureV1, ShutdownAdmission, ShutdownCompletionError,
+    ShutdownCoordinator, ShutdownDurations, ShutdownProgress, ShutdownReport, ShutdownWait,
 };
 pub use machine::{
     Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,

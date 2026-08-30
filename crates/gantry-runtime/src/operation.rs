@@ -240,6 +240,40 @@ impl OperationLifecycle {
         }
     }
 
+    /// Returns the exact prepared dispatch and its retry coordinates.
+    #[must_use]
+    pub fn prepared_dispatch(&self) -> Option<(&PreparedHookDispatch, u64, u64)> {
+        match &self.state {
+            OperationRuntimeState::Prepared {
+                dispatch,
+                validation_attempt,
+                recovery_dispatch,
+                ..
+            } => Some((dispatch, *validation_attempt, *recovery_dispatch)),
+            _ => None,
+        }
+    }
+
+    /// Returns the retained outcome and physical dispatch coordinates.
+    #[must_use]
+    pub fn outcome_context(&self) -> Option<(ProtocolIdentity, &HookOutcomeV1, u64, u64)> {
+        match &self.state {
+            OperationRuntimeState::Outcome {
+                dispatch_id,
+                outcome,
+                validation_attempt,
+                recovery_dispatch,
+                ..
+            } => Some((
+                *dispatch_id,
+                outcome,
+                *validation_attempt,
+                *recovery_dispatch,
+            )),
+            _ => None,
+        }
+    }
+
     /// Returns the normalized output after all ordered validation stages succeed.
     #[must_use]
     pub fn validated_output(&self) -> Option<&ValidatedHookOutputV1> {

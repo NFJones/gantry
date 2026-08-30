@@ -1,0 +1,24 @@
+{
+  "format": "gantry.execution-observation-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-OBS-002",
+  "entries": [
+    { "requirement": "GNT-12.0", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.0", "clause": "clause-002", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.0", "clause": "clause-003", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.0", "clause": "clause-004", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.0", "clause": "clause-005", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.1", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.2", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.3", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe" },
+    { "requirement": "GNT-12.3", "clause": "clause-002", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_emergency_diagnostic_is_bounded_out_of_band_and_settlement_neutral" },
+    { "requirement": "GNT-12.4", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.4", "clause": "clause-002", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.5", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/activity_observation.rs#canonical_projection_and_retry_vectors_match_the_public_kernel" },
+    { "requirement": "GNT-12.6", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe" },
+    { "requirement": "GNT-12.6", "clause": "clause-002", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe" },
+    { "requirement": "GNT-12.6", "clause": "clause-003", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe" },
+    { "requirement": "GNT-12.7", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" },
+    { "requirement": "GNT-12.8", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected" }
+  ]
+}

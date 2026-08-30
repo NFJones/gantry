@@ -19890,8 +19890,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -19951,8 +19953,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20012,8 +20016,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20073,8 +20079,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20132,8 +20140,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20213,8 +20223,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20299,8 +20311,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20384,8 +20398,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe"
+              ],
               "rationale": null
             },
             {
@@ -20443,8 +20459,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_emergency_diagnostic_is_bounded_out_of_band_and_settlement_neutral"
+              ],
               "rationale": null
             },
             {
@@ -20522,8 +20540,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20578,8 +20598,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -20661,8 +20683,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/activity_observation.rs#canonical_projection_and_retry_vectors_match_the_public_kernel"
+              ],
               "rationale": null
             },
             {
@@ -20721,9 +20745,9 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "Journaled delivery dispatch/settlement state, indeterminate redelivery, and frozen durable obligation recovery are refinements of the durable-runtime profile and do not apply to the nondurable sequential evaluator."
             },
             {
               "profile": "frontend",
@@ -20777,9 +20801,9 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "Journaled delivery dispatch/settlement state, indeterminate redelivery, and frozen durable obligation recovery are refinements of the durable-runtime profile and do not apply to the nondurable sequential evaluator."
             },
             {
               "profile": "frontend",
@@ -20833,9 +20857,9 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "Journaled delivery dispatch/settlement state, indeterminate redelivery, and frozen durable obligation recovery are refinements of the durable-runtime profile and do not apply to the nondurable sequential evaluator."
             },
             {
               "profile": "frontend",
@@ -20914,8 +20938,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe"
+              ],
               "rationale": null
             },
             {
@@ -20972,8 +20998,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe"
+              ],
               "rationale": null
             },
             {
@@ -21028,8 +21056,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe"
+              ],
               "rationale": null
             },
             {
@@ -21110,8 +21140,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -21194,8 +21226,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {

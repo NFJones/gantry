@@ -214,6 +214,24 @@ pub trait EventDeliveryRuntime: Send + Sync {
     fn sample_full_jitter(&self, ceiling_us: u64) -> Result<u64, HostError>;
 }
 
+/// Unprotected out-of-band diagnostic supplied only when standard events cannot report.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmergencyDiagnostic {
+    /// Stable machine-readable code without protected payload text.
+    pub code: Arc<str>,
+}
+
+/// Optional non-durable emergency diagnostic callback.
+///
+/// This callback is not an event sink and receives no protected payload bundle.
+pub trait EmergencyDiagnosticCallback: Send + Sync {
+    /// Performs one best-effort out-of-band report.
+    fn report<'a>(
+        &'a self,
+        diagnostic: EmergencyDiagnostic,
+    ) -> HostFuture<'a, Result<(), HostError>>;
+}
+
 /// Invalid event sink policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EventPolicyError {
