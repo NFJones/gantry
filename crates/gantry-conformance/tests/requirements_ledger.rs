@@ -50,6 +50,12 @@ struct Clause {
     end_line: usize,
     profiles: Vec<String>,
     roles: Vec<String>,
+    profile_reviews: Vec<ProfileReview>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProfileReview {
+    profile: String,
     state: String,
     evidence: Vec<String>,
     rationale: Option<String>,
@@ -183,21 +189,39 @@ fn every_anchor_and_authoring_excerpt_is_independently_accounted_for() {
                     .iter()
                     .all(|role| requirement.roles.contains(role))
             );
-            assert!(matches!(
-                clause.state.as_str(),
-                "planned" | "in-progress" | "covered" | "not-applicable" | "unresolved"
-            ));
-            if clause.state == "covered" {
-                assert!(!clause.evidence.is_empty());
+            let mut reviewed_profiles = BTreeSet::new();
+            for review in &clause.profile_reviews {
+                assert!(clause.profiles.contains(&review.profile));
+                assert!(reviewed_profiles.insert(review.profile.as_str()));
+                assert!(matches!(
+                    review.state.as_str(),
+                    "planned" | "in-progress" | "covered" | "not-applicable" | "unresolved"
+                ));
+                if review.state == "covered" {
+                    assert!(!review.evidence.is_empty());
+                }
+                if matches!(review.state.as_str(), "not-applicable" | "unresolved") {
+                    assert!(
+                        review
+                            .rationale
+                            .as_deref()
+                            .is_some_and(|value| !value.is_empty())
+                    );
+                }
             }
-            if matches!(clause.state.as_str(), "not-applicable" | "unresolved") {
-                assert!(
-                    clause
-                        .rationale
-                        .as_deref()
-                        .is_some_and(|value| !value.is_empty())
-                );
-            }
+            assert_eq!(
+                clause
+                    .profile_reviews
+                    .iter()
+                    .map(|review| review.profile.as_str())
+                    .collect::<Vec<_>>(),
+                clause
+                    .profiles
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(reviewed_profiles.len(), clause.profiles.len());
         }
         assert_eq!(next_clause_line, requirement.body_end_line + 1);
     }

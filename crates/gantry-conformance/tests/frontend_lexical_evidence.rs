@@ -40,6 +40,12 @@ struct Requirement {
 #[derive(Debug, Deserialize)]
 struct Clause {
     key: String,
+    profile_reviews: Vec<ProfileReview>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProfileReview {
+    profile: String,
     state: String,
     evidence: Vec<String>,
 }
@@ -69,13 +75,23 @@ fn reviewed_frontend_lexical_evidence_is_closed() {
                     .find(|clause| clause.key == entry.clause)
             })
             .unwrap_or_else(|| panic!("missing {}:{}", entry.requirement, entry.clause));
+        let review = clause
+            .profile_reviews
+            .iter()
+            .find(|review| review.profile == "frontend")
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing frontend review for {}:{}",
+                    entry.requirement, entry.clause
+                )
+            });
         assert_eq!(
-            clause.state, "covered",
+            review.state, "covered",
             "{}:{}",
             entry.requirement, entry.clause
         );
         assert_eq!(
-            clause.evidence,
+            review.evidence,
             [EVIDENCE_ID],
             "{}:{}",
             entry.requirement,

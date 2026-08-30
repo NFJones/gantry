@@ -63,6 +63,13 @@ struct ClauseReview {
     end_line: usize,
     profiles: Vec<String>,
     roles: Vec<String>,
+    profile_reviews: Vec<ProfileReview>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ProfileReview {
+    profile: String,
     state: String,
     evidence: Vec<String>,
     rationale: Option<String>,
@@ -451,19 +458,56 @@ fn validate_clauses(requirement: &RequirementReview) -> Result<(), String> {
                 requirement.id
             ));
         }
-        if !matches!(
-            clause.state.as_str(),
-            "planned" | "in-progress" | "covered" | "not-applicable" | "unresolved"
-        ) {
-            return Err(format!("{} has unknown clause state", requirement.id));
+        let mut reviewed_profiles = BTreeSet::new();
+        for review in &clause.profile_reviews {
+            if !clause.profiles.contains(&review.profile)
+                || !reviewed_profiles.insert(review.profile.as_str())
+            {
+                return Err(format!(
+                    "{} clause has an invalid or duplicate profile review",
+                    requirement.id
+                ));
+            }
+            if !matches!(
+                review.state.as_str(),
+                "planned" | "in-progress" | "covered" | "not-applicable" | "unresolved"
+            ) {
+                return Err(format!(
+                    "{} has unknown profile review state",
+                    requirement.id
+                ));
+            }
+            if review.state == "covered" && review.evidence.is_empty() {
+                return Err(format!(
+                    "{} covered profile review lacks evidence",
+                    requirement.id
+                ));
+            }
+            if matches!(review.state.as_str(), "not-applicable" | "unresolved")
+                && review.rationale.as_deref().is_none_or(str::is_empty)
+            {
+                return Err(format!(
+                    "{} profile review exclusion lacks a rationale",
+                    requirement.id
+                ));
+            }
         }
-        if clause.state == "covered" && clause.evidence.is_empty() {
-            return Err(format!("{} covered clause lacks evidence", requirement.id));
-        }
-        if matches!(clause.state.as_str(), "not-applicable" | "unresolved")
-            && clause.rationale.as_deref().is_none_or(str::is_empty)
+        if clause
+            .profile_reviews
+            .iter()
+            .map(|review| review.profile.as_str())
+            .ne(clause.profiles.iter().map(String::as_str))
+            || reviewed_profiles
+                != clause
+                    .profiles
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<BTreeSet<_>>()
         {
-            return Err(format!("{} exclusion lacks a rationale", requirement.id));
+            return Err(format!(
+                "{} clause profile reviews do not match applicability",
+                requirement.id
+            ));
         }
     }
     if next_line != requirement.body_end_line + 1 {
@@ -644,9 +688,12 @@ mod tests {
                         end_line: 3,
                         profiles: vec!["frontend".to_owned()],
                         roles: vec!["implementation".to_owned()],
-                        state: "planned".to_owned(),
-                        evidence: vec![],
-                        rationale: None,
+                        profile_reviews: vec![ProfileReview {
+                            profile: "frontend".to_owned(),
+                            state: "planned".to_owned(),
+                            evidence: vec![],
+                            rationale: None,
+                        }],
                     }],
                 }],
             },
@@ -736,9 +783,27 @@ mod tests {
     #[test]
     fn rejects_unjustified_not_applicable_clause() {
         let (spec, mut review, excerpts) = fixture();
-        review.requirements[0].clauses[0].state = "not-applicable".to_owned();
+        review.requirements[0].clauses[0].profile_reviews[0].state = "not-applicable".to_owned();
         assert!(
             matches!(build_inventory(&spec, review, excerpts), Err(message) if message.contains("rationale"))
+        );
+    }
+
+    #[test]
+    fn rejects_missing_or_duplicate_profile_reviews() {
+        let (spec, mut review, excerpts) = fixture();
+        review.requirements[0].clauses[0].profile_reviews.clear();
+        assert!(
+            matches!(build_inventory(&spec, review, excerpts), Err(message) if message.contains("do not match applicability"))
+        );
+
+        let (spec, mut review, excerpts) = fixture();
+        let duplicate = review.requirements[0].clauses[0].profile_reviews[0].clone();
+        review.requirements[0].clauses[0]
+            .profile_reviews
+            .push(duplicate);
+        assert!(
+            matches!(build_inventory(&spec, review, excerpts), Err(message) if message.contains("duplicate profile review"))
         );
     }
 

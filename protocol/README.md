@@ -34,3 +34,11 @@ repair field.
 Run `cargo run --locked -p xtask -- generate requirements` only after reviewing
 the complete `SPEC.md` revision and updating the requirement sidecars. Any
 specification-byte change invalidates the recorded review digest.
+
+Each reviewed clause has one `profile_reviews` entry for every profile in its
+applicability list, in the same canonical order. Status, executable evidence,
+and any exclusion rationale belong to that profile entry rather than to the
+clause globally. This permits an earlier profile to close without claiming
+unfinished behavior owned by a later profile. A covered profile review requires
+at least one evidence anchor; `not-applicable` and `unresolved` reviews require
+an explicit profile-based rationale.

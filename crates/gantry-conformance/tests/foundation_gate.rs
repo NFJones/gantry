@@ -127,6 +127,12 @@ struct Requirement {
 #[derive(Debug, Deserialize)]
 struct Clause {
     profiles: Vec<String>,
+    profile_reviews: Vec<ProfileReview>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProfileReview {
+    profile: String,
     state: String,
 }
 
@@ -343,7 +349,13 @@ fn validate_requirements(root: &Path, manifest: &Manifest) -> Result<(), String>
         .collect::<Vec<_>>();
     let states = frontend
         .iter()
-        .map(|clause| clause.state.as_str())
+        .filter_map(|clause| {
+            clause
+                .profile_reviews
+                .iter()
+                .find(|review| review.profile == "frontend")
+                .map(|review| review.state.as_str())
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();

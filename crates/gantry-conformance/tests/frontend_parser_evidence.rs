@@ -41,6 +41,12 @@ struct Requirement {
 struct Clause {
     key: String,
     profiles: Vec<String>,
+    profile_reviews: Vec<ProfileReview>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProfileReview {
+    profile: String,
     state: String,
     evidence: Vec<String>,
 }
@@ -102,13 +108,23 @@ fn reviewed_frontend_parser_evidence_is_closed() {
             })
             .unwrap_or_else(|| panic!("missing {}:{}", entry.requirement, entry.clause));
         assert!(clause.profiles.iter().any(|profile| profile == "frontend"));
+        let review = clause
+            .profile_reviews
+            .iter()
+            .find(|review| review.profile == "frontend")
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing frontend review for {}:{}",
+                    entry.requirement, entry.clause
+                )
+            });
         assert_eq!(
-            clause.state, "covered",
+            review.state, "covered",
             "{}:{}",
             entry.requirement, entry.clause
         );
         assert_eq!(
-            clause.evidence,
+            review.evidence,
             [PARSER_EVIDENCE],
             "{}:{}",
             entry.requirement,
