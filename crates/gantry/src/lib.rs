@@ -21,6 +21,8 @@ pub use gantry_host as host;
 pub use gantry_ir as ir;
 #[cfg(feature = "frontend")]
 pub use gantry_observe as observe;
+#[cfg(feature = "evaluator")]
+pub use gantry_runtime as runtime;
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 #[cfg(feature = "frontend")]
 pub use validate::{

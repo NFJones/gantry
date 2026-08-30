@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "1519bce0402f740b3f572cb70e3d592f799c58747dc39acae6da56092e2f004d",
+    "sha256": "cfd913d8b8bf549a9afecf2f0172d30a5a6dcf3d00797788a6c1820ecb0b820c",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -90,8 +90,8 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "1d3630827f7085e53e518a4457adeb8efa1ba949645c8255f21fc1c26272f220",
-    "product_lockfile_sha256": "d1066c6bc9e8c610a186d6a703b98219a8c16a1818bc5a32a90d9c4a58f14687",
+    "ledger_sha256": "db8f453c9bf8754e4dd7deb2bc7de219969c7d3f203d9b2d79f4aa3538a7fa39",
+    "product_lockfile_sha256": "9685b8e313cbb84207d153178b3a6cf23333177b87ad490285e87de04c094d35",
     "fuzz_lockfile_sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb",
     "decision_count": 7,
     "selected_count": 6,
@@ -104,11 +104,11 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "d1066c6bc9e8c610a186d6a703b98219a8c16a1818bc5a32a90d9c4a58f14687"
+      "sha256": "9685b8e313cbb84207d153178b3a6cf23333177b87ad490285e87de04c094d35"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "91d22c81148453312d7c1ba86ea6c886206ef5e235aed711bc688db7ac38f16f"
+      "sha256": "af32e8f5dd3f97fa2e169ff709c5a35b035e8c11b94bb7005e4dd080b6f034c3"
     },
     {
       "path": "Justfile",
@@ -147,6 +147,10 @@
       "sha256": "2c37d483058371da75633e62839412cde721d310768f236c3ed7e8e60153c1b4"
     },
     {
+      "path": "crates/gantry-conformance/tests/sequential_machine.rs",
+      "sha256": "2677101e5dffcd74117eb2394dce8ec34902e5885f2e7f482d0513387e0c0a2c"
+    },
+    {
       "path": "crates/gantry-conformance/tests/value_kernel.rs",
       "sha256": "bd78b21c37cb393cbc40b11bb9a97d382976b3e9574bd42ef7ad87de6b96b678"
     },
@@ -175,6 +179,10 @@
       "sha256": "9681a74c1c0f65bf9f90cca9b4a16f61f9e08cca14b0a68717874aed75de6b60"
     },
     {
+      "path": "crates/gantry-runtime/Cargo.toml",
+      "sha256": "2936e7c9c931984c88f5980c7759b4a6a3e33f8c66d59f4bcc837e43cbe995ed"
+    },
+    {
       "path": "deny.toml",
       "sha256": "8c44ff148d4b5c3f16bf80b58903d7f0d14c92fe6f699390e32cee39dfc3a306"
     },
@@ -184,7 +192,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "1d3630827f7085e53e518a4457adeb8efa1ba949645c8255f21fc1c26272f220"
+      "sha256": "db8f453c9bf8754e4dd7deb2bc7de219969c7d3f203d9b2d79f4aa3538a7fa39"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -229,6 +237,10 @@
     {
       "path": "protocol/conformance/persistent-values-v1.json",
       "sha256": "f27ca60d2e45f91ed4644283f1e8b70752af9362639ea1387e06e080ff6b636d"
+    },
+    {
+      "path": "protocol/conformance/sequential-machine-v1.json",
+      "sha256": "5dc2ca6511c9cc00ee156adb0fe3f5b9071000dd7c82f2124a7e522ec428d2ee"
     },
     {
       "path": "protocol/conformance/value-kernel-v1.json",
@@ -283,6 +295,10 @@
       "sha256": "c1c5c7090e5681e418b5003b49fea77d06a17dc367891366986f3d7640f31bbb"
     },
     {
+      "path": "protocol/goldens/sequential-machine-v1.json",
+      "sha256": "3338f91947a5d0a48103d5d02e34a9192fcd94e4f18e498081e450ec27b45030"
+    },
+    {
       "path": "protocol/goldens/source-substrate-vectors-v1.json",
       "sha256": "7b5d656a1b7df33808a5e86b57d32e92debf534744c74d5a5b94b86297523ed2"
     },
@@ -300,11 +316,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "1519bce0402f740b3f572cb70e3d592f799c58747dc39acae6da56092e2f004d"
+      "sha256": "cfd913d8b8bf549a9afecf2f0172d30a5a6dcf3d00797788a6c1820ecb0b820c"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "5a1eeee876266fca4e1c590eb5680642703f1ce94be5ccde5c53eed241165440"
+      "sha256": "b56d31252035e6b65bbcf91b972354ba9fef8b51136f0144490021989780a021"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -345,6 +361,10 @@
     {
       "path": "protocol/schemas/profile-catalog-v1.schema.json",
       "sha256": "53dd2e1994ec3cfcc64965289d7f44cbf8f1e63e7e01861d048c7760e59e83a7"
+    },
+    {
+      "path": "protocol/schemas/sequential-machine-v1.schema.json",
+      "sha256": "fb02643779ecd5a126b5825e966e0e3bd33ad7f0cbc029dbb035e6eb5834bbad"
     },
     {
       "path": "protocol/schemas/source-map-v1.schema.json",
@@ -415,6 +435,11 @@
       "id": "requirement-ledger",
       "kind": "independent-requirement-validation",
       "path": "crates/gantry-conformance/tests/requirements_ledger.rs"
+    },
+    {
+      "id": "sequential-machine",
+      "kind": "public-facade-and-reviewed-goldens",
+      "path": "crates/gantry-conformance/tests/sequential_machine.rs"
     },
     {
       "id": "unicode-16",

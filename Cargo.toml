@@ -9,6 +9,7 @@ members = [
     "crates/gantry-host",
     "crates/gantry-ir",
     "crates/gantry-observe",
+    "crates/gantry-runtime",
     "xtask",
 ]
 exclude = ["fuzz"]
@@ -28,6 +29,7 @@ gantry-frontend = { path = "crates/gantry-frontend", version = "=0.1.0" }
 gantry-host = { path = "crates/gantry-host", version = "=0.1.0" }
 gantry-ir = { path = "crates/gantry-ir", version = "=0.1.0" }
 gantry-observe = { path = "crates/gantry-observe", version = "=0.1.0" }
+gantry-runtime = { path = "crates/gantry-runtime", version = "=0.1.0" }
 getrandom = { version = "=0.3.4", default-features = false }
 rustix = { version = "=1.1.4", default-features = false, features = ["fs", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }

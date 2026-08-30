@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-gantry = { workspace = true, features = ["analyzer"] }
+gantry = { workspace = true, features = ["evaluator"] }
 
 [dev-dependencies]
 serde.workspace = true

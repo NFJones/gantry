@@ -56,6 +56,17 @@ maps only the directly exercised automatic-storage clauses; runtime retention,
 transcript, journal, recovery, and host-exhaustion obligations remain with
 their owning issues.
 
+Sequential-machine vectors in `goldens/sequential-machine-v1.json` exercise
+the public explicit-frame runtime, deep workflow calls, typed bindings and
+atomic root replacement, deterministic primitives and failure codes, finite
+budgets, cancellation nonconsumption, stable dynamic operation paths, and the
+base root settlement/foreground/terminal sequence. The paired
+`schemas/sequential-machine-v1.schema.json` freezes the vector envelope, while
+`conformance/sequential-machine-v1.json` maps only evaluator clauses directly
+covered by this foundation; host dispatch, complete operation policy,
+concurrent scheduling, durability, and profile closeout remain with later
+issues.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

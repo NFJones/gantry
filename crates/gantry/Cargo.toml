@@ -9,9 +9,9 @@ license.workspace = true
 default = ["evaluator"]
 frontend = ["dep:gantry-frontend", "dep:gantry-observe"]
 analyzer = ["frontend", "dep:gantry-analysis", "dep:gantry-ir"]
-evaluator = ["analyzer"]
-concurrent = ["evaluator"]
-durable = ["evaluator"]
+evaluator = ["analyzer", "dep:gantry-runtime"]
+concurrent = ["evaluator", "gantry-runtime/concurrent"]
+durable = ["evaluator", "gantry-runtime/durable"]
 
 [dependencies]
 gantry-analysis = { workspace = true, optional = true }
@@ -20,6 +20,7 @@ gantry-frontend = { workspace = true, optional = true }
 gantry-host.workspace = true
 gantry-ir = { workspace = true, optional = true }
 gantry-observe = { workspace = true, optional = true }
+gantry-runtime = { workspace = true, optional = true }
 
 [lints]
 workspace = true

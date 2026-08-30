@@ -7203,8 +7203,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             }
           ]
@@ -7237,8 +7239,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             }
           ]
@@ -7271,8 +7275,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             }
           ]
@@ -7326,8 +7332,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_explicit_frames_calls_and_lifecycle_are_stack_safe"
+              ],
               "rationale": null
             }
           ]
@@ -12053,8 +12061,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             }
           ]
@@ -12101,8 +12111,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             }
           ]
@@ -12220,8 +12232,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_string_primitives_are_exact_bounded_and_nontrimming"
+              ],
               "rationale": null
             }
           ]
@@ -14817,8 +14831,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             }
           ]
@@ -17415,8 +17431,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             }
           ]

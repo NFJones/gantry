@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/sequential-machine/v1/schema.json",
+  "title": "Gantry sequential-machine conformance vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.sequential-machine-vectors/v1" },
+    "deep_call_depth": { "type": "integer", "minimum": 1 },
+    "branch_operation_path": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "lifecycle_labels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["task-settled", "foreground-completion", "terminal-completion"]
+      }
+    },
+    "failure_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "required": [
+    "format",
+    "deep_call_depth",
+    "branch_operation_path",
+    "lifecycle_labels",
+    "failure_codes"
+  ]
+}

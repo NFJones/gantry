@@ -22,6 +22,7 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "gantry-host",
     "gantry-ir",
     "gantry-observe",
+    "gantry-runtime",
     "xtask",
 ];
 
@@ -32,6 +33,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry", "gantry-host"),
     ("gantry", "gantry-ir"),
     ("gantry", "gantry-observe"),
+    ("gantry", "gantry-runtime"),
     ("gantry-cli", "gantry"),
     ("gantry-conformance", "gantry"),
     ("gantry-analysis", "gantry-core"),
@@ -42,6 +44,10 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry-ir", "gantry-core"),
     ("gantry-observe", "gantry-core"),
     ("gantry-observe", "gantry-host"),
+    ("gantry-runtime", "gantry-core"),
+    ("gantry-runtime", "gantry-host"),
+    ("gantry-runtime", "gantry-ir"),
+    ("gantry-runtime", "gantry-observe"),
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -183,9 +189,18 @@ fn validate_facade_features(metadata: &cargo_metadata::Metadata) -> Result<(), S
             "analyzer",
             BTreeSet::from(["dep:gantry-analysis", "dep:gantry-ir", "frontend"]),
         ),
-        ("evaluator", BTreeSet::from(["analyzer"])),
-        ("concurrent", BTreeSet::from(["evaluator"])),
-        ("durable", BTreeSet::from(["evaluator"])),
+        (
+            "evaluator",
+            BTreeSet::from(["analyzer", "dep:gantry-runtime"]),
+        ),
+        (
+            "concurrent",
+            BTreeSet::from(["evaluator", "gantry-runtime/concurrent"]),
+        ),
+        (
+            "durable",
+            BTreeSet::from(["evaluator", "gantry-runtime/durable"]),
+        ),
     ]);
 
     for (feature, expected_members) in required {
@@ -267,6 +282,7 @@ mod tests {
                     "gantry-host",
                     "gantry-ir",
                     "gantry-observe",
+                    "gantry-runtime",
                 ],
             ),
             package(
@@ -281,6 +297,7 @@ mod tests {
             package("gantry-host", true, &["gantry-core"]),
             package("gantry-ir", true, &["gantry-core"]),
             package("gantry-observe", true, &["gantry-core", "gantry-host"]),
+            package("gantry-runtime", true, &["gantry-core", "gantry-ir"]),
             package("xtask", true, &[]),
         ]
     }

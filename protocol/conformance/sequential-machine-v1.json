@@ -1,0 +1,16 @@
+{
+  "format": "gantry.sequential-machine-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-RUN-001",
+  "entries": [
+    { "requirement": "GNT-3-M-CALL", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_explicit_frames_calls_and_lifecycle_are_stack_safe" },
+    { "requirement": "GNT-3-M-VALUES", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract" },
+    { "requirement": "GNT-3-M-VALUES", "clause": "clause-002", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract" },
+    { "requirement": "GNT-3-M-VALUES", "clause": "clause-003", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract" },
+    { "requirement": "GNT-5.15", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract" },
+    { "requirement": "GNT-5.15", "clause": "clause-002", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract" },
+    { "requirement": "GNT-5.16", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_string_primitives_are_exact_bounded_and_nontrimming" },
+    { "requirement": "GNT-7.16", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact" },
+    { "requirement": "GNT-9.7", "clause": "clause-001", "profile": "evaluator", "evidence": "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact" }
+  ]
+}

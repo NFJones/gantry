@@ -1,0 +1,25 @@
+{
+  "format": "gantry.sequential-machine-vectors/v1",
+  "deep_call_depth": 4096,
+  "branch_operation_path": [
+    "branch:crate::main:1:0",
+    "operation:crate::main:2:-:0"
+  ],
+  "lifecycle_labels": [
+    "task-settled",
+    "foreground-completion",
+    "terminal-completion"
+  ],
+  "failure_codes": [
+    "integer-overflow",
+    "integer-division-by-zero",
+    "integer-remainder-by-zero",
+    "float-division-by-zero",
+    "float-non-finite-result",
+    "list-index-out-of-bounds",
+    "string-empty-pattern",
+    "string-empty-separator",
+    "string-size-limit",
+    "list-size-limit"
+  ]
+}
