@@ -26,3 +26,8 @@ top-level `README.md`.
 The analyzer profile's written static argument, explicit assumptions, bounded
 model, and counterexample-replay links are documented in
 [`analyzer-package-validity.md`](analyzer-package-validity.md).
+
+The nondurable sequential evaluator's progress, preservation, cancellation,
+operation-consumption, lifecycle, observation, and terminal-uniqueness
+argument is documented in
+[`sequential-evaluator-refinement.md`](sequential-evaluator-refinement.md).

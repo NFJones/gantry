@@ -1,0 +1,82 @@
+{
+  "format": "gantry.sequential-evaluator-model/v1",
+  "maximum_depth": 12,
+  "explored_state_count": 836,
+  "terminal_state_count": 276,
+  "obligations": [
+    "enabled-machine-progress",
+    "type-and-store-preservation",
+    "base-handle-ownership-vacuous",
+    "operation-single-consumption",
+    "cancellation-nonconsumption",
+    "lifecycle-linearization",
+    "fixed-outcome-observation-isolation",
+    "terminal-completion-uniqueness"
+  ],
+  "assumptions": [
+    "The analyzed executable program is well typed and one nondurable root execution has been accepted.",
+    "The executor weakly fairly polls runnable Gantry work and eventually exposes ready timers and completed adapter futures.",
+    "Prepared dispatch and retry-waiting states may remain genuinely pending on integration or timer work.",
+    "The model is bounded to one logical operation, one root task, two representative result types, and the declared maximum trace depth."
+  ],
+  "host_wait_states": [
+    "prepared-integration-result",
+    "retry-waiting-timer"
+  ],
+  "counterexamples": [
+    {
+      "id": "admission-after-shutdown",
+      "trace": ["begin-shutdown"],
+      "rejected_action": "admit-new-work",
+      "invariant": "lifecycle-linearization"
+    },
+    {
+      "id": "barrier-cannot-refinalize",
+      "trace": ["deterministic-step", "settle-succeeded", "foreground-complete", "terminal-complete", "barrier-fail"],
+      "rejected_action": "terminal-complete",
+      "invariant": "fixed-outcome-observation-isolation"
+    },
+    {
+      "id": "double-accept",
+      "trace": ["prepare-operation", "observe-host-outcome", "validate-accept"],
+      "rejected_action": "validate-accept",
+      "invariant": "operation-single-consumption"
+    },
+    {
+      "id": "finish-shutdown-before-terminal",
+      "trace": ["begin-shutdown"],
+      "rejected_action": "finish-shutdown",
+      "invariant": "lifecycle-linearization"
+    },
+    {
+      "id": "foreground-twice",
+      "trace": ["deterministic-step", "settle-succeeded", "foreground-complete"],
+      "rejected_action": "foreground-complete",
+      "invariant": "terminal-completion-uniqueness"
+    },
+    {
+      "id": "operation-redispatch-after-accept",
+      "trace": ["prepare-operation", "observe-host-outcome", "validate-accept"],
+      "rejected_action": "prepare-operation",
+      "invariant": "operation-single-consumption"
+    },
+    {
+      "id": "source-after-cancel",
+      "trace": ["cancel"],
+      "rejected_action": "deterministic-step",
+      "invariant": "cancellation-nonconsumption"
+    },
+    {
+      "id": "terminal-before-foreground",
+      "trace": ["deterministic-step", "settle-succeeded"],
+      "rejected_action": "terminal-complete",
+      "invariant": "terminal-completion-uniqueness"
+    },
+    {
+      "id": "validate-after-cancel",
+      "trace": ["prepare-operation", "observe-host-outcome", "cancel"],
+      "rejected_action": "validate-accept",
+      "invariant": "cancellation-nonconsumption"
+    }
+  ]
+}

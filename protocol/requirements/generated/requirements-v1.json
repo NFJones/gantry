@@ -3029,14 +3029,18 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -3100,14 +3104,18 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -3148,14 +3156,18 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -3196,14 +3208,18 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -3244,14 +3260,18 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7061,8 +7081,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7095,8 +7117,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7150,8 +7174,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7184,8 +7210,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7218,8 +7246,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7815,8 +7845,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7849,8 +7881,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7883,8 +7917,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7917,8 +7953,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7951,8 +7989,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -7985,8 +8025,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8019,8 +8061,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8053,8 +8097,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8087,8 +8133,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8142,8 +8190,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8176,8 +8226,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8210,8 +8262,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8244,8 +8298,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8278,8 +8334,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8333,9 +8391,9 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "The base evaluator rejects reachable spawn effects before execution; dynamic task creation requires the concurrent-evaluator profile."
             }
           ]
         }
@@ -8388,8 +8446,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8422,9 +8482,9 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "The base evaluator has no attached child handles or join frame; join start and all-settled waiting require the concurrent-evaluator profile."
             }
           ]
         },
@@ -8456,9 +8516,9 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "The base evaluator has no joined child vector; join resolution and ordered aggregate failure require the concurrent-evaluator profile."
             }
           ]
         }
@@ -8511,9 +8571,9 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "The base evaluator rejects reachable detach effects before execution; dynamic detach transitions require the concurrent-evaluator profile."
             }
           ]
         }
@@ -8566,8 +8626,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8621,8 +8683,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]
@@ -8901,8 +8965,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             }
           ]

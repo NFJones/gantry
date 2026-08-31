@@ -46,6 +46,12 @@ by `conformance/analyzer-validity-v1.json`, with reviewed replay inputs in
 `goldens/analyzer-validity-model-v1.json`. The model states its assumptions and
 bounds explicitly and is not presented as an exhaustive proof over all source.
 
+The nondurable evaluator's written refinement argument, bounded lifecycle and
+operation model, invalid-trace replay, and exact public trace links are bound by
+`conformance/sequential-evaluator-refinement-v1.json`, with reviewed model data
+in `goldens/sequential-evaluator-model-v1.json`. Genuine host waits, fairness
+assumptions, concurrency exclusions, and recovery exclusions remain explicit.
+
 Portable value-kernel vectors in `goldens/value-kernel-v1.json` exercise the
 Gantry-owned strict JSON decoder, exact numeric normalization and primitives,
 generated-schema validator, RFC 8785 encoding, and exact SHA-256 boundary. The

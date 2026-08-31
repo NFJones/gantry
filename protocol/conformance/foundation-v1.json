@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "ecfc14a8de24a253e08f5822903251897fd83cedb958bb90d6e350b458d8303f",
+    "sha256": "e589b3f9d0c56f1836a03d000aa190c40a09823bd19eb997b6e1a315b8d59f45",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -171,6 +171,10 @@
       "sha256": "4ce003ef70cd35091d073847a01e45055e63e6eb5342cc6229d9c3f990c74c72"
     },
     {
+      "path": "crates/gantry-conformance/tests/sequential_refinement_model.rs",
+      "sha256": "08ab3a15fa37c6b629815aa81e431d957035dc16f3fa17ea05b1697f9a3449f0"
+    },
+    {
       "path": "crates/gantry-conformance/tests/validate_package.rs",
       "sha256": "3cf8c71fca801e04a22e3799985d91165cf9927161f1aafc9d7e016fbc972700"
     },
@@ -215,6 +219,10 @@
       "sha256": "acbc256ebce407f3e9c2b14ecdb87cd457ba107b4299c7acf8d1eb626f930110"
     },
     {
+      "path": "docs/sequential-evaluator-refinement.md",
+      "sha256": "467772b4386d966b9d07a33a11abf538ffaa384d54b9ec492f809b329ce2195f"
+    },
+    {
       "path": "fuzz/Cargo.lock",
       "sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb"
     },
@@ -244,7 +252,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "d763a2bd583e94da46d8c5164bcccb5633b4815dd3febd18ec73accc7a4bb2fa"
+      "sha256": "411eee0ec25495c63f1390aeed63846ece4bd5a57ffa88da5631d691eabab666"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -285,6 +293,10 @@
     {
       "path": "protocol/conformance/persistent-values-v1.json",
       "sha256": "f27ca60d2e45f91ed4644283f1e8b70752af9362639ea1387e06e080ff6b636d"
+    },
+    {
+      "path": "protocol/conformance/sequential-evaluator-refinement-v1.json",
+      "sha256": "ab85ba7a658f96d04473a89cabde70d2e14df6448a6d5a21828fac81bb2848f3"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",
@@ -351,6 +363,10 @@
       "sha256": "c1c5c7090e5681e418b5003b49fea77d06a17dc367891366986f3d7640f31bbb"
     },
     {
+      "path": "protocol/goldens/sequential-evaluator-model-v1.json",
+      "sha256": "ae71eb3d8e5c77f4327f74b44b986c6244609285186dd6dd79134e2829dec882"
+    },
+    {
       "path": "protocol/goldens/sequential-machine-v1.json",
       "sha256": "3338f91947a5d0a48103d5d02e34a9192fcd94e4f18e498081e450ec27b45030"
     },
@@ -372,11 +388,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "ecfc14a8de24a253e08f5822903251897fd83cedb958bb90d6e350b458d8303f"
+      "sha256": "e589b3f9d0c56f1836a03d000aa190c40a09823bd19eb997b6e1a315b8d59f45"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "17eb9228528842a7ed2c77d456cdc344bf4bdbf8624b47819f5020a273e9a583"
+      "sha256": "a41c07498620dbe4a30518b8da237846fb134d3baededbf4ebad99f4c0b7ce3f"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -525,6 +541,11 @@
       "id": "sequential-machine",
       "kind": "public-facade-and-reviewed-goldens",
       "path": "crates/gantry-conformance/tests/sequential_machine.rs"
+    },
+    {
+      "id": "sequential-refinement",
+      "kind": "bounded-model-and-written-argument",
+      "path": "crates/gantry-conformance/tests/sequential_refinement_model.rs"
     },
     {
       "id": "unicode-16",

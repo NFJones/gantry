@@ -1,0 +1,70 @@
+{
+  "format": "gantry.sequential-evaluator-refinement-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-RUN-002",
+  "profiles": [
+    "embedding",
+    "evaluator"
+  ],
+  "argument": "docs/sequential-evaluator-refinement.md",
+  "model": "protocol/goldens/sequential-evaluator-model-v1.json",
+  "model_evidence": "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay",
+  "reviewed_clauses": [
+    { "requirement": "GNT-3-D-PROPERTIES", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-CANCEL", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-FAIL", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LABELS", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LABELS", "clause": "clause-002", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LABELS", "clause": "clause-003", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-002", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-003", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-004", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-005", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-006", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-007", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-008", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-009", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-OPERATION", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-OPERATION", "clause": "clause-002", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-OPERATION", "clause": "clause-003", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-OPERATION", "clause": "clause-004", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-OPERATION", "clause": "clause-005", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-STATE", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-STATE", "clause": "clause-002", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3-M-TASK-SETTLE", "clause": "clause-001", "profiles": ["evaluator"] },
+    { "requirement": "GNT-3.15", "clause": "clause-001", "profiles": ["embedding", "evaluator"] },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-001", "profiles": ["embedding", "evaluator"] },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-002", "profiles": ["embedding", "evaluator"] },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-003", "profiles": ["embedding", "evaluator"] },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-004", "profiles": ["embedding", "evaluator"] }
+  ],
+  "excluded_clauses": [
+    { "requirement": "GNT-3-M-DETACH", "clause": "clause-001", "profile": "evaluator", "rationale": "The base evaluator rejects reachable detach effects before execution; dynamic detach transitions require the concurrent-evaluator profile." },
+    { "requirement": "GNT-3-M-SPAWN", "clause": "clause-001", "profile": "evaluator", "rationale": "The base evaluator rejects reachable spawn effects before execution; dynamic task creation requires the concurrent-evaluator profile." },
+    { "requirement": "GNT-3-M-TASK-SETTLE", "clause": "clause-002", "profile": "evaluator", "rationale": "The base evaluator has no attached child handles or join frame; join start and all-settled waiting require the concurrent-evaluator profile." },
+    { "requirement": "GNT-3-M-TASK-SETTLE", "clause": "clause-003", "profile": "evaluator", "rationale": "The base evaluator has no joined child vector; join resolution and ordered aggregate failure require the concurrent-evaluator profile." }
+  ],
+  "trace_evidence": [
+    "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe",
+    "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact",
+    "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_and_observes_one_sequential_execution",
+    "crates/gantry-conformance/tests/interpreter_lifecycle.rs#reentry_is_chain_local_and_pending_adapters_hold_no_lifecycle_lock",
+    "crates/gantry-conformance/tests/interpreter_lifecycle.rs#shutdown_races_transfer_admission_and_snapshot_first_durations",
+    "crates/gantry-conformance/tests/operation_boundaries.rs#public_cancellation_after_outcome_prevents_source_consumption",
+    "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption",
+    "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact",
+    "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+  ],
+  "evidence_manifests": [
+    "protocol/conformance/executor-services-v1.json",
+    "protocol/conformance/interpreter-lifecycle-v1.json",
+    "protocol/conformance/sequential-machine-v1.json"
+  ],
+  "exclusions": [
+    "The bounded search is not an exhaustive proof over all Gantry programs, values, retries, or host schedules.",
+    "Concurrent task creation, handle ownership transitions, joins, detachment, and schedule fairness remain owned by GNT-CON-005.",
+    "Durable commit-before-observation, recovery-prefix simulation, resume, and terminal recovery remain owned by GNT-DUR-006.",
+    "Genuinely pending DispatchOperation and timer work does not imply wall-clock termination and is excluded from enabled-machine progress."
+  ]
+}
