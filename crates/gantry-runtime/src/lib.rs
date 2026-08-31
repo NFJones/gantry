@@ -6,6 +6,8 @@
 
 mod configuration;
 mod containment;
+#[cfg(feature = "durable")]
+mod durable;
 mod event;
 mod hook_request;
 mod lifecycle;
@@ -23,6 +25,11 @@ pub use configuration::{
 pub use containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
     contain_gantry_future, contain_integration_future, drop_integration,
+};
+#[cfg(feature = "durable")]
+pub use durable::{
+    DurableTransitionSink, InMemoryJournalStore, TransitionReceiptV1, TransitionSink,
+    VolatileTransitionSink,
 };
 pub use event::{
     BranchConditionV1, ExecutionDeliveryConsequenceV1, ExecutionEventDraftV1, ExecutionEventError,

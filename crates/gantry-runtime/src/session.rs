@@ -265,7 +265,7 @@ impl LogicalSessionRegistryV1 {
         self.sessions.get_mut(&id)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "concurrent"))]
     /// Returns the number of records for sibling-module invariant tests.
     pub(crate) fn len(&self) -> usize {
         self.sessions.len()

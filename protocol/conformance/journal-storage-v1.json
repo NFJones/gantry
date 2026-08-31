@@ -1,0 +1,42 @@
+{
+  "format": "gantry.journal-storage-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-DUR-001",
+  "capabilities": [
+    {
+      "id": "atomic-fenced-store-contract",
+      "evidence": "crates/gantry-conformance/tests/journal_storage.rs#public_in_memory_store_passes_the_common_atomic_fenced_contract"
+    },
+    {
+      "id": "linearizable-owner-and-commit-races",
+      "evidence": "crates/gantry-conformance/tests/journal_storage.rs#public_owner_and_commit_races_are_linearizable"
+    },
+    {
+      "id": "snapshot-and-watermark-prefix-validation",
+      "evidence": "crates/gantry-conformance/tests/journal_storage.rs#public_snapshot_prefix_validation_enforces_frontier_watermark_and_references"
+    },
+    {
+      "id": "volatile-and-durable-transition-sinks",
+      "evidence": "crates/gantry-conformance/tests/journal_storage.rs#public_transition_sinks_separate_volatile_and_fenced_durable_records"
+    }
+  ],
+  "reviewed_clauses": [
+    {
+      "requirement": "GNT-11.2",
+      "clause": "clause-001",
+      "profile": "durable-runtime",
+      "evidence": [
+        "crates/gantry-conformance/tests/journal_storage.rs#public_in_memory_store_passes_the_common_atomic_fenced_contract",
+        "crates/gantry-conformance/tests/journal_storage.rs#public_owner_and_commit_races_are_linearizable",
+        "crates/gantry-conformance/tests/journal_storage.rs#public_snapshot_prefix_validation_enforces_frontier_watermark_and_references",
+        "crates/gantry-conformance/tests/journal_storage.rs#public_transition_sinks_separate_volatile_and_fenced_durable_records"
+      ]
+    }
+  ],
+  "exclusions": [
+    "The in-memory model is process-local contract evidence and makes no physical persistence or durable-profile claim.",
+    "Recovery projection, checkpoints, compaction semantics, and crash-cut evidence remain owned by GNT-DUR-002 and GNT-DUR-006.",
+    "Public durable start, resume, lifecycle, and journal-first event orchestration remain owned by GNT-DUR-003 through GNT-DUR-005.",
+    "SQLite worker, ownership, fencing, VFS qualification, and power-loss evidence remain owned by GNT-SQL-001 and GNT-SQL-002."
+  ]
+}

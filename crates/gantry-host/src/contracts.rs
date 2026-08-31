@@ -16,6 +16,7 @@ use gantry_core::timestamp::UtcTimestamp;
 
 use crate::embedding::{EMBEDDING_OPERATIONS, EmbeddingOperation};
 pub use crate::event::EventSink;
+pub use crate::journal::JournalStorage;
 
 /// A borrowed, executor-neutral future returned by a host integration.
 pub type HostFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -551,12 +552,6 @@ pub trait SubmittedTask: Send + Sync {
 pub struct OwnedTaskResult {
     /// Exact validated settlement bytes.
     pub canonical_bytes: Arc<[u8]>,
-}
-
-/// Backend-neutral durable journal operation boundary.
-pub trait JournalStorage: Send + Sync {
-    /// Performs one ownership, read, commit, payload, or release operation.
-    fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>>;
 }
 
 fn validate_operation_version(

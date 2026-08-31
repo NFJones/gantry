@@ -6,3 +6,4 @@
 pub mod contracts;
 pub mod embedding;
 pub mod event;
+pub mod journal;

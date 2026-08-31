@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/journal-storage/v1/schema.json",
+  "title": "Gantry journal-storage conformance vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.journal-storage-vectors/v1" },
+    "first_sequence": { "const": 1 },
+    "prefix_forms": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "enum": ["full-prefix", "snapshot-prefix"] }
+    },
+    "contract_cases": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "error_codes": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "in_memory_persistence_claim": { "const": "none" }
+  },
+  "required": [
+    "format",
+    "first_sequence",
+    "prefix_forms",
+    "contract_cases",
+    "error_codes",
+    "in_memory_persistence_claim"
+  ]
+}

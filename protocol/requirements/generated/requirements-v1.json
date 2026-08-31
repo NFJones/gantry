@@ -20513,8 +20513,13 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/journal_storage.rs#public_in_memory_store_passes_the_common_atomic_fenced_contract",
+                "crates/gantry-conformance/tests/journal_storage.rs#public_owner_and_commit_races_are_linearizable",
+                "crates/gantry-conformance/tests/journal_storage.rs#public_snapshot_prefix_validation_enforces_frontier_watermark_and_references",
+                "crates/gantry-conformance/tests/journal_storage.rs#public_transition_sinks_separate_volatile_and_fenced_durable_records"
+              ],
               "rationale": null
             },
             {
