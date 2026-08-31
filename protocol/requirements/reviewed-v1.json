@@ -8822,8 +8822,11 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order",
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
+              ],
               "rationale": null
             },
             {
@@ -8856,8 +8859,11 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order",
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
+              ],
               "rationale": null
             },
             {
@@ -8909,8 +8915,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence"
+              ],
               "rationale": null
             },
             {
@@ -19304,8 +19312,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order"
+              ],
               "rationale": null
             },
             {
@@ -19381,8 +19391,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
+              ],
               "rationale": null
             },
             {
@@ -19456,8 +19468,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order"
+              ],
               "rationale": null
             },
             {
@@ -19529,8 +19543,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence"
+              ],
               "rationale": null
             },
             {

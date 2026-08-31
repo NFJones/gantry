@@ -4,14 +4,17 @@
 //! The scheduler added by the concurrent profile can therefore create and
 //! settle one task identity without deriving semantics from adapter timing.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind};
 use gantry_core::value::{LogicalValue, ValueError, ValueLimits, ValuePathSegment};
 use gantry_host::contracts::HostError;
-use gantry_ir::{CanonicalPath, StructuralPosition, TypeDescriptor};
+use gantry_ir::generated::TaskControlSiteKind;
+use gantry_ir::{
+    CanonicalPath, OwnershipFact, StaticSiteId, StructuralPosition, TaskControlSite, TypeDescriptor,
+};
 
 use crate::machine::value_matches_type;
 use crate::{
@@ -109,6 +112,141 @@ pub struct TaskFailureV1 {
     pub code: Arc<str>,
     /// Optional protected integration diagnostic reference.
     pub protected_diagnostic: Option<Arc<str>>,
+}
+
+/// One dynamic handle named by canonical ownership-change evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskOwnershipMemberV1 {
+    /// Stable internal handle identity.
+    handle_id: DynamicTaskHandleIdentity,
+    /// Exact lexical handle name selected by analysis.
+    handle_name: Arc<str>,
+    /// Stable child task identity.
+    task_id: ProtocolIdentity,
+    /// Canonical dynamic task path fixed at spawn.
+    task_path: Arc<[Arc<str>]>,
+}
+
+impl TaskOwnershipMemberV1 {
+    /// Returns the stable internal handle identity.
+    #[must_use]
+    pub const fn handle_id(&self) -> DynamicTaskHandleIdentity {
+        self.handle_id
+    }
+
+    /// Returns the exact analyzer-selected lexical handle name.
+    #[must_use]
+    pub fn handle_name(&self) -> &str {
+        &self.handle_name
+    }
+
+    /// Returns the stable child task identity.
+    #[must_use]
+    pub const fn task_id(&self) -> ProtocolIdentity {
+        self.task_id
+    }
+
+    /// Returns the canonical dynamic task path fixed at spawn.
+    #[must_use]
+    pub fn task_path(&self) -> &[Arc<str>] {
+        &self.task_path
+    }
+}
+
+/// One atomic source-language ownership transition in canonical member order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskOwnershipChangedV1 {
+    /// Gantry task that owned every selected attached handle.
+    owner_task_id: ProtocolIdentity,
+    /// Canonical named-join, joinall, or detach site.
+    control_site: StaticSiteId,
+    /// Exact task-control form that caused the transition.
+    control_kind: TaskControlSiteKind,
+    /// Exact resulting source-language disposition.
+    disposition: TaskHandleState,
+    /// Selected dynamic members in source or declaration order.
+    members: Vec<TaskOwnershipMemberV1>,
+}
+
+impl TaskOwnershipChangedV1 {
+    /// Returns the Gantry task that owned every selected handle.
+    #[must_use]
+    pub const fn owner_task_id(&self) -> ProtocolIdentity {
+        self.owner_task_id
+    }
+
+    /// Returns the canonical task-control site that caused the transition.
+    #[must_use]
+    pub const fn control_site(&self) -> &StaticSiteId {
+        &self.control_site
+    }
+
+    /// Returns the exact task-control form that caused the transition.
+    #[must_use]
+    pub const fn control_kind(&self) -> TaskControlSiteKind {
+        self.control_kind
+    }
+
+    /// Returns the resulting source-language disposition.
+    #[must_use]
+    pub const fn disposition(&self) -> TaskHandleState {
+        self.disposition
+    }
+
+    /// Returns selected members in immutable source or declaration order.
+    #[must_use]
+    pub fn members(&self) -> &[TaskOwnershipMemberV1] {
+        &self.members
+    }
+}
+
+/// Result of atomically consuming one analyzed join selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JoinStartV1 {
+    /// An empty joinall reduced directly to Unit without ownership evidence.
+    Empty,
+    /// A nonempty join consumed every selected handle before waiting.
+    Started(TaskOwnershipChangedV1),
+}
+
+/// Exact terminal failure of one joined member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskJoinMemberFailureKindV1 {
+    /// The child settled with its retained runtime failure.
+    Failed(TaskFailureV1),
+    /// The child settled through cancellation with its protected reason reference.
+    Cancelled(Arc<str>),
+}
+
+/// One failed joined task in source or declaration order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskJoinMemberFailureV1 {
+    /// Stable child task identity.
+    pub task_id: ProtocolIdentity,
+    /// Canonical dynamic task path fixed at spawn.
+    pub task_path: Arc<[Arc<str>]>,
+    /// Exact terminal child failure.
+    pub failure: TaskJoinMemberFailureKindV1,
+}
+
+/// Ordered aggregate `task-join-failure` retained after every member settles.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskJoinFailureV1 {
+    /// Exact portable aggregate category.
+    pub category: RuntimeErrorCategory,
+    /// Failed or cancelled members in the join's normative order.
+    pub failures: Vec<TaskJoinMemberFailureV1>,
+}
+
+/// Current all-settled resolution of one consumed join selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JoinResolutionV1 {
+    /// At least one selected task remains unsettled; identities retain join order.
+    Pending(Vec<ProtocolIdentity>),
+    /// Every selected task succeeded and produced the statically determined shape.
+    Succeeded(LogicalValue),
+    /// Every selected task settled and at least one failed or was cancelled.
+    Failed(TaskJoinFailureV1),
 }
 
 /// Complete scheduler-owned status of one admitted child task.
@@ -569,6 +707,255 @@ impl ConcurrentTaskStateV1 {
         Ok(())
     }
 
+    /// Atomically consumes an analyzer-selected named join or joinall selection.
+    ///
+    /// The supplied dynamic vector is resolved against the analyzer's static
+    /// handle vector, so neither runtime settlement order nor caller ordering
+    /// can change the normative result order.
+    pub fn begin_join(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        control: &TaskControlSite,
+        handles: &[DynamicTaskHandleIdentity],
+    ) -> Result<JoinStartV1, TaskStateError> {
+        if !matches!(
+            control.kind,
+            TaskControlSiteKind::Join | TaskControlSiteKind::JoinAll
+        ) {
+            return Err(TaskStateError::InvalidTaskControl);
+        }
+        if handles.is_empty() {
+            if control.kind != TaskControlSiteKind::JoinAll || !control.handles.is_empty() {
+                return Err(TaskStateError::InvalidTaskControl);
+            }
+            return Ok(JoinStartV1::Empty);
+        }
+
+        let task_ids = self.validate_control_selection(owner_task_id, control, handles)?;
+        let members = task_ids
+            .iter()
+            .map(|task_id| {
+                let task = self.tasks.get(task_id).ok_or(TaskStateError::UnknownTask)?;
+                Ok(TaskOwnershipMemberV1 {
+                    handle_id: task.handle_id,
+                    handle_name: Arc::clone(&task.handle_name),
+                    task_id: *task_id,
+                    task_path: Arc::clone(&task.task_path),
+                })
+            })
+            .collect::<Result<Vec<_>, TaskStateError>>()?;
+        for task_id in task_ids {
+            let task = self
+                .tasks
+                .get_mut(&task_id)
+                .ok_or(TaskStateError::UnknownTask)?;
+            task.handle_state = TaskHandleState::Joined;
+        }
+
+        Ok(JoinStartV1::Started(TaskOwnershipChangedV1 {
+            owner_task_id,
+            control_site: control.id.clone(),
+            control_kind: control.kind,
+            disposition: TaskHandleState::Joined,
+            members,
+        }))
+    }
+
+    /// Resolves one already-consumed join only after every selected task settles.
+    pub fn resolve_join(
+        &self,
+        ownership: &TaskOwnershipChangedV1,
+        limits: ValueLimits,
+    ) -> Result<JoinResolutionV1, TaskStateError> {
+        if ownership.disposition != TaskHandleState::Joined
+            || !matches!(
+                ownership.control_kind,
+                TaskControlSiteKind::Join | TaskControlSiteKind::JoinAll
+            )
+            || ownership.members.is_empty()
+        {
+            return Err(TaskStateError::InvalidOwnershipEvidence);
+        }
+
+        let mut seen = BTreeSet::new();
+        let mut pending = Vec::new();
+        let mut result_types = Vec::new();
+        let mut values = Vec::new();
+        let mut failures = Vec::new();
+        for member in &ownership.members {
+            if !seen.insert(member.handle_id) {
+                return Err(TaskStateError::InvalidOwnershipEvidence);
+            }
+            let task = self
+                .tasks
+                .get(&member.task_id)
+                .ok_or(TaskStateError::UnknownTask)?;
+            if task.parent_task_id != ownership.owner_task_id
+                || task.handle_id != member.handle_id
+                || task.handle_name != member.handle_name
+                || task.task_path != member.task_path
+                || task.handle_state != TaskHandleState::Joined
+            {
+                return Err(TaskStateError::InvalidOwnershipEvidence);
+            }
+            match &task.status {
+                ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running => {
+                    pending.push(task.task_id);
+                }
+                ConcurrentTaskStatusV1::Succeeded(value) => {
+                    result_types.push(task.result_type.clone());
+                    values.push(value.clone());
+                }
+                ConcurrentTaskStatusV1::Failed(failure) => {
+                    failures.push(TaskJoinMemberFailureV1 {
+                        task_id: task.task_id,
+                        task_path: Arc::clone(&task.task_path),
+                        failure: TaskJoinMemberFailureKindV1::Failed(failure.clone()),
+                    });
+                }
+                ConcurrentTaskStatusV1::Cancelled(reason) => {
+                    failures.push(TaskJoinMemberFailureV1 {
+                        task_id: task.task_id,
+                        task_path: Arc::clone(&task.task_path),
+                        failure: TaskJoinMemberFailureKindV1::Cancelled(Arc::clone(reason)),
+                    });
+                }
+            }
+        }
+        if !pending.is_empty() {
+            return Ok(JoinResolutionV1::Pending(pending));
+        }
+        if !failures.is_empty() {
+            return Ok(JoinResolutionV1::Failed(TaskJoinFailureV1 {
+                category: RuntimeErrorCategory::TaskJoinFailure,
+                failures,
+            }));
+        }
+
+        let all_unit = result_types
+            .iter()
+            .all(|result_type| *result_type == TypeDescriptor::UNIT);
+        let any_unit = result_types.contains(&TypeDescriptor::UNIT);
+        let value = if all_unit {
+            LogicalValue::unit()
+        } else if any_unit {
+            return Err(TaskStateError::JoinResultType);
+        } else if values.len() == 1 {
+            values
+                .pop()
+                .ok_or(TaskStateError::InvalidOwnershipEvidence)?
+        } else if result_types.windows(2).all(|pair| pair[0] == pair[1]) {
+            LogicalValue::list(values, limits).map_err(TaskStateError::JoinValue)?
+        } else {
+            LogicalValue::tuple(values, limits).map_err(TaskStateError::JoinValue)?
+        };
+        Ok(JoinResolutionV1::Succeeded(value))
+    }
+
+    /// Transfers one attached handle to execution-owned detached work without waiting.
+    pub fn detach(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        control: &TaskControlSite,
+        handle: DynamicTaskHandleIdentity,
+    ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
+        if control.kind != TaskControlSiteKind::Detach {
+            return Err(TaskStateError::InvalidTaskControl);
+        }
+        let task_ids = self.validate_control_selection(owner_task_id, control, &[handle])?;
+        let task_id = task_ids
+            .into_iter()
+            .next()
+            .ok_or(TaskStateError::InvalidTaskControl)?;
+        let task = self
+            .tasks
+            .get_mut(&task_id)
+            .ok_or(TaskStateError::UnknownTask)?;
+        task.handle_state = TaskHandleState::Detached;
+        Ok(TaskOwnershipChangedV1 {
+            owner_task_id,
+            control_site: control.id.clone(),
+            control_kind: control.kind,
+            disposition: TaskHandleState::Detached,
+            members: vec![TaskOwnershipMemberV1 {
+                handle_id: task.handle_id,
+                handle_name: Arc::clone(&task.handle_name),
+                task_id: task.task_id,
+                task_path: Arc::clone(&task.task_path),
+            }],
+        })
+    }
+
+    /// Cross-checks one exact dynamic path against an analyzer ownership fact.
+    ///
+    /// `discharged` is analysis-only: it accepts either exact consumed runtime
+    /// disposition while preserving the joined or detached path evidence.
+    pub fn validate_analyzer_ownership(
+        &self,
+        handle: DynamicTaskHandleIdentity,
+        fact: &OwnershipFact,
+    ) -> Result<(), TaskStateError> {
+        let task = self
+            .tasks
+            .get(&handle.child())
+            .ok_or(TaskStateError::UnknownTask)?;
+        let compatible = match fact.state {
+            TaskHandleState::Discharged => matches!(
+                task.handle_state,
+                TaskHandleState::Joined | TaskHandleState::Detached | TaskHandleState::Discharged
+            ),
+            expected => task.handle_state == expected,
+        };
+        if task.handle_id != handle || task.handle_name != fact.handle || !compatible {
+            return Err(TaskStateError::AnalyzerOwnershipMismatch);
+        }
+        Ok(())
+    }
+
+    fn validate_control_selection(
+        &self,
+        owner_task_id: ProtocolIdentity,
+        control: &TaskControlSite,
+        handles: &[DynamicTaskHandleIdentity],
+    ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
+        if owner_task_id.kind() != IdentityKind::Task
+            || !self.task_paths.contains_key(&owner_task_id)
+        {
+            return Err(TaskStateError::InvalidTaskIdentity);
+        }
+        if handles.len() != control.handles.len() {
+            return Err(TaskStateError::HandleSelectionMismatch);
+        }
+        let mut seen = BTreeSet::new();
+        let mut task_ids = Vec::with_capacity(handles.len());
+        for (handle, static_name) in handles.iter().zip(&control.handles) {
+            if !seen.insert(*handle) {
+                return Err(TaskStateError::DuplicateHandle);
+            }
+            if handle.owner() != owner_task_id {
+                return Err(TaskStateError::ForeignHandle);
+            }
+            let task = self
+                .tasks
+                .get(&handle.child())
+                .ok_or(TaskStateError::UnknownTask)?;
+            if task.handle_id != *handle
+                || task.handle_name != *static_name
+                || task.workflow != *control.id.workflow()
+            {
+                return Err(TaskStateError::HandleSelectionMismatch);
+            }
+            if !task.handle_visible {
+                return Err(TaskStateError::HandleNotVisible);
+            }
+            if task.handle_state != TaskHandleState::Attached {
+                return Err(TaskStateError::ConsumedHandle);
+            }
+            task_ids.push(task.task_id);
+        }
+        Ok(task_ids)
+    }
+
     /// Replaces one mutable child-local capture without changing its parent copy.
     pub fn replace_capture(
         &mut self,
@@ -776,6 +1163,26 @@ pub enum TaskStateError {
     CaptureValue(ValueError),
     /// A successful child result differs from its analyzer-declared type.
     ResultType,
+    /// A join or detach request does not match its analyzer task-control form.
+    InvalidTaskControl,
+    /// One dynamic handle is selected more than once in an atomic consumption.
+    DuplicateHandle,
+    /// A task attempts to consume a handle owned by another Gantry task.
+    ForeignHandle,
+    /// The selected handle has not been exposed after submission resolution.
+    HandleNotVisible,
+    /// Dynamic handles differ from the analyzer's exact source-ordered selection.
+    HandleSelectionMismatch,
+    /// A joined or detached handle cannot be consumed again.
+    ConsumedHandle,
+    /// Retained ownership-change evidence no longer matches scheduler state.
+    InvalidOwnershipEvidence,
+    /// Runtime ownership differs from the analyzer's attached or consumed fact.
+    AnalyzerOwnershipMismatch,
+    /// A supposedly valid join mixes Unit and value-producing task results.
+    JoinResultType,
+    /// Constructing the analyzer-selected aggregate exceeded value limits.
+    JoinValue(ValueError),
     /// Automatic fork-session construction failed.
     Session(SessionError),
     /// The requested status transition is not defined.
@@ -831,14 +1238,23 @@ mod tests {
     use std::sync::Arc;
 
     use gantry_core::identity::ProtocolIdentity;
-    use gantry_core::portable::{IdentityKind, RuntimeErrorCategory, TaskStatusKind};
+    use gantry_core::numeric::GantryInt;
+    use gantry_core::portable::{
+        IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind,
+    };
+    use gantry_core::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
     use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
     use gantry_host::contracts::HostError;
-    use gantry_ir::{CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor};
+    use gantry_ir::generated::TaskControlSiteKind;
+    use gantry_ir::{
+        CanonicalPath, EffectSet, OwnershipFact, StaticSiteId, StructuralPosition, TaskControlSite,
+        TypeDescriptor,
+    };
 
     use super::{
-        ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1, TaskCaptureV1,
-        TaskCreationRequestV1, TaskStateError,
+        ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1, JoinResolutionV1,
+        JoinStartV1, TaskCaptureV1, TaskCreationRequestV1, TaskJoinMemberFailureKindV1,
+        TaskStateError,
     };
     use crate::{
         CanonicalTranscriptV1, Instruction, InstructionKind, LogicalSessionRegistryV1, Machine,
@@ -1122,6 +1538,245 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn named_join_consumes_atomically_before_waiting_and_rejects_reuse() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(3);
+        let first = state
+            .create_child(
+                &mut sessions,
+                typed_request(root_task, root_session, "first", 0, TypeDescriptor::INT),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("first task creation failed: {error:?}"));
+        state
+            .resolve_submission(first.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
+        let second = state
+            .create_child(
+                &mut sessions,
+                typed_request(root_task, root_session, "second", 1, TypeDescriptor::INT),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("second task creation failed: {error:?}"));
+        state
+            .resolve_submission(second.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("second submission failed: {error:?}"));
+        let join = task_control(TaskControlSiteKind::Join, 4, &["first", "second"]);
+
+        assert_eq!(
+            state.begin_join(root_task, &join, &[second.handle_id, first.handle_id]),
+            Err(TaskStateError::HandleSelectionMismatch)
+        );
+        assert_eq!(
+            state.task(first.task_id).map(|task| task.handle_state()),
+            Some(TaskHandleState::Attached)
+        );
+        let ownership = match state
+            .begin_join(root_task, &join, &[first.handle_id, second.handle_id])
+            .unwrap_or_else(|error| panic!("join start failed: {error:?}"))
+        {
+            JoinStartV1::Started(ownership) => ownership,
+            JoinStartV1::Empty => panic!("named join unexpectedly reduced as empty"),
+        };
+        assert_eq!(
+            ownership
+                .members
+                .iter()
+                .map(|member| member.task_id)
+                .collect::<Vec<_>>(),
+            vec![first.task_id, second.task_id]
+        );
+        assert_eq!(
+            ownership.members[0].task_path.as_ref(),
+            [Arc::from("spawn:crate::main:0:0")]
+        );
+        assert!(ownership.members.iter().all(|member| {
+            state
+                .task(member.task_id)
+                .is_some_and(|task| task.handle_state() == TaskHandleState::Joined)
+        }));
+        assert_eq!(
+            state.begin_join(root_task, &join, &[first.handle_id, second.handle_id]),
+            Err(TaskStateError::ConsumedHandle)
+        );
+
+        state
+            .settle(second.task_id, crate::MachineOutcome::Succeeded(integer(2)))
+            .unwrap_or_else(|error| panic!("second settlement failed: {error:?}"));
+        assert_eq!(
+            state.resolve_join(&ownership, DEFAULT_VALUE_LIMITS),
+            Ok(JoinResolutionV1::Pending(vec![first.task_id]))
+        );
+        state
+            .settle(first.task_id, crate::MachineOutcome::Succeeded(integer(1)))
+            .unwrap_or_else(|error| panic!("first settlement failed: {error:?}"));
+        let expected = LogicalValue::list(vec![integer(1), integer(2)], DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("expected list failed: {error:?}"));
+        assert_eq!(
+            state.resolve_join(&ownership, DEFAULT_VALUE_LIMITS),
+            Ok(JoinResolutionV1::Succeeded(expected))
+        );
+
+        let joined = OwnershipFact {
+            handle: Arc::from("first"),
+            state: TaskHandleState::Joined,
+            source: source_span(),
+        };
+        state
+            .validate_analyzer_ownership(first.handle_id, &joined)
+            .unwrap_or_else(|error| panic!("joined ownership mismatch: {error:?}"));
+    }
+
+    #[test]
+    fn joinall_is_all_settled_orders_failures_and_handles_zero_members() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(3);
+        let first = state
+            .create_child(
+                &mut sessions,
+                typed_request(root_task, root_session, "first", 0, TypeDescriptor::UNIT),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("first task creation failed: {error:?}"));
+        state
+            .resolve_submission(first.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
+        let second = state
+            .create_child(
+                &mut sessions,
+                typed_request(root_task, root_session, "second", 1, TypeDescriptor::UNIT),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("second task creation failed: {error:?}"));
+        state
+            .resolve_submission(second.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("second submission failed: {error:?}"));
+        let joinall = task_control(TaskControlSiteKind::JoinAll, 5, &["first", "second"]);
+        let ownership = match state
+            .begin_join(root_task, &joinall, &[first.handle_id, second.handle_id])
+            .unwrap_or_else(|error| panic!("joinall start failed: {error:?}"))
+        {
+            JoinStartV1::Started(ownership) => ownership,
+            JoinStartV1::Empty => panic!("nonempty joinall unexpectedly reduced as empty"),
+        };
+
+        state
+            .settle(
+                second.task_id,
+                crate::MachineOutcome::Cancelled(Arc::from("second-cancelled")),
+            )
+            .unwrap_or_else(|error| panic!("second cancellation failed: {error:?}"));
+        assert_eq!(
+            state.resolve_join(&ownership, DEFAULT_VALUE_LIMITS),
+            Ok(JoinResolutionV1::Pending(vec![first.task_id]))
+        );
+        state
+            .settle(
+                first.task_id,
+                crate::MachineOutcome::Cancelled(Arc::from("first-cancelled")),
+            )
+            .unwrap_or_else(|error| panic!("first cancellation failed: {error:?}"));
+        let failure = match state
+            .resolve_join(&ownership, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("joinall resolution failed: {error:?}"))
+        {
+            JoinResolutionV1::Failed(failure) => failure,
+            other => panic!("joinall unexpectedly resolved as {other:?}"),
+        };
+        assert_eq!(failure.category, RuntimeErrorCategory::TaskJoinFailure);
+        assert_eq!(
+            failure
+                .failures
+                .iter()
+                .map(|member| member.task_id)
+                .collect::<Vec<_>>(),
+            vec![first.task_id, second.task_id]
+        );
+        assert!(matches!(
+            &failure.failures[0].failure,
+            TaskJoinMemberFailureKindV1::Cancelled(reason)
+                if reason.as_ref() == "first-cancelled"
+        ));
+        assert!(matches!(
+            &failure.failures[1].failure,
+            TaskJoinMemberFailureKindV1::Cancelled(reason)
+                if reason.as_ref() == "second-cancelled"
+        ));
+
+        let empty = task_control(TaskControlSiteKind::JoinAll, 6, &[]);
+        assert_eq!(
+            state.begin_join(root_task, &empty, &[]),
+            Ok(JoinStartV1::Empty)
+        );
+    }
+
+    #[test]
+    fn detach_transfers_ownership_without_dropping_running_work() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(2);
+        let created = state
+            .create_child(
+                &mut sessions,
+                typed_request(
+                    root_task,
+                    root_session,
+                    "background",
+                    0,
+                    TypeDescriptor::INT,
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        state
+            .resolve_submission(created.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
+        let detach = task_control(TaskControlSiteKind::Detach, 7, &["background"]);
+        let ownership = state
+            .detach(root_task, &detach, created.handle_id)
+            .unwrap_or_else(|error| panic!("detach failed: {error:?}"));
+        assert_eq!(ownership.disposition, TaskHandleState::Detached);
+        assert_eq!(ownership.members.len(), 1);
+        assert_eq!(ownership.members[0].task_id, created.task_id);
+        assert_eq!(
+            ownership.members[0].task_path.as_ref(),
+            [Arc::from("spawn:crate::main:0:0")]
+        );
+        assert!(matches!(
+            state.task(created.task_id),
+            Some(task)
+                if task.handle_state() == TaskHandleState::Detached
+                    && matches!(task.status(), ConcurrentTaskStatusV1::Running)
+        ));
+        assert_eq!(
+            state.detach(root_task, &detach, created.handle_id),
+            Err(TaskStateError::ConsumedHandle)
+        );
+
+        let detached = OwnershipFact {
+            handle: Arc::from("background"),
+            state: TaskHandleState::Detached,
+            source: source_span(),
+        };
+        state
+            .validate_analyzer_ownership(created.handle_id, &detached)
+            .unwrap_or_else(|error| panic!("detached ownership mismatch: {error:?}"));
+        let discharged = OwnershipFact {
+            handle: Arc::from("background"),
+            state: TaskHandleState::Discharged,
+            source: source_span(),
+        };
+        state
+            .validate_analyzer_ownership(created.handle_id, &discharged)
+            .unwrap_or_else(|error| panic!("discharged ownership mismatch: {error:?}"));
+        let joined = OwnershipFact {
+            handle: Arc::from("background"),
+            state: TaskHandleState::Joined,
+            source: source_span(),
+        };
+        assert_eq!(
+            state.validate_analyzer_ownership(created.handle_id, &joined),
+            Err(TaskStateError::AnalyzerOwnershipMismatch)
+        );
+    }
+
     fn fixture(
         maximum_tasks: u64,
     ) -> (
@@ -1152,19 +1807,74 @@ mod tests {
         spawn_occurrence: u64,
         captures: Vec<TaskCaptureV1>,
     ) -> TaskCreationRequestV1 {
+        let mut request = typed_request(
+            parent_task_id,
+            parent_session_id,
+            "child",
+            spawn_occurrence,
+            TypeDescriptor::UNIT,
+        );
+        request.captures = captures;
+        request
+    }
+
+    fn typed_request(
+        parent_task_id: ProtocolIdentity,
+        parent_session_id: ProtocolIdentity,
+        handle_name: &str,
+        spawn_occurrence: u64,
+        result_type: TypeDescriptor,
+    ) -> TaskCreationRequestV1 {
         TaskCreationRequestV1 {
             parent_task_id,
-            handle_name: Arc::from("child"),
+            handle_name: Arc::from(handle_name),
             workflow: CanonicalPath::new("crate::main")
                 .unwrap_or_else(|error| panic!("path failed: {error}")),
             spawn_site: StructuralPosition::new(vec![0])
                 .unwrap_or_else(|error| panic!("site failed: {error}")),
             spawn_occurrence,
-            result_type: TypeDescriptor::UNIT,
-            captures,
+            result_type,
+            captures: Vec::new(),
             inherited_agent: Some(Arc::from("writer")),
             parent_session_id,
         }
+    }
+
+    fn task_control(kind: TaskControlSiteKind, position: u64, handles: &[&str]) -> TaskControlSite {
+        let workflow = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("path failed: {error}"));
+        let position = StructuralPosition::new(vec![position])
+            .unwrap_or_else(|error| panic!("site failed: {error}"));
+        TaskControlSite {
+            id: StaticSiteId::new(workflow, position),
+            kind,
+            handles: handles.iter().map(|handle| Arc::from(*handle)).collect(),
+            source: source_span(),
+        }
+    }
+
+    fn source_span() -> SourceSpan {
+        let limits = SourceLimits::new(1, 64, 64, 1, 1)
+            .unwrap_or_else(|error| panic!("source limits failed: {error:?}"));
+        let mut builder = SourceSnapshotBuilder::new(limits);
+        let id = builder
+            .add_file("main.gnt", b"joinall()")
+            .unwrap_or_else(|error| panic!("source fixture failed: {error:?}"));
+        let snapshot = builder.finish();
+        let record = snapshot
+            .get(&id)
+            .unwrap_or_else(|| panic!("source fixture record missing"));
+        SourceSpan::new(
+            record,
+            ByteSpan::new(0, 1).unwrap_or_else(|error| panic!("span failed: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("source span failed: {error:?}"))
+    }
+
+    fn integer(value: i64) -> LogicalValue {
+        LogicalValue::integer(
+            GantryInt::new(value).unwrap_or_else(|| panic!("fixture integer is out of range")),
+        )
     }
 
     fn fresh(kind: IdentityKind, byte: u8) -> ProtocolIdentity {

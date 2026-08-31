@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "238ef76e809eddedbc8bae48bf1791750988c315e0c85c321369ea50e26246f0",
+    "sha256": "d05efd454295158135b34fdfccd4c704c6b024fde91b2c54921761e318fab73c",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -149,6 +149,10 @@
     {
       "path": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",
       "sha256": "1c213d589191b4afa7f3a3498f4dd0acc3d23ad07060bdf2136f4cabd07aedb2"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
+      "sha256": "52f5db2c5bf5b6c0b375f897aad8178242c8ed3df5784b7602d87245ea40e12f"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_task_state.rs",
@@ -264,7 +268,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "fc9dbd0d4c223ab4b4961176b48f11c820f0f6ba7d698f5ffe7fb33f95c2dad4"
+      "sha256": "83439d888583aa34ec8a862180467a5a35f3dac76d611505a39e37b8fe340488"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -295,6 +299,10 @@
       "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
     },
     {
+      "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
+      "sha256": "3efc0b78eb1b46a05e6aafea42ed38df4a872ef458db4842352a557b8b8a5a6f"
+    },
+    {
       "path": "protocol/conformance/concurrent-task-state-v1.json",
       "sha256": "030e61157c3d272de006c345da35440f0543e31254da8397963fcc8319ad4b24"
     },
@@ -320,7 +328,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "8e3ee3d0304e0e91b3c0c1842f6932cd8bd0bfd09506852e60f484faf05e60a4"
+      "sha256": "a3a3ea60e448137f2a207e4e857dbf472c409eeb727e69895cc8bb23bcf05e8f"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",
@@ -416,11 +424,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "238ef76e809eddedbc8bae48bf1791750988c315e0c85c321369ea50e26246f0"
+      "sha256": "d05efd454295158135b34fdfccd4c704c6b024fde91b2c54921761e318fab73c"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "c381efaa86d823d1167024d3aaa26a080a6a5b02e1bc85b974d93441cb7f26d9"
+      "sha256": "c36bf03a02cffb35ebb0361582d3d20e73f163c91dc77110943557679465193e"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -528,6 +536,11 @@
       "id": "canonical-protocol",
       "kind": "public-facade",
       "path": "crates/gantry-conformance/tests/canonical_protocol.rs"
+    },
+    {
+      "id": "concurrent-handle-ownership",
+      "kind": "public-facade-and-reviewed-evidence",
+      "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs"
     },
     {
       "id": "concurrent-task-state",

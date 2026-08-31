@@ -80,8 +80,10 @@ pub use session::{
 #[cfg(feature = "concurrent")]
 pub use task::{
     ConcurrentSchedulerV1, ConcurrentTaskRecordV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
-    DynamicTaskHandleIdentity, ScheduledMachineStepV1, TaskCaptureV1, TaskCreatedV1,
-    TaskCreationRequestV1, TaskCreationV1, TaskFailureV1, TaskStateError,
+    DynamicTaskHandleIdentity, JoinResolutionV1, JoinStartV1, ScheduledMachineStepV1,
+    TaskCaptureV1, TaskCreatedV1, TaskCreationRequestV1, TaskCreationV1, TaskFailureV1,
+    TaskJoinFailureV1, TaskJoinMemberFailureKindV1, TaskJoinMemberFailureV1,
+    TaskOwnershipChangedV1, TaskOwnershipMemberV1, TaskStateError,
 };
 
 #[cfg(test)]
