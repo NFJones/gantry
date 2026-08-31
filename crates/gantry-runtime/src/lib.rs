@@ -8,6 +8,8 @@ mod configuration;
 mod containment;
 #[cfg(feature = "durable")]
 mod durable;
+#[cfg(feature = "durable")]
+mod durable_event;
 mod event;
 mod hook_request;
 mod lifecycle;
@@ -32,6 +34,15 @@ pub use containment::{
 pub use durable::{
     DurableTransitionSink, InMemoryJournalStore, TransitionReceiptV1, TransitionSink,
     VolatileTransitionSink,
+};
+#[cfg(feature = "durable")]
+pub use durable_event::{
+    DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
+    DURABLE_EVENT_SETTLED_KIND_V1, DurableDeliveryRecoveryV1, DurableEventBarrierV1,
+    DurableEventCommitCoordinatorV1, DurableEventCommitError, DurableEventCommitV1,
+    DurableEventDispatchedV1, DurableEventEvidenceError, DurableEventOccurrenceV1,
+    DurableEventPlanV1, DurableEventRetentionV1, DurableEventSettledV1, DurableSinkObligationV1,
+    RecoveredDurableEventV1, RecoveredDurableEventsV1,
 };
 pub use event::{
     BranchConditionV1, ExecutionDeliveryConsequenceV1, ExecutionEventDraftV1, ExecutionEventError,

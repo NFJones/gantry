@@ -21229,6 +21229,7 @@
               "profile": "durable-runtime",
               "state": "covered",
               "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_full_and_compacted_event_prefixes_project_equivalently",
                 "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions",
                 "crates/gantry-conformance/tests/durable_recovery.rs#public_recovery_rejects_corruption_invalid_causality_and_operation_order"
               ],
@@ -21909,8 +21910,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery",
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -22003,8 +22007,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery",
+                "crates/gantry-conformance/tests/durable_events.rs#public_replacement_barrier_exclusion_and_compaction_guards_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -22096,8 +22103,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery"
+              ],
               "rationale": null
             },
             {
@@ -22161,8 +22170,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_journal_failure_ends_the_standard_event_stream"
+              ],
               "rationale": null
             },
             {
@@ -22247,8 +22258,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -22308,8 +22321,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery",
+                "crates/gantry-conformance/tests/durable_events.rs#public_replacement_barrier_exclusion_and_compaction_guards_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -22398,8 +22414,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/activity_observation.rs#canonical_projection_and_retry_vectors_match_the_public_kernel",
+                "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement"
+              ],
               "rationale": null
             },
             {
@@ -22464,8 +22483,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement"
+              ],
               "rationale": null
             },
             {
@@ -22520,8 +22541,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement"
+              ],
               "rationale": null
             },
             {
@@ -22576,8 +22599,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement",
+                "crates/gantry-conformance/tests/durable_events.rs#public_journal_first_occurrence_plan_and_payloads_precede_delivery"
+              ],
               "rationale": null
             },
             {
@@ -22659,8 +22685,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_replacement_barrier_exclusion_and_compaction_guards_are_exact",
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe"
+              ],
               "rationale": null
             },
             {
@@ -22721,8 +22750,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_replacement_barrier_exclusion_and_compaction_guards_are_exact",
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe"
+              ],
               "rationale": null
             },
             {
@@ -22781,8 +22813,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_events.rs#public_replacement_barrier_exclusion_and_compaction_guards_are_exact",
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe"
+              ],
               "rationale": null
             },
             {

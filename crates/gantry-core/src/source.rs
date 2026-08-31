@@ -92,6 +92,14 @@ impl std::error::Error for PackagePathError {}
 pub struct SourceId(PackagePath);
 
 impl SourceId {
+    /// Reconstructs one snapshot-local identity from its portable package path.
+    ///
+    /// This is used by versioned source maps and durable event records whose
+    /// source bytes were validated before the record became authoritative.
+    pub fn from_package_path(value: &str) -> Result<Self, PackagePathError> {
+        PackagePath::new(value).map(Self)
+    }
+
     /// Returns the exact package-relative identity.
     #[must_use]
     pub fn package_path(&self) -> &PackagePath {
@@ -153,6 +161,21 @@ impl SourceSpan {
         })
     }
 
+    /// Reconstructs a previously validated portable source span.
+    ///
+    /// The caller must obtain the path and offsets from an authenticated
+    /// source map or another versioned record that validated the bounds before
+    /// publication. This constructor still validates path shape and byte order.
+    pub fn from_portable_parts(
+        path: &str,
+        start: u64,
+        end: u64,
+    ) -> Result<Self, PortableSpanError> {
+        let source = SourceId::from_package_path(path).map_err(PortableSpanError::Path)?;
+        let bytes = ByteSpan::new(start, end).map_err(PortableSpanError::Span)?;
+        Ok(Self { source, bytes })
+    }
+
     /// Returns the source identity.
     #[must_use]
     pub fn source(&self) -> &SourceId {
@@ -188,6 +211,26 @@ impl fmt::Display for SpanError {
 }
 
 impl std::error::Error for SpanError {}
+
+/// Failure to reconstruct a source span from portable path and offset fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PortableSpanError {
+    /// The package-relative source path is invalid.
+    Path(PackagePathError),
+    /// The byte offsets are reversed.
+    Span(SpanError),
+}
+
+impl fmt::Display for PortableSpanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path(error) => error.fmt(formatter),
+            Self::Span(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for PortableSpanError {}
 
 /// Immutable bytes and identity for one selected source file.
 #[derive(Clone, Debug, Eq, PartialEq)]

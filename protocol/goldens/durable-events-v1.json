@@ -1,0 +1,22 @@
+{
+  "format": "gantry.durable-event-vectors/v1",
+  "barriers": ["delivered", "pending", "required-exhausted"],
+  "cases": [
+    "atomic-occurrence-plan-and-payload",
+    "full-snapshot-event-equivalence",
+    "indeterminate-redelivery-same-retry",
+    "journal-failure-stream-termination",
+    "recorded-delay-reuse",
+    "replacement-cause-cardinality",
+    "required-barrier-and-scoped-exclusion",
+    "retention-and-compaction-guard"
+  ],
+  "evidence_kinds": [
+    "gantry.event-occurrence/v1",
+    "gantry.event-delivery-dispatched/v1",
+    "gantry.event-delivery-settled/v1"
+  ],
+  "recovery_states": ["pending", "indeterminate", "retry-delay", "success", "terminal"],
+  "retention": ["delivery-evidence", "occurrence-evidence", "protected-payloads"],
+  "standard_event_catalog_closed": true
+}

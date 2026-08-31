@@ -24,8 +24,10 @@ use gantry_ir::generated::RecoveryClass;
 use gantry_ir::{MachineProgram, TypeDescriptor};
 
 use crate::{
-    CancellationReason, DurableTransitionSink, LogicalSessionRegistryCheckpointV1,
-    LogicalSessionRegistryV1, Machine, MachineCheckpointV1, MachineRecoveryError, MachineStatus,
+    CancellationReason, DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
+    DURABLE_EVENT_SETTLED_KIND_V1, DurableEventEvidenceError, DurableEventOccurrenceV1,
+    DurableTransitionSink, LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine,
+    MachineCheckpointV1, MachineRecoveryError, MachineStatus, RecoveredDurableEventsV1,
     SessionRecoveryError, TransitionReceiptV1, TransitionSink, ValidationErrorCategoryV1,
     ValidationErrorV1,
 };
@@ -389,6 +391,7 @@ pub struct RecoveredDurableStateV1 {
     execution_start: Option<DurableExecutionStartV1>,
     execution_state: Option<DurableExecutionStateV1>,
     cancellation_reason: Option<CancellationReason>,
+    events: RecoveredDurableEventsV1,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
@@ -442,6 +445,12 @@ impl RecoveredDurableStateV1 {
     #[must_use]
     pub const fn cancellation_reason(&self) -> Option<&CancellationReason> {
         self.cancellation_reason.as_ref()
+    }
+
+    /// Returns the recovered journal-first event occurrences and sink obligations.
+    #[must_use]
+    pub const fn events(&self) -> &RecoveredDurableEventsV1 {
+        &self.events
     }
 
     /// Returns the reconstructed existing evaluator for read-only durable observation.
@@ -606,9 +615,11 @@ pub fn recover_authoritative_prefix_with_retained_program(
 #[derive(Default)]
 struct PrefixProjection {
     latest: Option<(u64, ProtocolIdentity, DurableLogicalEvidenceV1)>,
+    journal_tip: Option<(u64, ProtocolIdentity)>,
     execution_start: Option<DurableExecutionStartV1>,
     execution_state: Option<DurableExecutionStateV1>,
     committed_cancellation: Option<CancellationReason>,
+    events: RecoveredDurableEventsV1,
     known: BTreeSet<ProtocolIdentity>,
     prepared_dispatches: BTreeSet<ProtocolIdentity>,
     latest_prepared: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
@@ -631,6 +642,7 @@ impl PrefixProjection {
             return Err(DurableEvidenceError::InvalidCausalOrder);
         }
         self.latest = Some((sequence, evidence_id, evidence));
+        self.journal_tip = Some((sequence, evidence_id));
         Ok(())
     }
 
@@ -640,28 +652,49 @@ impl PrefixProjection {
         envelope: &JournalEvidenceEnvelopeV1,
     ) -> Result<(), DurableEvidenceError> {
         if self.latest.is_none() && envelope.kind.as_ref() == "gantry.execution-start/v1" {
-            if envelope.sequence != 1 || !envelope.references.is_empty() {
+            if self.journal_tip.is_some()
+                || envelope.sequence != 1
+                || !envelope.references.is_empty()
+            {
                 return Err(DurableEvidenceError::InvalidExecutionStart);
             }
             let start = DurableExecutionStartV1::decode(program, &envelope.canonical_body)?;
             let evidence = start.state().clone();
             self.record_operation_cut(&evidence, true)?;
-            self.known.insert(envelope.evidence_id);
+            self.record_tip(envelope)?;
             self.execution_start = Some(start);
             self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
             return Ok(());
         }
-        if envelope.kind.as_ref() == "gantry.cancellation/v1" {
-            let Some((_, predecessor, previous)) = &self.latest else {
+        if matches!(
+            envelope.kind.as_ref(),
+            DURABLE_EVENT_OCCURRENCE_KIND_V1
+                | DURABLE_EVENT_DISPATCHED_KIND_V1
+                | DURABLE_EVENT_SETTLED_KIND_V1
+        ) {
+            let Some((_, _, previous)) = &self.latest else {
                 return Err(DurableEvidenceError::InvalidCausalOrder);
             };
-            if !envelope.references.contains(predecessor)
-                || envelope
-                    .references
-                    .iter()
-                    .any(|reference| !self.known.contains(reference))
-                || self.committed_cancellation.is_some()
-            {
+            self.require_predecessor(envelope)?;
+            if envelope.kind.as_ref() == DURABLE_EVENT_OCCURRENCE_KIND_V1 {
+                let occurrence = DurableEventOccurrenceV1::decode(&envelope.canonical_body)
+                    .map_err(DurableEvidenceError::Event)?;
+                if occurrence.event().execution_id() != Some(previous.execution_id()) {
+                    return Err(DurableEvidenceError::MixedExecution);
+                }
+            }
+            self.events
+                .apply_envelope(envelope)
+                .map_err(DurableEvidenceError::Event)?;
+            self.record_tip(envelope)?;
+            return Ok(());
+        }
+        if envelope.kind.as_ref() == "gantry.cancellation/v1" {
+            let Some((_, _, previous)) = &self.latest else {
+                return Err(DurableEvidenceError::InvalidCausalOrder);
+            };
+            self.require_predecessor(envelope)?;
+            if self.committed_cancellation.is_some() {
                 return Err(DurableEvidenceError::RepeatedCancellation);
             }
             let cancellation =
@@ -673,7 +706,7 @@ impl PrefixProjection {
                 return Err(DurableEvidenceError::MixedExecution);
             }
             self.record_operation_cut(&evidence, true)?;
-            self.known.insert(envelope.evidence_id);
+            self.record_tip(envelope)?;
             self.committed_cancellation = Some(cancellation.reason().clone());
             self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
             return Ok(());
@@ -682,35 +715,22 @@ impl PrefixProjection {
             if envelope.kind.as_ref() != "gantry.execution-state/v1" {
                 return Err(DurableEvidenceError::UnsupportedEvidenceKind);
             }
-            let Some((_, predecessor, previous)) = &self.latest else {
+            let Some((_, _, previous)) = &self.latest else {
                 return Err(DurableEvidenceError::InvalidCausalOrder);
             };
-            if !envelope.references.contains(predecessor)
-                || envelope
-                    .references
-                    .iter()
-                    .any(|reference| !self.known.contains(reference))
-            {
-                return Err(DurableEvidenceError::InvalidCausalOrder);
-            }
+            let previous = previous.clone();
+            self.require_predecessor(envelope)?;
             let state = DurableExecutionStateV1::decode(&envelope.canonical_body)?;
             if state.execution_id() != previous.execution_id() {
                 return Err(DurableEvidenceError::MixedExecution);
             }
-            self.known.insert(envelope.evidence_id);
+            self.record_tip(envelope)?;
             self.execution_state = Some(state);
-            self.latest = Some((envelope.sequence, envelope.evidence_id, previous.clone()));
+            self.latest = Some((envelope.sequence, envelope.evidence_id, previous));
             return Ok(());
         }
-        if let Some((_, predecessor, previous)) = &self.latest {
-            if !envelope.references.contains(predecessor)
-                || envelope
-                    .references
-                    .iter()
-                    .any(|reference| !self.known.contains(reference))
-            {
-                return Err(DurableEvidenceError::InvalidCausalOrder);
-            }
+        if let Some((_, _, previous)) = &self.latest {
+            self.require_predecessor(envelope)?;
             let evidence = DurableLogicalEvidenceV1::decode(program, &envelope.canonical_body)?;
             if evidence.execution_id != previous.execution_id
                 || evidence.task_id != previous.task_id
@@ -718,7 +738,7 @@ impl PrefixProjection {
                 return Err(DurableEvidenceError::MixedExecution);
             }
             self.record_operation_cut(&evidence, true)?;
-            self.known.insert(envelope.evidence_id);
+            self.record_tip(envelope)?;
             self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
             return Ok(());
         }
@@ -727,8 +747,38 @@ impl PrefixProjection {
         }
         let evidence = DurableLogicalEvidenceV1::decode(program, &envelope.canonical_body)?;
         self.record_operation_cut(&evidence, true)?;
-        self.known.insert(envelope.evidence_id);
+        self.record_tip(envelope)?;
         self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
+        Ok(())
+    }
+
+    fn require_predecessor(
+        &self,
+        envelope: &JournalEvidenceEnvelopeV1,
+    ) -> Result<(), DurableEvidenceError> {
+        let Some((sequence, predecessor)) = self.journal_tip else {
+            return Err(DurableEvidenceError::InvalidCausalOrder);
+        };
+        if sequence.checked_add(1) != Some(envelope.sequence)
+            || !envelope.references.contains(&predecessor)
+            || envelope
+                .references
+                .iter()
+                .any(|reference| !self.known.contains(reference))
+        {
+            return Err(DurableEvidenceError::InvalidCausalOrder);
+        }
+        Ok(())
+    }
+
+    fn record_tip(
+        &mut self,
+        envelope: &JournalEvidenceEnvelopeV1,
+    ) -> Result<(), DurableEvidenceError> {
+        if !self.known.insert(envelope.evidence_id) {
+            return Err(DurableEvidenceError::InvalidCausalOrder);
+        }
+        self.journal_tip = Some((envelope.sequence, envelope.evidence_id));
         Ok(())
     }
 
@@ -796,8 +846,11 @@ impl PrefixProjection {
         self,
         program: Arc<MachineProgram>,
     ) -> Result<RecoveredDurableStateV1, DurableEvidenceError> {
-        let (latest_sequence, latest_evidence_id, evidence) = self
+        let (_, _, evidence) = self
             .latest
+            .ok_or(DurableEvidenceError::MissingRecoveryState)?;
+        let (latest_sequence, latest_evidence_id) = self
+            .journal_tip
             .ok_or(DurableEvidenceError::MissingRecoveryState)?;
         let operation_recovery = operation_recovery(&evidence)?;
         let sessions = evidence
@@ -813,6 +866,7 @@ impl PrefixProjection {
             execution_start: self.execution_start,
             execution_state: self.execution_state,
             cancellation_reason: self.committed_cancellation,
+            events: self.events,
             latest_sequence,
             latest_evidence_id,
             latest_cut: evidence.cut,
@@ -1172,6 +1226,8 @@ impl DurableLogicalEvidenceV1 {
 pub enum DurableEvidenceError {
     /// The evidence body is malformed, noncanonical, or uses an unsupported version.
     Encoding,
+    /// Durable event occurrence or delivery evidence is malformed or inconsistent.
+    Event(DurableEventEvidenceError),
     /// Typed identities, cut kind, and checkpoint state disagree.
     InvalidState,
     /// Sequence-one metadata, identity, or embedded checkpoint state is inconsistent.

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/durable-events/v1/schema.json",
+  "title": "Gantry durable-event conformance vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.durable-event-vectors/v1" },
+    "barriers": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "enum": ["delivered", "pending", "required-exhausted"] }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "evidence_kinds": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "gantry.event-occurrence/v1",
+          "gantry.event-delivery-dispatched/v1",
+          "gantry.event-delivery-settled/v1"
+        ]
+      }
+    },
+    "recovery_states": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": { "enum": ["pending", "indeterminate", "retry-delay", "success", "terminal"] }
+    },
+    "retention": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "enum": ["delivery-evidence", "occurrence-evidence", "protected-payloads"] }
+    },
+    "standard_event_catalog_closed": { "const": true }
+  },
+  "required": [
+    "format",
+    "barriers",
+    "cases",
+    "evidence_kinds",
+    "recovery_states",
+    "retention",
+    "standard_event_catalog_closed"
+  ]
+}

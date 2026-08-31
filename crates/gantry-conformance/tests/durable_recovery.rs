@@ -35,6 +35,7 @@ const OPERATION_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_recove
 const CORRUPTION_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_recovery.rs#public_recovery_rejects_corruption_invalid_causality_and_operation_order";
 const CUT_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_recovery.rs#public_non_operation_commit_cuts_recover_without_reapplying_fixed_state";
 const COMMIT_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_recovery.rs#public_commit_coordinator_awaits_contiguous_causal_cuts";
+const EVENT_COMPACTION_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_events.rs#public_full_and_compacted_event_prefixes_project_equivalently";
 
 #[derive(Debug, Deserialize)]
 struct EvidenceManifest {
@@ -130,6 +131,7 @@ fn checked_in_durable_recovery_evidence_is_narrow_and_current() {
                 | CORRUPTION_EVIDENCE
                 | CUT_EVIDENCE
                 | COMMIT_EVIDENCE
+                | EVENT_COMPACTION_EVIDENCE
         ));
     }
 

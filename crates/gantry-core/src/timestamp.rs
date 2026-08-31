@@ -34,6 +34,50 @@ impl UtcTimestamp {
         )))
     }
 
+    /// Parses one exact canonical RFC 3339 UTC timestamp.
+    pub fn parse(value: &str) -> Result<Self, TimestampError> {
+        let bytes = value.as_bytes();
+        if bytes.len() != 27
+            || bytes[4] != b'-'
+            || bytes[7] != b'-'
+            || bytes[10] != b'T'
+            || bytes[13] != b':'
+            || bytes[16] != b':'
+            || bytes[19] != b'.'
+            || bytes[26] != b'Z'
+        {
+            return Err(TimestampError::InvalidFormat);
+        }
+        let year = decimal(bytes, 0, 4)?;
+        let month = decimal(bytes, 5, 7)?;
+        let day = decimal(bytes, 8, 10)?;
+        let hour = decimal(bytes, 11, 13)?;
+        let minute = decimal(bytes, 14, 16)?;
+        let second = decimal(bytes, 17, 19)?;
+        let microseconds = decimal(bytes, 20, 26)?;
+        if !(1..=12).contains(&month)
+            || day == 0
+            || day > days_in_month(year, month)
+            || hour > 23
+            || minute > 59
+            || second > 59
+        {
+            return Err(TimestampError::InvalidFormat);
+        }
+        let days = days_from_civil(year, month, day);
+        let seconds = days
+            .checked_mul(SECONDS_PER_DAY)
+            .and_then(|value| value.checked_add(i64::from(hour) * 3_600))
+            .and_then(|value| value.checked_add(i64::from(minute) * 60))
+            .and_then(|value| value.checked_add(i64::from(second)))
+            .ok_or(TimestampError::OutOfRange)?;
+        let timestamp = Self::from_unix_seconds(seconds, microseconds)?;
+        if timestamp.as_str() != value {
+            return Err(TimestampError::InvalidFormat);
+        }
+        Ok(timestamp)
+    }
+
     /// Returns the exact canonical RFC 3339 UTC spelling.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -50,6 +94,8 @@ impl fmt::Display for UtcTimestamp {
 /// Failure to construct a portable UTC timestamp.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TimestampError {
+    /// The input is not the exact canonical RFC 3339 UTC representation.
+    InvalidFormat,
     /// The microsecond fraction exceeds `999999`.
     InvalidMicrosecond,
     /// The instant is outside the four-digit RFC 3339 year range.
@@ -59,6 +105,7 @@ pub enum TimestampError {
 impl fmt::Display for TimestampError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::InvalidFormat => "timestamp is not canonical RFC 3339 UTC",
             Self::InvalidMicrosecond => "timestamp microsecond fraction is out of range",
             Self::OutOfRange => "timestamp is outside the portable UTC range",
         })
@@ -80,6 +127,36 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     let month = month_prime + if month_prime < 10 { 3 } else { -9 };
     year += i64::from(month <= 2);
     (year, month, day)
+}
+
+fn decimal(bytes: &[u8], start: usize, end: usize) -> Result<u32, TimestampError> {
+    bytes[start..end].iter().try_fold(0_u32, |value, byte| {
+        byte.is_ascii_digit()
+            .then(|| value * 10 + u32::from(*byte - b'0'))
+            .ok_or(TimestampError::InvalidFormat)
+    })
+}
+
+const fn days_in_month(year: u32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) => {
+            29
+        }
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn days_from_civil(year: u32, month: u32, day: u32) -> i64 {
+    let year = i64::from(year) - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let month = i64::from(month);
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 #[cfg(test)]
@@ -120,6 +197,23 @@ mod tests {
         assert_eq!(
             UtcTimestamp::from_unix_seconds(253_402_300_800, 0),
             Err(TimestampError::OutOfRange)
+        );
+    }
+
+    #[test]
+    fn parses_only_exact_canonical_timestamps() {
+        let canonical = "2000-02-29T12:34:56.123456Z";
+        assert_eq!(
+            UtcTimestamp::parse(canonical).map(|value| value.to_string()),
+            Ok(canonical.to_owned())
+        );
+        assert_eq!(
+            UtcTimestamp::parse("2001-02-29T12:34:56.123456Z"),
+            Err(TimestampError::InvalidFormat)
+        );
+        assert_eq!(
+            UtcTimestamp::parse("2000-02-29t12:34:56.123456z"),
+            Err(TimestampError::InvalidFormat)
         );
     }
 }
