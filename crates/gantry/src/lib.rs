@@ -79,12 +79,19 @@ pub const fn compiled_features() -> CompiledFeatures {
 
 /// Returns the conformance profiles advertised by this build.
 ///
-/// The analyzer profile includes and advertises its frontend prerequisite.
-/// Later feature flags do not advertise their profiles until their own
-/// conformance gates close.
+/// The evaluator profile advertises its analyzer and frontend prerequisites
+/// plus the supported embedding role. Concurrent and durable feature flags do
+/// not advertise their profiles until their own conformance gates close.
 #[must_use]
 pub const fn advertised_profiles() -> &'static [ConformanceProfile] {
-    if cfg!(feature = "analyzer") {
+    if cfg!(feature = "evaluator") {
+        &[
+            ConformanceProfile::Analyzer,
+            ConformanceProfile::Embedding,
+            ConformanceProfile::Evaluator,
+            ConformanceProfile::Frontend,
+        ]
+    } else if cfg!(feature = "analyzer") {
         &[ConformanceProfile::Analyzer, ConformanceProfile::Frontend]
     } else if cfg!(feature = "frontend") {
         &[ConformanceProfile::Frontend]
@@ -117,7 +124,18 @@ mod tests {
 
     #[test]
     fn profile_advertisement_is_limited_to_closed_gates() {
-        if compiled_features().analyzer {
+        if compiled_features().evaluator {
+            assert_eq!(
+                advertised_profiles(),
+                [
+                    ConformanceProfile::Analyzer,
+                    ConformanceProfile::Embedding,
+                    ConformanceProfile::Evaluator,
+                    ConformanceProfile::Frontend,
+                ]
+            );
+            assert!(advertises_any_profile());
+        } else if compiled_features().analyzer {
             assert_eq!(
                 advertised_profiles(),
                 [ConformanceProfile::Analyzer, ConformanceProfile::Frontend]

@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "e589b3f9d0c56f1836a03d000aa190c40a09823bd19eb997b6e1a315b8d59f45",
+    "sha256": "8e19dd706ead713fe35959fcc20cee14f2ad8f1ebbb1ec31722b695ce7e66cd0",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -128,7 +128,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
-      "sha256": "1a44ef1e969362d817fac162db7ce47c0ca2929d94bc81dd8683bbcd60e49491"
+      "sha256": "4f7f216375da99c3334f3b34703acf6a4f61e95ccb417369dce3071e8c13d3b4"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
@@ -165,6 +165,10 @@
     {
       "path": "crates/gantry-conformance/tests/persistent_values.rs",
       "sha256": "2c37d483058371da75633e62839412cde721d310768f236c3ed7e8e60153c1b4"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/sequential_gate.rs",
+      "sha256": "c3dfd91c13864a55fd2d93e508282e9bf0c32cc70f2b618a7801b72d5e186ebf"
     },
     {
       "path": "crates/gantry-conformance/tests/sequential_machine.rs",
@@ -252,7 +256,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "411eee0ec25495c63f1390aeed63846ece4bd5a57ffa88da5631d691eabab666"
+      "sha256": "57e198cc13f9a55a0d0af45883b8e978302197507d834dd0250af995f9d74cd4"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -297,6 +301,10 @@
     {
       "path": "protocol/conformance/sequential-evaluator-refinement-v1.json",
       "sha256": "ab85ba7a658f96d04473a89cabde70d2e14df6448a6d5a21828fac81bb2848f3"
+    },
+    {
+      "path": "protocol/conformance/sequential-gate-v1.json",
+      "sha256": "04b2053edff2973f706592f1653603b524613abdf84a72d7324769bdedb9b35a"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",
@@ -388,11 +396,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "e589b3f9d0c56f1836a03d000aa190c40a09823bd19eb997b6e1a315b8d59f45"
+      "sha256": "8e19dd706ead713fe35959fcc20cee14f2ad8f1ebbb1ec31722b695ce7e66cd0"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "a41c07498620dbe4a30518b8da237846fb134d3baededbf4ebad99f4c0b7ce3f"
+      "sha256": "19d8eba4a485a01f22b7ff45c3a812502e23ce641dbccb1ae3546a66707c2a78"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -541,6 +549,11 @@
       "id": "sequential-machine",
       "kind": "public-facade-and-reviewed-goldens",
       "path": "crates/gantry-conformance/tests/sequential_machine.rs"
+    },
+    {
+      "id": "sequential-profile-gate",
+      "kind": "profile-gate-and-reviewed-evidence",
+      "path": "crates/gantry-conformance/tests/sequential_gate.rs"
     },
     {
       "id": "sequential-refinement",

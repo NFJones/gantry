@@ -151,8 +151,8 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
                 "embedding",
                 "evaluator",
             ]
-        || gantry::advertised_profiles()
-            != [ConformanceProfile::Analyzer, ConformanceProfile::Frontend]
+        || !gantry::advertised_profiles().contains(&ConformanceProfile::Analyzer)
+        || !gantry::advertised_profiles().contains(&ConformanceProfile::Frontend)
     {
         return Err("analyzer claim is invalid or overstates a later profile".to_owned());
     }

@@ -3,10 +3,15 @@
 use gantry::{ConformanceProfile, advertised_profiles, advertises_any_profile};
 
 #[test]
-fn facade_advertises_exactly_the_closed_analyzer_profile_and_prerequisite() {
+fn facade_advertises_the_closed_sequential_profiles_and_excludes_later_refinements() {
     assert_eq!(
         advertised_profiles(),
-        [ConformanceProfile::Analyzer, ConformanceProfile::Frontend]
+        [
+            ConformanceProfile::Analyzer,
+            ConformanceProfile::Embedding,
+            ConformanceProfile::Evaluator,
+            ConformanceProfile::Frontend,
+        ]
     );
     assert!(advertises_any_profile());
 }
