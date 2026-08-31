@@ -1,0 +1,38 @@
+{
+  "format": "gantry.durable-refinement-model/v1",
+  "maximum_depth": 15,
+  "explored_state_count": 3724,
+  "terminal_state_count": 2772,
+  "obligations": [
+    "cancellation-nonconsumption",
+    "causally-closed-prefix-recovery",
+    "commit-before-observation",
+    "compaction-equivalent-projection",
+    "fixed-outcome-status-isolation",
+    "indeterminate-delivery-classification",
+    "indeterminate-operation-classification",
+    "recorded-delay-reuse",
+    "single-result-consumption",
+    "terminal-completion-uniqueness"
+  ],
+  "assumptions": [
+    "The analyzed package is well typed and recovery reconstructs the shared explicit-frame Machine.",
+    "Journal reads expose one causally closed authoritative prefix and fenced owners reject superseded commits.",
+    "Host outcomes and delivery results are nondeterministic; genuinely pending host work has no wall-clock completion guarantee.",
+    "The search is bounded to one execution, task, operation, delivery, owner, and the declared maximum trace depth; it is not an unbounded proof."
+  ],
+  "counterexamples": [
+    { "id": "accept-before-outcome", "trace": ["prepare-read-only"], "rejected_action": "accept-result", "invariant": "commit-before-observation" },
+    { "id": "delivery-settle-before-dispatch", "trace": ["commit-event-cause", "commit-event-occurrence"], "rejected_action": "settle-delivery-success", "invariant": "commit-before-observation" },
+    { "id": "double-event-occurrence", "trace": ["commit-event-cause", "commit-event-occurrence"], "rejected_action": "commit-event-occurrence", "invariant": "causally-closed-prefix-recovery" },
+    { "id": "double-result-consumption", "trace": ["prepare-read-only", "commit-operation-outcome", "accept-result"], "rejected_action": "accept-result", "invariant": "single-result-consumption" },
+    { "id": "double-terminal", "trace": ["settle-succeeded", "commit-foreground", "commit-terminal"], "rejected_action": "commit-terminal", "invariant": "terminal-completion-uniqueness" },
+    { "id": "finish-shutdown-before-release", "trace": ["begin-shutdown", "settle-succeeded", "commit-foreground", "commit-terminal", "settle-barrier-success"], "rejected_action": "finish-shutdown", "invariant": "fixed-outcome-status-isolation" },
+    { "id": "foreground-before-settlement", "trace": [], "rejected_action": "commit-foreground", "invariant": "commit-before-observation" },
+    { "id": "owner-release-before-closure", "trace": ["settle-succeeded", "commit-foreground", "commit-terminal"], "rejected_action": "release-owner", "invariant": "fixed-outcome-status-isolation" },
+    { "id": "retry-ready-before-delay", "trace": ["prepare-read-only", "commit-operation-outcome"], "rejected_action": "operation-retry-ready", "invariant": "recorded-delay-reuse" },
+    { "id": "settle-cancelled-before-commit", "trace": [], "rejected_action": "settle-cancelled", "invariant": "commit-before-observation" },
+    { "id": "source-after-cancellation", "trace": ["commit-cancellation"], "rejected_action": "prepare-read-only", "invariant": "cancellation-nonconsumption" }
+  ]
+}
+

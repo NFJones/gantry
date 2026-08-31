@@ -1,0 +1,105 @@
+# Durable runtime refinement argument
+
+## Scope and claim
+
+This document gives Gantry v1's repository-owned argument that sequential
+durability refines the same explicit-frame machine used by the nondurable
+evaluator. It covers authoritative committed prefixes, semantic commit points,
+crash recovery, checkpoints and compaction, operation and event-delivery
+indeterminacy, recorded retry delays, cancellation, foreground and terminal
+completion, delivery barriers, journal-owner release, and shutdown.
+
+The argument is profile-scoped to `durable-runtime` without the concurrent
+refinement. Physical SQLite tables and write behavior are not semantic inputs.
+Combined concurrent-durable task-graph recovery remains outside this claim.
+
+## Assumptions, crash choices, and bounds
+
+The package is well typed, the base sequential-machine invariants hold, and
+every storage read returns one causally closed authoritative prefix accepted by
+the public recovery projection. A crash may occur before or after each modeled
+semantic commit point. Uncommitted physical tails are absent from that prefix.
+Fenced acquisition ensures a superseded owner cannot extend it.
+
+The checked model is bounded to one accepted execution, one root task, one
+logical operation, one event delivery, one immutable language outcome, one
+required-delivery barrier, one journal owner, and the maximum trace depth in
+`protocol/goldens/durable-refinement-model-v1.json`. Host outcomes and delivery
+results are nondeterministic choices. Genuinely pending host work is not a
+wall-clock termination claim. The search is not an unbounded proof over every
+program, prefix length, operation, event, checkpoint, crash, or adapter.
+
+## Recovery-prefix refinement mapping
+
+- A committed operation preparation recovers as a redispatch with a new
+  physical dispatch number for prompt, decision, read-only, and idempotent
+  work. The same cut recovers as unknown outcome for a non-idempotent action.
+- A committed host outcome recovers for deterministic validation or failure
+  conversion and is never redispatched. A committed accepted result recovers
+  as source-consumable exactly once and is never validated twice.
+- A committed retry-waiting state retains its selected delay and retry budget.
+  Recovery waits that complete delay before committing another preparation.
+- A committed cancellation mark disables later source-consuming transitions.
+  Task, foreground, and terminal settlement are each monotonic and recovered
+  without replaying their causal label.
+- A committed event cause without its occurrence requires one replacement
+  occurrence. A committed occurrence is delivered from its frozen plan. A
+  dispatched delivery without settlement is indeterminate; a committed retry
+  delay is reused; success and terminal settlement are not redelivered.
+- Required-delivery barrier and journal-owner status remain separate from the
+  fixed foreground and terminal language outcomes. Release invalidates the
+  owner after terminal and finite delivery obligations settle.
+- Full-prefix and snapshot-plus-suffix representations have one logical
+  projection. Compaction may change representation but cannot change recovered
+  machine, operation, event, barrier, or owner state.
+
+## Property argument
+
+**Causal-prefix simulation.** Every modeled action is either a stutter with no
+semantic observation or one atomic logical commit whose prerequisites are
+already in the prefix. For every reachable state, the model compares recovery
+from full and compacted representations and requires identical projections.
+
+**Commit-before-observation.** Operation preparation precedes dispatch;
+outcome precedes validation; accepted result precedes consumption;
+cancellation precedes signalling and settlement; event occurrence precedes
+delivery; task settlement precedes foreground and terminal completion; and
+terminal completion plus delivery settlement precede owner release.
+
+**Crash classification and retry reuse.** Recovery classification is a pure
+function of committed state. Prepared read-only work redispatches, prepared
+non-idempotent work becomes unknown outcome, committed outcomes and results are
+reused, and operation and delivery retry delays are retained without
+resampling or budget consumption.
+
+**Cancellation and unique outcomes.** Cancellation is monotonic and prevents a
+later source-consuming operation or accepted result. Task settlement,
+foreground completion, and terminal completion each occur at most once.
+Barrier failure and owner-release status cannot replace either fixed language
+outcome.
+
+**Lifecycle and shutdown.** Admission and observation are stuttering steps for
+the source machine. Shutdown is monotonic, uses the same cancellation and
+terminal coordinates, waits for the modeled owner/delivery obligations, and
+publishes one immutable terminal report.
+
+## Requirement and trace links
+
+The machine-readable mapping is
+`protocol/conformance/durable-refinement-v1.json`. Its model evidence closes
+the durable-runtime projection of `GNT-3-D-PROPERTIES` and the resolved
+lifecycle kernel. Its trace list points to executable recovery, commit-cut,
+event-gap, delivery, cancellation, shutdown, fencing, and compaction cases
+owned by the existing durable implementation suites.
+
+## Counterexample replay
+
+Each checked counterexample records a valid committed-prefix trace, one
+rejected next commit, and the invariant requiring rejection. Replays cover
+outcome acceptance before a committed outcome, double result consumption,
+source work after cancellation, settlement before cancellation, event delivery
+before occurrence, duplicate occurrence, delivery settlement before dispatch,
+retry continuation before a recorded delay, foreground and terminal
+duplication, owner release before terminal delivery closure, and shutdown
+completion before owner release.
+
