@@ -1,0 +1,32 @@
+{
+  "format": "gantry.durable-recovery-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-DUR-002",
+  "capabilities": [
+    { "id": "awaited-causal-commit-order", "evidence": "crates/gantry-conformance/tests/durable_recovery.rs#public_commit_coordinator_awaits_contiguous_causal_cuts" },
+    { "id": "corruption-and-order-rejection", "evidence": "crates/gantry-conformance/tests/durable_recovery.rs#public_recovery_rejects_corruption_invalid_causality_and_operation_order" },
+    { "id": "full-snapshot-recovery-equivalence", "evidence": "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions" },
+    { "id": "operation-cut-recovery", "evidence": "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch" },
+    { "id": "task-lifecycle-commit-cuts", "evidence": "crates/gantry-conformance/tests/durable_recovery.rs#public_non_operation_commit_cuts_recover_without_reapplying_fixed_state" }
+  ],
+  "reviewed_clauses": [
+    { "requirement": "GNT-11.1", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_commit_coordinator_awaits_contiguous_causal_cuts", "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions", "crates/gantry-conformance/tests/durable_recovery.rs#public_non_operation_commit_cuts_recover_without_reapplying_fixed_state", "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch"] },
+    { "requirement": "GNT-11.3", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch"] },
+    { "requirement": "GNT-11.4", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch"] },
+    { "requirement": "GNT-11.5", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch"] },
+    { "requirement": "GNT-11.7", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions", "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch"] },
+    { "requirement": "GNT-11.9", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions", "crates/gantry-conformance/tests/durable_recovery.rs#public_recovery_rejects_corruption_invalid_causality_and_operation_order"] },
+    { "requirement": "GNT-3-D-COMMIT-ORDER", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_commit_coordinator_awaits_contiguous_causal_cuts", "crates/gantry-conformance/tests/durable_recovery.rs#public_non_operation_commit_cuts_recover_without_reapplying_fixed_state", "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch"] },
+    { "requirement": "GNT-3-D-CRASH", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_non_operation_commit_cuts_recover_without_reapplying_fixed_state", "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch", "crates/gantry-conformance/tests/durable_recovery.rs#public_recovery_rejects_corruption_invalid_causality_and_operation_order"] },
+    { "requirement": "GNT-3-D-EQUIVALENCE", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions"] },
+    { "requirement": "GNT-3-D-REFINEMENT", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions"] },
+    { "requirement": "GNT-3-D-REFINEMENT", "clause": "clause-002", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions"] },
+    { "requirement": "GNT-3-D-SIMULATION", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_recovery.rs#public_commit_coordinator_awaits_contiguous_causal_cuts", "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions"] }
+  ],
+  "exclusions": [
+    "Public durable start, resume acceptance, and compatibility preflight remain owned by GNT-DUR-003.",
+    "Durable query, cancellation orchestration, await, shutdown, and owner release reporting remain owned by GNT-DUR-004.",
+    "Journal-first event delivery recovery, protected-payload retention, and physical compaction execution remain owned by GNT-DUR-005.",
+    "The bounded recovery-prefix proof/model and physical SQLite durability evidence remain owned by GNT-DUR-006 and GNT-SQL-001/GNT-SQL-002."
+  ]
+}

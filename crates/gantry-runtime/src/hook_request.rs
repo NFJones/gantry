@@ -262,7 +262,9 @@ pub enum ValidationErrorCategoryV1 {
 }
 
 impl ValidationErrorCategoryV1 {
-    const fn wire_name(self) -> &'static str {
+    /// Returns the exact version-one evidence spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
         match self {
             Self::Utf8 => "utf8",
             Self::JsonSyntax => "json-syntax",
@@ -270,6 +272,20 @@ impl ValidationErrorCategoryV1 {
             Self::JsonUnicode => "json-unicode",
             Self::Schema => "schema",
             Self::ResourceLimit => "resource-limit",
+        }
+    }
+
+    /// Parses one exact version-one evidence spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        match value {
+            "utf8" => Some(Self::Utf8),
+            "json-syntax" => Some(Self::JsonSyntax),
+            "json-duplicate-key" => Some(Self::JsonDuplicateKey),
+            "json-unicode" => Some(Self::JsonUnicode),
+            "schema" => Some(Self::Schema),
+            "resource-limit" => Some(Self::ResourceLimit),
+            _ => None,
         }
     }
 }

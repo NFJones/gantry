@@ -105,6 +105,60 @@ fn drive(machine: &mut Machine) -> MachineOutcome {
     panic!("machine did not terminate within the fixture bound")
 }
 
+#[cfg(feature = "durable")]
+#[test]
+fn durable_checkpoint_recovers_the_same_explicit_frame_machine() {
+    let main = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::BOOL,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::BOOL,
+                InstructionKind::Push(LogicalValue::boolean(true)),
+            ),
+            instruction(1, TypeDescriptor::BOOL, InstructionKind::Return),
+        ],
+    );
+    let program = program(vec![main]);
+    let mut original = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        Vec::new(),
+        limits(8, 1, 1, 1, 8),
+    );
+    assert!(matches!(
+        original.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    let checkpoint = original.checkpoint();
+    assert_eq!(checkpoint.execution_id(), execution());
+    assert_eq!(checkpoint.status(), MachineStatus::Running);
+    assert_eq!(checkpoint.remaining_budgets(), (7, 1, 1));
+
+    let bytes = checkpoint.canonical_bytes();
+    let decoded = crate::MachineCheckpointV1::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("checkpoint decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    let mut corrupted = bytes.clone();
+    corrupted[0] ^= 1;
+    assert_eq!(
+        crate::MachineCheckpointV1::decode(&program, &corrupted),
+        Err(crate::MachineRecoveryError::InvalidEncoding)
+    );
+
+    let mut recovered = Machine::recover_from_checkpoint(program, decoded)
+        .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
+    assert_eq!(drive(&mut original), drive(&mut recovered));
+    assert_eq!(
+        recovered.outcome(),
+        Some(&MachineOutcome::Succeeded(LogicalValue::boolean(true)))
+    );
+}
+
 #[test]
 fn explicit_frames_are_stack_safe_and_enforce_exact_depth() {
     const DEPTH: usize = 4_096;

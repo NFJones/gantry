@@ -639,6 +639,17 @@ impl LogicalValue {
             .map(|(_, value)| Self::from_arc(Arc::clone(value)))
     }
 
+    /// Returns one Struct field name and value by declaration-order position.
+    #[must_use]
+    pub fn struct_field(&self, index: usize) -> Option<(&str, Self)> {
+        let NodeKind::Struct { fields, .. } = &self.node_arc().kind else {
+            return None;
+        };
+        fields
+            .get(index)
+            .map(|(name, value)| (name.as_ref(), Self::from_arc(Arc::clone(value))))
+    }
+
     /// Returns an Enum payload, present Option member, or Result payload.
     #[must_use]
     pub fn payload(&self) -> Option<Self> {

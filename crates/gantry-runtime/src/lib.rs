@@ -14,6 +14,8 @@ mod lifecycle;
 mod machine;
 mod operation;
 mod outcome;
+#[cfg(feature = "durable")]
+mod recovery;
 mod session;
 #[cfg(feature = "concurrent")]
 mod task;
@@ -63,6 +65,8 @@ pub use machine::{
     MachineStatus, MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
     SessionScopeCompletionError, SessionScopeOccurrence,
 };
+#[cfg(feature = "durable")]
+pub use machine::{MachineCheckpointV1, MachineRecoveryError};
 pub use operation::{
     OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
     OperationLifecycleState, TaskHook, TaskHookError, TaskHookSessionError,
@@ -72,11 +76,19 @@ pub use outcome::{
     ProcessedHookOutcomeV1, RetryDelayOutcomeV1, RetryPolicyError, ValidatedHookOutputV1,
     process_hook_outcome, wait_retry_delay,
 };
+#[cfg(feature = "durable")]
+pub use recovery::{
+    DurableCommitCoordinatorV1, DurableCommitCutV1, DurableCommitError, DurableEvidenceCommitV1,
+    DurableEvidenceError, DurableLogicalEvidenceV1, DurableOperationEvidenceV1,
+    DurableOperationRecoveryV1, RecoveredDurableStateV1, recover_authoritative_prefix,
+};
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,
     SessionCreationModeV1, SessionError, SessionEstablisher, SessionEstablishmentError,
     SessionEstablishmentV1, TranscriptError, TranscriptResultKindV1, TranscriptTurnV1,
 };
+#[cfg(feature = "durable")]
+pub use session::{LogicalSessionRegistryCheckpointV1, SessionRecoveryError};
 #[cfg(feature = "concurrent")]
 pub use task::{
     ConcurrentSchedulerV1, ConcurrentTaskRecordV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,

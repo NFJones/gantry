@@ -1,0 +1,37 @@
+{
+  "format": "gantry.durable-recovery-vectors/v1",
+  "checkpoint_formats": [
+    "gantry.logical-evidence/v1",
+    "machine-checkpoint/v1",
+    "session-checkpoint/v1"
+  ],
+  "commit_cuts": [
+    "checkpoint",
+    "operation-prepared",
+    "operation-outcome",
+    "operation-result",
+    "retry-waiting",
+    "cancellation",
+    "task-settlement",
+    "foreground-completion",
+    "terminal-completion"
+  ],
+  "operation_recovery": [
+    "redispatch",
+    "retry-delay",
+    "reuse-outcome",
+    "reuse-result",
+    "unknown-outcome"
+  ],
+  "prefix_forms": [
+    "full-prefix",
+    "snapshot-prefix"
+  ],
+  "cases": [
+    "awaited-causal-commit-order",
+    "corruption-and-order-rejection",
+    "full-snapshot-recovery-equivalence",
+    "operation-cut-recovery",
+    "task-lifecycle-commit-cuts"
+  ]
+}

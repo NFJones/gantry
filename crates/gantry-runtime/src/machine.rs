@@ -17,6 +17,11 @@ use gantry_ir::{
 
 use crate::session::SessionCreationModeV1;
 
+#[cfg(feature = "durable")]
+mod checkpoint_codec;
+#[cfg(feature = "durable")]
+use checkpoint_codec::{decode_machine_checkpoint, encode_machine_checkpoint};
+
 /// Finite positive limits captured for one machine run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MachineLimits {
@@ -278,7 +283,7 @@ pub enum MachineStep {
     Complete(MachineOutcome),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Binding {
     value: LogicalValue,
     ty: TypeDescriptor,
@@ -287,7 +292,7 @@ struct Binding {
 
 type Scope = BTreeMap<Arc<str>, Binding>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct WorkflowFrame {
     workflow: usize,
     pc: usize,
@@ -300,10 +305,116 @@ struct WorkflowFrame {
     session_at_entry: Option<ProtocolIdentity>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PendingOperation {
     occurrence: OperationOccurrence,
     operands: usize,
+}
+
+/// Complete task-local checkpoint for the existing explicit-frame machine.
+///
+/// The durable recovery projection treats this as typed logical state rather
+/// than a serialization of Rust memory layout. Fields remain private so only
+/// validated construction and recovery can create runnable machine state.
+#[cfg(feature = "durable")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MachineCheckpointV1 {
+    execution: ProtocolIdentity,
+    execution_foreground: bool,
+    limits: MachineLimits,
+    frames: Vec<WorkflowFrame>,
+    values: Vec<LogicalValue>,
+    occurrences: Vec<Arc<str>>,
+    counters: BTreeMap<String, u64>,
+    source_loop_entries: BTreeMap<String, u64>,
+    agent: Option<Arc<str>>,
+    agent_stack: Vec<Option<Arc<str>>>,
+    session: Option<ProtocolIdentity>,
+    session_stack: Vec<Option<ProtocolIdentity>>,
+    remaining_transitions: u64,
+    remaining_operations: u64,
+    remaining_loop_iterations: u64,
+    consecutive_transitions: u64,
+    pending_session_scope: Option<SessionScopeOccurrence>,
+    pending_operation: Option<PendingOperation>,
+    pending_labels: VecDeque<MachineLabel>,
+    cancellation: Option<Arc<str>>,
+    status: MachineStatus,
+    outcome: Option<MachineOutcome>,
+}
+
+#[cfg(feature = "durable")]
+impl MachineCheckpointV1 {
+    /// Returns the accepted execution identity represented by this checkpoint.
+    #[must_use]
+    pub const fn execution_id(&self) -> ProtocolIdentity {
+        self.execution
+    }
+
+    /// Returns the value limits captured for this machine run.
+    #[must_use]
+    pub const fn value_limits(&self) -> ValueLimits {
+        self.limits.value_limits
+    }
+
+    /// Returns the logical operation awaiting source-visible completion, when any.
+    #[must_use]
+    pub fn pending_operation(&self) -> Option<&OperationOccurrence> {
+        self.pending_operation
+            .as_ref()
+            .map(|pending| &pending.occurrence)
+    }
+
+    /// Returns the first effective cancellation reason retained by this checkpoint.
+    #[must_use]
+    pub fn cancellation_reason(&self) -> Option<&str> {
+        self.cancellation.as_deref()
+    }
+
+    /// Returns the fixed machine outcome retained by this checkpoint, when terminal.
+    #[must_use]
+    pub const fn outcome(&self) -> Option<&MachineOutcome> {
+        self.outcome.as_ref()
+    }
+
+    /// Returns the exact coarse state represented by this checkpoint.
+    #[must_use]
+    pub const fn status(&self) -> MachineStatus {
+        self.status
+    }
+
+    /// Returns remaining deterministic, operation, and loop-entry budgets.
+    #[must_use]
+    pub const fn remaining_budgets(&self) -> (u64, u64, u64) {
+        (
+            self.remaining_transitions,
+            self.remaining_operations,
+            self.remaining_loop_iterations,
+        )
+    }
+
+    /// Encodes this checkpoint as the unique version-one binary representation.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        encode_machine_checkpoint(self)
+    }
+
+    /// Decodes one exact version-one checkpoint against its immutable program.
+    pub fn decode(program: &MachineProgram, bytes: &[u8]) -> Result<Self, MachineRecoveryError> {
+        decode_machine_checkpoint(program, bytes)
+    }
+}
+
+/// Rejection of malformed or program-incompatible durable machine state.
+#[cfg(feature = "durable")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MachineRecoveryError {
+    /// Checkpoint bytes are truncated, noncanonical, or use an unsupported version.
+    InvalidEncoding,
+    /// The checkpoint violates a typed machine invariant.
+    InvalidCheckpoint,
+    /// A checkpoint frame or operation no longer resolves in the supplied program.
+    ProgramMismatch,
 }
 
 /// One task-neutral explicit-frame machine.
@@ -515,6 +626,70 @@ impl Machine {
             self.remaining_operations,
             self.remaining_loop_iterations,
         )
+    }
+
+    /// Captures complete typed state at one durable checkpoint boundary.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn checkpoint(&self) -> MachineCheckpointV1 {
+        MachineCheckpointV1 {
+            execution: self.execution,
+            execution_foreground: self.execution_foreground,
+            limits: self.limits,
+            frames: self.frames.clone(),
+            values: self.values.clone(),
+            occurrences: self.occurrences.clone(),
+            counters: self.counters.clone(),
+            source_loop_entries: self.source_loop_entries.clone(),
+            agent: self.agent.clone(),
+            agent_stack: self.agent_stack.clone(),
+            session: self.session,
+            session_stack: self.session_stack.clone(),
+            remaining_transitions: self.remaining_transitions,
+            remaining_operations: self.remaining_operations,
+            remaining_loop_iterations: self.remaining_loop_iterations,
+            consecutive_transitions: self.consecutive_transitions,
+            pending_session_scope: self.pending_session_scope.clone(),
+            pending_operation: self.pending_operation.clone(),
+            pending_labels: self.pending_labels.clone(),
+            cancellation: self.cancellation.clone(),
+            status: self.status,
+            outcome: self.outcome.clone(),
+        }
+    }
+
+    /// Reconstructs the same explicit-frame evaluator from validated typed state.
+    #[cfg(feature = "durable")]
+    pub fn recover_from_checkpoint(
+        program: Arc<MachineProgram>,
+        checkpoint: MachineCheckpointV1,
+    ) -> Result<Self, MachineRecoveryError> {
+        validate_machine_checkpoint(&program, &checkpoint)?;
+        Ok(Self {
+            program,
+            execution: checkpoint.execution,
+            execution_foreground: checkpoint.execution_foreground,
+            limits: checkpoint.limits,
+            frames: checkpoint.frames,
+            values: checkpoint.values,
+            occurrences: checkpoint.occurrences,
+            counters: checkpoint.counters,
+            source_loop_entries: checkpoint.source_loop_entries,
+            agent: checkpoint.agent,
+            agent_stack: checkpoint.agent_stack,
+            session: checkpoint.session,
+            session_stack: checkpoint.session_stack,
+            remaining_transitions: checkpoint.remaining_transitions,
+            remaining_operations: checkpoint.remaining_operations,
+            remaining_loop_iterations: checkpoint.remaining_loop_iterations,
+            consecutive_transitions: checkpoint.consecutive_transitions,
+            pending_session_scope: checkpoint.pending_session_scope,
+            pending_operation: checkpoint.pending_operation,
+            pending_labels: checkpoint.pending_labels,
+            cancellation: checkpoint.cancellation,
+            status: checkpoint.status,
+            outcome: checkpoint.outcome,
+        })
     }
 
     /// Records the first cancellation reason without consuming source state.
@@ -1506,6 +1681,156 @@ impl Machine {
                 .unwrap_or_else(|| "-".to_owned())
         ))
     }
+}
+
+#[cfg(feature = "durable")]
+fn validate_machine_checkpoint(
+    program: &MachineProgram,
+    checkpoint: &MachineCheckpointV1,
+) -> Result<(), MachineRecoveryError> {
+    if checkpoint.execution.kind() != IdentityKind::Execution
+        || checkpoint.frames.is_empty()
+        || checkpoint.limits.maximum_deterministic_transitions == 0
+        || checkpoint.limits.maximum_operations == 0
+        || checkpoint.limits.maximum_loop_iterations == 0
+        || checkpoint.limits.maximum_workflow_call_depth == 0
+        || checkpoint.limits.deterministic_transition_yield_quantum == 0
+        || checkpoint.remaining_transitions > checkpoint.limits.maximum_deterministic_transitions
+        || checkpoint.remaining_operations > checkpoint.limits.maximum_operations
+        || checkpoint.remaining_loop_iterations > checkpoint.limits.maximum_loop_iterations
+        || checkpoint.consecutive_transitions
+            > checkpoint.limits.deterministic_transition_yield_quantum
+        || checkpoint
+            .session
+            .is_some_and(|session| session.kind() != IdentityKind::Session)
+        || checkpoint
+            .session_stack
+            .iter()
+            .flatten()
+            .any(|session| session.kind() != IdentityKind::Session)
+        || checkpoint
+            .values
+            .iter()
+            .any(|value| value.validate(checkpoint.limits.value_limits).is_err())
+    {
+        return Err(MachineRecoveryError::InvalidCheckpoint);
+    }
+
+    for frame in &checkpoint.frames {
+        let workflow = program
+            .workflows()
+            .get(frame.workflow)
+            .ok_or(MachineRecoveryError::ProgramMismatch)?;
+        if frame.pc >= workflow.instructions.len()
+            || frame.scopes.is_empty()
+            || frame.stack_base > checkpoint.values.len()
+            || frame.occurrence_base > checkpoint.occurrences.len()
+            || frame.agent_stack_base > checkpoint.agent_stack.len()
+            || frame.session_stack_base > checkpoint.session_stack.len()
+            || frame
+                .session_at_entry
+                .is_some_and(|session| session.kind() != IdentityKind::Session)
+        {
+            return Err(MachineRecoveryError::InvalidCheckpoint);
+        }
+        for scope in &frame.scopes {
+            for (name, binding) in scope {
+                if name.is_empty()
+                    || binding
+                        .value
+                        .validate(checkpoint.limits.value_limits)
+                        .is_err()
+                    || !value_matches_type(&binding.value, &binding.ty)
+                {
+                    return Err(MachineRecoveryError::InvalidCheckpoint);
+                }
+            }
+        }
+    }
+
+    let pending_session_valid = checkpoint
+        .pending_session_scope
+        .as_ref()
+        .is_none_or(|pending| {
+            let Some(frame) = checkpoint.frames.last() else {
+                return false;
+            };
+            let Some(workflow) = program.workflows().get(frame.workflow) else {
+                return false;
+            };
+            pending.parent_session_id.kind() == IdentityKind::Session
+                && workflow.path == pending.workflow
+                && workflow
+                    .instructions
+                    .get(frame.pc)
+                    .is_some_and(|instruction| {
+                        instruction.site == pending.site
+                            && matches!(instruction.kind, InstructionKind::EnterSession(_))
+                    })
+        });
+    if !pending_session_valid {
+        return Err(MachineRecoveryError::ProgramMismatch);
+    }
+
+    let pending_operation_valid = checkpoint.pending_operation.as_ref().is_none_or(|pending| {
+        let occurrence = &pending.occurrence;
+        let Some(frame) = checkpoint.frames.last() else {
+            return false;
+        };
+        let Some(workflow) = program.workflows().get(frame.workflow) else {
+            return false;
+        };
+        let Some(index) = frame.pc.checked_sub(1) else {
+            return false;
+        };
+        let Some(instruction) = workflow.instructions.get(index) else {
+            return false;
+        };
+        let (operands, metadata) = match &instruction.kind {
+            InstructionKind::Operation => (0, None),
+            InstructionKind::OperationWithOperands { operands } => (*operands, None),
+            InstructionKind::OperationCall {
+                operation,
+                operands,
+            } => (*operands, Some(operation)),
+            _ => return false,
+        };
+        occurrence.identity.kind() == IdentityKind::Operation
+            && occurrence
+                .active_session
+                .is_none_or(|session| session.kind() == IdentityKind::Session)
+            && workflow.path == occurrence.workflow
+            && instruction.site == occurrence.site
+            && instruction.ty == occurrence.expected_type
+            && pending.operands == operands
+            && occurrence.metadata.as_deref() == metadata
+            && pending.operands <= checkpoint.values.len()
+    });
+    if !pending_operation_valid {
+        return Err(MachineRecoveryError::ProgramMismatch);
+    }
+
+    let state_valid = match (checkpoint.status, checkpoint.outcome.as_ref()) {
+        (MachineStatus::Running | MachineStatus::YieldRequired, None) => {
+            checkpoint.pending_session_scope.is_none() && checkpoint.pending_operation.is_none()
+        }
+        (MachineStatus::WaitingSessionScope, None) => {
+            checkpoint.pending_session_scope.is_some() && checkpoint.pending_operation.is_none()
+        }
+        (MachineStatus::WaitingOperation, None) => {
+            checkpoint.pending_operation.is_some() && checkpoint.pending_session_scope.is_none()
+        }
+        (MachineStatus::Succeeded, Some(MachineOutcome::Succeeded(value))) => {
+            value.validate(checkpoint.limits.value_limits).is_ok()
+        }
+        (MachineStatus::Failed, Some(MachineOutcome::Failed(_)))
+        | (MachineStatus::Cancelled, Some(MachineOutcome::Cancelled(_))) => true,
+        _ => false,
+    };
+    if !state_valid {
+        return Err(MachineRecoveryError::InvalidCheckpoint);
+    }
+    Ok(())
 }
 
 fn instruction_name(instruction: &InstructionKind) -> Arc<str> {

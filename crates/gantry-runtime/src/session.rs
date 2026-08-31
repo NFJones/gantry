@@ -19,6 +19,11 @@ use crate::{
     AdapterPoison, BoundaryFailure, InterpolationInputV1, InterpreterLifecycle, NamedInputV1,
 };
 
+#[cfg(feature = "durable")]
+mod checkpoint_codec;
+#[cfg(feature = "durable")]
+use checkpoint_codec::{decode_session_checkpoint, encode_session_checkpoint};
+
 const TRANSCRIPT_PREFIX: &str = "{\"protocol\":{\"major\":1,\"minor\":0},\"turns\":[";
 const TRANSCRIPT_SUFFIX: &str = "]}";
 
@@ -203,6 +208,8 @@ pub struct LogicalSessionV1 {
     pub creator_task: Option<ProtocolIdentity>,
     /// Canonical creation site for non-root sessions.
     pub creation_site: Option<StructuralPosition>,
+    /// Zero-based dynamic occurrence at the creation site for non-root sessions.
+    pub creation_occurrence: Option<u64>,
     /// Gantry-owned authoritative canonical transcript.
     pub transcript: CanonicalTranscriptV1,
 }
@@ -213,6 +220,51 @@ pub struct LogicalSessionRegistryV1 {
     execution_id: ProtocolIdentity,
     sessions: BTreeMap<ProtocolIdentity, LogicalSessionV1>,
     keys: BTreeMap<ProtocolIdentity, Arc<[u8]>>,
+}
+
+/// Complete execution-scoped logical-session recovery state.
+#[cfg(feature = "durable")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LogicalSessionRegistryCheckpointV1 {
+    execution_id: ProtocolIdentity,
+    sessions: BTreeMap<ProtocolIdentity, LogicalSessionV1>,
+    keys: BTreeMap<ProtocolIdentity, Arc<[u8]>>,
+}
+
+#[cfg(feature = "durable")]
+impl LogicalSessionRegistryCheckpointV1 {
+    /// Returns the accepted execution represented by this checkpoint.
+    #[must_use]
+    pub const fn execution_id(&self) -> ProtocolIdentity {
+        self.execution_id
+    }
+
+    /// Returns the number of retained logical sessions.
+    #[must_use]
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
+    }
+
+    /// Encodes the unique version-one logical-session checkpoint.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        encode_session_checkpoint(self)
+    }
+
+    /// Decodes one exact version-one session checkpoint.
+    pub fn decode(bytes: &[u8], limits: ValueLimits) -> Result<Self, SessionRecoveryError> {
+        decode_session_checkpoint(bytes, limits)
+    }
+}
+
+/// Rejection of malformed or inconsistent logical-session recovery state.
+#[cfg(feature = "durable")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionRecoveryError {
+    /// Checkpoint bytes are truncated, noncanonical, or use another version.
+    InvalidEncoding,
+    /// Session descriptors, parentage, transcripts, or derivation keys disagree.
+    InvalidCheckpoint,
 }
 
 impl LogicalSessionRegistryV1 {
@@ -245,6 +297,7 @@ impl LogicalSessionRegistryV1 {
             establishment,
             creator_task: None,
             creation_site: None,
+            creation_occurrence: None,
             transcript,
         };
         Ok(Self {
@@ -263,6 +316,30 @@ impl LogicalSessionRegistryV1 {
     /// Returns one mutable logical-session record for atomic transcript extension.
     pub fn get_mut(&mut self, id: ProtocolIdentity) -> Option<&mut LogicalSessionV1> {
         self.sessions.get_mut(&id)
+    }
+
+    /// Captures complete typed session and transcript state for durable recovery.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn checkpoint(&self) -> LogicalSessionRegistryCheckpointV1 {
+        LogicalSessionRegistryCheckpointV1 {
+            execution_id: self.execution_id,
+            sessions: self.sessions.clone(),
+            keys: self.keys.clone(),
+        }
+    }
+
+    /// Reconstructs the session registry from one validated durable checkpoint.
+    #[cfg(feature = "durable")]
+    pub fn recover_from_checkpoint(
+        checkpoint: LogicalSessionRegistryCheckpointV1,
+    ) -> Result<Self, SessionRecoveryError> {
+        validate_session_checkpoint(&checkpoint)?;
+        Ok(Self {
+            execution_id: checkpoint.execution_id,
+            sessions: checkpoint.sessions,
+            keys: checkpoint.keys,
+        })
     }
 
     #[cfg(all(test, feature = "concurrent"))]
@@ -334,6 +411,7 @@ impl LogicalSessionRegistryV1 {
             establishment,
             creator_task: Some(creator_task),
             creation_site: Some(site),
+            creation_occurrence: Some(occurrence),
             transcript,
         };
         self.keys.insert(id, Arc::from(key));
@@ -703,6 +781,104 @@ fn session_key(
     output.into_bytes()
 }
 
+#[cfg(feature = "durable")]
+fn validate_session_checkpoint(
+    checkpoint: &LogicalSessionRegistryCheckpointV1,
+) -> Result<(), SessionRecoveryError> {
+    if checkpoint.execution_id.kind() != IdentityKind::Execution || checkpoint.sessions.is_empty() {
+        return Err(SessionRecoveryError::InvalidCheckpoint);
+    }
+    let roots = checkpoint
+        .sessions
+        .values()
+        .filter(|session| session.parent.is_none())
+        .collect::<Vec<_>>();
+    if roots.len() != 1 {
+        return Err(SessionRecoveryError::InvalidCheckpoint);
+    }
+    let root = roots[0];
+    if root.execution_id != checkpoint.execution_id
+        || root.id.kind() != IdentityKind::Session
+        || root.root != root.id
+        || !matches!(
+            root.mode,
+            SessionCreationModeV1::EmbedderRoot | SessionCreationModeV1::GantryRoot
+        )
+        || root.creator_task.is_some()
+        || root.creation_site.is_some()
+        || root.creation_occurrence.is_some()
+        || checkpoint.keys.contains_key(&root.id)
+    {
+        return Err(SessionRecoveryError::InvalidCheckpoint);
+    }
+    for (id, session) in &checkpoint.sessions {
+        if *id != session.id
+            || session.execution_id != checkpoint.execution_id
+            || session.id.kind() != IdentityKind::Session
+            || session.root != root.id
+        {
+            return Err(SessionRecoveryError::InvalidCheckpoint);
+        }
+        if session.parent.is_none() {
+            continue;
+        }
+        let parent = session
+            .parent
+            .and_then(|parent| checkpoint.sessions.get(&parent))
+            .ok_or(SessionRecoveryError::InvalidCheckpoint)?;
+        let creator = session
+            .creator_task
+            .filter(|creator| creator.kind() == IdentityKind::Task)
+            .ok_or(SessionRecoveryError::InvalidCheckpoint)?;
+        let site = session
+            .creation_site
+            .as_ref()
+            .ok_or(SessionRecoveryError::InvalidCheckpoint)?;
+        let occurrence = session
+            .creation_occurrence
+            .ok_or(SessionRecoveryError::InvalidCheckpoint)?;
+        if parent.root != root.id
+            || !matches!(
+                session.mode,
+                SessionCreationModeV1::New | SessionCreationModeV1::Fork
+            )
+            || session.establishment == SessionEstablishmentV1::ResolvedPreflight
+        {
+            return Err(SessionRecoveryError::InvalidCheckpoint);
+        }
+        let key = checkpoint
+            .keys
+            .get(id)
+            .ok_or(SessionRecoveryError::InvalidCheckpoint)?;
+        let expected_key = session_key(
+            checkpoint.execution_id,
+            parent.id,
+            root.id,
+            creator,
+            site,
+            occurrence,
+            session.mode,
+        );
+        if key.as_ref() != expected_key.as_slice()
+            || ProtocolIdentity::derive(IdentityKind::Session, &expected_key)
+                .ok()
+                .as_ref()
+                != Some(id)
+        {
+            return Err(SessionRecoveryError::InvalidCheckpoint);
+        }
+    }
+    if checkpoint.keys.len().saturating_add(1) != checkpoint.sessions.len()
+        || checkpoint
+            .keys
+            .keys()
+            .any(|id| !checkpoint.sessions.contains_key(id))
+    {
+        return Err(SessionRecoveryError::InvalidCheckpoint);
+    }
+    Ok(())
+}
+
 fn require_identity(
     identity: ProtocolIdentity,
     expected: IdentityKind,
@@ -869,6 +1045,16 @@ mod tests {
         );
         assert_eq!(new.transcript, CanonicalTranscriptV1::empty());
         assert_ne!(fork.id, new.id);
+
+        let checkpoint = registry.checkpoint();
+        let bytes = checkpoint.canonical_bytes();
+        let decoded = LogicalSessionRegistryCheckpointV1::decode(&bytes, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("session checkpoint decode failed: {error:?}"));
+        assert_eq!(decoded, checkpoint);
+        let recovered = LogicalSessionRegistryV1::recover_from_checkpoint(decoded)
+            .unwrap_or_else(|error| panic!("session recovery failed: {error:?}"));
+        assert_eq!(recovered.get(fork.id), Some(&fork));
+        assert_eq!(recovered.get(new.id), Some(&new));
     }
 
     fn turn(prompt: &str) -> TranscriptTurnV1 {
