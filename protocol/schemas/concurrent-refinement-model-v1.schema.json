@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/concurrent-refinement-model/v1/schema.json",
+  "title": "Gantry bounded concurrent refinement model v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "maximum_depth",
+    "explored_state_count",
+    "terminal_state_count",
+    "obligations",
+    "assumptions",
+    "counterexamples"
+  ],
+  "properties": {
+    "format": { "const": "gantry.concurrent-refinement-model/v1" },
+    "maximum_depth": { "type": "integer", "minimum": 1 },
+    "explored_state_count": { "type": "integer", "minimum": 1 },
+    "terminal_state_count": { "type": "integer", "minimum": 1 },
+    "obligations": {
+      "type": "array",
+      "minItems": 12,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "assumptions": {
+      "type": "array",
+      "minItems": 4,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "counterexamples": {
+      "type": "array",
+      "minItems": 11,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "trace", "rejected_action", "invariant"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "trace": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "rejected_action": { "type": "string", "minLength": 1 },
+          "invariant": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
+

@@ -3051,8 +3051,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3201,8 +3203,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3276,8 +3280,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3328,8 +3334,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3380,8 +3388,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3432,8 +3442,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7552,8 +7564,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7609,8 +7623,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7645,8 +7661,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7681,8 +7699,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -8304,8 +8324,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -8340,8 +8362,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -8376,8 +8400,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -8412,8 +8438,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -8448,8 +8476,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -8599,8 +8629,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -8915,8 +8947,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9163,8 +9197,10 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9462,8 +9498,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {

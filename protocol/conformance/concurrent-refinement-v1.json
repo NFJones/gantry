@@ -1,0 +1,55 @@
+{
+  "format": "gantry.concurrent-refinement-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-CON-005",
+  "profile": "concurrent-evaluator",
+  "argument": "docs/concurrent-evaluator-refinement.md",
+  "model": "protocol/goldens/concurrent-refinement-model-v1.json",
+  "model_evidence": "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay",
+  "reviewed_clauses": [
+    { "requirement": "GNT-3-D-PROPERTIES", "clause": "clause-001" },
+    { "requirement": "GNT-3-M-FAIL", "clause": "clause-001" },
+    { "requirement": "GNT-3-M-LABELS", "clause": "clause-001" },
+    { "requirement": "GNT-3-M-LABELS", "clause": "clause-002" },
+    { "requirement": "GNT-3-M-LABELS", "clause": "clause-003" },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-001" },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-002" },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-003" },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-004" },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-005" },
+    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-009" },
+    { "requirement": "GNT-3-M-STATE", "clause": "clause-002" },
+    { "requirement": "GNT-3-M-TASK-SETTLE", "clause": "clause-001" },
+    { "requirement": "GNT-3.13", "clause": "clause-001" },
+    { "requirement": "GNT-3.15", "clause": "clause-001" },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-001" },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-002" },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-003" },
+    { "requirement": "GNT-3.15-liveness", "clause": "clause-004" }
+  ],
+  "trace_evidence": [
+    "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",
+    "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal",
+    "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence",
+    "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order",
+    "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order",
+    "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_cancellation_abort_terminal_and_shutdown_cohorts_are_exact",
+    "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_concurrent_events_are_canonical_typed_and_causal",
+    "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_spawned_sessions_establish_once_before_child_use",
+    "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path",
+    "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated"
+  ],
+  "evidence_manifests": [
+    "protocol/conformance/concurrent-executor-v1.json",
+    "protocol/conformance/concurrent-handle-ownership-v1.json",
+    "protocol/conformance/concurrent-lifecycle-v1.json",
+    "protocol/conformance/concurrent-task-state-v1.json"
+  ],
+  "exclusions": [
+    "The bounded model is not an unbounded proof over all programs, values, task graphs, host futures, or schedules.",
+    "No task ordering, equal CPU allocation, bounded scheduling latency, deterministic timestamp, or unconditional termination claim is made.",
+    "Genuinely pending integration work remains outside enabled-machine progress until its documented prerequisite resolves.",
+    "Durable commit, recovery, SQLite, and combined concurrent-durable obligations remain owned by Phase 6 and the combined gate."
+  ]
+}
+

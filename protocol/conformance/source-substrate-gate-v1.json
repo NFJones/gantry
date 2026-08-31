@@ -38,7 +38,7 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "4e7aa858687750620a2f163fc8976a463d89fd004bde79be239a9ec1153c2c57"
+      "sha256": "929f31d6827eb3cb8c555b9a3ca0f56225a726fab0acd8473c731f1825a3207e"
     },
     {
       "path": "protocol/schemas/source-substrate-v1.schema.json",

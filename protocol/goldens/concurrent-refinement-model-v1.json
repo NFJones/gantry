@@ -1,0 +1,95 @@
+{
+  "format": "gantry.concurrent-refinement-model/v1",
+  "maximum_depth": 14,
+  "explored_state_count": 9986,
+  "terminal_state_count": 2482,
+  "obligations": [
+    "all-settled-source-order",
+    "cancellation-nonconsumption",
+    "enabled-task-progress",
+    "fixed-outcome-observation-isolation",
+    "foreground-terminal-separation",
+    "linear-handle-ownership",
+    "per-task-transition-order",
+    "shared-machine-refinement",
+    "shutdown-cohort-closure",
+    "task-settlement-at-most-once",
+    "terminal-completion-uniqueness",
+    "weak-fair-runnable-polling"
+  ],
+  "assumptions": [
+    "The analyzed package is well typed and every child executes the shared explicit-frame Machine.",
+    "Continuously runnable Gantry futures are weakly fairly polled and ready executor or adapter responses eventually become observable.",
+    "Submitting tasks and genuinely pending integration work may remain pending until their documented external prerequisite resolves.",
+    "The lifecycle search is bounded to one execution, one root, two child tasks, and the declared maximum trace depth; it is not an unbounded proof."
+  ],
+  "counterexamples": [
+    {
+      "id": "child-before-submission",
+      "trace": ["spawn-a"],
+      "rejected_action": "settle-a-succeeded",
+      "invariant": "per-task-transition-order"
+    },
+    {
+      "id": "detach-after-join",
+      "trace": ["spawn-a", "submit-a-ok", "join-a"],
+      "rejected_action": "detach-a",
+      "invariant": "linear-handle-ownership"
+    },
+    {
+      "id": "double-join",
+      "trace": ["spawn-a", "submit-a-ok", "join-a"],
+      "rejected_action": "join-a",
+      "invariant": "linear-handle-ownership"
+    },
+    {
+      "id": "double-settlement",
+      "trace": ["spawn-a", "submit-a-ok", "settle-a-succeeded"],
+      "rejected_action": "settle-a-failed",
+      "invariant": "task-settlement-at-most-once"
+    },
+    {
+      "id": "finish-shutdown-before-terminal",
+      "trace": ["begin-shutdown"],
+      "rejected_action": "finish-shutdown",
+      "invariant": "shutdown-cohort-closure"
+    },
+    {
+      "id": "foreground-before-attached-settlement",
+      "trace": ["spawn-a", "submit-a-ok", "fail-root"],
+      "rejected_action": "foreground-complete",
+      "invariant": "foreground-terminal-separation"
+    },
+    {
+      "id": "root-settlement-before-attached-drain",
+      "trace": ["spawn-a", "submit-a-ok", "fail-root"],
+      "rejected_action": "settle-root-failed",
+      "invariant": "task-settlement-at-most-once"
+    },
+    {
+      "id": "source-after-cancellation",
+      "trace": ["spawn-a", "submit-a-ok", "cancel-execution"],
+      "rejected_action": "detach-a",
+      "invariant": "cancellation-nonconsumption"
+    },
+    {
+      "id": "source-while-join-pending",
+      "trace": ["spawn-a", "submit-a-ok", "join-a"],
+      "rejected_action": "spawn-b",
+      "invariant": "all-settled-source-order"
+    },
+    {
+      "id": "terminal-before-detached-settlement",
+      "trace": ["spawn-a", "submit-a-ok", "detach-a", "settle-root-succeeded", "foreground-complete"],
+      "rejected_action": "terminal-complete",
+      "invariant": "foreground-terminal-separation"
+    },
+    {
+      "id": "terminal-twice",
+      "trace": ["settle-root-succeeded", "foreground-complete", "terminal-complete"],
+      "rejected_action": "terminal-complete",
+      "invariant": "terminal-completion-uniqueness"
+    }
+  ]
+}
+
