@@ -237,6 +237,152 @@ impl ExecutionHandle {
         self.execution_id
     }
 
+    /// Returns one internally consistent point-in-time execution snapshot.
+    pub fn snapshot(&self) -> Result<ExecutionSnapshot, ExecutionTransitionError> {
+        let inner = self
+            .inner
+            .upgrade()
+            .ok_or(ExecutionTransitionError::InterpreterDropped)?;
+        let data = inner.lock();
+        data.executions
+            .get(&self.execution_id)
+            .map(|execution| execution.snapshot(self.execution_id))
+            .ok_or(ExecutionTransitionError::NotFound)
+    }
+
+    /// Publishes a cancellation reason whose durable evidence already committed.
+    ///
+    /// Durable orchestration calls this boundary only after journal acceptance;
+    /// the lifecycle then fixes the first reason and signals owned work atomically.
+    pub fn publish_committed_cancellation(
+        &self,
+        reason: CancellationReason,
+    ) -> Result<CancellationRecord, ExecutionTransitionError> {
+        let inner = self
+            .inner
+            .upgrade()
+            .ok_or(ExecutionTransitionError::InterpreterDropped)?;
+        let mut data = inner.lock();
+        let execution = data
+            .executions
+            .get_mut(&self.execution_id)
+            .ok_or(ExecutionTransitionError::NotFound)?;
+        if execution.terminal.is_some() {
+            return Ok(CancellationRecord::AlreadyTerminal(
+                execution.snapshot(self.execution_id),
+            ));
+        }
+        if let Some(existing) = &execution.cancellation {
+            return Ok(CancellationRecord::Existing {
+                reason: existing.clone(),
+                signal: execution.cancellation_signal.clone(),
+            });
+        }
+        execution.cancellation = Some(reason.clone());
+        execution.cancellation_signal.cancel();
+        Ok(CancellationRecord::Accepted {
+            reason,
+            signal: execution.cancellation_signal.clone(),
+        })
+    }
+
+    /// Publishes a foreground outcome whose durable evidence already committed.
+    pub fn publish_committed_foreground(
+        &self,
+        outcome: MachineOutcome,
+    ) -> Result<(), ExecutionTransitionError> {
+        self.publish_committed_outcome(Some(outcome), None)
+    }
+
+    /// Publishes a terminal outcome whose durable evidence already committed.
+    pub fn publish_committed_terminal(
+        &self,
+        outcome: MachineOutcome,
+    ) -> Result<(), ExecutionTransitionError> {
+        self.publish_committed_outcome(None, Some(outcome))
+    }
+
+    /// Publishes an operational end to the current durable run without fixing a language outcome.
+    ///
+    /// This boundary signals execution-owned work and releases shutdown progress only after
+    /// durable orchestration has established that the journal can no longer advance this run.
+    pub fn publish_run_failed_nondurably(&self) -> Result<(), ExecutionTransitionError> {
+        let inner = self
+            .inner
+            .upgrade()
+            .ok_or(ExecutionTransitionError::InterpreterDropped)?;
+        let mut data = inner.lock();
+        let waiters = {
+            let execution = data
+                .executions
+                .get_mut(&self.execution_id)
+                .ok_or(ExecutionTransitionError::NotFound)?;
+            if execution.terminal.is_some() {
+                return Err(ExecutionTransitionError::AlreadyFixed);
+            }
+            if execution.run_failed_nondurably {
+                return Ok(());
+            }
+            execution.run_failed_nondurably = true;
+            execution.cancellation_signal.cancel();
+            std::mem::take(&mut execution.waiters)
+        };
+        let progress = std::mem::take(&mut data.progress_waiters);
+        drop(data);
+        wake_all(
+            waiters
+                .into_iter()
+                .map(|registered| registered.waker)
+                .chain(progress)
+                .collect(),
+        );
+        Ok(())
+    }
+
+    fn publish_committed_outcome(
+        &self,
+        foreground: Option<MachineOutcome>,
+        terminal: Option<MachineOutcome>,
+    ) -> Result<(), ExecutionTransitionError> {
+        let inner = self
+            .inner
+            .upgrade()
+            .ok_or(ExecutionTransitionError::InterpreterDropped)?;
+        let mut data = inner.lock();
+        let waiters = {
+            let execution = data
+                .executions
+                .get_mut(&self.execution_id)
+                .ok_or(ExecutionTransitionError::NotFound)?;
+            if let Some(outcome) = foreground {
+                if execution.foreground.is_some() {
+                    return Err(ExecutionTransitionError::AlreadyFixed);
+                }
+                execution.foreground = Some(outcome);
+            }
+            if let Some(outcome) = terminal {
+                if execution.terminal.is_some() {
+                    return Err(ExecutionTransitionError::AlreadyFixed);
+                }
+                if execution.foreground.is_none() {
+                    return Err(ExecutionTransitionError::ForegroundUnknown);
+                }
+                execution.terminal = Some(outcome);
+            }
+            std::mem::take(&mut execution.waiters)
+        };
+        let progress = std::mem::take(&mut data.progress_waiters);
+        drop(data);
+        wake_all(
+            waiters
+                .into_iter()
+                .map(|registered| registered.waker)
+                .chain(progress)
+                .collect(),
+        );
+        Ok(())
+    }
+
     /// Returns the monotonic execution-owned cancellation signal.
     pub fn cancellation_signal(&self) -> Result<CancellationSignal, ExecutionTransitionError> {
         let inner = self
@@ -342,6 +488,15 @@ impl InterpreterLifecycle {
                 }),
             }),
         }
+    }
+
+    /// Returns whether an execution handle belongs to this interpreter lifecycle.
+    #[must_use]
+    pub fn owns_handle(&self, handle: &ExecutionHandle) -> bool {
+        handle
+            .inner
+            .upgrade()
+            .is_some_and(|inner| Arc::ptr_eq(&self.inner, &inner))
     }
 
     /// Admits one public operation at a single lifecycle linearization point.
@@ -1186,6 +1341,7 @@ struct ExecutionRecord {
     cancellation: Option<CancellationReason>,
     foreground: Option<MachineOutcome>,
     terminal: Option<MachineOutcome>,
+    run_failed_nondurably: bool,
     required_delivery_failures: Vec<RequiredEventDeliveryFailureV1>,
     waiters: Vec<RegisteredWaiter>,
 }
@@ -1202,6 +1358,7 @@ impl ExecutionRecord {
             cancellation: None,
             foreground: None,
             terminal: None,
+            run_failed_nondurably: false,
             required_delivery_failures: Vec::new(),
             waiters: Vec::new(),
         }
@@ -1366,9 +1523,9 @@ fn pending_executions(data: &LifecycleData) -> Vec<ProtocolIdentity> {
         .cohort
         .iter()
         .filter(|identity| {
-            data.executions
-                .get(identity)
-                .is_some_and(|execution| execution.terminal.is_none())
+            data.executions.get(identity).is_some_and(|execution| {
+                execution.terminal.is_none() && !execution.run_failed_nondurably
+            })
         })
         .copied()
         .collect()

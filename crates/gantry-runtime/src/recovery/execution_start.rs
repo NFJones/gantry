@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
-use gantry_core::portable::IdentityKind;
+use gantry_core::portable::{CancellationReasonCategory, IdentityKind};
 use gantry_core::strict_json::{JsonLimits, StrictJsonDocument};
 use gantry_host::journal::{
     BatchLocalEvidenceId, JournalContractError, JournalEvidenceReferenceV1, UnfinalizedEvidenceV1,
@@ -11,6 +11,7 @@ use gantry_host::journal::{
 use gantry_ir::MachineProgram;
 
 use crate::machine::{decode_machine_program, encode_machine_program};
+use crate::{CancellationCausalIdentity, CancellationReason};
 
 use super::{
     DurableCommitCutV1, DurableEvidenceError, DurableLogicalEvidenceV1, decode_hex, encode_hex,
@@ -205,6 +206,148 @@ impl DurableExecutionStartV1 {
             Arc::from([]),
         )
         .map_err(|error: JournalContractError| DurableEvidenceError::Journal(error))
+    }
+}
+
+/// Canonical first-effective cancellation evidence committed before task signalling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DurableCancellationEvidenceV1 {
+    reason: CancellationReason,
+    state: DurableLogicalEvidenceV1,
+}
+
+impl DurableCancellationEvidenceV1 {
+    /// Constructs cancellation evidence over the complete state at the cancellation cut.
+    pub fn new(
+        reason: CancellationReason,
+        state: DurableLogicalEvidenceV1,
+    ) -> Result<Self, DurableEvidenceError> {
+        let causal_identity_valid = reason
+            .causal_identity
+            .is_none_or(|identity| match identity {
+                CancellationCausalIdentity::Operation(identity) => {
+                    identity.kind() == IdentityKind::Operation
+                }
+                CancellationCausalIdentity::Task(identity) => identity.kind() == IdentityKind::Task,
+            });
+        if state.cut() != DurableCommitCutV1::Cancellation || !causal_identity_valid {
+            return Err(DurableEvidenceError::Encoding);
+        }
+        Ok(Self { reason, state })
+    }
+
+    /// Returns the first effective cancellation reason.
+    #[must_use]
+    pub const fn reason(&self) -> &CancellationReason {
+        &self.reason
+    }
+
+    /// Returns the complete logical state committed with cancellation.
+    #[must_use]
+    pub const fn state(&self) -> &DurableLogicalEvidenceV1 {
+        &self.state
+    }
+
+    /// Encodes the unique canonical cancellation evidence body.
+    #[must_use]
+    pub fn canonical_body(&self) -> Vec<u8> {
+        let mut output = String::from("{\"causal_identity\":");
+        match self.reason.causal_identity {
+            Some(CancellationCausalIdentity::Operation(identity)) => {
+                output.push_str("{\"identity\":");
+                push_json_string(&mut output, &identity.to_string());
+                output.push_str(",\"kind\":\"operation\"}");
+            }
+            Some(CancellationCausalIdentity::Task(identity)) => {
+                output.push_str("{\"identity\":");
+                push_json_string(&mut output, &identity.to_string());
+                output.push_str(",\"kind\":\"task\"}");
+            }
+            None => output.push_str("null"),
+        }
+        output.push_str(",\"category\":");
+        push_json_string(&mut output, self.reason.category.wire_name());
+        output.push_str(",\"format\":\"gantry.cancellation/v1\",\"message\":");
+        super::push_optional_string(&mut output, self.reason.message.as_deref());
+        output.push_str(",\"state\":");
+        push_json_string(&mut output, &encode_hex(&self.state.canonical_body()));
+        output.push('}');
+        output.into_bytes()
+    }
+
+    /// Decodes one exact canonical cancellation body against its immutable program.
+    pub fn decode(program: &MachineProgram, body: &[u8]) -> Result<Self, DurableEvidenceError> {
+        let document = decode_snapshot_document(body)?;
+        let root = object(&document, document.root())?;
+        require_exact_fields(
+            root,
+            &["causal_identity", "category", "format", "message", "state"],
+        )?;
+        if string(&document, field(root, "format")?)? != "gantry.cancellation/v1" {
+            return Err(DurableEvidenceError::Encoding);
+        }
+        let category = CancellationReasonCategory::from_wire_name(string(
+            &document,
+            field(root, "category")?,
+        )?)
+        .ok_or(DurableEvidenceError::Encoding)?;
+        let causal_identity = match document.node(field(root, "causal_identity")?) {
+            Some(gantry_core::strict_json::JsonNode::Null) => None,
+            Some(gantry_core::strict_json::JsonNode::Object(value)) => {
+                require_exact_fields(value, &["identity", "kind"])?;
+                let kind = string(&document, field(value, "kind")?)?;
+                let (identity_kind, wrap): (
+                    IdentityKind,
+                    fn(ProtocolIdentity) -> CancellationCausalIdentity,
+                ) = match kind {
+                    "operation" => (
+                        IdentityKind::Operation,
+                        CancellationCausalIdentity::Operation,
+                    ),
+                    "task" => (IdentityKind::Task, CancellationCausalIdentity::Task),
+                    _ => return Err(DurableEvidenceError::Encoding),
+                };
+                let identity = ProtocolIdentity::parse_kind(
+                    string(&document, field(value, "identity")?)?,
+                    identity_kind,
+                )
+                .map_err(|_| DurableEvidenceError::Encoding)?;
+                Some(wrap(identity))
+            }
+            _ => return Err(DurableEvidenceError::Encoding),
+        };
+        let reason = CancellationReason::new(
+            category,
+            optional_arc_string(&document, field(root, "message")?)?,
+            causal_identity,
+            u64::MAX,
+        )
+        .map_err(|_| DurableEvidenceError::Encoding)?;
+        let state = DurableLogicalEvidenceV1::decode(
+            program,
+            &decode_hex(string(&document, field(root, "state")?)?)?,
+        )?;
+        let decoded = Self::new(reason, state)?;
+        if decoded.canonical_body() != body {
+            return Err(DurableEvidenceError::Encoding);
+        }
+        Ok(decoded)
+    }
+
+    /// Wraps cancellation for one causally linked atomic journal commit.
+    pub fn unfinalized(
+        &self,
+        batch_local_id: BatchLocalEvidenceId,
+        references: impl Into<Arc<[JournalEvidenceReferenceV1]>>,
+    ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
+        UnfinalizedEvidenceV1::new(
+            batch_local_id,
+            "gantry.cancellation/v1",
+            self.canonical_body(),
+            references,
+            Arc::from([]),
+        )
+        .map_err(DurableEvidenceError::Journal)
     }
 }
 

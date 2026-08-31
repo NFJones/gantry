@@ -168,7 +168,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/durable_start.rs",
-      "sha256": "b4e1086e9c52f6ee33549a476b24ab62583af27e08c7d0fbe23bf73f25880e9e"
+      "sha256": "5a00d050a4f81fa9fc3598d9a6baf15565cd62f5f3ebf9624851036701bbebe6"
     },
     {
       "path": "crates/gantry-conformance/tests/executor_services.rs",
@@ -352,7 +352,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "396693a3ddf3a835a314b0272fa518b0069129a71073cd4f64e9e1214dbfdb8d"
+      "sha256": "08061d09d1f586785082619430104662cbdc0245e2836e04f5d28203a42f423d"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",

@@ -3,15 +3,15 @@
 use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::pin;
+use std::pin::{Pin, pin};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::task::{Context, Poll, Waker};
 
 use gantry::host::contracts::{
-    EmbeddingVersion, ExecutorAdapter, FreshIdentityAllocator, HostError, HostFuture, HostRequest,
-    HostResponse, IdentitySource, InclusiveJitterRange, IntegrationPreflight, JournalStorage,
-    UtcClock,
+    CancellationToken, EmbeddingVersion, ExecutorAdapter, FreshIdentityAllocator, HostError,
+    HostFuture, HostRequest, HostResponse, IdentitySource, InclusiveJitterRange,
+    IntegrationPreflight, JournalStorage, UtcClock,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::host::event::{
@@ -19,24 +19,30 @@ use gantry::host::event::{
     SinkId,
 };
 use gantry::host::journal::{
-    JournalId, JournalPrefixV1, ReadJournalPrefixV1, ReleaseJournalOwnerV1,
+    AcquireJournalOwnerV1, JournalCommitReceiptV1, JournalCommitRequestV1, JournalError,
+    JournalErrorCode, JournalId, JournalOwnershipV1, JournalPrefixV1, ReadJournalPrefixV1,
+    ReleaseJournalOwnerV1, ResolveJournalPayloadV1, ResolvedJournalPayloadV1,
 };
 use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
-    DeliveryOutcome, IdentityKind, JitterMode, PORTABLE_SPECIFICATION_REVISION,
-    PROTOCOL_FAMILY_DEFINITIONS, ResumeStartFailureCategory, SinkClass, StartFailureCategory,
+    CancellationReasonCategory, DeliveryOutcome, ExecutionObservationState, IdentityKind,
+    JitterMode, PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS,
+    ResumeStartFailureCategory, SinkClass, StartFailureCategory,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    InMemoryJournalStore, InterpreterConfiguration, InterpreterLifecycle, RequiredConfiguration,
+    CancellationReason, FinalShutdownEventSettlement, InMemoryJournalStore,
+    InterpreterConfiguration, InterpreterLifecycle, MachineOutcome, RequiredConfiguration,
     recover_authoritative_prefix_with_retained_program,
 };
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::ValueLimits;
 use gantry::{
-    AnalyzePackageCoordinator, DurableResumeExecutionRequest, DurableResumeExecutionResult,
-    DurableResumeSourceComparison, DurableStartExecutionCoordinator, DurableStartExecutionRequest,
+    AnalyzePackageCoordinator, DurableCancelExecutionResult, DurableJournalOwnerState,
+    DurableLifecycleCoordinator, DurableQueryExecutionRequest, DurableQueryExecutionResult,
+    DurableResumeExecutionRequest, DurableResumeExecutionResult, DurableResumeSourceComparison,
+    DurableRunFailure, DurableStartExecutionCoordinator, DurableStartExecutionRequest,
     DurableStartExecutionResult, StartExecutionCoordinator, StartExecutionRequest,
 };
 use serde::Deserialize;
@@ -176,6 +182,65 @@ impl EventSink for FixedSink {
     }
 }
 
+#[derive(Default)]
+struct InstrumentedJournalStore {
+    inner: InMemoryJournalStore,
+    fail_commits: AtomicBool,
+    release_calls: AtomicU64,
+}
+
+impl InstrumentedJournalStore {
+    fn set_fail_commits(&self, fail: bool) {
+        self.fail_commits.store(fail, Ordering::Release);
+    }
+
+    fn release_calls(&self) -> u64 {
+        self.release_calls.load(Ordering::Acquire)
+    }
+}
+
+impl JournalStorage for InstrumentedJournalStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        if self.fail_commits.load(Ordering::Acquire) {
+            Box::pin(async { Err(JournalError::new(JournalErrorCode::Internal)) })
+        } else {
+            self.inner.commit(request)
+        }
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.release_calls.fetch_add(1, Ordering::AcqRel);
+        self.inner.release_owner(request)
+    }
+}
+
 struct ResolvedPreflight {
     agent_revision: &'static str,
     action_revision: &'static str,
@@ -282,6 +347,288 @@ fn checked_in_durable_start_evidence_is_narrow_and_current() {
 }
 
 #[test]
+fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
+    let root = TempDirectory::new(
+        b"agents { worker } default agent = worker; action read_only inspect(value: Int) -> Int; fn main() {}",
+    );
+    let services = Arc::new(Services::default());
+    let configuration = test_configuration(Arc::clone(&services));
+    let selection = selection();
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("durable-lifecycle-cancellation")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let clock = FixedClock;
+    let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+    let interpreter_lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let start = StartExecutionCoordinator::new(
+        &package,
+        &interpreter_lifecycle,
+        &configuration,
+        &allocator,
+        &preflight,
+    );
+    let durable =
+        DurableStartExecutionCoordinator::new(start, &configuration, Arc::clone(&storage_adapter));
+    let accepted = match block_on(durable.start(DurableStartExecutionRequest {
+        journal_id: journal_id.clone(),
+        start: start_request(&root.0, &selection),
+    })) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("durable cancellation fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.start.execution_id;
+    let signal = accepted
+        .start
+        .handle
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal was unavailable: {error:?}"));
+    assert!(!signal.is_cancelled());
+
+    let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&storage_adapter));
+    let owned = block_on(lifecycle.open_owned_execution(
+        journal_id.clone(),
+        accepted.ownership_token.clone(),
+        accepted.start.handle.clone(),
+        execution_id,
+    ))
+    .unwrap_or_else(|error| panic!("durable execution could not be opened: {error:?}"));
+    let reason = CancellationReason::new(
+        CancellationReasonCategory::Caller,
+        Some(Arc::from("stop")),
+        None,
+        32,
+    )
+    .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let first = block_on(owned.cancel_execution(execution_id, reason.clone()));
+    let DurableCancelExecutionResult::Accepted {
+        effective_reason,
+        terminal,
+    } = &first
+    else {
+        panic!("first durable cancellation was not accepted: {first:?}")
+    };
+    assert_eq!(effective_reason, &reason);
+    assert!(signal.is_cancelled());
+    assert_eq!(terminal.state, ExecutionObservationState::Terminal);
+    assert_eq!(terminal.cancellation, Some(reason.clone()));
+    assert!(matches!(
+        terminal.terminal,
+        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop"
+    ));
+    assert_eq!(terminal.foreground, terminal.terminal);
+    assert_eq!(terminal.owner, Some(DurableJournalOwnerState::Released));
+    assert!(terminal.required_delivery_failures.is_empty());
+    assert!(terminal.run_failure.is_none());
+
+    let prefix_after_terminal = read_prefix(storage.as_ref(), &journal_id);
+    let JournalPrefixV1::Full(full) = &prefix_after_terminal else {
+        panic!("durable cancellation did not retain a full prefix");
+    };
+    assert_eq!(full.committed_through, 5);
+    assert_eq!(
+        full.evidence
+            .iter()
+            .map(|evidence| evidence.kind.as_ref())
+            .collect::<Vec<_>>(),
+        [
+            "gantry.execution-start/v1",
+            "gantry.cancellation/v1",
+            "gantry.logical-evidence/v1",
+            "gantry.logical-evidence/v1",
+            "gantry.logical-evidence/v1",
+        ]
+    );
+
+    let second_reason = CancellationReason::new(
+        CancellationReasonCategory::Deadline,
+        Some(Arc::from("later")),
+        None,
+        32,
+    )
+    .unwrap_or_else(|error| panic!("second cancellation reason failed: {error:?}"));
+    let repeated = block_on(owned.cancel_execution(execution_id, second_reason));
+    let DurableCancelExecutionResult::Accepted {
+        effective_reason,
+        terminal: repeated_terminal,
+    } = repeated
+    else {
+        panic!("repeated durable cancellation did not preserve accepted status")
+    };
+    assert_eq!(effective_reason, reason);
+    assert_eq!(&repeated_terminal, terminal);
+    assert_eq!(
+        read_prefix(storage.as_ref(), &journal_id),
+        prefix_after_terminal
+    );
+    assert_eq!(block_on(owned.await_foreground()), **terminal);
+    assert_eq!(block_on(owned.await_terminal()), **terminal);
+
+    let queried = block_on(lifecycle.query(DurableQueryExecutionRequest {
+        journal_id: journal_id.clone(),
+        expected_execution_id: Some(execution_id),
+    }));
+    let DurableQueryExecutionResult::Snapshot(queried) = queried else {
+        panic!("terminal durable query did not return a snapshot")
+    };
+    assert_eq!(queried.state, ExecutionObservationState::Terminal);
+    assert_eq!(queried.terminal, terminal.terminal);
+    assert_eq!(queried.cancellation, Some(reason));
+    assert!(queried.owner.is_none());
+    assert!(queried.run_failure.is_none());
+}
+
+#[test]
+fn durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent() {
+    let storage = Arc::new(InstrumentedJournalStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let (interpreter_lifecycle, lifecycle, owned, execution_id, signal, journal_id) =
+        start_owned_lifecycle("durable-lifecycle-shutdown", Arc::clone(&storage_adapter));
+
+    let mut dropped_wait = owned.await_terminal();
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(Pin::new(&mut dropped_wait).poll(&mut context).is_pending());
+    drop(dropped_wait);
+
+    let report = block_on(lifecycle.shutdown(
+        &interpreter_lifecycle,
+        &[Arc::clone(&owned)],
+        None,
+        None,
+        FinalShutdownEventSettlement::Settled,
+    ))
+    .unwrap_or_else(|error| panic!("durable shutdown failed: {error:?}"));
+    assert!(report.lifecycle.orderly);
+    assert_eq!(report.lifecycle.cohort.len(), 1);
+    assert_eq!(report.executions.len(), 1);
+    assert_eq!(report.executions[0].execution_id, execution_id);
+    assert_eq!(
+        report.executions[0].state,
+        ExecutionObservationState::Terminal
+    );
+    assert_eq!(
+        report.executions[0]
+            .cancellation
+            .as_ref()
+            .map(|reason| reason.category),
+        Some(CancellationReasonCategory::Shutdown)
+    );
+    assert!(matches!(
+        report.executions[0].terminal,
+        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
+    ));
+    assert_eq!(
+        report.executions[0].owner,
+        Some(DurableJournalOwnerState::Released)
+    );
+    assert!(report.executions[0].required_delivery_failures.is_empty());
+    assert!(report.executions[0].run_failure.is_none());
+    assert!(signal.is_cancelled());
+    assert_eq!(storage.release_calls(), 1);
+
+    let repeated = block_on(lifecycle.shutdown(
+        &interpreter_lifecycle,
+        &[owned],
+        None,
+        None,
+        FinalShutdownEventSettlement::Exhausted,
+    ))
+    .unwrap_or_else(|error| panic!("repeated durable shutdown failed: {error:?}"));
+    assert!(Arc::ptr_eq(&report, &repeated));
+    assert_eq!(storage.release_calls(), 1);
+    assert_eq!(
+        read_prefix(storage.as_ref(), &journal_id),
+        read_prefix(storage.as_ref(), &journal_id)
+    );
+}
+
+#[test]
+fn durable_journal_failure_wakes_waiters_without_fabricating_terminal_state() {
+    let storage = Arc::new(InstrumentedJournalStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let (interpreter_lifecycle, lifecycle, owned, execution_id, signal, journal_id) =
+        start_owned_lifecycle(
+            "durable-lifecycle-journal-failure",
+            Arc::clone(&storage_adapter),
+        );
+    storage.set_fail_commits(true);
+
+    let mut dropped_wait = owned.await_foreground();
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(Pin::new(&mut dropped_wait).poll(&mut context).is_pending());
+    drop(dropped_wait);
+
+    let reason = CancellationReason::new(
+        CancellationReasonCategory::Caller,
+        Some(Arc::from("will-not-commit")),
+        None,
+        32,
+    )
+    .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let failed = block_on(owned.cancel_execution(execution_id, reason));
+    let DurableCancelExecutionResult::Failed {
+        effective_reason,
+        failure,
+        observation,
+    } = failed
+    else {
+        panic!("journal failure did not produce a separated failed result")
+    };
+    assert!(effective_reason.is_none());
+    assert!(matches!(failure, DurableRunFailure::Commit(_)));
+    assert_eq!(
+        observation.state,
+        ExecutionObservationState::RunFailedNondurably
+    );
+    assert!(observation.foreground.is_none());
+    assert!(observation.terminal.is_none());
+    assert!(observation.cancellation.is_none());
+    assert_eq!(observation.owner, Some(DurableJournalOwnerState::Held));
+    assert!(signal.is_cancelled());
+    assert_eq!(block_on(owned.await_terminal()), *observation);
+
+    let queried = block_on(lifecycle.query(DurableQueryExecutionRequest {
+        journal_id: journal_id.clone(),
+        expected_execution_id: Some(execution_id),
+    }));
+    let DurableQueryExecutionResult::Snapshot(queried) = queried else {
+        panic!("authoritative query did not return the unchanged durable prefix")
+    };
+    assert_eq!(queried.state, ExecutionObservationState::NotTerminal);
+    assert!(queried.foreground.is_none());
+    assert!(queried.terminal.is_none());
+    assert!(queried.cancellation.is_none());
+    assert!(queried.run_failure.is_none());
+
+    let report = block_on(lifecycle.shutdown(
+        &interpreter_lifecycle,
+        &[owned],
+        None,
+        None,
+        FinalShutdownEventSettlement::Settled,
+    ))
+    .unwrap_or_else(|error| panic!("failed-run shutdown did not complete: {error:?}"));
+    assert!(!report.lifecycle.orderly);
+    assert_eq!(report.executions.len(), 1);
+    assert_eq!(
+        report.executions[0].state,
+        ExecutionObservationState::RunFailedNondurably
+    );
+    assert!(report.executions[0].terminal.is_none());
+    assert_eq!(
+        report.executions[0].owner,
+        Some(DurableJournalOwnerState::Released)
+    );
+    assert_eq!(storage.release_calls(), 1);
+}
+
+#[test]
 fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let root = TempDirectory::new(
         b"agents { worker } default agent = worker; action read_only inspect(value: Int) -> Int; fn main() {}",
@@ -295,6 +642,17 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let clock = FixedClock;
     let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+
+    let query = DurableLifecycleCoordinator::new(Arc::clone(&storage_adapter));
+    let empty = block_on(query.query(DurableQueryExecutionRequest {
+        journal_id: journal_id.clone(),
+        expected_execution_id: None,
+    }));
+    assert!(matches!(
+        empty,
+        DurableQueryExecutionResult::NotFound { journal_id: ref observed }
+            if observed == &journal_id
+    ));
 
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
@@ -333,6 +691,38 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         full.evidence[0].evidence_id
     );
     assert_eq!(accepted.start.handle.execution_id(), execution_id);
+    let query_before = read_prefix(storage.as_ref(), &journal_id);
+    let queried = block_on(query.query(DurableQueryExecutionRequest {
+        journal_id: journal_id.clone(),
+        expected_execution_id: Some(execution_id),
+    }));
+    let DurableQueryExecutionResult::Snapshot(queried) = queried else {
+        panic!("sequence-one durable query did not return a snapshot");
+    };
+    assert_eq!(queried.journal_id, journal_id);
+    assert_eq!(queried.execution_id, execution_id);
+    assert_eq!(queried.state, ExecutionObservationState::NotTerminal);
+    assert!(queried.foreground.is_none());
+    assert!(queried.terminal.is_none());
+    assert_eq!(queried.latest_sequence, 1);
+    assert_eq!(queried.latest_evidence_id, full.evidence[0].evidence_id);
+    assert_eq!(read_prefix(storage.as_ref(), &journal_id), query_before);
+
+    let other_execution = gantry::identity::ProtocolIdentity::from_fresh_material(
+        IdentityKind::Execution,
+        [0xff; 32],
+    )
+    .unwrap_or_else(|error| panic!("query mismatch identity failed: {error}"));
+    let mismatch = block_on(query.query(DurableQueryExecutionRequest {
+        journal_id: journal_id.clone(),
+        expected_execution_id: Some(other_execution),
+    }));
+    assert!(matches!(
+        mismatch,
+        DurableQueryExecutionResult::NotFound { journal_id: ref observed }
+            if observed == &journal_id
+    ));
+    assert_eq!(read_prefix(storage.as_ref(), &journal_id), query_before);
     let (_, recovered_start) =
         recover_authoritative_prefix_with_retained_program(&prefix_after_start)
             .unwrap_or_else(|error| panic!("sequence-one recovery failed: {error:?}"));
@@ -749,6 +1139,72 @@ fn start_request<'a>(
         root_session: None,
         event_delivery: None,
     }
+}
+
+fn start_owned_lifecycle(
+    journal_name: &str,
+    storage: Arc<dyn JournalStorage>,
+) -> (
+    InterpreterLifecycle,
+    DurableLifecycleCoordinator,
+    Arc<gantry::DurableOwnedExecution>,
+    gantry::identity::ProtocolIdentity,
+    gantry::host::contracts::CancellationSignal,
+    JournalId,
+) {
+    let root = TempDirectory::new(
+        b"agents { worker } default agent = worker; action read_only inspect(value: Int) -> Int; fn main() {}",
+    );
+    let services = Arc::new(Services::default());
+    let configuration = test_configuration(Arc::clone(&services));
+    let selection = selection();
+    let journal_id = JournalId::new(journal_name)
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let clock = FixedClock;
+    let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+    let interpreter_lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let start = StartExecutionCoordinator::new(
+        &package,
+        &interpreter_lifecycle,
+        &configuration,
+        &allocator,
+        &preflight,
+    );
+    let durable =
+        DurableStartExecutionCoordinator::new(start, &configuration, Arc::clone(&storage));
+    let accepted = match block_on(durable.start(DurableStartExecutionRequest {
+        journal_id: journal_id.clone(),
+        start: start_request(&root.0, &selection),
+    })) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("durable lifecycle fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.start.execution_id;
+    let signal = accepted
+        .start
+        .handle
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal was unavailable: {error:?}"));
+    let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&storage));
+    let owned = block_on(lifecycle.open_owned_execution(
+        journal_id.clone(),
+        accepted.ownership_token.clone(),
+        accepted.start.handle.clone(),
+        execution_id,
+    ))
+    .unwrap_or_else(|error| panic!("durable execution could not be opened: {error:?}"));
+    (
+        interpreter_lifecycle,
+        lifecycle,
+        owned,
+        execution_id,
+        signal,
+        journal_id,
+    )
 }
 
 fn read_prefix(storage: &dyn JournalStorage, journal_id: &JournalId) -> JournalPrefixV1 {

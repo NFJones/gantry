@@ -6,6 +6,8 @@
 
 pub mod diagnostic;
 #[cfg(feature = "durable")]
+mod durable_lifecycle;
+#[cfg(feature = "durable")]
 mod durable_start;
 #[cfg(feature = "evaluator")]
 mod interpreter;
@@ -14,6 +16,14 @@ mod start;
 #[cfg(feature = "frontend")]
 mod validate;
 
+#[cfg(feature = "durable")]
+pub use durable_lifecycle::{
+    DurableCancelExecutionResult, DurableExecutionObservation, DurableExecutionWait,
+    DurableJournalOwnerState, DurableLifecycleCoordinator, DurableOwnedExecution,
+    DurableOwnedExecutionOpenError, DurableQueryExecutionError, DurableQueryExecutionFailure,
+    DurableQueryExecutionRequest, DurableQueryExecutionResult, DurableRunFailure,
+    DurableShutdownError, DurableShutdownReport,
+};
 #[cfg(feature = "durable")]
 pub use durable_start::{
     DurableResumeExecutionAccepted, DurableResumeExecutionFailure, DurableResumeExecutionRequest,

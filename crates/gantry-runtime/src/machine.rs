@@ -422,7 +422,7 @@ pub enum MachineRecoveryError {
 }
 
 /// One task-neutral explicit-frame machine.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Machine {
     program: Arc<MachineProgram>,
     execution: ProtocolIdentity,

@@ -3,7 +3,8 @@
 mod execution_start;
 
 pub use execution_start::{
-    DurableExecutionStartV1, DurableExecutionStateV1, DurableRecoverySnapshotV1,
+    DurableCancellationEvidenceV1, DurableExecutionStartV1, DurableExecutionStateV1,
+    DurableRecoverySnapshotV1,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,9 +24,10 @@ use gantry_ir::generated::RecoveryClass;
 use gantry_ir::{MachineProgram, TypeDescriptor};
 
 use crate::{
-    DurableTransitionSink, LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine,
-    MachineCheckpointV1, MachineRecoveryError, MachineStatus, SessionRecoveryError,
-    TransitionReceiptV1, TransitionSink, ValidationErrorCategoryV1, ValidationErrorV1,
+    CancellationReason, DurableTransitionSink, LogicalSessionRegistryCheckpointV1,
+    LogicalSessionRegistryV1, Machine, MachineCheckpointV1, MachineRecoveryError, MachineStatus,
+    SessionRecoveryError, TransitionReceiptV1, TransitionSink, ValidationErrorCategoryV1,
+    ValidationErrorV1,
 };
 
 /// Exact semantic boundary represented by one durable logical evidence body.
@@ -187,6 +189,55 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             session_checkpoint,
         )
         .map_err(DurableCommitError::Evidence)?;
+        self.commit_evidence(cut, evidence).await
+    }
+
+    /// Commits the first canonical cancellation reason before task signalling.
+    pub async fn commit_cancellation(
+        &mut self,
+        reason: CancellationReason,
+        machine: &Machine,
+        sessions: Option<&LogicalSessionRegistryV1>,
+    ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
+        let evidence = DurableLogicalEvidenceV1::new_with_sessions(
+            self.execution_id,
+            self.task_id,
+            DurableCommitCutV1::Cancellation,
+            None,
+            machine.checkpoint(),
+            sessions.map(LogicalSessionRegistryV1::checkpoint),
+        )
+        .map_err(DurableCommitError::Evidence)?;
+        let cancellation = DurableCancellationEvidenceV1::new(reason, evidence)
+            .map_err(DurableCommitError::Evidence)?;
+        let local_number = self
+            .next_local_id
+            .checked_add(1)
+            .ok_or(DurableCommitError::InvalidState)?;
+        let local_id = BatchLocalEvidenceId::new(format!("cut-{local_number}"))
+            .map_err(|_| DurableCommitError::InvalidState)?;
+        let references = self
+            .predecessor
+            .map(|(identity, _)| JournalEvidenceReferenceV1::Existing(identity))
+            .into_iter()
+            .collect::<Vec<_>>();
+        let body = cancellation
+            .unfinalized(local_id.clone(), references)
+            .map_err(DurableCommitError::Evidence)?;
+        self.commit_body(
+            DurableCommitCutV1::Cancellation,
+            local_number,
+            local_id,
+            body,
+        )
+        .await
+    }
+
+    async fn commit_evidence(
+        &mut self,
+        cut: DurableCommitCutV1,
+        evidence: DurableLogicalEvidenceV1,
+    ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         let local_number = self
             .next_local_id
             .checked_add(1)
@@ -201,6 +252,16 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         let body = evidence
             .unfinalized(local_id.clone(), references)
             .map_err(DurableCommitError::Evidence)?;
+        self.commit_body(cut, local_number, local_id, body).await
+    }
+
+    async fn commit_body(
+        &mut self,
+        cut: DurableCommitCutV1,
+        local_number: u64,
+        local_id: BatchLocalEvidenceId,
+        body: UnfinalizedEvidenceV1,
+    ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         let batch = JournalBatchV1::new(vec![body], Vec::new())
             .map_err(|_| DurableCommitError::InvalidState)?;
         let expected_sequence = self
@@ -327,6 +388,7 @@ pub struct RecoveredDurableStateV1 {
     sessions: Option<LogicalSessionRegistryV1>,
     execution_start: Option<DurableExecutionStartV1>,
     execution_state: Option<DurableExecutionStateV1>,
+    cancellation_reason: Option<CancellationReason>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
@@ -374,6 +436,63 @@ impl RecoveredDurableStateV1 {
     #[must_use]
     pub const fn execution_state(&self) -> Option<&DurableExecutionStateV1> {
         self.execution_state.as_ref()
+    }
+
+    /// Returns the first canonical cancellation reason committed by this execution.
+    #[must_use]
+    pub const fn cancellation_reason(&self) -> Option<&CancellationReason> {
+        self.cancellation_reason.as_ref()
+    }
+
+    /// Returns the reconstructed existing evaluator for read-only durable observation.
+    #[must_use]
+    pub const fn machine(&self) -> &Machine {
+        &self.machine
+    }
+
+    /// Returns the reconstructed evaluator for one journal-first durable transition.
+    pub fn machine_mut(&mut self) -> &mut Machine {
+        &mut self.machine
+    }
+
+    /// Returns reconstructed logical sessions for a journal-first durable transition.
+    pub fn sessions_mut(&mut self) -> Option<&mut LogicalSessionRegistryV1> {
+        self.sessions.as_mut()
+    }
+
+    /// Returns the mutable machine and session registry as one borrow for a durable commit.
+    pub fn state_mut(&mut self) -> (&mut Machine, Option<&mut LogicalSessionRegistryV1>) {
+        (&mut self.machine, self.sessions.as_mut())
+    }
+
+    /// Advances authoritative coordinates after a validated semantic commit.
+    pub fn record_semantic_commit(
+        &mut self,
+        commit: &DurableEvidenceCommitV1,
+    ) -> Result<(), DurableEvidenceError> {
+        if commit.evidence_id.kind() != IdentityKind::Evidence
+            || self.latest_sequence.checked_add(1) != Some(commit.sequence)
+        {
+            return Err(DurableEvidenceError::InvalidCausalOrder);
+        }
+        self.latest_sequence = commit.sequence;
+        self.latest_evidence_id = commit.evidence_id;
+        self.latest_cut = commit.cut;
+        Ok(())
+    }
+
+    /// Retains the first reason after its cancellation evidence commits.
+    pub fn record_cancellation_commit(
+        &mut self,
+        reason: CancellationReason,
+        commit: &DurableEvidenceCommitV1,
+    ) -> Result<(), DurableEvidenceError> {
+        if commit.cut != DurableCommitCutV1::Cancellation || self.cancellation_reason.is_some() {
+            return Err(DurableEvidenceError::RepeatedCancellation);
+        }
+        self.record_semantic_commit(commit)?;
+        self.cancellation_reason = Some(reason);
+        Ok(())
     }
 
     /// Advances recovery coordinates after one validated execution-state commit receipt.
@@ -489,6 +608,7 @@ struct PrefixProjection {
     latest: Option<(u64, ProtocolIdentity, DurableLogicalEvidenceV1)>,
     execution_start: Option<DurableExecutionStartV1>,
     execution_state: Option<DurableExecutionStateV1>,
+    committed_cancellation: Option<CancellationReason>,
     known: BTreeSet<ProtocolIdentity>,
     prepared_dispatches: BTreeSet<ProtocolIdentity>,
     latest_prepared: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
@@ -528,6 +648,33 @@ impl PrefixProjection {
             self.record_operation_cut(&evidence, true)?;
             self.known.insert(envelope.evidence_id);
             self.execution_start = Some(start);
+            self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
+            return Ok(());
+        }
+        if envelope.kind.as_ref() == "gantry.cancellation/v1" {
+            let Some((_, predecessor, previous)) = &self.latest else {
+                return Err(DurableEvidenceError::InvalidCausalOrder);
+            };
+            if !envelope.references.contains(predecessor)
+                || envelope
+                    .references
+                    .iter()
+                    .any(|reference| !self.known.contains(reference))
+                || self.committed_cancellation.is_some()
+            {
+                return Err(DurableEvidenceError::RepeatedCancellation);
+            }
+            let cancellation =
+                DurableCancellationEvidenceV1::decode(program, &envelope.canonical_body)?;
+            let evidence = cancellation.state().clone();
+            if evidence.execution_id() != previous.execution_id()
+                || evidence.task_id() != previous.task_id()
+            {
+                return Err(DurableEvidenceError::MixedExecution);
+            }
+            self.record_operation_cut(&evidence, true)?;
+            self.known.insert(envelope.evidence_id);
+            self.committed_cancellation = Some(cancellation.reason().clone());
             self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
             return Ok(());
         }
@@ -665,6 +812,7 @@ impl PrefixProjection {
             sessions,
             execution_start: self.execution_start,
             execution_state: self.execution_state,
+            cancellation_reason: self.committed_cancellation,
             latest_sequence,
             latest_evidence_id,
             latest_cut: evidence.cut,
@@ -820,7 +968,7 @@ impl DurableLogicalEvidenceV1 {
             let result_expected = cut == DurableCommitCutV1::OperationResult;
             if request_expected != operation.request_bytes.is_some()
                 || outcome_expected != operation.outcome.is_some()
-                || retry_errors_expected != !operation.retry_errors.is_empty()
+                || retry_errors_expected == operation.retry_errors.is_empty()
                 || result_expected != operation.result_type.is_some()
                 || result_expected != operation.result_bytes.is_some()
                 || operation
@@ -1050,6 +1198,8 @@ pub enum DurableEvidenceError {
     InvalidOperationTransition,
     /// One dispatch outcome or logical result was committed more than once.
     RepeatedOperationCut,
+    /// More than one cancellation transition appears in one authoritative prefix.
+    RepeatedCancellation,
 }
 
 fn optional_operation(
