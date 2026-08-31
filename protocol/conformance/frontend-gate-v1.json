@@ -73,7 +73,7 @@
     },
     {
       "path": "protocol/conformance/source-substrate-gate-v1.json",
-      "sha256": "6990a891558b8c66c6dc963c9cd2503adb4ab0dbd2f86e461220ee05a9f85d15"
+      "sha256": "3ba120496e8dc913d29b348a1482cdf69f7f270bdd9081e62e08a9ace9a2ee8d"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -97,11 +97,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f878c3ee61c44322148ee8717870175ff8daefd9bca637ed5800b28b19ea1492"
+      "sha256": "f967e68b9f345e00d3b0f60333da258bde9d433fb315d7aaa0bf8f44ce38b395"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "699e09e282e9b1b91722617243a4895942e4ae42257376c54ee9631ee67a6957"
+      "sha256": "aa291257511561f3ce27d546a3aa5a656bf4d71557f34b31d1ef3ac874ce4e58"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

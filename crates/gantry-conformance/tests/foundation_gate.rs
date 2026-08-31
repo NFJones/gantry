@@ -253,7 +253,9 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         return Err("validation commands contain an empty entry".to_owned());
     }
     if manifest.environment_gaps
-        != ["The stable macOS product lane is declared in CI and requires a hosted macOS runner."]
+        != [
+            "The exact Rust 1.97.1 and rolling stable macOS product lanes are declared in CI and require a hosted macOS runner.",
+        ]
     {
         return Err("environment gaps are stale or overbroad".to_owned());
     }
@@ -465,6 +467,7 @@ fn expected_artifacts() -> Vec<&'static str> {
         "crates/gantry-conformance/tests/analyzer_validity_model.rs",
         "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",
         "crates/gantry-conformance/tests/concurrent_executor.rs",
+        "crates/gantry-conformance/tests/concurrent_gate.rs",
         "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
         "crates/gantry-conformance/tests/concurrent_lifecycle.rs",
         "crates/gantry-conformance/tests/concurrent_refinement_model.rs",
@@ -509,6 +512,7 @@ fn expected_artifacts() -> Vec<&'static str> {
         "protocol/conformance/analyzer-validity-v1.json",
         "protocol/conformance/analyzer-workflows-v1.json",
         "protocol/conformance/concurrent-executor-v1.json",
+        "protocol/conformance/concurrent-gate-v1.json",
         "protocol/conformance/concurrent-handle-ownership-v1.json",
         "protocol/conformance/concurrent-lifecycle-v1.json",
         "protocol/conformance/concurrent-refinement-v1.json",

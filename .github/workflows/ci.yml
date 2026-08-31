@@ -25,7 +25,11 @@ jobs:
           - os: ubuntu-latest
             rust: 1.91.0
           - os: ubuntu-latest
+            rust: 1.97.1
+          - os: ubuntu-latest
             rust: stable
+          - os: macos-latest
+            rust: 1.97.1
           - os: macos-latest
             rust: stable
     runs-on: ${{ matrix.os }}

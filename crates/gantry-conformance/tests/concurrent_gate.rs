@@ -1,6 +1,6 @@
-//! Independent validation of the sequential evaluator and embedding gate.
+//! Independent validation of the concurrent evaluator profile gate.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,8 +9,8 @@ use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const MANIFEST_PATH: &str = "protocol/conformance/sequential-gate-v1.json";
-const REVIEW_PROFILES: [&str; 2] = ["embedding", "evaluator"];
+const MANIFEST_PATH: &str = "protocol/conformance/concurrent-gate-v1.json";
+const PROFILE: &str = "concurrent-evaluator";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,12 +21,10 @@ struct Manifest {
     specification: FileDigest,
     prerequisites: Vec<Prerequisite>,
     artifacts: Vec<FileDigest>,
-    review_summaries: Vec<ReviewSummary>,
+    review_summary: ReviewSummary,
     evidence_anchor_count: usize,
     section14_excerpt_count: usize,
     semantic_evidence: SemanticEvidence,
-    unsupported_concurrency_evidence: String,
-    cli_evidence: String,
     required_evidence: Vec<String>,
     claim: Claim,
     validation_commands: Vec<String>,
@@ -118,11 +116,16 @@ struct Section14Excerpt {
 }
 
 #[derive(Debug, Deserialize)]
+struct SequentialGate {
+    artifacts: Vec<FileDigest>,
+}
+
+#[derive(Debug, Deserialize)]
 struct RefinementManifest {
     format: String,
     specification_sha256: String,
     issue: String,
-    profiles: Vec<String>,
+    profile: String,
     argument: String,
     model: String,
     model_evidence: String,
@@ -132,14 +135,13 @@ struct RefinementManifest {
 }
 
 #[derive(Debug, Deserialize)]
-struct SequentialModel {
+struct ConcurrentModel {
     format: String,
     maximum_depth: usize,
     explored_state_count: usize,
     terminal_state_count: usize,
     obligations: Vec<String>,
     assumptions: Vec<String>,
-    host_wait_states: Vec<String>,
     counterexamples: Vec<Counterexample>,
 }
 
@@ -152,14 +154,14 @@ struct Counterexample {
 }
 
 #[test]
-fn checked_in_sequential_profile_gate_is_current() {
+fn checked_in_concurrent_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
     assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
-fn sequential_profile_gate_rejects_stale_overclaimed_and_incomplete_evidence() {
+fn concurrent_gate_rejects_stale_overclaimed_and_incomplete_evidence() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
 
@@ -174,21 +176,21 @@ fn sequential_profile_gate_rejects_stale_overclaimed_and_incomplete_evidence() {
     overclaimed
         .claim
         .profiles
-        .push("concurrent-evaluator".to_owned());
+        .push("durable-runtime".to_owned());
     assert!(
         validate_manifest(&root, &overclaimed)
-            .is_err_and(|message| message.contains("sequential claim is invalid"))
+            .is_err_and(|message| message.contains("concurrent claim is invalid"))
     );
 
     let mut missing = manifest.clone();
     missing.required_evidence.pop();
     assert!(
         validate_manifest(&root, &missing)
-            .is_err_and(|message| message.contains("required sequential evidence is incomplete"))
+            .is_err_and(|message| message.contains("required concurrent evidence is incomplete"))
     );
 
     let mut inconsistent = manifest;
-    inconsistent.review_summaries[0].covered_count += 1;
+    inconsistent.review_summary.covered_count += 1;
     assert!(
         validate_manifest(&root, &inconsistent)
             .is_err_and(|message| message.contains("review summary differs"))
@@ -196,37 +198,34 @@ fn sequential_profile_gate_rejects_stale_overclaimed_and_incomplete_evidence() {
 }
 
 fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
-    if manifest.format != "gantry.sequential-gate-evidence/v1"
-        || manifest.gate != "GNT-GATE-400"
+    if manifest.format != "gantry.concurrent-gate-evidence/v1"
+        || manifest.gate != "GNT-GATE-500"
         || manifest.status != "verified"
     {
-        return Err("sequential gate identity or status is invalid".to_owned());
+        return Err("concurrent gate identity or status is invalid".to_owned());
     }
-    let advertised_profiles_are_valid = if gantry::compiled_features().concurrent {
-        gantry::advertised_profiles()
-            == [
+    let claimed = [
+        "analyzer",
+        "concurrent-evaluator",
+        "embedding",
+        "evaluator",
+        "frontend",
+    ];
+    if manifest.claim.profiles != claimed
+        || manifest.claim.advertises_profiles != claimed
+        || manifest.claim.excludes_profiles != ["durable-runtime"]
+        || manifest.claim.excludes_capabilities != ["journal", "resume"]
+        || gantry::advertised_profiles()
+            != [
                 ConformanceProfile::Analyzer,
                 ConformanceProfile::ConcurrentEvaluator,
                 ConformanceProfile::Embedding,
                 ConformanceProfile::Evaluator,
                 ConformanceProfile::Frontend,
             ]
-    } else {
-        gantry::advertised_profiles()
-            == [
-                ConformanceProfile::Analyzer,
-                ConformanceProfile::Embedding,
-                ConformanceProfile::Evaluator,
-                ConformanceProfile::Frontend,
-            ]
-    };
-    if manifest.claim.profiles != ["analyzer", "embedding", "evaluator", "frontend"]
-        || manifest.claim.advertises_profiles != manifest.claim.profiles
-        || manifest.claim.excludes_profiles != ["concurrent-evaluator", "durable-runtime"]
-        || manifest.claim.excludes_capabilities != ["journal", "resume"]
-        || !advertised_profiles_are_valid
+        || !gantry::compiled_features().concurrent
     {
-        return Err("sequential claim is invalid or overstates a later profile".to_owned());
+        return Err("concurrent claim is invalid or overstates durability".to_owned());
     }
 
     validate_file_digest(root, &manifest.specification, "specification")?;
@@ -262,55 +261,125 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         }
     }
 
+    let sequential: SequentialGate =
+        read_json(&root.join("protocol/conformance/sequential-gate-v1.json"));
+    for artifact in &sequential.artifacts {
+        validate_file_digest(root, artifact, "delegated sequential artifact")?;
+    }
+    let authenticated_paths = artifact_paths
+        .iter()
+        .copied()
+        .chain(
+            sequential
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.path.as_str()),
+        )
+        .collect::<BTreeSet<_>>();
+
     let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
     let section14: Section14Review =
         read_json(&root.join("protocol/requirements/section14-v1.json"));
     if review.specification_sha256 != manifest.specification.sha256
         || section14.specification_sha256 != manifest.specification.sha256
     {
-        return Err("sequential evidence uses another specification revision".to_owned());
+        return Err("concurrent evidence uses another specification revision".to_owned());
     }
+    validate_reviews(root, manifest, &review, &authenticated_paths)?;
+    validate_section14(root, manifest, &section14, &authenticated_paths)?;
+    validate_semantic_evidence(root, manifest, &authenticated_paths)?;
+    validate_required_evidence(root, manifest, &authenticated_paths)?;
 
-    let summaries = validate_reviews(root, &review, &artifact_paths)?;
-    if manifest.review_summaries.len() != REVIEW_PROFILES.len() {
-        return Err("sequential review summary differs from reviewed applicability".to_owned());
+    validate_sorted_unique(
+        "validation commands",
+        manifest.validation_commands.iter().map(String::as_str),
+    )?;
+    if manifest.validation_commands.is_empty()
+        || manifest.environment_gaps
+            != [
+                "The exact Rust 1.97.1 and rolling stable macOS product lanes execute in hosted CI; this Linux gate run does not claim a local macOS result.",
+            ]
+    {
+        return Err("validation commands or environment gaps are incomplete".to_owned());
     }
-    for summary in &manifest.review_summaries {
-        let actual = summaries
-            .get(summary.profile.as_str())
-            .ok_or_else(|| "sequential review summary has an unknown profile".to_owned())?;
-        if *actual
+    Ok(())
+}
+
+fn validate_reviews(
+    root: &Path,
+    manifest: &Manifest,
+    review: &RequirementReview,
+    artifact_paths: &BTreeSet<&str>,
+) -> Result<(), String> {
+    let mut applicable = 0_usize;
+    let mut covered = 0_usize;
+    let mut not_applicable = 0_usize;
+    let mut anchors = BTreeSet::new();
+    for requirement in &review.requirements {
+        for clause in &requirement.clauses {
+            if !clause.profiles.iter().any(|candidate| candidate == PROFILE) {
+                continue;
+            }
+            applicable += 1;
+            let profile_review = clause
+                .profile_reviews
+                .iter()
+                .find(|profile_review| profile_review.profile == PROFILE)
+                .ok_or_else(|| {
+                    format!(
+                        "concurrent review is missing: {}:{}",
+                        requirement.id, clause.key
+                    )
+                })?;
+            match profile_review.state.as_str() {
+                "covered" if !profile_review.evidence.is_empty() => {
+                    covered += 1;
+                    for evidence in &profile_review.evidence {
+                        anchors.insert(evidence.as_str());
+                        validate_public_test_anchor(root, evidence)?;
+                        require_anchor_artifact(evidence, artifact_paths)?;
+                    }
+                }
+                "not-applicable"
+                    if profile_review.evidence.is_empty()
+                        && profile_review
+                            .rationale
+                            .as_deref()
+                            .is_some_and(|rationale| !rationale.trim().is_empty()) =>
+                {
+                    not_applicable += 1;
+                }
+                _ => {
+                    return Err(format!(
+                        "concurrent review is not closed: {}:{}",
+                        requirement.id, clause.key
+                    ));
+                }
+            }
+        }
+    }
+    let summary = &manifest.review_summary;
+    if summary.profile != PROFILE
+        || (applicable, covered, not_applicable)
             != (
                 summary.applicable_clause_count,
                 summary.covered_count,
                 summary.not_applicable_count,
             )
-            || summary.applicable_clause_count
-                != summary.covered_count + summary.not_applicable_count
-        {
-            return Err("sequential review summary differs from reviewed applicability".to_owned());
-        }
+        || applicable != covered + not_applicable
+        || manifest.evidence_anchor_count != anchors.len()
+    {
+        return Err("concurrent review summary differs from reviewed applicability".to_owned());
     }
-    validate_sorted_unique(
-        "review summary profiles",
-        manifest
-            .review_summaries
-            .iter()
-            .map(|summary| summary.profile.as_str()),
-    )?;
+    Ok(())
+}
 
-    let evidence_anchors = review
-        .requirements
-        .iter()
-        .flat_map(|requirement| &requirement.clauses)
-        .flat_map(|clause| &clause.profile_reviews)
-        .filter(|profile_review| REVIEW_PROFILES.contains(&profile_review.profile.as_str()))
-        .flat_map(|profile_review| profile_review.evidence.iter().map(String::as_str))
-        .collect::<BTreeSet<_>>();
-    if manifest.evidence_anchor_count != evidence_anchors.len() {
-        return Err("sequential evidence anchor count differs".to_owned());
-    }
-
+fn validate_section14(
+    root: &Path,
+    manifest: &Manifest,
+    section14: &Section14Review,
+    artifact_paths: &BTreeSet<&str>,
+) -> Result<(), String> {
     if manifest.section14_excerpt_count != section14.excerpts.len()
         || section14
             .excerpts
@@ -325,86 +394,9 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         .flat_map(|excerpt| &excerpt.evidence)
     {
         validate_public_test_anchor(root, evidence)?;
-        require_anchor_artifact(evidence, &artifact_paths)?;
-    }
-
-    validate_semantic_evidence(root, manifest, &artifact_paths)?;
-    validate_required_evidence(root, manifest, &artifact_paths)?;
-    validate_source_test_anchor(root, &manifest.unsupported_concurrency_evidence)?;
-    validate_source_test_anchor(root, &manifest.cli_evidence)?;
-    require_anchor_artifact(&manifest.unsupported_concurrency_evidence, &artifact_paths)?;
-    require_anchor_artifact(&manifest.cli_evidence, &artifact_paths)?;
-
-    validate_sorted_unique(
-        "validation commands",
-        manifest.validation_commands.iter().map(String::as_str),
-    )?;
-    if manifest.validation_commands.is_empty()
-        || manifest.environment_gaps
-            != [
-                "The stable macOS product lane executes in hosted CI; this Linux gate run does not claim a local macOS result.",
-            ]
-    {
-        return Err("validation commands or environment gaps are incomplete".to_owned());
+        require_anchor_artifact(evidence, artifact_paths)?;
     }
     Ok(())
-}
-
-fn validate_reviews(
-    root: &Path,
-    review: &RequirementReview,
-    artifact_paths: &BTreeSet<&str>,
-) -> Result<BTreeMap<&'static str, (usize, usize, usize)>, String> {
-    let mut summaries = BTreeMap::new();
-    for profile in REVIEW_PROFILES {
-        let mut applicable = 0_usize;
-        let mut covered = 0_usize;
-        let mut not_applicable = 0_usize;
-        for requirement in &review.requirements {
-            for clause in &requirement.clauses {
-                if !clause.profiles.iter().any(|candidate| candidate == profile) {
-                    continue;
-                }
-                applicable += 1;
-                let profile_review = clause
-                    .profile_reviews
-                    .iter()
-                    .find(|profile_review| profile_review.profile == profile)
-                    .ok_or_else(|| {
-                        format!(
-                            "{profile} review is missing: {}:{}",
-                            requirement.id, clause.key
-                        )
-                    })?;
-                match profile_review.state.as_str() {
-                    "covered" if !profile_review.evidence.is_empty() => {
-                        covered += 1;
-                        for evidence in &profile_review.evidence {
-                            validate_public_test_anchor(root, evidence)?;
-                            require_anchor_artifact(evidence, artifact_paths)?;
-                        }
-                    }
-                    "not-applicable"
-                        if profile_review.evidence.is_empty()
-                            && profile_review
-                                .rationale
-                                .as_deref()
-                                .is_some_and(|rationale| !rationale.trim().is_empty()) =>
-                    {
-                        not_applicable += 1;
-                    }
-                    _ => {
-                        return Err(format!(
-                            "{profile} review is not closed: {}:{}",
-                            requirement.id, clause.key
-                        ));
-                    }
-                }
-            }
-        }
-        summaries.insert(profile, (applicable, covered, not_applicable));
-    }
-    Ok(summaries)
 }
 
 fn validate_semantic_evidence(
@@ -413,15 +405,15 @@ fn validate_semantic_evidence(
     artifact_paths: &BTreeSet<&str>,
 ) -> Result<(), String> {
     let summary = &manifest.semantic_evidence;
-    if summary.manifest != "protocol/conformance/sequential-evaluator-refinement-v1.json"
-        || summary.argument != "docs/sequential-evaluator-refinement.md"
-        || summary.model != "protocol/goldens/sequential-evaluator-model-v1.json"
-        || summary.maximum_depth != 12
-        || summary.explored_state_count != 836
-        || summary.terminal_state_count != 276
-        || summary.counterexample_count != 9
+    if summary.manifest != "protocol/conformance/concurrent-refinement-v1.json"
+        || summary.argument != "docs/concurrent-evaluator-refinement.md"
+        || summary.model != "protocol/goldens/concurrent-refinement-model-v1.json"
+        || summary.maximum_depth != 14
+        || summary.explored_state_count != 9_986
+        || summary.terminal_state_count != 2_482
+        || summary.counterexample_count != 11
     {
-        return Err("sequential semantic evidence summary is invalid".to_owned());
+        return Err("concurrent semantic evidence summary is invalid".to_owned());
     }
     for path in [&summary.manifest, &summary.argument, &summary.model] {
         if !artifact_paths.contains(path.as_str()) {
@@ -430,17 +422,17 @@ fn validate_semantic_evidence(
     }
 
     let refinement: RefinementManifest = read_json(&root.join(&summary.manifest));
-    if refinement.format != "gantry.sequential-evaluator-refinement-evidence/v1"
+    if refinement.format != "gantry.concurrent-refinement-evidence/v1"
         || refinement.specification_sha256 != manifest.specification.sha256
-        || refinement.issue != "GNT-RUN-002"
-        || refinement.profiles != ["embedding", "evaluator"]
+        || refinement.issue != "GNT-CON-005"
+        || refinement.profile != PROFILE
         || refinement.argument != summary.argument
         || refinement.model != summary.model
-        || refinement.trace_evidence.is_empty()
-        || refinement.evidence_manifests.len() != 3
+        || refinement.trace_evidence.len() != 10
+        || refinement.evidence_manifests.len() != 4
         || refinement.exclusions.len() != 4
     {
-        return Err("sequential refinement manifest is incomplete".to_owned());
+        return Err("concurrent refinement manifest is incomplete".to_owned());
     }
     validate_public_test_anchor(root, &refinement.model_evidence)?;
     require_anchor_artifact(&refinement.model_evidence, artifact_paths)?;
@@ -458,43 +450,46 @@ fn validate_semantic_evidence(
     if !refinement
         .exclusions
         .iter()
-        .any(|exclusion| exclusion.contains("Concurrent"))
+        .any(|exclusion| exclusion.contains("Durable"))
         || !refinement
             .exclusions
             .iter()
-            .any(|exclusion| exclusion.contains("Durable"))
+            .any(|exclusion| exclusion.contains("not an unbounded proof"))
     {
-        return Err("sequential refinement exclusions are incomplete".to_owned());
+        return Err("concurrent refinement exclusions are incomplete".to_owned());
     }
 
-    let model: SequentialModel = read_json(&root.join(&summary.model));
-    let obligation_set = model
+    let model: ConcurrentModel = read_json(&root.join(&summary.model));
+    let expected_obligations = [
+        "all-settled-source-order",
+        "cancellation-nonconsumption",
+        "enabled-task-progress",
+        "fixed-outcome-observation-isolation",
+        "foreground-terminal-separation",
+        "linear-handle-ownership",
+        "per-task-transition-order",
+        "shared-machine-refinement",
+        "shutdown-cohort-closure",
+        "task-settlement-at-most-once",
+        "terminal-completion-uniqueness",
+        "weak-fair-runnable-polling",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let actual_obligations = model
         .obligations
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
-    let expected_obligations = [
-        "base-handle-ownership-vacuous",
-        "cancellation-nonconsumption",
-        "enabled-machine-progress",
-        "fixed-outcome-observation-isolation",
-        "lifecycle-linearization",
-        "operation-single-consumption",
-        "terminal-completion-uniqueness",
-        "type-and-store-preservation",
-    ]
-    .into_iter()
-    .collect::<BTreeSet<_>>();
-    if model.format != "gantry.sequential-evaluator-model/v1"
+    if model.format != "gantry.concurrent-refinement-model/v1"
         || model.maximum_depth != summary.maximum_depth
         || model.explored_state_count != summary.explored_state_count
         || model.terminal_state_count != summary.terminal_state_count
         || model.counterexamples.len() != summary.counterexample_count
-        || obligation_set != expected_obligations
+        || actual_obligations != expected_obligations
         || model.assumptions.len() != 4
-        || model.host_wait_states != ["prepared-integration-result", "retry-waiting-timer"]
     {
-        return Err("sequential bounded model summary differs".to_owned());
+        return Err("concurrent bounded model summary differs".to_owned());
     }
     validate_sorted_unique(
         "counterexample ids",
@@ -508,7 +503,7 @@ fn validate_semantic_evidence(
             || counterexample.rejected_action.trim().is_empty()
             || counterexample.invariant.trim().is_empty()
     }) {
-        return Err("sequential counterexample replay is incomplete".to_owned());
+        return Err("concurrent counterexample replay is incomplete".to_owned());
     }
     Ok(())
 }
@@ -520,7 +515,7 @@ fn validate_required_evidence(
 ) -> Result<(), String> {
     let expected = required_evidence();
     if manifest.required_evidence != expected {
-        return Err("required sequential evidence is incomplete".to_owned());
+        return Err("required concurrent evidence is incomplete".to_owned());
     }
     for evidence in &manifest.required_evidence {
         validate_public_test_anchor(root, evidence)?;
@@ -531,41 +526,45 @@ fn validate_required_evidence(
 
 fn required_evidence() -> Vec<String> {
     [
-        "crates/gantry-conformance/tests/activity_observation.rs#canonical_barrier_vectors_keep_required_failure_activity_scoped",
-        "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected",
-        "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe",
-        "crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers",
-        "crates/gantry-conformance/tests/harness.rs#contract_runner_uses_substitutable_adapters_and_aggregates_failures",
-        "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_and_observes_one_sequential_execution",
-        "crates/gantry-conformance/tests/interpreter_lifecycle.rs#panic_boundaries_preserve_origin_and_apply_exact_poisoning",
-        "crates/gantry-conformance/tests/logical_sessions.rs#public_session_establishment_is_idempotent_and_precedes_hook_creation",
-        "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption",
-        "crates/gantry-conformance/tests/scripted_integration.rs#scripted_adapter_exercises_preflight_hook_and_cancellation_contracts",
-        "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact",
-        "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay",
-        "crates/gantry-conformance/tests/start_execution.rs#mapping_and_root_preflight_precede_identity_and_accept_normalized_entry",
+        "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",
+        "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal",
+        "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_detach_transfers_ownership_and_preserves_path_evidence",
+        "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_joinall_waits_for_all_and_reports_source_order",
+        "crates/gantry-conformance/tests/concurrent_handle_ownership.rs#public_named_join_consumes_linearly_and_preserves_analyzer_order",
+        "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_cancellation_abort_terminal_and_shutdown_cohorts_are_exact",
+        "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_concurrent_events_are_canonical_typed_and_causal",
+        "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_spawned_sessions_establish_once_before_child_use",
+        "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay",
+        "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path",
+        "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated",
     ]
     .into_iter()
     .map(str::to_owned)
     .collect()
 }
 
-fn required_artifact_paths() -> [&'static str; 17] {
+fn required_artifact_paths() -> [&'static str; 23] {
     [
         "SPEC.md",
-        "crates/gantry-cli/src/main.rs",
+        "crates/gantry-conformance/tests/concurrent_gate.rs",
+        "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
+        "crates/gantry-conformance/tests/concurrent_lifecycle.rs",
+        "crates/gantry-conformance/tests/concurrent_refinement_model.rs",
+        "crates/gantry-conformance/tests/concurrent_task_state.rs",
         "crates/gantry/src/lib.rs",
-        "docs/sequential-evaluator-refinement.md",
+        "docs/concurrent-evaluator-refinement.md",
         "protocol/catalogs/embedding-contracts-v1.json",
         "protocol/catalogs/profiles-v1.json",
-        "protocol/conformance/analyzer-gate-v1.json",
-        "protocol/conformance/execution-observation-v1.json",
-        "protocol/conformance/executor-services-v1.json",
-        "protocol/conformance/interpreter-lifecycle-v1.json",
-        "protocol/conformance/sequential-evaluator-refinement-v1.json",
-        "protocol/goldens/embedding-contracts-v1.canonical.json",
-        "protocol/goldens/sequential-evaluator-model-v1.json",
+        "protocol/conformance/concurrent-executor-v1.json",
+        "protocol/conformance/concurrent-handle-ownership-v1.json",
+        "protocol/conformance/concurrent-lifecycle-v1.json",
+        "protocol/conformance/concurrent-refinement-v1.json",
+        "protocol/conformance/concurrent-task-state-v1.json",
+        "protocol/goldens/concurrent-executor-model-v1.json",
+        "protocol/goldens/concurrent-lifecycle-v1.json",
+        "protocol/goldens/concurrent-refinement-model-v1.json",
         "protocol/publication/artifacts-v1.json",
+        "protocol/conformance/sequential-gate-v1.json",
         "protocol/requirements/generated/requirements-v1.json",
         "protocol/requirements/reviewed-v1.json",
         "protocol/requirements/section14-v1.json",

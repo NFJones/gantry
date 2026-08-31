@@ -37,6 +37,7 @@ struct Lockfile {
 #[serde(deny_unknown_fields)]
 struct Toolchains {
     product_msrv: String,
+    default_toolchain: String,
     current_stable: String,
     fuzz_nightly: String,
 }
@@ -117,6 +118,7 @@ fn validate_shape(root: &Path, ledger: &Ledger) -> Result<(), String> {
         return Err("allowed sources must contain only the crates.io registry".to_owned());
     }
     if ledger.toolchains.product_msrv != "1.91.0"
+        || ledger.toolchains.default_toolchain != "1.97.1"
         || ledger.toolchains.current_stable != "stable"
         || !ledger.toolchains.fuzz_nightly.starts_with("nightly-20")
     {
@@ -304,8 +306,8 @@ fn validate_policy_files(root: &Path, ledger: &Ledger) -> Result<(), String> {
     for (contents, value, name) in [
         (
             &root_toolchain,
-            &ledger.toolchains.product_msrv,
-            "root MSRV",
+            &ledger.toolchains.default_toolchain,
+            "root default toolchain",
         ),
         (
             &fuzz_toolchain,
@@ -324,7 +326,13 @@ fn validate_policy_files(root: &Path, ledger: &Ledger) -> Result<(), String> {
             return Err(format!("{name} pin is absent or stale"));
         }
     }
-    for anchor in ["ubuntu-latest", "macos-latest", "1.91.0", "stable"] {
+    for anchor in [
+        "ubuntu-latest",
+        "macos-latest",
+        "1.91.0",
+        "1.97.1",
+        "stable",
+    ] {
         if !workflow.contains(anchor) {
             return Err(format!(
                 "CI workflow is missing required matrix value {anchor}"

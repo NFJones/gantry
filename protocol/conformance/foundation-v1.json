@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "f878c3ee61c44322148ee8717870175ff8daefd9bca637ed5800b28b19ea1492",
+    "sha256": "f967e68b9f345e00d3b0f60333da258bde9d433fb315d7aaa0bf8f44ce38b395",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -90,7 +90,7 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "22e3a85e49aa5c14c524822797b7802df6707c00acdca706d7515c185f2609b1",
+    "ledger_sha256": "c682d978d9b7ea0c5d0f6d4668cce0a24e357462da01f22b6af1756598a97f36",
     "product_lockfile_sha256": "3099a05348bdcb78d97f956d8c2862af43d187aa80ac3393917c623fe38bd9d9",
     "fuzz_lockfile_sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb",
     "decision_count": 10,
@@ -100,7 +100,7 @@
   "artifacts": [
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "e846617e75c11fb2c8b872b62622675915536bc0f543a0684e5d8e9d7ad1f007"
+      "sha256": "9c4639919ee5c7f0f4c202357ab24dbfa1dbe26d231aa23208554243b3e4544c"
     },
     {
       "path": "Cargo.lock",
@@ -155,6 +155,10 @@
       "sha256": "1816204c44370eb687c4011db01cc70798e26825f36769dc58e1e9bdf60fb57f"
     },
     {
+      "path": "crates/gantry-conformance/tests/concurrent_gate.rs",
+      "sha256": "4392b87ce95cca8260b060eb5a35cf103992d21c47771ce40de7bdc7f3ae8beb"
+    },
+    {
       "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
       "sha256": "52f5db2c5bf5b6c0b375f897aad8178242c8ed3df5784b7602d87245ea40e12f"
     },
@@ -204,7 +208,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/sequential_gate.rs",
-      "sha256": "c3dfd91c13864a55fd2d93e508282e9bf0c32cc70f2b618a7801b72d5e186ebf"
+      "sha256": "1a3b3b5f7a92273129a515c02aa6a0765fdd54596c8cf6e550b8db16cc2733c9"
     },
     {
       "path": "crates/gantry-conformance/tests/sequential_machine.rs",
@@ -272,7 +276,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "22e3a85e49aa5c14c524822797b7802df6707c00acdca706d7515c185f2609b1"
+      "sha256": "c682d978d9b7ea0c5d0f6d4668cce0a24e357462da01f22b6af1756598a97f36"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",
@@ -296,7 +300,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "cad77694cb3ff5e44c058c87fb496866e0b8f48657dc3324d33b973b59fca5f0"
+      "sha256": "ca24cd185e2b50d89832e727aaa05e5d0c36c3d0c648863f18ed0020c52531d8"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -329,6 +333,10 @@
     {
       "path": "protocol/conformance/concurrent-executor-v1.json",
       "sha256": "ddc5a1d660a69e67a2e0943fe81d861c8adca59d92e1d5fb02fe9875af279374"
+    },
+    {
+      "path": "protocol/conformance/concurrent-gate-v1.json",
+      "sha256": "b94d6b49ef1b1d2164c282233b1eb2b3bea2c1ddb25cec360e3dd24b7bcbd12c"
     },
     {
       "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
@@ -380,7 +388,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "1e94e503b002d992e9b6e232f1a6e7adba0df9546050e9ee4bac1b44b9626a98"
+      "sha256": "586debfb467ad8894a5725d7c215a4940c2766432a96e4725d8444895da39cf0"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",
@@ -500,11 +508,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f878c3ee61c44322148ee8717870175ff8daefd9bca637ed5800b28b19ea1492"
+      "sha256": "f967e68b9f345e00d3b0f60333da258bde9d433fb315d7aaa0bf8f44ce38b395"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "699e09e282e9b1b91722617243a4895942e4ae42257376c54ee9631ee67a6957"
+      "sha256": "aa291257511561f3ce27d546a3aa5a656bf4d71557f34b31d1ef3ac874ce4e58"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -596,7 +604,7 @@
     },
     {
       "path": "rust-toolchain.toml",
-      "sha256": "d77718ea6bac6c35c4bebcf784a65531b890abb6155e7014af9e074cd64b23de"
+      "sha256": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e"
     },
     {
       "path": "third_party/unicode/16.0.0/LICENSE",
@@ -651,6 +659,11 @@
       "id": "concurrent-lifecycle",
       "kind": "public-facade-and-reviewed-evidence",
       "path": "crates/gantry-conformance/tests/concurrent_lifecycle.rs"
+    },
+    {
+      "id": "concurrent-profile-gate",
+      "kind": "profile-gate-and-reviewed-evidence",
+      "path": "crates/gantry-conformance/tests/concurrent_gate.rs"
     },
     {
       "id": "concurrent-refinement",
@@ -761,6 +774,6 @@
     "timeout 180 just test"
   ],
   "environment_gaps": [
-    "The stable macOS product lane is declared in CI and requires a hosted macOS runner."
+    "The exact Rust 1.97.1 and rolling stable macOS product lanes are declared in CI and require a hosted macOS runner."
   ]
 }

@@ -72,19 +72,16 @@ fn main() {
 }
 
 fn bundled_sqlite_metadata() -> (PathBuf, PathBuf) {
-    let library_directory = env::split_paths(
-        &env::var_os("LD_LIBRARY_PATH")
-            .unwrap_or_else(|| panic!("Cargo did not provide a native library search path")),
-    )
-    .find(|path| path.join("libsqlite3.a").is_file())
-    .unwrap_or_else(|| panic!("could not locate Cargo's bundled libsqlite3.a"));
-    let build_directory = library_directory
+    let out_directory = PathBuf::from(
+        env::var_os("OUT_DIR").unwrap_or_else(|| panic!("Cargo did not provide OUT_DIR")),
+    );
+    let build_directory = out_directory
         .parent()
         .and_then(|path| path.parent())
-        .unwrap_or_else(|| panic!("bundled SQLite library path has no Cargo build directory"));
-    let expected_library = format!("cargo:lib_dir={}", library_directory.display());
+        .unwrap_or_else(|| panic!("conformance output has no Cargo build directory"));
     let entries = fs::read_dir(build_directory)
         .unwrap_or_else(|error| panic!("could not inspect Cargo build metadata: {error}"));
+    let mut candidates = Vec::new();
     for entry in entries.flatten() {
         if !entry
             .file_name()
@@ -97,16 +94,30 @@ fn bundled_sqlite_metadata() -> (PathBuf, PathBuf) {
         let Ok(contents) = fs::read_to_string(metadata) else {
             continue;
         };
-        if !contents.lines().any(|line| line == expected_library) {
+        let Some(library_directory) = contents
+            .lines()
+            .find_map(|line| line.strip_prefix("cargo:lib_dir="))
+            .map(PathBuf::from)
+            .filter(|path| path.join("libsqlite3.a").is_file())
+        else {
             continue;
-        }
-        let include = contents
+        };
+        let Some(include) = contents
             .lines()
             .find_map(|line| line.strip_prefix("cargo:include="))
             .map(PathBuf::from)
             .filter(|path| path.join("sqlite3.h").is_file())
-            .unwrap_or_else(|| panic!("bundled SQLite metadata has no usable include path"));
-        return (include, library_directory.join("libsqlite3.a"));
+        else {
+            continue;
+        };
+        let modified = fs::metadata(library_directory.join("libsqlite3.a"))
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        candidates.push((modified, include, library_directory));
     }
-    panic!("could not match bundled SQLite library to its Cargo metadata");
+    candidates.sort_by_key(|candidate| candidate.0);
+    let (_, include, library_directory) = candidates
+        .pop()
+        .unwrap_or_else(|| panic!("could not locate Cargo's bundled libsqlite3.a metadata"));
+    (include, library_directory.join("libsqlite3.a"))
 }

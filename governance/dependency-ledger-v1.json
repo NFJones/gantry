@@ -19,6 +19,7 @@
   ],
   "toolchains": {
     "product_msrv": "1.91.0",
+    "default_toolchain": "1.97.1",
     "current_stable": "stable",
     "fuzz_nightly": "nightly-2026-07-01"
   },
