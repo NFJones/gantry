@@ -93,6 +93,9 @@ fn drive(machine: &mut Machine) -> MachineOutcome {
         match machine.step() {
             MachineStep::Transition(_) => {}
             MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+            MachineStep::WaitingSessionScope(scope) => {
+                panic!("unexpected session-scope wait: {:?}", scope.site)
+            }
             MachineStep::WaitingOperation(operation) => {
                 panic!("unexpected operation wait: {}", operation.identity)
             }
@@ -602,6 +605,8 @@ fn operation_results_enforce_nested_types_and_captured_value_limits() {
 
 #[test]
 fn workflow_return_restores_dynamic_agent_and_session_scopes() {
+    let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x24; 32])
+        .unwrap_or_else(|error| panic!("invalid fixture session: {error}"));
     let callee = workflow(
         "crate::callee",
         Vec::new(),
@@ -616,7 +621,7 @@ fn workflow_return_restores_dynamic_agent_and_session_scopes() {
             instruction(
                 1,
                 TypeDescriptor::UNIT,
-                InstructionKind::EnterSession(Arc::from("inner-session")),
+                InstructionKind::EnterSession(Arc::from("inline")),
             ),
             instruction(
                 2,
@@ -640,7 +645,7 @@ fn workflow_return_restores_dynamic_agent_and_session_scopes() {
             instruction(
                 1,
                 TypeDescriptor::UNIT,
-                InstructionKind::EnterSession(Arc::from("outer-session")),
+                InstructionKind::EnterSession(Arc::from("inline")),
             ),
             instruction(
                 2,
@@ -655,12 +660,16 @@ fn workflow_return_restores_dynamic_agent_and_session_scopes() {
             instruction(5, TypeDescriptor::UNIT, InstructionKind::Return),
         ],
     );
-    let mut machine = new_machine(
+    let mut machine = Machine::new_with_context(
         program(vec![callee, main]),
-        "crate::main",
+        &path("crate::main"),
         Vec::new(),
+        execution(),
         limits(32, 1, 1, 2, 32),
-    );
+        None,
+        Some(session),
+    )
+    .unwrap_or_else(|error| panic!("machine construction failed: {error:?}"));
     let operation = loop {
         match machine.step() {
             MachineStep::Transition(MachineLabel::OperationPrepared(operation)) => {
@@ -671,7 +680,7 @@ fn workflow_return_restores_dynamic_agent_and_session_scopes() {
         }
     };
     assert_eq!(operation.active_agent.as_deref(), Some("outer-agent"));
-    assert_eq!(operation.active_session.as_deref(), Some("outer-session"));
+    assert_eq!(operation.active_session, Some(session));
 }
 
 #[test]

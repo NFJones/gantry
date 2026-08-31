@@ -143,6 +143,8 @@ pub struct ActionInventory {
     pub path: CanonicalPath,
     /// Canonical action signature including parameter names and recovery class.
     pub signature: CanonicalSignature,
+    /// Declaration-order typed action parameters.
+    pub parameters: Vec<crate::ActionParameter>,
     /// Declared recovery class.
     pub recovery: RecoveryClass,
     /// Exact declared result type, including implicit `Unit`.

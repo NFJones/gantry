@@ -4,8 +4,11 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gantry::host::contracts::{
-    HostError, HostFuture, IdentitySource, InclusiveJitterRange, JitterSource, UtcClock,
+    EmbeddingVersion, HookFactory, HostError, HostFuture, HostRequest, HostResponse,
+    IdentitySource, InclusiveJitterRange, IntegrationPreflight, JitterSource, OperationHook,
+    UtcClock,
 };
+use gantry::host::embedding::EmbeddingOperation;
 use gantry::portable::IdentityKind;
 use gantry::timestamp::UtcTimestamp;
 
@@ -37,6 +40,61 @@ pub(crate) struct SystemJitterSource;
 impl JitterSource for SystemJitterSource {
     fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
         sample_inclusive_with(range, getrandom::fill)
+    }
+}
+
+/// CLI-private integration used for preflight and deterministic packages.
+pub(crate) struct CliIntegration;
+
+impl IntegrationPreflight for CliIntegration {
+    fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        let operation = request.operation();
+        let response = match operation {
+            EmbeddingOperation::ResolveMappings => {
+                let bytes = request.canonical_bytes();
+                let actions = !contains(bytes, b"\"action_signatures\":[]");
+                let agents = !contains(bytes, b"\"agent_names\":[]");
+                match (actions, agents) {
+                    (true, true) => b"{\"action_mapping_revision\":\"cli-actions-v1\",\"agent_mapping_revision\":\"cli-agents-v1\",\"result\":\"resolved\"}".as_slice(),
+                    (true, false) => b"{\"action_mapping_revision\":\"cli-actions-v1\",\"result\":\"resolved\"}".as_slice(),
+                    (false, true) => b"{\"agent_mapping_revision\":\"cli-agents-v1\",\"result\":\"resolved\"}".as_slice(),
+                    (false, false) => b"{\"result\":\"resolved\"}".as_slice(),
+                }
+            }
+            EmbeddingOperation::ResolveSessions => b"{\"result\":\"resolved\"}",
+            EmbeddingOperation::EstablishSession => b"{\"result\":\"established\"}",
+            _ => {
+                return Box::pin(async {
+                    Err(integration_failure("unsupported-preflight-operation"))
+                });
+            }
+        };
+        Box::pin(async move {
+            HostResponse::new(EmbeddingVersion::V1, operation, Arc::from(response))
+                .map_err(|_| integration_failure("invalid-cli-response"))
+        })
+    }
+}
+
+impl HookFactory for CliIntegration {
+    fn create_hook<'a>(
+        &'a self,
+        _request: HostRequest,
+    ) -> HostFuture<'a, Result<Box<dyn OperationHook>, HostError>> {
+        Box::pin(async { Err(integration_failure("cli-hook-unconfigured")) })
+    }
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+fn integration_failure(code: &'static str) -> HostError {
+    HostError {
+        code: Arc::from(code),
+        protected_diagnostic: None,
     }
 }
 

@@ -36,6 +36,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry", "gantry-observe"),
     ("gantry", "gantry-runtime"),
     ("gantry-cli", "gantry"),
+    ("gantry-cli", "gantry-adapter-tokio"),
     ("gantry-conformance", "gantry"),
     ("gantry-conformance", "gantry-adapter-tokio"),
     ("gantry-adapter-tokio", "gantry-host"),
@@ -294,7 +295,7 @@ mod tests {
                 &["gantry-core", "gantry-frontend", "gantry-ir"],
             ),
             package("gantry-adapter-tokio", true, &["gantry-host"]),
-            package("gantry-cli", true, &["gantry"]),
+            package("gantry-cli", true, &["gantry", "gantry-adapter-tokio"]),
             package(
                 "gantry-conformance",
                 true,

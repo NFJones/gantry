@@ -1612,6 +1612,38 @@ impl<'a> Machine<'a> {
         if !machine.at_end() {
             return Err(machine.expected("end of interpolation"));
         }
+        let Some(root_index) = machine.nodes.len().checked_sub(1) else {
+            return Err(machine.invariant_fault());
+        };
+        if !matches!(
+            machine.nodes.get(root_index).map(SyntaxNode::form),
+            Some(SyntaxForm::InterpolationExpression)
+        ) {
+            return Err(self.invariant_fault());
+        }
+        let base = self.nodes.len();
+        for node in machine.nodes {
+            let mut children = Vec::with_capacity(node.children().len());
+            for child in node.children() {
+                children.push(NodeId::from_index(
+                    base.checked_add(child.index())
+                        .ok_or_else(|| self.invariant_fault())?,
+                ));
+            }
+            self.nodes.push(SyntaxNode::new(
+                node.form().clone(),
+                node.span().clone(),
+                children,
+            ));
+        }
+        let root = NodeId::from_index(
+            base.checked_add(root_index)
+                .ok_or_else(|| self.invariant_fault())?,
+        );
+        let Some(parent) = self.open.last_mut() else {
+            return Err(self.invariant_fault());
+        };
+        parent.children.push(root);
         Ok(())
     }
 

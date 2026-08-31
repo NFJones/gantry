@@ -104,7 +104,7 @@ pub fn analyze_package_types_with_artifact_limits(
         .chain(&type_diagnostics)
         .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error);
     let schema_result = if has_semantic_errors {
-        Ok((None, None))
+        Ok((None, None, None))
     } else {
         analyze_generated_schemas(
             phase.parsed_sources(),
@@ -113,6 +113,7 @@ pub fn analyze_package_types_with_artifact_limits(
             &workflows,
             artifact_limits,
         )
+        .map(|(entry, schemas, shapes)| (entry, schemas, Some(shapes)))
     };
 
     facts.sort_by(|left, right| left.span.cmp(&right.span));
@@ -140,7 +141,7 @@ pub fn analyze_package_types_with_artifact_limits(
     } else {
         AnalysisStatus::Valid
     };
-    let (entry, schemas) = match schema_result {
+    let (entry, schemas, declared_value_shapes) = match schema_result {
         Ok(inventory) => inventory,
         Err(SchemaAnalysisError::ResourceLimit(error)) => {
             return Err(AnalysisError::ResourceLimit {
@@ -173,6 +174,7 @@ pub fn analyze_package_types_with_artifact_limits(
             &body_types,
             entry.as_ref().ok_or(AnalysisError::Invariant)?,
             &workflows,
+            &actions,
         )?;
         (
             Some(artifacts.manifest),
@@ -200,6 +202,7 @@ pub fn analyze_package_types_with_artifact_limits(
         actions,
         entry,
         schemas,
+        declared_value_shapes,
         manifest,
         canonical_ir,
         executable,

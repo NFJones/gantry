@@ -11,9 +11,11 @@ use gantry_core::unicode::{is_white_space, to_full_lowercase, to_full_uppercase}
 use gantry_core::value::{LogicalValue, LogicalValueView, ValueError, ValueLimitKind, ValueLimits};
 use gantry_ir::generated::Effect;
 use gantry_ir::{
-    AggregateKind, CanonicalPath, Comparison, Instruction, InstructionKind, LoopPhase,
-    MachineProgram, Primitive, Projection, StructuralPosition, TypeDescriptor,
+    AggregateKind, CanonicalPath, Comparison, ExecutableOperation, Instruction, InstructionKind,
+    LoopPhase, MachineProgram, Primitive, Projection, StructuralPosition, TypeDescriptor,
 };
+
+use crate::session::SessionCreationModeV1;
 
 /// Finite positive limits captured for one machine run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +70,8 @@ impl MachineLimits {
 pub enum RuntimeCode {
     /// One closed deterministic primitive failure from the portable catalog.
     Deterministic(DeterministicEvaluationCode),
+    /// One typed integration-operation failure from the portable catalog.
+    Operation(gantry_core::portable::RuntimeErrorCategory),
     /// The deterministic-transition execution budget is exhausted.
     DeterministicTransitionBudget,
     /// The logical-operation execution budget is exhausted.
@@ -88,6 +92,7 @@ impl RuntimeCode {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::Deterministic(code) => code.wire_name(),
+            Self::Operation(category) => category.wire_name(),
             Self::DeterministicTransitionBudget => "deterministic-transition-budget",
             Self::OperationBudget => "operation-budget",
             Self::LoopIterationBudget => "loop-iteration-budget",
@@ -120,6 +125,8 @@ pub enum MachineBuildError {
     ArgumentType,
     /// The identity is not an execution identity.
     InvalidExecutionIdentity,
+    /// The initial logical-session identity is not a session identity.
+    InvalidSessionIdentity,
     /// One initial argument violates the effective value limits.
     Value(ValueError),
     /// The base sequential profile does not support this reachable effect.
@@ -131,6 +138,8 @@ pub enum MachineBuildError {
 pub enum MachineStatus {
     /// A deterministic transition is enabled.
     Running,
+    /// One lexical `fork` or `new` scope awaits session creation.
+    WaitingSessionScope,
     /// One prepared operation awaits a host-selected result.
     WaitingOperation,
     /// The configured transition quantum requires an executor yield.
@@ -167,10 +176,42 @@ pub struct OperationOccurrence {
     pub dynamic_path: Arc<[Arc<str>]>,
     /// Exact expected result type.
     pub expected_type: TypeDescriptor,
+    /// Analyzer-resolved hook metadata when this came from package lowering.
+    pub metadata: Option<Arc<ExecutableOperation>>,
+    /// Completed source inputs captured in left-to-right order.
+    pub inputs: Arc<[LogicalValue]>,
     /// Active agent selection, when present.
     pub active_agent: Option<Arc<str>>,
     /// Active logical session, when present.
-    pub active_session: Option<Arc<str>>,
+    pub active_session: Option<ProtocolIdentity>,
+}
+
+/// One lexical session scope awaiting runtime-owned child-session creation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SessionScopeOccurrence {
+    /// Canonical containing workflow.
+    pub workflow: CanonicalPath,
+    /// Canonical lexical session site.
+    pub site: StructuralPosition,
+    /// Active enclosing logical session.
+    pub parent_session_id: ProtocolIdentity,
+    /// Stable dynamic occurrence number for this static site.
+    pub occurrence: u64,
+    /// Requested child-session creation mode.
+    pub mode: SessionCreationModeV1,
+}
+
+/// Rejection while completing one pending lexical session scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionScopeCompletionError {
+    /// No lexical session scope is awaiting completion.
+    NotWaiting,
+    /// The supplied occurrence is not the pending lexical scope.
+    OccurrenceMismatch,
+    /// The supplied child identity is not a logical-session identity.
+    InvalidSessionIdentity,
+    /// Cancellation made the pending scope nonconsumable.
+    Cancelled,
 }
 
 /// Rejection of a host result supplied for a logical operation.
@@ -227,6 +268,8 @@ pub enum MachineLabel {
 pub enum MachineStep {
     /// One abstract transition completed.
     Transition(MachineLabel),
+    /// One lexical session scope awaits child-session creation.
+    WaitingSessionScope(SessionScopeOccurrence),
     /// Host dispatch remains pending for this operation.
     WaitingOperation(OperationOccurrence),
     /// The caller must cooperatively yield before further transitions.
@@ -254,7 +297,7 @@ struct WorkflowFrame {
     agent_stack_base: usize,
     agent_at_entry: Option<Arc<str>>,
     session_stack_base: usize,
-    session_at_entry: Option<Arc<str>>,
+    session_at_entry: Option<ProtocolIdentity>,
 }
 
 #[derive(Clone, Debug)]
@@ -276,12 +319,13 @@ pub struct Machine {
     source_loop_entries: BTreeMap<String, u64>,
     agent: Option<Arc<str>>,
     agent_stack: Vec<Option<Arc<str>>>,
-    session: Option<Arc<str>>,
-    session_stack: Vec<Option<Arc<str>>>,
+    session: Option<ProtocolIdentity>,
+    session_stack: Vec<Option<ProtocolIdentity>>,
     remaining_transitions: u64,
     remaining_operations: u64,
     remaining_loop_iterations: u64,
     consecutive_transitions: u64,
+    pending_session_scope: Option<SessionScopeOccurrence>,
     pending_operation: Option<PendingOperation>,
     pending_labels: VecDeque<MachineLabel>,
     cancellation: Option<Arc<str>>,
@@ -298,8 +342,24 @@ impl Machine {
         execution: ProtocolIdentity,
         limits: MachineLimits,
     ) -> Result<Self, MachineBuildError> {
+        Self::new_with_context(program, root, arguments, execution, limits, None, None)
+    }
+
+    /// Creates the root task with its preflight-resolved initial agent and session.
+    pub fn new_with_context(
+        program: Arc<MachineProgram>,
+        root: &CanonicalPath,
+        arguments: Vec<LogicalValue>,
+        execution: ProtocolIdentity,
+        limits: MachineLimits,
+        initial_agent: Option<Arc<str>>,
+        initial_session: Option<ProtocolIdentity>,
+    ) -> Result<Self, MachineBuildError> {
         if execution.kind() != IdentityKind::Execution {
             return Err(MachineBuildError::InvalidExecutionIdentity);
+        }
+        if initial_session.is_some_and(|session| session.kind() != IdentityKind::Session) {
+            return Err(MachineBuildError::InvalidSessionIdentity);
         }
         let root_index = program
             .workflow_index(root)
@@ -349,14 +409,15 @@ impl Machine {
             occurrences: Vec::new(),
             counters: BTreeMap::new(),
             source_loop_entries: BTreeMap::new(),
-            agent: None,
+            agent: initial_agent,
             agent_stack: Vec::new(),
-            session: None,
+            session: initial_session,
             session_stack: Vec::new(),
             remaining_transitions: limits.maximum_deterministic_transitions,
             remaining_operations: limits.maximum_operations,
             remaining_loop_iterations: limits.maximum_loop_iterations,
             consecutive_transitions: 0,
+            pending_session_scope: None,
             pending_operation: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
@@ -407,6 +468,58 @@ impl Machine {
         true
     }
 
+    /// Enters one pending lexical session scope after its child was recorded and established.
+    pub fn complete_session_scope(
+        &mut self,
+        occurrence: &SessionScopeOccurrence,
+        session: ProtocolIdentity,
+    ) -> Result<MachineLabel, SessionScopeCompletionError> {
+        let pending = self
+            .pending_session_scope
+            .as_ref()
+            .ok_or(SessionScopeCompletionError::NotWaiting)?;
+        if pending != occurrence {
+            return Err(SessionScopeCompletionError::OccurrenceMismatch);
+        }
+        if session.kind() != IdentityKind::Session {
+            return Err(SessionScopeCompletionError::InvalidSessionIdentity);
+        }
+        if self.cancellation.is_some() {
+            return Err(SessionScopeCompletionError::Cancelled);
+        }
+        self.session_stack.push(self.session.replace(session));
+        self.advance_pc();
+        self.pending_session_scope = None;
+        self.status = MachineStatus::Running;
+        self.consecutive_transitions = 0;
+        let label = MachineLabel::Deterministic {
+            workflow: occurrence.workflow.clone(),
+            site: occurrence.site.clone(),
+            kind: Arc::from("session-enter"),
+        };
+        Ok(label)
+    }
+
+    /// Fails one pending lexical session scope before its body becomes active.
+    pub fn fail_session_scope(
+        &mut self,
+        occurrence: &SessionScopeOccurrence,
+        code: RuntimeCode,
+    ) -> Result<MachineLabel, SessionScopeCompletionError> {
+        let pending = self
+            .pending_session_scope
+            .as_ref()
+            .ok_or(SessionScopeCompletionError::NotWaiting)?;
+        if pending != occurrence {
+            return Err(SessionScopeCompletionError::OccurrenceMismatch);
+        }
+        self.pending_session_scope = None;
+        match self.fail_at(code, occurrence.workflow.clone(), occurrence.site.clone()) {
+            MachineStep::Transition(label) => Ok(label),
+            _ => unreachable!("session-scope failure emits one transition"),
+        }
+    }
+
     /// Supplies one normalized result for the exact pending logical operation.
     pub fn complete_operation(
         &mut self,
@@ -441,6 +554,39 @@ impl Machine {
         Ok(MachineLabel::OperationResult { operation })
     }
 
+    /// Fails the exact pending logical operation with one portable runtime category.
+    pub fn fail_operation(
+        &mut self,
+        operation: ProtocolIdentity,
+        category: gantry_core::portable::RuntimeErrorCategory,
+    ) -> Result<MachineLabel, OperationCompletionError> {
+        self.fail_operation_with_code(operation, RuntimeCode::Operation(category))
+    }
+
+    /// Fails the exact pending logical operation with one typed runtime code.
+    pub fn fail_operation_with_code(
+        &mut self,
+        operation: ProtocolIdentity,
+        code: RuntimeCode,
+    ) -> Result<MachineLabel, OperationCompletionError> {
+        let pending = self
+            .pending_operation
+            .as_ref()
+            .ok_or(OperationCompletionError::NotWaiting)?;
+        if pending.occurrence.identity != operation {
+            return Err(OperationCompletionError::IdentityMismatch);
+        }
+        if self.cancellation.is_some() {
+            return Err(OperationCompletionError::Cancelled);
+        }
+        let workflow = pending.occurrence.workflow.clone();
+        let site = pending.occurrence.site.clone();
+        match self.fail_at(code, workflow, site) {
+            MachineStep::Transition(label) => Ok(label),
+            _ => unreachable!("operation failure emits one transition"),
+        }
+    }
+
     /// Takes the next unique deterministic or operation-preparation transition.
     pub fn step(&mut self) -> MachineStep {
         loop {
@@ -454,6 +600,12 @@ impl Machine {
                 return self.finish_cancelled(reason);
             }
             match self.status {
+                MachineStatus::WaitingSessionScope => {
+                    let occurrence = self.pending_session_scope.clone().unwrap_or_else(|| {
+                        unreachable!("waiting status retains one session scope")
+                    });
+                    return MachineStep::WaitingSessionScope(occurrence);
+                }
                 MachineStatus::WaitingOperation => {
                     let occurrence = self
                         .pending_operation
@@ -534,9 +686,14 @@ impl Machine {
             InstructionKind::OperationWithOperands { operands } => {
                 return self.prepare_operation(workflow, instruction, operands);
             }
+            InstructionKind::OperationCall { operands, .. } => {
+                return self.prepare_operation(workflow, instruction, operands);
+            }
             InstructionKind::EnterAgent(agent) => self.enter_agent(agent),
             InstructionKind::ExitAgent => self.exit_agent(),
-            InstructionKind::EnterSession(session) => self.enter_session(session),
+            InstructionKind::EnterSession(mode) => {
+                return self.enter_session(workflow, site, &mode);
+            }
             InstructionKind::ExitSession => self.exit_session(),
             InstructionKind::CancellationCheck => unreachable!("checks are consumed by step"),
         };
@@ -944,7 +1101,7 @@ impl Machine {
             agent_stack_base: self.agent_stack.len(),
             agent_at_entry: self.agent.clone(),
             session_stack_base: self.session_stack.len(),
-            session_at_entry: self.session.clone(),
+            session_at_entry: self.session,
         });
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
@@ -996,9 +1153,16 @@ impl Machine {
         if self.remaining_operations == 0 {
             return self.fail_at(RuntimeCode::OperationBudget, workflow, instruction.site);
         }
-        if self.peek_operands(operands).is_err() {
-            return self.fail_at(RuntimeCode::InternalInvariant, workflow, instruction.site);
-        }
+        let inputs = match self.peek_operands(operands) {
+            Ok(inputs) => Arc::from(inputs.to_vec()),
+            Err(_) => {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, instruction.site);
+            }
+        };
+        let metadata = match &instruction.kind {
+            InstructionKind::OperationCall { operation, .. } => Some(Arc::new(operation.clone())),
+            _ => None,
+        };
         let operation_frame = self.next_occurrence("operation", &workflow, &instruction.site, None);
         let mut path = self.occurrences.clone();
         path.push(operation_frame);
@@ -1017,8 +1181,10 @@ impl Machine {
             site: instruction.site,
             dynamic_path: Arc::from(path),
             expected_type: instruction.ty,
+            metadata,
+            inputs,
             active_agent: self.agent.clone(),
-            active_session: self.session.clone(),
+            active_session: self.session,
         };
         self.pending_operation = Some(PendingOperation {
             occurrence: occurrence.clone(),
@@ -1049,11 +1215,42 @@ impl Machine {
         Ok(())
     }
 
-    fn enter_session(&mut self, session: Arc<str>) -> Result<(), RuntimeCode> {
-        self.charge_transition()?;
-        self.session_stack.push(self.session.replace(session));
-        self.advance_pc();
-        Ok(())
+    fn enter_session(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        mode: &str,
+    ) -> MachineStep {
+        if let Err(code) = self.charge_transition() {
+            return self.fail_at(code, workflow, site);
+        }
+        if mode == "inline" {
+            self.session_stack.push(self.session);
+            self.advance_pc();
+            return self.finish_deterministic(workflow, site, Arc::from("session-enter"));
+        }
+        let Some(parent_session_id) = self.session else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let mode = match mode {
+            "fork" => SessionCreationModeV1::Fork,
+            "new" => SessionCreationModeV1::New,
+            _ => return self.fail_at(RuntimeCode::InternalInvariant, workflow, site),
+        };
+        let key = self.counter_key("session", &workflow, &site);
+        let occurrence = self.counters.get(&key).copied().unwrap_or(0);
+        self.counters.insert(key, occurrence.saturating_add(1));
+        let pending = SessionScopeOccurrence {
+            workflow,
+            site,
+            parent_session_id,
+            occurrence,
+            mode,
+        };
+        self.pending_session_scope = Some(pending.clone());
+        self.status = MachineStatus::WaitingSessionScope;
+        self.consecutive_transitions = 0;
+        MachineStep::WaitingSessionScope(pending)
     }
 
     fn exit_session(&mut self) -> Result<(), RuntimeCode> {
@@ -1096,6 +1293,7 @@ impl Machine {
 
     fn finish_cancelled(&mut self, reason: Arc<str>) -> MachineStep {
         let outcome = MachineOutcome::Cancelled(reason);
+        self.pending_session_scope = None;
         self.pending_operation = None;
         self.finish_outcome(outcome)
     }
@@ -1143,6 +1341,7 @@ impl Machine {
             workflow,
             site,
         };
+        self.pending_session_scope = None;
         self.pending_operation = None;
         self.status = MachineStatus::Failed;
         let outcome = MachineOutcome::Failed(failure.clone());
@@ -1254,7 +1453,9 @@ fn instruction_name(instruction: &InstructionKind) -> Arc<str> {
         InstructionKind::LeaveOccurrence => "occurrence-exit",
         InstructionKind::Call { .. } => "call",
         InstructionKind::Return => "return",
-        InstructionKind::Operation | InstructionKind::OperationWithOperands { .. } => "operation",
+        InstructionKind::Operation
+        | InstructionKind::OperationWithOperands { .. }
+        | InstructionKind::OperationCall { .. } => "operation",
         InstructionKind::EnterAgent(_) => "agent-enter",
         InstructionKind::ExitAgent => "agent-exit",
         InstructionKind::EnterSession(_) => "session-enter",

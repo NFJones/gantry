@@ -13,7 +13,10 @@ use gantry_ir::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::{AnalysisError, PackageStructure, Symbol, SymbolKind, TypeFact};
+use crate::{
+    AnalysisError, DeclaredEnumVariant, DeclaredStructField, DeclaredValueShape,
+    DeclaredValueShapes, PackageStructure, Symbol, SymbolKind, TypeFact,
+};
 
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 
@@ -41,7 +44,14 @@ pub(crate) fn analyze_generated_schemas(
     structure: &PackageStructure,
     workflows: &[WorkflowFacts],
     limits: ArtifactLimits,
-) -> Result<(Option<EntryInventory>, Option<GeneratedSchemaObject>), SchemaAnalysisError> {
+) -> Result<
+    (
+        Option<EntryInventory>,
+        Option<GeneratedSchemaObject>,
+        DeclaredValueShapes,
+    ),
+    SchemaAnalysisError,
+> {
     let symbols_by_span = structure
         .symbols()
         .iter()
@@ -63,7 +73,7 @@ pub(crate) fn analyze_generated_schemas(
         );
     }
     if roots.is_empty() {
-        return Ok((entry, None));
+        return Ok((entry, None, public_declared_shapes(&shapes)));
     }
 
     let mut entries = Vec::with_capacity(roots.len());
@@ -85,7 +95,7 @@ pub(crate) fn analyze_generated_schemas(
         | SchemaObjectError::InvalidSchemaBytes
         | SchemaObjectError::NoncanonicalOrder => SchemaAnalysisError::Invariant,
     })?;
-    Ok((entry, Some(schemas)))
+    Ok((entry, Some(schemas), public_declared_shapes(&shapes)))
 }
 
 fn collect_entry(
@@ -214,6 +224,41 @@ fn collect_declared_shapes(
         }
     }
     Ok(shapes)
+}
+
+fn public_declared_shapes(shapes: &BTreeMap<CanonicalPath, DeclaredShape>) -> DeclaredValueShapes {
+    DeclaredValueShapes::new(
+        shapes
+            .iter()
+            .map(|(path, shape)| {
+                let shape = match shape {
+                    DeclaredShape::Struct(fields) => DeclaredValueShape::Struct(
+                        fields
+                            .iter()
+                            .map(|field| DeclaredStructField {
+                                name: Arc::clone(&field.name),
+                                ty: field.ty.clone(),
+                                default_json: field
+                                    .default
+                                    .as_ref()
+                                    .map(|value| Arc::from(value.as_bytes())),
+                            })
+                            .collect(),
+                    ),
+                    DeclaredShape::Enum(variants) => DeclaredValueShape::Enum(
+                        variants
+                            .iter()
+                            .map(|(name, payload)| DeclaredEnumVariant {
+                                name: Arc::clone(name),
+                                payload: payload.clone(),
+                            })
+                            .collect(),
+                    ),
+                };
+                (path.clone(), shape)
+            })
+            .collect(),
+    )
 }
 
 fn build_root_schema(

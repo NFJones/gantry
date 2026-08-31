@@ -138,6 +138,9 @@ fn drive(machine: &mut Machine) -> MachineOutcome {
             MachineStep::Transition(_) => {}
             MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
             MachineStep::Complete(outcome) => return outcome,
+            MachineStep::WaitingSessionScope(scope) => {
+                panic!("deterministic fixture requested session scope {scope:?}")
+            }
             MachineStep::WaitingOperation(operation) => {
                 panic!("deterministic fixture requested operation {operation:?}")
             }

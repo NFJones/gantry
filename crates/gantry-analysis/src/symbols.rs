@@ -110,7 +110,7 @@ pub fn analyze_package_structure(
         &mut diagnostics,
     )?;
     let mut bindings = std::mem::take(&mut package.bindings);
-    let agents = collect_agents(
+    let (agents, default_agent) = collect_agents(
         phase.parsed_sources(),
         &package,
         &mut diagnostics,
@@ -132,6 +132,7 @@ pub fn analyze_package_structure(
         package,
         references,
         agents,
+        default_agent,
         diagnostics,
         phase.snapshot().counters().clone(),
     )
@@ -673,7 +674,7 @@ fn collect_agents(
     package: &CollectedPackage,
     diagnostics: &mut Vec<StructuredDiagnostic>,
     bindings: &mut Vec<BindingRecord>,
-) -> Result<Vec<AgentName>, AnalysisError> {
+) -> Result<(Vec<AgentName>, Option<Arc<str>>), AnalysisError> {
     let mut declarations = BTreeMap::<Arc<str>, Vec<SourceSpan>>::new();
     let mut defaults = Vec::<(ModuleId, Arc<str>, SourceSpan)>::new();
     for context in &package.contexts {
@@ -797,13 +798,18 @@ fn collect_agents(
         }
     }
 
-    Ok(declarations
+    let default_agent = defaults
+        .iter()
+        .find(|(module, _, _)| *module == root)
+        .map(|(_, name, _)| Arc::clone(name));
+    let agents = declarations
         .into_iter()
         .map(|(name, mut declarations)| {
             declarations.sort();
             AgentName { name, declarations }
         })
-        .collect())
+        .collect();
+    Ok((agents, default_agent))
 }
 
 /// Enforces member uniqueness and lexical no-shadowing for parameters, local
@@ -1846,6 +1852,7 @@ fn finish_structure(
     package: CollectedPackage,
     references: Vec<ResolvedReference>,
     agents: Vec<AgentName>,
+    default_agent: Option<Arc<str>>,
     mut diagnostics: Vec<StructuredDiagnostic>,
     mut counters: SourceCounters,
 ) -> Result<PackageStructure, AnalysisError> {
@@ -1875,6 +1882,7 @@ fn finish_structure(
         symbols: package.symbols,
         references,
         agents,
+        default_agent,
         diagnostics: retained,
         counters,
     })

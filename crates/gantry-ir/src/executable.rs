@@ -3,11 +3,52 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::generated::Effect;
-use crate::{CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor};
+use crate::generated::{Effect, OperationSiteKind, RecoveryClass};
+use crate::{
+    ActionParameter, CanonicalPath, CanonicalSignature, EffectSet, StructuralPosition,
+    TypeDescriptor,
+};
 use gantry_core::value::{LogicalValue, ValuePathSegment};
 
 use crate::Primitive;
+
+/// Analyzer-resolved action metadata retained by one executable operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableAction {
+    /// Canonical declared action path.
+    pub path: CanonicalPath,
+    /// Canonical declaration signature.
+    pub signature: CanonicalSignature,
+    /// Declared recovery class.
+    pub recovery: RecoveryClass,
+    /// Declaration-order typed parameters.
+    pub parameters: Vec<ActionParameter>,
+}
+
+/// Typed semantic metadata for one executable integration operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableOperation {
+    /// Prompt, decision, or harness-action classification.
+    pub kind: OperationSiteKind,
+    /// Exact successful operation result type before optional `attempt` wrapping.
+    pub result_type: TypeDescriptor,
+    /// Action-specific metadata, present only for an action invocation.
+    pub action: Option<ExecutableAction>,
+    /// Decoded prompt-template literal segments in source order.
+    pub template_segments: Vec<Arc<str>>,
+    /// Static types of interpolation inputs in source order.
+    pub interpolation_types: Vec<TypeDescriptor>,
+    /// Named model-input names in source order.
+    pub named_input_names: Vec<Arc<str>>,
+    /// Static types of named model inputs in source order.
+    pub named_input_types: Vec<TypeDescriptor>,
+    /// Optional source-level validation retry override.
+    pub retry_limit: Option<u64>,
+    /// Optional model session directive (`inline`, `fork`, or `new`).
+    pub session_mode: Option<Arc<str>>,
+    /// Whether source wraps this operation in `attempt`.
+    pub attempted: bool,
+}
 
 /// One analyzed workflow parameter copied into a fresh local root.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -153,6 +194,13 @@ pub enum InstructionKind {
     Operation,
     /// Prepare one logical operation after capturing its completed input values.
     OperationWithOperands {
+        /// Number of left-to-right values retained for immutable request capture.
+        operands: usize,
+    },
+    /// Prepare one analyzer-resolved hook operation after capturing its input values.
+    OperationCall {
+        /// Complete static operation metadata.
+        operation: ExecutableOperation,
         /// Number of left-to-right values retained for immutable request capture.
         operands: usize,
     },

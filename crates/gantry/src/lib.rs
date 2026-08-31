@@ -6,6 +6,8 @@
 
 pub mod diagnostic;
 #[cfg(feature = "evaluator")]
+mod interpreter;
+#[cfg(feature = "evaluator")]
 mod start;
 #[cfg(feature = "frontend")]
 mod validate;
@@ -25,6 +27,10 @@ pub use gantry_ir as ir;
 pub use gantry_observe as observe;
 #[cfg(feature = "evaluator")]
 pub use gantry_runtime as runtime;
+#[cfg(feature = "evaluator")]
+pub use interpreter::{
+    Interpreter, RunExecutionError, ShutdownError, caller_cancellation_reason, root_task_identity,
+};
 pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
 #[cfg(feature = "evaluator")]
 pub use start::{

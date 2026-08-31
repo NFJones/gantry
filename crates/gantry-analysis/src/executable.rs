@@ -12,9 +12,10 @@ use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValuePathSegment};
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::Effect;
 use gantry_ir::{
-    AggregateKind, CanonicalPath, Comparison, EffectSet, EntryInventory, Instruction,
-    InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, ProgramError, Projection,
-    StructuralPosition, TypeDescriptor, Workflow, WorkflowFacts,
+    ActionInventory, AggregateKind, CanonicalPath, Comparison, EffectSet, EntryInventory,
+    ExecutableAction, ExecutableOperation, Instruction, InstructionKind, LoopPhase, MachineProgram,
+    Parameter, Primitive, ProgramError, Projection, StructuralPosition, TypeDescriptor, Workflow,
+    WorkflowFacts,
 };
 
 use crate::{AnalysisError, TypeFact};
@@ -25,6 +26,7 @@ pub(crate) fn lower_executable_program(
     body_types: &[BTreeMap<NodeId, TypeDescriptor>],
     entry: &EntryInventory,
     workflows: &[WorkflowFacts],
+    actions: &[ActionInventory],
 ) -> Result<MachineProgram, AnalysisError> {
     if sources.len() != type_facts.len() || sources.len() != body_types.len() {
         return Err(AnalysisError::Invariant);
@@ -65,6 +67,7 @@ pub(crate) fn lower_executable_program(
                 .get(source_index)
                 .ok_or(AnalysisError::Invariant)?,
             facts,
+            actions,
             instructions: Vec::new(),
         };
         if unsupported {
@@ -107,6 +110,7 @@ struct Compiler<'a> {
     declaration_types: &'a BTreeMap<NodeId, TypeFact>,
     body_types: &'a BTreeMap<NodeId, TypeDescriptor>,
     facts: &'a WorkflowFacts,
+    actions: &'a [ActionInventory],
     instructions: Vec<Instruction>,
 }
 
@@ -759,7 +763,8 @@ impl Compiler<'_> {
         ty: TypeDescriptor,
     ) -> Result<TypeDescriptor, AnalysisError> {
         let operation_node = self.node(operation)?;
-        let actual = if matches!(operation_node.form(), SyntaxForm::AttemptExpression) {
+        let attempted = matches!(operation_node.form(), SyntaxForm::AttemptExpression);
+        let actual = if attempted {
             descendant_form(
                 self.tree,
                 operation,
@@ -773,19 +778,97 @@ impl Compiler<'_> {
         } else {
             operation
         };
-        let actual_node = self.node(actual)?;
-        let operands = direct_expressions(self.tree, actual_node);
-        for operand in &operands {
-            self.compile_expression(*operand)?;
-        }
+        let actual_node = self.node(actual)?.clone();
+        let operation_source = actual_node.span().clone();
+        let mut interpolation_types = Vec::new();
+        let mut named_input_types = Vec::new();
+        let operands = if matches!(
+            actual_node.form(),
+            SyntaxForm::PromptExpression | SyntaxForm::DecideExpression
+        ) {
+            let mut count = 0_usize;
+            for interpolation in actual_node.children().iter().copied().filter(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::InterpolationExpression))
+            }) {
+                interpolation_types.push(self.compile_expression(interpolation)?);
+                count = count.saturating_add(1);
+            }
+            if let Some(using_clause) =
+                direct_child_form(self.tree, &actual_node, SyntaxForm::UsingClause)
+            {
+                for input in semantic_children(self.tree, using_clause)? {
+                    let input_node = self.node(input)?.clone();
+                    if !matches!(input_node.form(), SyntaxForm::NamedInput) {
+                        continue;
+                    }
+                    let ty = if let Some(expression) =
+                        direct_child_form(self.tree, &input_node, SyntaxForm::Expression)
+                    {
+                        self.compile_expression(expression)?
+                    } else {
+                        let name =
+                            direct_identifier(self.tree, input).ok_or(AnalysisError::Invariant)?;
+                        let ty = self
+                            .body_types
+                            .get(&input)
+                            .cloned()
+                            .ok_or(AnalysisError::Invariant)?;
+                        self.emit(ty.clone(), InstructionKind::Load(name))?;
+                        ty
+                    };
+                    named_input_types.push(ty);
+                    count = count.saturating_add(1);
+                }
+            }
+            count
+        } else {
+            let operands = direct_expressions(self.tree, &actual_node);
+            for operand in &operands {
+                self.compile_expression(*operand)?;
+            }
+            operands.len()
+        };
+        let site = self
+            .facts
+            .operations
+            .iter()
+            .find(|site| site.source == operation_source)
+            .ok_or(AnalysisError::Invariant)?;
+        let action = site
+            .action
+            .as_ref()
+            .map(|path| {
+                self.actions
+                    .iter()
+                    .find(|action| &action.path == path)
+                    .map(|action| ExecutableAction {
+                        path: action.path.clone(),
+                        signature: action.signature.clone(),
+                        recovery: action.recovery,
+                        parameters: action.parameters.clone(),
+                    })
+                    .ok_or(AnalysisError::Invariant)
+            })
+            .transpose()?;
+        let metadata = ExecutableOperation {
+            kind: site.kind,
+            result_type: site.result.clone(),
+            action,
+            template_segments: operation_template_segments(self.tree, &actual_node),
+            interpolation_types,
+            named_input_names: operation_named_input_names(self.tree, &actual_node),
+            named_input_types,
+            retry_limit: operation_retry_limit(self.tree, &actual_node),
+            session_mode: operation_session_mode(self.tree, &actual_node),
+            attempted,
+        };
         self.emit(
             ty.clone(),
-            if operands.is_empty() {
-                InstructionKind::Operation
-            } else {
-                InstructionKind::OperationWithOperands {
-                    operands: operands.len(),
-                }
+            InstructionKind::OperationCall {
+                operation: metadata,
+                operands,
             },
         )?;
         Ok(ty)
@@ -897,6 +980,81 @@ fn direct_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> 
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
         })
         .collect()
+}
+
+fn operation_template_segments(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+) -> Vec<Arc<str>> {
+    node.children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .find_map(|child| match child.form() {
+            SyntaxForm::Token(TokenKind::PromptTemplate(template)) => {
+                Some(template.literals().to_vec())
+            }
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+fn operation_named_input_names(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+) -> Vec<Arc<str>> {
+    node.children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .filter(|child| matches!(child.form(), SyntaxForm::UsingClause))
+        .flat_map(gantry_frontend::SyntaxNode::children)
+        .filter_map(|child| tree.node(*child))
+        .filter(|child| matches!(child.form(), SyntaxForm::NamedInput))
+        .filter_map(|input| direct_identifier(tree, node_id(tree, input)?))
+        .collect()
+}
+
+fn operation_retry_limit(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option<u64> {
+    descendant_token(tree, node, |token| match token {
+        TokenKind::DirectiveInteger(value) => value.parse().ok(),
+        _ => None,
+    })
+}
+
+fn operation_session_mode(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+) -> Option<Arc<str>> {
+    descendant_token(tree, node, |token| match token {
+        TokenKind::ReservedWord(word) if matches!(word.spelling(), "fork" | "new") => {
+            Some(Arc::from(word.spelling()))
+        }
+        _ => None,
+    })
+}
+
+fn descendant_token<T>(
+    tree: &SyntaxTree,
+    root: &gantry_frontend::SyntaxNode,
+    mut select: impl FnMut(&TokenKind) -> Option<T>,
+) -> Option<T> {
+    let mut work = root.children().to_vec();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if let SyntaxForm::Token(token) = node.form()
+            && let Some(value) = select(token)
+        {
+            return Some(value);
+        }
+        work.extend(node.children().iter().rev().copied());
+    }
+    None
+}
+
+fn node_id(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> Option<NodeId> {
+    tree.nodes()
+        .iter()
+        .position(|candidate| std::ptr::eq(candidate, node))
+        .map(NodeId::from_index)
 }
 
 fn node_has_word(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode, expected: &str) -> bool {

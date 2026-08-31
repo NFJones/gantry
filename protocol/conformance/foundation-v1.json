@@ -90,8 +90,8 @@
   },
   "dependencies": {
     "ledger_path": "governance/dependency-ledger-v1.json",
-    "ledger_sha256": "5442baeb15b2977c379f8dc70e6bf3086b563b06852f6cd9ee5f119e6ed624f8",
-    "product_lockfile_sha256": "289e20a87b53bdf0a7c5575b3e44eaa8681f72abcdc83936e91645f205e52ea1",
+    "ledger_sha256": "ed4e55bd8bfefdae06ada75f816c14e03533b29150208b63b016e377d8d801a9",
+    "product_lockfile_sha256": "7d8ce1fb130557d0bff097557a6f007a1d9ed0acfbf5a8e9ddc1712756801e06",
     "fuzz_lockfile_sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb",
     "decision_count": 8,
     "selected_count": 7,
@@ -104,7 +104,7 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "289e20a87b53bdf0a7c5575b3e44eaa8681f72abcdc83936e91645f205e52ea1"
+      "sha256": "7d8ce1fb130557d0bff097557a6f007a1d9ed0acfbf5a8e9ddc1712756801e06"
     },
     {
       "path": "Cargo.toml",
@@ -168,7 +168,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/sequential_machine.rs",
-      "sha256": "2677101e5dffcd74117eb2394dce8ec34902e5885f2e7f482d0513387e0c0a2c"
+      "sha256": "4ce003ef70cd35091d073847a01e45055e63e6eb5342cc6229d9c3f990c74c72"
     },
     {
       "path": "crates/gantry-conformance/tests/validate_package.rs",
@@ -220,7 +220,7 @@
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "5442baeb15b2977c379f8dc70e6bf3086b563b06852f6cd9ee5f119e6ed624f8"
+      "sha256": "ed4e55bd8bfefdae06ada75f816c14e03533b29150208b63b016e377d8d801a9"
     },
     {
       "path": "governance/fixtures/negative-policy-v1.json",

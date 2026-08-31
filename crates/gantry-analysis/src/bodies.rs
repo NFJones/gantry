@@ -2083,12 +2083,18 @@ fn infer_operation(
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(operation).ok_or(AnalysisError::Invariant)?;
     match node.form() {
-        SyntaxForm::PromptExpression => Ok(Some(
-            direct_child_form(tree, node, SyntaxForm::ValueType)
-                .and_then(|type_node| facts.get(&type_node))
-                .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone()),
-        )),
-        SyntaxForm::DecideExpression => Ok(Some(TypeDescriptor::DECISION)),
+        SyntaxForm::PromptExpression => {
+            infer_model_operation_inputs(tree, node, facts, environment, context, diagnostics)?;
+            Ok(Some(
+                direct_child_form(tree, node, SyntaxForm::ValueType)
+                    .and_then(|type_node| facts.get(&type_node))
+                    .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone()),
+            ))
+        }
+        SyntaxForm::DecideExpression => {
+            infer_model_operation_inputs(tree, node, facts, environment, context, diagnostics)?;
+            Ok(Some(TypeDescriptor::DECISION))
+        }
         SyntaxForm::ActionExpression => {
             infer_action_operation(tree, node, facts, environment, context, diagnostics)
         }
@@ -2115,6 +2121,51 @@ fn infer_operation(
         }
         _ => Ok(None),
     }
+}
+
+fn infer_model_operation_inputs(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    for child in node.children().iter().copied() {
+        let child_node = tree.node(child).ok_or(AnalysisError::Invariant)?;
+        if matches!(child_node.form(), SyntaxForm::InterpolationExpression) {
+            let _ = infer_expression(tree, child, facts, environment, None, context, diagnostics)?;
+            continue;
+        }
+        if !matches!(child_node.form(), SyntaxForm::UsingClause) {
+            continue;
+        }
+        for input in child_node.children().iter().copied() {
+            let input_node = tree.node(input).ok_or(AnalysisError::Invariant)?;
+            if !matches!(input_node.form(), SyntaxForm::NamedInput) {
+                continue;
+            }
+            let inferred = if let Some(expression) =
+                direct_child_form(tree, input_node, SyntaxForm::Expression)
+            {
+                infer_expression(
+                    tree,
+                    expression,
+                    facts,
+                    environment,
+                    None,
+                    context,
+                    diagnostics,
+                )?
+            } else {
+                direct_identifier(tree, input)?.and_then(|name| environment.get(&name).cloned())
+            };
+            if let Some(ty) = inferred {
+                context.expression_types.borrow_mut().insert(input, ty);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn infer_action_operation(

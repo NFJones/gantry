@@ -21,6 +21,7 @@ use crate::{AnalysisError, PackageStructure, Symbol, SymbolId, SymbolKind, TypeF
 struct ActionShape {
     path: CanonicalPath,
     signature: CanonicalSignature,
+    parameters: Vec<ActionParameter>,
     recovery: RecoveryClass,
     result: TypeDescriptor,
     source: SourceSpan,
@@ -239,6 +240,7 @@ pub(crate) fn analyze_workflow_facts(
         .map(|action| ActionInventory {
             path: action.path.clone(),
             signature: action.signature.clone(),
+            parameters: action.parameters.clone(),
             recovery: action.recovery,
             result: action.result.clone(),
             source: action.source.clone(),
@@ -1100,6 +1102,7 @@ fn collect_actions(
                 ActionShape {
                     path: symbol.path.clone(),
                     signature,
+                    parameters,
                     recovery,
                     result,
                     source: node.span().clone(),

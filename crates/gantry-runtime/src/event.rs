@@ -767,6 +767,7 @@ fn failure_payload(failure: &MachineFailure) -> String {
 
 fn runtime_category(code: RuntimeCode) -> &'static str {
     match code {
+        RuntimeCode::Operation(category) => category.wire_name(),
         RuntimeCode::InternalInvariant | RuntimeCode::UnsupportedEffect => {
             "internal-invariant-failure"
         }

@@ -1209,6 +1209,9 @@ fn drive(machine: &mut Machine) -> (MachineOutcome, Vec<MachineLabel>) {
         match machine.step() {
             MachineStep::Transition(label) => labels.push(label),
             MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+            MachineStep::WaitingSessionScope(scope) => {
+                panic!("unexpected session-scope wait: {:?}", scope.site)
+            }
             MachineStep::WaitingOperation(operation) => {
                 panic!("unexpected operation wait: {}", operation.identity)
             }

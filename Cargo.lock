@@ -131,7 +131,9 @@ name = "gantry-cli"
 version = "0.1.0"
 dependencies = [
  "gantry",
+ "gantry-adapter-tokio",
  "getrandom",
+ "tokio",
 ]
 
 [[package]]

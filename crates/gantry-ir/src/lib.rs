@@ -25,8 +25,8 @@ pub use canonical::{
 };
 pub use effects::{EFFECT_ORDER, EffectSet};
 pub use executable::{
-    AggregateKind, Instruction, InstructionKind, LoopPhase, MachineProgram, Parameter,
-    ProgramError, Projection, Workflow,
+    AggregateKind, ExecutableAction, ExecutableOperation, Instruction, InstructionKind, LoopPhase,
+    MachineProgram, Parameter, ProgramError, Projection, Workflow,
 };
 pub use facts::{
     ActionEffectContributor, ActionInventory, CallEdge, EntryInventory, OperationSite,

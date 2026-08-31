@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod scripted;
 pub mod services;
 
 /// Evidence classes understood by profile and release gates.

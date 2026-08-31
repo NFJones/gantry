@@ -113,6 +113,8 @@ pub enum OperationLifecycleError {
     Request(HookRequestError),
     /// Hook creation, invocation, response, or integration containment failed.
     Hook(TaskHookError),
+    /// Required logical-session establishment failed before model dispatch.
+    Session(SessionEstablishmentError),
     /// Gantry could not validate or normalize an otherwise typed hook outcome.
     Outcome(HookOutcomeProcessingError),
     /// The requested transition is not enabled from the current state.
@@ -139,6 +141,8 @@ pub enum OperationLifecycleError {
 pub enum OperationLifecycleFailureV1 {
     /// Hook construction or dispatch failed at the integration boundary.
     Hook(TaskHookError),
+    /// Required logical-session establishment failed before model dispatch.
+    Session(SessionEstablishmentError),
     /// A validated typed hook outcome selected an operation-local failure.
     Operation(OperationFailureV1),
     /// Gantry could not validate or normalize an otherwise typed hook outcome.
@@ -387,6 +391,68 @@ impl OperationLifecycle {
                     attempt_consumed: false,
                 };
                 Err(OperationLifecycleError::Hook(error))
+            }
+        }
+    }
+
+    /// Establishes the selected logical session, dispatches through the task hook,
+    /// and retains one model outcome under the same lifecycle as action dispatch.
+    pub async fn dispatch_model(
+        &mut self,
+        hook: &mut TaskHook<'_>,
+        cancellation: &dyn CancellationToken,
+        establisher: &mut SessionEstablisher<'_>,
+        execution_id: ProtocolIdentity,
+        session: &LogicalSessionV1,
+    ) -> Result<&HookOutcomeV1, OperationLifecycleError> {
+        self.require_state(OperationStateKind::Prepared)?;
+        let OperationRuntimeState::Prepared {
+            dispatch: prepared,
+            validation_attempt,
+            recovery_dispatch,
+            retries_left,
+            retry_policy,
+        } = &self.state
+        else {
+            unreachable!("state check preserves prepared dispatch")
+        };
+        let dispatch_id = prepared.dispatch_id;
+        let request = prepared.request.clone();
+        let validation_attempt = *validation_attempt;
+        let recovery_dispatch = *recovery_dispatch;
+        let retries_left = *retries_left;
+        let retry_policy = *retry_policy;
+        match hook
+            .dispatch_model(request, cancellation, establisher, execution_id, session)
+            .await
+        {
+            Ok(outcome) => {
+                self.state = OperationRuntimeState::Outcome {
+                    dispatch_id,
+                    outcome,
+                    validation_attempt,
+                    recovery_dispatch,
+                    retries_left,
+                    retry_policy,
+                };
+                self.outcome()
+                    .ok_or_else(|| invalid_state(OperationStateKind::Outcome))
+            }
+            Err(TaskHookSessionError::Hook(error)) => {
+                self.state = OperationRuntimeState::Failed {
+                    dispatch_id: Some(dispatch_id),
+                    failure: OperationLifecycleFailureV1::Hook(error.clone()),
+                    attempt_consumed: false,
+                };
+                Err(OperationLifecycleError::Hook(error))
+            }
+            Err(TaskHookSessionError::Session(error)) => {
+                self.state = OperationRuntimeState::Failed {
+                    dispatch_id: Some(dispatch_id),
+                    failure: OperationLifecycleFailureV1::Session(error.clone()),
+                    attempt_consumed: false,
+                };
+                Err(OperationLifecycleError::Session(error))
             }
         }
     }

@@ -18,7 +18,9 @@ path = "src/main.rs"
 
 [dependencies]
 gantry.workspace = true
+gantry-adapter-tokio.workspace = true
 getrandom.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
 
 [lints]
 workspace = true

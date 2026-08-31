@@ -52,6 +52,7 @@ pub use lifecycle::{
 pub use machine::{
     Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
     MachineStatus, MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
+    SessionScopeCompletionError, SessionScopeOccurrence,
 };
 pub use operation::{
     OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,

@@ -1,5 +1,6 @@
 //! Public module, symbol, and resolution results.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use gantry_core::source::{
@@ -127,6 +128,7 @@ pub struct PackageStructure {
     pub(crate) symbols: Vec<Symbol>,
     pub(crate) references: Vec<ResolvedReference>,
     pub(crate) agents: Vec<AgentName>,
+    pub(crate) default_agent: Option<Arc<str>>,
     pub(crate) diagnostics: Vec<StructuredDiagnostic>,
     pub(crate) counters: SourceCounters,
 }
@@ -162,6 +164,12 @@ impl PackageStructure {
         &self.agents
     }
 
+    /// Returns the unique package-wide default agent, when one is declared.
+    #[must_use]
+    pub fn default_agent(&self) -> Option<&str> {
+        self.default_agent.as_deref()
+    }
+
     /// Returns disclosure-neutral diagnostics in canonical machine order.
     #[must_use]
     pub fn diagnostics(&self) -> &[StructuredDiagnostic] {
@@ -184,6 +192,53 @@ pub struct TypeFact {
     pub descriptor: TypeDescriptor,
 }
 
+/// One declaration-order field in an analyzed struct value shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredStructField {
+    /// Exact source field name.
+    pub name: Arc<str>,
+    /// Resolved field type.
+    pub ty: TypeDescriptor,
+    /// Canonical JSON default for an optional field, when declared.
+    pub default_json: Option<Arc<[u8]>>,
+}
+
+/// One declaration-order variant in an analyzed enum value shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredEnumVariant {
+    /// Exact source variant name.
+    pub name: Arc<str>,
+    /// Resolved payload type, absent for a unit variant.
+    pub payload: Option<TypeDescriptor>,
+}
+
+/// Analyzer-owned normalized shape of one declared package value type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeclaredValueShape {
+    /// Named fields in source declaration order.
+    Struct(Vec<DeclaredStructField>),
+    /// Tagged variants in source declaration order.
+    Enum(Vec<DeclaredEnumVariant>),
+}
+
+/// Canonical-path-indexed declared value shapes retained for typed normalization.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredValueShapes {
+    shapes: BTreeMap<CanonicalPath, DeclaredValueShape>,
+}
+
+impl DeclaredValueShapes {
+    pub(crate) fn new(shapes: BTreeMap<CanonicalPath, DeclaredValueShape>) -> Self {
+        Self { shapes }
+    }
+
+    /// Returns the analyzed shape of one canonical declared type.
+    #[must_use]
+    pub fn get(&self, path: &CanonicalPath) -> Option<&DeclaredValueShape> {
+        self.shapes.get(path)
+    }
+}
+
 /// Deterministic package result after declaration type analysis.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypedPackage {
@@ -194,6 +249,7 @@ pub struct TypedPackage {
     pub(crate) actions: Vec<ActionInventory>,
     pub(crate) entry: Option<EntryInventory>,
     pub(crate) schemas: Option<GeneratedSchemaObject>,
+    pub(crate) declared_value_shapes: Option<DeclaredValueShapes>,
     pub(crate) manifest: Option<PackageSourceManifest>,
     pub(crate) canonical_ir: Option<CanonicalIr>,
     pub(crate) executable: Option<MachineProgram>,
@@ -243,6 +299,12 @@ impl TypedPackage {
     #[must_use]
     pub const fn schemas(&self) -> Option<&GeneratedSchemaObject> {
         self.schemas.as_ref()
+    }
+
+    /// Returns analyzer-owned declared struct and enum shapes for typed normalization.
+    #[must_use]
+    pub const fn declared_value_shapes(&self) -> Option<&DeclaredValueShapes> {
+        self.declared_value_shapes.as_ref()
     }
 
     /// Returns the immutable package-source manifest for a source-valid package.
