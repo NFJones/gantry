@@ -41,6 +41,11 @@ pub use event::{
     operation_dispatch_event, operation_result_event, report_emergency_diagnostic, shutdown_event,
     structured_output_validation_failure_event, validation_retry_event, workflow_event,
 };
+#[cfg(feature = "concurrent")]
+pub use event::{
+    concurrent_detach_event, concurrent_detached_failure_event, concurrent_join_event,
+    concurrent_spawn_event, concurrent_task_cancellation_event, concurrent_terminal_event,
+};
 pub use gantry_ir::Comparison;
 pub use gantry_ir::{
     AggregateKind, Instruction, InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive,
@@ -91,11 +96,13 @@ pub use session::{
 pub use session::{LogicalSessionRegistryCheckpointV1, SessionRecoveryError};
 #[cfg(feature = "concurrent")]
 pub use task::{
-    ConcurrentSchedulerV1, ConcurrentTaskRecordV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
-    DynamicTaskHandleIdentity, JoinResolutionV1, JoinStartV1, ScheduledMachineStepV1,
-    TaskCaptureV1, TaskCreatedV1, TaskCreationRequestV1, TaskCreationV1, TaskFailureV1,
-    TaskJoinFailureV1, TaskJoinMemberFailureKindV1, TaskJoinMemberFailureV1,
-    TaskOwnershipChangedV1, TaskOwnershipMemberV1, TaskStateError,
+    ConcurrentSchedulerV1, ConcurrentShutdownCohortV1, ConcurrentTaskRecordV1,
+    ConcurrentTaskStateV1, ConcurrentTaskStatusV1, ConcurrentTerminalCategoryV1,
+    ConcurrentTerminalOutcomeV1, DetachedTaskFailureV1, DynamicTaskHandleIdentity,
+    JoinResolutionV1, JoinStartV1, ScheduledMachineStepV1, TaskAbortResultV1, TaskCaptureV1,
+    TaskCreatedV1, TaskCreationRequestV1, TaskCreationV1, TaskFailureV1, TaskJoinFailureV1,
+    TaskJoinMemberFailureKindV1, TaskJoinMemberFailureV1, TaskOwnershipChangedV1,
+    TaskOwnershipMemberV1, TaskStateError,
 };
 
 #[cfg(test)]

@@ -16,6 +16,8 @@ use gantry_host::event::{
     EmergencyDiagnostic, EmergencyDiagnosticCallback, EventDeliveryRuntime, ProtectedPayload,
 };
 use gantry_ir::TypeDescriptor;
+#[cfg(feature = "concurrent")]
+use gantry_ir::generated::TaskControlSiteKind;
 use gantry_ir::generated::TypeKind;
 use gantry_observe::{
     ActivityBarrier, ActivityDeliveryResult, DeliveryError, DeliveryKernel, EventCompleter,
@@ -26,6 +28,11 @@ use crate::{
     AdapterPoison, CapturedOperationRequestV1, ExecutionHandle, MachineFailure, MachineLabel,
     MachineOutcome, OperationRetryWaitV1, PreparedHookDispatch, RequiredDeliveryRecordV1,
     RequiredEventDeliveryFailureV1, RuntimeCode, ValidationErrorCategoryV1, ValidationErrorV1,
+};
+#[cfg(feature = "concurrent")]
+use crate::{
+    ConcurrentTerminalCategoryV1, ConcurrentTerminalOutcomeV1, TaskCreatedV1, TaskFailureV1,
+    TaskJoinFailureV1, TaskJoinMemberFailureKindV1, TaskOwnershipChangedV1,
 };
 
 /// Performs one bounded best-effort emergency report and ignores every settlement.
@@ -394,6 +401,273 @@ pub fn operation_result_event(
         draft,
         protected_payloads: Arc::from(payloads),
     })
+}
+
+/// Builds the logical `spawn` event after task state and fork-session identity exist.
+#[cfg(feature = "concurrent")]
+pub fn concurrent_spawn_event(
+    execution_id: ProtocolIdentity,
+    transition: &TaskCreatedV1,
+    task_sequence: u64,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    let mut json = String::from("{\"attachment_state\":");
+    push_json_string(&mut json, transition.attachment.wire_name());
+    json.push_str(",\"child_task_id\":");
+    push_json_string(&mut json, &transition.task_id.to_string());
+    json.push_str(",\"declared_result_type\":");
+    push_json_string(&mut json, &transition.result_type.canonical_string());
+    json.push_str(",\"parent_task_id\":");
+    push_json_string(&mut json, &transition.parent_task_id.to_string());
+    json.push_str(",\"spawn_occurrence\":");
+    json.push_str(&transition.spawn_occurrence.to_string());
+    json.push('}');
+    concurrent_task_draft(
+        gantry_core::portable::EventKind::Spawn,
+        json,
+        execution_id,
+        transition.parent_task_id,
+        task_sequence,
+        [transition.parent_task_id, transition.task_id],
+    )
+}
+
+/// Builds one logical `join` event in analyzer-selected source order.
+#[cfg(feature = "concurrent")]
+#[allow(clippy::too_many_arguments)]
+pub fn concurrent_join_event(
+    execution_id: ProtocolIdentity,
+    joining_task_id: ProtocolIdentity,
+    control_kind: TaskControlSiteKind,
+    joined_task_ids: &[ProtocolIdentity],
+    settlement_status: &str,
+    result_type: Option<&TypeDescriptor>,
+    failure: Option<&TaskJoinFailureV1>,
+    task_sequence: u64,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    if !matches!(
+        control_kind,
+        TaskControlSiteKind::Join | TaskControlSiteKind::JoinAll
+    ) || settlement_status.is_empty()
+        || failure.is_some_and(|failure| failure.failures.is_empty())
+    {
+        return Err(OperationEventDraftError::InvalidContext);
+    }
+    let mut json = String::from("{\"child_failures\":[");
+    if let Some(failure) = failure {
+        for (index, member) in failure.failures.iter().enumerate() {
+            if index > 0 {
+                json.push(',');
+            }
+            json.push_str("{\"category\":");
+            let (category, reference) = match &member.failure {
+                TaskJoinMemberFailureKindV1::Failed(failure) => (
+                    failure.category.wire_name(),
+                    format!("task:{}:failure:{}", member.task_id, failure.code),
+                ),
+                TaskJoinMemberFailureKindV1::Cancelled(_) => (
+                    "cancellation",
+                    format!("task:{}:cancellation", member.task_id),
+                ),
+            };
+            push_json_string(&mut json, category);
+            json.push_str(",\"failure_reference\":");
+            push_json_string(&mut json, &reference);
+            json.push_str(",\"task_id\":");
+            push_json_string(&mut json, &member.task_id.to_string());
+            json.push('}');
+        }
+    }
+    json.push_str("],\"join_form\":");
+    push_json_string(&mut json, control_kind.wire_name());
+    json.push_str(",\"joined_task_ids\":[");
+    for (index, task_id) in joined_task_ids.iter().enumerate() {
+        if task_id.kind() != IdentityKind::Task {
+            return Err(OperationEventDraftError::InvalidContext);
+        }
+        if index > 0 {
+            json.push(',');
+        }
+        push_json_string(&mut json, &task_id.to_string());
+    }
+    json.push_str("],\"joining_task_id\":");
+    push_json_string(&mut json, &joining_task_id.to_string());
+    if let Some(result_type) = result_type {
+        json.push_str(",\"result_type\":");
+        push_json_string(&mut json, &result_type.canonical_string());
+    }
+    json.push_str(",\"settlement_status\":");
+    push_json_string(&mut json, settlement_status);
+    json.push('}');
+    let mut causal = Vec::with_capacity(joined_task_ids.len().saturating_add(1));
+    causal.push(joining_task_id);
+    causal.extend_from_slice(joined_task_ids);
+    concurrent_task_draft(
+        gantry_core::portable::EventKind::Join,
+        json,
+        execution_id,
+        joining_task_id,
+        task_sequence,
+        causal,
+    )
+}
+
+/// Builds one logical `detach` event from the exact ownership transition.
+#[cfg(feature = "concurrent")]
+pub fn concurrent_detach_event(
+    execution_id: ProtocolIdentity,
+    ownership: &TaskOwnershipChangedV1,
+    task_sequence: u64,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    let [member] = ownership.members() else {
+        return Err(OperationEventDraftError::InvalidContext);
+    };
+    if ownership.control_kind() != TaskControlSiteKind::Detach
+        || ownership.disposition() != gantry_core::portable::TaskHandleState::Detached
+    {
+        return Err(OperationEventDraftError::InvalidContext);
+    }
+    let owner_task_id = ownership.owner_task_id();
+    let mut json = String::from("{\"detached_task_id\":");
+    push_json_string(&mut json, &member.task_id().to_string());
+    json.push_str(",\"durable_ownership_transfer_record_reference\":");
+    push_json_string(
+        &mut json,
+        &format!(
+            "task-ownership:{}:{}:{}",
+            owner_task_id,
+            ownership.control_site().workflow().as_str(),
+            position(ownership.control_site().position())
+        ),
+    );
+    json.push_str(",\"owner_task_id\":");
+    push_json_string(&mut json, &owner_task_id.to_string());
+    json.push('}');
+    concurrent_task_draft(
+        gantry_core::portable::EventKind::Detach,
+        json,
+        execution_id,
+        owner_task_id,
+        task_sequence,
+        [owner_task_id, member.task_id()],
+    )
+}
+
+/// Builds one task-target cancellation event for a newly emitted cancellation label.
+#[cfg(feature = "concurrent")]
+pub fn concurrent_task_cancellation_event(
+    execution_id: ProtocolIdentity,
+    task_id: ProtocolIdentity,
+    reason: &str,
+    terminal: bool,
+    task_sequence: u64,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    if reason.is_empty() {
+        return Err(OperationEventDraftError::InvalidContext);
+    }
+    let mut json = String::from("{\"reason\":");
+    push_json_string(&mut json, reason);
+    json.push_str(",\"state\":");
+    push_json_string(&mut json, if terminal { "terminal" } else { "requested" });
+    json.push_str(",\"target\":");
+    push_json_string(&mut json, &task_id.to_string());
+    json.push_str(",\"target_kind\":\"task\"}");
+    concurrent_task_draft(
+        gantry_core::portable::EventKind::Cancellation,
+        json,
+        execution_id,
+        task_id,
+        task_sequence,
+        [execution_id, task_id],
+    )
+}
+
+/// Builds the detached-task `failure` event without changing foreground state.
+#[cfg(feature = "concurrent")]
+pub fn concurrent_detached_failure_event(
+    execution_id: ProtocolIdentity,
+    task_id: ProtocolIdentity,
+    task_path: &[Arc<str>],
+    failure: &TaskFailureV1,
+    task_sequence: u64,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    let mut json = String::from("{\"code\":");
+    push_json_string(&mut json, &failure.code);
+    json.push_str(",\"diagnostic\":{\"redacted\":true},\"runtime_error_category\":");
+    push_json_string(&mut json, failure.category.wire_name());
+    json.push_str(",\"task_id\":");
+    push_json_string(&mut json, &task_id.to_string());
+    json.push_str(",\"task_path\":[");
+    for (index, frame) in task_path.iter().enumerate() {
+        if index > 0 {
+            json.push(',');
+        }
+        push_json_string(&mut json, frame);
+    }
+    json.push_str("]}");
+    concurrent_task_draft(
+        gantry_core::portable::EventKind::Failure,
+        json,
+        execution_id,
+        task_id,
+        task_sequence,
+        [task_id],
+    )
+}
+
+/// Builds the unique terminal-execution event after detached work settles.
+#[cfg(feature = "concurrent")]
+pub fn concurrent_terminal_event(
+    execution_id: ProtocolIdentity,
+    root_task_id: ProtocolIdentity,
+    terminal: &ConcurrentTerminalOutcomeV1,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    let category = match terminal.category {
+        ConcurrentTerminalCategoryV1::Runtime(category) => category.wire_name(),
+        ConcurrentTerminalCategoryV1::TerminalOnly(category) => category.wire_name(),
+        ConcurrentTerminalCategoryV1::Cancellation => "cancellation",
+    };
+    let mut json = String::from("{\"completion_category\":");
+    push_json_string(&mut json, category);
+    json.push_str(",\"execution_id\":");
+    push_json_string(&mut json, &execution_id.to_string());
+    match terminal.category {
+        ConcurrentTerminalCategoryV1::Runtime(_)
+        | ConcurrentTerminalCategoryV1::TerminalOnly(
+            gantry_core::portable::TerminalOnlyCategory::DetachedTaskFailure,
+        ) => {
+            json.push_str(",\"primary_failure_reference\":");
+            push_json_string(
+                &mut json,
+                &format!("execution:{execution_id}:primary-failure"),
+            );
+        }
+        ConcurrentTerminalCategoryV1::TerminalOnly(
+            gantry_core::portable::TerminalOnlyCategory::Success,
+        ) => {
+            json.push_str(",\"typed_foreground_result_reference\":");
+            push_json_string(
+                &mut json,
+                &format!("execution:{execution_id}:foreground-result"),
+            );
+        }
+        ConcurrentTerminalCategoryV1::Cancellation => {}
+    }
+    json.push_str(",\"terminal_execution_record_reference\":");
+    push_json_string(&mut json, &format!("execution:{execution_id}:terminal"));
+    json.push('}');
+    let mut causal = vec![root_task_id];
+    causal.extend(
+        terminal
+            .detached_failures
+            .iter()
+            .map(|failure| failure.task_id),
+    );
+    concurrent_execution_draft(
+        gantry_core::portable::EventKind::TerminalExecution,
+        json,
+        execution_id,
+        causal,
+    )
 }
 
 /// Maps root lifecycle machine labels to their exact logical event drafts.
@@ -824,6 +1098,43 @@ fn require_diagnostic(
 fn event_payload(json: String) -> EventPayload {
     EventPayload::from_validated_canonical_bytes(Arc::<[u8]>::from(json.into_bytes()))
         .unwrap_or_else(|_| unreachable!("runtime event payload is nonempty"))
+}
+
+#[cfg(feature = "concurrent")]
+fn concurrent_task_draft(
+    kind: gantry_core::portable::EventKind,
+    json: String,
+    execution_id: ProtocolIdentity,
+    task_id: ProtocolIdentity,
+    task_sequence: u64,
+    causal_ids: impl Into<Arc<[ProtocolIdentity]>>,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    let draft = EventDraft::new(kind, event_payload(json))
+        .with_execution_id(execution_id)
+        .and_then(|draft| draft.with_task(task_id, task_sequence))
+        .map(|draft| draft.with_causal_ids(causal_ids))
+        .map_err(OperationEventDraftError::Contract)?;
+    Ok(ExecutionEventDraftV1 {
+        draft,
+        protected_payloads: Arc::from([]),
+    })
+}
+
+#[cfg(feature = "concurrent")]
+fn concurrent_execution_draft(
+    kind: gantry_core::portable::EventKind,
+    json: String,
+    execution_id: ProtocolIdentity,
+    causal_ids: impl Into<Arc<[ProtocolIdentity]>>,
+) -> Result<ExecutionEventDraftV1, OperationEventDraftError> {
+    let draft = EventDraft::new(kind, event_payload(json))
+        .with_execution_id(execution_id)
+        .map(|draft| draft.with_causal_ids(causal_ids))
+        .map_err(OperationEventDraftError::Contract)?;
+    Ok(ExecutionEventDraftV1 {
+        draft,
+        protected_payloads: Arc::from([]),
+    })
 }
 
 fn result_kind(kind: TypeKind) -> &'static str {
@@ -1522,6 +1833,83 @@ mod tests {
         assert_eq!(shutdown.draft.kind(), EventKind::Shutdown);
         assert!(shutdown.protected_payloads.is_empty());
         assert_canonical(shutdown.draft.payload().canonical_bytes());
+    }
+
+    #[cfg(feature = "concurrent")]
+    #[test]
+    fn concurrent_task_lifecycle_events_are_canonical_and_causally_typed() {
+        let execution = fresh(IdentityKind::Execution, 42);
+        let root_task = derived(IdentityKind::Task, b"concurrent-root-task");
+        let child_task = derived(IdentityKind::Task, b"concurrent-child-task");
+        let transition = TaskCreatedV1 {
+            task_id: child_task,
+            parent_task_id: root_task,
+            workflow: CanonicalPath::new("crate::main")
+                .unwrap_or_else(|error| panic!("workflow path failed: {error}")),
+            spawn_site: StructuralPosition::new(vec![7])
+                .unwrap_or_else(|error| panic!("spawn site failed: {error}")),
+            spawn_occurrence: 3,
+            result_type: TypeDescriptor::UNIT,
+            attachment: gantry_core::portable::TaskHandleState::Attached,
+        };
+        let spawn = concurrent_spawn_event(execution, &transition, 0)
+            .unwrap_or_else(|error| panic!("spawn event failed: {error:?}"));
+        let join = concurrent_join_event(
+            execution,
+            root_task,
+            TaskControlSiteKind::Join,
+            &[child_task],
+            "succeeded",
+            Some(&TypeDescriptor::UNIT),
+            None,
+            1,
+        )
+        .unwrap_or_else(|error| panic!("join event failed: {error:?}"));
+        let cancellation =
+            concurrent_task_cancellation_event(execution, child_task, "parent-failed", false, 2)
+                .unwrap_or_else(|error| panic!("cancellation event failed: {error:?}"));
+        let failure = TaskFailureV1 {
+            category: gantry_core::portable::RuntimeErrorCategory::ExecutorFailure,
+            code: Arc::from("executor-stopped"),
+            protected_diagnostic: None,
+        };
+        let detached_failure = concurrent_detached_failure_event(
+            execution,
+            child_task,
+            &[Arc::from("spawn:crate::main:7:3")],
+            &failure,
+            3,
+        )
+        .unwrap_or_else(|error| panic!("detached failure event failed: {error:?}"));
+        let terminal = ConcurrentTerminalOutcomeV1 {
+            category: ConcurrentTerminalCategoryV1::TerminalOnly(
+                gantry_core::portable::TerminalOnlyCategory::DetachedTaskFailure,
+            ),
+            foreground: MachineOutcome::Succeeded(LogicalValue::unit()),
+            detached_failures: vec![crate::DetachedTaskFailureV1 {
+                task_id: child_task,
+                task_path: Arc::from([Arc::from("spawn:crate::main:7:3")]),
+                failure,
+            }],
+        };
+        let terminal = concurrent_terminal_event(execution, root_task, &terminal)
+            .unwrap_or_else(|error| panic!("terminal event failed: {error:?}"));
+
+        let events = [spawn, join, cancellation, detached_failure, terminal];
+        let expected = [
+            EventKind::Spawn,
+            EventKind::Join,
+            EventKind::Cancellation,
+            EventKind::Failure,
+            EventKind::TerminalExecution,
+        ];
+        for (event, kind) in events.iter().zip(expected) {
+            assert_eq!(event.draft.kind(), kind);
+            assert!(event.protected_payloads.is_empty());
+            assert_canonical(event.draft.payload().canonical_bytes());
+        }
+        assert_eq!(events[0].draft.causal_ids(), [root_task, child_task]);
+        assert_eq!(events[4].draft.causal_ids(), [root_task, child_task]);
     }
 
     #[test]

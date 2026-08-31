@@ -1046,15 +1046,18 @@ mod tests {
         assert_eq!(new.transcript, CanonicalTranscriptV1::empty());
         assert_ne!(fork.id, new.id);
 
-        let checkpoint = registry.checkpoint();
-        let bytes = checkpoint.canonical_bytes();
-        let decoded = LogicalSessionRegistryCheckpointV1::decode(&bytes, DEFAULT_VALUE_LIMITS)
-            .unwrap_or_else(|error| panic!("session checkpoint decode failed: {error:?}"));
-        assert_eq!(decoded, checkpoint);
-        let recovered = LogicalSessionRegistryV1::recover_from_checkpoint(decoded)
-            .unwrap_or_else(|error| panic!("session recovery failed: {error:?}"));
-        assert_eq!(recovered.get(fork.id), Some(&fork));
-        assert_eq!(recovered.get(new.id), Some(&new));
+        #[cfg(feature = "durable")]
+        {
+            let checkpoint = registry.checkpoint();
+            let bytes = checkpoint.canonical_bytes();
+            let decoded = LogicalSessionRegistryCheckpointV1::decode(&bytes, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("session checkpoint decode failed: {error:?}"));
+            assert_eq!(decoded, checkpoint);
+            let recovered = LogicalSessionRegistryV1::recover_from_checkpoint(decoded)
+                .unwrap_or_else(|error| panic!("session recovery failed: {error:?}"));
+            assert_eq!(recovered.get(fork.id), Some(&fork));
+            assert_eq!(recovered.get(new.id), Some(&new));
+        }
     }
 
     fn turn(prompt: &str) -> TranscriptTurnV1 {

@@ -307,6 +307,12 @@ impl EventDraft {
     pub const fn payload(&self) -> &EventPayload {
         &self.payload
     }
+
+    /// Returns causal identities in canonical semantic order.
+    #[must_use]
+    pub fn causal_ids(&self) -> &[ProtocolIdentity] {
+        &self.causal_ids
+    }
 }
 
 /// One completed immutable standard event occurrence.

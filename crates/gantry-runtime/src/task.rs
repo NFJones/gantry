@@ -8,7 +8,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
-use gantry_core::portable::{IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind};
+use gantry_core::portable::{
+    ExecutorAbortResultKind, IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind,
+    TerminalOnlyCategory,
+};
 use gantry_core::value::{LogicalValue, ValueError, ValueLimits, ValuePathSegment};
 use gantry_host::contracts::HostError;
 use gantry_ir::generated::TaskControlSiteKind;
@@ -19,7 +22,8 @@ use gantry_ir::{
 use crate::machine::value_matches_type;
 use crate::{
     LogicalSessionRegistryV1, Machine, MachineLabel, MachineOutcome, MachineStatus, MachineStep,
-    SessionCreationModeV1, SessionError, SessionEstablishmentV1,
+    SessionCreationModeV1, SessionError, SessionEstablisher, SessionEstablishmentError,
+    SessionEstablishmentV1,
 };
 
 /// One analyzer-selected value binding copied into a child task.
@@ -278,6 +282,62 @@ impl ConcurrentTaskStatusV1 {
     }
 }
 
+/// One task whose detached failure contributes to execution-terminal state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DetachedTaskFailureV1 {
+    /// Stable failed task identity.
+    pub task_id: ProtocolIdentity,
+    /// Canonical dynamic task path used for stable failure ordering.
+    pub task_path: Arc<[Arc<str>]>,
+    /// Exact retained task-local failure.
+    pub failure: TaskFailureV1,
+}
+
+/// Precedence-selected terminal category for one concurrent execution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConcurrentTerminalCategoryV1 {
+    /// The foreground task failed with this portable runtime category.
+    Runtime(RuntimeErrorCategory),
+    /// Foreground settled without failure, but detached work failed.
+    TerminalOnly(TerminalOnlyCategory),
+    /// Cancellation was effective after higher-precedence failures were absent.
+    Cancellation,
+}
+
+/// Terminal execution projection fixed only after all detached work settles.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConcurrentTerminalOutcomeV1 {
+    /// Exact precedence-selected terminal category.
+    pub category: ConcurrentTerminalCategoryV1,
+    /// Foreground outcome fixed independently of detached work.
+    pub foreground: MachineOutcome,
+    /// Detached failures in canonical dynamic task-path order.
+    pub detached_failures: Vec<DetachedTaskFailureV1>,
+}
+
+/// Result of one idempotent executor-abort attempt.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskAbortResultV1 {
+    /// The executor confirms that the task future will no longer be polled.
+    Stopped,
+    /// The executor reports that the task had already settled.
+    AlreadySettled,
+    /// The executor could not stop the task.
+    Failed(HostError),
+}
+
+impl TaskAbortResultV1 {
+    /// Projects the closed portable executor-abort result vocabulary.
+    #[must_use]
+    pub const fn kind(&self) -> ExecutorAbortResultKind {
+        match self {
+            Self::Stopped => ExecutorAbortResultKind::Stopped,
+            Self::AlreadySettled => ExecutorAbortResultKind::AlreadySettled,
+            Self::Failed(_) => ExecutorAbortResultKind::Failed,
+        }
+    }
+}
+
 /// Immutable and mutable state retained for one admitted child task.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConcurrentTaskRecordV1 {
@@ -452,15 +512,33 @@ pub struct TaskCreationRequestV1 {
     pub parent_session_id: ProtocolIdentity,
 }
 
+/// Stable snapshot of all still-owned work in one concurrent shutdown cohort.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConcurrentShutdownCohortV1 {
+    /// Accepted execution that owns every listed task.
+    pub execution_id: ProtocolIdentity,
+    /// Foreground root task when its outcome is not yet fixed.
+    pub foreground_task: Option<ProtocolIdentity>,
+    /// Pending attached descendants in canonical dynamic task-path order.
+    pub attached_tasks: Vec<ProtocolIdentity>,
+    /// Pending detached work in canonical dynamic task-path order.
+    pub detached_tasks: Vec<ProtocolIdentity>,
+}
+
 /// Execution-scoped owner of cumulative task count and child task state.
 #[derive(Debug)]
 pub struct ConcurrentTaskStateV1 {
     execution_id: ProtocolIdentity,
+    root_task_id: ProtocolIdentity,
     maximum_tasks: u64,
     created_tasks: u64,
     task_paths: BTreeMap<ProtocolIdentity, Arc<[Arc<str>]>>,
     tasks: BTreeMap<ProtocolIdentity, ConcurrentTaskRecordV1>,
     submitting_by_parent: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
+    cancellation_reasons: BTreeMap<ProtocolIdentity, Arc<str>>,
+    execution_cancellation: Option<Arc<str>>,
+    foreground: Option<MachineOutcome>,
+    terminal: Option<ConcurrentTerminalOutcomeV1>,
 }
 
 impl ConcurrentTaskStateV1 {
@@ -481,11 +559,16 @@ impl ConcurrentTaskStateV1 {
         }
         Ok(Self {
             execution_id,
+            root_task_id,
             maximum_tasks,
             created_tasks: 1,
             task_paths: BTreeMap::from([(root_task_id, Arc::from([]))]),
             tasks: BTreeMap::new(),
             submitting_by_parent: BTreeMap::new(),
+            cancellation_reasons: BTreeMap::new(),
+            execution_cancellation: None,
+            foreground: None,
+            terminal: None,
         })
     }
 
@@ -501,6 +584,12 @@ impl ConcurrentTaskStateV1 {
         self.execution_id
     }
 
+    /// Returns the stable root task identity for this execution.
+    #[must_use]
+    pub const fn root_task_id(&self) -> ProtocolIdentity {
+        self.root_task_id
+    }
+
     /// Returns the configured cumulative task-count ceiling.
     #[must_use]
     pub const fn maximum_task_count(&self) -> u64 {
@@ -513,10 +602,224 @@ impl ConcurrentTaskStateV1 {
         self.tasks.get(&task_id)
     }
 
+    /// Returns the first effective cancellation reason for one task.
+    #[must_use]
+    pub fn task_cancellation_reason(&self, task_id: ProtocolIdentity) -> Option<&str> {
+        self.cancellation_reasons.get(&task_id).map(AsRef::as_ref)
+    }
+
+    /// Returns the fixed foreground outcome, independently of detached work.
+    #[must_use]
+    pub const fn foreground_outcome(&self) -> Option<&MachineOutcome> {
+        self.foreground.as_ref()
+    }
+
+    /// Returns the fixed execution-terminal projection, when detached work is settled.
+    #[must_use]
+    pub const fn terminal_outcome(&self) -> Option<&ConcurrentTerminalOutcomeV1> {
+        self.terminal.as_ref()
+    }
+
     /// Returns whether one task is suspended on unresolved child submission.
     #[must_use]
     pub fn parent_is_suspended(&self, task_id: ProtocolIdentity) -> bool {
         self.submitting_by_parent.contains_key(&task_id)
+    }
+
+    /// Snapshots every unsettled task owned by this execution for shutdown coordination.
+    #[must_use]
+    pub fn shutdown_cohort(&self) -> ConcurrentShutdownCohortV1 {
+        let mut attached = Vec::new();
+        let mut detached = Vec::new();
+        for (task_id, task) in &self.tasks {
+            if !matches!(
+                task.status,
+                ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+            ) {
+                continue;
+            }
+            if task.handle_state == TaskHandleState::Detached {
+                detached.push(*task_id);
+            } else {
+                attached.push(*task_id);
+            }
+        }
+        let by_path = |left: &ProtocolIdentity, right: &ProtocolIdentity| {
+            self.task_paths.get(left).cmp(&self.task_paths.get(right))
+        };
+        attached.sort_by(by_path);
+        detached.sort_by(by_path);
+        ConcurrentShutdownCohortV1 {
+            execution_id: self.execution_id,
+            foreground_task: self.foreground.is_none().then_some(self.root_task_id),
+            attached_tasks: attached,
+            detached_tasks: detached,
+        }
+    }
+
+    /// Records the first execution cancellation reason and propagates it to all live tasks.
+    pub fn cancel_execution(
+        &mut self,
+        reason: impl Into<Arc<str>>,
+    ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
+        if self.terminal.is_some() {
+            return Ok(Vec::new());
+        }
+        let reason = reason.into();
+        if reason.is_empty() {
+            return Err(TaskStateError::InvalidCancellationReason);
+        }
+        let reason = self
+            .execution_cancellation
+            .get_or_insert_with(|| Arc::clone(&reason))
+            .clone();
+        let mut affected = Vec::new();
+        if !self.cancellation_reasons.contains_key(&self.root_task_id) {
+            self.cancellation_reasons
+                .insert(self.root_task_id, Arc::clone(&reason));
+            affected.push(self.root_task_id);
+        }
+        for (task_id, task) in &self.tasks {
+            if matches!(
+                task.status,
+                ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+            ) && !self.cancellation_reasons.contains_key(task_id)
+            {
+                self.cancellation_reasons
+                    .insert(*task_id, Arc::clone(&reason));
+                affected.push(*task_id);
+            }
+        }
+        affected.sort_by(|left, right| self.task_paths.get(left).cmp(&self.task_paths.get(right)));
+        Ok(affected)
+    }
+
+    /// Records a parent-task cancellation and propagates it through attached descendants.
+    pub fn cancel_task_tree(
+        &mut self,
+        task_id: ProtocolIdentity,
+        reason: impl Into<Arc<str>>,
+    ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
+        if !self.task_paths.contains_key(&task_id) {
+            return Err(TaskStateError::UnknownTask);
+        }
+        let reason = reason.into();
+        if reason.is_empty() {
+            return Err(TaskStateError::InvalidCancellationReason);
+        }
+        let existing = self.cancellation_reasons.get(&task_id).cloned();
+        let reason = existing.unwrap_or_else(|| Arc::clone(&reason));
+        let mut affected = Vec::new();
+        if let std::collections::btree_map::Entry::Vacant(entry) =
+            self.cancellation_reasons.entry(task_id)
+        {
+            entry.insert(Arc::clone(&reason));
+            affected.push(task_id);
+        }
+        let mut frontier = vec![task_id];
+        while let Some(parent) = frontier.pop() {
+            for (child_id, child) in &self.tasks {
+                if child.parent_task_id == parent
+                    && child.handle_state != TaskHandleState::Detached
+                    && matches!(
+                        child.status,
+                        ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+                    )
+                    && !self.cancellation_reasons.contains_key(child_id)
+                {
+                    self.cancellation_reasons
+                        .insert(*child_id, Arc::clone(&reason));
+                    affected.push(*child_id);
+                    frontier.push(*child_id);
+                }
+            }
+        }
+        affected.sort_by(|left, right| self.task_paths.get(left).cmp(&self.task_paths.get(right)));
+        Ok(affected)
+    }
+
+    /// Fixes foreground completion exactly once without waiting for detached work.
+    pub fn complete_foreground(&mut self, outcome: MachineOutcome) -> Result<(), TaskStateError> {
+        if self.foreground.is_some() {
+            return Err(TaskStateError::ForegroundAlreadyFixed);
+        }
+        if self.tasks.values().any(|task| {
+            task.handle_state != TaskHandleState::Detached
+                && matches!(
+                    task.status,
+                    ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+                )
+        }) {
+            return Err(TaskStateError::AttachedTasksPending);
+        }
+        self.foreground = Some(outcome);
+        Ok(())
+    }
+
+    /// Fixes terminal execution after every detached task has settled.
+    pub fn complete_terminal(&mut self) -> Result<&ConcurrentTerminalOutcomeV1, TaskStateError> {
+        if self.terminal.is_some() {
+            return self
+                .terminal
+                .as_ref()
+                .ok_or(TaskStateError::TerminalAlreadyFixed);
+        }
+        let foreground = self
+            .foreground
+            .clone()
+            .ok_or(TaskStateError::ForegroundUnknown)?;
+        if self.tasks.values().any(|task| {
+            task.handle_state == TaskHandleState::Detached
+                && matches!(
+                    task.status,
+                    ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+                )
+        }) {
+            return Err(TaskStateError::DetachedTasksPending);
+        }
+        let mut detached_failures = self
+            .tasks
+            .values()
+            .filter_map(|task| {
+                if task.handle_state != TaskHandleState::Detached {
+                    return None;
+                }
+                let ConcurrentTaskStatusV1::Failed(failure) = &task.status else {
+                    return None;
+                };
+                Some(DetachedTaskFailureV1 {
+                    task_id: task.task_id,
+                    task_path: Arc::clone(&task.task_path),
+                    failure: failure.clone(),
+                })
+            })
+            .collect::<Vec<_>>();
+        detached_failures.sort_by(|left, right| left.task_path.cmp(&right.task_path));
+        let category = match &foreground {
+            MachineOutcome::Failed(failure) => {
+                ConcurrentTerminalCategoryV1::Runtime(machine_failure_category(failure.code))
+            }
+            MachineOutcome::Succeeded(_) if !detached_failures.is_empty() => {
+                ConcurrentTerminalCategoryV1::TerminalOnly(
+                    TerminalOnlyCategory::DetachedTaskFailure,
+                )
+            }
+            MachineOutcome::Cancelled(_) => ConcurrentTerminalCategoryV1::Cancellation,
+            MachineOutcome::Succeeded(_) if self.execution_cancellation.is_some() => {
+                ConcurrentTerminalCategoryV1::Cancellation
+            }
+            MachineOutcome::Succeeded(_) => {
+                ConcurrentTerminalCategoryV1::TerminalOnly(TerminalOnlyCategory::Success)
+            }
+        };
+        self.terminal = Some(ConcurrentTerminalOutcomeV1 {
+            category,
+            foreground,
+            detached_failures,
+        });
+        self.terminal
+            .as_ref()
+            .ok_or(TaskStateError::TerminalAlreadyFixed)
     }
 
     /// Records task, handle, captures, and fork-session state before submission.
@@ -528,6 +831,13 @@ impl ConcurrentTaskStateV1 {
     ) -> Result<TaskCreationV1, TaskStateError> {
         if request.handle_name.is_empty() {
             return Err(TaskStateError::InvalidHandleName);
+        }
+        if self.execution_cancellation.is_some()
+            || self
+                .cancellation_reasons
+                .contains_key(&request.parent_task_id)
+        {
+            return Err(TaskStateError::TaskCancelled);
         }
         if self
             .submitting_by_parent
@@ -653,7 +963,12 @@ impl ConcurrentTaskStateV1 {
             return Err(TaskStateError::InvalidTransition);
         }
         task.status = match result {
-            Ok(()) => ConcurrentTaskStatusV1::Running,
+            Ok(()) => self
+                .cancellation_reasons
+                .get(&task_id)
+                .map_or(ConcurrentTaskStatusV1::Running, |reason| {
+                    ConcurrentTaskStatusV1::Cancelled(Arc::clone(reason))
+                }),
             Err(error) => ConcurrentTaskStatusV1::Failed(TaskFailureV1 {
                 category: RuntimeErrorCategory::ExecutorFailure,
                 code: error.code,
@@ -677,6 +992,12 @@ impl ConcurrentTaskStateV1 {
         if !matches!(task.status, ConcurrentTaskStatusV1::Running) {
             return Err(TaskStateError::InvalidTransition);
         }
+        let outcome = self
+            .cancellation_reasons
+            .get(&task_id)
+            .map_or(outcome, |reason| {
+                MachineOutcome::Cancelled(Arc::clone(reason))
+            });
         if let MachineOutcome::Succeeded(value) = &outcome
             && !value_matches_type(value, &task.result_type)
         {
@@ -983,6 +1304,51 @@ impl ConcurrentTaskStateV1 {
         capture.value = value.clone();
         Ok(value)
     }
+
+    /// Applies one idempotent executor-abort result to a live task.
+    pub fn apply_abort_result(
+        &mut self,
+        task_id: ProtocolIdentity,
+        result: TaskAbortResultV1,
+    ) -> Result<ExecutorAbortResultKind, TaskStateError> {
+        let task = self
+            .tasks
+            .get_mut(&task_id)
+            .ok_or(TaskStateError::UnknownTask)?;
+        if !matches!(
+            task.status,
+            ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+        ) {
+            return Ok(ExecutorAbortResultKind::AlreadySettled);
+        }
+        let kind = result.kind();
+        if let TaskAbortResultV1::Stopped = result {
+            let reason = self
+                .cancellation_reasons
+                .entry(task_id)
+                .or_insert_with(|| Arc::from("executor-abort"))
+                .clone();
+            self.submitting_by_parent.remove(&task.parent_task_id);
+            task.handle_visible = true;
+            task.status = ConcurrentTaskStatusV1::Cancelled(reason);
+        }
+        Ok(kind)
+    }
+
+    /// Returns all submitting or running child tasks in stable identity order.
+    #[must_use]
+    pub fn pending_task_ids(&self) -> Vec<ProtocolIdentity> {
+        self.tasks
+            .iter()
+            .filter_map(|(task_id, task)| {
+                matches!(
+                    task.status,
+                    ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+                )
+                .then_some(*task_id)
+            })
+            .collect()
+    }
 }
 
 /// One scheduler-selected transition from a child instance of the shared machine.
@@ -1029,6 +1395,32 @@ impl ConcurrentSchedulerV1 {
         self.state.create_child(sessions, request, limits)
     }
 
+    /// Establishes the child's creation-time fork session before child hook construction.
+    pub async fn establish_child_session(
+        &self,
+        sessions: &LogicalSessionRegistryV1,
+        establisher: &mut SessionEstablisher<'_>,
+        task_id: ProtocolIdentity,
+    ) -> Result<(), SessionEstablishmentError> {
+        let session_id = self
+            .state
+            .task(task_id)
+            .ok_or(SessionEstablishmentError::InvalidRequest)?
+            .base_session_id();
+        let session = sessions
+            .get(session_id)
+            .ok_or(SessionEstablishmentError::InvalidRequest)?;
+        establisher
+            .establish(self.state.execution_id(), session)
+            .await
+    }
+
+    /// Snapshots all foreground, attached, and detached work for shutdown coordination.
+    #[must_use]
+    pub fn shutdown_cohort(&self) -> ConcurrentShutdownCohortV1 {
+        self.state.shutdown_cohort()
+    }
+
     /// Resolves submission with either the child shared-machine instance or its failure.
     pub fn resolve_submission(
         &mut self,
@@ -1044,12 +1436,64 @@ impl ConcurrentSchedulerV1 {
                     return Err(TaskStateError::InvalidTaskMachine);
                 }
                 self.state.resolve_submission(task_id, Ok(()))?;
-                self.machines.insert(task_id, machine);
-                self.runnable.push_back(task_id);
+                if matches!(
+                    self.state.task(task_id).map(ConcurrentTaskRecordV1::status),
+                    Some(ConcurrentTaskStatusV1::Running)
+                ) {
+                    self.machines.insert(task_id, machine);
+                    self.runnable.push_back(task_id);
+                }
             }
             Err(error) => self.state.resolve_submission(task_id, Err(error))?,
         }
         Ok(())
+    }
+
+    /// Records execution cancellation and signals every live shared-machine task.
+    pub fn cancel_execution(
+        &mut self,
+        reason: impl Into<Arc<str>>,
+    ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
+        let affected = self.state.cancel_execution(reason)?;
+        for task_id in &affected {
+            if let Some(machine) = self.machines.get_mut(task_id)
+                && let Some(reason) = self.state.task_cancellation_reason(*task_id)
+            {
+                let _ = machine.cancel(Arc::<str>::from(reason));
+            }
+        }
+        Ok(affected)
+    }
+
+    /// Records parent failure cancellation through attached descendants only.
+    pub fn cancel_task_tree(
+        &mut self,
+        task_id: ProtocolIdentity,
+        reason: impl Into<Arc<str>>,
+    ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
+        let affected = self.state.cancel_task_tree(task_id, reason)?;
+        for affected_id in &affected {
+            if let Some(machine) = self.machines.get_mut(affected_id)
+                && let Some(reason) = self.state.task_cancellation_reason(*affected_id)
+            {
+                let _ = machine.cancel(Arc::<str>::from(reason));
+            }
+        }
+        Ok(affected)
+    }
+
+    /// Applies one idempotent executor-abort result and drops stopped machine ownership.
+    pub fn apply_abort_result(
+        &mut self,
+        task_id: ProtocolIdentity,
+        result: TaskAbortResultV1,
+    ) -> Result<ExecutorAbortResultKind, TaskStateError> {
+        let kind = self.state.apply_abort_result(task_id, result)?;
+        if kind == ExecutorAbortResultKind::Stopped {
+            self.machines.remove(&task_id);
+            self.runnable.retain(|candidate| *candidate != task_id);
+        }
+        Ok(kind)
     }
 
     /// Returns a suspended child machine for host-result completion.
@@ -1185,8 +1629,38 @@ pub enum TaskStateError {
     JoinValue(ValueError),
     /// Automatic fork-session construction failed.
     Session(SessionError),
+    /// A cancellation reason must be nonempty.
+    InvalidCancellationReason,
+    /// Cancellation prevents creation of more child work.
+    TaskCancelled,
+    /// Foreground completion was already fixed.
+    ForegroundAlreadyFixed,
+    /// Foreground completion requires every attached descendant to settle.
+    AttachedTasksPending,
+    /// Terminal completion requires a fixed foreground outcome.
+    ForegroundUnknown,
+    /// Detached tasks must settle before terminal completion.
+    DetachedTasksPending,
+    /// Terminal completion was already fixed.
+    TerminalAlreadyFixed,
     /// The requested status transition is not defined.
     InvalidTransition,
+}
+
+fn machine_failure_category(code: crate::RuntimeCode) -> RuntimeErrorCategory {
+    match code {
+        crate::RuntimeCode::Operation(category) => category,
+        crate::RuntimeCode::UnsupportedEffect | crate::RuntimeCode::InternalInvariant => {
+            RuntimeErrorCategory::InternalInvariantFailure
+        }
+        crate::RuntimeCode::Deterministic(_)
+        | crate::RuntimeCode::DeterministicTransitionBudget
+        | crate::RuntimeCode::OperationBudget
+        | crate::RuntimeCode::LoopIterationBudget
+        | crate::RuntimeCode::LoopLimitExhausted => {
+            RuntimeErrorCategory::DeterministicEvaluationFailure
+        }
+    }
 }
 
 fn task_path_frame(workflow: &CanonicalPath, site: &StructuralPosition, occurrence: u64) -> String {
@@ -1240,7 +1714,8 @@ mod tests {
     use gantry_core::identity::ProtocolIdentity;
     use gantry_core::numeric::GantryInt;
     use gantry_core::portable::{
-        IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind,
+        ExecutorAbortResultKind, IdentityKind, RuntimeErrorCategory, TaskHandleState,
+        TaskStatusKind, TerminalOnlyCategory,
     };
     use gantry_core::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
     use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
@@ -1252,9 +1727,9 @@ mod tests {
     };
 
     use super::{
-        ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1, JoinResolutionV1,
-        JoinStartV1, TaskCaptureV1, TaskCreationRequestV1, TaskJoinMemberFailureKindV1,
-        TaskStateError,
+        ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
+        ConcurrentTerminalCategoryV1, JoinResolutionV1, JoinStartV1, TaskAbortResultV1,
+        TaskCaptureV1, TaskCreationRequestV1, TaskJoinMemberFailureKindV1, TaskStateError,
     };
     use crate::{
         CanonicalTranscriptV1, Instruction, InstructionKind, LogicalSessionRegistryV1, Machine,
@@ -1774,6 +2249,189 @@ mod tests {
         assert_eq!(
             state.validate_analyzer_ownership(created.handle_id, &joined),
             Err(TaskStateError::AnalyzerOwnershipMismatch)
+        );
+    }
+
+    #[test]
+    fn cancellation_propagates_through_attached_descendants_but_not_detached_work() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(4);
+        let attached = state
+            .create_child(
+                &mut sessions,
+                typed_request(root_task, root_session, "attached", 0, TypeDescriptor::UNIT),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("attached task creation failed: {error:?}"));
+        state
+            .resolve_submission(attached.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("attached submission failed: {error:?}"));
+        let detached = state
+            .create_child(
+                &mut sessions,
+                typed_request(root_task, root_session, "detached", 1, TypeDescriptor::UNIT),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("detached task creation failed: {error:?}"));
+        state
+            .resolve_submission(detached.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("detached submission failed: {error:?}"));
+        let detach = task_control(TaskControlSiteKind::Detach, 8, &["detached"]);
+        state
+            .detach(root_task, &detach, detached.handle_id)
+            .unwrap_or_else(|error| panic!("detach failed: {error:?}"));
+        let grandchild = state
+            .create_child(
+                &mut sessions,
+                typed_request(
+                    attached.task_id,
+                    attached.base_session_id,
+                    "grandchild",
+                    0,
+                    TypeDescriptor::UNIT,
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("grandchild creation failed: {error:?}"));
+        state
+            .resolve_submission(grandchild.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("grandchild submission failed: {error:?}"));
+
+        let affected = state
+            .cancel_task_tree(root_task, "parent-failed")
+            .unwrap_or_else(|error| panic!("task cancellation failed: {error:?}"));
+        assert_eq!(affected, [root_task, attached.task_id, grandchild.task_id]);
+        assert_eq!(
+            state.task_cancellation_reason(attached.task_id),
+            Some("parent-failed")
+        );
+        assert_eq!(state.task_cancellation_reason(detached.task_id), None);
+        assert_eq!(
+            state
+                .cancel_task_tree(root_task, "later-reason")
+                .unwrap_or_else(|error| panic!("repeat cancellation failed: {error:?}")),
+            []
+        );
+        assert_eq!(
+            state.task_cancellation_reason(root_task),
+            Some("parent-failed")
+        );
+
+        state
+            .settle(
+                attached.task_id,
+                crate::MachineOutcome::Succeeded(LogicalValue::unit()),
+            )
+            .unwrap_or_else(|error| panic!("attached settlement failed: {error:?}"));
+        assert!(matches!(
+            state.task(attached.task_id).map(|task| task.status()),
+            Some(ConcurrentTaskStatusV1::Cancelled(reason))
+                if reason.as_ref() == "parent-failed"
+        ));
+        assert!(matches!(
+            state.task(detached.task_id).map(|task| task.status()),
+            Some(ConcurrentTaskStatusV1::Running)
+        ));
+    }
+
+    #[test]
+    fn detached_failure_does_not_replace_foreground_but_selects_terminal_category() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(2);
+        let detached = state
+            .create_child(
+                &mut sessions,
+                typed_request(
+                    root_task,
+                    root_session,
+                    "background",
+                    0,
+                    TypeDescriptor::UNIT,
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("detached task creation failed: {error:?}"));
+        state
+            .resolve_submission(
+                detached.task_id,
+                Err(HostError {
+                    code: Arc::from("executor-stopped"),
+                    protected_diagnostic: None,
+                }),
+            )
+            .unwrap_or_else(|error| panic!("submission failure failed: {error:?}"));
+        let detach = task_control(TaskControlSiteKind::Detach, 9, &["background"]);
+        state
+            .detach(root_task, &detach, detached.handle_id)
+            .unwrap_or_else(|error| panic!("detach failed: {error:?}"));
+        let foreground = crate::MachineOutcome::Succeeded(LogicalValue::unit());
+        state
+            .complete_foreground(foreground.clone())
+            .unwrap_or_else(|error| panic!("foreground completion failed: {error:?}"));
+        let terminal = state
+            .complete_terminal()
+            .unwrap_or_else(|error| panic!("terminal completion failed: {error:?}"));
+
+        assert_eq!(terminal.foreground, foreground);
+        assert_eq!(
+            terminal.category,
+            ConcurrentTerminalCategoryV1::TerminalOnly(TerminalOnlyCategory::DetachedTaskFailure)
+        );
+        assert_eq!(terminal.detached_failures.len(), 1);
+        assert_eq!(terminal.detached_failures[0].task_id, detached.task_id);
+        assert_eq!(
+            terminal.detached_failures[0].failure.category,
+            RuntimeErrorCategory::ExecutorFailure
+        );
+        assert_eq!(state.foreground_outcome(), Some(&foreground));
+    }
+
+    #[test]
+    fn executor_abort_is_idempotent_and_preserves_the_first_cancellation_reason() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(2);
+        let created = state
+            .create_child(
+                &mut sessions,
+                request(root_task, root_session, 0, Vec::new()),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        state
+            .resolve_submission(created.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
+        state
+            .cancel_task_tree(root_task, "shutdown")
+            .unwrap_or_else(|error| panic!("cancellation failed: {error:?}"));
+
+        assert_eq!(
+            state
+                .apply_abort_result(
+                    created.task_id,
+                    TaskAbortResultV1::Failed(HostError {
+                        code: Arc::from("abort-failed"),
+                        protected_diagnostic: None,
+                    }),
+                )
+                .unwrap_or_else(|error| panic!("failed abort result failed: {error:?}")),
+            ExecutorAbortResultKind::Failed
+        );
+        assert!(matches!(
+            state.task(created.task_id).map(|task| task.status()),
+            Some(ConcurrentTaskStatusV1::Running)
+        ));
+        assert_eq!(
+            state
+                .apply_abort_result(created.task_id, TaskAbortResultV1::Stopped)
+                .unwrap_or_else(|error| panic!("stopped abort failed: {error:?}")),
+            ExecutorAbortResultKind::Stopped
+        );
+        assert!(matches!(
+            state.task(created.task_id).map(|task| task.status()),
+            Some(ConcurrentTaskStatusV1::Cancelled(reason)) if reason.as_ref() == "shutdown"
+        ));
+        assert_eq!(
+            state
+                .apply_abort_result(created.task_id, TaskAbortResultV1::Stopped)
+                .unwrap_or_else(|error| panic!("repeat abort failed: {error:?}")),
+            ExecutorAbortResultKind::AlreadySettled
         );
     }
 

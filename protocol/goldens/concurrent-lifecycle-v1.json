@@ -1,0 +1,37 @@
+{
+  "format": "gantry.concurrent-lifecycle-vectors/v1",
+  "task_statuses": [
+    "cancelled",
+    "failed",
+    "running",
+    "submitting",
+    "succeeded"
+  ],
+  "abort_results": [
+    "already-settled",
+    "failed",
+    "stopped"
+  ],
+  "terminal_categories": [
+    "cancellation",
+    "detached-task-failure",
+    "runtime-error",
+    "success"
+  ],
+  "event_kinds": [
+    "cancellation",
+    "detach",
+    "failure",
+    "foreground-completion",
+    "join",
+    "spawn",
+    "task-completion",
+    "terminal-execution"
+  ],
+  "cases": [
+    "attached-descendant-cancellation",
+    "detached-terminal-precedence",
+    "shutdown-cohort-and-idempotent-abort",
+    "spawned-session-establishment"
+  ]
+}
