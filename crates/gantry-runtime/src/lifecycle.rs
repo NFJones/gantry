@@ -335,6 +335,7 @@ impl InterpreterLifecycle {
                 data: Mutex::new(LifecycleData {
                     state: LifecyclePhase::Running,
                     admitted_calls: 0,
+                    reserved_executions: BTreeSet::new(),
                     executions: BTreeMap::new(),
                     progress_waiters: Vec::new(),
                     shutdown_waiters: Vec::new(),
@@ -365,6 +366,7 @@ impl InterpreterLifecycle {
             inner: Arc::clone(&self.inner),
             kind,
             active: true,
+            reserved_execution: None,
         })
     }
 
@@ -672,6 +674,7 @@ pub struct OperationAdmission {
     inner: Arc<LifecycleInner>,
     kind: AdmissionKind,
     active: bool,
+    reserved_execution: Option<ProtocolIdentity>,
 }
 
 impl std::fmt::Debug for OperationAdmission {
@@ -680,16 +683,17 @@ impl std::fmt::Debug for OperationAdmission {
             .debug_struct("OperationAdmission")
             .field("kind", &self.kind)
             .field("active", &self.active)
+            .field("reserved_execution", &self.reserved_execution)
             .finish()
     }
 }
 
 impl OperationAdmission {
-    /// Transfers admitted new work into an accepted execution state.
-    pub fn accept_execution(
+    /// Reserves one execution identity without publishing accepted lifecycle state.
+    pub fn reserve_execution(
         &mut self,
         execution_id: ProtocolIdentity,
-    ) -> Result<ExecutionHandle, AcceptExecutionError> {
+    ) -> Result<(), AcceptExecutionError> {
         if !self.active {
             return Err(AcceptExecutionError::AdmissionTransferred);
         }
@@ -699,14 +703,43 @@ impl OperationAdmission {
         if execution_id.kind() != IdentityKind::Execution {
             return Err(AcceptExecutionError::WrongIdentityKind);
         }
+        if self.reserved_execution.is_some() {
+            return Err(AcceptExecutionError::AdmissionTransferred);
+        }
         let mut data = self.inner.lock();
-        if data.executions.contains_key(&execution_id) {
+        if data.executions.contains_key(&execution_id)
+            || !data.reserved_executions.insert(execution_id)
+        {
             return Err(AcceptExecutionError::DuplicateIdentity);
         }
-        data.executions.insert(execution_id, ExecutionRecord::new());
+        self.reserved_execution = Some(execution_id);
+        Ok(())
+    }
+
+    /// Publishes a previously reserved identity as accepted execution state.
+    pub fn accept_reserved_execution(
+        &mut self,
+        execution_id: ProtocolIdentity,
+    ) -> Result<ExecutionHandle, AcceptExecutionError> {
+        if !self.active {
+            return Err(AcceptExecutionError::AdmissionTransferred);
+        }
+        if self.reserved_execution != Some(execution_id) {
+            return Err(AcceptExecutionError::ReservationMismatch);
+        }
+        let mut data = self.inner.lock();
+        if !data.reserved_executions.remove(&execution_id)
+            || data
+                .executions
+                .insert(execution_id, ExecutionRecord::new())
+                .is_some()
+        {
+            return Err(AcceptExecutionError::ReservationMismatch);
+        }
         if let LifecyclePhase::ShuttingDown(shutdown) = &mut data.state {
             shutdown.cohort.insert(execution_id);
         }
+        self.reserved_execution = None;
         self.active = false;
         data.admitted_calls = data.admitted_calls.saturating_sub(1);
         let progress = std::mem::take(&mut data.progress_waiters);
@@ -717,6 +750,15 @@ impl OperationAdmission {
             execution_id,
         })
     }
+
+    /// Transfers admitted new work into an accepted execution state.
+    pub fn accept_execution(
+        &mut self,
+        execution_id: ProtocolIdentity,
+    ) -> Result<ExecutionHandle, AcceptExecutionError> {
+        self.reserve_execution(execution_id)?;
+        self.accept_reserved_execution(execution_id)
+    }
 }
 
 impl Drop for OperationAdmission {
@@ -726,6 +768,9 @@ impl Drop for OperationAdmission {
         }
         self.active = false;
         let mut data = self.inner.lock();
+        if let Some(execution_id) = self.reserved_execution.take() {
+            data.reserved_executions.remove(&execution_id);
+        }
         data.admitted_calls = data.admitted_calls.saturating_sub(1);
         let progress = std::mem::take(&mut data.progress_waiters);
         drop(data);
@@ -744,6 +789,8 @@ pub enum AcceptExecutionError {
     WrongIdentityKind,
     /// This interpreter already owns the execution identity.
     DuplicateIdentity,
+    /// The reserved identity is absent or differs from the accepted identity.
+    ReservationMismatch,
 }
 
 /// Future for one independent foreground or terminal observation.
@@ -1115,6 +1162,7 @@ impl LifecycleInner {
 struct LifecycleData {
     state: LifecyclePhase,
     admitted_calls: u64,
+    reserved_executions: BTreeSet<ProtocolIdentity>,
     executions: BTreeMap<ProtocolIdentity, ExecutionRecord>,
     progress_waiters: Vec<Waker>,
     shutdown_waiters: Vec<Waker>,

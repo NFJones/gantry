@@ -318,6 +318,11 @@ impl LogicalSessionRegistryV1 {
         self.sessions.get_mut(&id)
     }
 
+    /// Returns all logical sessions in canonical identity order.
+    pub fn sessions(&self) -> impl Iterator<Item = &LogicalSessionV1> {
+        self.sessions.values()
+    }
+
     /// Captures complete typed session and transcript state for durable recovery.
     #[cfg(feature = "durable")]
     #[must_use]

@@ -84,8 +84,10 @@ pub use outcome::{
 #[cfg(feature = "durable")]
 pub use recovery::{
     DurableCommitCoordinatorV1, DurableCommitCutV1, DurableCommitError, DurableEvidenceCommitV1,
-    DurableEvidenceError, DurableLogicalEvidenceV1, DurableOperationEvidenceV1,
-    DurableOperationRecoveryV1, RecoveredDurableStateV1, recover_authoritative_prefix,
+    DurableEvidenceError, DurableExecutionStartV1, DurableExecutionStateV1,
+    DurableLogicalEvidenceV1, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
+    DurableRecoverySnapshotV1, RecoveredDurableStateV1, recover_authoritative_prefix,
+    recover_authoritative_prefix_with_retained_program,
 };
 pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,

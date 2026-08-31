@@ -1000,7 +1000,7 @@ fn transcript_result_kind(ty: &TypeDescriptor) -> TranscriptResultKindV1 {
     }
 }
 
-fn decode_logical_value(
+pub(crate) fn decode_logical_value(
     bytes: &[u8],
     ty: &TypeDescriptor,
     limits: ValueLimits,

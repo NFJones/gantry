@@ -1,0 +1,25 @@
+{
+  "format": "gantry.durable-start-vectors/v1",
+  "evidence_formats": [
+    "gantry.execution-start/v1",
+    "gantry.execution-state/v1",
+    "gantry.recovery-snapshot/v1"
+  ],
+  "resume_modes": [
+    "candidate-source",
+    "source-free"
+  ],
+  "compatibility_classes": [
+    "identity-bound",
+    "durably-mutable",
+    "scheduling-only"
+  ],
+  "cases": [
+    "candidate-and-source-free-resume",
+    "execution-state-revisions",
+    "fresh-target-and-sequence-one",
+    "nonmutation-and-owner-release",
+    "resume-compatibility-and-preflight",
+    "sequence-one-metadata"
+  ]
+}

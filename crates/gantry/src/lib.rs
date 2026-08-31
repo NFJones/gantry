@@ -5,6 +5,8 @@
 //! only layers whose conformance gates have closed.
 
 pub mod diagnostic;
+#[cfg(feature = "durable")]
+mod durable_start;
 #[cfg(feature = "evaluator")]
 mod interpreter;
 #[cfg(feature = "evaluator")]
@@ -12,6 +14,13 @@ mod start;
 #[cfg(feature = "frontend")]
 mod validate;
 
+#[cfg(feature = "durable")]
+pub use durable_start::{
+    DurableResumeExecutionAccepted, DurableResumeExecutionFailure, DurableResumeExecutionRequest,
+    DurableResumeExecutionResult, DurableResumeSourceComparison, DurableStartExecutionAccepted,
+    DurableStartExecutionCoordinator, DurableStartExecutionFailure, DurableStartExecutionRequest,
+    DurableStartExecutionResult,
+};
 #[cfg(feature = "analyzer")]
 pub use gantry_analysis as analysis;
 pub use gantry_core::{

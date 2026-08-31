@@ -1,5 +1,11 @@
 //! Versioned logical evidence and authoritative recovery projection.
 
+mod execution_start;
+
+pub use execution_start::{
+    DurableExecutionStartV1, DurableExecutionStateV1, DurableRecoverySnapshotV1,
+};
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -319,6 +325,8 @@ pub enum DurableOperationRecoveryV1 {
 pub struct RecoveredDurableStateV1 {
     machine: Machine,
     sessions: Option<LogicalSessionRegistryV1>,
+    execution_start: Option<DurableExecutionStartV1>,
+    execution_state: Option<DurableExecutionStateV1>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
@@ -354,6 +362,37 @@ impl RecoveredDurableStateV1 {
     #[must_use]
     pub const fn sessions(&self) -> Option<&LogicalSessionRegistryV1> {
         self.sessions.as_ref()
+    }
+
+    /// Returns immutable sequence-one metadata when the prefix retained an execution start.
+    #[must_use]
+    pub const fn execution_start(&self) -> Option<&DurableExecutionStartV1> {
+        self.execution_start.as_ref()
+    }
+
+    /// Returns the latest compatible execution-state revision retained by recovery.
+    #[must_use]
+    pub const fn execution_state(&self) -> Option<&DurableExecutionStateV1> {
+        self.execution_state.as_ref()
+    }
+
+    /// Advances recovery coordinates after one validated execution-state commit receipt.
+    pub fn record_execution_state_commit(
+        &mut self,
+        state: DurableExecutionStateV1,
+        evidence_id: ProtocolIdentity,
+        sequence: u64,
+    ) -> Result<(), DurableEvidenceError> {
+        if state.execution_id() != self.machine.execution_id()
+            || evidence_id.kind() != IdentityKind::Evidence
+            || self.latest_sequence.checked_add(1) != Some(sequence)
+        {
+            return Err(DurableEvidenceError::InvalidExecutionState);
+        }
+        self.execution_state = Some(state);
+        self.latest_evidence_id = evidence_id;
+        self.latest_sequence = sequence;
+        Ok(())
     }
 
     /// Consumes the projection and returns the reconstructed existing evaluator.
@@ -393,7 +432,17 @@ pub fn recover_authoritative_prefix(
                     (*sequence == prefix.frontier).then_some(*identity)
                 })
                 .ok_or(DurableEvidenceError::InvalidCausalOrder)?;
-            let evidence = DurableLogicalEvidenceV1::decode(&program, &prefix.canonical_snapshot)?;
+            let evidence = if prefix.snapshot_version == 1 {
+                DurableLogicalEvidenceV1::decode(&program, &prefix.canonical_snapshot)?
+            } else if prefix.snapshot_version == 2 {
+                let snapshot =
+                    DurableRecoverySnapshotV1::decode(&program, &prefix.canonical_snapshot)?;
+                projection.execution_start = Some(snapshot.execution_start().clone());
+                projection.execution_state = snapshot.execution_state().cloned();
+                snapshot.state().clone()
+            } else {
+                return Err(DurableEvidenceError::Encoding);
+            };
             projection.apply_snapshot(
                 prefix.frontier,
                 frontier_id,
@@ -408,9 +457,38 @@ pub fn recover_authoritative_prefix(
     projection.finish(program)
 }
 
+/// Recovers one authoritative prefix using the executable program retained by sequence one.
+pub fn recover_authoritative_prefix_with_retained_program(
+    prefix: &JournalPrefixV1,
+) -> Result<(Arc<MachineProgram>, RecoveredDurableStateV1), DurableEvidenceError> {
+    validate_journal_prefix(prefix).map_err(DurableEvidenceError::Journal)?;
+    let program = Arc::new(match prefix {
+        JournalPrefixV1::Full(prefix) => {
+            let first = prefix
+                .evidence
+                .first()
+                .ok_or(DurableEvidenceError::MissingRecoveryState)?;
+            if first.sequence != 1 || first.kind.as_ref() != "gantry.execution-start/v1" {
+                return Err(DurableEvidenceError::InvalidExecutionStart);
+            }
+            DurableExecutionStartV1::retained_program(&first.canonical_body)?
+        }
+        JournalPrefixV1::Snapshot(prefix) if prefix.snapshot_version == 2 => {
+            DurableRecoverySnapshotV1::retained_program(&prefix.canonical_snapshot)?
+        }
+        JournalPrefixV1::Snapshot(_) => {
+            return Err(DurableEvidenceError::MissingRecoveryState);
+        }
+    });
+    let recovered = recover_authoritative_prefix(Arc::clone(&program), prefix)?;
+    Ok((program, recovered))
+}
+
 #[derive(Default)]
 struct PrefixProjection {
     latest: Option<(u64, ProtocolIdentity, DurableLogicalEvidenceV1)>,
+    execution_start: Option<DurableExecutionStartV1>,
+    execution_state: Option<DurableExecutionStateV1>,
     known: BTreeSet<ProtocolIdentity>,
     prepared_dispatches: BTreeSet<ProtocolIdentity>,
     latest_prepared: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
@@ -441,8 +519,41 @@ impl PrefixProjection {
         program: &MachineProgram,
         envelope: &JournalEvidenceEnvelopeV1,
     ) -> Result<(), DurableEvidenceError> {
+        if self.latest.is_none() && envelope.kind.as_ref() == "gantry.execution-start/v1" {
+            if envelope.sequence != 1 || !envelope.references.is_empty() {
+                return Err(DurableEvidenceError::InvalidExecutionStart);
+            }
+            let start = DurableExecutionStartV1::decode(program, &envelope.canonical_body)?;
+            let evidence = start.state().clone();
+            self.record_operation_cut(&evidence, true)?;
+            self.known.insert(envelope.evidence_id);
+            self.execution_start = Some(start);
+            self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
+            return Ok(());
+        }
         if envelope.kind.as_ref() != "gantry.logical-evidence/v1" {
-            return Err(DurableEvidenceError::UnsupportedEvidenceKind);
+            if envelope.kind.as_ref() != "gantry.execution-state/v1" {
+                return Err(DurableEvidenceError::UnsupportedEvidenceKind);
+            }
+            let Some((_, predecessor, previous)) = &self.latest else {
+                return Err(DurableEvidenceError::InvalidCausalOrder);
+            };
+            if !envelope.references.contains(predecessor)
+                || envelope
+                    .references
+                    .iter()
+                    .any(|reference| !self.known.contains(reference))
+            {
+                return Err(DurableEvidenceError::InvalidCausalOrder);
+            }
+            let state = DurableExecutionStateV1::decode(&envelope.canonical_body)?;
+            if state.execution_id() != previous.execution_id() {
+                return Err(DurableEvidenceError::MixedExecution);
+            }
+            self.known.insert(envelope.evidence_id);
+            self.execution_state = Some(state);
+            self.latest = Some((envelope.sequence, envelope.evidence_id, previous.clone()));
+            return Ok(());
         }
         if let Some((_, predecessor, previous)) = &self.latest {
             if !envelope.references.contains(predecessor)
@@ -552,6 +663,8 @@ impl PrefixProjection {
         Ok(RecoveredDurableStateV1 {
             machine,
             sessions,
+            execution_start: self.execution_start,
+            execution_state: self.execution_state,
             latest_sequence,
             latest_evidence_id,
             latest_cut: evidence.cut,
@@ -913,6 +1026,10 @@ pub enum DurableEvidenceError {
     Encoding,
     /// Typed identities, cut kind, and checkpoint state disagree.
     InvalidState,
+    /// Sequence-one metadata, identity, or embedded checkpoint state is inconsistent.
+    InvalidExecutionStart,
+    /// A mutable-policy or mapping execution-state revision is inconsistent.
+    InvalidExecutionState,
     /// Operation coordinates do not match the represented operation cut.
     InvalidOperation,
     /// The backend-neutral journal body contract rejected construction.
@@ -1336,8 +1453,10 @@ mod tests {
     };
 
     use super::{
-        DurableCommitCutV1, DurableEvidenceError, DurableLogicalEvidenceV1,
-        DurableOperationEvidenceV1, DurableOperationRecoveryV1, recover_authoritative_prefix,
+        DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV1,
+        DurableLogicalEvidenceV1, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
+        DurableRecoverySnapshotV1, recover_authoritative_prefix,
+        recover_authoritative_prefix_with_retained_program,
     };
     use crate::{
         CanonicalTranscriptV1, LogicalSessionRegistryV1, Machine, MachineLimits, MachineOutcome,
@@ -1378,6 +1497,46 @@ mod tests {
             &DurableOperationRecoveryV1::None
         );
         assert_eq!(drive(full.into_machine()), drive(compacted.into_machine()));
+    }
+
+    #[test]
+    fn retained_start_snapshot_recovers_program_metadata_and_latest_machine() {
+        let program = value_program();
+        let mut machine = machine(Arc::clone(&program));
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let state = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
+        let execution_start = DurableExecutionStartV1::new(
+            execution(),
+            root_task(),
+            &program,
+            Arc::<[u8]>::from(&b"{}"[..]),
+            state.clone(),
+        )
+        .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
+        let snapshot = DurableRecoverySnapshotV1::new(execution_start, state)
+            .unwrap_or_else(|error| panic!("retained snapshot failed: {error:?}"));
+        let prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
+            journal_id: journal_id(),
+            snapshot_version: 2,
+            frontier: 1,
+            canonical_snapshot: Arc::from(snapshot.canonical_body()),
+            retained_evidence: BTreeMap::from([(evidence_id(1), 1)]),
+            suffix: Arc::from([]),
+            committed_through: 1,
+        });
+
+        let (retained_program, recovered) =
+            recover_authoritative_prefix_with_retained_program(&prefix)
+                .unwrap_or_else(|error| panic!("retained recovery failed: {error:?}"));
+        assert_eq!(retained_program.as_ref(), program.as_ref());
+        assert_eq!(
+            recovered
+                .execution_start()
+                .map(DurableExecutionStartV1::metadata),
+            Some(&b"{}"[..])
+        );
+        assert_eq!(recovered.latest_sequence(), 1);
+        assert_eq!(drive(recovered.into_machine()), drive(machine));
     }
 
     #[test]

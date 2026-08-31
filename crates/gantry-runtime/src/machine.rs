@@ -21,6 +21,10 @@ use crate::session::SessionCreationModeV1;
 mod checkpoint_codec;
 #[cfg(feature = "durable")]
 use checkpoint_codec::{decode_machine_checkpoint, encode_machine_checkpoint};
+#[cfg(feature = "durable")]
+mod program_codec;
+#[cfg(feature = "durable")]
+pub(crate) use program_codec::{decode_machine_program, encode_machine_program};
 
 /// Finite positive limits captured for one machine run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -21,6 +21,7 @@ use gantry_observe::SinkPlan;
 use gantry_runtime::{
     AcceptExecutionError, AdapterPoison, AdmissionKind, BoundaryFailure, CanonicalTranscriptV1,
     ExecutionHandle, InterpreterConfiguration, InterpreterLifecycle, LifecycleError,
+    OperationAdmission,
 };
 
 use crate::{
@@ -130,10 +131,80 @@ pub enum StartExecutionResult {
     Rejected(StartExecutionFailure),
 }
 
+/// Complete pre-acceptance state retained while an execution crosses its acceptance boundary.
+pub(crate) struct PreparedExecutionStart {
+    pub(crate) admission: OperationAdmission,
+    pub(crate) execution_id: ProtocolIdentity,
+    pub(crate) package_activity: AnalyzePackageResult,
+    pub(crate) entry_input: Option<ValidatedEntryInput>,
+    pub(crate) root_session: RootSessionState,
+    pub(crate) mapping_revisions: MappingRevisions,
+}
+
+impl PreparedExecutionStart {
+    /// Reserves lifecycle ownership before a durable acceptance record is committed.
+    #[cfg(feature = "durable")]
+    pub(crate) fn reserve_state(&mut self) -> Result<(), StartExecutionFailure> {
+        self.admission
+            .reserve_execution(self.execution_id)
+            .map_err(accept_failure)
+    }
+
+    /// Publishes lifecycle state after the durable acceptance record commits.
+    #[cfg(feature = "durable")]
+    pub(crate) fn accept_reserved_state(
+        mut self,
+    ) -> Result<StartExecutionAccepted, StartExecutionFailure> {
+        let handle = self
+            .admission
+            .accept_reserved_execution(self.execution_id)
+            .map_err(|error| {
+                with_package_activity(accept_failure(error), self.package_activity.clone())
+            })?;
+        Ok(StartExecutionAccepted {
+            execution_id: self.execution_id,
+            handle,
+            package_activity: Box::new(self.package_activity),
+            entry_input: self.entry_input,
+            root_session: self.root_session,
+            mapping_revisions: self.mapping_revisions,
+        })
+    }
+
+    /// Transfers prepared work into lifecycle state after its acceptance boundary is established.
+    pub(crate) fn accept_state(mut self) -> Result<StartExecutionAccepted, StartExecutionFailure> {
+        let handle = match self.admission.accept_execution(self.execution_id) {
+            Ok(handle) => handle,
+            Err(error) => {
+                return Err(with_package_activity(
+                    accept_failure(error),
+                    self.package_activity,
+                ));
+            }
+        };
+        Ok(StartExecutionAccepted {
+            execution_id: self.execution_id,
+            handle,
+            package_activity: Box::new(self.package_activity),
+            entry_input: self.entry_input,
+            root_session: self.root_session,
+            mapping_revisions: self.mapping_revisions,
+        })
+    }
+
+    /// Transfers prepared work into the ordinary nondurable lifecycle acceptance boundary.
+    pub(crate) fn accept(self) -> StartExecutionResult {
+        match self.accept_state() {
+            Ok(accepted) => StartExecutionResult::Accepted(Box::new(accepted)),
+            Err(failure) => StartExecutionResult::Rejected(failure),
+        }
+    }
+}
+
 /// Ordered pre-execution coordinator over existing semantic and lifecycle owners.
 pub struct StartExecutionCoordinator<'a> {
-    package: &'a AnalyzePackageCoordinator<'a>,
-    lifecycle: &'a InterpreterLifecycle,
+    pub(crate) package: &'a AnalyzePackageCoordinator<'a>,
+    pub(crate) lifecycle: &'a InterpreterLifecycle,
     configuration: &'a InterpreterConfiguration,
     allocator: &'a FreshIdentityAllocator,
     preflight: &'a dyn IntegrationPreflight,
@@ -162,20 +233,28 @@ impl<'a> StartExecutionCoordinator<'a> {
 
     /// Runs ordered nondurable preflight and accepts before any evaluation or hook creation.
     pub async fn start(&self, request: StartExecutionRequest<'_>) -> StartExecutionResult {
-        let mut admission = match self.lifecycle.admit(AdmissionKind::NewWork) {
+        match self.prepare(request).await {
+            Ok(prepared) => prepared.accept(),
+            Err(failure) => StartExecutionResult::Rejected(failure),
+        }
+    }
+
+    /// Runs all shared pre-acceptance work while retaining lifecycle admission ownership.
+    pub(crate) async fn prepare(
+        &self,
+        request: StartExecutionRequest<'_>,
+    ) -> Result<PreparedExecutionStart, StartExecutionFailure> {
+        let admission = match self.lifecycle.admit(AdmissionKind::NewWork) {
             Ok(admission) => admission,
-            Err(error) => return rejected(lifecycle_failure(error), None),
+            Err(error) => return Err(lifecycle_failure(error)),
         };
 
         for peer in request.required_peers {
             if request.protocol_selection.require_peer(peer).is_err() {
-                return rejected(
-                    failure(
-                        StartFailureCategory::IntegrationPreflight,
-                        "unsupported-protocol-selection",
-                    ),
-                    None,
-                );
+                return Err(failure(
+                    StartFailureCategory::IntegrationPreflight,
+                    "unsupported-protocol-selection",
+                ));
             }
         }
 
@@ -190,7 +269,7 @@ impl<'a> StartExecutionCoordinator<'a> {
             .await
         {
             Ok(activity) => activity,
-            Err(error) => return rejected(analyze_failure(error), None),
+            Err(error) => return Err(analyze_failure(error)),
         };
         if package_activity.status != AnalyzePackageStatus::SourceValid {
             let category = if package_activity.analysis.is_some() {
@@ -198,7 +277,10 @@ impl<'a> StartExecutionCoordinator<'a> {
             } else {
                 StartFailureCategory::Syntax
             };
-            return rejected(failure(category, "source-invalid"), Some(package_activity));
+            return Err(with_package_activity(
+                failure(category, "source-invalid"),
+                package_activity,
+            ));
         }
 
         let analysis = package_activity
@@ -206,27 +288,31 @@ impl<'a> StartExecutionCoordinator<'a> {
             .as_ref()
             .unwrap_or_else(|| unreachable!("source-valid activity retains analysis"));
         if analysis.status() != AnalysisStatus::Valid {
-            return rejected(
+            return Err(with_package_activity(
                 failure(StartFailureCategory::Analysis, "source-invalid"),
-                Some(package_activity),
-            );
+                package_activity,
+            ));
         }
         let entry_input =
             match validate_entry_input(analysis, request.entry_input, self.configuration) {
                 Ok(input) => input,
-                Err(failure) => return rejected(failure, Some(package_activity)),
+                Err(failure) => {
+                    return Err(with_package_activity(failure, package_activity));
+                }
             };
         let mapping_revisions = match self.resolve_mappings(analysis).await {
             Ok(revisions) => revisions,
-            Err(failure) => return rejected(failure, Some(package_activity)),
+            Err(failure) => return Err(with_package_activity(failure, package_activity)),
         };
         let supplied_root = if let Some(specification) = request.root_session {
             let root = match self.supplied_root_session(specification) {
                 Ok(root) => root,
-                Err(failure) => return rejected(failure, Some(package_activity)),
+                Err(failure) => {
+                    return Err(with_package_activity(failure, package_activity));
+                }
             };
             if let Err(failure) = self.resolve_root_session(&root, specification).await {
-                return rejected(failure, Some(package_activity));
+                return Err(with_package_activity(failure, package_activity));
             }
             Some(root)
         } else {
@@ -238,13 +324,20 @@ impl<'a> StartExecutionCoordinator<'a> {
             .await
         {
             Ok(deliveries) => package_activity.deliveries = deliveries,
-            Err(error) => return rejected(analyze_failure(error), Some(package_activity)),
+            Err(error) => {
+                return Err(with_package_activity(
+                    analyze_failure(error),
+                    package_activity,
+                ));
+            }
         }
         let root_session = match supplied_root {
             Some(root) => root,
             None => match self.fresh_root_session() {
                 Ok(root) => root,
-                Err(failure) => return rejected(failure, Some(package_activity)),
+                Err(failure) => {
+                    return Err(with_package_activity(failure, package_activity));
+                }
             },
         };
         let execution_id = match self.allocator.allocate(
@@ -253,37 +346,31 @@ impl<'a> StartExecutionCoordinator<'a> {
         ) {
             Ok(identity) => identity,
             Err(error) => {
-                return rejected(
+                return Err(with_package_activity(
                     identity_failure(error, "execution-identity-source-failure"),
-                    Some(package_activity),
-                );
+                    package_activity,
+                ));
             }
         };
 
         if execution_id.kind() != IdentityKind::Execution {
-            return rejected(
+            return Err(with_package_activity(
                 failure(
                     StartFailureCategory::Internal,
                     "execution-identity-invariant",
                 ),
-                Some(package_activity),
-            );
+                package_activity,
+            ));
         }
 
-        let handle = match admission.accept_execution(execution_id) {
-            Ok(handle) => handle,
-            Err(error) => {
-                return rejected(accept_failure(error), Some(package_activity));
-            }
-        };
-        StartExecutionResult::Accepted(Box::new(StartExecutionAccepted {
+        Ok(PreparedExecutionStart {
+            admission,
             execution_id,
-            handle,
-            package_activity: Box::new(package_activity),
+            package_activity,
             entry_input,
             root_session,
             mapping_revisions,
-        }))
+        })
     }
 
     fn supplied_root_session(
@@ -378,7 +465,7 @@ impl<'a> StartExecutionCoordinator<'a> {
         require_resolved(&response)
     }
 
-    async fn call_preflight(
+    pub(crate) async fn call_preflight(
         &self,
         operation: EmbeddingOperation,
         payload: String,
@@ -409,7 +496,7 @@ impl<'a> StartExecutionCoordinator<'a> {
     }
 }
 
-fn decode_mapping_revisions(
+pub(crate) fn decode_mapping_revisions(
     response: &HostResponse,
     expects_agent: bool,
     expects_action: bool,
@@ -474,7 +561,7 @@ fn decode_mapping_revisions(
     Ok(MappingRevisions { agent, action })
 }
 
-fn require_resolved(response: &HostResponse) -> Result<(), StartExecutionFailure> {
+pub(crate) fn require_resolved(response: &HostResponse) -> Result<(), StartExecutionFailure> {
     if response.canonical_bytes() == b"{\"result\":\"resolved\"}" {
         Ok(())
     } else {
@@ -673,12 +760,12 @@ fn failure(category: StartFailureCategory, code: impl Into<Arc<str>>) -> StartEx
     }
 }
 
-fn rejected(
+fn with_package_activity(
     mut failure: StartExecutionFailure,
-    package_activity: Option<AnalyzePackageResult>,
-) -> StartExecutionResult {
-    failure.package_activity = package_activity.map(Box::new);
-    StartExecutionResult::Rejected(failure)
+    package_activity: AnalyzePackageResult,
+) -> StartExecutionFailure {
+    failure.package_activity = Some(Box::new(package_activity));
+    failure
 }
 
 fn json_string_array(values: &[&str]) -> String {

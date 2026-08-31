@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/durable-start/v1/schema.json",
+  "title": "Gantry durable-start conformance vectors v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.durable-start-vectors/v1" },
+    "evidence_formats": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "resume_modes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["candidate-source", "source-free"] }
+    },
+    "compatibility_classes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "enum": ["identity-bound", "durably-mutable", "scheduling-only"] }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "required": [
+    "format",
+    "evidence_formats",
+    "resume_modes",
+    "compatibility_classes",
+    "cases"
+  ]
+}

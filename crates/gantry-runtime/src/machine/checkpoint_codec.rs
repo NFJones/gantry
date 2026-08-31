@@ -590,49 +590,49 @@ fn read_label(
 }
 
 #[derive(Default)]
-struct Writer {
+pub(super) struct Writer {
     bytes: Vec<u8>,
 }
 
 impl Writer {
-    fn finish(self) -> Vec<u8> {
+    pub(super) fn finish(self) -> Vec<u8> {
         self.bytes
     }
 
-    fn raw(&mut self, value: &[u8]) {
+    pub(super) fn raw(&mut self, value: &[u8]) {
         self.bytes.extend_from_slice(value);
     }
 
-    fn u8(&mut self, value: u8) {
+    pub(super) fn u8(&mut self, value: u8) {
         self.bytes.push(value);
     }
 
-    fn boolean(&mut self, value: bool) {
+    pub(super) fn boolean(&mut self, value: bool) {
         self.u8(u8::from(value));
     }
 
-    fn u64(&mut self, value: u64) {
+    pub(super) fn u64(&mut self, value: u64) {
         self.raw(&value.to_be_bytes());
     }
 
-    fn usize(&mut self, value: usize) {
+    pub(super) fn usize(&mut self, value: usize) {
         self.u64(u64::try_from(value).unwrap_or(u64::MAX));
     }
 
-    fn count(&mut self, value: usize) {
+    pub(super) fn count(&mut self, value: usize) {
         self.usize(value);
     }
 
-    fn bytes(&mut self, value: &[u8]) {
+    pub(super) fn bytes(&mut self, value: &[u8]) {
         self.count(value.len());
         self.raw(value);
     }
 
-    fn string(&mut self, value: &str) {
+    pub(super) fn string(&mut self, value: &str) {
         self.bytes(value.as_bytes());
     }
 
-    fn optional_string(&mut self, value: Option<&str>) {
+    pub(super) fn optional_string(&mut self, value: Option<&str>) {
         self.boolean(value.is_some());
         if let Some(value) = value {
             self.string(value);
@@ -650,14 +650,14 @@ impl Writer {
         }
     }
 
-    fn position(&mut self, value: &StructuralPosition) {
+    pub(super) fn position(&mut self, value: &StructuralPosition) {
         self.count(value.components().len());
         for component in value.components() {
             self.u64(*component);
         }
     }
 
-    fn strings(&mut self, values: &[Arc<str>]) {
+    pub(super) fn strings(&mut self, values: &[Arc<str>]) {
         self.count(values.len());
         for value in values {
             self.string(value);
@@ -672,23 +672,23 @@ impl Writer {
         }
     }
 
-    fn value(&mut self, value: &LogicalValue) {
+    pub(super) fn value(&mut self, value: &LogicalValue) {
         let encoded = encode_value(value);
         self.bytes(&encoded);
     }
 }
 
-struct Reader<'a> {
+pub(super) struct Reader<'a> {
     bytes: &'a [u8],
     cursor: usize,
 }
 
 impl<'a> Reader<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
+    pub(super) const fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, cursor: 0 }
     }
 
-    fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.cursor == self.bytes.len()
     }
 
@@ -696,7 +696,7 @@ impl<'a> Reader<'a> {
         self.bytes.len().saturating_sub(self.cursor)
     }
 
-    fn raw(&mut self, length: usize) -> Result<&'a [u8], MachineRecoveryError> {
+    pub(super) fn raw(&mut self, length: usize) -> Result<&'a [u8], MachineRecoveryError> {
         let end = self
             .cursor
             .checked_add(length)
@@ -707,11 +707,11 @@ impl<'a> Reader<'a> {
         Ok(value)
     }
 
-    fn u8(&mut self) -> Result<u8, MachineRecoveryError> {
+    pub(super) fn u8(&mut self) -> Result<u8, MachineRecoveryError> {
         self.raw(1).map(|bytes| bytes[0])
     }
 
-    fn boolean(&mut self) -> Result<bool, MachineRecoveryError> {
+    pub(super) fn boolean(&mut self) -> Result<bool, MachineRecoveryError> {
         match self.u8()? {
             0 => Ok(false),
             1 => Ok(true),
@@ -719,7 +719,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn u64(&mut self) -> Result<u64, MachineRecoveryError> {
+    pub(super) fn u64(&mut self) -> Result<u64, MachineRecoveryError> {
         let bytes: [u8; 8] = self
             .raw(8)?
             .try_into()
@@ -727,11 +727,11 @@ impl<'a> Reader<'a> {
         Ok(u64::from_be_bytes(bytes))
     }
 
-    fn usize(&mut self) -> Result<usize, MachineRecoveryError> {
+    pub(super) fn usize(&mut self) -> Result<usize, MachineRecoveryError> {
         usize::try_from(self.u64()?).map_err(|_| MachineRecoveryError::InvalidEncoding)
     }
 
-    fn count(&mut self) -> Result<usize, MachineRecoveryError> {
+    pub(super) fn count(&mut self) -> Result<usize, MachineRecoveryError> {
         let count = self.usize()?;
         if count > self.remaining() {
             return Err(MachineRecoveryError::InvalidEncoding);
@@ -739,18 +739,18 @@ impl<'a> Reader<'a> {
         Ok(count)
     }
 
-    fn bytes(&mut self) -> Result<&'a [u8], MachineRecoveryError> {
+    pub(super) fn bytes(&mut self) -> Result<&'a [u8], MachineRecoveryError> {
         let length = self.usize()?;
         self.raw(length)
     }
 
-    fn string(&mut self) -> Result<String, MachineRecoveryError> {
+    pub(super) fn string(&mut self) -> Result<String, MachineRecoveryError> {
         std::str::from_utf8(self.bytes()?)
             .map(str::to_owned)
             .map_err(|_| MachineRecoveryError::InvalidEncoding)
     }
 
-    fn optional_string(&mut self) -> Result<Option<String>, MachineRecoveryError> {
+    pub(super) fn optional_string(&mut self) -> Result<Option<String>, MachineRecoveryError> {
         self.boolean()?.then(|| self.string()).transpose()
     }
 
@@ -774,7 +774,7 @@ impl<'a> Reader<'a> {
         self.boolean()?.then(|| self.identity(expected)).transpose()
     }
 
-    fn position(&mut self) -> Result<StructuralPosition, MachineRecoveryError> {
+    pub(super) fn position(&mut self) -> Result<StructuralPosition, MachineRecoveryError> {
         let count = self.count()?;
         let mut components = Vec::new();
         for _ in 0..count {
@@ -783,7 +783,7 @@ impl<'a> Reader<'a> {
         StructuralPosition::new(components).map_err(|_| MachineRecoveryError::InvalidEncoding)
     }
 
-    fn strings(&mut self) -> Result<Vec<Arc<str>>, MachineRecoveryError> {
+    pub(super) fn strings(&mut self) -> Result<Vec<Arc<str>>, MachineRecoveryError> {
         let count = self.count()?;
         let mut values = Vec::new();
         for _ in 0..count {
@@ -805,7 +805,10 @@ impl<'a> Reader<'a> {
         Ok(values)
     }
 
-    fn value(&mut self, limits: ValueLimits) -> Result<LogicalValue, MachineRecoveryError> {
+    pub(super) fn value(
+        &mut self,
+        limits: ValueLimits,
+    ) -> Result<LogicalValue, MachineRecoveryError> {
         decode_value(self.bytes()?, limits)
     }
 }

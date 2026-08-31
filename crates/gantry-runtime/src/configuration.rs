@@ -360,6 +360,12 @@ impl InterpreterConfiguration {
         self.post_cancellation_drain
     }
 
+    /// Returns the effective workflow-call-depth limit.
+    #[must_use]
+    pub const fn maximum_workflow_call_depth(&self) -> u64 {
+        self.maximum_workflow_call_depth
+    }
+
     /// Returns the effective cumulative task-count limit.
     #[must_use]
     pub const fn maximum_tasks_per_execution(&self) -> u64 {
