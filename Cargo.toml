@@ -11,6 +11,7 @@ members = [
     "crates/gantry-ir",
     "crates/gantry-observe",
     "crates/gantry-runtime",
+    "crates/gantry-storage-sqlite",
     "xtask",
 ]
 exclude = ["fuzz"]
@@ -32,7 +33,9 @@ gantry-host = { path = "crates/gantry-host", version = "=0.1.0" }
 gantry-ir = { path = "crates/gantry-ir", version = "=0.1.0" }
 gantry-observe = { path = "crates/gantry-observe", version = "=0.1.0" }
 gantry-runtime = { path = "crates/gantry-runtime", version = "=0.1.0" }
+gantry-storage-sqlite = { path = "crates/gantry-storage-sqlite", version = "=0.1.0" }
 getrandom = { version = "=0.3.4", default-features = false }
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "limits", "load_extension"] }
 rustix = { version = "=1.1.4", default-features = false, features = ["fs", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

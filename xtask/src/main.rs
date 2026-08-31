@@ -24,6 +24,7 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "gantry-ir",
     "gantry-observe",
     "gantry-runtime",
+    "gantry-storage-sqlite",
     "xtask",
 ];
 
@@ -39,6 +40,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry-cli", "gantry-adapter-tokio"),
     ("gantry-conformance", "gantry"),
     ("gantry-conformance", "gantry-adapter-tokio"),
+    ("gantry-conformance", "gantry-storage-sqlite"),
     ("gantry-adapter-tokio", "gantry-host"),
     ("gantry-analysis", "gantry-core"),
     ("gantry-analysis", "gantry-frontend"),
@@ -52,6 +54,8 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry-runtime", "gantry-host"),
     ("gantry-runtime", "gantry-ir"),
     ("gantry-runtime", "gantry-observe"),
+    ("gantry-storage-sqlite", "gantry-core"),
+    ("gantry-storage-sqlite", "gantry-host"),
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -299,7 +303,7 @@ mod tests {
             package(
                 "gantry-conformance",
                 true,
-                &["gantry", "gantry-adapter-tokio"],
+                &["gantry", "gantry-adapter-tokio", "gantry-storage-sqlite"],
             ),
             package("gantry-core", true, &[]),
             package("gantry-frontend", true, &["gantry-core"]),
@@ -307,6 +311,11 @@ mod tests {
             package("gantry-ir", true, &["gantry-core"]),
             package("gantry-observe", true, &["gantry-core", "gantry-host"]),
             package("gantry-runtime", true, &["gantry-core", "gantry-ir"]),
+            package(
+                "gantry-storage-sqlite",
+                true,
+                &["gantry-core", "gantry-host"],
+            ),
             package("xtask", true, &[]),
         ]
     }

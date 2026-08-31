@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "7d8ce1fb130557d0bff097557a6f007a1d9ed0acfbf5a8e9ddc1712756801e06"
+    "sha256": "085d3a564e8551f0b5b40e4348db4075aa327e7020ab415c8a3f5d99e3a62678"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
@@ -68,6 +68,32 @@
         "crates/gantry-conformance/tests/package_services.rs"
       ],
       "fallback": "Replace the CLI-private adapter with another reviewed operating-system random source that fills all 256 bits and preserves the same public IdentitySource contract."
+    },
+    {
+      "id": "rusqlite-reference-journal-storage",
+      "package": "rusqlite",
+      "status": "selected",
+      "version": "0.40.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "features": [
+        "bundled",
+        "limits",
+        "load_extension",
+        "modern_sqlite"
+      ],
+      "owner": "gantry-storage-sqlite",
+      "purpose": "Run the reference SQLite JournalStorage adapter on one bounded connection-affine worker while keeping database types and blocking work outside Gantry host contracts.",
+      "data_or_protocol_versions": [
+        "private SQLite schema version 1 behind the JournalStorage contract"
+      ],
+      "bounded_spike": "The locked wrapper bundles SQLite 3.53.2, supports Rust 1.85 or newer, exposes defensive configuration and resource limits, and permits extension loading to be explicitly disabled before fixed adapter SQL is executed.",
+      "acceptance_evidence": [
+        "crates/gantry-conformance/tests/sqlite_storage.rs",
+        "crates/gantry-storage-sqlite/src/storage.rs",
+        "crates/gantry-storage-sqlite/src/worker.rs"
+      ],
+      "fallback": "Preserve the backend-neutral JournalStorage contract and replace this leaf adapter with another reviewed bounded storage implementation that passes the same store, cancellation, malformed-input, and fault suites."
     },
     {
       "id": "rustix-package-source-provider",
