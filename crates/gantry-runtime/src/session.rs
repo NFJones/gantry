@@ -265,6 +265,12 @@ impl LogicalSessionRegistryV1 {
         self.sessions.get_mut(&id)
     }
 
+    #[cfg(test)]
+    /// Returns the number of records for sibling-module invariant tests.
+    pub(crate) fn len(&self) -> usize {
+        self.sessions.len()
+    }
+
     /// Creates or deterministically replays one non-root `new` or `fork` session.
     #[allow(clippy::too_many_arguments)]
     pub fn create(

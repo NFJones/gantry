@@ -245,7 +245,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "57e198cc13f9a55a0d0af45883b8e978302197507d834dd0250af995f9d74cd4"
+      "sha256": "60931c5d12b1c147d1f71f0dbc0e6451e5cf055048ee916ca0c22928484ac027"
     },
     {
       "path": "protocol/conformance/execution-observation-v1.json",
@@ -281,11 +281,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "8e19dd706ead713fe35959fcc20cee14f2ad8f1ebbb1ec31722b695ce7e66cd0"
+      "sha256": "4091b421d1fe6c5425dac2ad86e572bf99d48cac713ad8e98052c5ec8f280b66"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "19d8eba4a485a01f22b7ff45c3a812502e23ce641dbccb1ae3546a66707c2a78"
+      "sha256": "00a9f5615d978a7ff0de5abe9c55388515f2f9dc553858cfa8952e62403f12b3"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

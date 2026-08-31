@@ -311,6 +311,7 @@ struct PendingOperation {
 pub struct Machine {
     program: Arc<MachineProgram>,
     execution: ProtocolIdentity,
+    execution_foreground: bool,
     limits: MachineLimits,
     frames: Vec<WorkflowFrame>,
     values: Vec<LogicalValue>,
@@ -355,6 +356,60 @@ impl Machine {
         initial_agent: Option<Arc<str>>,
         initial_session: Option<ProtocolIdentity>,
     ) -> Result<Self, MachineBuildError> {
+        Self::new_task_context(
+            program,
+            root,
+            arguments,
+            execution,
+            limits,
+            initial_agent,
+            initial_session,
+            true,
+            true,
+        )
+    }
+
+    /// Creates one spawned task over the same explicit-frame evaluator.
+    ///
+    /// Child settlement emits `TaskSettled` but does not fabricate root-only
+    /// foreground or terminal execution labels. Concurrent effect metadata is
+    /// admitted because the execution-scoped scheduler owns task expansion.
+    #[cfg(feature = "concurrent")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_concurrent_task_with_context(
+        program: Arc<MachineProgram>,
+        root: &CanonicalPath,
+        arguments: Vec<LogicalValue>,
+        execution: ProtocolIdentity,
+        limits: MachineLimits,
+        initial_agent: Option<Arc<str>>,
+        initial_session: Option<ProtocolIdentity>,
+    ) -> Result<Self, MachineBuildError> {
+        Self::new_task_context(
+            program,
+            root,
+            arguments,
+            execution,
+            limits,
+            initial_agent,
+            initial_session,
+            false,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_task_context(
+        program: Arc<MachineProgram>,
+        root: &CanonicalPath,
+        arguments: Vec<LogicalValue>,
+        execution: ProtocolIdentity,
+        limits: MachineLimits,
+        initial_agent: Option<Arc<str>>,
+        initial_session: Option<ProtocolIdentity>,
+        execution_foreground: bool,
+        reject_concurrent_effects: bool,
+    ) -> Result<Self, MachineBuildError> {
         if execution.kind() != IdentityKind::Execution {
             return Err(MachineBuildError::InvalidExecutionIdentity);
         }
@@ -368,7 +423,7 @@ impl Machine {
         if workflow.parameters.len() != arguments.len() {
             return Err(MachineBuildError::ArgumentCount);
         }
-        if let Some(effect) = program.unsupported_effect(root_index) {
+        if reject_concurrent_effects && let Some(effect) = program.unsupported_effect(root_index) {
             return Err(MachineBuildError::UnsupportedEffect(effect));
         }
         for (parameter, argument) in workflow.parameters.iter().zip(&arguments) {
@@ -393,6 +448,7 @@ impl Machine {
         Ok(Self {
             program,
             execution,
+            execution_foreground,
             limits,
             frames: vec![WorkflowFrame {
                 workflow: root_index,
@@ -430,6 +486,19 @@ impl Machine {
     #[must_use]
     pub const fn status(&self) -> MachineStatus {
         self.status
+    }
+
+    /// Returns the accepted execution identity shared by this task machine.
+    #[must_use]
+    pub const fn execution_id(&self) -> ProtocolIdentity {
+        self.execution
+    }
+
+    /// Returns whether this machine owns execution foreground/terminal labels.
+    #[cfg(feature = "concurrent")]
+    #[must_use]
+    pub const fn is_execution_foreground(&self) -> bool {
+        self.execution_foreground
     }
 
     /// Returns the fixed foreground outcome, when terminal.
@@ -1305,10 +1374,12 @@ impl Machine {
             MachineOutcome::Cancelled(_) => MachineStatus::Cancelled,
         };
         self.outcome = Some(outcome.clone());
-        self.pending_labels
-            .push_back(MachineLabel::ForegroundCompletion(outcome.clone()));
-        self.pending_labels
-            .push_back(MachineLabel::TerminalCompletion(outcome.clone()));
+        if self.execution_foreground {
+            self.pending_labels
+                .push_back(MachineLabel::ForegroundCompletion(outcome.clone()));
+            self.pending_labels
+                .push_back(MachineLabel::TerminalCompletion(outcome.clone()));
+        }
         MachineStep::Transition(MachineLabel::TaskSettled(outcome))
     }
 
@@ -1348,10 +1419,12 @@ impl Machine {
         self.outcome = Some(outcome.clone());
         self.pending_labels
             .push_back(MachineLabel::TaskSettled(outcome.clone()));
-        self.pending_labels
-            .push_back(MachineLabel::ForegroundCompletion(outcome.clone()));
-        self.pending_labels
-            .push_back(MachineLabel::TerminalCompletion(outcome));
+        if self.execution_foreground {
+            self.pending_labels
+                .push_back(MachineLabel::ForegroundCompletion(outcome.clone()));
+            self.pending_labels
+                .push_back(MachineLabel::TerminalCompletion(outcome));
+        }
         MachineStep::Transition(MachineLabel::Failure(failure))
     }
 
@@ -1778,7 +1851,7 @@ fn parse_float(value: &str) -> Option<GantryFloat> {
     number.to_gantry_float().ok().and_then(GantryFloat::new)
 }
 
-fn value_matches_type(value: &LogicalValue, expected: &TypeDescriptor) -> bool {
+pub(crate) fn value_matches_type(value: &LogicalValue, expected: &TypeDescriptor) -> bool {
     use gantry_ir::generated::TypeKind;
 
     let mut work = vec![(value.clone(), expected.clone())];

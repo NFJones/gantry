@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "8e19dd706ead713fe35959fcc20cee14f2ad8f1ebbb1ec31722b695ce7e66cd0",
+    "sha256": "4091b421d1fe6c5425dac2ad86e572bf99d48cac713ad8e98052c5ec8f280b66",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -149,6 +149,10 @@
     {
       "path": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",
       "sha256": "1c213d589191b4afa7f3a3498f4dd0acc3d23ad07060bdf2136f4cabd07aedb2"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_task_state.rs",
+      "sha256": "11d7f2ad811848b0229880c72d55f726ac41876ded921f70615db28c2dd1c113"
     },
     {
       "path": "crates/gantry-conformance/tests/executor_services.rs",
@@ -256,7 +260,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "57e198cc13f9a55a0d0af45883b8e978302197507d834dd0250af995f9d74cd4"
+      "sha256": "60931c5d12b1c147d1f71f0dbc0e6451e5cf055048ee916ca0c22928484ac027"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -287,6 +291,10 @@
       "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
     },
     {
+      "path": "protocol/conformance/concurrent-task-state-v1.json",
+      "sha256": "030e61157c3d272de006c345da35440f0543e31254da8397963fcc8319ad4b24"
+    },
+    {
       "path": "protocol/conformance/executor-services-v1.json",
       "sha256": "2eab30814bee2e4732c43785db391e42268d2e3825a1d1e066ac8d7707c59e3e"
     },
@@ -304,7 +312,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "04b2053edff2973f706592f1653603b524613abdf84a72d7324769bdedb9b35a"
+      "sha256": "b9461906e21e7e597408d058606648f3f500cd5c6a7621b241800cd8fe0611a4"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",
@@ -396,11 +404,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "8e19dd706ead713fe35959fcc20cee14f2ad8f1ebbb1ec31722b695ce7e66cd0"
+      "sha256": "4091b421d1fe6c5425dac2ad86e572bf99d48cac713ad8e98052c5ec8f280b66"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "19d8eba4a485a01f22b7ff45c3a812502e23ce641dbccb1ae3546a66707c2a78"
+      "sha256": "00a9f5615d978a7ff0de5abe9c55388515f2f9dc553858cfa8952e62403f12b3"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -504,6 +512,11 @@
       "id": "canonical-protocol",
       "kind": "public-facade",
       "path": "crates/gantry-conformance/tests/canonical_protocol.rs"
+    },
+    {
+      "id": "concurrent-task-state",
+      "kind": "public-facade-and-reviewed-evidence",
+      "path": "crates/gantry-conformance/tests/concurrent_task_state.rs"
     },
     {
       "id": "diagnostic-presentation",

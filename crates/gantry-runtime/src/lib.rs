@@ -13,6 +13,8 @@ mod machine;
 mod operation;
 mod outcome;
 mod session;
+#[cfg(feature = "concurrent")]
+mod task;
 
 pub use configuration::{
     ConfigurationError, ConfigurationErrorKind, InterpreterConfiguration, RequiredConfiguration,
@@ -67,6 +69,12 @@ pub use session::{
     AcceptedTranscriptResultV1, CanonicalTranscriptV1, LogicalSessionRegistryV1, LogicalSessionV1,
     SessionCreationModeV1, SessionError, SessionEstablisher, SessionEstablishmentError,
     SessionEstablishmentV1, TranscriptError, TranscriptResultKindV1, TranscriptTurnV1,
+};
+#[cfg(feature = "concurrent")]
+pub use task::{
+    ConcurrentSchedulerV1, ConcurrentTaskRecordV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
+    DynamicTaskHandleIdentity, ScheduledMachineStepV1, TaskCaptureV1, TaskCreatedV1,
+    TaskCreationRequestV1, TaskCreationV1, TaskFailureV1, TaskStateError,
 };
 
 #[cfg(test)]

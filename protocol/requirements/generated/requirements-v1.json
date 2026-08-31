@@ -8847,8 +8847,11 @@
           "profile_reviews": [
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path",
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated"
+              ],
               "rationale": null
             },
             {
