@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "98381dc69fcc34b9d9dd55d6d50ac4c695f1785eceebe49b22feb8229ab9c06d"
+    "sha256": "3099a05348bdcb78d97f956d8c2862af43d187aa80ac3393917c623fe38bd9d9"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
@@ -68,6 +68,35 @@
         "crates/gantry-conformance/tests/package_services.rs"
       ],
       "fallback": "Replace the CLI-private adapter with another reviewed operating-system random source that fills all 256 bits and preserves the same public IdentitySource contract."
+    },
+    {
+      "id": "libsqlite3-sys-fault-helper-build",
+      "package": "libsqlite3-sys",
+      "status": "selected",
+      "version": "0.38.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "features": [
+        "bundled",
+        "bundled_bindings",
+        "cc",
+        "default",
+        "min_sqlite_version_3_34_1",
+        "pkg-config",
+        "vcpkg"
+      ],
+      "owner": "gantry-conformance",
+      "purpose": "Build the subprocess-only SQLite physical-fault helper against the exact bundled SQLite library selected by the reference adapter while preserving unsafe-code prohibition in workspace Rust.",
+      "data_or_protocol_versions": [
+        "bundled SQLite 3.53.2 C VFS ABI for synthetic conformance faults"
+      ],
+      "bounded_spike": "The locked release exposes the same bundled SQLite 3.53.2 static library used by rusqlite; the helper delegates to its unix VFS and deterministically exercises short writes, torn writes, database sync failure, and directory sync failure in an isolated subprocess.",
+      "acceptance_evidence": [
+        "crates/gantry-conformance/build.rs",
+        "crates/gantry-conformance/tests/fixtures/sqlite_fault_helper.c",
+        "crates/gantry-conformance/tests/sqlite_storage.rs"
+      ],
+      "fallback": "Replace the subprocess helper with another reviewed test-only VFS or filesystem shim that covers all four fault classes against the locked engine without introducing unsafe Rust into workspace crates."
     },
     {
       "id": "rusqlite-reference-journal-storage",

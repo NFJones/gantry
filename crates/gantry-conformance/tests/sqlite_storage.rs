@@ -308,6 +308,43 @@ fn public_sqlite_strict_power_loss_policy_matches_environment_qualification() {
     }
 }
 
+#[cfg(gantry_sqlite_fault_helper)]
+#[test]
+fn bundled_sqlite_fault_matrix_preserves_atomic_sequence_and_payload_prefixes() {
+    for (case, expected_commit, expected_state) in [
+        ("short-write", "success", Some("new")),
+        ("torn-write", "crash", Some("old")),
+        ("database-sync-failure", "io-error", None),
+        ("directory-sync-failure", "io-error", None),
+    ] {
+        let database = TemporaryDatabase::new(case);
+        let output = Command::new(env!("GANTRY_SQLITE_FAULT_HELPER"))
+            .arg(case)
+            .arg(database.path())
+            .output()
+            .unwrap_or_else(|error| panic!("fault helper failed to start for {case}: {error}"));
+        assert!(
+            output.status.success(),
+            "fault helper failed for {case}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout)
+            .unwrap_or_else(|error| panic!("fault helper output was not UTF-8: {error}"));
+        let fields = stdout
+            .split_whitespace()
+            .filter_map(|field| field.split_once('='))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(fields.get("case"), Some(&case));
+        assert_eq!(fields.get("commit"), Some(&expected_commit));
+        assert_eq!(fields.get("injections"), Some(&"1"));
+        assert_eq!(fields.get("sqlite"), Some(&"3.53.2"));
+        assert!(matches!(fields.get("state"), Some(&"old" | &"new")));
+        if let Some(expected_state) = expected_state {
+            assert_eq!(fields.get("state"), Some(&expected_state));
+        }
+    }
+}
+
 fn journal_id(value: &str) -> JournalId {
     JournalId::new(value).unwrap_or_else(|error| panic!("journal id failed: {error:?}"))
 }

@@ -22,18 +22,24 @@
       "evidence": "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_owner_lease_fences_same_process_and_preserves_sidecar_identity"
     },
     {
+      "id": "synthetic-physical-fault-atomicity",
+      "evidence": "crates/gantry-conformance/tests/sqlite_storage.rs#bundled_sqlite_fault_matrix_preserves_atomic_sequence_and_payload_prefixes"
+    },
+    {
       "id": "unsupported-power-loss-environment-rejection",
       "evidence": "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_strict_power_loss_policy_matches_environment_qualification"
     }
   ],
   "physical_fault_matrix": {
-    "status": "unqualified",
-    "missing_cases": [
+    "status": "synthetic-bundled-unix-vfs-covered",
+    "cases": [
+      "database-sync-failure",
       "directory-sync-failure",
       "short-write",
-      "sync-failure",
       "torn-write"
     ],
+    "evidence_environment": "subprocess helper compiled from the locked SQLite 3.53.2 amalgamation and a delegating unix VFS",
+    "qualification_boundary": "The matrix proves SQLite transaction and hot-journal behavior under deterministic injected cuts; it does not prove stable-media behavior for the host VFS or filesystem.",
     "power_loss_claim": false
   },
   "documentation": "docs/sqlite-journal-storage.md"

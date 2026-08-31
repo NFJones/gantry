@@ -42,7 +42,7 @@ An engine, VFS, pragma, schema, or defensive-setting mismatch fails closed.
 The adapter identifies the database filesystem for evidence and policy, but a
 filesystem name alone is not a durability proof.
 
-## Current evidence and claim boundary
+## Physical fault evidence and claim boundary
 
 The public conformance suite verifies the common atomic fenced-store contract,
 same-process and cross-process owner exclusion, stable sidecar identity,
@@ -50,12 +50,31 @@ transactional release ordering, stale-token rejection, process-death lock
 reclamation, and recovery of a committed prefix in a fresh process. It also
 checks all effective settings listed above.
 
-The current repository does **not** contain a test VFS or equivalent filesystem
-shim capable of demonstrating short writes, torn writes, database-file sync
-failure, or rollback-journal directory-sync failure. Consequently every
-environment reports `power_loss_qualified = false`; configuration that requires
-that qualification is rejected with `sqlite-unsupported-environment`.
-Transaction and restart tests must not be presented as power-loss evidence.
-The durable-profile release gate remains blocked on a platform-specific fault
-matrix that records the SQLite engine, VFS, filesystem, and flush behavior for
-each qualified environment.
+The physical-fault matrix runs an isolated C subprocess compiled from the exact
+bundled SQLite `3.53.2` amalgamation. Its `gantry-fault` VFS delegates ordinary
+I/O and locking to SQLite's `unix` VFS while deterministically injecting one of
+four commit-boundary failures:
+
+- a reported partial database write, which SQLite must complete and commit;
+- an unreported partial database write followed by immediate process death,
+  which hot-journal recovery must roll back;
+- a main-database `xSync` failure; and
+- rollback-journal deletion followed by a synthetic directory-sync failure.
+
+Every case reopens the database, runs `quick_check`, and requires the journal's
+sequence and protected-payload rows to form exactly the complete old prefix or
+the complete new prefix. The short-write case must produce the new prefix, and
+the torn-write crash must recover the old prefix. The helper is a subprocess C
+boundary because SQLite's VFS ABI is a C interface; all workspace Rust remains
+under `unsafe_code = "forbid"`.
+
+This deterministic matrix establishes the adapter's transaction and recovery
+behavior under the four injected cuts. It does **not** establish that a
+particular host filesystem, storage device, VFS implementation, or flush path
+actually provides stable-media power-loss guarantees. Consequently current
+environments still report `power_loss_qualified = false`; configuration that
+requires qualification is rejected with `sqlite-unsupported-environment`.
+Transaction, restart, and synthetic-fault tests must not be presented as a
+host-environment power-loss claim. A future qualified environment must add a
+platform record for the exact engine, VFS, filesystem, mount/storage behavior,
+and flush evidence rather than changing this boundary by inference.

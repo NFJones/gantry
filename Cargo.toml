@@ -35,6 +35,7 @@ gantry-observe = { path = "crates/gantry-observe", version = "=0.1.0" }
 gantry-runtime = { path = "crates/gantry-runtime", version = "=0.1.0" }
 gantry-storage-sqlite = { path = "crates/gantry-storage-sqlite", version = "=0.1.0" }
 getrandom = { version = "=0.3.4", default-features = false }
+libsqlite3-sys = { version = "=0.38.2", features = ["bundled"] }
 rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "limits", "load_extension"] }
 rustix = { version = "=1.1.4", default-features = false, features = ["fs", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }

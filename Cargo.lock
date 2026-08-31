@@ -171,6 +171,7 @@ dependencies = [
  "gantry",
  "gantry-adapter-tokio",
  "gantry-storage-sqlite",
+ "libsqlite3-sys",
  "rusqlite",
  "serde",
  "serde_json",
