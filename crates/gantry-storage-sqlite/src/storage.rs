@@ -19,6 +19,7 @@ use rusqlite::config::DbConfig;
 use rusqlite::limits::Limit;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
+use crate::ownership::{OwnerLeaseError, OwnerLeaseManager};
 use crate::worker::{
     CommandCompletion, SqliteWorker, SqliteWorkerSnapshot, WorkerFailure, WorkerStartError,
 };
@@ -26,8 +27,17 @@ use crate::worker::{
 /// SQLite application identifier reserved for Gantry journal databases.
 pub const SQLITE_APPLICATION_ID: i32 = 0x474e_5452;
 
+/// Locked bundled SQLite engine version used by the reference adapter.
+pub const SQLITE_ENGINE_VERSION: &str = "3.53.2";
+
 /// Current private SQLite schema version for the reference adapter.
 pub const SQLITE_SCHEMA_VERSION: i32 = 1;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const SQLITE_VFS_NAME: &str = "unix";
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+const SQLITE_VFS_NAME: &str = "unsupported";
 
 /// Stable adapter-specific failure detail carried inside journal failures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,6 +54,10 @@ pub enum SqliteAdapterErrorCode {
     MalformedDatabase,
     /// A defensive connection setting could not be established and read back.
     DefensiveConfiguration,
+    /// The effective engine, VFS, journal, sync, or flush setting is unsupported.
+    DurabilityConfiguration,
+    /// The database filesystem is outside the reference power-loss claim.
+    UnsupportedEnvironment,
     /// An ordinary SQLite operation failed outside the narrower categories.
     Storage,
 }
@@ -59,6 +73,8 @@ impl SqliteAdapterErrorCode {
             Self::Locked => "sqlite-locked",
             Self::MalformedDatabase => "sqlite-malformed-database",
             Self::DefensiveConfiguration => "sqlite-defensive-configuration",
+            Self::DurabilityConfiguration => "sqlite-durability-configuration",
+            Self::UnsupportedEnvironment => "sqlite-unsupported-environment",
             Self::Storage => "sqlite-storage",
         }
     }
@@ -85,6 +101,23 @@ pub struct SqliteDefensiveSettings {
     pub worker_threads: i32,
 }
 
+/// Effective durability environment verified before the adapter is exposed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SqliteDurabilitySettings {
+    /// Explicit SQLite VFS selected when opening the database.
+    pub vfs: Arc<str>,
+    /// Effective rollback-journal mode.
+    pub journal_mode: Arc<str>,
+    /// Effective synchronous level; SQLite reports `3` for `EXTRA`.
+    pub synchronous: i64,
+    /// Whether the macOS full-fsync path is enabled.
+    pub fullfsync: bool,
+    /// Bounded filesystem classification used by the reference adapter.
+    pub filesystem: Arc<str>,
+    /// Whether this environment is admitted for the reference power-loss claim.
+    pub power_loss_qualified: bool,
+}
+
 /// Finite worker and database limits selected for one adapter instance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqliteJournalStoreConfig {
@@ -94,6 +127,8 @@ pub struct SqliteJournalStoreConfig {
     pub maximum_value_bytes: i32,
     /// Maximum fixed SQL statement length in bytes.
     pub maximum_sql_bytes: i32,
+    /// Reject opening unless the filesystem is qualified for power-loss evidence.
+    pub require_power_loss_qualified: bool,
 }
 
 impl Default for SqliteJournalStoreConfig {
@@ -102,6 +137,7 @@ impl Default for SqliteJournalStoreConfig {
             queue_capacity: 64,
             maximum_value_bytes: 16 * 1024 * 1024,
             maximum_sql_bytes: 64 * 1024,
+            require_power_loss_qualified: false,
         }
     }
 }
@@ -117,7 +153,15 @@ pub struct SqliteJournalStoreOpenError {
 pub struct SqliteJournalStore {
     path: PathBuf,
     settings: SqliteDefensiveSettings,
+    durability: SqliteDurabilitySettings,
+    owners: Arc<OwnerLeaseManager>,
     worker: SqliteWorker,
+}
+
+struct InitializedStore {
+    settings: SqliteDefensiveSettings,
+    durability: SqliteDurabilitySettings,
+    owners: Arc<OwnerLeaseManager>,
 }
 
 impl SqliteJournalStore {
@@ -136,7 +180,7 @@ impl SqliteJournalStore {
         }
         let path = path.as_ref().to_path_buf();
         let worker_path = path.clone();
-        let (worker, settings) = SqliteWorker::start(config.queue_capacity, move || {
+        let (worker, initialized) = SqliteWorker::start(config.queue_capacity, move || {
             initialize_connection(&worker_path, config)
         })
         .map_err(|error| SqliteJournalStoreOpenError {
@@ -147,7 +191,9 @@ impl SqliteJournalStore {
         })?;
         Ok(Self {
             path,
-            settings,
+            settings: initialized.settings,
+            durability: initialized.durability,
+            owners: initialized.owners,
             worker,
         })
     }
@@ -162,6 +208,18 @@ impl SqliteJournalStore {
     #[must_use]
     pub const fn defensive_settings(&self) -> &SqliteDefensiveSettings {
         &self.settings
+    }
+
+    /// Returns the effective durability settings and environment qualification.
+    #[must_use]
+    pub const fn durability_settings(&self) -> &SqliteDurabilitySettings {
+        &self.durability
+    }
+
+    /// Returns the stable sidecar path retained across ownership generations.
+    #[must_use]
+    pub fn owner_lock_path(&self) -> &Path {
+        self.owners.lock_path()
     }
 
     /// Returns point-in-time worker state counters.
@@ -215,7 +273,8 @@ impl JournalStorage for SqliteJournalStore {
         &'a self,
         request: AcquireJournalOwnerV1,
     ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
-        self.submit_mutation(move |connection| acquire_owner(connection, request))
+        let owners = Arc::clone(&self.owners);
+        self.submit_mutation(move |connection| acquire_owner(connection, &owners, request))
     }
 
     fn read_prefix<'a>(
@@ -229,7 +288,8 @@ impl JournalStorage for SqliteJournalStore {
         &'a self,
         request: JournalCommitRequestV1,
     ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
-        self.submit_mutation(move |connection| commit_batch(connection, request))
+        let owners = Arc::clone(&self.owners);
+        self.submit_mutation(move |connection| commit_batch(connection, &owners, request))
     }
 
     fn resolve_payload<'a>(
@@ -243,11 +303,34 @@ impl JournalStorage for SqliteJournalStore {
         &'a self,
         request: ReleaseJournalOwnerV1,
     ) -> HostFuture<'a, Result<(), JournalError>> {
-        self.submit_mutation(move |connection| release_owner(connection, request))
+        let owners = Arc::clone(&self.owners);
+        self.submit_mutation(move |connection| release_owner(connection, &owners, request))
     }
 }
 
 fn acquire_owner(
+    connection: &mut Connection,
+    owners: &OwnerLeaseManager,
+    request: AcquireJournalOwnerV1,
+) -> Result<JournalOwnershipV1, JournalError> {
+    owners.ensure_locked().map_err(owner_acquisition_error)?;
+    if owners.has_owner(&request.journal_id) {
+        return Err(JournalError::new(JournalErrorCode::OwnershipUnavailable));
+    }
+    let result = acquire_owner_transaction(connection, request);
+    match result {
+        Ok(ownership) => {
+            owners.register_owner(&ownership.journal_id, &ownership.token);
+            Ok(ownership)
+        }
+        Err(error) => {
+            owners.release_if_unused();
+            Err(error)
+        }
+    }
+}
+
+fn acquire_owner_transaction(
     connection: &mut Connection,
     request: AcquireJournalOwnerV1,
 ) -> Result<JournalOwnershipV1, JournalError> {
@@ -262,12 +345,6 @@ fn acquire_owner(
         )
         .optional()
         .map_err(sqlite_journal_error)?;
-    if current
-        .as_ref()
-        .is_some_and(|(_, owner_token)| owner_token.is_some())
-    {
-        return Err(JournalError::new(JournalErrorCode::OwnershipUnavailable));
-    }
     let generation = current.map_or(Ok(1_i64), |(generation, _)| {
         generation
             .checked_add(1)
@@ -359,8 +436,12 @@ fn read_prefix(
 
 fn commit_batch(
     connection: &mut Connection,
+    owners: &OwnerLeaseManager,
     request: JournalCommitRequestV1,
 ) -> Result<JournalCommitReceiptV1, JournalError> {
+    if !owners.is_active(&request.journal_id, &request.ownership_token) {
+        return Err(JournalError::new(JournalErrorCode::StaleOwnership));
+    }
     validate_local_reference_graph(&request.batch)?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -509,8 +590,12 @@ fn resolve_payload(
 
 fn release_owner(
     connection: &mut Connection,
+    owners: &OwnerLeaseManager,
     request: ReleaseJournalOwnerV1,
 ) -> Result<(), JournalError> {
+    if !owners.is_active(&request.journal_id, &request.ownership_token) {
+        return Err(JournalError::new(JournalErrorCode::StaleOwnership));
+    }
     let changed = connection
         .execute(
             "UPDATE journals SET owner_token = NULL WHERE journal_id = ?1 AND owner_token = ?2",
@@ -521,6 +606,7 @@ fn release_owner(
         )
         .map_err(sqlite_journal_error)?;
     if changed == 1 {
+        owners.finish_release(&request.journal_id, &request.ownership_token);
         Ok(())
     } else {
         Err(JournalError::new(JournalErrorCode::StaleOwnership))
@@ -862,11 +948,12 @@ const REQUIRED_SCHEMA: [(&str, &str); 5] = [
 fn initialize_connection(
     path: &Path,
     config: SqliteJournalStoreConfig,
-) -> Result<(Connection, SqliteDefensiveSettings), SqliteAdapterErrorCode> {
+) -> Result<(Connection, InitializedStore), SqliteAdapterErrorCode> {
     let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
         | OpenFlags::SQLITE_OPEN_CREATE
         | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    let mut connection = Connection::open_with_flags(path, flags).map_err(sqlite_adapter_code)?;
+    let mut connection = Connection::open_with_flags_and_vfs(path, flags, SQLITE_VFS_NAME)
+        .map_err(sqlite_adapter_code)?;
     connection
         .busy_timeout(Duration::ZERO)
         .map_err(sqlite_adapter_code)?;
@@ -917,6 +1004,19 @@ fn initialize_connection(
         _ => return Err(SqliteAdapterErrorCode::MalformedDatabase),
     }
 
+    let journal_mode = connection
+        .pragma_update_and_check(None, "journal_mode", "DELETE", |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|_| SqliteAdapterErrorCode::DurabilityConfiguration)?;
+    connection
+        .pragma_update(None, "synchronous", "EXTRA")
+        .map_err(|_| SqliteAdapterErrorCode::DurabilityConfiguration)?;
+    let required_fullfsync = cfg!(target_os = "macos");
+    connection
+        .pragma_update(None, "fullfsync", required_fullfsync)
+        .map_err(|_| SqliteAdapterErrorCode::DurabilityConfiguration)?;
+
     let defensive = connection
         .db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE)
         .map_err(|_| SqliteAdapterErrorCode::DefensiveConfiguration)?;
@@ -937,6 +1037,12 @@ fn initialize_connection(
     let worker_threads = connection
         .limit(Limit::SQLITE_LIMIT_WORKER_THREADS)
         .map_err(|_| SqliteAdapterErrorCode::DefensiveConfiguration)?;
+    let synchronous: i64 = connection
+        .pragma_query_value(None, "synchronous", |row| row.get(0))
+        .map_err(|_| SqliteAdapterErrorCode::DurabilityConfiguration)?;
+    let fullfsync: bool = connection
+        .pragma_query_value(None, "fullfsync", |row| row.get(0))
+        .map_err(|_| SqliteAdapterErrorCode::DurabilityConfiguration)?;
     if extension_loading_enabled
         || !defensive
         || trusted_schema
@@ -944,20 +1050,39 @@ fn initialize_connection(
         || maximum_value_bytes != config.maximum_value_bytes
         || maximum_sql_bytes != config.maximum_sql_bytes
         || worker_threads != 0
+        || rusqlite::version() != SQLITE_ENGINE_VERSION
+        || !journal_mode.eq_ignore_ascii_case("delete")
+        || synchronous != 3
+        || fullfsync != required_fullfsync
     {
-        return Err(SqliteAdapterErrorCode::DefensiveConfiguration);
+        return Err(SqliteAdapterErrorCode::DurabilityConfiguration);
+    }
+    let (owners, filesystem) = OwnerLeaseManager::new(path).map_err(owner_open_error)?;
+    if config.require_power_loss_qualified && !filesystem.power_loss_qualified {
+        return Err(SqliteAdapterErrorCode::UnsupportedEnvironment);
     }
     Ok((
         connection,
-        SqliteDefensiveSettings {
-            engine_version: Arc::from(rusqlite::version()),
-            extension_loading_enabled,
-            defensive,
-            trusted_schema,
-            mmap_size,
-            maximum_value_bytes,
-            maximum_sql_bytes,
-            worker_threads,
+        InitializedStore {
+            settings: SqliteDefensiveSettings {
+                engine_version: Arc::from(rusqlite::version()),
+                extension_loading_enabled,
+                defensive,
+                trusted_schema,
+                mmap_size,
+                maximum_value_bytes,
+                maximum_sql_bytes,
+                worker_threads,
+            },
+            durability: SqliteDurabilitySettings {
+                vfs: Arc::from(SQLITE_VFS_NAME),
+                journal_mode: Arc::from(journal_mode),
+                synchronous,
+                fullfsync,
+                filesystem: Arc::from(filesystem.name),
+                power_loss_qualified: filesystem.power_loss_qualified,
+            },
+            owners: Arc::new(owners),
         },
     ))
 }
@@ -1037,6 +1162,25 @@ fn worker_adapter_code(error: WorkerFailure) -> SqliteAdapterErrorCode {
 
 fn worker_journal_error(error: WorkerFailure) -> JournalError {
     adapter_journal_error(worker_adapter_code(error))
+}
+
+fn owner_acquisition_error(error: OwnerLeaseError) -> JournalError {
+    match error {
+        OwnerLeaseError::Unavailable => JournalError::new(JournalErrorCode::OwnershipUnavailable),
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        OwnerLeaseError::UnsupportedEnvironment => {
+            adapter_journal_error(SqliteAdapterErrorCode::UnsupportedEnvironment)
+        }
+        OwnerLeaseError::Io => adapter_journal_error(SqliteAdapterErrorCode::Storage),
+    }
+}
+
+fn owner_open_error(error: OwnerLeaseError) -> SqliteAdapterErrorCode {
+    match error {
+        OwnerLeaseError::Unavailable | OwnerLeaseError::Io => SqliteAdapterErrorCode::Storage,
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        OwnerLeaseError::UnsupportedEnvironment => SqliteAdapterErrorCode::UnsupportedEnvironment,
+    }
 }
 
 fn sqlite_adapter_code(error: rusqlite::Error) -> SqliteAdapterErrorCode {

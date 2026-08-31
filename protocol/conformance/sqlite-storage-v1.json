@@ -1,0 +1,40 @@
+{
+  "format": "gantry.sqlite-storage-evidence/v1",
+  "issue": "GNT-SQL-002",
+  "engine": {
+    "sqlite_version": "3.53.2",
+    "vfs": "unix",
+    "journal_mode": "delete",
+    "synchronous": 3,
+    "macos_fullfsync": true
+  },
+  "capabilities": [
+    {
+      "id": "cross-process-owner-exclusion-and-crash-reclamation",
+      "evidence": "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_cross_process_owner_exclusion_and_crash_reclamation"
+    },
+    {
+      "id": "effective-durability-setting-readback",
+      "evidence": "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_worker_passes_common_contract_with_defensive_settings"
+    },
+    {
+      "id": "same-process-fencing-and-stable-sidecar",
+      "evidence": "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_owner_lease_fences_same_process_and_preserves_sidecar_identity"
+    },
+    {
+      "id": "unsupported-power-loss-environment-rejection",
+      "evidence": "crates/gantry-conformance/tests/sqlite_storage.rs#public_sqlite_strict_power_loss_policy_matches_environment_qualification"
+    }
+  ],
+  "physical_fault_matrix": {
+    "status": "unqualified",
+    "missing_cases": [
+      "directory-sync-failure",
+      "short-write",
+      "sync-failure",
+      "torn-write"
+    ],
+    "power_loss_claim": false
+  },
+  "documentation": "docs/sqlite-journal-storage.md"
+}

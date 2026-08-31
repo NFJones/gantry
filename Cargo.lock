@@ -233,6 +233,7 @@ dependencies = [
  "gantry-core",
  "gantry-host",
  "rusqlite",
+ "rustix",
 ]
 
 [[package]]

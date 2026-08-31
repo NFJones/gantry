@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "085d3a564e8551f0b5b40e4348db4075aa327e7020ab415c8a3f5d99e3a62678"
+    "sha256": "98381dc69fcc34b9d9dd55d6d50ac4c695f1785eceebe49b22feb8229ab9c06d"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
@@ -107,17 +107,20 @@
         "fs",
         "std"
       ],
-      "owner": "gantry-frontend",
-      "purpose": "Open package roots and source path components relative to pinned directory descriptors with no-follow and file-type checks on supported Unix platforms.",
+      "owner": "gantry-frontend and gantry-storage-sqlite",
+      "purpose": "Open package roots relative to pinned descriptors and implement the SQLite adapter's stable no-follow owner sidecar, nonblocking flock, database identity, and filesystem inspection on supported Unix platforms.",
       "data_or_protocol_versions": [
-        "GNT-4.6 and GNT-4.17 descriptor-relative no-symlink source access"
+        "GNT-4.6 and GNT-4.17 descriptor-relative no-symlink source access",
+        "GNT-11.2 and GNT-15.5 SQLite owner exclusion and fencing support"
       ],
-      "bounded_spike": "The locked release supports Rust 1.63 or newer and exposes openat, O_NOFOLLOW, O_DIRECTORY, fstat, and bounded descriptor reads on Linux and macOS behind only std and fs features.",
+      "bounded_spike": "The locked release supports Rust 1.63 or newer and exposes openat, O_NOFOLLOW, O_DIRECTORY, fstat, statfs, and nonblocking flock on Linux and macOS behind only std and fs features.",
       "acceptance_evidence": [
+        "crates/gantry-conformance/tests/sqlite_storage.rs",
+        "crates/gantry-storage-sqlite/src/ownership.rs",
         "crates/gantry-frontend/src/provider.rs",
         "crates/gantry-conformance/tests/source_provider.rs"
       ],
-      "fallback": "Keep the SourceProvider contract and replace the leaf implementation with a small audited platform-specific descriptor walk preserving the same no-symlink and one-descriptor semantics."
+      "fallback": "Keep the SourceProvider and JournalStorage contracts and replace each leaf use with small audited platform-specific descriptor, no-follow, file-identity, and advisory-lock implementations preserving the same semantics."
     },
     {
       "id": "serde-json-private-tooling",

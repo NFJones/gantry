@@ -10,6 +10,7 @@ publish = false
 gantry-core.workspace = true
 gantry-host.workspace = true
 rusqlite.workspace = true
+rustix.workspace = true
 
 [lints]
 workspace = true

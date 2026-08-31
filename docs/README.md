@@ -31,3 +31,7 @@ The nondurable sequential evaluator's progress, preservation, cancellation,
 operation-consumption, lifecycle, observation, and terminal-uniqueness
 argument is documented in
 [`sequential-evaluator-refinement.md`](sequential-evaluator-refinement.md).
+
+The reference SQLite journal adapter's ownership, fencing, effective durability
+settings, restart evidence, and deliberately unqualified power-loss boundary
+are documented in [`sqlite-journal-storage.md`](sqlite-journal-storage.md).

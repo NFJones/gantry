@@ -56,6 +56,7 @@ const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry-runtime", "gantry-observe"),
     ("gantry-storage-sqlite", "gantry-core"),
     ("gantry-storage-sqlite", "gantry-host"),
+    ("gantry-storage-sqlite", "rustix"),
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -314,7 +315,7 @@ mod tests {
             package(
                 "gantry-storage-sqlite",
                 true,
-                &["gantry-core", "gantry-host"],
+                &["gantry-core", "gantry-host", "rustix"],
             ),
             package("xtask", true, &[]),
         ]
