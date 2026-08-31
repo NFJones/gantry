@@ -1,0 +1,26 @@
+{
+  "format": "gantry.concurrent-executor-evidence/v1",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "issue": "GNT-CON-004",
+  "model": "protocol/goldens/concurrent-executor-model-v1.json",
+  "model_evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",
+  "adapter_evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal",
+  "reviewed_clauses": [
+    {
+      "requirement": "GNT-15.4",
+      "clause": "clause-001",
+      "profile": "embedding",
+      "evidence": [
+        "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal",
+        "crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers",
+        "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact"
+      ]
+    }
+  ],
+  "exclusions": [
+    "The bounded two-task schedule corpus is not an unbounded proof over all programs, task graphs, host futures, or executor implementations.",
+    "The explorer constrains starvation for replay coverage but does not define a portable task order, equal CPU allocation, bounded latency, or deterministic timestamps.",
+    "The complete concurrent semantic-refinement argument, lifecycle mapping, and profile claim remain owned by GNT-CON-005 and GNT-GATE-500.",
+    "Durable task submission, commit cuts, recovery, and combined concurrent-durable behavior remain outside this evidence slice."
+  ]
+}

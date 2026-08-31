@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/concurrent-executor-model/v1/schema.json",
+  "title": "Gantry bounded concurrent executor model v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "maximum_tasks",
+    "polls_per_task",
+    "maximum_consecutive_polls",
+    "explored_schedule_count",
+    "assumptions",
+    "schedules",
+    "replay_cases"
+  ],
+  "properties": {
+    "format": { "const": "gantry.concurrent-executor-model/v1" },
+    "maximum_tasks": { "const": 2 },
+    "polls_per_task": { "const": 3 },
+    "maximum_consecutive_polls": { "const": 2 },
+    "explored_schedule_count": { "const": 14 },
+    "assumptions": {
+      "type": "array",
+      "minItems": 4,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "schedules": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "type": "array",
+        "minItems": 6,
+        "maxItems": 6,
+        "items": { "enum": ["a", "b"] }
+      }
+    },
+    "replay_cases": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "actions", "invariant"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "actions": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "invariant": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "format": "gantry.concurrent-executor-model/v1",
+  "maximum_tasks": 2,
+  "polls_per_task": 3,
+  "maximum_consecutive_polls": 2,
+  "explored_schedule_count": 14,
+  "assumptions": [
+    "Both modeled tasks remain continuously runnable until their third poll and self-wake after each of their first two polls.",
+    "The bounded explorer admits every six-poll schedule containing three polls of each task with no task selected more than twice consecutively.",
+    "Weak fairness requires eventual polling of continuously runnable work but does not define task order, equal CPU allocation, maximum latency, or timestamps.",
+    "This bounded corpus and its failure replays are not an unbounded proof over all Gantry programs, task graphs, or host schedules."
+  ],
+  "schedules": [
+    ["a", "a", "b", "a", "b", "b"],
+    ["a", "a", "b", "b", "a", "b"],
+    ["a", "b", "a", "a", "b", "b"],
+    ["a", "b", "a", "b", "a", "b"],
+    ["a", "b", "a", "b", "b", "a"],
+    ["a", "b", "b", "a", "a", "b"],
+    ["a", "b", "b", "a", "b", "a"],
+    ["b", "a", "a", "b", "a", "b"],
+    ["b", "a", "a", "b", "b", "a"],
+    ["b", "a", "b", "a", "a", "b"],
+    ["b", "a", "b", "a", "b", "a"],
+    ["b", "a", "b", "b", "a", "a"],
+    ["b", "b", "a", "a", "b", "a"],
+    ["b", "b", "a", "b", "a", "a"]
+  ],
+  "replay_cases": [
+    {
+      "id": "abort-late-wake",
+      "actions": ["poll-pending", "abort-stopped", "stale-wake", "poll-remains-stopped", "abort-already-settled"],
+      "invariant": "A confirmed stop prevents every later poll and a stale wake cannot make the task runnable or mutate task state."
+    },
+    {
+      "id": "sibling-failure-isolation",
+      "actions": ["poll-panicking-sibling", "observe-executor-failure", "poll-healthy-sibling", "observe-healthy-settlement"],
+      "invariant": "One task panic maps to executor-failure without preventing an independent runnable sibling from settling."
+    },
+    {
+      "id": "submission-failure",
+      "actions": ["inject-next-spawn-failure", "spawn", "observe-executor-failure", "verify-no-task-created"],
+      "invariant": "A failed executor submission creates no executor-owned task and returns the exact structured executor failure."
+    }
+  ]
+}

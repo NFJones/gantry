@@ -4,14 +4,27 @@
 //! shuts down a Tokio runtime. Tokio types remain confined to this leaf crate.
 
 use std::future::Future;
+#[cfg(feature = "concurrent")]
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::sync::Arc;
+#[cfg(feature = "concurrent")]
+use std::sync::{Mutex, MutexGuard};
+#[cfg(feature = "concurrent")]
+use std::task::Waker;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+#[cfg(feature = "concurrent")]
+use gantry_host::contracts::{
+    ConcurrentExecutorAdapter, EmbeddingVersion, HostResponse, OwnedTaskFuture, OwnedTaskResult,
+    SubmittedTask,
+};
 use gantry_host::contracts::{
     DurationMicros, ExecutorAdapter, HostError, HostFuture, InclusiveJitterRange, JitterSource,
 };
+#[cfg(feature = "concurrent")]
+use gantry_host::embedding::EmbeddingOperation;
 use tokio::runtime::Handle;
 use tokio::task::{JoinError, JoinHandle};
 
@@ -61,6 +74,224 @@ impl ExecutorAdapter for TokioExecutor {
     }
 }
 
+#[cfg(feature = "concurrent")]
+impl ConcurrentExecutorAdapter for TokioExecutor {
+    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
+        let state = Arc::new(Mutex::new(SubmittedTaskState::default()));
+        let managed = ManagedTaskFuture {
+            task: Some(task),
+            state: Arc::clone(&state),
+        };
+        catch_unwind(AssertUnwindSafe(|| self.handle.spawn(managed)))
+            .map_err(|_| executor_failure_code())?;
+        Ok(Box::new(TokioSubmittedTask { state }))
+    }
+}
+
+#[cfg(feature = "concurrent")]
+struct TokioSubmittedTask {
+    state: Arc<Mutex<SubmittedTaskState>>,
+}
+
+#[cfg(feature = "concurrent")]
+impl SubmittedTask for TokioSubmittedTask {
+    fn join<'a>(&'a self) -> HostFuture<'a, Result<OwnedTaskResult, HostError>> {
+        Box::pin(std::future::poll_fn(move |context| {
+            let mut state = lock_submitted(&self.state);
+            match &state.settlement {
+                SubmittedTaskSettlement::Running => {
+                    register_waker(&mut state.waiters, context.waker());
+                    Poll::Pending
+                }
+                SubmittedTaskSettlement::Completed(result) => Poll::Ready(result.clone()),
+                SubmittedTaskSettlement::Stopped => Poll::Ready(Err(executor_failure_code())),
+            }
+        }))
+    }
+
+    fn abort<'a>(&'a self) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        Box::pin(std::future::poll_fn(move |context| {
+            let executor_waker = {
+                let mut state = lock_submitted(&self.state);
+                match &state.settlement {
+                    SubmittedTaskSettlement::Running => {
+                        state.stop_requested = true;
+                        register_waker(&mut state.waiters, context.waker());
+                        state.executor_waker.take()
+                    }
+                    SubmittedTaskSettlement::Completed(_) => {
+                        return Poll::Ready(abort_response("already-settled"));
+                    }
+                    SubmittedTaskSettlement::Stopped => {
+                        let result = if state.stop_reported {
+                            "already-settled"
+                        } else {
+                            state.stop_reported = true;
+                            "stopped"
+                        };
+                        return Poll::Ready(abort_response(result));
+                    }
+                }
+            };
+            if let Some(waker) = executor_waker {
+                waker.wake();
+            }
+            Poll::Pending
+        }))
+    }
+}
+
+#[cfg(feature = "concurrent")]
+impl Drop for TokioSubmittedTask {
+    fn drop(&mut self) {
+        let executor_waker = {
+            let mut state = lock_submitted(&self.state);
+            if !matches!(state.settlement, SubmittedTaskSettlement::Running) {
+                return;
+            }
+            state.stop_requested = true;
+            state.executor_waker.take()
+        };
+        if let Some(waker) = executor_waker {
+            waker.wake();
+        }
+    }
+}
+
+#[cfg(feature = "concurrent")]
+struct ManagedTaskFuture {
+    task: Option<OwnedTaskFuture>,
+    state: Arc<Mutex<SubmittedTaskState>>,
+}
+
+#[cfg(feature = "concurrent")]
+impl Future for ManagedTaskFuture {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        {
+            let mut state = lock_submitted(&self.state);
+            if state.stop_requested {
+                drop(state);
+                let task = self.task.take();
+                let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
+                complete_submitted(&self.state, SubmittedTaskSettlement::Stopped);
+                return Poll::Ready(());
+            }
+            state.executor_waker = Some(context.waker().clone());
+        }
+
+        let Some(task) = self.task.as_mut() else {
+            complete_submitted(
+                &self.state,
+                SubmittedTaskSettlement::Completed(Err(executor_failure_code())),
+            );
+            return Poll::Ready(());
+        };
+        match catch_unwind(AssertUnwindSafe(|| task.as_mut().poll(context))) {
+            Ok(Poll::Pending) => Poll::Pending,
+            Ok(Poll::Ready(result)) => {
+                let task = self.task.take();
+                if catch_unwind(AssertUnwindSafe(|| drop(task))).is_err() {
+                    complete_submitted(
+                        &self.state,
+                        SubmittedTaskSettlement::Completed(Err(executor_failure_code())),
+                    );
+                    return Poll::Ready(());
+                }
+                complete_submitted(&self.state, SubmittedTaskSettlement::Completed(Ok(result)));
+                Poll::Ready(())
+            }
+            Err(_) => {
+                let task = self.task.take();
+                let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
+                complete_submitted(
+                    &self.state,
+                    SubmittedTaskSettlement::Completed(Err(executor_failure_code())),
+                );
+                Poll::Ready(())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "concurrent")]
+impl Drop for ManagedTaskFuture {
+    fn drop(&mut self) {
+        let running = matches!(
+            lock_submitted(&self.state).settlement,
+            SubmittedTaskSettlement::Running
+        );
+        if running {
+            let task = self.task.take();
+            let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
+            complete_submitted(
+                &self.state,
+                SubmittedTaskSettlement::Completed(Err(executor_failure_code())),
+            );
+        }
+    }
+}
+
+#[cfg(feature = "concurrent")]
+#[derive(Default)]
+struct SubmittedTaskState {
+    settlement: SubmittedTaskSettlement,
+    stop_requested: bool,
+    stop_reported: bool,
+    executor_waker: Option<Waker>,
+    waiters: Vec<Waker>,
+}
+
+#[cfg(feature = "concurrent")]
+#[derive(Default)]
+enum SubmittedTaskSettlement {
+    #[default]
+    Running,
+    Completed(Result<OwnedTaskResult, HostError>),
+    Stopped,
+}
+
+#[cfg(feature = "concurrent")]
+fn complete_submitted(state: &Mutex<SubmittedTaskState>, settlement: SubmittedTaskSettlement) {
+    let waiters = {
+        let mut state = lock_submitted(state);
+        if !matches!(state.settlement, SubmittedTaskSettlement::Running) {
+            return;
+        }
+        state.settlement = settlement;
+        state.executor_waker = None;
+        std::mem::take(&mut state.waiters)
+    };
+    for waiter in waiters {
+        waiter.wake();
+    }
+}
+
+#[cfg(feature = "concurrent")]
+fn lock_submitted(state: &Mutex<SubmittedTaskState>) -> MutexGuard<'_, SubmittedTaskState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(feature = "concurrent")]
+fn register_waker(waiters: &mut Vec<Waker>, waker: &Waker) {
+    if !waiters.iter().any(|candidate| candidate.will_wake(waker)) {
+        waiters.push(waker.clone());
+    }
+}
+
+#[cfg(feature = "concurrent")]
+fn abort_response(result: &str) -> Result<HostResponse, HostError> {
+    HostResponse::new(
+        EmbeddingVersion::V1,
+        EmbeddingOperation::AbortTask,
+        Arc::from(format!("{{\"result\":\"{result}\"}}").into_bytes()),
+    )
+    .map_err(|_| executor_failure_code())
+}
+
 struct AbortOnDrop<T> {
     task: JoinHandle<T>,
 }
@@ -101,13 +332,15 @@ mod tests {
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::task::{Context, Poll};
 
     use gantry_host::contracts::{
         CancellationSignal, DeadlineOutcome, DurationMicros, ExecutorAdapter, HostError,
         InclusiveJitterRange, JitterSource, deadline_race,
     };
+    #[cfg(feature = "concurrent")]
+    use gantry_host::contracts::{ConcurrentExecutorAdapter, OwnedTaskResult};
     use tokio::runtime::Builder;
 
     use super::TokioExecutor;
@@ -134,6 +367,29 @@ mod tests {
     }
 
     impl Drop for PendingUntilDrop {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::Release);
+        }
+    }
+
+    #[cfg(feature = "concurrent")]
+    struct SubmittedUntilDrop {
+        dropped: Arc<AtomicBool>,
+        polls: Arc<AtomicUsize>,
+    }
+
+    #[cfg(feature = "concurrent")]
+    impl Future for SubmittedUntilDrop {
+        type Output = OwnedTaskResult;
+
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            self.polls.fetch_add(1, Ordering::AcqRel);
+            Poll::Pending
+        }
+    }
+
+    #[cfg(feature = "concurrent")]
+    impl Drop for SubmittedUntilDrop {
         fn drop(&mut self) {
             self.dropped.store(true, Ordering::Release);
         }
@@ -172,7 +428,80 @@ mod tests {
             )
             .await;
             assert_eq!(cancelled, DeadlineOutcome::Cancelled);
+
+            #[cfg(feature = "concurrent")]
+            exercise_task_services(&adapter).await;
         });
+    }
+
+    #[cfg(feature = "concurrent")]
+    async fn exercise_task_services(adapter: &TokioExecutor) {
+        let expected = OwnedTaskResult {
+            canonical_bytes: Arc::from(b"{\"result\":\"settled\"}".as_slice()),
+        };
+        let settled = adapter
+            .spawn(Box::pin({
+                let expected = expected.clone();
+                async move { expected }
+            }))
+            .unwrap_or_else(|error| panic!("task submission failed: {error:?}"));
+        assert_eq!(settled.join().await, Ok(expected.clone()));
+        assert_eq!(settled.join().await, Ok(expected));
+        let after_settlement = settled
+            .abort()
+            .await
+            .unwrap_or_else(|error| panic!("settled abort failed: {error:?}"));
+        assert_eq!(
+            after_settlement.canonical_bytes(),
+            b"{\"result\":\"already-settled\"}"
+        );
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let polls = Arc::new(AtomicUsize::new(0));
+        let pending = adapter
+            .spawn(Box::pin(SubmittedUntilDrop {
+                dropped: Arc::clone(&dropped),
+                polls: Arc::clone(&polls),
+            }))
+            .unwrap_or_else(|error| panic!("pending task submission failed: {error:?}"));
+        for _ in 0..1_000 {
+            if polls.load(Ordering::Acquire) > 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(polls.load(Ordering::Acquire) > 0);
+        let stopped = pending
+            .abort()
+            .await
+            .unwrap_or_else(|error| panic!("pending task abort failed: {error:?}"));
+        assert_eq!(stopped.canonical_bytes(), b"{\"result\":\"stopped\"}");
+        assert!(dropped.load(Ordering::Acquire));
+        let polls_after_stop = polls.load(Ordering::Acquire);
+        tokio::task::yield_now().await;
+        assert_eq!(polls.load(Ordering::Acquire), polls_after_stop);
+        let repeated = pending
+            .abort()
+            .await
+            .unwrap_or_else(|error| panic!("repeated abort failed: {error:?}"));
+        assert_eq!(
+            repeated.canonical_bytes(),
+            b"{\"result\":\"already-settled\"}"
+        );
+        assert!(matches!(
+            pending.join().await,
+            Err(HostError { ref code, .. }) if code.as_ref() == "executor-failure"
+        ));
+
+        let panicked = adapter
+            .spawn(Box::pin(async {
+                panic!("task panic fixture");
+            }))
+            .unwrap_or_else(|error| panic!("panic task submission failed: {error:?}"));
+        assert!(matches!(
+            panicked.join().await,
+            Err(HostError { ref code, .. }) if code.as_ref() == "executor-failure"
+        ));
     }
 
     #[test]

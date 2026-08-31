@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+concurrent = []
+
 [dependencies]
 gantry-host.workspace = true
 tokio = { workspace = true, features = ["rt", "time"] }

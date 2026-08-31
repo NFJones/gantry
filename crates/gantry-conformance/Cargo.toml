@@ -10,7 +10,7 @@ publish = false
 gantry = { workspace = true, features = ["concurrent", "durable"] }
 
 [dev-dependencies]
-gantry-adapter-tokio.workspace = true
+gantry-adapter-tokio = { workspace = true, features = ["concurrent"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

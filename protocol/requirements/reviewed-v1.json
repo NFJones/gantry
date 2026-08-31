@@ -26512,6 +26512,7 @@
               "profile": "embedding",
               "state": "covered",
               "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal",
                 "crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers",
                 "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact"
               ],

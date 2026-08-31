@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod concurrent_executor;
 pub mod journal;
 pub mod scripted;
 pub mod services;

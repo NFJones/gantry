@@ -61,7 +61,7 @@
   },
   "requirements": {
     "path": "protocol/requirements/generated/requirements-v1.json",
-    "sha256": "82355efaf02086b0be6a4f1a1520c270afad658e375ab9d1f7c00918b4481fed",
+    "sha256": "4e7aa858687750620a2f163fc8976a463d89fd004bde79be239a9ec1153c2c57",
     "requirement_count": 229,
     "clause_count": 464,
     "section14_excerpt_count": 49
@@ -120,7 +120,7 @@
     },
     {
       "path": "crates/gantry-adapter-tokio/Cargo.toml",
-      "sha256": "a9a2032cb53b1dc16264540edddcf3db5bcfca4a5d3dfc42c5006dbef21275f9"
+      "sha256": "a38f929919cc6b171030751529e73881c525e8ea64cfc429ffae8f645c849f62"
     },
     {
       "path": "crates/gantry-analysis/Cargo.toml",
@@ -149,6 +149,10 @@
     {
       "path": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs",
       "sha256": "1c213d589191b4afa7f3a3498f4dd0acc3d23ad07060bdf2136f4cabd07aedb2"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/concurrent_executor.rs",
+      "sha256": "1816204c44370eb687c4011db01cc70798e26825f36769dc58e1e9bdf60fb57f"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
@@ -280,7 +284,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "2069f841652cb0df3af34a2100c27874e6bfb76465352ab6b8fc0f9d0e2fbd5f"
+      "sha256": "be3bdc437e3c7762ca44eeef9b07f48302e548789544bb0cacef4ebee16aec7a"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -309,6 +313,10 @@
     {
       "path": "protocol/conformance/analyzer-workflows-v1.json",
       "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
+    },
+    {
+      "path": "protocol/conformance/concurrent-executor-v1.json",
+      "sha256": "ddc5a1d660a69e67a2e0943fe81d861c8adca59d92e1d5fb02fe9875af279374"
     },
     {
       "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
@@ -352,7 +360,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "08061d09d1f586785082619430104662cbdc0245e2836e04f5d28203a42f423d"
+      "sha256": "b87de3c29ee1ded8fb28056478c1c3bbca8b8ba25374e5dda4a7573643b18db0"
     },
     {
       "path": "protocol/conformance/sequential-machine-v1.json",
@@ -369,6 +377,10 @@
     {
       "path": "protocol/goldens/analyzer-validity-model-v1.json",
       "sha256": "3a5b7bb07b849821dd40c73bb833f4882c4117b09b5c76e9adc1c19372b7db82"
+    },
+    {
+      "path": "protocol/goldens/concurrent-executor-model-v1.json",
+      "sha256": "5896f16a699d89948ece362c0c9b64ef54ce0c9a956829715af424de2386ce93"
     },
     {
       "path": "protocol/goldens/concurrent-lifecycle-v1.json",
@@ -460,11 +472,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "82355efaf02086b0be6a4f1a1520c270afad658e375ab9d1f7c00918b4481fed"
+      "sha256": "4e7aa858687750620a2f163fc8976a463d89fd004bde79be239a9ec1153c2c57"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "15b88327ef6c06ce57f116e0bc64cf531b50ea5ad11e4eb156810bba6a2092ba"
+      "sha256": "19dc4d280b41125f11dfc3906bb68d198d5561e3403140cc086acef0c804ecd8"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -477,6 +489,10 @@
     {
       "path": "protocol/schemas/canonical-ir-v1.schema.json",
       "sha256": "f83c9ba0fc0c11c8fc0af6f984690cec33160828264a27d1d87f210e282f911b"
+    },
+    {
+      "path": "protocol/schemas/concurrent-executor-model-v1.schema.json",
+      "sha256": "4fe1b8aa2af150fb08297c2122523489b5c93f80ad762a2826ae0628f2477123"
     },
     {
       "path": "protocol/schemas/concurrent-lifecycle-v1.schema.json",
@@ -584,6 +600,11 @@
       "id": "canonical-protocol",
       "kind": "public-facade",
       "path": "crates/gantry-conformance/tests/canonical_protocol.rs"
+    },
+    {
+      "id": "concurrent-executor",
+      "kind": "adapter-contract-and-bounded-schedule-model",
+      "path": "crates/gantry-conformance/tests/concurrent_executor.rs"
     },
     {
       "id": "concurrent-handle-ownership",
