@@ -26,6 +26,14 @@ use crate::{
     SessionEstablishmentV1,
 };
 
+#[cfg(feature = "durable")]
+mod combined_checkpoint;
+#[cfg(feature = "durable")]
+pub use combined_checkpoint::{
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV1,
+    RecoveredConcurrentDurableExecutionV1,
+};
+
 /// One analyzer-selected value binding copied into a child task.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TaskCaptureV1 {
@@ -526,7 +534,7 @@ pub struct ConcurrentShutdownCohortV1 {
 }
 
 /// Execution-scoped owner of cumulative task count and child task state.
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConcurrentTaskStateV1 {
     execution_id: ProtocolIdentity,
     root_task_id: ProtocolIdentity,

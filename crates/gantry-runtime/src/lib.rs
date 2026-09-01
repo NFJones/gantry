@@ -92,6 +92,11 @@ pub use outcome::{
     ProcessedHookOutcomeV1, RetryDelayOutcomeV1, RetryPolicyError, ValidatedHookOutputV1,
     process_hook_outcome, wait_retry_delay,
 };
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use recovery::{
+    CONCURRENT_DURABLE_EVIDENCE_KIND_V1, ConcurrentDurableEvidenceV1,
+    RecoveredConcurrentDurableStateV1, recover_concurrent_authoritative_prefix,
+};
 #[cfg(feature = "durable")]
 pub use recovery::{
     DurableCancellationEvidenceV1, DurableCommitCoordinatorV1, DurableCommitCutV1,
@@ -107,6 +112,11 @@ pub use session::{
 };
 #[cfg(feature = "durable")]
 pub use session::{LogicalSessionRegistryCheckpointV1, SessionRecoveryError};
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use task::{
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV1,
+    RecoveredConcurrentDurableExecutionV1,
+};
 #[cfg(feature = "concurrent")]
 pub use task::{
     ConcurrentSchedulerV1, ConcurrentShutdownCohortV1, ConcurrentTaskRecordV1,

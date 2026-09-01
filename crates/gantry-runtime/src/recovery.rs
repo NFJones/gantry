@@ -1,7 +1,14 @@
 //! Versioned logical evidence and authoritative recovery projection.
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+mod concurrent;
 mod execution_start;
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use concurrent::{
+    ConcurrentDurableEvidenceV1, RecoveredConcurrentDurableStateV1,
+    recover_concurrent_authoritative_prefix,
+};
 pub use execution_start::{
     DurableCancellationEvidenceV1, DurableExecutionStartV1, DurableExecutionStateV1,
     DurableRecoverySnapshotV1,
@@ -23,6 +30,8 @@ use gantry_host::journal::{
 use gantry_ir::generated::RecoveryClass;
 use gantry_ir::{MachineProgram, TypeDescriptor};
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+use crate::ConcurrentDurableCheckpointError;
 use crate::{
     CancellationReason, DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
     DURABLE_EVENT_SETTLED_KIND_V1, DurableEventEvidenceError, DurableEventOccurrenceV1,
@@ -32,11 +41,19 @@ use crate::{
     ValidationErrorV1,
 };
 
+/// Version-one evidence kind for complete concurrent-durable graph checkpoints.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V1: &str = "gantry.concurrent-durable-evidence/v1";
+
 /// Exact semantic boundary represented by one durable logical evidence body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DurableCommitCutV1 {
     /// A complete replay base for deterministic state.
     Checkpoint,
+    /// One child task was durably created before executor submission.
+    TaskCreation,
+    /// One atomic join or detach ownership transition became durable.
+    TaskOwnership,
     /// A physical operation dispatch was prepared before hook entry.
     OperationPrepared,
     /// A host-level operation outcome was retained before validation.
@@ -61,6 +78,8 @@ impl DurableCommitCutV1 {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::Checkpoint => "checkpoint",
+            Self::TaskCreation => "task-creation",
+            Self::TaskOwnership => "task-ownership",
             Self::OperationPrepared => "operation-prepared",
             Self::OperationOutcome => "operation-outcome",
             Self::OperationResult => "operation-result",
@@ -85,6 +104,8 @@ impl DurableCommitCutV1 {
     fn from_wire_name(value: &str) -> Option<Self> {
         match value {
             "checkpoint" => Some(Self::Checkpoint),
+            "task-creation" => Some(Self::TaskCreation),
+            "task-ownership" => Some(Self::TaskOwnership),
             "operation-prepared" => Some(Self::OperationPrepared),
             "operation-outcome" => Some(Self::OperationOutcome),
             "operation-result" => Some(Self::OperationResult),
@@ -1242,6 +1263,9 @@ pub enum DurableEvidenceError {
     Checkpoint(MachineRecoveryError),
     /// Embedded logical-session descriptors or transcripts are malformed.
     Session(SessionRecoveryError),
+    /// A composed concurrent-durable checkpoint is malformed or inconsistent.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    ConcurrentCheckpoint(ConcurrentDurableCheckpointError),
     /// The authoritative prefix contains no recoverable checkpoint state.
     MissingRecoveryState,
     /// One envelope uses a logical evidence kind not owned by this projection.

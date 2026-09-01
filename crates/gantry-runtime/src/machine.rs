@@ -18,7 +18,7 @@ use gantry_ir::{
 use crate::session::SessionCreationModeV1;
 
 #[cfg(feature = "durable")]
-mod checkpoint_codec;
+pub(crate) mod checkpoint_codec;
 #[cfg(feature = "durable")]
 use checkpoint_codec::{decode_machine_checkpoint, encode_machine_checkpoint};
 #[cfg(feature = "durable")]
@@ -353,6 +353,13 @@ impl MachineCheckpointV1 {
     #[must_use]
     pub const fn execution_id(&self) -> ProtocolIdentity {
         self.execution
+    }
+
+    /// Returns whether this checkpoint owns execution foreground/terminal labels.
+    #[cfg(feature = "concurrent")]
+    #[must_use]
+    pub const fn is_execution_foreground(&self) -> bool {
+        self.execution_foreground
     }
 
     /// Returns the value limits captured for this machine run.
