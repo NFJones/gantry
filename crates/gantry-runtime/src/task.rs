@@ -1429,6 +1429,45 @@ impl ConcurrentSchedulerV1 {
         self.state.shutdown_cohort()
     }
 
+    /// Atomically consumes an analyzer-selected join through scheduler-owned state.
+    pub fn begin_join(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        control: &TaskControlSite,
+        handles: &[DynamicTaskHandleIdentity],
+    ) -> Result<JoinStartV1, TaskStateError> {
+        self.state.begin_join(owner_task_id, control, handles)
+    }
+
+    /// Resolves one already-consumed join from scheduler-owned task state.
+    pub fn resolve_join(
+        &self,
+        ownership: &TaskOwnershipChangedV1,
+        limits: ValueLimits,
+    ) -> Result<JoinResolutionV1, TaskStateError> {
+        self.state.resolve_join(ownership, limits)
+    }
+
+    /// Transfers one attached handle to execution-owned detached work.
+    pub fn detach(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        control: &TaskControlSite,
+        handle: DynamicTaskHandleIdentity,
+    ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
+        self.state.detach(owner_task_id, control, handle)
+    }
+
+    /// Fixes foreground completion after all attached descendants settle.
+    pub fn complete_foreground(&mut self, outcome: MachineOutcome) -> Result<(), TaskStateError> {
+        self.state.complete_foreground(outcome)
+    }
+
+    /// Fixes terminal completion after all detached work settles.
+    pub fn complete_terminal(&mut self) -> Result<&ConcurrentTerminalOutcomeV1, TaskStateError> {
+        self.state.complete_terminal()
+    }
+
     /// Resolves submission with either the child shared-machine instance or its failure.
     pub fn resolve_submission(
         &mut self,

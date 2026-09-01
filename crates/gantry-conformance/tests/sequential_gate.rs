@@ -202,24 +202,35 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     {
         return Err("sequential gate identity or status is invalid".to_owned());
     }
-    let advertised_profiles_are_valid = if gantry::compiled_features().concurrent {
-        gantry::advertised_profiles()
-            == [
-                ConformanceProfile::Analyzer,
-                ConformanceProfile::ConcurrentEvaluator,
-                ConformanceProfile::Embedding,
-                ConformanceProfile::Evaluator,
-                ConformanceProfile::Frontend,
-            ]
-    } else {
-        gantry::advertised_profiles()
-            == [
-                ConformanceProfile::Analyzer,
-                ConformanceProfile::Embedding,
-                ConformanceProfile::Evaluator,
-                ConformanceProfile::Frontend,
-            ]
-    };
+    let advertised_profiles_are_valid =
+        if gantry::compiled_features().concurrent && gantry::compiled_features().durable {
+            gantry::advertised_profiles()
+                == [
+                    ConformanceProfile::Analyzer,
+                    ConformanceProfile::ConcurrentEvaluator,
+                    ConformanceProfile::DurableRuntime,
+                    ConformanceProfile::Embedding,
+                    ConformanceProfile::Evaluator,
+                    ConformanceProfile::Frontend,
+                ]
+        } else if gantry::compiled_features().concurrent {
+            gantry::advertised_profiles()
+                == [
+                    ConformanceProfile::Analyzer,
+                    ConformanceProfile::ConcurrentEvaluator,
+                    ConformanceProfile::Embedding,
+                    ConformanceProfile::Evaluator,
+                    ConformanceProfile::Frontend,
+                ]
+        } else {
+            gantry::advertised_profiles()
+                == [
+                    ConformanceProfile::Analyzer,
+                    ConformanceProfile::Embedding,
+                    ConformanceProfile::Evaluator,
+                    ConformanceProfile::Frontend,
+                ]
+        };
     if manifest.claim.profiles != ["analyzer", "embedding", "evaluator", "frontend"]
         || manifest.claim.advertises_profiles != manifest.claim.profiles
         || manifest.claim.excludes_profiles != ["concurrent-evaluator", "durable-runtime"]

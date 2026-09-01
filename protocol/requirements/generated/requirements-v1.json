@@ -27916,7 +27916,7 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_protocol.rs#embedding_catalog_matches_its_golden_schema_and_public_binding",
                 "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
-                "crates/gantry-conformance/tests/facade.rs#facade_advertises_the_closed_concurrent_profiles_and_excludes_durability"
+                "crates/gantry-conformance/tests/facade.rs#facade_advertises_both_closed_refinements_in_the_combined_build"
               ],
               "rationale": null
             }
@@ -27941,7 +27941,7 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_protocol.rs#embedding_catalog_matches_its_golden_schema_and_public_binding",
                 "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
-                "crates/gantry-conformance/tests/facade.rs#facade_advertises_the_closed_concurrent_profiles_and_excludes_durability"
+                "crates/gantry-conformance/tests/facade.rs#facade_advertises_both_closed_refinements_in_the_combined_build"
               ],
               "rationale": null
             }
@@ -27966,7 +27966,7 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_protocol.rs#embedding_catalog_matches_its_golden_schema_and_public_binding",
                 "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
-                "crates/gantry-conformance/tests/facade.rs#facade_advertises_the_closed_concurrent_profiles_and_excludes_durability"
+                "crates/gantry-conformance/tests/facade.rs#facade_advertises_both_closed_refinements_in_the_combined_build"
               ],
               "rationale": null
             }
@@ -27991,7 +27991,7 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_protocol.rs#embedding_catalog_matches_its_golden_schema_and_public_binding",
                 "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
-                "crates/gantry-conformance/tests/facade.rs#facade_advertises_the_closed_concurrent_profiles_and_excludes_durability"
+                "crates/gantry-conformance/tests/facade.rs#facade_advertises_both_closed_refinements_in_the_combined_build"
               ],
               "rationale": null
             }
@@ -28016,7 +28016,7 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_protocol.rs#embedding_catalog_matches_its_golden_schema_and_public_binding",
                 "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
-                "crates/gantry-conformance/tests/facade.rs#facade_advertises_the_closed_concurrent_profiles_and_excludes_durability"
+                "crates/gantry-conformance/tests/facade.rs#facade_advertises_both_closed_refinements_in_the_combined_build"
               ],
               "rationale": null
             }

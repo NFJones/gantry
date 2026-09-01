@@ -101,11 +101,19 @@ pub const fn compiled_features() -> CompiledFeatures {
 /// The evaluator profile advertises its analyzer and frontend prerequisites
 /// plus the supported embedding role. Each standalone concurrent or durable
 /// refinement advertises its profile when compiled. A build containing both
-/// refinements advertises only the concurrent refinement until the combined
-/// conformance gate closes.
+/// refinements advertises both profiles after the combined conformance gate.
 #[must_use]
 pub const fn advertised_profiles() -> &'static [ConformanceProfile] {
-    if cfg!(feature = "concurrent") {
+    if cfg!(all(feature = "concurrent", feature = "durable")) {
+        &[
+            ConformanceProfile::Analyzer,
+            ConformanceProfile::ConcurrentEvaluator,
+            ConformanceProfile::DurableRuntime,
+            ConformanceProfile::Embedding,
+            ConformanceProfile::Evaluator,
+            ConformanceProfile::Frontend,
+        ]
+    } else if cfg!(feature = "concurrent") {
         &[
             ConformanceProfile::Analyzer,
             ConformanceProfile::ConcurrentEvaluator,
@@ -161,7 +169,20 @@ mod tests {
 
     #[test]
     fn profile_advertisement_is_limited_to_closed_gates() {
-        if compiled_features().concurrent {
+        if compiled_features().concurrent && compiled_features().durable {
+            assert_eq!(
+                advertised_profiles(),
+                [
+                    ConformanceProfile::Analyzer,
+                    ConformanceProfile::ConcurrentEvaluator,
+                    ConformanceProfile::DurableRuntime,
+                    ConformanceProfile::Embedding,
+                    ConformanceProfile::Evaluator,
+                    ConformanceProfile::Frontend,
+                ]
+            );
+            assert!(advertises_any_profile());
+        } else if compiled_features().concurrent {
             assert_eq!(
                 advertised_profiles(),
                 [

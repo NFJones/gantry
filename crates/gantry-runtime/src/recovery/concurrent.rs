@@ -17,8 +17,10 @@ use super::{
     push_json_string, require_exact_fields, string,
 };
 use crate::{
-    ConcurrentDurableCheckpointV1, ConcurrentSchedulerV1, LogicalSessionRegistryV1, Machine,
-    RecoveredConcurrentDurableExecutionV1,
+    ConcurrentDurableCheckpointV1, ConcurrentSchedulerV1, DURABLE_EVENT_DISPATCHED_KIND_V1,
+    DURABLE_EVENT_OCCURRENCE_KIND_V1, DURABLE_EVENT_SETTLED_KIND_V1, DurableEventOccurrenceV1,
+    LogicalSessionRegistryV1, Machine, RecoveredConcurrentDurableExecutionV1,
+    RecoveredDurableEventsV1,
 };
 
 /// One canonical authoritative evidence body for a complete concurrent task graph.
@@ -226,6 +228,7 @@ impl DurableCommitCoordinatorV1<'_> {
 #[derive(Debug)]
 pub struct RecoveredConcurrentDurableStateV1 {
     execution: RecoveredConcurrentDurableExecutionV1,
+    events: RecoveredDurableEventsV1,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
@@ -241,6 +244,12 @@ impl RecoveredConcurrentDurableStateV1 {
     /// Returns mutable access to the recovered composed execution.
     pub const fn execution_mut(&mut self) -> &mut RecoveredConcurrentDurableExecutionV1 {
         &mut self.execution
+    }
+
+    /// Returns recovered journal-first events and delivery obligations.
+    #[must_use]
+    pub const fn events(&self) -> &RecoveredDurableEventsV1 {
+        &self.events
     }
 
     /// Returns the latest authoritative journal sequence.
@@ -271,33 +280,58 @@ pub fn recover_concurrent_authoritative_prefix(
     let JournalPrefixV1::Full(prefix) = prefix else {
         return Err(DurableEvidenceError::UnsupportedEvidenceKind);
     };
-    let mut previous: Option<(u64, ProtocolIdentity, ConcurrentDurableEvidenceV1)> = None;
+    let mut latest_graph: Option<ConcurrentDurableEvidenceV1> = None;
+    let mut journal_tip: Option<(u64, ProtocolIdentity)> = None;
+    let mut events = RecoveredDurableEventsV1::default();
     let mut known = BTreeSet::new();
     for envelope in prefix.evidence.iter() {
-        if envelope.kind.as_ref() != CONCURRENT_DURABLE_EVIDENCE_KIND_V1 {
-            return Err(DurableEvidenceError::UnsupportedEvidenceKind);
-        }
-        match &previous {
+        match journal_tip {
             None if envelope.sequence == 1 && envelope.references.is_empty() => {}
-            Some((sequence, evidence_id, _))
+            Some((sequence, evidence_id))
                 if sequence.checked_add(1) == Some(envelope.sequence)
-                    && envelope.references.as_ref() == [*evidence_id]
+                    && envelope.references.contains(&evidence_id)
                     && envelope.references.iter().all(|id| known.contains(id)) => {}
             _ => return Err(DurableEvidenceError::InvalidCausalOrder),
         }
-        let evidence = ConcurrentDurableEvidenceV1::decode(&program, &envelope.canonical_body)?;
-        if let Some((_, _, prior)) = &previous {
-            validate_transition(prior, &evidence)?;
-        } else if evidence.cut != DurableCommitCutV1::Checkpoint {
-            return Err(DurableEvidenceError::InvalidState);
+
+        if envelope.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V1 {
+            let evidence = ConcurrentDurableEvidenceV1::decode(&program, &envelope.canonical_body)?;
+            if let Some(prior) = &latest_graph {
+                validate_transition(prior, &evidence)?;
+            } else if evidence.cut != DurableCommitCutV1::Checkpoint {
+                return Err(DurableEvidenceError::InvalidState);
+            }
+            latest_graph = Some(evidence);
+        } else if matches!(
+            envelope.kind.as_ref(),
+            DURABLE_EVENT_OCCURRENCE_KIND_V1
+                | DURABLE_EVENT_DISPATCHED_KIND_V1
+                | DURABLE_EVENT_SETTLED_KIND_V1
+        ) {
+            let graph = latest_graph
+                .as_ref()
+                .ok_or(DurableEvidenceError::InvalidCausalOrder)?;
+            if envelope.kind.as_ref() == DURABLE_EVENT_OCCURRENCE_KIND_V1 {
+                let occurrence = DurableEventOccurrenceV1::decode(&envelope.canonical_body)
+                    .map_err(DurableEvidenceError::Event)?;
+                if occurrence.event().execution_id() != Some(graph.execution_id()) {
+                    return Err(DurableEvidenceError::MixedExecution);
+                }
+            }
+            events
+                .apply_envelope(envelope)
+                .map_err(DurableEvidenceError::Event)?;
+        } else {
+            return Err(DurableEvidenceError::UnsupportedEvidenceKind);
         }
         if !known.insert(envelope.evidence_id) {
             return Err(DurableEvidenceError::InvalidCausalOrder);
         }
-        previous = Some((envelope.sequence, envelope.evidence_id, evidence));
+        journal_tip = Some((envelope.sequence, envelope.evidence_id));
     }
-    let (latest_sequence, latest_evidence_id, evidence) =
-        previous.ok_or(DurableEvidenceError::MissingRecoveryState)?;
+    let (latest_sequence, latest_evidence_id) =
+        journal_tip.ok_or(DurableEvidenceError::MissingRecoveryState)?;
+    let evidence = latest_graph.ok_or(DurableEvidenceError::MissingRecoveryState)?;
     let latest_cut = evidence.cut;
     let execution = evidence
         .checkpoint
@@ -305,6 +339,7 @@ pub fn recover_concurrent_authoritative_prefix(
         .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
     Ok(RecoveredConcurrentDurableStateV1 {
         execution,
+        events,
         latest_sequence,
         latest_evidence_id,
         latest_cut,

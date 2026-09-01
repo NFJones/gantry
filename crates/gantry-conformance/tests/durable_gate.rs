@@ -234,6 +234,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
             != [
                 ConformanceProfile::Analyzer,
                 ConformanceProfile::ConcurrentEvaluator,
+                ConformanceProfile::DurableRuntime,
                 ConformanceProfile::Embedding,
                 ConformanceProfile::Evaluator,
                 ConformanceProfile::Frontend,

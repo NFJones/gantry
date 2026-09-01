@@ -49,7 +49,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/durable_gate.rs",
-      "sha256": "628fb4ef0e5b95fcf410809d6d8583990c671cb139b74539c5e809b43aa0dac5"
+      "sha256": "587f34671c625e1c02c717b7b569821c12a96b7765b512ac9c4f3d5e59689371"
     },
     {
       "path": "crates/gantry-conformance/tests/durable_recovery.rs",
@@ -73,7 +73,7 @@
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "bd590977e9f223beb58de8aa148101e1326b9337cae37ea68d62f356bd1eec08"
+      "sha256": "1d888268bed4261cf556e749a2eaf7d905c452deec1fb09b9ca76d705ab832cb"
     },
     {
       "path": "docs/durable-runtime-refinement.md",
@@ -105,7 +105,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "0c05f46c86dee8570efdfa949df8605a1794141138343a3d9e1a83aa632631eb"
+      "sha256": "200c6cd9f00fcc28e68d0c06cd16cd87deebdb9790e8f2143ffc88a11f6611f9"
     },
     {
       "path": "protocol/conformance/sqlite-storage-v1.json",
@@ -137,11 +137,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "db895d3eccdf84d4b9c8633394c422a0b0da80699a3b9e16007db42b90684059"
+      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "bda8a9691f32500beda4d27b61f790592b4840a37c1f08d1134c9334f429b9cf"
+      "sha256": "f419eca99aecb460bf23ee8c6ef28271253a293e5688c453a259ea54c3be6e59"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
