@@ -21,11 +21,19 @@ Every protocol change requires explicit version, schema, golden, generated
 binding, and publication-impact review.
 
 Analyzer/runtime contract inputs live in `catalogs/ir-contracts-v1.json`.
-Its canonical catalog golden and generated Rust binding freeze the closed IR
-vocabularies. The four artifact schemas and `goldens/ir-artifact-vectors-v1.json`
-separately freeze canonical IR, source-map, package-source-manifest, and
-generated-schema-object encodings; `conformance/analyzer-ir-v1.json` records
-only the analyzer clauses covered by the public contract suite.
+Its canonical catalog golden and generated Rust binding freeze closed IR,
+generic type-expression, analysis-fact, executable-fact, and template-kind
+vocabularies. The canonical IR schema admits ordinal-based open expressions
+only in analysis-template records and requires the distinct executable
+projection to contain closed descriptors and direct callable identities. The
+source-map schema separately carries sorted, deduplicated multi-origin records
+for interned concrete nodes; source spans do not participate in canonical IR
+identity. The four artifact schemas and
+`goldens/ir-artifact-vectors-v1.json` separately freeze canonical IR,
+source-map, package-source-manifest, and generated-schema-object encodings.
+`conformance/generics-traits-ir-v1.json` records only this bounded contract
+slice; analyzer solving, runtime execution, and durable reconstruction remain
+with their owning issues.
 
 Module-graph, symbol, import-resolution, no-shadowing, and Unicode-security
 evidence is recorded separately in `conformance/analyzer-symbols-v1.json`.

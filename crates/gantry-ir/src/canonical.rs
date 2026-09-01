@@ -10,7 +10,10 @@ use crate::artifact::{
 use crate::generated::{
     ArtifactKind, CoreForm, OperationSiteKind, RecoveryClass, TaskControlSiteKind,
 };
-use crate::{CanonicalPath, CanonicalSignature, EffectSet, StructuralPosition, TypeDescriptor};
+use crate::{
+    CanonicalPath, CanonicalSignature, ConcreteIdentity, ConcreteSourceMapEntry, EffectSet,
+    GenericAnalysisFacts, Predicate, StructuralPosition, TraitReference, TypeDescriptor,
+};
 
 /// Portable static operation metadata retained by one canonical operation node.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -97,6 +100,7 @@ impl CanonicalWorkflow {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalIr {
     workflows: Vec<CanonicalWorkflow>,
+    generic: GenericAnalysisFacts,
     artifact: BoundedArtifact,
 }
 
@@ -106,15 +110,26 @@ impl CanonicalIr {
         workflows: Vec<CanonicalWorkflow>,
         limits: ArtifactLimits,
     ) -> Result<Self, IrArtifactError> {
+        Self::with_generic_facts(workflows, GenericAnalysisFacts::empty(), limits)
+    }
+
+    /// Encodes workflows and generic analysis facts under the IR byte limit.
+    pub fn with_generic_facts(
+        workflows: Vec<CanonicalWorkflow>,
+        generic: GenericAnalysisFacts,
+        limits: ArtifactLimits,
+    ) -> Result<Self, IrArtifactError> {
         if workflows
             .windows(2)
             .any(|pair| pair[0].path >= pair[1].path)
         {
             return Err(IrArtifactError::NoncanonicalOrder);
         }
-        let artifact = encode_ir(&workflows, limits).map_err(IrArtifactError::Encoding)?;
+        let artifact =
+            encode_ir(&workflows, &generic, limits).map_err(IrArtifactError::Encoding)?;
         Ok(Self {
             workflows,
+            generic,
             artifact,
         })
     }
@@ -123,6 +138,12 @@ impl CanonicalIr {
     #[must_use]
     pub fn workflows(&self) -> &[CanonicalWorkflow] {
         &self.workflows
+    }
+
+    /// Returns canonically ordered generic facts and the closed projection.
+    #[must_use]
+    pub const fn generic_facts(&self) -> &GenericAnalysisFacts {
+        &self.generic
     }
 
     /// Returns canonical bytes and their accepted execution-package identity.
@@ -147,6 +168,7 @@ pub struct SourceMapEntry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalSourceMap {
     entries: Vec<SourceMapEntry>,
+    generic_entries: Vec<ConcreteSourceMapEntry>,
     artifact: BoundedArtifact,
 }
 
@@ -156,19 +178,42 @@ impl CanonicalSourceMap {
         entries: Vec<SourceMapEntry>,
         limits: ArtifactLimits,
     ) -> Result<Self, IrArtifactError> {
+        Self::with_generic_entries(entries, Vec::new(), limits)
+    }
+
+    /// Encodes structural and multi-origin generic entries in canonical order.
+    pub fn with_generic_entries(
+        entries: Vec<SourceMapEntry>,
+        generic_entries: Vec<ConcreteSourceMapEntry>,
+        limits: ArtifactLimits,
+    ) -> Result<Self, IrArtifactError> {
         if entries.windows(2).any(|pair| {
             (&pair[0].workflow, &pair[0].position) >= (&pair[1].workflow, &pair[1].position)
+        }) || generic_entries.windows(2).any(|pair| {
+            pair[0].node().canonical_string().as_bytes()
+                >= pair[1].node().canonical_string().as_bytes()
         }) {
             return Err(IrArtifactError::NoncanonicalOrder);
         }
-        let artifact = encode_source_map(&entries, limits).map_err(IrArtifactError::Encoding)?;
-        Ok(Self { entries, artifact })
+        let artifact = encode_source_map(&entries, &generic_entries, limits)
+            .map_err(IrArtifactError::Encoding)?;
+        Ok(Self {
+            entries,
+            generic_entries,
+            artifact,
+        })
     }
 
     /// Returns entries in canonical structural order.
     #[must_use]
     pub fn entries(&self) -> &[SourceMapEntry] {
         &self.entries
+    }
+
+    /// Returns multi-origin generic entries in concrete-identity order.
+    #[must_use]
+    pub fn generic_entries(&self) -> &[ConcreteSourceMapEntry] {
+        &self.generic_entries
     }
 
     /// Returns the complete bounded source-map bytes.
@@ -202,10 +247,165 @@ impl std::error::Error for IrArtifactError {}
 
 fn encode_ir(
     workflows: &[CanonicalWorkflow],
+    generic: &GenericAnalysisFacts,
     limits: ArtifactLimits,
 ) -> Result<BoundedArtifact, ArtifactEncodingError> {
     let mut output = CanonicalArtifactEncoder::new(ArtifactKind::CanonicalIr, limits);
-    output.push_str("{\"canonical_ir\":{\"major\":1,\"minor\":0},\"workflows\":[")?;
+    output.push_str("{\"canonical_ir\":{\"major\":1,\"minor\":0},\"concrete_effects\":[")?;
+    for (index, effect) in generic.concrete_effects().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"callable\":")?;
+        push_json_string(&mut output, effect.callable.as_str())?;
+        output.push_str(",\"effects\":[")?;
+        push_effects(&mut output, effect.effects)?;
+        output.push_str("]}")?;
+    }
+    output.push_str("],\"executable_projection\":{\"callables\":[")?;
+    for (index, callable) in generic.executable().callables().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"direct_calls\":[")?;
+        for (call_index, callee) in callable.direct_calls().iter().enumerate() {
+            if call_index > 0 {
+                output.push_byte(b',')?;
+            }
+            push_json_string(&mut output, callee.as_str())?;
+        }
+        output.push_str("],\"effects\":[")?;
+        push_effects(&mut output, *callable.effects())?;
+        output.push_str("],\"identity\":")?;
+        push_json_string(&mut output, callable.identity().as_str())?;
+        output.push_str(",\"signature\":")?;
+        push_json_string(&mut output, callable.signature().as_str())?;
+        output.push_byte(b'}')?;
+    }
+    output.push_str("],\"types\":[")?;
+    for (index, descriptor) in generic.executable().types().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        push_json_string(&mut output, &descriptor.canonical_string())?;
+    }
+    output.push_str("]},\"implementations\":[")?;
+    for (index, implementation) in generic.implementations().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"identity\":")?;
+        push_json_string(&mut output, implementation.identity().as_str())?;
+        output.push_str(",\"parameter_count\":\"")?;
+        output.push_str(&implementation.parameter_count().to_string())?;
+        output.push_str("\",\"predicates\":[")?;
+        push_predicates(&mut output, implementation.predicates())?;
+        output.push_str("],\"receiver\":")?;
+        push_json_string(&mut output, implementation.receiver().as_str())?;
+        if let Some(trait_reference) = implementation.trait_reference() {
+            output.push_str(",\"trait\":")?;
+            push_trait_reference(&mut output, trait_reference)?;
+        }
+        output.push_byte(b'}')?;
+    }
+    output.push_str("],\"instantiations\":[")?;
+    for (index, instantiation) in generic.instantiations().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"arguments\":[")?;
+        for (argument_index, argument) in instantiation.arguments().iter().enumerate() {
+            if argument_index > 0 {
+                output.push_byte(b',')?;
+            }
+            push_json_string(&mut output, &argument.canonical_string())?;
+        }
+        output.push_str("],\"concrete\":")?;
+        push_concrete_identity(&mut output, instantiation.concrete())?;
+        output.push_str(",\"kind\":")?;
+        push_json_string(&mut output, instantiation.kind().wire_name())?;
+        output.push_str(",\"template\":")?;
+        push_json_string(&mut output, instantiation.template().as_str())?;
+        output.push_byte(b'}')?;
+    }
+    output.push_str("],\"resolved_calls\":[")?;
+    for (index, call) in generic.resolved_calls().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"callee\":")?;
+        push_json_string(&mut output, call.callee.as_str())?;
+        output.push_str(",\"position\":")?;
+        push_position(&mut output, call.site.position())?;
+        if let Some(implementation) = &call.selected_implementation {
+            output.push_str(",\"selected_implementation\":")?;
+            push_json_string(&mut output, implementation.as_str())?;
+        }
+        output.push_str(",\"workflow\":")?;
+        push_json_string(&mut output, call.site.workflow().as_str())?;
+        output.push_byte(b'}')?;
+    }
+    output.push_str("],\"templates\":[")?;
+    for (index, template) in generic.templates().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"conservative_effects\":[")?;
+        push_effects(&mut output, *template.conservative_effects())?;
+        output.push_str("],\"identity\":")?;
+        push_json_string(&mut output, template.identity().as_str())?;
+        output.push_str(",\"kind\":")?;
+        push_json_string(&mut output, template.kind().wire_name())?;
+        output.push_str(",\"parameter_count\":\"")?;
+        output.push_str(&template.parameter_count().to_string())?;
+        output.push_str("\",\"predicates\":[")?;
+        push_predicates(&mut output, template.predicates())?;
+        output.push_str("]}")?;
+    }
+    output.push_str("],\"traits\":[")?;
+    for (index, contract) in generic.traits().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"methods\":[")?;
+        for (method_index, method) in contract.methods().iter().enumerate() {
+            if method_index > 0 {
+                output.push_byte(b',')?;
+            }
+            output.push_str("{\"effects\":[")?;
+            push_effects(&mut output, *method.effects())?;
+            output.push_str("],\"mutable_receiver\":")?;
+            output.push_str(if method.mutable_receiver() {
+                "true"
+            } else {
+                "false"
+            })?;
+            output.push_str(",\"name\":")?;
+            push_json_string(&mut output, method.name())?;
+            output.push_str(",\"parameter_count\":\"")?;
+            output.push_str(&method.parameter_count().to_string())?;
+            output.push_str("\",\"parameters\":[")?;
+            for (parameter_index, parameter) in method.parameters().iter().enumerate() {
+                if parameter_index > 0 {
+                    output.push_byte(b',')?;
+                }
+                push_json_string(&mut output, parameter.as_str())?;
+            }
+            output.push_str("],\"predicates\":[")?;
+            push_predicates(&mut output, method.predicates())?;
+            output.push_str("],\"result\":")?;
+            push_json_string(&mut output, method.result().as_str())?;
+            output.push_byte(b'}')?;
+        }
+        output.push_str("],\"parameter_count\":\"")?;
+        output.push_str(&contract.parameter_count().to_string())?;
+        output.push_str("\",\"path\":")?;
+        push_json_string(&mut output, contract.path().as_str())?;
+        output.push_str(",\"predicates\":[")?;
+        push_predicates(&mut output, contract.predicates())?;
+        output.push_str("]}")?;
+    }
+    output.push_str("],\"workflows\":[")?;
     for (workflow_index, workflow) in workflows.iter().enumerate() {
         if workflow_index > 0 {
             output.push_byte(b',')?;
@@ -309,6 +509,7 @@ fn encode_ir(
 
 fn encode_source_map(
     entries: &[SourceMapEntry],
+    generic_entries: &[ConcreteSourceMapEntry],
     limits: ArtifactLimits,
 ) -> Result<BoundedArtifact, ArtifactEncodingError> {
     let mut output = CanonicalArtifactEncoder::new(ArtifactKind::SourceMap, limits);
@@ -331,8 +532,105 @@ fn encode_source_map(
         push_json_string(&mut output, entry.workflow.as_str())?;
         output.push_byte(b'}')?;
     }
+    output.push_str("],\"generic_entries\":[")?;
+    for (index, entry) in generic_entries.iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"declaration\":")?;
+        push_span(&mut output, entry.declaration())?;
+        output.push_str(",\"node\":")?;
+        push_concrete_identity(&mut output, entry.node())?;
+        output.push_str(",\"origins\":[")?;
+        for (origin_index, origin) in entry.origins().origins().iter().enumerate() {
+            if origin_index > 0 {
+                output.push_byte(b',')?;
+            }
+            push_span(&mut output, origin)?;
+        }
+        output.push_str("]}")?;
+    }
     output.push_str("],\"source_map\":{\"major\":1,\"minor\":0}}")?;
     output.finish()
+}
+
+fn push_effects(
+    output: &mut CanonicalArtifactEncoder,
+    effects: EffectSet,
+) -> Result<(), ArtifactEncodingError> {
+    for (index, effect) in effects.iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        push_json_string(output, effect.wire_name())?;
+    }
+    Ok(())
+}
+
+fn push_trait_reference(
+    output: &mut CanonicalArtifactEncoder,
+    trait_reference: &TraitReference,
+) -> Result<(), ArtifactEncodingError> {
+    output.push_str("{\"arguments\":[")?;
+    for (index, argument) in trait_reference.arguments().iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        push_json_string(output, argument.as_str())?;
+    }
+    output.push_str("],\"path\":")?;
+    push_json_string(output, trait_reference.path().as_str())?;
+    output.push_byte(b'}')?;
+    Ok(())
+}
+
+fn push_predicates(
+    output: &mut CanonicalArtifactEncoder,
+    predicates: &[Predicate],
+) -> Result<(), ArtifactEncodingError> {
+    for (index, predicate) in predicates.iter().enumerate() {
+        if index > 0 {
+            output.push_byte(b',')?;
+        }
+        output.push_str("{\"receiver\":")?;
+        push_json_string(output, predicate.receiver().as_str())?;
+        output.push_str(",\"trait\":")?;
+        push_trait_reference(output, predicate.trait_reference())?;
+        output.push_byte(b'}')?;
+    }
+    Ok(())
+}
+
+fn push_concrete_identity(
+    output: &mut CanonicalArtifactEncoder,
+    identity: &ConcreteIdentity,
+) -> Result<(), ArtifactEncodingError> {
+    output.push_str("{\"kind\":")?;
+    push_json_string(
+        output,
+        match identity {
+            ConcreteIdentity::DeclaredType(_) => "declared-type",
+            ConcreteIdentity::Callable(_) => "callable",
+        },
+    )?;
+    output.push_str(",\"value\":")?;
+    push_json_string(output, &identity.canonical_string())?;
+    output.push_byte(b'}')?;
+    Ok(())
+}
+
+fn push_span(
+    output: &mut CanonicalArtifactEncoder,
+    span: &SourceSpan,
+) -> Result<(), ArtifactEncodingError> {
+    output.push_str("{\"end\":\"")?;
+    output.push_str(&span.bytes().end().to_string())?;
+    output.push_str("\",\"path\":")?;
+    push_json_string(output, span.source().package_path().as_str())?;
+    output.push_str(",\"start\":\"")?;
+    output.push_str(&span.bytes().start().to_string())?;
+    output.push_str("\"}")?;
+    Ok(())
 }
 
 fn push_position(

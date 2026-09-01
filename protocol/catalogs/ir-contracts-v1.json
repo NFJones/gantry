@@ -102,6 +102,12 @@
     { "requirements": ["GNT-6.5"], "rust": "JoinAll", "wire": "joinall" },
     { "requirements": ["GNT-6.5"], "rust": "Detach", "wire": "detach" }
   ],
+  "template_kinds": [
+    { "requirements": ["GNT-3-F-INSTANTIATION"], "rust": "DeclaredType", "wire": "declared-type" },
+    { "requirements": ["GNT-3-F-INSTANTIATION"], "rust": "FreeWorkflow", "wire": "free-workflow" },
+    { "requirements": ["GNT-3-F-INSTANTIATION"], "rust": "InherentMethod", "wire": "inherent-method" },
+    { "requirements": ["GNT-3-F-INSTANTIATION"], "rust": "TraitMethod", "wire": "trait-method" }
+  ],
   "type_expression_kinds": [
     { "requirements": ["GNT-3-F-GENERICS"], "rust": "BuiltinApplication", "wire": "builtin-application" },
     { "requirements": ["GNT-3-F-GENERICS"], "rust": "DeclaredApplication", "wire": "declared-application" },

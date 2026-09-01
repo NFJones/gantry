@@ -1,0 +1,26 @@
+{
+  "format": "gantry.generics-traits-ir-evidence/v1",
+  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "issue": "GNT-GEN-IR-001",
+  "capabilities": [
+    {
+      "id": "canonical-generic-artifacts",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+    },
+    {
+      "id": "closed-runtime-boundary",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
+    },
+    {
+      "id": "independent-schema-validation",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#canonical_artifact_vectors_match_the_public_facade"
+    }
+  ],
+  "exclusions": [
+    "Name resolution, inference, capability proofs, coherence, trait selection, and instantiation discovery remain analyzer work.",
+    "Execution of concrete generic applications and static trait calls remains runtime work.",
+    "Durable retention, reconstruction, tamper rejection, and recovery equivalence remain durable-runtime work.",
+    "No analyzer, evaluator, durable, embedding, publication, or release profile claim is enabled by this contract slice."
+  ],
+  "profiles": []
+}

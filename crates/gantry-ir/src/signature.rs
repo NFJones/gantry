@@ -6,7 +6,7 @@ use std::sync::Arc;
 use gantry_core::unicode::{is_nfc, is_xid_continue, is_xid_start};
 
 use crate::generated::RecoveryClass;
-use crate::{CanonicalPath, TypeDescriptor};
+use crate::{CanonicalCallableIdentity, CanonicalPath, TypeDescriptor};
 
 /// Mutability and type of one workflow parameter.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60,6 +60,20 @@ impl CanonicalSignature {
         result: &TypeDescriptor,
     ) -> Self {
         let mut output = format!("fn {}(", path.as_str());
+        push_workflow_parameters(&mut output, parameters);
+        output.push_str(")->");
+        output.push_str(&result.canonical_string());
+        Self(Arc::from(output))
+    }
+
+    /// Constructs one closed generic callable signature.
+    #[must_use]
+    pub fn concrete_function(
+        identity: &CanonicalCallableIdentity,
+        parameters: &[WorkflowParameter],
+        result: &TypeDescriptor,
+    ) -> Self {
+        let mut output = format!("fn {}(", identity.as_str());
         push_workflow_parameters(&mut output, parameters);
         output.push_str(")->");
         output.push_str(&result.canonical_string());
@@ -165,7 +179,7 @@ fn validate_identifier(value: &str) -> Result<(), SignatureError> {
 mod tests {
     use super::{ActionParameter, CanonicalSignature, SignatureError, WorkflowParameter};
     use crate::generated::RecoveryClass;
-    use crate::{CanonicalPath, TypeDescriptor};
+    use crate::{CanonicalCallableIdentity, CanonicalPath, TypeDescriptor};
 
     #[test]
     fn signatures_match_the_normative_examples() {
@@ -202,6 +216,22 @@ mod tests {
                 "fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report"
                     .to_owned()
             )
+        );
+        let preserve = CanonicalPath::new("crate::preserve")
+            .unwrap_or_else(|_| unreachable!("constant path is canonical"));
+        let concrete =
+            CanonicalCallableIdentity::free(&preserve, std::slice::from_ref(&report_type));
+        assert_eq!(
+            CanonicalSignature::concrete_function(
+                &concrete,
+                &[WorkflowParameter {
+                    mutable: false,
+                    ty: report_type.clone(),
+                }],
+                &report_type,
+            )
+            .as_str(),
+            "fn crate::preserve<crate::domain::Report>(crate::domain::Report)->crate::domain::Report"
         );
     }
 

@@ -29,6 +29,7 @@ struct IrCatalog {
     recovery_classes: Vec<NamedInput>,
     specification_revision: String,
     task_control_site_kinds: Vec<NamedInput>,
+    template_kinds: Vec<NamedInput>,
     type_expression_kinds: Vec<NamedInput>,
     type_kinds: Vec<NamedInput>,
 }
@@ -146,6 +147,16 @@ fn validate(root: &Path, catalog: &IrCatalog) -> Result<(), String> {
             .map(|item| (&item.wire, &item.rust)),
     )?;
     validate_exact_named(
+        "template kind",
+        &catalog.template_kinds,
+        &[
+            "declared-type",
+            "free-workflow",
+            "inherent-method",
+            "trait-method",
+        ],
+    )?;
+    validate_exact_named(
         "effect",
         &catalog.effects,
         &[
@@ -222,6 +233,7 @@ fn validate(root: &Path, catalog: &IrCatalog) -> Result<(), String> {
         .chain(&catalog.operation_site_kinds)
         .chain(&catalog.recovery_classes)
         .chain(&catalog.task_control_site_kinds)
+        .chain(&catalog.template_kinds)
         .chain(&catalog.type_expression_kinds)
         .chain(&catalog.type_kinds)
     {
@@ -406,6 +418,15 @@ fn render_rust(catalog: &IrCatalog) -> String {
         "task-control site kind",
         catalog
             .task_control_site_kinds
+            .iter()
+            .map(|item| (&item.rust, &item.wire)),
+    );
+    render_enum(
+        &mut output,
+        "TemplateKind",
+        "generic instantiation template kind",
+        catalog
+            .template_kinds
             .iter()
             .map(|item| (&item.rust, &item.wire)),
     );

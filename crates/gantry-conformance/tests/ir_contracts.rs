@@ -5,15 +5,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gantry::ir::generated::{ArtifactKind, CoreForm, Effect, OperationSiteKind};
+use gantry::canonical_json::CanonicalJson;
+use gantry::ir::generated::{ArtifactKind, CoreForm, Effect, OperationSiteKind, TemplateKind};
 use gantry::ir::{
-    ArtifactEncodingError, ArtifactLimits, CanonicalIr, CanonicalNode, CanonicalOperationSite,
-    CanonicalPath, CanonicalSignature, CanonicalSourceMap, CanonicalWorkflow,
-    GeneratedSchemaObject, PackageSourceManifest, SourceMapEntry, StructuralPosition,
-    TypeDescriptor,
+    ArtifactEncodingError, ArtifactLimits, CanonicalCallableIdentity, CanonicalIr, CanonicalNode,
+    CanonicalOperationSite, CanonicalPath, CanonicalSignature, CanonicalSourceMap,
+    CanonicalTemplateIdentity, CanonicalWorkflow, ClosedCallable, ConcreteEffect, ConcreteIdentity,
+    ConcreteInstantiation, ConcreteSourceMapEntry, ExecutableProjection, GeneratedSchemaObject,
+    GenericAnalysisFacts, GenericContractError, GenericTemplate, PackageSourceManifest,
+    SourceMapEntry, SourceOriginSet, StructuralPosition, TypeDescriptor, TypeExpression,
+    WorkflowParameter,
 };
 use gantry::protocol::ProtocolVersion;
+use gantry::schema::SchemaValidator;
 use gantry::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
+use gantry::strict_json::{JsonLimits, StrictJsonDocument};
 use serde::Deserialize;
 
 const CONTRACT_EVIDENCE: &str = "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract";
@@ -160,6 +166,143 @@ fn canonical_paths_types_signatures_and_effects_match_the_public_contract() {
 }
 
 #[test]
+fn generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps() {
+    let preserve_path = CanonicalPath::new("crate::preserve")
+        .unwrap_or_else(|_| unreachable!("constant path is canonical"));
+    let parameter = TypeExpression::parameter(0, 0, 8)
+        .unwrap_or_else(|_| unreachable!("bounded parameter is canonical"));
+    let template_identity =
+        CanonicalTemplateIdentity::free(&preserve_path, std::slice::from_ref(&parameter));
+    assert_eq!(template_identity.as_str(), "crate::preserve<^0.0>");
+
+    let template = GenericTemplate::new(
+        TemplateKind::FreeWorkflow,
+        template_identity.clone(),
+        1,
+        Vec::new(),
+        gantry::ir::EffectSet::default(),
+    )
+    .unwrap_or_else(|_| unreachable!("template facts are canonical"));
+    let callable = CanonicalCallableIdentity::free(&preserve_path, &[TypeDescriptor::STRING]);
+    let instantiation = ConcreteInstantiation::new(
+        TemplateKind::FreeWorkflow,
+        template_identity,
+        vec![TypeDescriptor::STRING],
+        ConcreteIdentity::Callable(callable.clone()),
+    )
+    .unwrap_or_else(|_| unreachable!("closed instantiation kind matches"));
+    let signature = CanonicalSignature::concrete_function(
+        &callable,
+        &[WorkflowParameter {
+            mutable: false,
+            ty: TypeDescriptor::STRING,
+        }],
+        &TypeDescriptor::STRING,
+    );
+    let closed_callable = ClosedCallable::new(
+        callable.clone(),
+        signature,
+        gantry::ir::EffectSet::default(),
+        Vec::new(),
+    )
+    .unwrap_or_else(|_| unreachable!("call targets are canonical"));
+    let executable = ExecutableProjection::new(vec![TypeDescriptor::STRING], vec![closed_callable])
+        .unwrap_or_else(|_| unreachable!("projection is closed"));
+
+    let declaration = SourceSpan::from_portable_parts("main.gnt", 0, 18)
+        .unwrap_or_else(|_| unreachable!("constant span is portable"));
+    let first_origin = SourceSpan::from_portable_parts("main.gnt", 20, 35)
+        .unwrap_or_else(|_| unreachable!("constant span is portable"));
+    let second_origin = SourceSpan::from_portable_parts("main.gnt", 40, 55)
+        .unwrap_or_else(|_| unreachable!("constant span is portable"));
+    let generic_source = ConcreteSourceMapEntry::new(
+        ConcreteIdentity::Callable(callable.clone()),
+        declaration,
+        SourceOriginSet::canonicalize(vec![
+            second_origin.clone(),
+            first_origin.clone(),
+            first_origin,
+        ]),
+    );
+    assert_eq!(
+        generic_source.origins().origins(),
+        [
+            SourceSpan::from_portable_parts("main.gnt", 20, 35)
+                .unwrap_or_else(|_| unreachable!("constant span is portable")),
+            second_origin,
+        ]
+    );
+
+    let facts = GenericAnalysisFacts::new(
+        Vec::new(),
+        Vec::new(),
+        vec![template],
+        vec![instantiation],
+        Vec::new(),
+        vec![ConcreteEffect {
+            callable: callable.clone(),
+            effects: gantry::ir::EffectSet::default(),
+        }],
+        vec![generic_source.clone()],
+        executable,
+    )
+    .unwrap_or_else(|_| unreachable!("generic analysis facts are closed"));
+    let ir = CanonicalIr::with_generic_facts(Vec::new(), facts, limits(8_192))
+        .unwrap_or_else(|_| unreachable!("generic IR fits"));
+    let ir_text = std::str::from_utf8(ir.artifact().canonical_bytes())
+        .unwrap_or_else(|_| unreachable!("canonical IR is UTF-8"));
+    assert!(ir_text.contains("\"identity\":\"crate::preserve<^0.0>\""));
+    assert!(ir_text.contains("\"value\":\"crate::preserve<String>\""));
+    assert!(ir_text.contains("\"executable_projection\":{\"callables\":["));
+    assert!(!ir_text.contains("^0.0>(String)"));
+
+    let source_map =
+        CanonicalSourceMap::with_generic_entries(Vec::new(), vec![generic_source], limits(8_192))
+            .unwrap_or_else(|_| unreachable!("generic source map fits"));
+    let map_text = std::str::from_utf8(source_map.artifact().canonical_bytes())
+        .unwrap_or_else(|_| unreachable!("source map is UTF-8"));
+    assert!(map_text.contains("\"generic_entries\":[{"));
+    assert_eq!(map_text.matches("\"start\":\"20\"").count(), 1);
+}
+
+#[test]
+fn generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs() {
+    assert!(CanonicalCallableIdentity::from_canonical_string("crate::preserve<^0.0>", 8,).is_err());
+    assert!(matches!(
+        TypeExpression::from_canonical_string("List<^0.0>", 1),
+        Err(gantry::ir::TypeExpressionError::ConstructedTypeDepth {
+            limit: 1,
+            observed: 2,
+        })
+    ));
+
+    let repeated = SourceSpan::from_portable_parts("main.gnt", 1, 2)
+        .unwrap_or_else(|_| unreachable!("constant span is portable"));
+    assert_eq!(
+        SourceOriginSet::from_canonical_origins(vec![repeated.clone(), repeated]),
+        Err(GenericContractError::NoncanonicalOrigins)
+    );
+
+    let main_path = CanonicalPath::new("crate::main")
+        .unwrap_or_else(|_| unreachable!("constant path is canonical"));
+    let missing_path = CanonicalPath::new("crate::missing")
+        .unwrap_or_else(|_| unreachable!("constant path is canonical"));
+    let main = CanonicalCallableIdentity::free(&main_path, &[]);
+    let missing = CanonicalCallableIdentity::free(&missing_path, &[]);
+    let callable = ClosedCallable::new(
+        main,
+        CanonicalSignature::function(&main_path, &[], &TypeDescriptor::UNIT),
+        gantry::ir::EffectSet::default(),
+        vec![missing],
+    )
+    .unwrap_or_else(|_| unreachable!("direct targets are ordered"));
+    assert_eq!(
+        ExecutableProjection::new(vec![TypeDescriptor::UNIT], vec![callable]),
+        Err(GenericContractError::MissingDirectTarget)
+    );
+}
+
+#[test]
 fn ir_schemas_and_catalog_are_versioned_and_closed() {
     let root = protocol_root();
     let catalog: serde_json::Value = read_json(&root.join("catalogs/ir-contracts-v1.json"));
@@ -232,6 +375,14 @@ fn canonical_artifact_vectors_match_the_public_facade() {
         ArtifactKind::GeneratedSchemaObject
     );
     assert_eq!(ir.artifact().sha256_hex().len(), 64);
+    assert_canonical_and_schema_valid(
+        "canonical-ir-v1.schema.json",
+        ir.artifact().canonical_bytes(),
+    );
+    assert_canonical_and_schema_valid(
+        "source-map-v1.schema.json",
+        source_map.artifact().canonical_bytes(),
+    );
 }
 
 #[test]
@@ -361,6 +512,31 @@ fn limits(limit: u64) -> ArtifactLimits {
         canonical_ir_bytes: limit,
         source_map_bytes: limit,
         generated_schema_bytes: limit,
+    }
+}
+
+fn assert_canonical_and_schema_valid(schema_name: &str, bytes: &[u8]) {
+    let document = StrictJsonDocument::decode(bytes, json_limits())
+        .unwrap_or_else(|error| panic!("could not strictly decode IR artifact: {error:?}"));
+    let canonical = CanonicalJson::from_document(&document)
+        .unwrap_or_else(|error| panic!("could not canonicalize IR artifact: {error:?}"));
+    assert_eq!(canonical.bytes(), bytes);
+
+    let schema_path = protocol_root().join("schemas").join(schema_name);
+    let schema = fs::read(&schema_path)
+        .unwrap_or_else(|error| panic!("could not read {}: {error}", schema_path.display()));
+    let validator = SchemaValidator::compile(schema, json_limits())
+        .unwrap_or_else(|error| panic!("could not compile {schema_name}: {error:?}"));
+    assert_eq!(validator.validate(&document), Ok(Vec::new()));
+}
+
+fn json_limits() -> JsonLimits {
+    JsonLimits {
+        maximum_bytes: 4_000_000,
+        maximum_nesting_depth: 4_000_000,
+        maximum_nodes: 4_000_000,
+        maximum_string_scalars: 4_000_000,
+        maximum_list_items: 4_000_000,
     }
 }
 

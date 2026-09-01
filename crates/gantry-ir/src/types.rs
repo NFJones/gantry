@@ -17,6 +17,7 @@ pub struct TypeDescriptor {
 enum TypeToken {
     Primitive(TypeKind),
     Declared(CanonicalPath),
+    OpenDeclared(CanonicalPath),
     Open(TypeKind),
     Comma,
     Close,
@@ -56,11 +57,35 @@ impl TypeDescriptor {
         }
     }
 
+    /// Constructs one closed declared type with ordered concrete arguments.
+    #[must_use]
+    pub fn declared_with_arguments(path: CanonicalPath, arguments: Vec<Self>) -> Self {
+        if arguments.is_empty() {
+            return Self::declared(path);
+        }
+        let contains_sealed_boundary = arguments
+            .iter()
+            .any(|argument| argument.contains_sealed_boundary);
+        let mut tokens = vec![TypeToken::OpenDeclared(path)];
+        for (index, argument) in arguments.into_iter().enumerate() {
+            if index > 0 {
+                tokens.push(TypeToken::Comma);
+            }
+            tokens.extend(argument.into_tokens());
+        }
+        tokens.push(TypeToken::Close);
+        Self {
+            kind: TypeKind::Declared,
+            tokens,
+            contains_sealed_boundary,
+        }
+    }
+
     /// Returns the canonical path when this is a declared package type.
     #[must_use]
     pub fn declared_path(&self) -> Option<&CanonicalPath> {
         match self.tokens.first() {
-            Some(TypeToken::Declared(path)) => Some(path),
+            Some(TypeToken::Declared(path) | TypeToken::OpenDeclared(path)) => Some(path),
             _ => None,
         }
     }
@@ -151,7 +176,12 @@ impl TypeDescriptor {
     /// independent of descriptor nesting depth and does not recurse.
     #[must_use]
     pub fn immediate_members(&self) -> Vec<Self> {
-        if self.tokens.len() < 3 || !matches!(self.tokens.first(), Some(TypeToken::Open(_))) {
+        if self.tokens.len() < 3
+            || !matches!(
+                self.tokens.first(),
+                Some(TypeToken::Open(_) | TypeToken::OpenDeclared(_))
+            )
+        {
             return Vec::new();
         }
         let mut members = Vec::new();
@@ -159,7 +189,9 @@ impl TypeDescriptor {
         let mut depth = 0_usize;
         for index in 1..self.tokens.len().saturating_sub(1) {
             match &self.tokens[index] {
-                TypeToken::Open(_) => depth = depth.saturating_add(1),
+                TypeToken::Open(_) | TypeToken::OpenDeclared(_) => {
+                    depth = depth.saturating_add(1);
+                }
                 TypeToken::Close => depth = depth.saturating_sub(1),
                 TypeToken::Comma if depth == 0 => {
                     if let Some(member) = Self::from_token_slice(&self.tokens[start..index]) {
@@ -192,6 +224,10 @@ impl TypeDescriptor {
             match token {
                 TypeToken::Primitive(kind) => output.push_str(kind.wire_name()),
                 TypeToken::Declared(path) => output.push_str(path.as_str()),
+                TypeToken::OpenDeclared(path) => {
+                    output.push_str(path.as_str());
+                    output.push('<');
+                }
                 TypeToken::Open(kind) => {
                     output.push_str(kind.wire_name());
                     output.push('<');
@@ -204,14 +240,26 @@ impl TypeDescriptor {
     }
 
     /// Decodes one exact canonical descriptor without native recursion.
+    ///
+    /// Use [`Self::from_canonical_string_with_depth_limit`] when decoding is
+    /// governed by one frontend activity's constructed-type policy.
     pub fn from_canonical_string(value: &str) -> Result<Self, TypeDescriptorError> {
+        Self::from_canonical_string_with_depth_limit(value, u64::MAX)
+    }
+
+    /// Decodes one exact canonical descriptor under an inclusive depth limit.
+    pub fn from_canonical_string_with_depth_limit(
+        value: &str,
+        maximum_constructed_type_depth: u64,
+    ) -> Result<Self, TypeDescriptorError> {
         if value.is_empty() || value.bytes().any(|byte| byte.is_ascii_whitespace()) {
             return Err(TypeDescriptorError::InvalidCanonicalString);
         }
-        let mut parser = DescriptorParser::new(value);
-        let descriptor = parser
-            .parse()
-            .map_err(|_| TypeDescriptorError::InvalidCanonicalString)?;
+        let mut parser = DescriptorParser::new(value, maximum_constructed_type_depth);
+        let descriptor = parser.parse().map_err(|error| match error {
+            TypeDescriptorError::ConstructedTypeDepth { .. } => error,
+            _ => TypeDescriptorError::InvalidCanonicalString,
+        })?;
         if descriptor.canonical_string() != value {
             return Err(TypeDescriptorError::InvalidCanonicalString);
         }
@@ -229,7 +277,7 @@ impl TypeDescriptor {
     fn from_token_slice(tokens: &[TypeToken]) -> Option<Self> {
         let kind = match tokens.first()? {
             TypeToken::Primitive(kind) | TypeToken::Open(kind) => *kind,
-            TypeToken::Declared(_) => TypeKind::Declared,
+            TypeToken::Declared(_) | TypeToken::OpenDeclared(_) => TypeKind::Declared,
             TypeToken::Comma | TypeToken::Close => return None,
         };
         let contains_sealed_boundary = tokens.iter().any(|token| {
@@ -266,6 +314,13 @@ pub enum TypeDescriptorError {
     TupleArity,
     /// Input is not one exact canonical v1 type descriptor.
     InvalidCanonicalString,
+    /// A decoded descriptor exceeds the configured constructed-type depth.
+    ConstructedTypeDepth {
+        /// Configured inclusive maximum depth.
+        limit: u64,
+        /// First rejected depth.
+        observed: u64,
+    },
 }
 
 impl fmt::Display for TypeDescriptorError {
@@ -274,18 +329,22 @@ impl fmt::Display for TypeDescriptorError {
             Self::InvalidOptionMember => "option member is not permitted",
             Self::TupleArity => "tuple requires at least two members",
             Self::InvalidCanonicalString => "type descriptor is not canonical",
+            Self::ConstructedTypeDepth { .. } => {
+                "type descriptor exceeds the constructed-type depth limit"
+            }
         })
     }
 }
 
 impl std::error::Error for TypeDescriptorError {}
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum ContainerKind {
     Option,
     Result,
     List,
     Tuple,
+    Declared(CanonicalPath),
 }
 
 struct ContainerFrame {
@@ -298,15 +357,17 @@ struct DescriptorParser<'a> {
     cursor: usize,
     frames: Vec<ContainerFrame>,
     value: Option<TypeDescriptor>,
+    maximum_constructed_type_depth: u64,
 }
 
 impl<'a> DescriptorParser<'a> {
-    fn new(source: &'a str) -> Self {
+    fn new(source: &'a str, maximum_constructed_type_depth: u64) -> Self {
         Self {
             source,
             cursor: 0,
             frames: Vec::new(),
             value: None,
+            maximum_constructed_type_depth,
         }
     }
 
@@ -328,7 +389,7 @@ impl<'a> DescriptorParser<'a> {
                 return Err(TypeDescriptorError::InvalidCanonicalString);
             };
             frame.members.push(value);
-            match frame.kind {
+            match &frame.kind {
                 ContainerKind::Option | ContainerKind::List => {
                     if frame.members.len() != 1 || delimiter != Some(b'>') {
                         return Err(TypeDescriptorError::InvalidCanonicalString);
@@ -352,11 +413,20 @@ impl<'a> DescriptorParser<'a> {
                     }
                     _ => return Err(TypeDescriptorError::InvalidCanonicalString),
                 },
+                ContainerKind::Declared(_) => match delimiter {
+                    Some(b',') => self.cursor += 1,
+                    Some(b'>') if !frame.members.is_empty() => {
+                        self.cursor += 1;
+                        self.close_frame()?;
+                    }
+                    _ => return Err(TypeDescriptorError::InvalidCanonicalString),
+                },
             }
         }
     }
 
     fn parse_atom(&mut self) -> Result<(), TypeDescriptorError> {
+        self.check_depth()?;
         for (name, descriptor) in [
             ("Unit", Self::primitive(TypeDescriptor::UNIT)),
             ("Bool", Self::primitive(TypeDescriptor::BOOL)),
@@ -390,7 +460,7 @@ impl<'a> DescriptorParser<'a> {
             }
         }
         let end = self.source[self.cursor..]
-            .find([',', '>'])
+            .find([',', '>', '<'])
             .map_or(self.source.len(), |offset| self.cursor + offset);
         let path = self
             .source
@@ -399,7 +469,15 @@ impl<'a> DescriptorParser<'a> {
         let path =
             CanonicalPath::new(path).map_err(|_| TypeDescriptorError::InvalidCanonicalString)?;
         self.cursor = end;
-        self.value = Some(TypeDescriptor::declared(path));
+        if self.byte() == Some(b'<') {
+            self.cursor += 1;
+            self.frames.push(ContainerFrame {
+                kind: ContainerKind::Declared(path),
+                members: Vec::new(),
+            });
+        } else {
+            self.value = Some(TypeDescriptor::declared(path));
+        }
         Ok(())
     }
 
@@ -434,7 +512,24 @@ impl<'a> DescriptorParser<'a> {
                     .ok_or(TypeDescriptorError::InvalidCanonicalString)?,
             ),
             ContainerKind::Tuple => TypeDescriptor::tuple(frame.members)?,
+            ContainerKind::Declared(path) => {
+                TypeDescriptor::declared_with_arguments(path, frame.members)
+            }
         });
+        Ok(())
+    }
+
+    fn check_depth(&self) -> Result<(), TypeDescriptorError> {
+        let observed = u64::try_from(self.frames.len())
+            .ok()
+            .and_then(|depth| depth.checked_add(1))
+            .ok_or(TypeDescriptorError::InvalidCanonicalString)?;
+        if observed > self.maximum_constructed_type_depth {
+            return Err(TypeDescriptorError::ConstructedTypeDepth {
+                limit: self.maximum_constructed_type_depth,
+                observed,
+            });
+        }
         Ok(())
     }
 
@@ -481,6 +576,16 @@ mod tests {
             result.canonical_string(),
             "Result<List<crate::domain::Report>,Option<String>>"
         );
+        let envelope = TypeDescriptor::declared_with_arguments(
+            CanonicalPath::new("crate::domain::Envelope")
+                .unwrap_or_else(|_| unreachable!("constant path is canonical")),
+            vec![result.clone()],
+        );
+        assert_eq!(
+            envelope.canonical_string(),
+            "crate::domain::Envelope<Result<List<crate::domain::Report>,Option<String>>>"
+        );
+        assert_eq!(envelope.immediate_members(), [result]);
         assert_eq!(
             report.declared_path().map(CanonicalPath::as_str),
             Some("crate::domain::Report")
@@ -539,9 +644,10 @@ mod tests {
             "crate::domain::Report",
             "Option<String>",
             "Result<List<crate::domain::Report>,Tuple<Int,String>>",
+            "crate::domain::Envelope<Result<Int,String>>",
         ] {
             assert_eq!(
-                TypeDescriptor::from_canonical_string(value)
+                TypeDescriptor::from_canonical_string_with_depth_limit(value, 16)
                     .map(|descriptor| descriptor.canonical_string()),
                 Ok(value.to_owned())
             );
@@ -557,9 +663,17 @@ mod tests {
             "crate::bad-name",
         ] {
             assert_eq!(
-                TypeDescriptor::from_canonical_string(value),
+                TypeDescriptor::from_canonical_string_with_depth_limit(value, 16),
                 Err(TypeDescriptorError::InvalidCanonicalString)
             );
         }
+        assert_eq!(
+            TypeDescriptor::from_canonical_string_with_depth_limit("List<Int>", 1),
+            Err(TypeDescriptorError::ConstructedTypeDepth {
+                limit: 1,
+                observed: 2,
+            })
+        );
+        assert!(TypeDescriptor::from_canonical_string_with_depth_limit("List<Int>", 2).is_ok());
     }
 }

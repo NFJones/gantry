@@ -24,11 +24,47 @@
         "required": ["end", "path", "position", "start", "workflow"]
       }
     },
+    "generic_entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/generic_entry" }
+    },
     "source_map": { "$ref": "#/$defs/version" }
   },
-  "required": ["entries", "source_map"],
+  "required": ["entries", "generic_entries", "source_map"],
   "$defs": {
     "decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "end": { "$ref": "#/$defs/decimal" },
+        "path": { "type": "string", "pattern": "^[^/].*\\.gnt$" },
+        "start": { "$ref": "#/$defs/decimal" }
+      },
+      "required": ["end", "path", "start"]
+    },
+    "concrete_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["callable", "declared-type"] },
+        "value": { "type": "string", "minLength": 1 }
+      },
+      "required": ["kind", "value"]
+    },
+    "generic_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "declaration": { "$ref": "#/$defs/span" },
+        "node": { "$ref": "#/$defs/concrete_identity" },
+        "origins": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/span" }
+        }
+      },
+      "required": ["declaration", "node", "origins"]
+    },
     "version": {
       "type": "object",
       "additionalProperties": false,

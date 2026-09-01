@@ -303,7 +303,9 @@ fn resolve_type_node(
                     None
                 }
                 Err(
-                    TypeDescriptorError::TupleArity | TypeDescriptorError::InvalidCanonicalString,
+                    TypeDescriptorError::TupleArity
+                    | TypeDescriptorError::InvalidCanonicalString
+                    | TypeDescriptorError::ConstructedTypeDepth { .. },
                 ) => return Err(AnalysisError::Invariant),
             }
         }

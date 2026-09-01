@@ -6,12 +6,41 @@
   "additionalProperties": false,
   "properties": {
     "canonical_ir": { "$ref": "#/$defs/version" },
+    "concrete_effects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/concrete_effect" }
+    },
+    "executable_projection": { "$ref": "#/$defs/executable_projection" },
+    "implementations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/implementation" }
+    },
+    "instantiations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/instantiation" }
+    },
+    "resolved_calls": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/resolved_call" }
+    },
+    "templates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/template" }
+    },
+    "traits": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/trait" }
+    },
     "workflows": {
       "type": "array",
       "items": { "$ref": "#/$defs/workflow" }
     }
   },
-  "required": ["canonical_ir", "workflows"],
+  "required": [
+    "canonical_ir", "concrete_effects", "executable_projection",
+    "implementations", "instantiations", "resolved_calls", "templates",
+    "traits", "workflows"
+  ],
   "$defs": {
     "version": {
       "type": "object",
@@ -27,6 +56,189 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/decimal" }
+    },
+    "effect": {
+      "enum": [
+        "prompt", "decide", "action(read_only)", "action(idempotent)",
+        "action(non_idempotent)", "spawn", "join", "background", "session", "attempt"
+      ]
+    },
+    "effects": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/effect" }
+    },
+    "canonical_path": { "type": "string", "pattern": "^crate::.+$" },
+    "type_expression": { "type": "string", "minLength": 1 },
+    "closed_type": { "type": "string", "minLength": 1 },
+    "callable_identity": { "type": "string", "minLength": 1 },
+    "template_identity": { "type": "string", "minLength": 1 },
+    "trait_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/type_expression" }
+        },
+        "path": { "$ref": "#/$defs/canonical_path" }
+      },
+      "required": ["arguments", "path"]
+    },
+    "predicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "receiver": { "$ref": "#/$defs/type_expression" },
+        "trait": { "$ref": "#/$defs/trait_reference" }
+      },
+      "required": ["receiver", "trait"]
+    },
+    "trait_method": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "effects": { "$ref": "#/$defs/effects" },
+        "mutable_receiver": { "type": "boolean" },
+        "name": { "type": "string", "minLength": 1 },
+        "parameter_count": { "$ref": "#/$defs/decimal" },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/type_expression" }
+        },
+        "predicates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/predicate" }
+        },
+        "result": { "$ref": "#/$defs/type_expression" }
+      },
+      "required": [
+        "effects", "mutable_receiver", "name", "parameter_count", "parameters",
+        "predicates", "result"
+      ]
+    },
+    "trait": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/trait_method" }
+        },
+        "parameter_count": { "$ref": "#/$defs/decimal" },
+        "path": { "$ref": "#/$defs/canonical_path" },
+        "predicates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/predicate" }
+        }
+      },
+      "required": ["methods", "parameter_count", "path", "predicates"]
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": { "type": "string", "minLength": 1 },
+        "parameter_count": { "$ref": "#/$defs/decimal" },
+        "predicates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/predicate" }
+        },
+        "receiver": { "$ref": "#/$defs/type_expression" },
+        "trait": { "$ref": "#/$defs/trait_reference" }
+      },
+      "required": ["identity", "parameter_count", "predicates", "receiver"]
+    },
+    "concrete_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["callable", "declared-type"] },
+        "value": { "type": "string", "minLength": 1 }
+      },
+      "required": ["kind", "value"]
+    },
+    "instantiation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/closed_type" }
+        },
+        "concrete": { "$ref": "#/$defs/concrete_identity" },
+        "kind": {
+          "enum": ["declared-type", "free-workflow", "inherent-method", "trait-method"]
+        },
+        "template": { "$ref": "#/$defs/template_identity" }
+      },
+      "required": ["arguments", "concrete", "kind", "template"]
+    },
+    "resolved_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "callee": { "$ref": "#/$defs/callable_identity" },
+        "position": { "$ref": "#/$defs/position" },
+        "selected_implementation": { "type": "string", "minLength": 1 },
+        "workflow": { "$ref": "#/$defs/canonical_path" }
+      },
+      "required": ["callee", "position", "workflow"]
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "conservative_effects": { "$ref": "#/$defs/effects" },
+        "identity": { "$ref": "#/$defs/template_identity" },
+        "kind": {
+          "enum": ["declared-type", "free-workflow", "inherent-method", "trait-method"]
+        },
+        "parameter_count": { "$ref": "#/$defs/decimal" },
+        "predicates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/predicate" }
+        }
+      },
+      "required": ["conservative_effects", "identity", "kind", "parameter_count", "predicates"]
+    },
+    "concrete_effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "callable": { "$ref": "#/$defs/callable_identity" },
+        "effects": { "$ref": "#/$defs/effects" }
+      },
+      "required": ["callable", "effects"]
+    },
+    "closed_callable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direct_calls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/callable_identity" }
+        },
+        "effects": { "$ref": "#/$defs/effects" },
+        "identity": { "$ref": "#/$defs/callable_identity" },
+        "signature": { "type": "string", "minLength": 1 }
+      },
+      "required": ["direct_calls", "effects", "identity", "signature"]
+    },
+    "executable_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "callables": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/closed_callable" }
+        },
+        "types": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/closed_type" }
+        }
+      },
+      "required": ["callables", "types"]
     },
     "node": {
       "type": "object",
@@ -93,16 +305,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "effects": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "enum": [
-              "prompt", "decide", "action(read_only)", "action(idempotent)",
-              "action(non_idempotent)", "spawn", "join", "background", "session", "attempt"
-            ]
-          }
-        },
+        "effects": { "$ref": "#/$defs/effects" },
         "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
         "path": { "type": "string", "pattern": "^crate::.+$" },
         "signature": { "type": "string", "minLength": 1 }

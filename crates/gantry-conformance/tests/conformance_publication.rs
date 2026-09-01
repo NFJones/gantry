@@ -276,7 +276,7 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         &manifest.negative_vectors.sha256,
     );
 
-    assert_eq!(manifest.manifests.len(), 38);
+    assert_eq!(manifest.manifests.len(), 39);
     assert!(
         manifest
             .manifests

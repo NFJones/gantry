@@ -278,6 +278,32 @@ impl TaskControlSiteKind {
     }
 }
 
+/// Closed `TemplateKind` generic instantiation template kind vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TemplateKind {
+    /// The `declared-type` value.
+    DeclaredType,
+    /// The `free-workflow` value.
+    FreeWorkflow,
+    /// The `inherent-method` value.
+    InherentMethod,
+    /// The `trait-method` value.
+    TraitMethod,
+}
+
+impl TemplateKind {
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::DeclaredType => "declared-type",
+            Self::FreeWorkflow => "free-workflow",
+            Self::InherentMethod => "inherent-method",
+            Self::TraitMethod => "trait-method",
+        }
+    }
+}
+
 /// Closed `TypeExpressionKind` generic template type expression vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeExpressionKind {
