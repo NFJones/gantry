@@ -99,15 +99,24 @@ pub const fn compiled_features() -> CompiledFeatures {
 /// Returns the conformance profiles advertised by this build.
 ///
 /// The evaluator profile advertises its analyzer and frontend prerequisites
-/// plus the supported embedding role. The concurrent refinement advertises its
-/// profile when compiled. The durable feature flag does not advertise its
-/// profile until the durable conformance gate closes.
+/// plus the supported embedding role. Each standalone concurrent or durable
+/// refinement advertises its profile when compiled. A build containing both
+/// refinements advertises only the concurrent refinement until the combined
+/// conformance gate closes.
 #[must_use]
 pub const fn advertised_profiles() -> &'static [ConformanceProfile] {
     if cfg!(feature = "concurrent") {
         &[
             ConformanceProfile::Analyzer,
             ConformanceProfile::ConcurrentEvaluator,
+            ConformanceProfile::Embedding,
+            ConformanceProfile::Evaluator,
+            ConformanceProfile::Frontend,
+        ]
+    } else if cfg!(feature = "durable") {
+        &[
+            ConformanceProfile::Analyzer,
+            ConformanceProfile::DurableRuntime,
             ConformanceProfile::Embedding,
             ConformanceProfile::Evaluator,
             ConformanceProfile::Frontend,
@@ -158,6 +167,18 @@ mod tests {
                 [
                     ConformanceProfile::Analyzer,
                     ConformanceProfile::ConcurrentEvaluator,
+                    ConformanceProfile::Embedding,
+                    ConformanceProfile::Evaluator,
+                    ConformanceProfile::Frontend,
+                ]
+            );
+            assert!(advertises_any_profile());
+        } else if compiled_features().durable {
+            assert_eq!(
+                advertised_profiles(),
+                [
+                    ConformanceProfile::Analyzer,
+                    ConformanceProfile::DurableRuntime,
                     ConformanceProfile::Embedding,
                     ConformanceProfile::Evaluator,
                     ConformanceProfile::Frontend,

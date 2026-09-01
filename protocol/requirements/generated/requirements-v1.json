@@ -108,8 +108,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -174,8 +176,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -240,8 +244,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -306,8 +312,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -372,8 +380,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -438,8 +448,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -504,8 +516,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -570,8 +584,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -636,8 +652,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -702,8 +720,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -768,8 +788,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -834,8 +856,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -900,8 +924,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -966,8 +992,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1032,8 +1060,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1098,8 +1128,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1164,8 +1196,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1230,8 +1264,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1298,8 +1334,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+              ],
               "rationale": null
             },
             {
@@ -1367,8 +1406,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1433,8 +1474,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1524,8 +1567,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1590,8 +1635,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_gate.rs#checked_in_frontend_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -1681,8 +1728,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1747,8 +1796,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1838,8 +1889,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1904,8 +1957,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -1970,8 +2025,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -2036,8 +2093,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -2123,8 +2182,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2202,8 +2263,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2281,8 +2344,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2359,8 +2424,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact",
+                "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer"
+              ],
               "rationale": null
             },
             {
@@ -2439,8 +2507,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_and_observes_one_sequential_execution",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption"
+              ],
               "rationale": null
             },
             {
@@ -2519,8 +2590,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/scripted_integration.rs#scripted_adapter_exercises_preflight_hook_and_cancellation_contracts",
+                "crates/gantry-conformance/tests/start_execution.rs#mapping_and_root_preflight_precede_identity_and_accept_normalized_entry"
+              ],
               "rationale": null
             },
             {
@@ -2600,8 +2674,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_cancellation_after_outcome_prevents_source_consumption",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -2679,8 +2757,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries",
+                "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions"
+              ],
               "rationale": null
             },
             {
@@ -2753,8 +2834,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption",
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -2834,8 +2918,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2913,8 +2999,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -2992,8 +3080,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+              ],
               "rationale": null
             },
             {
@@ -3071,8 +3161,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3148,8 +3240,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption",
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3225,8 +3320,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay",
+                "crates/gantry-conformance/tests/durable_recovery.rs#public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions"
+              ],
               "rationale": null
             },
             {
@@ -3300,8 +3398,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3377,8 +3477,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3431,8 +3533,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3485,8 +3589,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3539,8 +3645,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -3618,8 +3726,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3674,8 +3784,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3730,8 +3842,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3786,8 +3900,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3865,8 +3981,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3921,8 +4039,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -3977,8 +4097,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4033,8 +4155,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4089,8 +4213,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4145,8 +4271,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4201,8 +4329,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4280,8 +4410,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4336,8 +4468,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4392,8 +4526,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4471,8 +4607,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4550,8 +4688,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4606,8 +4746,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4685,8 +4827,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4741,8 +4885,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4797,8 +4943,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4876,8 +5024,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4932,8 +5082,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -4988,8 +5140,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5067,8 +5221,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5123,8 +5279,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5179,8 +5337,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5258,8 +5418,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5314,8 +5476,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5370,8 +5534,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5449,8 +5615,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5505,8 +5673,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5561,8 +5731,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5640,8 +5812,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5696,8 +5870,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5752,8 +5928,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5808,8 +5986,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5887,8 +6067,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5943,8 +6125,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -5999,8 +6183,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6078,8 +6264,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -6134,8 +6322,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -6190,8 +6380,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -6269,8 +6461,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6325,8 +6519,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6404,8 +6600,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6460,8 +6658,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6516,8 +6716,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6595,8 +6797,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6651,8 +6855,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6707,8 +6913,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6786,8 +6994,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6842,8 +7052,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6898,8 +7110,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -6977,8 +7191,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7033,8 +7249,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7089,8 +7307,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7168,8 +7388,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -7224,8 +7446,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -7303,8 +7527,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7359,8 +7585,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7415,8 +7643,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7494,8 +7724,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7573,8 +7805,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7629,8 +7863,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7685,8 +7921,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -7753,8 +7991,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7791,8 +8031,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7850,8 +8092,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7888,8 +8132,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7926,8 +8172,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -7986,8 +8234,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt"
+              ],
               "rationale": null
             },
             {
@@ -8026,8 +8277,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt"
+              ],
               "rationale": null
             },
             {
@@ -8066,8 +8320,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt"
+              ],
               "rationale": null
             },
             {
@@ -8126,8 +8383,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             },
             {
@@ -8164,8 +8423,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             },
             {
@@ -8202,8 +8463,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             },
             {
@@ -8261,8 +8524,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_explicit_frames_calls_and_lifecycle_are_stack_safe"
+              ],
               "rationale": null
             },
             {
@@ -8321,8 +8586,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             },
             {
@@ -8382,8 +8650,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_reuses_one_lexical_fork_session",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -8422,8 +8693,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_reuses_one_lexical_fork_session",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -8462,8 +8736,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_reuses_one_lexical_fork_session",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -8523,8 +8800,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_reuses_one_lexical_fork_session",
+                "crates/gantry-conformance/tests/logical_sessions.rs#public_new_and_fork_sessions_replay_identity_and_snapshot_creation_state"
+              ],
               "rationale": null
             },
             {
@@ -8965,8 +9245,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9003,8 +9285,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9041,8 +9325,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9079,8 +9365,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9117,8 +9405,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9177,9 +9467,9 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "evaluator",
@@ -9234,8 +9524,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9273,9 +9565,9 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "evaluator",
@@ -9310,9 +9602,9 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "evaluator",
@@ -9367,9 +9659,9 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "evaluator",
@@ -9425,8 +9717,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9484,8 +9778,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -9858,8 +10154,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -9937,8 +10235,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -10018,8 +10318,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts",
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses",
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation"
+              ],
               "rationale": null
             },
             {
@@ -10100,8 +10404,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -10179,8 +10485,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical"
+              ],
               "rationale": null
             },
             {
@@ -10258,8 +10566,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation"
+              ],
               "rationale": null
             },
             {
@@ -10340,8 +10652,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -10421,8 +10735,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation"
+              ],
               "rationale": null
             },
             {
@@ -10505,8 +10823,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation"
+              ],
               "rationale": null
             },
             {
@@ -10587,8 +10909,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -10666,8 +10990,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation"
+              ],
               "rationale": null
             },
             {
@@ -10749,8 +11076,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation"
+              ],
               "rationale": null
             },
             {
@@ -10833,8 +11164,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed",
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses",
+                "crates/gantry-conformance/tests/source_provider.rs#public_provider_rejects_escape_symlink_and_ambiguity"
+              ],
               "rationale": null
             },
             {
@@ -10915,8 +11250,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_rejects_executable_top_level_statements"
+              ],
               "rationale": null
             },
             {
@@ -10994,8 +11331,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11071,8 +11410,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+              ],
               "rationale": null
             },
             {
@@ -11148,8 +11489,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract"
+              ],
               "rationale": null
             },
             {
@@ -11202,8 +11545,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract"
+              ],
               "rationale": null
             },
             {
@@ -11279,8 +11624,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -11359,8 +11706,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries",
+                "crates/gantry-conformance/tests/validate_package.rs#complete_frontend_limit_policy_is_public_and_finite"
+              ],
               "rationale": null
             },
             {
@@ -11419,8 +11769,13 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries",
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses",
+                "crates/gantry-conformance/tests/source_substrate.rs#source_limits_are_atomic_at_boundaries_and_on_overflow",
+                "crates/gantry-conformance/tests/validate_package.rs#complete_frontend_limit_policy_is_public_and_finite"
+              ],
               "rationale": null
             },
             {
@@ -11481,8 +11836,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries",
+                "crates/gantry-conformance/tests/validate_package.rs#frontend_limit_failure_is_separate_and_retains_diagnostics"
+              ],
               "rationale": null
             },
             {
@@ -11540,8 +11898,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries",
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses",
+                "crates/gantry-conformance/tests/source_substrate.rs#source_limits_are_atomic_at_boundaries_and_on_overflow"
+              ],
               "rationale": null
             },
             {
@@ -11602,8 +11964,13 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_reports_bounded_source_backed_recovery_diagnostics",
+                "crates/gantry-conformance/tests/source_substrate.rs#diagnostics_are_disclosure_neutral_and_deterministically_bounded",
+                "crates/gantry-conformance/tests/validate_package.rs#frontend_limit_failure_is_separate_and_retains_diagnostics"
+              ],
               "rationale": null
             },
             {
@@ -11664,8 +12031,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries",
+                "crates/gantry-conformance/tests/validate_package.rs#frontend_limit_failure_is_separate_and_retains_diagnostics"
+              ],
               "rationale": null
             },
             {
@@ -11717,8 +12087,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries",
+                "crates/gantry-conformance/tests/validate_package.rs#frontend_limit_failure_is_separate_and_retains_diagnostics"
+              ],
               "rationale": null
             },
             {
@@ -11771,8 +12144,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity",
+                "crates/gantry-conformance/tests/lexical_frontend.rs#deeply_nested_comments_and_interpolation_delimiters_are_iterative",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_handles_adversarial_nesting_without_native_recursion"
+              ],
               "rationale": null
             },
             {
@@ -11853,8 +12230,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -11932,8 +12311,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12011,8 +12392,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12090,8 +12473,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12169,8 +12554,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12248,8 +12635,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12327,8 +12716,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12406,8 +12797,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12485,8 +12878,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12564,8 +12959,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12643,8 +13040,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12722,8 +13121,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12801,8 +13202,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -12879,8 +13282,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             },
             {
@@ -12959,8 +13365,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/persistent_values.rs#public_value_limits_and_all_traversals_are_depth_safe"
+              ],
               "rationale": null
             },
             {
@@ -13016,8 +13425,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/persistent_values.rs#public_value_limits_and_all_traversals_are_depth_safe"
+              ],
               "rationale": null
             },
             {
@@ -13073,8 +13485,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/persistent_values.rs#public_value_limits_and_all_traversals_are_depth_safe"
+              ],
               "rationale": null
             },
             {
@@ -13130,8 +13545,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/persistent_values.rs#public_value_limits_and_all_traversals_are_depth_safe"
+              ],
               "rationale": null
             },
             {
@@ -13299,8 +13717,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/persistent_values.rs#public_value_limits_and_all_traversals_are_depth_safe"
+              ],
               "rationale": null
             },
             {
@@ -13356,8 +13777,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/persistent_values.rs#public_persistent_values_are_representation_independent_and_nonaliasing",
+                "crates/gantry-conformance/tests/persistent_values.rs#public_value_limits_and_all_traversals_are_depth_safe"
+              ],
               "rationale": null
             },
             {
@@ -13437,8 +13861,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13516,8 +13942,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             },
             {
@@ -13572,8 +14000,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract"
+              ],
               "rationale": null
             },
             {
@@ -13628,8 +14058,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13707,8 +14139,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_string_primitives_are_exact_bounded_and_nontrimming"
+              ],
               "rationale": null
             },
             {
@@ -13785,8 +14219,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_string_primitives_are_exact_bounded_and_nontrimming"
+              ],
               "rationale": null
             },
             {
@@ -13866,8 +14303,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -13945,8 +14384,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract"
+              ],
               "rationale": null
             },
             {
@@ -14024,8 +14465,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14101,8 +14544,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14170,8 +14615,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_impl_targets_and_receivers_are_typed"
+              ],
               "rationale": null
             },
             {
@@ -14239,8 +14686,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_impl_targets_and_receivers_are_typed"
+              ],
               "rationale": null
             },
             {
@@ -14308,8 +14757,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14377,8 +14828,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14446,8 +14899,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -14515,8 +14970,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14584,8 +15041,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14653,8 +15112,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14722,8 +15183,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14791,8 +15254,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14860,8 +15325,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -14929,8 +15396,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15001,8 +15470,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_and_observes_one_sequential_execution",
+                "crates/gantry-conformance/tests/scripted_integration.rs#scripted_adapter_exercises_preflight_hook_and_cancellation_contracts"
+              ],
               "rationale": null
             },
             {
@@ -15084,8 +15556,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15164,8 +15638,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/start_execution.rs#mapping_and_root_preflight_precede_identity_and_accept_normalized_entry"
+              ],
               "rationale": null
             },
             {
@@ -15247,8 +15724,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15328,8 +15807,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption"
+              ],
               "rationale": null
             },
             {
@@ -15413,8 +15896,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields"
+              ],
               "rationale": null
             },
             {
@@ -15474,8 +15961,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields"
+              ],
               "rationale": null
             },
             {
@@ -15535,8 +16026,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields"
+              ],
               "rationale": null
             },
             {
@@ -15618,8 +16113,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields"
+              ],
               "rationale": null
             },
             {
@@ -15673,8 +16170,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields"
+              ],
               "rationale": null
             },
             {
@@ -15728,8 +16227,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields"
+              ],
               "rationale": null
             },
             {
@@ -15809,8 +16310,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15890,8 +16393,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -15969,8 +16474,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_requests_are_canonical_typed_and_exclude_forbidden_fields"
+              ],
               "rationale": null
             },
             {
@@ -16050,8 +16557,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_captures_and_completes_one_model_prompt",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_cancellation_after_outcome_prevents_source_consumption"
+              ],
               "rationale": null
             },
             {
@@ -16135,8 +16646,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_provider_failure_is_preserved_and_fixes_failed_state",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption"
+              ],
               "rationale": null
             },
             {
@@ -16220,8 +16735,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_reuses_one_lexical_fork_session",
+                "crates/gantry-conformance/tests/logical_sessions.rs#public_model_acceptance_appends_atomically_after_machine_acceptance",
+                "crates/gantry-conformance/tests/logical_sessions.rs#public_transcripts_are_versioned_closed_canonical_and_atomic"
+              ],
               "rationale": null
             },
             {
@@ -16281,8 +16800,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_reuses_one_lexical_fork_session",
+                "crates/gantry-conformance/tests/logical_sessions.rs#public_model_acceptance_appends_atomically_after_machine_acceptance",
+                "crates/gantry-conformance/tests/logical_sessions.rs#public_transcripts_are_versioned_closed_canonical_and_atomic"
+              ],
               "rationale": null
             },
             {
@@ -16365,8 +16888,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/logical_sessions.rs#public_session_establishment_is_idempotent_and_precedes_hook_creation",
+                "crates/gantry-conformance/tests/logical_sessions.rs#public_transcripts_are_versioned_closed_canonical_and_atomic"
+              ],
               "rationale": null
             },
             {
@@ -16448,8 +16974,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16529,8 +17057,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16610,8 +17140,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -16691,8 +17223,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16748,8 +17282,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16805,8 +17341,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16862,8 +17400,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16919,8 +17459,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -16976,8 +17518,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17033,8 +17577,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17090,8 +17636,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17147,8 +17695,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17204,8 +17754,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17261,8 +17813,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17343,8 +17897,13 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_provider_failure_is_preserved_and_fixes_failed_state",
+                "crates/gantry-conformance/tests/start_execution.rs#preflight_failure_allocates_no_root_or_execution_identity",
+                "crates/gantry-conformance/tests/start_execution.rs#syntax_and_analysis_rejections_cross_no_preflight_or_execution_boundary"
+              ],
               "rationale": null
             },
             {
@@ -17407,8 +17966,13 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_provider_failure_is_preserved_and_fixes_failed_state",
+                "crates/gantry-conformance/tests/start_execution.rs#preflight_failure_allocates_no_root_or_execution_identity",
+                "crates/gantry-conformance/tests/start_execution.rs#syntax_and_analysis_rejections_cross_no_preflight_or_execution_boundary"
+              ],
               "rationale": null
             },
             {
@@ -17471,8 +18035,13 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_provider_failure_is_preserved_and_fixes_failed_state",
+                "crates/gantry-conformance/tests/start_execution.rs#preflight_failure_allocates_no_root_or_execution_identity",
+                "crates/gantry-conformance/tests/start_execution.rs#syntax_and_analysis_rejections_cross_no_preflight_or_execution_boundary"
+              ],
               "rationale": null
             },
             {
@@ -17558,8 +18127,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_provider_failure_is_preserved_and_fixes_failed_state",
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -17643,8 +18216,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption",
+                "crates/gantry-conformance/tests/value_kernel.rs#public_schema_and_resource_boundaries_are_exact_and_stack_safe",
+                "crates/gantry-conformance/tests/value_kernel.rs#public_strict_json_numbers_and_canonical_identity_match_goldens"
+              ],
               "rationale": null
             },
             {
@@ -17791,8 +18368,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17848,8 +18427,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -17929,8 +18510,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18010,8 +18593,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18091,8 +18676,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18172,8 +18759,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18229,8 +18818,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18397,8 +18988,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -18561,8 +19154,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/activity_observation.rs#canonical_projection_and_retry_vectors_match_the_public_kernel",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_settles_retry_delay_executor_failure",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption"
+              ],
               "rationale": null
             },
             {
@@ -18646,8 +19243,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_settles_retry_delay_executor_failure",
+                "crates/gantry-conformance/tests/interpreter_lifecycle.rs#public_configuration_defaults_bounds_and_classes_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -18731,8 +19332,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_scripted_action_success_and_decline",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_settles_retry_delay_executor_failure",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_operation_lifecycle_is_lazy_serial_and_single_consumption"
+              ],
               "rationale": null
             },
             {
@@ -18815,8 +19420,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_settles_retry_delay_executor_failure",
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_hook_provider_failure_is_preserved_and_fixes_failed_state"
+              ],
               "rationale": null
             },
             {
@@ -18898,8 +19506,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -18975,8 +19585,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19044,8 +19656,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19113,8 +19727,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19160,8 +19776,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19207,8 +19825,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19276,8 +19896,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19345,8 +19967,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19414,8 +20038,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19483,8 +20109,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19550,8 +20178,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -19619,8 +20249,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19687,8 +20319,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_decodes_one_sealed_decision",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_settles_retry_delay_executor_failure"
+              ],
               "rationale": null
             },
             {
@@ -19757,8 +20392,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19826,8 +20463,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -19894,8 +20533,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_cancellation_after_outcome_prevents_source_consumption",
+                "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact"
+              ],
               "rationale": null
             },
             {
@@ -19968,8 +20610,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -20049,8 +20693,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -20130,8 +20776,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -20212,8 +20860,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -20293,8 +20943,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -20374,8 +21026,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -20455,8 +21109,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
+              ],
               "rationale": null
             },
             {
@@ -20534,9 +21190,9 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "embedding",
@@ -20611,8 +21267,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
+              ],
               "rationale": null
             },
             {
@@ -20691,9 +21349,9 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "embedding",
@@ -20767,8 +21425,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/operation_boundaries.rs#public_cancellation_after_outcome_prevents_source_consumption",
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -20849,9 +21510,9 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "embedding",
@@ -20926,8 +21587,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_safe",
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_and_observes_one_sequential_execution",
+                "crates/gantry-conformance/tests/interpreter_lifecycle.rs#shutdown_races_transfer_admission_and_snapshot_first_durations"
+              ],
               "rationale": null
             },
             {
@@ -21010,8 +21675,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_emergency_diagnostic_is_bounded_out_of_band_and_settlement_neutral",
+                "crates/gantry-conformance/tests/interpreter_lifecycle.rs#unclean_drop_signals_work_without_standard_event_claim"
+              ],
               "rationale": null
             },
             {
@@ -21091,8 +21759,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/interpreter_facade.rs#public_interpreter_drives_and_observes_one_sequential_execution",
+                "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -21152,8 +21823,12 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries",
+                "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch",
+                "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement"
+              ],
               "rationale": null
             },
             {
@@ -21462,8 +22137,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -21490,8 +22167,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -21539,8 +22218,11 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -21570,8 +22252,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+              ],
               "rationale": null
             },
             {
@@ -21601,8 +22285,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+              ],
               "rationale": null
             },
             {
@@ -21632,8 +22318,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -21663,8 +22351,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -21691,8 +22381,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -21719,8 +22411,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#reviewed_analyzer_lowering_evidence_is_closed"
+              ],
               "rationale": null
             },
             {
@@ -21823,9 +22517,9 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This clause requires spawned-task or detached-task behavior and therefore applies only when the concurrent refinement is also enabled. The standalone sequential-durable profile has no spawned child tasks; GNT-COMB-001 owns the combined concurrent-durable obligation."
             },
             {
               "profile": "embedding",
@@ -22126,8 +22820,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -22199,8 +22895,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -22268,8 +22966,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -22337,8 +23037,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -22407,8 +23109,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -22474,8 +23178,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -23577,8 +24283,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -23671,8 +24379,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/execution_observation.rs#public_execution_event_catalog_is_typed_canonical_and_protected"
+              ],
               "rationale": null
             },
             {
@@ -23765,8 +24475,13 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts",
+                "crates/gantry-conformance/tests/frontend_package_evidence.rs#package_requirement_vectors_cover_reviewed_clauses",
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation",
+                "crates/gantry-conformance/tests/validate_package.rs#valid_and_invalid_packages_each_expose_one_parse_occurrence"
+              ],
               "rationale": null
             },
             {
@@ -23863,8 +24578,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/start_execution.rs#syntax_and_analysis_rejections_cross_no_preflight_or_execution_boundary",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_stops_after_syntax_failure_and_reports_semantic_failure"
+              ],
               "rationale": null
             },
             {
@@ -23959,8 +24677,14 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed",
+                "crates/gantry-conformance/tests/diagnostic_presentation.rs#reviewed_machine_and_presentation_goldens_match_independently",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_reports_bounded_source_backed_recovery_diagnostics",
+                "crates/gantry-conformance/tests/source_substrate.rs#diagnostics_are_disclosure_neutral_and_deterministically_bounded",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_stops_after_syntax_failure_and_reports_semantic_failure"
+              ],
               "rationale": null
             },
             {
@@ -24039,8 +24763,13 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/diagnostic_presentation.rs#reviewed_machine_and_presentation_goldens_match_independently",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_reports_bounded_source_backed_recovery_diagnostics",
+                "crates/gantry-conformance/tests/source_substrate.rs#diagnostics_are_disclosure_neutral_and_deterministically_bounded",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_stops_after_syntax_failure_and_reports_semantic_failure"
+              ],
               "rationale": null
             },
             {
@@ -24136,8 +24865,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24217,8 +24949,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24273,8 +25007,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24329,8 +25065,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24385,8 +25123,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24464,8 +25204,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24520,8 +25262,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24576,8 +25320,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed"
+              ],
               "rationale": null
             },
             {
@@ -24630,8 +25376,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24686,8 +25434,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24742,8 +25492,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24798,8 +25550,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24854,8 +25608,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24910,8 +25666,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24966,8 +25724,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -25022,8 +25782,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -25078,8 +25840,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -25134,8 +25898,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -25190,8 +25956,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -25246,8 +26014,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -25325,8 +26095,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -25383,8 +26155,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -25443,8 +26218,12 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -25525,8 +26304,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -25583,8 +26364,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -25664,8 +26448,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -25722,8 +26508,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -25803,8 +26592,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -25859,8 +26650,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -25913,8 +26706,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -25969,8 +26764,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -26029,8 +26827,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -26087,8 +26888,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -26143,8 +26946,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -26203,8 +27009,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -26261,8 +27070,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -26317,8 +27128,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -26373,8 +27186,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
               "rationale": null
             },
             {
@@ -26429,8 +27244,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -26510,8 +27328,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -26566,8 +27386,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -26622,8 +27444,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -26678,8 +27502,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -26736,8 +27562,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -26817,8 +27646,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -26875,8 +27706,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -26956,8 +27790,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -27014,8 +27850,11 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_preserves_authored_order_spans_and_semantic_boundaries"
+              ],
               "rationale": null
             },
             {

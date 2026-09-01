@@ -137,7 +137,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
-      "sha256": "5ffadde53c705b4ee549be01a6c54f47ca8fd9caa599e049074a1e4cf590c289"
+      "sha256": "5e43137a9bd84a543cbfb4e57f699a3497b7e13cf222b1569d72ae952a28ccdc"
     },
     {
       "path": "crates/gantry-conformance/tests/facade.rs",
@@ -233,7 +233,7 @@
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "f972bda7f99ce87a9d78f2576b3e91c5a4f36b5cd7f639b0e6698fb31d0ddd24"
+      "sha256": "bd590977e9f223beb58de8aa148101e1326b9337cae37ea68d62f356bd1eec08"
     },
     {
       "path": "docs/sequential-evaluator-refinement.md",
@@ -249,7 +249,7 @@
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "ca24cd185e2b50d89832e727aaa05e5d0c36c3d0c648863f18ed0020c52531d8"
+      "sha256": "040b1b51b9d46103411ca863bf30ff8f84beeb9287e26e6067ec0c6ad5991360"
     },
     {
       "path": "protocol/conformance/execution-observation-v1.json",
@@ -285,11 +285,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f967e68b9f345e00d3b0f60333da258bde9d433fb315d7aaa0bf8f44ce38b395"
+      "sha256": "db895d3eccdf84d4b9c8633394c422a0b0da80699a3b9e16007db42b90684059"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "aa291257511561f3ce27d546a3aa5a656bf4d71557f34b31d1ef3ac874ce4e58"
+      "sha256": "bda8a9691f32500beda4d27b61f790592b4840a37c1f08d1134c9334f429b9cf"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

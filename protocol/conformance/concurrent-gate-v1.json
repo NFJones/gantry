@@ -65,7 +65,7 @@
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "f972bda7f99ce87a9d78f2576b3e91c5a4f36b5cd7f639b0e6698fb31d0ddd24"
+      "sha256": "bd590977e9f223beb58de8aa148101e1326b9337cae37ea68d62f356bd1eec08"
     },
     {
       "path": "docs/concurrent-evaluator-refinement.md",
@@ -101,7 +101,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "586debfb467ad8894a5725d7c215a4940c2766432a96e4725d8444895da39cf0"
+      "sha256": "0c05f46c86dee8570efdfa949df8605a1794141138343a3d9e1a83aa632631eb"
     },
     {
       "path": "protocol/goldens/concurrent-executor-model-v1.json",
@@ -121,11 +121,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f967e68b9f345e00d3b0f60333da258bde9d433fb315d7aaa0bf8f44ce38b395"
+      "sha256": "db895d3eccdf84d4b9c8633394c422a0b0da80699a3b9e16007db42b90684059"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "aa291257511561f3ce27d546a3aa5a656bf4d71557f34b31d1ef3ac874ce4e58"
+      "sha256": "bda8a9691f32500beda4d27b61f790592b4840a37c1f08d1134c9334f429b9cf"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

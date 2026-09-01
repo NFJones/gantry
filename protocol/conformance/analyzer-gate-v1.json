@@ -96,7 +96,7 @@
     },
     {
       "path": "protocol/conformance/frontend-gate-v1.json",
-      "sha256": "fcece982db4a37b421b2cbcab6a37a6a29c341649669677d58b9d9e1728c4f97"
+      "sha256": "f7079dcf27ec4f317fcc2db2a33a71336f432400b117bbe5c653c272519d21e4"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -120,11 +120,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f967e68b9f345e00d3b0f60333da258bde9d433fb315d7aaa0bf8f44ce38b395"
+      "sha256": "db895d3eccdf84d4b9c8633394c422a0b0da80699a3b9e16007db42b90684059"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "aa291257511561f3ce27d546a3aa5a656bf4d71557f34b31d1ef3ac874ce4e58"
+      "sha256": "bda8a9691f32500beda4d27b61f790592b4840a37c1f08d1134c9334f429b9cf"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
