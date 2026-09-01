@@ -99,7 +99,10 @@ fn reviewed_execution_observation_evidence_is_closed() {
 
     assert_eq!(manifest.format, "gantry.execution-observation-evidence/v1");
     assert_eq!(manifest.issue, "GNT-OBS-002");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
 
     let mut entries = BTreeMap::<(String, String, String), Vec<String>>::new();

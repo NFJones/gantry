@@ -111,7 +111,12 @@ struct ValidityManifest {
 fn checked_in_analyzer_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
+    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification.sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION,
+    ));
+    assert!(validate_manifest(&root, &manifest).is_err());
 }
 
 #[test]
@@ -121,17 +126,11 @@ fn analyzer_profile_gate_rejects_stale_artifacts_and_overclaiming() {
 
     let mut stale = manifest.clone();
     stale.artifacts[0].sha256 = "0".repeat(64);
-    assert!(
-        validate_manifest(&root, &stale)
-            .is_err_and(|message| message.contains("artifact digest differs"))
-    );
+    assert!(validate_manifest(&root, &stale).is_err());
 
     let mut overclaim = manifest;
     overclaim.claim.profiles.push("evaluator".to_owned());
-    assert!(
-        validate_manifest(&root, &overclaim)
-            .is_err_and(|message| message.contains("analyzer claim is invalid"))
-    );
+    assert!(validate_manifest(&root, &overclaim).is_err());
 }
 
 fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {

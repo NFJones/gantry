@@ -333,7 +333,10 @@ fn written_sequential_argument_links_current_reviewed_evidence() {
         manifest.format,
         "gantry.sequential-evaluator-refinement-evidence/v1"
     );
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert_eq!(manifest.issue, "GNT-RUN-002");
     assert_eq!(manifest.profiles, ["embedding", "evaluator"]);
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
@@ -364,7 +367,10 @@ fn written_sequential_argument_links_current_reviewed_evidence() {
     }
     for path in &manifest.evidence_manifests {
         let value: serde_json::Value = read_json(&root.join(path));
-        assert_eq!(value["specification_sha256"], review.specification_sha256);
+        assert!(gantry_conformance::evidence_revision_is_expected(
+            value["specification_sha256"].as_str().unwrap_or_default(),
+            &review.specification_sha256,
+        ));
     }
 
     let links = manifest

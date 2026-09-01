@@ -14,6 +14,7 @@ const INDEX_PATH: &str = "protocol/publication/index-v1.json";
 const REPORT_PATH: &str = "protocol/publication/verification-v1.json";
 const OUTPUT_DIRECTORY: &str = "protocol/publication/v1";
 const SPEC_PATH: &str = "SPEC.md";
+const ADOPTION_PATH: &str = "protocol/conformance/generics-traits-adoption-v1.json";
 
 const PROFILES: &[&str] = &[
     "analyzer",
@@ -32,6 +33,19 @@ struct RequirementRegistry {
 #[derive(Clone, Debug, Deserialize)]
 struct RequirementRecord {
     id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AdoptionGate {
+    format: String,
+    gate: String,
+    status: String,
+    specification_sha256: String,
+    amended_profiles: Vec<String>,
+    advertises_profiles: Vec<String>,
+    blocked_by: Vec<String>,
+    superseded_publication_revision: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -170,6 +184,11 @@ const DEFINITIONS: &[ArtifactDefinition] = &[
 ];
 
 pub(super) fn generate(root: &Path) -> Result<bool, String> {
+    if let Some(adoption) = blocked_adoption(root)? {
+        check_superseded_publication(root, &adoption)?;
+        println!("replacement publication assembly is blocked by staged language adoption");
+        return Ok(false);
+    }
     let outputs = build_outputs(root)?;
     let mut changed = false;
     for (path, bytes) in outputs {
@@ -182,6 +201,11 @@ pub(super) fn generate(root: &Path) -> Result<bool, String> {
 }
 
 pub(super) fn check_generated(root: &Path) -> Result<(), String> {
+    if let Some(adoption) = blocked_adoption(root)? {
+        check_superseded_publication(root, &adoption)?;
+        println!("superseded publication is isolated while replacement assembly is blocked");
+        return Ok(());
+    }
     let outputs = build_outputs(root)?;
     for (path, expected) in &outputs {
         let actual =
@@ -213,6 +237,69 @@ pub(super) fn check_generated(root: &Path) -> Result<(), String> {
         );
     }
     println!("active seven-artifact publication set is current");
+    Ok(())
+}
+
+fn blocked_adoption(root: &Path) -> Result<Option<AdoptionGate>, String> {
+    let adoption: AdoptionGate = read_json(root, ADOPTION_PATH)?;
+    let specification = read(root, SPEC_PATH)?;
+    let current_revision = digest(&specification);
+    if adoption.format != "gantry.language-adoption/v1"
+        || adoption.gate != "GNT-GEN-GATE-000"
+        || adoption.specification_sha256 != current_revision
+    {
+        return Err(
+            "language-adoption gate does not identify the current specification".to_owned(),
+        );
+    }
+    if adoption.status == "blocked" {
+        if adoption.amended_profiles != PROFILES
+            || !adoption.advertises_profiles.is_empty()
+            || adoption.blocked_by.is_empty()
+            || !adoption.blocked_by.windows(2).all(|pair| pair[0] < pair[1])
+        {
+            return Err(
+                "blocked language-adoption gate is incomplete or overclaims profiles".to_owned(),
+            );
+        }
+        return Ok(Some(adoption));
+    }
+    if adoption.status != "verified"
+        || !adoption.blocked_by.is_empty()
+        || adoption.advertises_profiles != PROFILES
+    {
+        return Err("language-adoption gate has an invalid terminal state".to_owned());
+    }
+    Ok(None)
+}
+
+fn check_superseded_publication(root: &Path, adoption: &AdoptionGate) -> Result<(), String> {
+    let index: Value = read_json(root, INDEX_PATH)?;
+    let revision = index
+        .get("publication_revision")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "superseded publication index has no revision".to_owned())?;
+    if revision != adoption.superseded_publication_revision {
+        return Err("blocked adoption found a mixed or unexpected publication revision".to_owned());
+    }
+    let published_specification = read(root, &format!("{OUTPUT_DIRECTORY}/SPEC.md"))?;
+    let published_revision = format!("gantry-v1-{}", digest(&published_specification));
+    if published_revision != adoption.superseded_publication_revision
+        || published_revision == format!("gantry-v1-{}", adoption.specification_sha256)
+    {
+        return Err(
+            "blocked adoption publication does not isolate superseded specification bytes"
+                .to_owned(),
+        );
+    }
+    let report: Value = read_json(root, REPORT_PATH)?;
+    if report
+        .get("publication_set_identity")
+        .and_then(Value::as_str)
+        .is_none()
+    {
+        return Err("superseded publication verification report is malformed".to_owned());
+    }
     Ok(())
 }
 

@@ -107,7 +107,11 @@ fn published_public_formats_match_exact_bytes_and_reject_mutations() {
     assert_eq!((catalog.major, catalog.minor), (1, 0));
     assert_eq!(
         catalog.specification_revision,
-        specification_revision(&root)
+        if gantry::PROFILE_CLAIMS_ENABLED {
+            specification_revision(&root)
+        } else {
+            gantry::PROFILE_SUPERSEDED_SPECIFICATION_REVISION.to_owned()
+        }
     );
     assert_eq!(catalog.formats.len(), fixtures.len());
     assert_eq!(golden.format, "gantry.public-format-goldens/v1");

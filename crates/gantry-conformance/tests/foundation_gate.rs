@@ -155,7 +155,13 @@ struct DependencyDecision {
 fn checked_in_foundation_evidence_is_current_and_makes_no_profile_claim() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
+    assert!(manifest.claim.profiles.is_empty());
+    assert!(!manifest.claim.advertises_profile);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification.sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION,
+    ));
+    assert!(validate_manifest(&root, &manifest).is_err());
 }
 
 #[test]

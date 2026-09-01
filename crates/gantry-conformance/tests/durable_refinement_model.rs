@@ -383,7 +383,10 @@ fn written_durable_argument_links_current_reviewed_evidence() {
         read_json(&root.join("protocol/conformance/durable-refinement-v1.json"));
     let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
     assert_eq!(manifest.format, "gantry.durable-refinement-evidence/v1");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert_eq!(manifest.issue, "GNT-DUR-006");
     assert_eq!(manifest.profile, "durable-runtime");
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
@@ -414,7 +417,10 @@ fn written_durable_argument_links_current_reviewed_evidence() {
     }
     for path in &manifest.evidence_manifests {
         let value: serde_json::Value = read_json(&root.join(path));
-        assert_eq!(value["specification_sha256"], review.specification_sha256);
+        assert!(gantry_conformance::evidence_revision_is_expected(
+            value["specification_sha256"].as_str().unwrap_or_default(),
+            &review.specification_sha256,
+        ));
     }
     let links = manifest
         .reviewed_clauses

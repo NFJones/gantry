@@ -23,8 +23,11 @@ use sha2::{Digest, Sha256};
 #[serde(deny_unknown_fields)]
 struct ProfileCatalog {
     catalog: String,
+    claims_enabled: bool,
     major: u64,
     minor: u64,
+    specification_revision: String,
+    superseded_specification_revision: String,
     profiles: Vec<ProfileInput>,
 }
 
@@ -90,6 +93,17 @@ fn canonical_profile_catalog_matches_the_public_binding() {
     assert_eq!(catalog, golden);
     assert_eq!(catalog.catalog, "gantry.profiles");
     assert_eq!((catalog.major, catalog.minor), (1, 0));
+    assert_eq!(catalog.claims_enabled, gantry::PROFILE_CLAIMS_ENABLED);
+    assert_eq!(
+        catalog.specification_revision,
+        gantry::PROFILE_SPECIFICATION_REVISION
+    );
+    assert_eq!(
+        catalog.superseded_specification_revision,
+        gantry::PROFILE_SUPERSEDED_SPECIFICATION_REVISION
+    );
+    assert!(!catalog.claims_enabled);
+    assert!(gantry::advertised_profiles().is_empty());
 
     let public = PROFILE_DEFINITIONS
         .iter()

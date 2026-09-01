@@ -131,7 +131,10 @@ fn checked_in_executor_evidence_is_narrow_and_current() {
         read_json(&root.join("protocol/schemas/executor-services-v1.schema.json"));
 
     assert_eq!(manifest.format, "gantry.executor-services-evidence/v1");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert_eq!(manifest.issue, "GNT-EMB-001");
     assert!(
         manifest

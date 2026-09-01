@@ -45,6 +45,7 @@ const ASYNC_KINDS: &[&str] = &["borrowed-future", "owned-task-future", "synchron
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct EmbeddingCatalog {
+    analysis_result_fields: Vec<AnalysisResultFieldInput>,
     catalog: String,
     major: u64,
     minor: u64,
@@ -52,6 +53,13 @@ struct EmbeddingCatalog {
     operations: Vec<OperationInput>,
     failure_matrix: Vec<FailureInput>,
     trait_bounds: Vec<TraitBoundInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AnalysisResultFieldInput {
+    wire: String,
+    requirements: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -158,9 +166,26 @@ fn validate(catalog: &EmbeddingCatalog) -> Result<(), String> {
         );
     }
     validate_digest(&catalog.specification_revision)?;
+    validate_analysis_result_fields(&catalog.analysis_result_fields)?;
     validate_operations(&catalog.operations)?;
     validate_failure_matrix(&catalog.failure_matrix)?;
     validate_trait_bounds(&catalog.trait_bounds)
+}
+
+fn validate_analysis_result_fields(entries: &[AnalysisResultFieldInput]) -> Result<(), String> {
+    if entries.is_empty() {
+        return Err("analysis result field catalog must not be empty".to_owned());
+    }
+    let mut prior: Option<&str> = None;
+    for entry in entries {
+        validate_wire_name(&entry.wire)?;
+        if prior.is_some_and(|value| value >= entry.wire.as_str()) {
+            return Err("analysis result fields must be unique and ordered".to_owned());
+        }
+        prior = Some(&entry.wire);
+        validate_requirements(&entry.requirements)?;
+    }
+    Ok(())
 }
 
 fn validate_operations(operations: &[OperationInput]) -> Result<(), String> {
@@ -338,9 +363,15 @@ fn validate_digest(value: &str) -> Result<(), String> {
 
 fn requirement_links(catalog: &EmbeddingCatalog) -> impl Iterator<Item = &str> {
     catalog
-        .operations
+        .analysis_result_fields
         .iter()
         .flat_map(|entry| entry.requirements.iter())
+        .chain(
+            catalog
+                .operations
+                .iter()
+                .flat_map(|entry| entry.requirements.iter()),
+        )
         .chain(
             catalog
                 .failure_matrix
@@ -390,6 +421,11 @@ fn render_rust(catalog: &EmbeddingCatalog) -> String {
         "/// SHA-256 of the reviewed specification revision.\npub const EMBEDDING_SPECIFICATION_REVISION: &str = \"{}\";\n",
         catalog.specification_revision
     ));
+    output.push_str("\n/// Structured fields returned by successful semantic analysis.\npub const ANALYSIS_RESULT_FIELDS: &[&str] = &[\n");
+    for field in &catalog.analysis_result_fields {
+        output.push_str(&format!("    \"{}\",\n", field.wire));
+    }
+    output.push_str("];\n");
     render_enum(
         &mut output,
         "EmbeddingOperation",

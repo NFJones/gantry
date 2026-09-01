@@ -2,7 +2,7 @@
 // Source: protocol/catalogs/portable-contracts-v1.json. Do not edit manually.
 
 /// SHA-256 of the exact reviewed `SPEC.md` revision.
-pub const PORTABLE_SPECIFICATION_REVISION: &str = "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22";
+pub const PORTABLE_SPECIFICATION_REVISION: &str = "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44";
 
 
 /// Closed `IdentityOrigin` portable vocabulary.
@@ -638,10 +638,14 @@ impl ExecutorAbortResultKind {
 pub enum FrontendResourceCode {
     /// The `canonical-ir-byte-limit` value.
     CanonicalIrByteLimit,
+    /// The `constructed-type-depth-limit` value.
+    ConstructedTypeDepthLimit,
     /// The `diagnostic-count-limit` value.
     DiagnosticCountLimit,
     /// The `generated-schema-byte-limit` value.
     GeneratedSchemaByteLimit,
+    /// The `generic-instantiation-limit` value.
+    GenericInstantiationLimit,
     /// The `package-file-count-limit` value.
     PackageFileCountLimit,
     /// The `package-source-byte-limit` value.
@@ -654,6 +658,8 @@ pub enum FrontendResourceCode {
     SourceMapByteLimit,
     /// The `source-token-limit` value.
     SourceTokenLimit,
+    /// The `trait-resolution-step-limit` value.
+    TraitResolutionStepLimit,
 }
 
 impl FrontendResourceCode {
@@ -662,14 +668,17 @@ impl FrontendResourceCode {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::CanonicalIrByteLimit => "canonical-ir-byte-limit",
+            Self::ConstructedTypeDepthLimit => "constructed-type-depth-limit",
             Self::DiagnosticCountLimit => "diagnostic-count-limit",
             Self::GeneratedSchemaByteLimit => "generated-schema-byte-limit",
+            Self::GenericInstantiationLimit => "generic-instantiation-limit",
             Self::PackageFileCountLimit => "package-file-count-limit",
             Self::PackageSourceByteLimit => "package-source-byte-limit",
             Self::PackageSourceManifestByteLimit => "package-source-manifest-byte-limit",
             Self::SourceFileByteLimit => "source-file-byte-limit",
             Self::SourceMapByteLimit => "source-map-byte-limit",
             Self::SourceTokenLimit => "source-token-limit",
+            Self::TraitResolutionStepLimit => "trait-resolution-step-limit",
         }
     }
 
@@ -678,14 +687,127 @@ impl FrontendResourceCode {
     pub fn from_wire_name(value: &str) -> Option<Self> {
         match value {
             "canonical-ir-byte-limit" => Some(Self::CanonicalIrByteLimit),
+            "constructed-type-depth-limit" => Some(Self::ConstructedTypeDepthLimit),
             "diagnostic-count-limit" => Some(Self::DiagnosticCountLimit),
             "generated-schema-byte-limit" => Some(Self::GeneratedSchemaByteLimit),
+            "generic-instantiation-limit" => Some(Self::GenericInstantiationLimit),
             "package-file-count-limit" => Some(Self::PackageFileCountLimit),
             "package-source-byte-limit" => Some(Self::PackageSourceByteLimit),
             "package-source-manifest-byte-limit" => Some(Self::PackageSourceManifestByteLimit),
             "source-file-byte-limit" => Some(Self::SourceFileByteLimit),
             "source-map-byte-limit" => Some(Self::SourceMapByteLimit),
             "source-token-limit" => Some(Self::SourceTokenLimit),
+            "trait-resolution-step-limit" => Some(Self::TraitResolutionStepLimit),
+            _ => None,
+        }
+    }
+}
+
+/// Closed `GenericAnalysisCode` portable vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GenericAnalysisCode {
+    /// The `ambiguous-trait-method` value.
+    AmbiguousTraitMethod,
+    /// The `ambiguous-type-inference` value.
+    AmbiguousTypeInference,
+    /// The `conflicting-type-inference` value.
+    ConflictingTypeInference,
+    /// The `cyclic-trait-obligation` value.
+    CyclicTraitObligation,
+    /// The `duplicate-type-parameter` value.
+    DuplicateTypeParameter,
+    /// The `escaped-type-parameter` value.
+    EscapedTypeParameter,
+    /// The `implementation-method-mismatch` value.
+    ImplementationMethodMismatch,
+    /// The `incomplete-type-inference` value.
+    IncompleteTypeInference,
+    /// The `invalid-implementation-head` value.
+    InvalidImplementationHead,
+    /// The `invalid-self-type` value.
+    InvalidSelfType,
+    /// The `missing-concrete-schema` value.
+    MissingConcreteSchema,
+    /// The `missing-implementation` value.
+    MissingImplementation,
+    /// The `open-runtime-type` value.
+    OpenRuntimeType,
+    /// The `overlapping-implementation` value.
+    OverlappingImplementation,
+    /// The `overlapping-inherent-method` value.
+    OverlappingInherentMethod,
+    /// The `polymorphic-recursion` value.
+    PolymorphicRecursion,
+    /// The `sealed-capability-unsatisfied` value.
+    SealedCapabilityUnsatisfied,
+    /// The `sealed-trait-implementation` value.
+    SealedTraitImplementation,
+    /// The `shadowed-type-parameter` value.
+    ShadowedTypeParameter,
+    /// The `type-argument-arity` value.
+    TypeArgumentArity,
+    /// The `unconstrained-implementation-parameter` value.
+    UnconstrainedImplementationParameter,
+    /// The `unsatisfied-bound` value.
+    UnsatisfiedBound,
+}
+
+impl GenericAnalysisCode {
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::AmbiguousTraitMethod => "ambiguous-trait-method",
+            Self::AmbiguousTypeInference => "ambiguous-type-inference",
+            Self::ConflictingTypeInference => "conflicting-type-inference",
+            Self::CyclicTraitObligation => "cyclic-trait-obligation",
+            Self::DuplicateTypeParameter => "duplicate-type-parameter",
+            Self::EscapedTypeParameter => "escaped-type-parameter",
+            Self::ImplementationMethodMismatch => "implementation-method-mismatch",
+            Self::IncompleteTypeInference => "incomplete-type-inference",
+            Self::InvalidImplementationHead => "invalid-implementation-head",
+            Self::InvalidSelfType => "invalid-self-type",
+            Self::MissingConcreteSchema => "missing-concrete-schema",
+            Self::MissingImplementation => "missing-implementation",
+            Self::OpenRuntimeType => "open-runtime-type",
+            Self::OverlappingImplementation => "overlapping-implementation",
+            Self::OverlappingInherentMethod => "overlapping-inherent-method",
+            Self::PolymorphicRecursion => "polymorphic-recursion",
+            Self::SealedCapabilityUnsatisfied => "sealed-capability-unsatisfied",
+            Self::SealedTraitImplementation => "sealed-trait-implementation",
+            Self::ShadowedTypeParameter => "shadowed-type-parameter",
+            Self::TypeArgumentArity => "type-argument-arity",
+            Self::UnconstrainedImplementationParameter => "unconstrained-implementation-parameter",
+            Self::UnsatisfiedBound => "unsatisfied-bound",
+        }
+    }
+
+    /// Parses one exact portable spelling.
+    #[must_use]
+    pub fn from_wire_name(value: &str) -> Option<Self> {
+        match value {
+            "ambiguous-trait-method" => Some(Self::AmbiguousTraitMethod),
+            "ambiguous-type-inference" => Some(Self::AmbiguousTypeInference),
+            "conflicting-type-inference" => Some(Self::ConflictingTypeInference),
+            "cyclic-trait-obligation" => Some(Self::CyclicTraitObligation),
+            "duplicate-type-parameter" => Some(Self::DuplicateTypeParameter),
+            "escaped-type-parameter" => Some(Self::EscapedTypeParameter),
+            "implementation-method-mismatch" => Some(Self::ImplementationMethodMismatch),
+            "incomplete-type-inference" => Some(Self::IncompleteTypeInference),
+            "invalid-implementation-head" => Some(Self::InvalidImplementationHead),
+            "invalid-self-type" => Some(Self::InvalidSelfType),
+            "missing-concrete-schema" => Some(Self::MissingConcreteSchema),
+            "missing-implementation" => Some(Self::MissingImplementation),
+            "open-runtime-type" => Some(Self::OpenRuntimeType),
+            "overlapping-implementation" => Some(Self::OverlappingImplementation),
+            "overlapping-inherent-method" => Some(Self::OverlappingInherentMethod),
+            "polymorphic-recursion" => Some(Self::PolymorphicRecursion),
+            "sealed-capability-unsatisfied" => Some(Self::SealedCapabilityUnsatisfied),
+            "sealed-trait-implementation" => Some(Self::SealedTraitImplementation),
+            "shadowed-type-parameter" => Some(Self::ShadowedTypeParameter),
+            "type-argument-arity" => Some(Self::TypeArgumentArity),
+            "unconstrained-implementation-parameter" => Some(Self::UnconstrainedImplementationParameter),
+            "unsatisfied-bound" => Some(Self::UnsatisfiedBound),
             _ => None,
         }
     }
@@ -1492,7 +1614,8 @@ pub const PORTABLE_VOCABULARIES: &[PortableVocabularyDefinition] = &[
     PortableVocabularyDefinition { name: "diagnostic-severity", values: &["error", "warning"] },
     PortableVocabularyDefinition { name: "execution-observation-state", values: &["not-terminal", "run-failed-nondurably", "terminal"] },
     PortableVocabularyDefinition { name: "executor-abort-result", values: &["already-settled", "failed", "stopped"] },
-    PortableVocabularyDefinition { name: "frontend-resource-code", values: &["canonical-ir-byte-limit", "diagnostic-count-limit", "generated-schema-byte-limit", "package-file-count-limit", "package-source-byte-limit", "package-source-manifest-byte-limit", "source-file-byte-limit", "source-map-byte-limit", "source-token-limit"] },
+    PortableVocabularyDefinition { name: "frontend-resource-code", values: &["canonical-ir-byte-limit", "constructed-type-depth-limit", "diagnostic-count-limit", "generated-schema-byte-limit", "generic-instantiation-limit", "package-file-count-limit", "package-source-byte-limit", "package-source-manifest-byte-limit", "source-file-byte-limit", "source-map-byte-limit", "source-token-limit", "trait-resolution-step-limit"] },
+    PortableVocabularyDefinition { name: "generic-analysis-code", values: &["ambiguous-trait-method", "ambiguous-type-inference", "conflicting-type-inference", "cyclic-trait-obligation", "duplicate-type-parameter", "escaped-type-parameter", "implementation-method-mismatch", "incomplete-type-inference", "invalid-implementation-head", "invalid-self-type", "missing-concrete-schema", "missing-implementation", "open-runtime-type", "overlapping-implementation", "overlapping-inherent-method", "polymorphic-recursion", "sealed-capability-unsatisfied", "sealed-trait-implementation", "shadowed-type-parameter", "type-argument-arity", "unconstrained-implementation-parameter", "unsatisfied-bound"] },
     PortableVocabularyDefinition { name: "hook-failure-category", values: &["cancelled", "policy-denied", "provider-failure", "timeout", "unknown-outcome"] },
     PortableVocabularyDefinition { name: "hook-outcome", values: &["completed", "declined", "failed"] },
     PortableVocabularyDefinition { name: "interpreter-state", values: &["running", "shutting-down", "terminated"] },
@@ -1770,6 +1893,8 @@ pub enum ConfigurationField {
     IdentitySource,
     /// The `maximum_canonical_ir_bytes` value.
     MaximumCanonicalIrBytes,
+    /// The `maximum_constructed_type_depth` value.
+    MaximumConstructedTypeDepth,
     /// The `maximum_deterministic_transitions_per_execution` value.
     MaximumDeterministicTransitionsPerExecution,
     /// The `maximum_diagnostics_per_activity` value.
@@ -1778,6 +1903,8 @@ pub enum ConfigurationField {
     MaximumEntryInputBytes,
     /// The `maximum_generated_schema_bytes` value.
     MaximumGeneratedSchemaBytes,
+    /// The `maximum_generic_instantiations_per_activity` value.
+    MaximumGenericInstantiationsPerActivity,
     /// The `maximum_hook_output_bytes` value.
     MaximumHookOutputBytes,
     /// The `maximum_list_items` value.
@@ -1802,6 +1929,8 @@ pub enum ConfigurationField {
     MaximumStringScalars,
     /// The `maximum_tasks_per_execution` value.
     MaximumTasksPerExecution,
+    /// The `maximum_trait_resolution_steps_per_activity` value.
+    MaximumTraitResolutionStepsPerActivity,
     /// The `maximum_value_nesting_depth` value.
     MaximumValueNestingDepth,
     /// The `maximum_value_nodes` value.
@@ -1840,10 +1969,12 @@ impl ConfigurationField {
             Self::GracefulShutdownTimeoutUs => "graceful_shutdown_timeout_us",
             Self::IdentitySource => "identity_source",
             Self::MaximumCanonicalIrBytes => "maximum_canonical_ir_bytes",
+            Self::MaximumConstructedTypeDepth => "maximum_constructed_type_depth",
             Self::MaximumDeterministicTransitionsPerExecution => "maximum_deterministic_transitions_per_execution",
             Self::MaximumDiagnosticsPerActivity => "maximum_diagnostics_per_activity",
             Self::MaximumEntryInputBytes => "maximum_entry_input_bytes",
             Self::MaximumGeneratedSchemaBytes => "maximum_generated_schema_bytes",
+            Self::MaximumGenericInstantiationsPerActivity => "maximum_generic_instantiations_per_activity",
             Self::MaximumHookOutputBytes => "maximum_hook_output_bytes",
             Self::MaximumListItems => "maximum_list_items",
             Self::MaximumLoopIterationsPerTask => "maximum_loop_iterations_per_task",
@@ -1856,6 +1987,7 @@ impl ConfigurationField {
             Self::MaximumSourceTokens => "maximum_source_tokens",
             Self::MaximumStringScalars => "maximum_string_scalars",
             Self::MaximumTasksPerExecution => "maximum_tasks_per_execution",
+            Self::MaximumTraitResolutionStepsPerActivity => "maximum_trait_resolution_steps_per_activity",
             Self::MaximumValueNestingDepth => "maximum_value_nesting_depth",
             Self::MaximumValueNodes => "maximum_value_nodes",
             Self::MaximumWorkflowCallDepth => "maximum_workflow_call_depth",
@@ -1883,10 +2015,12 @@ impl ConfigurationField {
             "graceful_shutdown_timeout_us" => Some(Self::GracefulShutdownTimeoutUs),
             "identity_source" => Some(Self::IdentitySource),
             "maximum_canonical_ir_bytes" => Some(Self::MaximumCanonicalIrBytes),
+            "maximum_constructed_type_depth" => Some(Self::MaximumConstructedTypeDepth),
             "maximum_deterministic_transitions_per_execution" => Some(Self::MaximumDeterministicTransitionsPerExecution),
             "maximum_diagnostics_per_activity" => Some(Self::MaximumDiagnosticsPerActivity),
             "maximum_entry_input_bytes" => Some(Self::MaximumEntryInputBytes),
             "maximum_generated_schema_bytes" => Some(Self::MaximumGeneratedSchemaBytes),
+            "maximum_generic_instantiations_per_activity" => Some(Self::MaximumGenericInstantiationsPerActivity),
             "maximum_hook_output_bytes" => Some(Self::MaximumHookOutputBytes),
             "maximum_list_items" => Some(Self::MaximumListItems),
             "maximum_loop_iterations_per_task" => Some(Self::MaximumLoopIterationsPerTask),
@@ -1899,6 +2033,7 @@ impl ConfigurationField {
             "maximum_source_tokens" => Some(Self::MaximumSourceTokens),
             "maximum_string_scalars" => Some(Self::MaximumStringScalars),
             "maximum_tasks_per_execution" => Some(Self::MaximumTasksPerExecution),
+            "maximum_trait_resolution_steps_per_activity" => Some(Self::MaximumTraitResolutionStepsPerActivity),
             "maximum_value_nesting_depth" => Some(Self::MaximumValueNestingDepth),
             "maximum_value_nodes" => Some(Self::MaximumValueNodes),
             "maximum_workflow_call_depth" => Some(Self::MaximumWorkflowCallDepth),
@@ -1941,10 +2076,12 @@ pub const CONFIGURATION_FIELDS: &[ConfigurationFieldDefinition] = &[
     ConfigurationFieldDefinition { field: ConfigurationField::GracefulShutdownTimeoutUs, class: ConfigurationClass::DurablyMutable, default: Some("30000000"), zero_allowed: Some(true), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::IdentitySource, class: ConfigurationClass::IntegrationOwned, default: None, zero_allowed: None, maximum: None },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumCanonicalIrBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumConstructedTypeDepth, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumDeterministicTransitionsPerExecution, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumDiagnosticsPerActivity, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumEntryInputBytes, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumGeneratedSchemaBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumGenericInstantiationsPerActivity, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumHookOutputBytes, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumListItems, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9007199254740991") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumLoopIterationsPerTask, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
@@ -1957,6 +2094,7 @@ pub const CONFIGURATION_FIELDS: &[ConfigurationFieldDefinition] = &[
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumSourceTokens, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumStringScalars, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9007199254740991") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumTasksPerExecution, class: ConfigurationClass::IdentityBound, default: Some("65536"), zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumTraitResolutionStepsPerActivity, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumValueNestingDepth, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumValueNodes, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumWorkflowCallDepth, class: ConfigurationClass::IdentityBound, default: Some("1024"), zero_allowed: Some(false), maximum: Some("9223372036854775807") },

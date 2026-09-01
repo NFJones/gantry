@@ -4,8 +4,17 @@
   "additionalProperties": false,
   "properties": {
     "catalog": { "const": "gantry.profiles" },
+    "claims_enabled": { "type": "boolean" },
     "major": { "const": 1 },
     "minor": { "const": 0 },
+    "specification_revision": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "superseded_specification_revision": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
     "profiles": {
       "items": {
         "additionalProperties": false,
@@ -25,7 +34,15 @@
       "type": "array"
     }
   },
-  "required": ["catalog", "major", "minor", "profiles"],
+  "required": [
+    "catalog",
+    "claims_enabled",
+    "major",
+    "minor",
+    "specification_revision",
+    "superseded_specification_revision",
+    "profiles"
+  ],
   "title": "Gantry v1 profile catalog input",
   "type": "object"
 }

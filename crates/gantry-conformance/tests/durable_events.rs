@@ -113,7 +113,10 @@ fn reviewed_durable_event_evidence_is_closed() {
 
     assert_eq!(manifest.format, "gantry.durable-event-evidence/v1");
     assert_eq!(manifest.issue, "GNT-DUR-005");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
 
     let allowed = BTreeSet::from([

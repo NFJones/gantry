@@ -102,7 +102,7 @@
         "gate": { "type": "string", "minLength": 1 },
         "path": { "type": "string", "minLength": 1 },
         "sha256": { "$ref": "#/$defs/digest" },
-        "status": { "const": "verified" }
+        "status": { "enum": ["blocked", "verified"] }
       },
       "required": ["gate", "path", "sha256", "status"]
     },
@@ -122,9 +122,16 @@
         },
         "covered_count": { "$ref": "#/$defs/count" },
         "not_applicable_count": { "$ref": "#/$defs/count" },
-        "status": { "const": "verified" }
+        "planned_count": { "$ref": "#/$defs/count" },
+        "status": { "enum": ["blocked", "verified"] }
       },
-      "required": ["profile", "covered_count", "not_applicable_count", "status"]
+      "required": [
+        "profile",
+        "covered_count",
+        "not_applicable_count",
+        "planned_count",
+        "status"
+      ]
     },
     "proof": {
       "type": "object",

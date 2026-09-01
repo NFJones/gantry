@@ -13,6 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 const CATALOG_PATH: &str = "protocol/catalogs/profiles-v1.json";
 const GOLDEN_PATH: &str = "protocol/goldens/profiles-v1.canonical.json";
@@ -24,6 +25,9 @@ struct ProfileCatalog {
     catalog: String,
     major: u64,
     minor: u64,
+    specification_revision: String,
+    superseded_specification_revision: String,
+    claims_enabled: bool,
     profiles: Vec<ProfileInput>,
 }
 
@@ -82,14 +86,18 @@ pub(crate) fn check_generated(root: &Path) -> Result<(), String> {
 }
 
 fn generate_protocol(root: &Path) -> Result<bool, String> {
-    let catalog = load_catalog(root)?;
+    let catalog = parse_catalog(&root.join(CATALOG_PATH))?;
+    validate_catalog(root, &catalog)?;
+    let golden = render_canonical_json(&catalog);
+    let golden_changed = write_atomic_if_changed(&root.join(GOLDEN_PATH), golden.as_bytes())?;
     let output = render_rust(&catalog);
-    write_atomic_if_changed(&root.join(OUTPUT_PATH), output.as_bytes())
+    let output_changed = write_atomic_if_changed(&root.join(OUTPUT_PATH), output.as_bytes())?;
+    Ok(golden_changed || output_changed)
 }
 
 fn load_catalog(root: &Path) -> Result<ProfileCatalog, String> {
     let catalog = parse_catalog(&root.join(CATALOG_PATH))?;
-    validate_catalog(&catalog)?;
+    validate_catalog(root, &catalog)?;
 
     let golden_path = root.join(GOLDEN_PATH);
     let golden_bytes = fs::read(&golden_path)
@@ -111,9 +119,23 @@ fn parse_catalog(path: &Path) -> Result<ProfileCatalog, String> {
         .map_err(|error| format!("invalid profile catalog {}: {error}", path.display()))
 }
 
-fn validate_catalog(catalog: &ProfileCatalog) -> Result<(), String> {
+fn validate_catalog(root: &Path, catalog: &ProfileCatalog) -> Result<(), String> {
     if catalog.catalog != "gantry.profiles" || (catalog.major, catalog.minor) != (1, 0) {
         return Err("profile catalog must identify gantry.profiles version 1.0".to_owned());
+    }
+    let specification = fs::read(root.join("SPEC.md"))
+        .map_err(|error| format!("could not read SPEC.md: {error}"))?;
+    if catalog.specification_revision != format!("{:x}", Sha256::digest(specification)) {
+        return Err("profile catalog specification revision is stale".to_owned());
+    }
+    if catalog.superseded_specification_revision == catalog.specification_revision
+        || catalog.superseded_specification_revision.len() != 64
+        || !catalog
+            .superseded_specification_revision
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        return Err("profile catalog superseded revision is invalid".to_owned());
     }
     if catalog.profiles.is_empty() {
         return Err("profile catalog must not be empty".to_owned());
@@ -224,8 +246,8 @@ fn reject_dependency_cycles(profiles: &BTreeMap<&str, &ProfileInput>) -> Result<
 
 fn render_canonical_json(catalog: &ProfileCatalog) -> String {
     let mut output = format!(
-        "{{\"catalog\":\"{}\",\"major\":{},\"minor\":{},\"profiles\":[",
-        catalog.catalog, catalog.major, catalog.minor
+        "{{\"catalog\":\"{}\",\"claims_enabled\":{},\"major\":{},\"minor\":{},\"profiles\":[",
+        catalog.catalog, catalog.claims_enabled, catalog.major, catalog.minor
     );
     for (index, profile) in catalog.profiles.iter().enumerate() {
         if index > 0 {
@@ -240,7 +262,10 @@ fn render_canonical_json(catalog: &ProfileCatalog) -> String {
         }
         output.push_str(&format!("],\"rust_name\":\"{}\"}}", profile.rust_name));
     }
-    output.push_str("]}\n");
+    output.push_str(&format!(
+        "],\"specification_revision\":\"{}\",\"superseded_specification_revision\":\"{}\"}}\n",
+        catalog.specification_revision, catalog.superseded_specification_revision
+    ));
     output
 }
 
@@ -267,6 +292,28 @@ pub enum ConformanceProfile {\n",
     }
     output.push_str(
         "        }\n    }\n}\n\n\
+/// SHA-256 of the exact specification revision owning these profiles.\n\
+pub const PROFILE_SPECIFICATION_REVISION: &str = \"",
+    );
+    output.push_str(&catalog.specification_revision);
+    output.push_str(
+        "\";\n\n\
+/// SHA-256 of the isolated pre-adoption specification revision.\n\
+pub const PROFILE_SUPERSEDED_SPECIFICATION_REVISION: &str = \"",
+    );
+    output.push_str(&catalog.superseded_specification_revision);
+    output.push_str(
+        "\";\n\n\
+/// Whether this staged baseline may advertise conformance profiles.\n\
+pub const PROFILE_CLAIMS_ENABLED: bool = ",
+    );
+    output.push_str(if catalog.claims_enabled {
+        "true"
+    } else {
+        "false"
+    });
+    output.push_str(
+        ";\n\n\
 /// One profile and its direct prerequisite profiles.\n\
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]\n\
 pub struct ProfileDefinition {\n\
@@ -341,6 +388,7 @@ fn temporary_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{ProfileCatalog, ProfileInput, generate_protocol, render_rust, validate_catalog};
+    use sha2::{Digest, Sha256};
     use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -349,8 +397,11 @@ mod tests {
     fn catalog() -> ProfileCatalog {
         ProfileCatalog {
             catalog: "gantry.profiles".to_owned(),
+            claims_enabled: false,
             major: 1,
             minor: 0,
+            specification_revision: format!("{:x}", Sha256::digest(b"test specification")),
+            superseded_specification_revision: "0".repeat(64),
             profiles: vec![
                 ProfileInput {
                     name: "analyzer".to_owned(),
@@ -369,38 +420,51 @@ mod tests {
     #[test]
     fn renders_the_same_binding_for_the_same_catalog() {
         let catalog = catalog();
-        assert_eq!(validate_catalog(&catalog), Ok(()));
+        let root = temporary_root();
+        write_fixture(&root, "SPEC.md", b"test specification");
+        assert_eq!(validate_catalog(&root, &catalog), Ok(()));
         assert_eq!(render_rust(&catalog), render_rust(&catalog));
+        assert!(fs::remove_dir_all(root).is_ok());
     }
 
     #[test]
     fn rejects_duplicate_rust_names() {
         let mut catalog = catalog();
         catalog.profiles[1].rust_name = "Analyzer".to_owned();
-        let error = validate_catalog(&catalog);
+        let root = temporary_root();
+        write_fixture(&root, "SPEC.md", b"test specification");
+        let error = validate_catalog(&root, &catalog);
         assert!(matches!(error, Err(message) if message.contains("duplicate profile Rust name")));
+        assert!(fs::remove_dir_all(root).is_ok());
     }
 
     #[test]
     fn rejects_unknown_dependencies() {
         let mut catalog = catalog();
         catalog.profiles[0].requires = vec!["missing".to_owned()];
-        let error = validate_catalog(&catalog);
+        let root = temporary_root();
+        write_fixture(&root, "SPEC.md", b"test specification");
+        let error = validate_catalog(&root, &catalog);
         assert!(matches!(error, Err(message) if message.contains("unknown profile missing")));
+        assert!(fs::remove_dir_all(root).is_ok());
     }
 
     #[test]
     fn rejects_noncanonical_profile_order() {
         let mut catalog = catalog();
         catalog.profiles.reverse();
-        let error = validate_catalog(&catalog);
+        let root = temporary_root();
+        write_fixture(&root, "SPEC.md", b"test specification");
+        let error = validate_catalog(&root, &catalog);
         assert!(matches!(error, Err(message) if message.contains("strictly ordered")));
+        assert!(fs::remove_dir_all(root).is_ok());
     }
 
     #[test]
     fn generation_is_an_idempotent_no_op() {
         let root = temporary_root();
         let catalog = catalog();
+        write_fixture(&root, "SPEC.md", b"test specification");
         let pretty = serde_json::to_vec_pretty(&catalog_for_json(&catalog));
         assert!(pretty.is_ok());
         let pretty = pretty.unwrap_or_default();
@@ -420,8 +484,11 @@ mod tests {
     fn catalog_for_json(catalog: &ProfileCatalog) -> serde_json::Value {
         serde_json::json!({
             "catalog": catalog.catalog,
+            "claims_enabled": catalog.claims_enabled,
             "major": catalog.major,
             "minor": catalog.minor,
+            "specification_revision": catalog.specification_revision,
+            "superseded_specification_revision": catalog.superseded_specification_revision,
             "profiles": catalog.profiles.iter().map(|profile| serde_json::json!({
                 "name": profile.name,
                 "rust_name": profile.rust_name,

@@ -16,10 +16,12 @@ const OUTPUT_PATH: &str = "crates/gantry-ir/src/generated/contracts.rs";
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct IrCatalog {
+    analysis_fact_kinds: Vec<NamedInput>,
     artifact_kinds: Vec<ArtifactKindInput>,
     catalog: String,
     core_forms: Vec<NamedInput>,
     effects: Vec<NamedInput>,
+    executable_fact_kinds: Vec<NamedInput>,
     major: u64,
     minor: u64,
     operation_site_kinds: Vec<NamedInput>,
@@ -27,6 +29,7 @@ struct IrCatalog {
     recovery_classes: Vec<NamedInput>,
     specification_revision: String,
     task_control_site_kinds: Vec<NamedInput>,
+    type_expression_kinds: Vec<NamedInput>,
     type_kinds: Vec<NamedInput>,
 }
 
@@ -115,9 +118,30 @@ fn validate(root: &Path, catalog: &IrCatalog) -> Result<(), String> {
             .map(|item| (&item.wire, &item.rust)),
     )?;
     validate_named(
+        "analysis fact kind",
+        catalog
+            .analysis_fact_kinds
+            .iter()
+            .map(|item| (&item.wire, &item.rust)),
+    )?;
+    validate_named(
         "core form",
         catalog
             .core_forms
+            .iter()
+            .map(|item| (&item.wire, &item.rust)),
+    )?;
+    validate_named(
+        "executable fact kind",
+        catalog
+            .executable_fact_kinds
+            .iter()
+            .map(|item| (&item.wire, &item.rust)),
+    )?;
+    validate_named(
+        "type expression kind",
+        catalog
+            .type_expression_kinds
             .iter()
             .map(|item| (&item.wire, &item.rust)),
     )?;
@@ -190,12 +214,15 @@ fn validate(root: &Path, catalog: &IrCatalog) -> Result<(), String> {
         validate_wire_name(&item.resource_code)?;
     }
     for item in catalog
-        .core_forms
+        .analysis_fact_kinds
         .iter()
+        .chain(&catalog.core_forms)
         .chain(&catalog.effects)
+        .chain(&catalog.executable_fact_kinds)
         .chain(&catalog.operation_site_kinds)
         .chain(&catalog.recovery_classes)
         .chain(&catalog.task_control_site_kinds)
+        .chain(&catalog.type_expression_kinds)
         .chain(&catalog.type_kinds)
     {
         validate_requirements(&item.requirements, &specification)?;
@@ -324,10 +351,28 @@ fn render_rust(catalog: &IrCatalog) -> String {
     );
     render_enum(
         &mut output,
+        "AnalysisFactKind",
+        "generic analysis fact",
+        catalog
+            .analysis_fact_kinds
+            .iter()
+            .map(|item| (&item.rust, &item.wire)),
+    );
+    render_enum(
+        &mut output,
         "CoreForm",
         "desugared core form",
         catalog
             .core_forms
+            .iter()
+            .map(|item| (&item.rust, &item.wire)),
+    );
+    render_enum(
+        &mut output,
+        "ExecutableFactKind",
+        "closed executable fact",
+        catalog
+            .executable_fact_kinds
             .iter()
             .map(|item| (&item.rust, &item.wire)),
     );
@@ -361,6 +406,15 @@ fn render_rust(catalog: &IrCatalog) -> String {
         "task-control site kind",
         catalog
             .task_control_site_kinds
+            .iter()
+            .map(|item| (&item.rust, &item.wire)),
+    );
+    render_enum(
+        &mut output,
+        "TypeExpressionKind",
+        "generic template type expression",
+        catalog
+            .type_expression_kinds
             .iter()
             .map(|item| (&item.rust, &item.wire)),
     );

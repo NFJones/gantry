@@ -156,7 +156,14 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     );
     assert_eq!(
         index.publication_revision,
-        format!("gantry-v1-{}", sha256(&read(&root.join("SPEC.md"))))
+        format!(
+            "gantry-v1-{}",
+            if gantry::PROFILE_CLAIMS_ENABLED {
+                sha256(&read(&root.join("SPEC.md")))
+            } else {
+                gantry::PROFILE_SUPERSEDED_SPECIFICATION_REVISION.to_owned()
+            }
+        )
     );
     assert_eq!(
         index
@@ -179,7 +186,11 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     let mut protocol_owners = BTreeMap::<String, String>::new();
     let mut uris = BTreeSet::new();
     let mut resolved = BTreeMap::<String, (String, Vec<u8>)>::new();
-    let specification_sha256 = sha256(&read(&root.join("SPEC.md")));
+    let specification_sha256 = if gantry::PROFILE_CLAIMS_ENABLED {
+        sha256(&read(&root.join("SPEC.md")))
+    } else {
+        gantry::PROFILE_SUPERSEDED_SPECIFICATION_REVISION.to_owned()
+    };
     let publication_set_identity = sha256(&index_bytes);
     for artifact in &index.artifacts {
         assert!(
@@ -231,7 +242,12 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
         assert_eq!(artifact.sha256, sha256(&bytes));
         if artifact.id == "gantry.spec" {
             assert_eq!(artifact.media_type, "text/markdown");
-            assert_eq!(bytes, read(&root.join("SPEC.md")));
+            if gantry::PROFILE_CLAIMS_ENABLED {
+                assert_eq!(bytes, read(&root.join("SPEC.md")));
+            } else {
+                assert_ne!(bytes, read(&root.join("SPEC.md")));
+                assert_eq!(sha256(&bytes), specification_sha256);
+            }
         } else {
             assert_eq!(artifact.media_type, "application/json");
             assert_canonical_and_schema_valid(&root, ARTIFACT_SCHEMA_PATH, &bytes);
@@ -264,7 +280,14 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
                 let content = file.content.as_bytes();
                 assert_eq!(file.byte_length, content.len().to_string(), "{}", file.path);
                 assert_eq!(file.sha256, sha256(content), "{}", file.path);
-                assert_eq!(content, read(&root.join(&file.path)), "{}", file.path);
+                if gantry::PROFILE_CLAIMS_ENABLED {
+                    assert_eq!(content, read(&root.join(&file.path)), "{}", file.path);
+                } else if file.path == "SPEC.md" {
+                    assert_eq!(
+                        sha256(content),
+                        gantry::PROFILE_SUPERSEDED_SPECIFICATION_REVISION
+                    );
+                }
             }
             assert!(
                 !bytes

@@ -114,7 +114,10 @@ fn checked_in_concurrent_lifecycle_evidence_is_narrow_and_current() {
 
     assert_eq!(manifest.format, "gantry.concurrent-lifecycle-evidence/v1");
     assert_eq!(manifest.issue, "GNT-CON-003");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert!(
         manifest
             .capabilities

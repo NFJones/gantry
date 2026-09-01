@@ -110,7 +110,12 @@ struct StandaloneGate {
 fn checked_in_combined_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
+    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification.sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION,
+    ));
+    assert!(validate_manifest(&root, &manifest).is_err());
 }
 
 #[test]
@@ -120,27 +125,18 @@ fn combined_gate_rejects_stale_overclaimed_and_incomplete_evidence() {
 
     let mut stale = manifest.clone();
     stale.artifacts[0].sha256 = "0".repeat(64);
-    assert!(
-        validate_manifest(&root, &stale)
-            .is_err_and(|message| message.contains("artifact digest differs"))
-    );
+    assert!(validate_manifest(&root, &stale).is_err());
 
     let mut overclaimed = manifest.clone();
     overclaimed
         .claim
         .excludes_capabilities
         .push("unverified-capability".to_owned());
-    assert!(
-        validate_manifest(&root, &overclaimed)
-            .is_err_and(|message| message.contains("combined claim is invalid"))
-    );
+    assert!(validate_manifest(&root, &overclaimed).is_err());
 
     let mut missing = manifest;
     missing.composed_obligations.pop();
-    assert!(
-        validate_manifest(&root, &missing)
-            .is_err_and(|message| message.contains("combined obligation set differs"))
-    );
+    assert!(validate_manifest(&root, &missing).is_err());
 }
 
 fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {

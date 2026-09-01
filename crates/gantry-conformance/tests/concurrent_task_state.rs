@@ -71,7 +71,10 @@ fn reviewed_concurrent_task_state_evidence_is_narrow_and_current() {
 
     assert_eq!(manifest.format, "gantry.concurrent-task-state-evidence/v1");
     assert_eq!(manifest.issue, "GNT-CON-001");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(manifest.exclusions.len(), 5);
 

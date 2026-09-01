@@ -27,6 +27,44 @@ impl ArtifactKind {
     }
 }
 
+/// Closed `AnalysisFactKind` generic analysis fact vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AnalysisFactKind {
+    /// The `concrete-effect` value.
+    ConcreteEffect,
+    /// The `concrete-instantiation` value.
+    ConcreteInstantiation,
+    /// The `generic-template` value.
+    GenericTemplate,
+    /// The `implementation-head` value.
+    ImplementationHead,
+    /// The `predicate` value.
+    Predicate,
+    /// The `resolved-call` value.
+    ResolvedCall,
+    /// The `source-origin-set` value.
+    SourceOriginSet,
+    /// The `trait-contract` value.
+    TraitContract,
+}
+
+impl AnalysisFactKind {
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::ConcreteEffect => "concrete-effect",
+            Self::ConcreteInstantiation => "concrete-instantiation",
+            Self::GenericTemplate => "generic-template",
+            Self::ImplementationHead => "implementation-head",
+            Self::Predicate => "predicate",
+            Self::ResolvedCall => "resolved-call",
+            Self::SourceOriginSet => "source-origin-set",
+            Self::TraitContract => "trait-contract",
+        }
+    }
+}
+
 /// Closed `CoreForm` desugared core form vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CoreForm {
@@ -91,6 +129,35 @@ impl CoreForm {
             Self::Spawn => "spawn",
             Self::Variable => "variable",
             Self::WithScope => "with-scope",
+        }
+    }
+}
+
+/// Closed `ExecutableFactKind` closed executable fact vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ExecutableFactKind {
+    /// The `closed-callable` value.
+    ClosedCallable,
+    /// The `closed-type` value.
+    ClosedType,
+    /// The `direct-call` value.
+    DirectCall,
+    /// The `operation-site` value.
+    OperationSite,
+    /// The `task-site` value.
+    TaskSite,
+}
+
+impl ExecutableFactKind {
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::ClosedCallable => "closed-callable",
+            Self::ClosedType => "closed-type",
+            Self::DirectCall => "direct-call",
+            Self::OperationSite => "operation-site",
+            Self::TaskSite => "task-site",
         }
     }
 }
@@ -207,6 +274,35 @@ impl TaskControlSiteKind {
             Self::Join => "join",
             Self::JoinAll => "joinall",
             Self::Detach => "detach",
+        }
+    }
+}
+
+/// Closed `TypeExpressionKind` generic template type expression vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeExpressionKind {
+    /// The `builtin-application` value.
+    BuiltinApplication,
+    /// The `declared-application` value.
+    DeclaredApplication,
+    /// The `parameter` value.
+    Parameter,
+    /// The `primitive` value.
+    Primitive,
+    /// The `self` value.
+    SelfType,
+}
+
+impl TypeExpressionKind {
+    /// Returns the exact portable spelling.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::BuiltinApplication => "builtin-application",
+            Self::DeclaredApplication => "declared-application",
+            Self::Parameter => "parameter",
+            Self::Primitive => "primitive",
+            Self::SelfType => "self",
         }
     }
 }

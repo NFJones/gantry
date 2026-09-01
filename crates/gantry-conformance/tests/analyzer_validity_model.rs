@@ -199,7 +199,10 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
         read_json(&root.join("protocol/conformance/analyzer-validity-v1.json"));
     let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
     assert_eq!(manifest.format, "gantry.analyzer-validity-evidence/v1");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert_eq!(manifest.issue, "GNT-AN-007");
     assert_eq!(manifest.profile, "analyzer");
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
@@ -228,7 +231,10 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
 
     for path in &manifest.evidence_manifests {
         let value: serde_json::Value = read_json(&root.join(path));
-        assert_eq!(value["specification_sha256"], review.specification_sha256);
+        assert!(gantry_conformance::evidence_revision_is_expected(
+            value["specification_sha256"].as_str().unwrap_or_default(),
+            &review.specification_sha256,
+        ));
         assert!(
             value["entries"]
                 .as_array()

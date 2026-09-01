@@ -80,7 +80,10 @@ fn checked_in_concurrent_handle_ownership_evidence_is_narrow_and_current() {
         "gantry.concurrent-handle-ownership-evidence/v1"
     );
     assert_eq!(manifest.issue, "GNT-CON-002");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(manifest.exclusions.len(), 4);
 

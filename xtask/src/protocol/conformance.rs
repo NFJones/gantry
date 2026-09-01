@@ -133,6 +133,7 @@ struct ProfileResult {
     profile: String,
     covered_count: usize,
     not_applicable_count: usize,
+    planned_count: usize,
     status: &'static str,
 }
 
@@ -222,6 +223,14 @@ fn render_corpus(root: &Path) -> Result<Vec<u8>, String> {
                             ));
                         }
                     }
+                    "planned" | "in-progress" | "unresolved" => {
+                        if !profile_review.evidence.is_empty() {
+                            return Err(format!(
+                                "open review {}:{}:{} must not claim evidence",
+                                requirement.id, clause.key, profile_review.profile
+                            ));
+                        }
+                    }
                     other => return Err(format!("unclosed profile review state {other}")),
                 }
             }
@@ -263,7 +272,7 @@ fn render_manifest(root: &Path, corpus: &[u8]) -> Result<Vec<u8>, String> {
     let generated: GeneratedRequirements = read_json(root, REQUIREMENTS_PATH)?;
     let mut profile_counts = PROFILES
         .iter()
-        .map(|profile| ((*profile).to_owned(), (0_usize, 0_usize)))
+        .map(|profile| ((*profile).to_owned(), (0_usize, 0_usize, 0_usize)))
         .collect::<BTreeMap<_, _>>();
     let mut mapping_count = 0;
     for requirement in &review.requirements {
@@ -278,6 +287,7 @@ fn render_manifest(root: &Path, corpus: &[u8]) -> Result<Vec<u8>, String> {
                 match profile_review.state.as_str() {
                     "covered" => counts.0 += 1,
                     "not-applicable" => counts.1 += 1,
+                    "planned" | "in-progress" | "unresolved" => counts.2 += 1,
                     other => return Err(format!("unclosed profile review state {other}")),
                 }
             }
@@ -319,7 +329,10 @@ fn render_manifest(root: &Path, corpus: &[u8]) -> Result<Vec<u8>, String> {
                 .get("status")
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("gate {gate} has no status"))?;
-            if status != "verified" {
+            let staged_adoption = format == "gantry.language-adoption/v1"
+                && gate == "GNT-GEN-GATE-000"
+                && status == "blocked";
+            if status != "verified" && !staged_adoption {
                 return Err(format!("gate {gate} is not verified"));
             }
             gates.push(GateSource {
@@ -391,11 +404,16 @@ fn render_manifest(root: &Path, corpus: &[u8]) -> Result<Vec<u8>, String> {
         profile_results: profile_counts
             .into_iter()
             .map(
-                |(profile, (covered_count, not_applicable_count))| ProfileResult {
+                |(profile, (covered_count, not_applicable_count, planned_count))| ProfileResult {
                     profile,
                     covered_count,
                     not_applicable_count,
-                    status: "verified",
+                    planned_count,
+                    status: if planned_count == 0 {
+                        "verified"
+                    } else {
+                        "blocked"
+                    },
                 },
             )
             .collect(),

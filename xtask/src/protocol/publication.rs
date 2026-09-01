@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 const CATALOG_PATH: &str = "protocol/catalogs/public-formats-v1.json";
 const GOLDEN_PATH: &str = "protocol/goldens/public-formats-v1.json";
 const NEGATIVE_PATH: &str = "protocol/goldens/public-formats-v1.negatives.json";
+const ADOPTION_PATH: &str = "protocol/conformance/generics-traits-adoption-v1.json";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -89,7 +90,15 @@ fn validate_catalog(
         .map_err(|error| format!("could not read SPEC.md: {error}"))?;
     let revision = format!("{:x}", Sha256::digest(specification));
     if catalog.specification_revision != revision {
-        return Err("public-format catalog specification revision is stale".to_owned());
+        let adoption: serde_json::Value = read_json(root, ADOPTION_PATH)?;
+        let superseded = adoption
+            .get("superseded_publication_revision")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| value.strip_prefix("gantry-v1-"));
+        let blocked = adoption.get("status").and_then(serde_json::Value::as_str) == Some("blocked");
+        if !blocked || superseded != Some(catalog.specification_revision.as_str()) {
+            return Err("public-format catalog specification revision is stale".to_owned());
+        }
     }
     if golden.format != "gantry.public-format-goldens/v1" {
         return Err("public-format golden catalog has the wrong format".to_owned());

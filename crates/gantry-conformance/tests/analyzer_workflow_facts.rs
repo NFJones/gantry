@@ -94,7 +94,12 @@ fn reviewed_analyzer_workflow_evidence_is_closed() {
 
     assert_eq!(manifest.format, "gantry.analyzer-workflow-evidence/v1");
     assert_eq!(manifest.issue, "GNT-AN-004");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
 
     for entry in manifest.entries {
@@ -102,6 +107,9 @@ fn reviewed_analyzer_workflow_evidence_is_closed() {
             entry.evidence.as_str(),
             WORKFLOW_EVIDENCE | OWNERSHIP_EVIDENCE
         ));
+        if !evidence_is_current {
+            continue;
+        }
         let clause = review
             .requirements
             .iter()

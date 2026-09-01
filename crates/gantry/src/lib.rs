@@ -50,7 +50,10 @@ pub use gantry_runtime as runtime;
 pub use interpreter::{
     Interpreter, RunExecutionError, ShutdownError, caller_cancellation_reason, root_task_identity,
 };
-pub use profile::{ConformanceProfile, PROFILE_DEFINITIONS, ProfileDefinition};
+pub use profile::{
+    ConformanceProfile, PROFILE_CLAIMS_ENABLED, PROFILE_DEFINITIONS,
+    PROFILE_SPECIFICATION_REVISION, PROFILE_SUPERSEDED_SPECIFICATION_REVISION, ProfileDefinition,
+};
 #[cfg(feature = "evaluator")]
 pub use start::{
     ActionMappingRevision, AgentMappingRevision, MappingRevisions, RootSessionProvenance,
@@ -104,6 +107,9 @@ pub const fn compiled_features() -> CompiledFeatures {
 /// refinements advertises both profiles after the combined conformance gate.
 #[must_use]
 pub const fn advertised_profiles() -> &'static [ConformanceProfile] {
+    if !PROFILE_CLAIMS_ENABLED {
+        return &[];
+    }
     if cfg!(all(feature = "concurrent", feature = "durable")) {
         &[
             ConformanceProfile::Analyzer,
@@ -154,7 +160,8 @@ pub const fn advertises_any_profile() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConformanceProfile, advertised_profiles, advertises_any_profile, compiled_features,
+        ConformanceProfile, PROFILE_CLAIMS_ENABLED, advertised_profiles, advertises_any_profile,
+        compiled_features,
     };
 
     #[test]
@@ -169,6 +176,11 @@ mod tests {
 
     #[test]
     fn profile_advertisement_is_limited_to_closed_gates() {
+        if !PROFILE_CLAIMS_ENABLED {
+            assert!(advertised_profiles().is_empty());
+            assert!(!advertises_any_profile());
+            return;
+        }
         if compiled_features().concurrent && compiled_features().durable {
             assert_eq!(
                 advertised_profiles(),

@@ -83,7 +83,10 @@ fn reviewed_sequential_machine_evidence_is_closed() {
 
     assert_eq!(manifest.format, "gantry.sequential-machine-evidence/v1");
     assert_eq!(manifest.issue, "GNT-RUN-001");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
 
     let mut entries = BTreeMap::<(String, String, String), Vec<String>>::new();

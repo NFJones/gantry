@@ -143,7 +143,10 @@ fn reviewed_concurrent_executor_evidence_is_current() {
     let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
 
     assert_eq!(manifest.format, "gantry.concurrent-executor-evidence/v1");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert_eq!(manifest.issue, "GNT-CON-004");
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
     assert_eq!(manifest.adapter_evidence, ADAPTER_EVIDENCE);

@@ -117,7 +117,10 @@ fn checked_in_lifecycle_evidence_is_narrow_and_current() {
     let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
 
     assert_eq!(manifest.format, "gantry.interpreter-lifecycle-evidence/v1");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
     assert_eq!(manifest.issue, "GNT-EMB-002");
     assert!(
         manifest

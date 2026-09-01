@@ -108,6 +108,7 @@ struct ProfileResult {
     profile: String,
     covered_count: usize,
     not_applicable_count: usize,
+    planned_count: usize,
     status: String,
 }
 
@@ -230,14 +231,14 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         );
         assert_anchor_exists(&root, &entry.evidence);
     }
-    assert_eq!(corpus.entries.len(), 108);
+    assert_eq!(corpus.entries.len(), 104);
     assert_eq!(
         corpus
             .entries
             .iter()
             .map(|entry| entry.mappings.len())
             .sum::<usize>(),
-        2_487
+        1_967
     );
 
     assert_eq!(manifest.requirement_registry.path, REQUIREMENTS_PATH);
@@ -258,11 +259,11 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
             .map(|requirement| requirement.clauses.len())
             .sum::<usize>()
     );
-    assert_eq!(manifest.requirement_registry.mapping_count, 1_957);
+    assert_eq!(manifest.requirement_registry.mapping_count, 1_673);
     assert_eq!(manifest.corpus.path, CORPUS_PATH);
     assert_eq!(manifest.corpus.sha256, sha256(&corpus_bytes));
-    assert_eq!(manifest.corpus.evidence_count, 108);
-    assert_eq!(manifest.corpus.mapping_count, 2_487);
+    assert_eq!(manifest.corpus.evidence_count, 104);
+    assert_eq!(manifest.corpus.mapping_count, 1_967);
 
     assert_eq!(manifest.schemas.len(), 2);
     for schema in &manifest.schemas {
@@ -275,7 +276,7 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         &manifest.negative_vectors.sha256,
     );
 
-    assert_eq!(manifest.manifests.len(), 36);
+    assert_eq!(manifest.manifests.len(), 37);
     assert!(
         manifest
             .manifests
@@ -291,7 +292,7 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         );
     }
 
-    assert_eq!(manifest.gates.len(), 8);
+    assert_eq!(manifest.gates.len(), 9);
     assert!(
         manifest
             .gates
@@ -299,17 +300,32 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
             .all(|pair| pair[0].gate < pair[1].gate)
     );
     for gate in &manifest.gates {
-        assert_eq!(gate.status, "verified");
+        if gate.gate == "GNT-GEN-GATE-000" {
+            assert_eq!(gate.status, "blocked");
+        } else {
+            assert_eq!(gate.status, "verified");
+        }
         assert_digest(&root, &gate.path, &gate.sha256);
     }
 
     let expected_profiles = expected_profile_results(&review);
     assert_eq!(manifest.profile_results.len(), 6);
     for result in &manifest.profile_results {
-        assert_eq!(result.status, "verified");
+        assert_eq!(
+            result.status,
+            if result.planned_count == 0 {
+                "verified"
+            } else {
+                "blocked"
+            }
+        );
         assert_eq!(
             expected_profiles.get(&result.profile),
-            Some(&(result.covered_count, result.not_applicable_count))
+            Some(&(
+                result.covered_count,
+                result.not_applicable_count,
+                result.planned_count,
+            ))
         );
     }
 
@@ -394,6 +410,9 @@ fn expected_corpus(review: &RequirementReview) -> BTreeMap<String, Vec<CorpusMap
                                 .is_some_and(|value| !value.is_empty())
                         );
                     }
+                    "planned" | "in-progress" | "unresolved" => {
+                        assert!(profile_review.evidence.is_empty());
+                    }
                     other => panic!("unclosed review state {other}"),
                 }
             }
@@ -406,8 +425,8 @@ fn expected_corpus(review: &RequirementReview) -> BTreeMap<String, Vec<CorpusMap
     expected
 }
 
-fn expected_profile_results(review: &RequirementReview) -> BTreeMap<String, (usize, usize)> {
-    let mut results = BTreeMap::<String, (usize, usize)>::new();
+fn expected_profile_results(review: &RequirementReview) -> BTreeMap<String, (usize, usize, usize)> {
+    let mut results = BTreeMap::<String, (usize, usize, usize)>::new();
     for requirement in &review.requirements {
         for clause in &requirement.clauses {
             for profile_review in &clause.profile_reviews {
@@ -415,6 +434,7 @@ fn expected_profile_results(review: &RequirementReview) -> BTreeMap<String, (usi
                 match profile_review.state.as_str() {
                     "covered" => counts.0 += 1,
                     "not-applicable" => counts.1 += 1,
+                    "planned" | "in-progress" | "unresolved" => counts.2 += 1,
                     other => panic!("unclosed review state {other}"),
                 }
             }

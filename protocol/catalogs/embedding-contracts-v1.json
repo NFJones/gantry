@@ -1,8 +1,21 @@
 {
+  "analysis_result_fields": [
+    { "wire": "canonical-analysis-ir", "requirements": ["GNT-12.9"] },
+    { "wire": "closed-executable-projection", "requirements": ["GNT-12.9"] },
+    { "wire": "concrete-effects", "requirements": ["GNT-12.9"] },
+    { "wire": "concrete-schemas", "requirements": ["GNT-12.9", "GNT-8.13-concrete-generic-schemas"] },
+    { "wire": "generic-binders", "requirements": ["GNT-12.9"] },
+    { "wire": "inferred-substitutions", "requirements": ["GNT-12.9"] },
+    { "wire": "package-source-manifest", "requirements": ["GNT-11.6-package-source-manifest"] },
+    { "wire": "retained-instantiations", "requirements": ["GNT-12.9"] },
+    { "wire": "selected-implementations", "requirements": ["GNT-12.9"] },
+    { "wire": "source-map", "requirements": ["GNT-11.6", "GNT-12.9"] },
+    { "wire": "template-effects", "requirements": ["GNT-12.9"] }
+  ],
   "catalog": "gantry.embedding-contracts",
   "major": 1,
   "minor": 0,
-  "specification_revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_revision": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
   "operations": [
     {
       "wire": "abort-task",
@@ -50,7 +63,7 @@
       "idempotency": "semantically-repeatable",
       "cancellation": "caller-stops-waiting",
       "async_kind": "borrowed-future",
-      "requirements": ["GNT-12.10", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-4.17-frontend-resource-limits"]
+      "requirements": ["GNT-12.10", "GNT-12.11-generic-diagnostics", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-3.15-generic-profiles", "GNT-4.17-frontend-resource-limits", "GNT-4.17-generic-analysis-limits"]
     },
     {
       "wire": "await-foreground",
@@ -338,7 +351,7 @@
       "idempotency": "correctable-retry-before-acceptance",
       "cancellation": "caller-stops-waiting",
       "async_kind": "borrowed-future",
-      "requirements": ["GNT-11.10", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-7.17"]
+      "requirements": ["GNT-11.10", "GNT-11.11-generic-artifact-recovery", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-4.17-generic-analysis-limits", "GNT-7.17"]
     },
     {
       "wire": "sample-jitter",
@@ -418,7 +431,7 @@
       "idempotency": "new-candidate",
       "cancellation": "caller-stops-waiting",
       "async_kind": "borrowed-future",
-      "requirements": ["GNT-11.10", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-7.17"]
+      "requirements": ["GNT-11.10", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-3.15-generic-profiles", "GNT-4.17-generic-analysis-limits", "GNT-7.17"]
     },
     {
       "wire": "utc-now",
@@ -450,7 +463,7 @@
       "idempotency": "semantically-repeatable",
       "cancellation": "caller-stops-waiting",
       "async_kind": "borrowed-future",
-      "requirements": ["GNT-12.9", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-4.17-frontend-resource-limits"]
+      "requirements": ["GNT-12.9", "GNT-15.1", "GNT-15.1-concurrency-and-reentrancy", "GNT-3.15-generic-profiles", "GNT-4.17-frontend-resource-limits", "GNT-4.17-generic-analysis-limits"]
     },
     {
       "wire": "yield-now",

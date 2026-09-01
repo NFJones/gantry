@@ -3,6 +3,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "analysis_result_fields": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "wire": { "$ref": "#/$defs/wireName" },
+          "requirements": { "$ref": "#/$defs/requirements" }
+        },
+        "required": ["wire", "requirements"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
     "catalog": { "const": "gantry.embedding-contracts" },
     "major": { "const": 1 },
     "minor": { "const": 0 },
@@ -30,6 +44,7 @@
     }
   },
   "required": [
+    "analysis_result_fields",
     "catalog",
     "major",
     "minor",

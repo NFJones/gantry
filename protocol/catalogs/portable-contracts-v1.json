@@ -2,7 +2,7 @@
   "catalog": "gantry.portable-contracts",
   "major": 1,
   "minor": 0,
-  "specification_revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_revision": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
   "maximum_directive_integer": "9223372036854775807",
   "identity_kinds": [
     {
@@ -450,12 +450,20 @@
           "rust": "CanonicalIrByteLimit"
         },
         {
+          "wire": "constructed-type-depth-limit",
+          "rust": "ConstructedTypeDepthLimit"
+        },
+        {
           "wire": "diagnostic-count-limit",
           "rust": "DiagnosticCountLimit"
         },
         {
           "wire": "generated-schema-byte-limit",
           "rust": "GeneratedSchemaByteLimit"
+        },
+        {
+          "wire": "generic-instantiation-limit",
+          "rust": "GenericInstantiationLimit"
         },
         {
           "wire": "package-file-count-limit",
@@ -480,10 +488,46 @@
         {
           "wire": "source-token-limit",
           "rust": "SourceTokenLimit"
+        },
+        {
+          "wire": "trait-resolution-step-limit",
+          "rust": "TraitResolutionStepLimit"
         }
       ],
       "requirements": [
-        "GNT-4.17-frontend-resource-limits"
+        "GNT-4.17-frontend-resource-limits",
+        "GNT-4.17-generic-analysis-limits"
+      ]
+    },
+    {
+      "name": "generic-analysis-code",
+      "rust": "GenericAnalysisCode",
+      "values": [
+        { "wire": "ambiguous-trait-method", "rust": "AmbiguousTraitMethod" },
+        { "wire": "ambiguous-type-inference", "rust": "AmbiguousTypeInference" },
+        { "wire": "conflicting-type-inference", "rust": "ConflictingTypeInference" },
+        { "wire": "cyclic-trait-obligation", "rust": "CyclicTraitObligation" },
+        { "wire": "duplicate-type-parameter", "rust": "DuplicateTypeParameter" },
+        { "wire": "escaped-type-parameter", "rust": "EscapedTypeParameter" },
+        { "wire": "implementation-method-mismatch", "rust": "ImplementationMethodMismatch" },
+        { "wire": "incomplete-type-inference", "rust": "IncompleteTypeInference" },
+        { "wire": "invalid-implementation-head", "rust": "InvalidImplementationHead" },
+        { "wire": "invalid-self-type", "rust": "InvalidSelfType" },
+        { "wire": "missing-concrete-schema", "rust": "MissingConcreteSchema" },
+        { "wire": "missing-implementation", "rust": "MissingImplementation" },
+        { "wire": "open-runtime-type", "rust": "OpenRuntimeType" },
+        { "wire": "overlapping-implementation", "rust": "OverlappingImplementation" },
+        { "wire": "overlapping-inherent-method", "rust": "OverlappingInherentMethod" },
+        { "wire": "polymorphic-recursion", "rust": "PolymorphicRecursion" },
+        { "wire": "sealed-capability-unsatisfied", "rust": "SealedCapabilityUnsatisfied" },
+        { "wire": "sealed-trait-implementation", "rust": "SealedTraitImplementation" },
+        { "wire": "shadowed-type-parameter", "rust": "ShadowedTypeParameter" },
+        { "wire": "type-argument-arity", "rust": "TypeArgumentArity" },
+        { "wire": "unconstrained-implementation-parameter", "rust": "UnconstrainedImplementationParameter" },
+        { "wire": "unsatisfied-bound", "rust": "UnsatisfiedBound" }
+      ],
+      "requirements": [
+        "GNT-12.11-generic-diagnostics"
       ]
     },
     {
@@ -1323,6 +1367,18 @@
       ]
     },
     {
+      "wire": "maximum_constructed_type_depth",
+      "rust": "MaximumConstructedTypeDepth",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7",
+        "GNT-4.17-generic-analysis-limits"
+      ]
+    },
+    {
       "wire": "maximum_deterministic_transitions_per_execution",
       "rust": "MaximumDeterministicTransitionsPerExecution",
       "class": "identity-bound",
@@ -1366,6 +1422,18 @@
       "maximum": "9223372036854775807",
       "requirements": [
         "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_generic_instantiations_per_activity",
+      "rust": "MaximumGenericInstantiationsPerActivity",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7",
+        "GNT-4.17-generic-analysis-limits"
       ]
     },
     {
@@ -1504,6 +1572,18 @@
       "requirements": [
         "GNT-11.10",
         "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_trait_resolution_steps_per_activity",
+      "rust": "MaximumTraitResolutionStepsPerActivity",
+      "class": "activity-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.7",
+        "GNT-4.17-generic-analysis-limits"
       ]
     },
     {

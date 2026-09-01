@@ -1,4 +1,14 @@
 {
+  "analysis_fact_kinds": [
+    { "requirements": ["GNT-3-F-INSTANTIATION"], "rust": "ConcreteEffect", "wire": "concrete-effect" },
+    { "requirements": ["GNT-3-F-INSTANTIATION"], "rust": "ConcreteInstantiation", "wire": "concrete-instantiation" },
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "GenericTemplate", "wire": "generic-template" },
+    { "requirements": ["GNT-3-F-TRAITS"], "rust": "ImplementationHead", "wire": "implementation-head" },
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "Predicate", "wire": "predicate" },
+    { "requirements": ["GNT-3-T-GENERIC-CALL"], "rust": "ResolvedCall", "wire": "resolved-call" },
+    { "requirements": ["GNT-3-T-PARAMETRIC-PACKAGE"], "rust": "SourceOriginSet", "wire": "source-origin-set" },
+    { "requirements": ["GNT-3-F-TRAITS"], "rust": "TraitContract", "wire": "trait-contract" }
+  ],
   "artifact_kinds": [
     {
       "protocol": "canonical-ir",
@@ -62,6 +72,13 @@
     { "requirements": ["GNT-6.5"], "rust": "Session", "wire": "session" },
     { "requirements": ["GNT-6.5"], "rust": "Attempt", "wire": "attempt" }
   ],
+  "executable_fact_kinds": [
+    { "requirements": ["GNT-3-F-INSTANTIATION"], "rust": "ClosedCallable", "wire": "closed-callable" },
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "ClosedType", "wire": "closed-type" },
+    { "requirements": ["GNT-3-T-GENERIC-CALL"], "rust": "DirectCall", "wire": "direct-call" },
+    { "requirements": ["GNT-3-T-PARAMETRIC-PACKAGE"], "rust": "OperationSite", "wire": "operation-site" },
+    { "requirements": ["GNT-3-T-PARAMETRIC-PACKAGE"], "rust": "TaskSite", "wire": "task-site" }
+  ],
   "major": 1,
   "minor": 0,
   "operation_site_kinds": [
@@ -78,12 +95,19 @@
     { "requirements": ["GNT-6.12", "GNT-7.15"], "rust": "Idempotent", "wire": "idempotent" },
     { "requirements": ["GNT-6.12", "GNT-7.15"], "rust": "NonIdempotent", "wire": "non_idempotent" }
   ],
-  "specification_revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_revision": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
   "task_control_site_kinds": [
     { "requirements": ["GNT-6.5"], "rust": "Spawn", "wire": "spawn" },
     { "requirements": ["GNT-6.5"], "rust": "Join", "wire": "join" },
     { "requirements": ["GNT-6.5"], "rust": "JoinAll", "wire": "joinall" },
     { "requirements": ["GNT-6.5"], "rust": "Detach", "wire": "detach" }
+  ],
+  "type_expression_kinds": [
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "BuiltinApplication", "wire": "builtin-application" },
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "DeclaredApplication", "wire": "declared-application" },
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "Parameter", "wire": "parameter" },
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "Primitive", "wire": "primitive" },
+    { "requirements": ["GNT-3-F-GENERICS"], "rust": "SelfType", "wire": "self" }
   ],
   "type_kinds": [
     { "requirements": ["GNT-5.1", "GNT-5.19"], "rust": "Unit", "wire": "Unit" },

@@ -2,7 +2,22 @@
 // Source: protocol/catalogs/embedding-contracts-v1.json. Do not edit manually.
 
 /// SHA-256 of the reviewed specification revision.
-pub const EMBEDDING_SPECIFICATION_REVISION: &str = "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22";
+pub const EMBEDDING_SPECIFICATION_REVISION: &str = "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44";
+
+/// Structured fields returned by successful semantic analysis.
+pub const ANALYSIS_RESULT_FIELDS: &[&str] = &[
+    "canonical-analysis-ir",
+    "closed-executable-projection",
+    "concrete-effects",
+    "concrete-schemas",
+    "generic-binders",
+    "inferred-substitutions",
+    "package-source-manifest",
+    "retained-instantiations",
+    "selected-implementations",
+    "source-map",
+    "template-effects",
+];
 
 /// Closed `EmbeddingOperation` protocol vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
