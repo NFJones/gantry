@@ -617,7 +617,7 @@ fn accept(
 
 fn configuration(services: Arc<Services>) -> InterpreterConfiguration {
     let required = RequiredConfiguration::new(
-        FrontendLimits::new(1, 1, 1, 1, 1, 1, 1, 1, 1)
+        FrontendLimits::new(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
             .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
         1,
         1,

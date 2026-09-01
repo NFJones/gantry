@@ -562,6 +562,7 @@ fn configuration(
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+            256, 65_536, 1_000_000,
         )
         .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
         1_048_576,

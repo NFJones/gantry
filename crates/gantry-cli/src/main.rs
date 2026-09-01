@@ -97,18 +97,7 @@ fn check_command(
     stderr: &mut dyn Write,
 ) -> u8 {
     let selection = published_selection();
-    let limits = FrontendLimits::new(
-        4_096,
-        16_777_216,
-        268_435_456,
-        4_194_304,
-        4_096,
-        268_435_456,
-        268_435_456,
-        268_435_456,
-        268_435_456,
-    )
-    .unwrap_or_else(|_| unreachable!("fixed CLI limits are valid"));
+    let limits = cli_frontend_limits();
     let allocator = FreshIdentityAllocator::default();
     let identity_source = services::SystemIdentitySource;
     let clock = services::SystemUtcClock;
@@ -170,18 +159,7 @@ fn analyze_command(
     stderr: &mut dyn Write,
 ) -> u8 {
     let selection = published_selection();
-    let limits = FrontendLimits::new(
-        4_096,
-        16_777_216,
-        268_435_456,
-        4_194_304,
-        4_096,
-        268_435_456,
-        268_435_456,
-        268_435_456,
-        268_435_456,
-    )
-    .unwrap_or_else(|_| unreachable!("fixed CLI limits are valid"));
+    let limits = cli_frontend_limits();
     let allocator = FreshIdentityAllocator::default();
     let identity_source = services::SystemIdentitySource;
     let clock = services::SystemUtcClock;
@@ -378,6 +356,8 @@ fn render_start_diagnostics(failure: &gantry::StartExecutionFailure, stderr: &mu
 
 #[cfg(feature = "frontend")]
 fn cli_frontend_limits() -> FrontendLimits {
+    // Every field is explicit because the portable contract defines no
+    // implementation-independent frontend-policy defaults.
     FrontendLimits::new(
         4_096,
         16_777_216,
@@ -388,6 +368,9 @@ fn cli_frontend_limits() -> FrontendLimits {
         268_435_456,
         268_435_456,
         268_435_456,
+        256,
+        65_536,
+        1_000_000,
     )
     .unwrap_or_else(|_| unreachable!("fixed CLI limits are valid"))
 }

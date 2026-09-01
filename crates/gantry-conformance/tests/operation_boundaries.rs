@@ -504,8 +504,10 @@ fn header(kind: OperationSiteKind, expected_type: TypeDescriptor) -> OperationRe
 
 fn configuration(services: Arc<Services>) -> InterpreterConfiguration {
     let required = RequiredConfiguration::new(
-        FrontendLimits::new(8, 1_024, 4_096, 1_024, 32, 4_096, 4_096, 4_096, 4_096)
-            .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
+        FrontendLimits::new(
+            8, 1_024, 4_096, 1_024, 32, 4_096, 4_096, 4_096, 4_096, 64, 1_024, 4_096,
+        )
+        .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
         1_024,
         1_024,
         DEFAULT_VALUE_LIMITS,

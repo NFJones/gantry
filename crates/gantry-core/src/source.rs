@@ -390,13 +390,25 @@ impl SourceLimits {
     pub const fn maximum_package_source_bytes(self) -> u64 {
         self.maximum_package_source_bytes
     }
+
+    /// Returns the maximum nontrivia tokens admitted for one activity.
+    #[must_use]
+    pub const fn maximum_source_tokens(self) -> u64 {
+        self.maximum_source_tokens
+    }
+
+    /// Returns the maximum retained diagnostics admitted for one activity.
+    #[must_use]
+    pub const fn maximum_diagnostics_per_activity(self) -> u64 {
+        self.maximum_diagnostics_per_activity
+    }
 }
 
 /// Complete finite frontend policy accepted by package operations.
 ///
-/// Syntax-only validation enforces the embedded source limits and retains the
-/// artifact limits for later analyzer or execution phases without constructing
-/// artifacts that its operation does not own.
+/// Syntax-only validation enforces the embedded source and constructed-type
+/// limits. Semantic analysis additionally consumes the generic-instantiation
+/// and trait-resolution budgets and enforces the artifact limits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrontendLimits {
     source: SourceLimits,
@@ -404,6 +416,9 @@ pub struct FrontendLimits {
     maximum_canonical_ir_bytes: u64,
     maximum_source_map_bytes: u64,
     maximum_generated_schema_bytes: u64,
+    maximum_constructed_type_depth: u64,
+    maximum_generic_instantiations_per_activity: u64,
+    maximum_trait_resolution_steps_per_activity: u64,
 }
 
 impl FrontendLimits {
@@ -419,6 +434,9 @@ impl FrontendLimits {
         maximum_canonical_ir_bytes: u64,
         maximum_source_map_bytes: u64,
         maximum_generated_schema_bytes: u64,
+        maximum_constructed_type_depth: u64,
+        maximum_generic_instantiations_per_activity: u64,
+        maximum_trait_resolution_steps_per_activity: u64,
     ) -> Result<Self, SourceLimitConfigurationError> {
         let source = SourceLimits::new(
             maximum_package_files,
@@ -432,6 +450,9 @@ impl FrontendLimits {
             maximum_canonical_ir_bytes,
             maximum_source_map_bytes,
             maximum_generated_schema_bytes,
+            maximum_constructed_type_depth,
+            maximum_generic_instantiations_per_activity,
+            maximum_trait_resolution_steps_per_activity,
         ];
         if artifact_limits.contains(&0) {
             return Err(SourceLimitConfigurationError::Zero);
@@ -448,6 +469,9 @@ impl FrontendLimits {
             maximum_canonical_ir_bytes,
             maximum_source_map_bytes,
             maximum_generated_schema_bytes,
+            maximum_constructed_type_depth,
+            maximum_generic_instantiations_per_activity,
+            maximum_trait_resolution_steps_per_activity,
         })
     }
 
@@ -455,6 +479,36 @@ impl FrontendLimits {
     #[must_use]
     pub const fn source_limits(self) -> SourceLimits {
         self.source
+    }
+
+    /// Returns the maximum selected source files admitted for one activity.
+    #[must_use]
+    pub const fn maximum_package_files(self) -> u64 {
+        self.source.maximum_package_files()
+    }
+
+    /// Returns the maximum exact bytes admitted for one selected source file.
+    #[must_use]
+    pub const fn maximum_source_file_bytes(self) -> u64 {
+        self.source.maximum_source_file_bytes()
+    }
+
+    /// Returns the maximum cumulative source bytes admitted for one activity.
+    #[must_use]
+    pub const fn maximum_package_source_bytes(self) -> u64 {
+        self.source.maximum_package_source_bytes()
+    }
+
+    /// Returns the maximum nontrivia source tokens admitted for one activity.
+    #[must_use]
+    pub const fn maximum_source_tokens(self) -> u64 {
+        self.source.maximum_source_tokens()
+    }
+
+    /// Returns the maximum retained diagnostics admitted for one activity.
+    #[must_use]
+    pub const fn maximum_diagnostics_per_activity(self) -> u64 {
+        self.source.maximum_diagnostics_per_activity()
     }
 
     /// Returns the package-source-manifest byte limit for later phases.
@@ -479,6 +533,24 @@ impl FrontendLimits {
     #[must_use]
     pub const fn maximum_generated_schema_bytes(self) -> u64 {
         self.maximum_generated_schema_bytes
+    }
+
+    /// Returns the maximum retained constructed-type depth for one activity.
+    #[must_use]
+    pub const fn maximum_constructed_type_depth(self) -> u64 {
+        self.maximum_constructed_type_depth
+    }
+
+    /// Returns the maximum new canonical generic instantiations for one activity.
+    #[must_use]
+    pub const fn maximum_generic_instantiations_per_activity(self) -> u64 {
+        self.maximum_generic_instantiations_per_activity
+    }
+
+    /// Returns the maximum trait-resolution work units for one activity.
+    #[must_use]
+    pub const fn maximum_trait_resolution_steps_per_activity(self) -> u64 {
+        self.maximum_trait_resolution_steps_per_activity
     }
 }
 
@@ -588,6 +660,72 @@ impl SourceCounters {
             self.source_tokens,
             self.diagnostics,
         )
+    }
+}
+
+/// Checked generic-analysis counters for one admitted package activity.
+///
+/// Construct a fresh value at each public package-activity boundary. Charges
+/// are committed only after their checked next value is within the configured
+/// limit, so rejected work cannot alter the retained prefix.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GenericAnalysisCounters {
+    limits: FrontendLimits,
+    generic_instantiations: u64,
+    trait_resolution_steps: u64,
+}
+
+impl GenericAnalysisCounters {
+    /// Starts zeroed generic-analysis counters under the supplied activity policy.
+    #[must_use]
+    pub const fn new(limits: FrontendLimits) -> Self {
+        Self {
+            limits,
+            generic_instantiations: 0,
+            trait_resolution_steps: 0,
+        }
+    }
+
+    /// Checks one constructed type before it is retained.
+    pub fn check_constructed_type_depth(&self, depth: u64) -> Result<(), FrontendResourceLimit> {
+        check_limit(
+            FrontendResourceCode::ConstructedTypeDepthLimit,
+            self.limits.maximum_constructed_type_depth,
+            Some(depth),
+        )
+    }
+
+    /// Charges one new canonical generic-instantiation key before retaining it.
+    pub fn charge_generic_instantiation(&mut self) -> Result<(), FrontendResourceLimit> {
+        let next = checked_count(
+            FrontendResourceCode::GenericInstantiationLimit,
+            self.generic_instantiations,
+            1,
+            self.limits.maximum_generic_instantiations_per_activity,
+        )?;
+        self.generic_instantiations = next;
+        Ok(())
+    }
+
+    /// Charges canonical trait-resolution work before retaining its result.
+    pub fn charge_trait_resolution_steps(
+        &mut self,
+        amount: u64,
+    ) -> Result<(), FrontendResourceLimit> {
+        let next = checked_count(
+            FrontendResourceCode::TraitResolutionStepLimit,
+            self.trait_resolution_steps,
+            amount,
+            self.limits.maximum_trait_resolution_steps_per_activity,
+        )?;
+        self.trait_resolution_steps = next;
+        Ok(())
+    }
+
+    /// Returns `(generic instantiations, trait-resolution steps)`.
+    #[must_use]
+    pub const fn counts(&self) -> (u64, u64) {
+        (self.generic_instantiations, self.trait_resolution_steps)
     }
 }
 
@@ -1461,8 +1599,9 @@ pub struct DiagnosticCodeRegistryError;
 mod tests {
     use super::{
         ByteSpan, DiagnosticBuffer, DiagnosticBufferError, DiagnosticCode, DiagnosticPhase,
-        FrontendLimits, PackagePath, SourceLimitConfigurationError, SourceLimits,
-        SourceSnapshotBuilder, SourceSpan, TextSliceError, validate_diagnostic_code_registry,
+        FrontendLimits, GenericAnalysisCounters, PackagePath, SourceLimitConfigurationError,
+        SourceLimits, SourceSnapshotBuilder, SourceSpan, TextSliceError,
+        validate_diagnostic_code_registry,
     };
     use crate::portable::{DiagnosticCategory, DiagnosticSeverity, FrontendResourceCode};
     use std::collections::BTreeMap;
@@ -1474,7 +1613,7 @@ mod tests {
         for accepted in [MAXIMUM - 1, MAXIMUM] {
             let limits = FrontendLimits::new(
                 accepted, accepted, accepted, accepted, accepted, accepted, accepted, accepted,
-                accepted,
+                accepted, accepted, accepted, accepted,
             );
             assert!(limits.is_ok());
             let limits = limits.unwrap_or_else(|_| unreachable!("accepted finite limits"));
@@ -1487,6 +1626,15 @@ mod tests {
             assert_eq!(limits.maximum_canonical_ir_bytes(), accepted);
             assert_eq!(limits.maximum_source_map_bytes(), accepted);
             assert_eq!(limits.maximum_generated_schema_bytes(), accepted);
+            assert_eq!(limits.maximum_constructed_type_depth(), accepted);
+            assert_eq!(
+                limits.maximum_generic_instantiations_per_activity(),
+                accepted
+            );
+            assert_eq!(
+                limits.maximum_trait_resolution_steps_per_activity(),
+                accepted
+            );
         }
 
         for rejected in [0, MAXIMUM + 1] {
@@ -1495,19 +1643,56 @@ mod tests {
             } else {
                 SourceLimitConfigurationError::TooLarge
             };
-            for index in 0..9 {
-                let mut values = [1; 9];
+            for index in 0..12 {
+                let mut values = [1; 12];
                 values[index] = rejected;
                 assert_eq!(
                     FrontendLimits::new(
                         values[0], values[1], values[2], values[3], values[4], values[5],
-                        values[6], values[7], values[8],
+                        values[6], values[7], values[8], values[9], values[10], values[11],
                     ),
                     Err(expected),
                     "limit index {index}"
                 );
             }
         }
+    }
+
+    #[test]
+    fn generic_analysis_charges_are_activity_scoped_and_failure_atomic() {
+        let limits = FrontendLimits::new(1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 2, 4)
+            .unwrap_or_else(|_| unreachable!("positive limits"));
+        let mut first = GenericAnalysisCounters::new(limits);
+
+        assert_eq!(first.check_constructed_type_depth(3), Ok(()));
+        assert_eq!(
+            first.check_constructed_type_depth(4),
+            Err(super::FrontendResourceLimit {
+                code: FrontendResourceCode::ConstructedTypeDepthLimit,
+                limit: 3,
+                observed: Some(4),
+            })
+        );
+        assert_eq!(first.charge_generic_instantiation(), Ok(()));
+        assert_eq!(first.charge_generic_instantiation(), Ok(()));
+        assert!(matches!(
+            first.charge_generic_instantiation(),
+            Err(error)
+                if error.code == FrontendResourceCode::GenericInstantiationLimit
+                    && error.observed == Some(3)
+        ));
+        assert_eq!(first.charge_trait_resolution_steps(1), Ok(()));
+        assert_eq!(first.charge_trait_resolution_steps(3), Ok(()));
+        assert!(matches!(
+            first.charge_trait_resolution_steps(u64::MAX),
+            Err(error)
+                if error.code == FrontendResourceCode::TraitResolutionStepLimit
+                    && error.observed.is_none()
+        ));
+        assert_eq!(first.counts(), (2, 4));
+
+        let reset = GenericAnalysisCounters::new(limits);
+        assert_eq!(reset.counts(), (0, 0));
     }
 
     #[test]

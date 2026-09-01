@@ -161,6 +161,26 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
     assert_eq!(configuration.post_cancellation_drain().get(), 5_000_000);
     assert_eq!(configuration.maximum_tasks_per_execution(), 65_536);
 
+    let frontend = configuration.required().frontend_limits;
+    assert_eq!(frontend.maximum_package_files(), 128);
+    assert_eq!(frontend.maximum_source_file_bytes(), 1_048_576);
+    assert_eq!(frontend.maximum_package_source_bytes(), 16_777_216);
+    assert_eq!(frontend.maximum_source_tokens(), 1_000_000);
+    assert_eq!(frontend.maximum_diagnostics_per_activity(), 1_000);
+    assert_eq!(frontend.maximum_package_source_manifest_bytes(), 1_048_576);
+    assert_eq!(frontend.maximum_canonical_ir_bytes(), 16_777_216);
+    assert_eq!(frontend.maximum_source_map_bytes(), 16_777_216);
+    assert_eq!(frontend.maximum_generated_schema_bytes(), 16_777_216);
+    assert_eq!(frontend.maximum_constructed_type_depth(), 256);
+    assert_eq!(
+        frontend.maximum_generic_instantiations_per_activity(),
+        65_536
+    );
+    assert_eq!(
+        frontend.maximum_trait_resolution_steps_per_activity(),
+        1_000_000
+    );
+
     let machine = configuration.machine_limits();
     assert_eq!(machine.maximum_deterministic_transitions, 10_000_000);
     assert_eq!(machine.maximum_operations, 100_000);
@@ -172,6 +192,16 @@ fn public_configuration_defaults_bounds_and_classes_are_exact() {
         configuration_class(ConfigurationField::MaximumPackageFiles),
         ConfigurationClass::ActivityPolicy
     );
+    for field in [
+        ConfigurationField::MaximumConstructedTypeDepth,
+        ConfigurationField::MaximumGenericInstantiationsPerActivity,
+        ConfigurationField::MaximumTraitResolutionStepsPerActivity,
+    ] {
+        assert_eq!(
+            configuration_class(field),
+            ConfigurationClass::ActivityPolicy
+        );
+    }
     assert_eq!(
         configuration_class(ConfigurationField::GracefulShutdownTimeoutUs),
         ConfigurationClass::DurablyMutable
@@ -482,7 +512,8 @@ fn configuration() -> InterpreterConfiguration {
 
 fn frontend_limits() -> FrontendLimits {
     FrontendLimits::new(
-        128, 1_048_576, 16_777_216, 1_000_000, 1_000, 1_048_576, 16_777_216, 16_777_216, 16_777_216,
+        128, 1_048_576, 16_777_216, 1_000_000, 1_000, 1_048_576, 16_777_216, 16_777_216,
+        16_777_216, 256, 65_536, 1_000_000,
     )
     .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}"))
 }

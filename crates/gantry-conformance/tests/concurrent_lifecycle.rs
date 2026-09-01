@@ -644,7 +644,7 @@ fn session_registry(
 
 fn configuration(services: Arc<Services>) -> InterpreterConfiguration {
     let required = RequiredConfiguration::new(
-        FrontendLimits::new(1, 64, 64, 64, 8, 64, 64, 64, 64)
+        FrontendLimits::new(1, 64, 64, 64, 8, 64, 64, 64, 64, 16, 64, 64)
             .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
         64,
         64,

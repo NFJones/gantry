@@ -24,7 +24,7 @@ use gantry::portable::{
     PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS, SinkClass,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
-use gantry::source::FrontendLimits;
+use gantry::source::{FrontendLimits, GenericAnalysisCounters};
 use gantry::timestamp::UtcTimestamp;
 use gantry::{
     AnalyzePackageCoordinator, AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageStatus,
@@ -439,7 +439,7 @@ fn analyze_package_preserves_event_barrier_and_limit_failure_order() {
 
     let identities = ScriptedIdentities::new([Ok([19; 32]), Ok([20; 32])]);
     let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
-    let limits = FrontendLimits::new(32, 1_048_576, 4_194_304, 262_144, 256, 1, 1, 1, 1)
+    let limits = FrontendLimits::new(32, 1_048_576, 4_194_304, 262_144, 256, 1, 1, 1, 1, 1, 1, 1)
         .unwrap_or_else(|_| unreachable!("positive limits"));
     let result = block_on(coordinator.analyze(AnalyzePackageRequest {
         package_root: &root.0,
@@ -465,21 +465,23 @@ fn complete_frontend_limit_policy_is_public_and_finite() {
 
     assert!(
         FrontendLimits::new(
-            MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM
+            MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM, MAXIMUM,
+            MAXIMUM, MAXIMUM, MAXIMUM,
         )
         .is_ok()
     );
-    for index in 0..9 {
-        let mut zero = [1; 9];
+    for index in 0..12 {
+        let mut zero = [1; 12];
         zero[index] = 0;
         assert!(
             FrontendLimits::new(
-                zero[0], zero[1], zero[2], zero[3], zero[4], zero[5], zero[6], zero[7], zero[8]
+                zero[0], zero[1], zero[2], zero[3], zero[4], zero[5], zero[6], zero[7], zero[8],
+                zero[9], zero[10], zero[11],
             )
             .is_err()
         );
 
-        let mut oversized = [1; 9];
+        let mut oversized = [1; 12];
         oversized[index] = MAXIMUM + 1;
         assert!(
             FrontendLimits::new(
@@ -491,11 +493,48 @@ fn complete_frontend_limit_policy_is_public_and_finite() {
                 oversized[5],
                 oversized[6],
                 oversized[7],
-                oversized[8]
+                oversized[8],
+                oversized[9],
+                oversized[10],
+                oversized[11],
             )
             .is_err()
         );
     }
+}
+
+#[test]
+fn generic_analysis_policy_charges_are_public_and_failure_atomic() {
+    let limits = FrontendLimits::new(1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 3)
+        .unwrap_or_else(|_| unreachable!("positive limits"));
+    let mut counters = GenericAnalysisCounters::new(limits);
+
+    assert_eq!(counters.check_constructed_type_depth(2), Ok(()));
+    assert!(matches!(
+        counters.check_constructed_type_depth(3),
+        Err(limit)
+            if limit.code == FrontendResourceCode::ConstructedTypeDepthLimit
+                && limit.limit == 2
+                && limit.observed == Some(3)
+    ));
+    assert_eq!(counters.charge_generic_instantiation(), Ok(()));
+    assert!(matches!(
+        counters.charge_generic_instantiation(),
+        Err(limit)
+            if limit.code == FrontendResourceCode::GenericInstantiationLimit
+                && limit.limit == 1
+                && limit.observed == Some(2)
+    ));
+    assert_eq!(counters.charge_trait_resolution_steps(3), Ok(()));
+    assert!(matches!(
+        counters.charge_trait_resolution_steps(u64::MAX),
+        Err(limit)
+            if limit.code == FrontendResourceCode::TraitResolutionStepLimit
+                && limit.limit == 3
+                && limit.observed.is_none()
+    ));
+    assert_eq!(counters.counts(), (1, 3));
+    assert_eq!(GenericAnalysisCounters::new(limits).counts(), (0, 0));
 }
 
 #[test]
@@ -508,8 +547,10 @@ fn frontend_limit_failure_is_separate_and_retains_diagnostics() {
     let clock = FixedClock(Ok(timestamp()));
     let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
     let selection = selection();
-    let limits = FrontendLimits::new(1, 4_096, 4_096, 128, 1, 4_096, 4_096, 4_096, 4_096)
-        .unwrap_or_else(|_| unreachable!("positive limits"));
+    let limits = FrontendLimits::new(
+        1, 4_096, 4_096, 128, 1, 4_096, 4_096, 4_096, 4_096, 64, 128, 128,
+    )
+    .unwrap_or_else(|_| unreachable!("positive limits"));
 
     let result =
         block_on(coordinator.validate(request_with_limits(&root.0, &selection, limits, None)));
@@ -585,7 +626,8 @@ fn request<'a>(
     event_delivery: Option<&'a SinkPlan>,
 ) -> ValidatePackageRequest<'a> {
     let limits = FrontendLimits::new(
-        32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+        32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304, 256,
+        65_536, 1_000_000,
     )
     .unwrap_or_else(|_| unreachable!("positive limits"));
     request_with_limits(root, selection, limits, event_delivery)
@@ -615,6 +657,7 @@ fn analyze_request<'a>(
         protocol_selection: selection,
         frontend_limits: FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+            256, 65_536, 1_000_000,
         )
         .unwrap_or_else(|_| unreachable!("positive limits")),
         event_delivery,
