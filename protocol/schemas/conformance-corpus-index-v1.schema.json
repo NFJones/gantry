@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.example/protocol/schemas/conformance-corpus-index-v1.schema.json",
+  "title": "Gantry executable conformance corpus index v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.conformance-corpus-index/v1" },
+    "specification_sha256": { "type": "string", "minLength": 64 },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "required": ["format", "specification_sha256", "entries"],
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence": { "type": "string", "minLength": 1 },
+        "profiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/profile" }
+        },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/role" }
+        },
+        "mappings": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/mapping" }
+        }
+      },
+      "required": ["evidence", "profiles", "roles", "mappings"]
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requirement": { "type": "string", "minLength": 1 },
+        "clause": { "type": "string", "minLength": 1 },
+        "profile": { "$ref": "#/$defs/profile" },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/role" }
+        }
+      },
+      "required": ["requirement", "clause", "profile", "roles"]
+    },
+    "profile": {
+      "enum": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ]
+    },
+    "role": { "enum": ["harness", "implementation", "integration"] }
+  }
+}

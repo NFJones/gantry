@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.example/protocol/schemas/conformance-manifest-v1.schema.json",
+  "title": "Gantry aggregate conformance manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.conformance-manifest/v1" },
+    "specification_sha256": { "type": "string", "minLength": 64 },
+    "requirement_registry": { "$ref": "#/$defs/registry" },
+    "corpus": { "$ref": "#/$defs/corpus" },
+    "schemas": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "negative_vectors": { "$ref": "#/$defs/artifact" },
+    "manifests": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/manifest" }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/gate" }
+    },
+    "profile_results": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/profile_result" }
+    },
+    "proofs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/proof" }
+    }
+  },
+  "required": [
+    "format",
+    "specification_sha256",
+    "requirement_registry",
+    "corpus",
+    "schemas",
+    "negative_vectors",
+    "manifests",
+    "gates",
+    "profile_results",
+    "proofs"
+  ],
+  "$defs": {
+    "digest": { "type": "string", "minLength": 64 },
+    "count": { "type": "number", "minimum": 0, "maximum": 9007199254740991 },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      },
+      "required": ["path", "sha256"]
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "requirement_count": { "$ref": "#/$defs/count" },
+        "clause_count": { "$ref": "#/$defs/count" },
+        "mapping_count": { "$ref": "#/$defs/count" }
+      },
+      "required": ["path", "sha256", "requirement_count", "clause_count", "mapping_count"]
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "evidence_count": { "$ref": "#/$defs/count" },
+        "mapping_count": { "$ref": "#/$defs/count" }
+      },
+      "required": ["path", "sha256", "evidence_count", "mapping_count"]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "format": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      },
+      "required": ["path", "format", "sha256"]
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gate": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "status": { "const": "verified" }
+      },
+      "required": ["gate", "path", "sha256", "status"]
+    },
+    "profile_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "enum": [
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "embedding",
+            "evaluator",
+            "frontend"
+          ]
+        },
+        "covered_count": { "$ref": "#/$defs/count" },
+        "not_applicable_count": { "$ref": "#/$defs/count" },
+        "status": { "const": "verified" }
+      },
+      "required": ["profile", "covered_count", "not_applicable_count", "status"]
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["argument", "model"] },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" }
+      },
+      "required": ["kind", "path", "sha256"]
+    }
+  }
+}

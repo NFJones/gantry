@@ -1,0 +1,35 @@
+{
+  "format": "gantry.conformance-publication-negatives/v1",
+  "cases": [
+    {
+      "name": "corpus-extra-field",
+      "target": "corpus",
+      "mutation": "add-root-field"
+    },
+    {
+      "name": "corpus-missing-entries",
+      "target": "corpus",
+      "mutation": "missing-entries"
+    },
+    {
+      "name": "corpus-wrong-format",
+      "target": "corpus",
+      "mutation": "wrong-format"
+    },
+    {
+      "name": "manifest-extra-field",
+      "target": "manifest",
+      "mutation": "add-root-field"
+    },
+    {
+      "name": "manifest-missing-gates",
+      "target": "manifest",
+      "mutation": "missing-gates"
+    },
+    {
+      "name": "manifest-wrong-format",
+      "target": "manifest",
+      "mutation": "wrong-format"
+    }
+  ]
+}
