@@ -22,6 +22,9 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/NFJones/gantry"
+homepage = "https://github.com/NFJones/gantry"
 
 [workspace.dependencies]
 gantry = { path = "crates/gantry", version = "=0.1.0", default-features = false }

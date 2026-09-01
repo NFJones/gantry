@@ -132,6 +132,22 @@ Run `just help` to list all development commands.
   documentation.
 - [`AGENTS.md`](AGENTS.md) describes repository workflow and contribution
   requirements.
+
+## Rust library packages
+
+The supported Rust library is published as a version-locked package set rather
+than as one archive containing private path dependencies. The public set is
+`gantry`, `gantry-core`, `gantry-frontend`, `gantry-host`, `gantry-ir`,
+`gantry-observe`, `gantry-analysis`, `gantry-runtime`,
+`gantry-adapter-tokio`, and `gantry-storage-sqlite`. All members use the same
+release version, and the facade's feature graph selects the required members.
+
+Before registry publication, `just package-check` assembles every normalized
+Cargo source archive and verifies the complete set together through local
+registry patches. Registry publication follows dependency order: core first;
+frontend, host, and IR next; observation, analysis, and adapters after their
+dependencies; runtime after observation; and the `gantry` facade last. The
+CLI, conformance harness, and repository tooling remain source-only packages.
 - [`protocol/`](protocol/README.md) contains versioned protocol inputs,
   schemas, generated bindings, and conformance material.
 

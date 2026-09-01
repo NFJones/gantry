@@ -28,6 +28,19 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "xtask",
 ];
 
+const PUBLISHABLE_PACKAGES: &[&str] = &[
+    "gantry",
+    "gantry-adapter-tokio",
+    "gantry-analysis",
+    "gantry-core",
+    "gantry-frontend",
+    "gantry-host",
+    "gantry-ir",
+    "gantry-observe",
+    "gantry-runtime",
+    "gantry-storage-sqlite",
+];
+
 const ALLOWED_EDGES: &[(&str, &str)] = &[
     ("gantry", "gantry-analysis"),
     ("gantry", "gantry-core"),
@@ -164,10 +177,11 @@ fn validate_graph(packages: &[WorkspacePackage]) -> Result<(), String> {
 
     let allowed = ALLOWED_EDGES.iter().copied().collect::<BTreeSet<_>>();
     for package in packages {
-        if package.name != "gantry" && !package.publish_disabled {
+        let should_publish = PUBLISHABLE_PACKAGES.contains(&package.name.as_str());
+        if package.publish_disabled == should_publish {
             return Err(format!(
-                "workspace package {} must set publish = false",
-                package.name
+                "workspace package {} has the wrong publication policy",
+                package.name,
             ));
         }
         for dependency in &package.dependencies {
@@ -296,25 +310,25 @@ mod tests {
             ),
             package(
                 "gantry-analysis",
-                true,
+                false,
                 &["gantry-core", "gantry-frontend", "gantry-ir"],
             ),
-            package("gantry-adapter-tokio", true, &["gantry-host"]),
+            package("gantry-adapter-tokio", false, &["gantry-host"]),
             package("gantry-cli", true, &["gantry", "gantry-adapter-tokio"]),
             package(
                 "gantry-conformance",
                 true,
                 &["gantry", "gantry-adapter-tokio", "gantry-storage-sqlite"],
             ),
-            package("gantry-core", true, &[]),
-            package("gantry-frontend", true, &["gantry-core"]),
-            package("gantry-host", true, &["gantry-core"]),
-            package("gantry-ir", true, &["gantry-core"]),
-            package("gantry-observe", true, &["gantry-core", "gantry-host"]),
-            package("gantry-runtime", true, &["gantry-core", "gantry-ir"]),
+            package("gantry-core", false, &[]),
+            package("gantry-frontend", false, &["gantry-core"]),
+            package("gantry-host", false, &["gantry-core"]),
+            package("gantry-ir", false, &["gantry-core"]),
+            package("gantry-observe", false, &["gantry-core", "gantry-host"]),
+            package("gantry-runtime", false, &["gantry-core", "gantry-ir"]),
             package(
                 "gantry-storage-sqlite",
-                true,
+                false,
                 &["gantry-core", "gantry-host", "rustix"],
             ),
             package("xtask", true, &[]),

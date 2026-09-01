@@ -34,6 +34,10 @@ test:
 governance:
     cargo run --locked -p xtask -- check governance
 
+# Assemble and verify the coherent publishable library package set.
+package-check:
+    python3 release/verify-package-set.py
+
 # Clean build artifacts
 clean:
     cargo clean

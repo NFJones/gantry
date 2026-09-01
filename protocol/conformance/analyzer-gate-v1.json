@@ -52,7 +52,7 @@
   "artifacts": [
     {
       "path": "crates/gantry-analysis/Cargo.toml",
-      "sha256": "86fa16729069efb563c4c9b26cf0dab479bbd64e4a5446ec4bd15de2e647a99d"
+      "sha256": "4e9789b631c98491d310c69c2243a7168e5800cf555f25c941eaea04aad18b45"
     },
     {
       "path": "docs/analyzer-package-validity.md",
