@@ -5,6 +5,7 @@ mod embedding;
 mod ir;
 mod portable;
 mod publication;
+mod release;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -42,6 +43,7 @@ pub(crate) fn generate(root: &Path) -> Result<(), String> {
     let ir_changed = ir::generate(root)?;
     let portable_changed = portable::generate(root)?;
     publication::check_generated(root)?;
+    let release_changed = release::generate(root)?;
     if profiles_changed {
         println!("generated {OUTPUT_PATH}");
     }
@@ -50,6 +52,7 @@ pub(crate) fn generate(root: &Path) -> Result<(), String> {
         && !conformance_changed
         && !ir_changed
         && !portable_changed
+        && !release_changed
     {
         println!("protocol bindings are already current");
     }
@@ -73,6 +76,7 @@ pub(crate) fn check_generated(root: &Path) -> Result<(), String> {
     ir::check_generated(root)?;
     portable::check_generated(root)?;
     publication::check_generated(root)?;
+    release::check_generated(root)?;
     println!("generated protocol bindings are current");
     Ok(())
 }

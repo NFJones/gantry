@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.example/protocol/schemas/publication-artifact-v1.schema.json",
+  "title": "Gantry self-contained publication artifact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.publication-artifact/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "specification_sha256": { "type": "string", "minLength": 64 },
+    "protocols": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/protocol" }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/file" }
+    }
+  },
+  "required": [
+    "format",
+    "id",
+    "specification_sha256",
+    "protocols",
+    "profiles",
+    "requirements",
+    "files"
+  ],
+  "$defs": {
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "family": { "type": "string", "minLength": 1 },
+        "major": { "const": 1 },
+        "minor": { "const": 0 }
+      },
+      "required": ["family", "major", "minor"]
+    },
+    "profile": {
+      "enum": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ]
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "media_type": {
+          "enum": ["application/json", "text/markdown", "text/x-rust"]
+        },
+        "byte_length": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "minLength": 64 },
+        "content": { "type": "string" }
+      },
+      "required": ["path", "media_type", "byte_length", "sha256", "content"]
+    }
+  }
+}
