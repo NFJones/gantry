@@ -1,0 +1,149 @@
+{
+  "format": "gantry.release-readiness/v1",
+  "status": "qualified-release-ready",
+  "unqualified_full_v1": false,
+  "source_revision": "823640133587f92f74f90fc82a5b771156b00134",
+  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "publication": {
+    "index_path": "protocol/publication/index-v1.json",
+    "publication_set_identity": "1d5321e188b9f70ec3bb50720b7a880828b7f6ed8710bb41c96f10bd83e17c87",
+    "verification_path": "protocol/publication/verification-v1.json",
+    "verification_sha256": "741f62da81847fd45ca346736e11fd3a874dc1005713d850a3d4516810d3a36f"
+  },
+  "conformance": {
+    "requirement_registry": {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
+    },
+    "manifest": {
+      "path": "protocol/conformance/manifest-v1.json",
+      "sha256": "0bd6b0b6a8495ceb16885ca800fe6ccdac27a5812d74e4b4a18243422156b81a"
+    },
+    "profile_results": [
+      {
+        "profile": "analyzer",
+        "covered_count": 275,
+        "not_applicable_count": 67,
+        "status": "verified"
+      },
+      {
+        "profile": "concurrent-evaluator",
+        "covered_count": 374,
+        "not_applicable_count": 6,
+        "status": "verified"
+      },
+      {
+        "profile": "durable-runtime",
+        "covered_count": 403,
+        "not_applicable_count": 8,
+        "status": "verified"
+      },
+      {
+        "profile": "embedding",
+        "covered_count": 282,
+        "not_applicable_count": 34,
+        "status": "verified"
+      },
+      {
+        "profile": "evaluator",
+        "covered_count": 367,
+        "not_applicable_count": 13,
+        "status": "verified"
+      },
+      {
+        "profile": "frontend",
+        "covered_count": 106,
+        "not_applicable_count": 22,
+        "status": "verified"
+      }
+    ],
+    "combined_gate": {
+      "path": "protocol/conformance/combined-gate-v1.json",
+      "sha256": "10f7f8897ea744e87c9e0696e143620e6d73833f7acc75e8951bd3f472e82471",
+      "gate": "GNT-COMB-001",
+      "status": "verified",
+      "advertises_profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ]
+    }
+  },
+  "packaging": {
+    "version": "0.1.0",
+    "publishable_libraries": [
+      "gantry",
+      "gantry-adapter-tokio",
+      "gantry-analysis",
+      "gantry-core",
+      "gantry-frontend",
+      "gantry-host",
+      "gantry-ir",
+      "gantry-observe",
+      "gantry-runtime",
+      "gantry-storage-sqlite"
+    ],
+    "private_packages": [
+      "gantry-cli",
+      "gantry-conformance",
+      "xtask"
+    ],
+    "package_verifier": {
+      "path": "release/verify-package-set.py",
+      "sha256": "2de80e86073cb70280bf8e9bf56122b0ed1aebd3f82fb71a27adcd288284a52a"
+    },
+    "verified_toolchains": [
+      "1.91.0",
+      "1.97.1",
+      "stable"
+    ],
+    "cli": {
+      "package": "gantry-cli",
+      "binary": "gantry",
+      "distribution": "source-build",
+      "release_build": "passed",
+      "smoke_command": "target/release/gantry",
+      "smoke_exit": 0,
+      "smoke_stdout": "gantry: agent-control language for Mezzanine"
+    }
+  },
+  "matrix": {
+    "path": "release/release-matrix-v1.json",
+    "sha256": "e9efac0e96f0111bdb15944b02774daa242868ac9f0b5cc09252e30f63890245",
+    "verifier_path": "release/verify-release-matrix.py",
+    "verifier_sha256": "764801c23692a455cef423547d8a19ee5d250e69482b13b4816fcbcb672b21d5",
+    "status": "qualified-passed",
+    "passed_cells": [
+      "linux-rust-1.91.0",
+      "linux-rust-1.97.1",
+      "linux-rust-stable"
+    ],
+    "blocked_cells": [
+      "macos-rust-1.97.1",
+      "macos-rust-stable"
+    ]
+  },
+  "claim": {
+    "role": "implementation",
+    "profiles": [
+      "analyzer",
+      "concurrent-evaluator",
+      "durable-runtime",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
+    "platforms": [
+      "linux-x86_64-unknown-linux-gnu"
+    ],
+    "qualification": [
+      "No local macOS 1.97.1 result is claimed; that cell remains blocked pending hosted CI evidence.",
+      "No local macOS rolling-stable result is claimed; that cell remains blocked pending hosted CI evidence.",
+      "The Linux WSL2 ext4 run does not establish a stable-media power-loss claim; the SQLite matrix covers deterministic injected cuts and rejects unqualified strict environments.",
+      "The unqualified cross-platform phrase conforming Gantry v1 implementation is not permitted by this readiness record."
+    ]
+  }
+}
