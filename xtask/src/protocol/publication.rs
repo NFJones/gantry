@@ -271,7 +271,9 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let pair = std::str::from_utf8(pair).map_err(|_| "hex is not UTF-8".to_owned())?;
             u8::from_str_radix(pair, 16).map_err(|_| "hex contains a non-hex byte".to_owned())

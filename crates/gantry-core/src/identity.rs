@@ -145,7 +145,7 @@ pub(crate) fn decode_lower_hex(value: &str) -> Result<[u8; IDENTITY_BYTES], Iden
         return Err(IdentityError::InvalidLength);
     }
     let mut output = [0_u8; IDENTITY_BYTES];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         output[index] = (decode_nibble(pair[0])? << 4) | decode_nibble(pair[1])?;
     }
     Ok(output)

@@ -100,7 +100,7 @@
   "artifacts": [
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "9c4639919ee5c7f0f4c202357ab24dbfa1dbe26d231aa23208554243b3e4544c"
+      "sha256": "a7dc71fe8e3118f1c80ec4b3bc74ab8dc6c49e41ecc72626498610a1d10dd9d2"
     },
     {
       "path": "Cargo.lock",
