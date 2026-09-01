@@ -8,7 +8,8 @@ use gantry_core::source::{
 };
 use gantry_ir::{
     ActionInventory, CanonicalIr, CanonicalPath, CanonicalSourceMap, EntryInventory,
-    GeneratedSchemaObject, MachineProgram, PackageSourceManifest, TypeDescriptor, WorkflowFacts,
+    GeneratedSchemaObject, MachineProgram, PackageSourceManifest, TypeDescriptor, TypeExpression,
+    WorkflowFacts,
 };
 
 /// Dense deterministic identifier for one discovered source module.
@@ -54,10 +55,56 @@ pub enum SymbolKind {
     Struct,
     /// Declared enum type.
     Enum,
+    /// Declared static trait.
+    Trait,
     /// Declared free function.
     Function,
     /// Declared action.
     Action,
+}
+
+/// Dense deterministic identifier for one generic binder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TypeBinderId(u32);
+
+impl TypeBinderId {
+    pub(crate) const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Returns the zero-based dense value.
+    #[must_use]
+    pub const fn index(self) -> u32 {
+        self.0
+    }
+}
+
+/// One declaration-order type parameter owned by a specific binder.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeParameterBinding {
+    /// Binder that owns this parameter.
+    pub binder: TypeBinderId,
+    /// Zero-based declaration ordinal used by canonical type expressions.
+    pub ordinal: u64,
+    /// Authored source name retained only as metadata.
+    pub name: Arc<str>,
+    /// Exact authored parameter span.
+    pub span: SourceSpan,
+}
+
+/// One generic declaration binder and its optional enclosing binder.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeBinder {
+    /// Dense deterministic binder identifier.
+    pub id: TypeBinderId,
+    /// Enclosing trait or implementation binder for a nested method.
+    pub parent: Option<TypeBinderId>,
+    /// Zero-based lexical binder depth from outermost to innermost.
+    pub depth: u64,
+    /// Complete declaration span that owns the binder.
+    pub declaration: SourceSpan,
+    /// Parameters in declaration order.
+    pub parameters: Vec<TypeParameterBinding>,
 }
 
 /// One source module in canonical path order.
@@ -192,6 +239,17 @@ pub struct TypeFact {
     pub descriptor: TypeDescriptor,
 }
 
+/// One resolved open-or-closed type expression retained by generic analysis.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GenericTypeFact {
+    /// Exact source span of the complete authored type.
+    pub span: SourceSpan,
+    /// Canonical expression using binder depths and declaration ordinals.
+    pub expression: TypeExpression,
+    /// Closed runtime descriptor, present only when no parameter or `Self` remains.
+    pub descriptor: Option<TypeDescriptor>,
+}
+
 /// One declaration-order field in an analyzed struct value shape.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclaredStructField {
@@ -244,6 +302,8 @@ impl DeclaredValueShapes {
 pub struct TypedPackage {
     pub(crate) status: AnalysisStatus,
     pub(crate) structure: PackageStructure,
+    pub(crate) type_binders: Vec<TypeBinder>,
+    pub(crate) generic_types: Vec<GenericTypeFact>,
     pub(crate) types: Vec<TypeFact>,
     pub(crate) workflows: Vec<WorkflowFacts>,
     pub(crate) actions: Vec<ActionInventory>,
@@ -269,6 +329,18 @@ impl TypedPackage {
     #[must_use]
     pub const fn structure(&self) -> &PackageStructure {
         &self.structure
+    }
+
+    /// Returns generic binders in canonical declaration-span order.
+    #[must_use]
+    pub fn type_binders(&self) -> &[TypeBinder] {
+        &self.type_binders
+    }
+
+    /// Returns open and closed canonical type expressions in source-span order.
+    #[must_use]
+    pub fn generic_types(&self) -> &[GenericTypeFact] {
+        &self.generic_types
     }
 
     /// Returns canonical type facts in source-span order.

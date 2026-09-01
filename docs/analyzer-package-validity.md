@@ -34,6 +34,14 @@ be:
    IR, and source map are accepted only after their complete canonical bytes
    satisfy the configured positive limits.
 
+Generic analysis refines the type obligation with deterministic binder
+ownership, open analyzer-only type expressions, complete exact substitutions,
+regular guarded recursion, declaration-bound proof, generic defaults and enum
+patterns after substitution, and structural fixed-point proofs for the three
+compiler-owned capabilities. Constructed-type depth, unique closed generic
+applications, and structural capability work are checked against the complete
+package-activity policy before inferred results are retained.
+
 A source-valid result requires all six obligations. Any retained error
 diagnostic makes the result source-invalid. A source-valid result contains the
 schema inventory, manifest, canonical IR, and source map; a source-invalid
@@ -79,8 +87,10 @@ negative control.
 The analyzer performs no integration action. Its direct dependency graph is
 limited to `gantry-core`, `gantry-frontend`, `gantry-ir`, and `sha2`; it has no
 dependency on host hooks, executor adapters, observation delivery, runtime, or
-journal services. Its public entry point consumes `CompletedSyntaxPhase` and
-returns analyzer-owned facts and artifacts synchronously.
+journal services. Its public entry points consume `CompletedSyntaxPhase` and
+return analyzer-owned facts and artifacts synchronously. Public activities use
+`analyze_package_types_with_limits` so semantic inference and capability proof
+share the same complete `FrontendLimits` policy as parsing and artifacts.
 
 ## Requirement and trace links
 
@@ -89,6 +99,10 @@ returns analyzer-owned facts and artifacts synchronously.
 - Types, patterns, completion, schemas, and inventories: the clause keys in
   `protocol/conformance/analyzer-types-v1.json` and
   `protocol/conformance/analyzer-workflows-v1.json`.
+- Generic binders, applied types, inference, regular recursion, structural
+  capabilities, and generic-analysis limits: `GNT-5.20-parametric-types`,
+  `GNT-4.17-generic-analysis-limits`, and the public analyzer cases in
+  `crates/gantry-conformance/tests/analyzer_types.rs`.
 - Linear ownership and effects: `GNT-10.5`, `GNT-10.6`, `GNT-10.8`, `GNT-6.5`,
   and their executable workflow evidence.
 - Canonical lowering and bounded artifacts: `GNT-3.11`,

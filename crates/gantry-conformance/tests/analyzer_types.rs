@@ -178,6 +178,42 @@ fn main() {}
     );
 }
 
+#[test]
+fn public_generic_analysis_proves_bounds_and_substitutes_enum_patterns() {
+    let valid = analyze(
+        r#"
+struct Envelope<T> where T: Equatable { value: T }
+enum State<T, E> { Ready(T), Failed(E) }
+fn inspect(value: Envelope<String>) {}
+fn main(value: State<String, Int>) -> String {
+    match value {
+        State::<String, Int>::Ready(item) => item,
+        State::<String, Int>::Failed(_) => "failed",
+    }
+}
+"#,
+    );
+    assert_eq!(
+        valid.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        valid.diagnostics()
+    );
+
+    let invalid = analyze(
+        r#"
+struct Envelope<T> where T: Equatable { value: T }
+fn inspect(value: Envelope<Decision>) {}
+fn main() {}
+"#,
+    );
+    assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+    assert!(invalid.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code.as_str() == "unsatisfied-bound"
+            && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("Equatable")
+    }));
+}
+
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);

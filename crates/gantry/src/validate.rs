@@ -31,10 +31,8 @@ use gantry_observe::{
 
 #[cfg(feature = "analyzer")]
 use gantry_analysis::{
-    AnalysisError, AnalysisStatus, TypedPackage, analyze_package_types_with_artifact_limits,
+    AnalysisError, AnalysisStatus, TypedPackage, analyze_package_types_with_limits,
 };
-#[cfg(feature = "analyzer")]
-use gantry_ir::ArtifactLimits;
 
 /// One syntax-only package validation request.
 pub struct ValidatePackageRequest<'a> {
@@ -339,11 +337,8 @@ impl<'a> ValidatePackageCoordinator<'a> {
             });
         }
 
-        let analysis = analyze_package_types_with_artifact_limits(
-            &syntax,
-            ArtifactLimits::from(request.frontend_limits),
-        )
-        .map_err(AnalyzePackageError::Analysis)?;
+        let analysis = analyze_package_types_with_limits(&syntax, request.frontend_limits)
+            .map_err(AnalyzePackageError::Analysis)?;
         let status = if analysis.status() == AnalysisStatus::Valid {
             AnalyzePackageStatus::SourceValid
         } else {

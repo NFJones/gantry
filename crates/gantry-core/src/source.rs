@@ -1176,6 +1176,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeDefinition] = &[
         meaning: "A task handle appears more than once in one consumption.",
     },
     DiagnosticCodeDefinition {
+        code: "duplicate-where-predicate",
+        phase: DiagnosticPhase::Analysis,
+        category: DiagnosticCategory::Type,
+        meaning: "A where clause repeats one authored predicate.",
+    },
+    DiagnosticCodeDefinition {
         code: "expected-type",
         phase: DiagnosticPhase::Analysis,
         category: DiagnosticCategory::Type,

@@ -1,31 +1,37 @@
-//! Canonical declaration-type resolution and recursive-type validation.
+//! Canonical declaration-type resolution and generic well-formedness.
 //!
 //! The pass consumes arena-backed syntax in construction order, so nested
 //! annotations and declared-type graphs are processed with explicit work
-//! collections rather than native recursion. Body expression typing, pattern
-//! coverage, and completion analysis remain later stages of the same crate.
+//! collections rather than native recursion. It retains open generic facts,
+//! closes only complete substitutions, checks regular recursion, and keeps
+//! concrete schemas and executable lowering behind their later stage gates.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use gantry_core::portable::{DiagnosticCategory, DiagnosticSeverity};
 use gantry_core::source::{
-    DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, SourceSpan, StructuredDiagnostic,
+    DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, FrontendLimits, GenericAnalysisCounters,
+    SourceSpan, StructuredDiagnostic,
 };
 use gantry_frontend::{
     CompletedSyntaxPhase, NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind,
 };
 use gantry_ir::generated::TypeKind;
-use gantry_ir::{ArtifactLimits, TypeDescriptor, TypeDescriptorError};
+use gantry_ir::{ArtifactLimits, TypeDescriptor, TypeDescriptorError, TypeExpression};
 
 use crate::bodies::check_package_bodies;
 use crate::effects::analyze_workflow_facts;
 use crate::executable::lower_executable_program;
+use crate::generics::{
+    charge_generic_instantiations, check_sealed_declaration_bounds, collect_generic_type_facts,
+    collect_type_binders,
+};
 use crate::lowering::{LoweringError, lower_package_artifacts, lower_package_manifest};
 use crate::schemas::{SchemaAnalysisError, analyze_generated_schemas};
 use crate::{
-    AnalysisError, AnalysisStatus, PackageStructure, Symbol, SymbolId, SymbolKind, TypeFact,
-    TypedPackage, analyze_package_structure,
+    AnalysisError, AnalysisStatus, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind,
+    TypeBinder, TypeFact, TypedPackage, analyze_package_structure,
 };
 
 /// One declared-type reference within a source annotation.
@@ -33,6 +39,7 @@ use crate::{
 struct DeclaredUse {
     target: SymbolId,
     guarded: bool,
+    expression: Option<TypeExpression>,
     span: SourceSpan,
 }
 
@@ -41,6 +48,7 @@ struct DeclaredUse {
 struct TypeEdge {
     target: SymbolId,
     guarded: bool,
+    preserves_owner_arguments: bool,
     span: SourceSpan,
 }
 
@@ -56,11 +64,61 @@ pub fn analyze_package_types_with_artifact_limits(
     phase: &CompletedSyntaxPhase,
     artifact_limits: ArtifactLimits,
 ) -> Result<TypedPackage, AnalysisError> {
+    analyze_package_types_with_policy(phase, artifact_limits, None)
+}
+
+/// Resolves and validates a package under one complete frontend activity policy.
+pub fn analyze_package_types_with_limits(
+    phase: &CompletedSyntaxPhase,
+    limits: FrontendLimits,
+) -> Result<TypedPackage, AnalysisError> {
+    analyze_package_types_with_policy(phase, ArtifactLimits::from(limits), Some(limits))
+}
+
+fn analyze_package_types_with_policy(
+    phase: &CompletedSyntaxPhase,
+    artifact_limits: ArtifactLimits,
+    frontend_limits: Option<FrontendLimits>,
+) -> Result<TypedPackage, AnalysisError> {
     let structure = analyze_package_structure(phase)?;
     let mut diagnostics = structure.diagnostics().to_vec();
     let mut type_diagnostics = Vec::new();
     let mut facts = Vec::new();
     let mut facts_by_source = Vec::new();
+    let type_binders = collect_type_binders(phase.parsed_sources(), &mut type_diagnostics)?;
+    let generic_types = collect_generic_type_facts(
+        phase.parsed_sources(),
+        &structure,
+        &type_binders,
+        &mut type_diagnostics,
+    )?;
+    let mut generic_counters = frontend_limits.map(GenericAnalysisCounters::new);
+    if let Some(counters) = generic_counters.as_mut()
+        && let Err(error) = charge_generic_instantiations(&generic_types, counters)
+    {
+        diagnostics.append(&mut type_diagnostics);
+        diagnostics.sort();
+        diagnostics.dedup();
+        return Err(AnalysisError::ResourceLimit { error, diagnostics });
+    }
+    if let Err(error) = check_sealed_declaration_bounds(
+        phase.parsed_sources(),
+        &structure,
+        &type_binders,
+        &generic_types,
+        &mut generic_counters,
+        &mut type_diagnostics,
+    ) {
+        return match error {
+            AnalysisError::ResourceLimit { error, .. } => {
+                diagnostics.append(&mut type_diagnostics);
+                diagnostics.sort();
+                diagnostics.dedup();
+                Err(AnalysisError::ResourceLimit { error, diagnostics })
+            }
+            other => Err(other),
+        };
+    }
 
     for source in phase.parsed_sources() {
         let parsed = resolve_source_types(source, &structure, &mut type_diagnostics)?;
@@ -71,7 +129,8 @@ pub fn analyze_package_types_with_artifact_limits(
     check_recursive_declarations(
         phase.parsed_sources(),
         &structure,
-        &facts_by_source,
+        &generic_types,
+        &type_binders,
         &mut type_diagnostics,
     )?;
     check_sealed_boundaries(
@@ -85,14 +144,27 @@ pub fn analyze_package_types_with_artifact_limits(
         phase.parsed_sources(),
         &structure,
         &facts_by_source,
+        &generic_types,
         &mut type_diagnostics,
     )?;
-    let body_types = check_package_bodies(
+    let body_types = match check_package_bodies(
         phase.parsed_sources(),
         &facts_by_source,
+        &generic_types,
+        &type_binders,
         &structure,
+        frontend_limits.map(FrontendLimits::maximum_constructed_type_depth),
         &mut type_diagnostics,
-    )?;
+    ) {
+        Ok(body_types) => body_types,
+        Err(AnalysisError::ResourceLimit { error, .. }) => {
+            diagnostics.append(&mut type_diagnostics);
+            diagnostics.sort();
+            diagnostics.dedup();
+            return Err(AnalysisError::ResourceLimit { error, diagnostics });
+        }
+        Err(error) => return Err(error),
+    };
     let (workflows, actions) = analyze_workflow_facts(
         phase.parsed_sources(),
         &facts_by_source,
@@ -103,7 +175,8 @@ pub fn analyze_package_types_with_artifact_limits(
         .iter()
         .chain(&type_diagnostics)
         .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error);
-    let schema_result = if has_semantic_errors {
+    let has_generic_templates = !type_binders.is_empty();
+    let schema_result = if has_semantic_errors || has_generic_templates {
         Ok((None, None, None))
     } else {
         analyze_generated_schemas(
@@ -151,52 +224,55 @@ pub fn analyze_package_types_with_artifact_limits(
         }
         Err(SchemaAnalysisError::Invariant) => return Err(AnalysisError::Invariant),
     };
-    let (manifest, canonical_ir, executable, source_map) = if status == AnalysisStatus::Valid {
-        let artifacts = match lower_package_artifacts(
-            phase.snapshot(),
-            phase.parsed_sources(),
-            &body_types,
-            &workflows,
-            artifact_limits,
-        ) {
-            Ok(artifacts) => artifacts,
-            Err(LoweringError::ResourceLimit(error)) => {
-                return Err(AnalysisError::ResourceLimit {
-                    error,
-                    diagnostics: retained,
-                });
-            }
-            Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
-        };
-        let executable = lower_executable_program(
-            phase.parsed_sources(),
-            &facts_by_source,
-            &body_types,
-            entry.as_ref().ok_or(AnalysisError::Invariant)?,
-            &workflows,
-            &actions,
-        )?;
-        (
-            Some(artifacts.manifest),
-            Some(artifacts.canonical_ir),
-            Some(executable),
-            Some(artifacts.source_map),
-        )
-    } else {
-        let manifest = if phase.module_resolution_issues().is_empty() {
-            match lower_package_manifest(phase.snapshot(), artifact_limits) {
-                Ok(manifest) => Some(manifest),
-                Err(LoweringError::ResourceLimit(_)) => None,
+    let (manifest, canonical_ir, executable, source_map) =
+        if status == AnalysisStatus::Valid && !has_generic_templates {
+            let artifacts = match lower_package_artifacts(
+                phase.snapshot(),
+                phase.parsed_sources(),
+                &body_types,
+                &workflows,
+                artifact_limits,
+            ) {
+                Ok(artifacts) => artifacts,
+                Err(LoweringError::ResourceLimit(error)) => {
+                    return Err(AnalysisError::ResourceLimit {
+                        error,
+                        diagnostics: retained,
+                    });
+                }
                 Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
-            }
+            };
+            let executable = lower_executable_program(
+                phase.parsed_sources(),
+                &facts_by_source,
+                &body_types,
+                entry.as_ref().ok_or(AnalysisError::Invariant)?,
+                &workflows,
+                &actions,
+            )?;
+            (
+                Some(artifacts.manifest),
+                Some(artifacts.canonical_ir),
+                Some(executable),
+                Some(artifacts.source_map),
+            )
         } else {
-            None
+            let manifest = if phase.module_resolution_issues().is_empty() {
+                match lower_package_manifest(phase.snapshot(), artifact_limits) {
+                    Ok(manifest) => Some(manifest),
+                    Err(LoweringError::ResourceLimit(_)) => None,
+                    Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
+                }
+            } else {
+                None
+            };
+            (manifest, None, None, None)
         };
-        (manifest, None, None, None)
-    };
     Ok(TypedPackage {
         status,
         structure,
+        type_binders,
+        generic_types,
         types: facts,
         workflows,
         actions,
@@ -267,14 +343,8 @@ fn resolve_type_node(
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
     let word = direct_reserved_word(tree, id)?;
-    let members = node
-        .children()
-        .iter()
-        .copied()
-        .filter(|child| {
-            tree.node(*child)
-                .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
-        })
+    let members = type_member_nodes(tree, id)?
+        .into_iter()
         .map(|child| resolved.get(&child).map(|fact| fact.descriptor.clone()))
         .collect::<Option<Vec<_>>>();
 
@@ -358,11 +428,34 @@ fn resolve_type_node(
                 )?);
                 None
             } else {
-                Some(TypeDescriptor::declared(symbol.path.clone()))
+                Some(TypeDescriptor::declared_with_arguments(
+                    symbol.path.clone(),
+                    members.unwrap_or_default(),
+                ))
             }
         }
     };
     Ok(descriptor)
+}
+
+/// Returns immediate type members for built-in and declared applications.
+fn type_member_nodes(tree: &SyntaxTree, id: NodeId) -> Result<Vec<NodeId>, AnalysisError> {
+    let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+    let mut members = Vec::new();
+    for child in node.children().iter().copied() {
+        let child_node = tree.node(child).ok_or(AnalysisError::Invariant)?;
+        match child_node.form() {
+            SyntaxForm::ValueType => members.push(child),
+            SyntaxForm::TypeArgumentList => {
+                members.extend(child_node.children().iter().copied().filter(|argument| {
+                    tree.node(*argument)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+                }));
+            }
+            _ => {}
+        }
+    }
+    Ok(members)
 }
 
 /// Validates self recursion guards and rejects every cycle involving multiple
@@ -370,7 +463,8 @@ fn resolve_type_node(
 fn check_recursive_declarations(
     sources: &[ParsedSource],
     structure: &PackageStructure,
-    facts: &[BTreeMap<NodeId, TypeFact>],
+    generic_types: &[GenericTypeFact],
+    type_binders: &[TypeBinder],
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let references = structure
@@ -388,10 +482,17 @@ fn check_recursive_declarations(
         .iter()
         .map(|symbol| (symbol.id, symbol))
         .collect::<BTreeMap<_, _>>();
+    let generic_by_span = generic_types
+        .iter()
+        .map(|fact| (fact.span.clone(), &fact.expression))
+        .collect::<BTreeMap<_, _>>();
+    let binders_by_declaration = type_binders
+        .iter()
+        .map(|binder| (binder.declaration.clone(), binder))
+        .collect::<BTreeMap<_, _>>();
     let mut graph = BTreeMap::<SymbolId, Vec<TypeEdge>>::new();
 
-    for (source_index, source) in sources.iter().enumerate() {
-        let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
+    for source in sources {
         for node in source.tree().nodes() {
             if !matches!(
                 node.form(),
@@ -405,6 +506,11 @@ fn check_recursive_declarations(
             let Some(owner) = symbol_by_span.get(&name_span).copied() else {
                 continue;
             };
+            let expected_self = binders_by_declaration
+                .get(node.span())
+                .copied()
+                .map(|binder| generic_self_application(owner, binder))
+                .transpose()?;
             for member in node.children().iter().copied() {
                 let Some(member_node) = source.tree().node(member) else {
                     return Err(AnalysisError::Invariant);
@@ -421,16 +527,28 @@ fn check_recursive_declarations(
                         .node(*child)
                         .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
                 }) {
-                    if !resolved.contains_key(&type_node) {
+                    let type_span = source
+                        .tree()
+                        .node(type_node)
+                        .ok_or(AnalysisError::Invariant)?
+                        .span();
+                    if !generic_by_span.contains_key(type_span) {
                         continue;
                     }
-                    for usage in declared_uses(source.tree(), type_node, &references)? {
+                    for usage in
+                        declared_uses(source.tree(), type_node, &references, &generic_by_span)?
+                    {
                         if symbol_by_id.get(&usage.target).is_some_and(|symbol| {
                             matches!(symbol.kind, SymbolKind::Struct | SymbolKind::Enum)
                         }) {
+                            let preserves_owner_arguments = usage.target != owner.id
+                                || expected_self.as_ref().is_none_or(|expected| {
+                                    usage.expression.as_ref() == Some(expected)
+                                });
                             graph.entry(owner.id).or_default().push(TypeEdge {
                                 target: usage.target,
                                 guarded: usage.guarded,
+                                preserves_owner_arguments,
                                 span: usage.span,
                             });
                         }
@@ -448,6 +566,13 @@ fn check_recursive_declarations(
                     diagnostics.push(type_diagnostic(
                         "recursive-enum",
                         "an enum payload recursively contains its declaring enum",
+                        edge.span.clone(),
+                        [("canonical_path", owner_symbol.path.as_str())],
+                    )?);
+                } else if !edge.preserves_owner_arguments {
+                    diagnostics.push(type_diagnostic(
+                        "polymorphic-recursion",
+                        "a recursive generic declaration changes its own type arguments",
                         edge.span.clone(),
                         [("canonical_path", owner_symbol.path.as_str())],
                     )?);
@@ -472,12 +597,30 @@ fn check_recursive_declarations(
     Ok(())
 }
 
+/// Builds the only regular self-application admitted for one generic owner.
+fn generic_self_application(
+    owner: &Symbol,
+    binder: &TypeBinder,
+) -> Result<TypeExpression, AnalysisError> {
+    let arguments = binder
+        .parameters
+        .iter()
+        .map(|parameter| {
+            TypeExpression::parameter(binder.depth, parameter.ordinal, u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    TypeExpression::declared(owner.path.clone(), arguments, u64::MAX)
+        .map_err(|_| AnalysisError::Invariant)
+}
+
 /// Collects declared references under one annotation with explicit guard
 /// state propagated through Option and List nodes.
 fn declared_uses(
     tree: &SyntaxTree,
     root: NodeId,
     references: &BTreeMap<SourceSpan, SymbolId>,
+    generic_by_span: &BTreeMap<SourceSpan, &TypeExpression>,
 ) -> Result<Vec<DeclaredUse>, AnalysisError> {
     let mut uses = Vec::new();
     let mut work = vec![(root, false)];
@@ -494,6 +637,7 @@ fn declared_uses(
                         uses.push(DeclaredUse {
                             target,
                             guarded,
+                            expression: generic_by_span.get(node.span()).copied().cloned(),
                             span: child_node.span().clone(),
                         });
                     }
@@ -662,11 +806,16 @@ fn check_entry_and_field_defaults(
     sources: &[ParsedSource],
     structure: &PackageStructure,
     facts: &[BTreeMap<NodeId, TypeFact>],
+    generic_types: &[GenericTypeFact],
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let root_main = structure.symbols().iter().find(|symbol| {
         symbol.path.as_str() == "crate::main" && symbol.kind == SymbolKind::Function
     });
+    let generic_by_span = generic_types
+        .iter()
+        .map(|fact| (fact.span.clone(), fact))
+        .collect::<BTreeMap<_, _>>();
 
     for (source_index, source) in sources.iter().enumerate() {
         let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
@@ -707,20 +856,37 @@ fn check_entry_and_field_defaults(
                     }) else {
                         return Err(AnalysisError::Invariant);
                     };
-                    let Some(fact) = resolved.get(&type_node) else {
-                        continue;
-                    };
-                    if has_direct_punctuation(
+                    if !has_direct_punctuation(
                         source.tree(),
                         node,
                         gantry_frontend::Punctuation::Equal,
-                    ) && !field_default_matches(source.tree(), node, &fact.descriptor)?
+                    ) {
+                        continue;
+                    }
+                    let type_node_syntax = source
+                        .tree()
+                        .node(type_node)
+                        .ok_or(AnalysisError::Invariant)?;
+                    let (matches, display_type) = if let Some(fact) = resolved.get(&type_node) {
+                        (
+                            field_default_matches(source.tree(), node, &fact.descriptor)?,
+                            fact.descriptor.canonical_string(),
+                        )
+                    } else if let Some(fact) = generic_by_span.get(type_node_syntax.span()).copied()
                     {
+                        (
+                            open_field_default_matches(source.tree(), node, &fact.expression)?,
+                            fact.expression.as_str().to_owned(),
+                        )
+                    } else {
+                        continue;
+                    };
+                    if !matches {
                         diagnostics.push(type_diagnostic(
                             "invalid-field-default",
                             "a field default does not exactly match its declared type",
                             node.span().clone(),
-                            [("type", fact.descriptor.canonical_string())],
+                            [("type", display_type)],
                         )?);
                     }
                 }
@@ -729,6 +895,25 @@ fn check_entry_and_field_defaults(
         }
     }
     Ok(())
+}
+
+/// Checks the only field default that is valid independently of an open substitution.
+fn open_field_default_matches(
+    tree: &SyntaxTree,
+    field: &gantry_frontend::SyntaxNode,
+    declared: &TypeExpression,
+) -> Result<bool, AnalysisError> {
+    let is_none = field
+        .children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .any(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "None"
+            )
+        });
+    Ok(is_none && declared.as_str().starts_with("Option<"))
 }
 
 fn field_default_matches(
@@ -902,11 +1087,14 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use gantry_core::portable::FrontendResourceCode;
-    use gantry_core::source::SourceLimits;
+    use gantry_core::source::{FrontendLimits, SourceLimits};
     use gantry_frontend::validate_package_syntax;
     use gantry_ir::ArtifactLimits;
 
-    use super::{analyze_package_types, analyze_package_types_with_artifact_limits};
+    use super::{
+        analyze_package_types, analyze_package_types_with_artifact_limits,
+        analyze_package_types_with_limits,
+    };
     use crate::{AnalysisError, AnalysisStatus};
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -1425,6 +1613,291 @@ fn main(flag: Bool) -> Int {
     }
 
     #[test]
+    fn generic_self_recursion_must_preserve_parameter_ordinals() {
+        let regular = analyze("struct Node<T> { value: T, next: Option<Node<T>> }\nfn main() {}");
+        assert_eq!(
+            regular.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            regular.diagnostics()
+        );
+
+        let changing = analyze(
+            "struct Changing<T> { next: Option<Changing<List<T>>> }\nstruct Reordered<T,U> { next: Option<Reordered<U,T>> }\nfn main() {}",
+        );
+        assert_eq!(changing.status(), AnalysisStatus::Invalid);
+        assert_eq!(
+            changing
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "polymorphic-recursion")
+                .count(),
+            2,
+            "{:?}",
+            changing.diagnostics()
+        );
+    }
+
+    #[test]
+    fn generic_instantiations_charge_unique_closed_applications_once() {
+        let phase = syntax(
+            "struct Envelope<T> { value: T }\nfn first(value: Envelope<String>) {}\nfn second(value: Envelope<String>) {}\nfn third(value: Envelope<Int>) {}\nfn main() {}",
+        );
+        let admitted = analyze_package_types_with_limits(&phase, generic_limits(2))
+            .unwrap_or_else(|error| panic!("at-limit analysis failed: {error:?}"));
+        assert_eq!(admitted.status(), AnalysisStatus::Valid);
+
+        let rejected = analyze_package_types_with_limits(&phase, generic_limits(1));
+        assert!(matches!(
+            rejected,
+            Err(AnalysisError::ResourceLimit { error, .. })
+                if error.code == FrontendResourceCode::GenericInstantiationLimit
+        ));
+    }
+
+    #[test]
+    fn sealed_declaration_bounds_are_proved_after_complete_substitution() {
+        let accepted = analyze(
+            "struct Envelope<T> where T: Equatable { value: T }\nfn inspect(value: Envelope<String>) {}\nfn main() {}",
+        );
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            accepted.diagnostics()
+        );
+
+        let rejected = analyze(
+            "struct Envelope<T> where T: Equatable { value: T }\nfn inspect(value: Envelope<Decision>) {}\nfn main() {}",
+        );
+        assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+        assert!(rejected.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unsatisfied-bound"
+                && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("Equatable")
+        }));
+
+        let phase = syntax(
+            "struct Envelope<T> where T: Equatable { value: T }\nfn inspect(value: Envelope<String>) {}\nfn main() {}",
+        );
+        let at_limit = analyze_package_types_with_limits(&phase, trait_limits(3))
+            .unwrap_or_else(|error| panic!("at-limit analysis failed: {error:?}"));
+        assert_eq!(at_limit.status(), AnalysisStatus::Valid);
+        assert!(matches!(
+            analyze_package_types_with_limits(&phase, trait_limits(2)),
+            Err(AnalysisError::ResourceLimit { error, .. })
+                if error.code == FrontendResourceCode::TraitResolutionStepLimit
+        ));
+    }
+
+    #[test]
+    fn generic_declarations_reject_reserved_capability_names_and_duplicate_predicates() {
+        let reserved = analyze("trait Equatable { pure fn same(self); }\nfn main() {}");
+        assert_eq!(reserved.status(), AnalysisStatus::Invalid);
+        assert!(
+            reserved
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "sealed-trait-implementation")
+        );
+
+        let duplicate = analyze(
+            "struct Envelope<T> where T: Equatable, T: Equatable { value: T }\nfn main() {}",
+        );
+        assert_eq!(duplicate.status(), AnalysisStatus::Invalid);
+        assert!(
+            duplicate
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "duplicate-where-predicate")
+        );
+    }
+
+    #[test]
+    fn recursive_capability_proofs_are_structural_and_order_independent() {
+        for source in [
+            "struct Node<T> { value: T, next: Option<Node<T>> }\nstruct Envelope<T> where T: Equatable { value: T }\nfn inspect(value: Envelope<Node<String>>) {}\nfn main() {}",
+            "struct Envelope<T> where T: Equatable { value: T }\nstruct Node<T> { value: T, next: Option<Node<T>> }\nfn inspect(value: Envelope<Node<String>>) {}\nfn main() {}",
+        ] {
+            let package = analyze(source);
+            assert_eq!(
+                package.status(),
+                AnalysisStatus::Valid,
+                "{:?}",
+                package.diagnostics()
+            );
+        }
+
+        let excluded = analyze(
+            "struct Node<T> { value: T, next: Option<Node<T>> }\nstruct Envelope<T> where T: Equatable { value: T }\nfn inspect(value: Envelope<Node<Decision>>) {}\nfn main() {}",
+        );
+        assert_eq!(excluded.status(), AnalysisStatus::Invalid);
+        assert_eq!(
+            excluded
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "unsatisfied-bound")
+                .count(),
+            1,
+            "{:?}",
+            excluded.diagnostics()
+        );
+    }
+
+    #[test]
+    fn generic_field_defaults_must_hold_for_every_substitution() {
+        let accepted = analyze("struct Envelope<T> { value: Option<T> = None }\nfn main() {}");
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            accepted.diagnostics()
+        );
+
+        let rejected = analyze("struct Envelope<T> { value: T = \"not universal\" }\nfn main() {}");
+        assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-field-default")
+        );
+    }
+
+    #[test]
+    fn generic_enum_constructors_and_patterns_use_substituted_payloads() {
+        let package = analyze(
+            "enum State<T,E> { Ready(T), Failed(E) }\nfn main() -> String { let state: State<String,Int> = State::<String,Int>::Ready(\"ok\"); match state { State::<String,Int>::Ready(value) => value, State::<String,Int>::Failed(_) => \"failed\", } }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+
+        let wrong_payload = analyze(
+            "enum State<T,E> { Ready(T), Failed(E) }\nfn main() { let state: State<String,Int> = State::<String,Int>::Ready(1); discard state; }",
+        );
+        assert_eq!(wrong_payload.status(), AnalysisStatus::Invalid);
+        assert!(wrong_payload.diagnostics().iter().any(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "aggregate-member-type" | "type-mismatch"
+            )
+        }));
+
+        let incomplete = analyze(
+            "enum State<T,E> { Ready(T), Failed(E) }\nfn main(value: State<String,Int>) -> String { match value { State::<String,Int>::Ready(item) => item, } }",
+        );
+        assert_eq!(incomplete.status(), AnalysisStatus::Invalid);
+        assert!(
+            incomplete
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "nonexhaustive-match")
+        );
+    }
+
+    #[test]
+    fn generic_struct_constructors_require_one_complete_substitution() {
+        for source in [
+            "struct Envelope<T> { value: T }\nfn main() { let explicit: Envelope<String> = Envelope::<String> { value: \"ok\" }; discard explicit; }",
+            "struct Envelope<T> { value: T }\nfn main() { let expected: Envelope<String> = Envelope { value: \"ok\" }; discard expected; }",
+            "struct Envelope<T> { value: T }\nfn main() { discard Envelope { value: \"ok\" }; }",
+        ] {
+            let package = analyze(source);
+            assert_eq!(
+                package.status(),
+                AnalysisStatus::Valid,
+                "{:?}",
+                package.diagnostics()
+            );
+        }
+
+        let wrong = analyze(
+            "struct Envelope<T> { value: T }\nfn main() { let value: Envelope<String> = Envelope::<String> { value: 1 }; discard value; }",
+        );
+        assert_eq!(wrong.status(), AnalysisStatus::Invalid);
+        assert!(wrong.diagnostics().iter().any(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "aggregate-member-type" | "type-mismatch"
+            )
+        }));
+    }
+
+    #[test]
+    fn inferred_substitutions_obey_constructed_type_depth_policy() {
+        let phase = syntax(
+            "fn wrap<T>(value: T) -> List<T> { [value] }\nfn main(value: List<List<String>>) { discard wrap(value); }",
+        );
+        let admitted = analyze_package_types_with_limits(&phase, depth_limits(4))
+            .unwrap_or_else(|error| panic!("at-limit analysis failed: {error:?}"));
+        assert_eq!(admitted.status(), AnalysisStatus::Valid);
+
+        assert!(matches!(
+            analyze_package_types_with_limits(&phase, depth_limits(3)),
+            Err(AnalysisError::ResourceLimit { error, .. })
+                if error.code == FrontendResourceCode::ConstructedTypeDepthLimit
+                    && error.observed == Some(4)
+        ));
+    }
+
+    fn generic_limits(maximum_generic_instantiations: u64) -> FrontendLimits {
+        FrontendLimits::new(
+            4,
+            65_536,
+            65_536,
+            65_536,
+            64,
+            65_536,
+            65_536,
+            65_536,
+            65_536,
+            64,
+            maximum_generic_instantiations,
+            65_536,
+        )
+        .unwrap_or_else(|_| unreachable!("positive limits"))
+    }
+
+    fn depth_limits(maximum_constructed_type_depth: u64) -> FrontendLimits {
+        FrontendLimits::new(
+            4,
+            65_536,
+            65_536,
+            65_536,
+            64,
+            65_536,
+            65_536,
+            65_536,
+            65_536,
+            maximum_constructed_type_depth,
+            65_536,
+            65_536,
+        )
+        .unwrap_or_else(|_| unreachable!("positive limits"))
+    }
+
+    fn trait_limits(maximum_trait_resolution_steps: u64) -> FrontendLimits {
+        FrontendLimits::new(
+            4,
+            65_536,
+            65_536,
+            65_536,
+            64,
+            65_536,
+            65_536,
+            65_536,
+            65_536,
+            64,
+            65_536,
+            maximum_trait_resolution_steps,
+        )
+        .unwrap_or_else(|_| unreachable!("positive limits"))
+    }
+
+    #[test]
     fn invalid_options_cycles_and_sealed_boundaries_are_diagnosed() {
         let package = analyze(
             "struct Bad { value: Option<Unit> }\nstruct Left { right: Right }\nstruct Right { left: Left }\nenum Recursive { Next(Recursive) }\nfn main(value: Decision) -> OperationError { value }",
@@ -1573,6 +2046,54 @@ fn main(flag: Bool) -> Int {
                 .diagnostics()
                 .iter()
                 .any(|diagnostic| diagnostic.code.as_str() == "call-argument-type")
+        );
+    }
+
+    #[test]
+    fn generic_workflow_calls_require_one_complete_exact_substitution() {
+        for source in [
+            "fn preserve<T>(value: T) -> T { value } fn main() -> String { preserve(\"value\") }",
+            "fn preserve<T>(value: T) -> T { value } fn main() -> String { preserve::<String>(\"value\") }",
+            "fn make<T>() -> T { make::<T>() } fn main() -> String { make() }",
+        ] {
+            let package = analyze(source);
+            assert_eq!(
+                package.status(),
+                AnalysisStatus::Valid,
+                "{:?}",
+                package.diagnostics()
+            );
+        }
+
+        let incomplete = analyze("fn make<T>() -> T { make::<T>() } fn main() { discard make(); }");
+        assert_eq!(incomplete.status(), AnalysisStatus::Invalid);
+        assert!(
+            incomplete
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| { diagnostic.code.as_str() == "incomplete-type-inference" })
+        );
+
+        let conflicting = analyze(
+            "fn choose<T>(left: T, right: T) -> T { left } fn main() { discard choose(1, \"bad\"); }",
+        );
+        assert_eq!(conflicting.status(), AnalysisStatus::Invalid);
+        assert!(
+            conflicting
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| { diagnostic.code.as_str() == "conflicting-type-inference" })
+        );
+
+        let explicit_arity = analyze(
+            "fn preserve<T>(value: T) -> T { value } fn main() { discard preserve::<String,Int>(\"value\"); }",
+        );
+        assert_eq!(explicit_arity.status(), AnalysisStatus::Invalid);
+        assert!(
+            explicit_arity
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| { diagnostic.code.as_str() == "type-argument-arity" })
         );
     }
 

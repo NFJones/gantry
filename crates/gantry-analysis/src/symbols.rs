@@ -324,6 +324,22 @@ fn collect_package_items(
                 continue;
             };
             let (name, span) = declaration_name(tree, child)?;
+            if kind == SymbolKind::Trait
+                && matches!(
+                    name.as_ref(),
+                    "Equatable" | "Interpolatable" | "ExternalValue"
+                )
+            {
+                diagnostics.push(diagnostic(
+                    "sealed-trait-implementation",
+                    DiagnosticSeverity::Error,
+                    DiagnosticCategory::Type,
+                    "a compiler-owned capability name cannot be declared by source",
+                    Some(span.clone()),
+                    Vec::new(),
+                    [("capability", name.as_ref())],
+                )?);
+            }
             let path_text = join_module_path(&context.path, &name);
             let path = CanonicalPath::new(&path_text).map_err(|_| AnalysisError::Invariant)?;
             drafts.push(ItemDraft {
@@ -1060,6 +1076,17 @@ fn check_statement_references(
         if node_id != statement && matches!(node.form(), SyntaxForm::Block | SyntaxForm::MatchArm) {
             continue;
         }
+        if matches!(
+            node.form(),
+            SyntaxForm::ValueType
+                | SyntaxForm::TypeArgumentList
+                | SyntaxForm::TypeParameterList
+                | SyntaxForm::TraitReference
+                | SyntaxForm::WhereClause
+                | SyntaxForm::WherePredicate
+        ) {
+            continue;
+        }
         if matches!(node.form(), SyntaxForm::Path) {
             let path = parse_path(tree, node_id)?;
             if path.root == PathRoot::Relative
@@ -1550,6 +1577,10 @@ fn path_requires_package_item(
     if path.root != PathRoot::Relative || path.segments.len() > 1 {
         return Ok(true);
     }
+    let name = path.segments.first().ok_or(AnalysisError::Invariant)?;
+    if is_in_scope_type_parameter(tree, node, parents, name)? {
+        return Ok(false);
+    }
     let mut current = parents.get(node.index()).copied().flatten();
     while let Some(parent) = current {
         let form = tree.node(parent).ok_or(AnalysisError::Invariant)?.form();
@@ -1564,6 +1595,44 @@ fn path_requires_package_item(
         }
         if matches!(form, SyntaxForm::Expression | SyntaxForm::Block) {
             break;
+        }
+        current = parents.get(parent.index()).copied().flatten();
+    }
+    Ok(false)
+}
+
+/// Returns whether one unqualified path names a parameter of an enclosing
+/// generic declaration rather than a package item.
+fn is_in_scope_type_parameter(
+    tree: &SyntaxTree,
+    node: NodeId,
+    parents: &[Option<NodeId>],
+    name: &str,
+) -> Result<bool, AnalysisError> {
+    let mut current = parents.get(node.index()).copied().flatten();
+    while let Some(parent) = current {
+        let owner = tree.node(parent).ok_or(AnalysisError::Invariant)?;
+        if matches!(
+            owner.form(),
+            SyntaxForm::StructDeclaration
+                | SyntaxForm::EnumDeclaration
+                | SyntaxForm::TraitDeclaration
+                | SyntaxForm::FunctionDeclaration
+                | SyntaxForm::ImplDeclaration
+                | SyntaxForm::MethodDeclaration
+                | SyntaxForm::TraitMethodDeclaration
+        ) {
+            let parameter_list = owner.children().iter().copied().find(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::TypeParameterList))
+            });
+            if let Some(parameter_list) = parameter_list
+                && direct_identifiers(tree, parameter_list)?
+                    .iter()
+                    .any(|(parameter, _)| parameter.as_ref() == name)
+            {
+                return Ok(true);
+            }
         }
         current = parents.get(parent.index()).copied().flatten();
     }
@@ -1657,6 +1726,7 @@ fn item_kind(form: &SyntaxForm) -> Option<SymbolKind> {
         SyntaxForm::ModuleDeclaration => SymbolKind::Module,
         SyntaxForm::StructDeclaration => SymbolKind::Struct,
         SyntaxForm::EnumDeclaration => SymbolKind::Enum,
+        SyntaxForm::TraitDeclaration => SymbolKind::Trait,
         SyntaxForm::FunctionDeclaration => SymbolKind::Function,
         SyntaxForm::ActionDeclaration => SymbolKind::Action,
         _ => return None,

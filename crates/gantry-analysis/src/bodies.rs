@@ -8,15 +8,19 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use gantry_core::portable::{DiagnosticCategory, DiagnosticSeverity};
+use gantry_core::portable::{
+    DiagnosticCategory, DiagnosticSeverity, FrontendResourceCode, GenericAnalysisCode,
+};
 use gantry_core::source::{
-    DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, SourceSpan, StructuredDiagnostic,
+    DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, FrontendResourceLimit, SourceSpan,
+    StructuredDiagnostic,
 };
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
-use gantry_ir::TypeDescriptor;
 use gantry_ir::generated::TypeKind;
+use gantry_ir::{CanonicalPath, TypeDescriptor, TypeDescriptorError, TypeExpression};
 
-use crate::{AnalysisError, PackageStructure, SymbolId, TypeFact};
+use crate::generics::{ExactTypeSubstitution, TypeInferenceFailure, TypeParameterKey};
+use crate::{AnalysisError, GenericTypeFact, PackageStructure, SymbolId, TypeBinder, TypeFact};
 
 #[derive(Clone, Debug)]
 struct BlockResult {
@@ -40,6 +44,13 @@ struct CallableSignature {
 }
 
 #[derive(Clone, Debug)]
+struct GenericCallableSignature {
+    required: Vec<TypeParameterKey>,
+    parameters: Vec<TypeExpression>,
+    result: TypeExpression,
+}
+
+#[derive(Clone, Debug)]
 struct StructFieldShape {
     ty: TypeDescriptor,
     required: bool,
@@ -52,19 +63,44 @@ struct StructShape {
 }
 
 #[derive(Clone, Debug)]
+struct GenericStructFieldShape {
+    ty: TypeExpression,
+    required: bool,
+}
+
+#[derive(Clone, Debug)]
+struct GenericStructShape {
+    path: CanonicalPath,
+    required: Vec<TypeParameterKey>,
+    fields: BTreeMap<Arc<str>, GenericStructFieldShape>,
+}
+
+#[derive(Clone, Debug)]
 struct EnumShape {
     descriptor: TypeDescriptor,
     variants: BTreeMap<Arc<str>, Option<TypeDescriptor>>,
 }
 
 #[derive(Clone, Debug)]
+struct GenericEnumShape {
+    path: CanonicalPath,
+    required: Vec<TypeParameterKey>,
+    variants: BTreeMap<Arc<str>, Option<TypeExpression>>,
+}
+
+#[derive(Clone, Debug)]
 struct BodyContext {
     callables: BTreeMap<SymbolId, CallableSignature>,
+    generic_callables: BTreeMap<SymbolId, GenericCallableSignature>,
+    generic_types: BTreeMap<SourceSpan, TypeExpression>,
+    maximum_constructed_type_depth: Option<u64>,
     actions: BTreeMap<SymbolId, CallableSignature>,
     methods: BTreeMap<(TypeDescriptor, Arc<str>), CallableSignature>,
     references: BTreeMap<SourceSpan, SymbolId>,
     structs: BTreeMap<SymbolId, StructShape>,
+    generic_structs: BTreeMap<SymbolId, GenericStructShape>,
     enums: BTreeMap<SymbolId, EnumShape>,
+    generic_enums: BTreeMap<SymbolId, GenericEnumShape>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
 }
 
@@ -73,7 +109,10 @@ type PatternAnalysis = (BTreeSet<String>, BTreeMap<Arc<str>, TypeDescriptor>);
 fn build_body_context(
     sources: &[ParsedSource],
     facts: &[BTreeMap<NodeId, TypeFact>],
+    generic_facts: &[GenericTypeFact],
+    binders: &[TypeBinder],
     structure: &PackageStructure,
+    maximum_constructed_type_depth: Option<u64>,
 ) -> Result<BodyContext, AnalysisError> {
     let symbols_by_span = structure
         .symbols()
@@ -90,11 +129,22 @@ fn build_body_context(
         .iter()
         .map(|reference| (reference.span.clone(), reference.target))
         .collect::<BTreeMap<_, _>>();
+    let generic_by_span = generic_facts
+        .iter()
+        .map(|fact| (fact.span.clone(), fact))
+        .collect::<BTreeMap<_, _>>();
+    let binders_by_declaration = binders
+        .iter()
+        .map(|binder| (binder.declaration.clone(), binder))
+        .collect::<BTreeMap<_, _>>();
     let mut callables = BTreeMap::new();
+    let mut generic_callables = BTreeMap::new();
     let mut actions = BTreeMap::new();
     let mut methods = BTreeMap::new();
     let mut structs = BTreeMap::new();
+    let mut generic_structs = BTreeMap::new();
     let mut enums = BTreeMap::new();
+    let mut generic_enums = BTreeMap::new();
     for (source_index, source) in sources.iter().enumerate() {
         let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
         for node in source.tree().nodes() {
@@ -106,6 +156,56 @@ fn build_body_context(
             };
             match node.form() {
                 SyntaxForm::FunctionDeclaration => {
+                    if let Some(binder) = binders_by_declaration.get(node.span()).copied() {
+                        let parameters = node
+                            .children()
+                            .iter()
+                            .copied()
+                            .filter_map(|child| {
+                                let parameter = source.tree().node(child)?;
+                                matches!(parameter.form(), SyntaxForm::Parameter)
+                                    .then_some(parameter)
+                            })
+                            .filter_map(|parameter| {
+                                direct_child_form(source.tree(), parameter, SyntaxForm::ValueType)
+                            })
+                            .filter_map(|type_node| source.tree().node(type_node))
+                            .filter_map(|type_node| generic_by_span.get(type_node.span()))
+                            .map(|fact| fact.expression.clone())
+                            .collect::<Vec<_>>();
+                        let result = node
+                            .children()
+                            .iter()
+                            .copied()
+                            .rfind(|child| {
+                                source.tree().node(*child).is_some_and(|node| {
+                                    matches!(node.form(), SyntaxForm::ValueType)
+                                })
+                            })
+                            .and_then(|type_node| source.tree().node(type_node))
+                            .and_then(|type_node| generic_by_span.get(type_node.span()))
+                            .map(|fact| fact.expression.clone())
+                            .unwrap_or(
+                                TypeExpression::closed(&TypeDescriptor::UNIT, u64::MAX)
+                                    .map_err(|_| AnalysisError::Invariant)?,
+                            );
+                        generic_callables.insert(
+                            symbol.id,
+                            GenericCallableSignature {
+                                required: binder
+                                    .parameters
+                                    .iter()
+                                    .map(|parameter| TypeParameterKey {
+                                        binder_depth: binder.depth,
+                                        ordinal: parameter.ordinal,
+                                    })
+                                    .collect(),
+                                parameters,
+                                result,
+                            },
+                        );
+                        continue;
+                    }
                     let parameters = node
                         .children()
                         .iter()
@@ -162,6 +262,53 @@ fn build_body_context(
                     actions.insert(symbol.id, CallableSignature { parameters, result });
                 }
                 SyntaxForm::StructDeclaration => {
+                    if let Some(binder) = binders_by_declaration.get(node.span()).copied() {
+                        let mut fields = BTreeMap::new();
+                        for child in node.children().iter().copied() {
+                            let field =
+                                source.tree().node(child).ok_or(AnalysisError::Invariant)?;
+                            if !matches!(field.form(), SyntaxForm::StructField) {
+                                continue;
+                            }
+                            let Some(name) = direct_identifier(source.tree(), child)? else {
+                                return Err(AnalysisError::Invariant);
+                            };
+                            let type_node =
+                                direct_child_form(source.tree(), field, SyntaxForm::ValueType)
+                                    .and_then(|type_node| source.tree().node(type_node))
+                                    .ok_or(AnalysisError::Invariant)?;
+                            let ty = generic_by_span
+                                .get(type_node.span())
+                                .map(|fact| fact.expression.clone())
+                                .ok_or(AnalysisError::Invariant)?;
+                            let has_default = field.children().iter().copied().any(|part| {
+                                node_contains_punctuation(source.tree(), part, Punctuation::Equal)
+                            });
+                            fields.insert(
+                                name,
+                                GenericStructFieldShape {
+                                    required: !has_default && !ty.as_str().starts_with("Option<"),
+                                    ty,
+                                },
+                            );
+                        }
+                        generic_structs.insert(
+                            symbol.id,
+                            GenericStructShape {
+                                path: symbol.path.clone(),
+                                required: binder
+                                    .parameters
+                                    .iter()
+                                    .map(|parameter| TypeParameterKey {
+                                        binder_depth: binder.depth,
+                                        ordinal: parameter.ordinal,
+                                    })
+                                    .collect(),
+                                fields,
+                            },
+                        );
+                        continue;
+                    }
                     let mut fields = BTreeMap::new();
                     for child in node.children().iter().copied() {
                         let field = source.tree().node(child).ok_or(AnalysisError::Invariant)?;
@@ -200,6 +347,41 @@ fn build_body_context(
                     );
                 }
                 SyntaxForm::EnumDeclaration => {
+                    if let Some(binder) = binders_by_declaration.get(node.span()).copied() {
+                        let mut variants = BTreeMap::new();
+                        for child in node.children().iter().copied() {
+                            let variant =
+                                source.tree().node(child).ok_or(AnalysisError::Invariant)?;
+                            if !matches!(variant.form(), SyntaxForm::EnumVariant) {
+                                continue;
+                            }
+                            let Some(name) = direct_identifier(source.tree(), child)? else {
+                                return Err(AnalysisError::Invariant);
+                            };
+                            let payload =
+                                direct_child_form(source.tree(), variant, SyntaxForm::ValueType)
+                                    .and_then(|type_node| source.tree().node(type_node))
+                                    .and_then(|type_node| generic_by_span.get(type_node.span()))
+                                    .map(|fact| fact.expression.clone());
+                            variants.insert(name, payload);
+                        }
+                        generic_enums.insert(
+                            symbol.id,
+                            GenericEnumShape {
+                                path: symbol.path.clone(),
+                                required: binder
+                                    .parameters
+                                    .iter()
+                                    .map(|parameter| TypeParameterKey {
+                                        binder_depth: binder.depth,
+                                        ordinal: parameter.ordinal,
+                                    })
+                                    .collect(),
+                                variants,
+                            },
+                        );
+                        continue;
+                    }
                     let mut variants = BTreeMap::new();
                     for child in node.children().iter().copied() {
                         let variant = source.tree().node(child).ok_or(AnalysisError::Invariant)?;
@@ -290,11 +472,19 @@ fn build_body_context(
     }
     Ok(BodyContext {
         callables,
+        generic_callables,
+        generic_types: generic_facts
+            .iter()
+            .map(|fact| (fact.span.clone(), fact.expression.clone()))
+            .collect(),
+        maximum_constructed_type_depth,
         actions,
         methods,
         references,
         structs,
+        generic_structs,
         enums,
+        generic_enums,
         expression_types: RefCell::new(BTreeMap::new()),
     })
 }
@@ -303,10 +493,20 @@ fn build_body_context(
 pub(crate) fn check_package_bodies(
     sources: &[ParsedSource],
     facts: &[BTreeMap<NodeId, TypeFact>],
+    generic_facts: &[GenericTypeFact],
+    binders: &[TypeBinder],
     structure: &PackageStructure,
+    maximum_constructed_type_depth: Option<u64>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Vec<BTreeMap<NodeId, TypeDescriptor>>, AnalysisError> {
-    let context = build_body_context(sources, facts, structure)?;
+    let context = build_body_context(
+        sources,
+        facts,
+        generic_facts,
+        binders,
+        structure,
+        maximum_constructed_type_depth,
+    )?;
     let mut expression_types = Vec::with_capacity(sources.len());
     for (source_index, source) in sources.iter().enumerate() {
         let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
@@ -315,6 +515,9 @@ pub(crate) fn check_package_bodies(
                 node.form(),
                 SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
             ) {
+                continue;
+            }
+            if direct_child_form(source.tree(), node, SyntaxForm::TypeParameterList).is_some() {
                 continue;
             }
             check_callable(
@@ -888,7 +1091,7 @@ fn check_match_statement(
             [] as [(&str, &str); 0],
         )?);
     }
-    let universe = coverage_universe(&scrutinee_type, context);
+    let universe = coverage_universe(&scrutinee_type, context)?;
     let mut covered = BTreeSet::new();
     let mut any_fallthrough = false;
     for arm in statement.children().iter().copied().filter(|child| {
@@ -1544,12 +1747,39 @@ fn infer_expression(
         diagnostics,
     )?;
     if let Some(ty) = &inferred {
+        check_inferred_type_depth(ty, context.maximum_constructed_type_depth)?;
         context
             .expression_types
             .borrow_mut()
             .insert(expression, ty.clone());
     }
     Ok(inferred)
+}
+
+fn check_inferred_type_depth(
+    descriptor: &TypeDescriptor,
+    maximum_constructed_type_depth: Option<u64>,
+) -> Result<(), AnalysisError> {
+    let Some(maximum_constructed_type_depth) = maximum_constructed_type_depth else {
+        return Ok(());
+    };
+    match TypeDescriptor::from_canonical_string_with_depth_limit(
+        &descriptor.canonical_string(),
+        maximum_constructed_type_depth,
+    ) {
+        Ok(_) => Ok(()),
+        Err(TypeDescriptorError::ConstructedTypeDepth { limit, observed }) => {
+            Err(AnalysisError::ResourceLimit {
+                error: FrontendResourceLimit {
+                    code: FrontendResourceCode::ConstructedTypeDepthLimit,
+                    limit,
+                    observed: Some(observed),
+                },
+                diagnostics: Vec::new(),
+            })
+        }
+        Err(_) => Err(AnalysisError::Invariant),
+    }
 }
 
 fn infer_expression_inner(
@@ -1685,6 +1915,7 @@ fn infer_expression_inner(
             struct_expression,
             facts,
             environment,
+            expected,
             context,
             diagnostics,
         );
@@ -1714,9 +1945,15 @@ fn infer_expression_inner(
             diagnostics,
         );
     }
-    if let Some(value) =
-        infer_enum_constructor(tree, node, facts, environment, context, diagnostics)?
-    {
+    if let Some(value) = infer_enum_constructor(
+        tree,
+        node,
+        facts,
+        environment,
+        expected,
+        context,
+        diagnostics,
+    )? {
         return Ok(Some(value));
     }
     if node.children().iter().copied().any(|child| {
@@ -1770,6 +2007,7 @@ fn infer_expression_inner(
         node.children(),
         facts,
         environment,
+        expected,
         context,
         diagnostics,
     )? {
@@ -2428,6 +2666,7 @@ fn infer_enum_constructor(
     node: &gantry_frontend::SyntaxNode,
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected: Option<&TypeDescriptor>,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
@@ -2441,14 +2680,34 @@ fn infer_enum_constructor(
     let Some(target) = context.references.get(path_node.span()).copied() else {
         return Ok(None);
     };
+    let mut direct_variant = node.children().iter().filter_map(|child| {
+        let child = tree.node(*child)?;
+        match child.form() {
+            SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.clone()),
+            _ => None,
+        }
+    });
+    let path_variant = direct_identifiers(tree, path)?.into_iter().last();
+    let Some(variant) = direct_variant.next_back().or(path_variant) else {
+        return Ok(None);
+    };
+    if let Some(template) = context.generic_enums.get(&target) {
+        return infer_generic_enum_constructor(
+            tree,
+            node,
+            facts,
+            environment,
+            expected,
+            context,
+            diagnostics,
+            template,
+            &variant,
+        );
+    }
     let Some(shape) = context.enums.get(&target) else {
         return Ok(None);
     };
-    let identifiers = direct_identifiers(tree, path)?;
-    let Some(variant) = identifiers.last() else {
-        return Ok(None);
-    };
-    let Some(payload) = shape.variants.get(variant) else {
+    let Some(payload) = shape.variants.get(&variant) else {
         return Ok(None);
     };
     let expression = direct_child_form(tree, node, SyntaxForm::Expression);
@@ -2477,12 +2736,110 @@ fn infer_enum_constructor(
     Ok(Some(shape.descriptor.clone()))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn infer_generic_enum_constructor(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected: Option<&TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+    template: &GenericEnumShape,
+    variant: &Arc<str>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let explicit = direct_child_form(tree, node, SyntaxForm::TypeArgumentList)
+        .map(|list| closed_type_arguments(tree, list, context))
+        .transpose()?;
+    let descriptor = if let Some(arguments) = explicit {
+        if arguments.len() != template.required.len() {
+            diagnostics.push(body_diagnostic(
+                GenericAnalysisCode::TypeArgumentArity.wire_name(),
+                DiagnosticCategory::Type,
+                "an enum constructor has the wrong number of explicit type arguments",
+                node.span().clone(),
+                [
+                    ("expected", template.required.len().to_string()),
+                    ("observed", arguments.len().to_string()),
+                ],
+            )?);
+            return Ok(None);
+        }
+        TypeDescriptor::declared_with_arguments(template.path.clone(), arguments)
+    } else if let Some(expected) = expected.filter(|candidate| {
+        candidate.declared_path() == Some(&template.path)
+            && candidate.immediate_members().len() == template.required.len()
+    }) {
+        expected.clone()
+    } else {
+        diagnostics.push(body_diagnostic(
+            GenericAnalysisCode::IncompleteTypeInference.wire_name(),
+            DiagnosticCategory::Type,
+            "a generic enum constructor has no complete type substitution",
+            node.span().clone(),
+            [] as [(&str, &str); 0],
+        )?);
+        return Ok(None);
+    };
+    let shape = enum_shape_for_descriptor(context, &descriptor)?.ok_or(AnalysisError::Invariant)?;
+    let Some(payload) = shape.variants.get(variant) else {
+        return Ok(None);
+    };
+    let expression = direct_child_form(tree, node, SyntaxForm::Expression);
+    if payload.is_some() != expression.is_some() {
+        diagnostics.push(body_diagnostic(
+            "invalid-enum-constructor",
+            DiagnosticCategory::Type,
+            "an enum constructor does not match its substituted variant payload shape",
+            node.span().clone(),
+            [("variant", variant.as_ref())],
+        )?);
+    }
+    if let (Some(payload), Some(expression)) = (payload, expression)
+        && let Some(actual) = infer_expression(
+            tree,
+            expression,
+            facts,
+            environment,
+            Some(payload),
+            context,
+            diagnostics,
+        )?
+    {
+        require_aggregate_member(payload, &actual, tree, expression, diagnostics)?;
+    }
+    Ok(Some(descriptor))
+}
+
+fn closed_type_arguments(
+    tree: &SyntaxTree,
+    list: NodeId,
+    context: &BodyContext,
+) -> Result<Vec<TypeDescriptor>, AnalysisError> {
+    let list = tree.node(list).ok_or(AnalysisError::Invariant)?;
+    list.children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
+        .map(|node| {
+            context
+                .generic_types
+                .get(node.span())
+                .ok_or(AnalysisError::Invariant)?
+                .to_descriptor(u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn infer_struct(
     tree: &SyntaxTree,
     node: &gantry_frontend::SyntaxNode,
     struct_expression: NodeId,
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected: Option<&TypeDescriptor>,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
@@ -2496,6 +2853,19 @@ fn infer_struct(
     let Some(target) = context.references.get(path_node.span()).copied() else {
         return Ok(None);
     };
+    if let Some(shape) = context.generic_structs.get(&target) {
+        return infer_generic_struct(
+            tree,
+            node,
+            struct_expression,
+            facts,
+            environment,
+            expected,
+            context,
+            diagnostics,
+            shape,
+        );
+    }
     let Some(shape) = context.structs.get(&target) else {
         return Ok(None);
     };
@@ -2569,6 +2939,179 @@ fn infer_struct(
         }
     }
     Ok(Some(shape.descriptor.clone()))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn infer_generic_struct(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    struct_expression: NodeId,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected: Option<&TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+    shape: &GenericStructShape,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let constructor = tree
+        .node(struct_expression)
+        .ok_or(AnalysisError::Invariant)?;
+    let mut supplied = BTreeSet::new();
+    let mut initializers = Vec::new();
+    for initializer in constructor.children().iter().copied().filter(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::FieldInitializer))
+    }) {
+        let Some(name) = direct_identifier(tree, initializer)? else {
+            return Err(AnalysisError::Invariant);
+        };
+        if !supplied.insert(name.clone()) {
+            diagnostics.push(body_diagnostic(
+                "duplicate-struct-field",
+                DiagnosticCategory::Type,
+                "a generic struct constructor supplies one field more than once",
+                tree.node(initializer)
+                    .ok_or(AnalysisError::Invariant)?
+                    .span()
+                    .clone(),
+                [("field", name.as_ref())],
+            )?);
+        }
+        if !shape.fields.contains_key(&name) {
+            diagnostics.push(body_diagnostic(
+                "unknown-struct-field",
+                DiagnosticCategory::Type,
+                "a generic struct constructor supplies an unknown field",
+                tree.node(initializer)
+                    .ok_or(AnalysisError::Invariant)?
+                    .span()
+                    .clone(),
+                [("field", name.as_ref())],
+            )?);
+            continue;
+        }
+        initializers.push((initializer, name));
+    }
+
+    let explicit = direct_child_form(tree, node, SyntaxForm::TypeArgumentList)
+        .map(|list| closed_type_arguments(tree, list, context))
+        .transpose()?;
+    let mut inferred_actuals = BTreeMap::<NodeId, TypeDescriptor>::new();
+    let substitution = if let Some(arguments) = explicit {
+        ExactTypeSubstitution::explicit(&shape.required, &arguments)
+    } else if let Some(expected) = expected.filter(|candidate| {
+        candidate.declared_path() == Some(&shape.path)
+            && candidate.immediate_members().len() == shape.required.len()
+    }) {
+        ExactTypeSubstitution::explicit(&shape.required, &expected.immediate_members())
+    } else {
+        let mut constraints = Vec::new();
+        for (initializer, name) in &initializers {
+            let field = shape.fields.get(name).ok_or(AnalysisError::Invariant)?;
+            let initializer_node = tree.node(*initializer).ok_or(AnalysisError::Invariant)?;
+            let actual = if let Some(expression) =
+                direct_child_form(tree, initializer_node, SyntaxForm::Expression)
+            {
+                infer_expression(
+                    tree,
+                    expression,
+                    facts,
+                    environment,
+                    None,
+                    context,
+                    diagnostics,
+                )?
+            } else {
+                environment.get(name).cloned()
+            };
+            if let Some(actual) = actual {
+                constraints.push((
+                    field.ty.clone(),
+                    TypeExpression::closed(&actual, u64::MAX)
+                        .map_err(|_| AnalysisError::Invariant)?,
+                ));
+                inferred_actuals.insert(*initializer, actual);
+            }
+        }
+        ExactTypeSubstitution::infer(&shape.required, &constraints)
+    };
+    let substitution = match substitution {
+        Ok(substitution) => substitution,
+        Err(error) => {
+            let code = match error {
+                TypeInferenceFailure::Arity => GenericAnalysisCode::TypeArgumentArity,
+                TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
+                    GenericAnalysisCode::ConflictingTypeInference
+                }
+                TypeInferenceFailure::Incomplete => GenericAnalysisCode::IncompleteTypeInference,
+            };
+            diagnostics.push(body_diagnostic(
+                code.wire_name(),
+                DiagnosticCategory::Type,
+                "generic struct inference did not produce one complete substitution",
+                node.span().clone(),
+                [] as [(&str, &str); 0],
+            )?);
+            return Ok(None);
+        }
+    };
+
+    for (initializer, name) in &initializers {
+        let field = shape.fields.get(name).ok_or(AnalysisError::Invariant)?;
+        let expected_field = substitution
+            .apply(&field.ty)
+            .map_err(|_| AnalysisError::Invariant)?;
+        let initializer_node = tree.node(*initializer).ok_or(AnalysisError::Invariant)?;
+        let actual = if let Some(actual) = inferred_actuals.get(initializer).cloned() {
+            Some(actual)
+        } else if let Some(expression) =
+            direct_child_form(tree, initializer_node, SyntaxForm::Expression)
+        {
+            infer_expression(
+                tree,
+                expression,
+                facts,
+                environment,
+                Some(&expected_field),
+                context,
+                diagnostics,
+            )?
+        } else {
+            environment.get(name).cloned()
+        };
+        if let Some(actual) = actual {
+            require_aggregate_member(&expected_field, &actual, tree, *initializer, diagnostics)?;
+        }
+    }
+    for (name, field) in &shape.fields {
+        if field.required && !supplied.contains(name) {
+            diagnostics.push(body_diagnostic(
+                "missing-struct-field",
+                DiagnosticCategory::Type,
+                "a generic struct constructor omits a required field",
+                constructor.span().clone(),
+                [("field", name.as_ref())],
+            )?);
+        }
+    }
+
+    let application = TypeExpression::declared(
+        shape.path.clone(),
+        shape
+            .required
+            .iter()
+            .map(|parameter| {
+                TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                    .map_err(|_| AnalysisError::Invariant)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        u64::MAX,
+    )
+    .map_err(|_| AnalysisError::Invariant)?;
+    substitution
+        .apply(&application)
+        .map(Some)
+        .map_err(|_| AnalysisError::Invariant)
 }
 
 fn infer_projection(
@@ -2714,9 +3257,15 @@ fn infer_operand_sequence(
     {
         return Ok(Some(value));
     }
-    if let Some(value) =
-        infer_call_sequence(tree, children, facts, environment, context, diagnostics)?
-    {
+    if let Some(value) = infer_call_sequence(
+        tree,
+        children,
+        facts,
+        environment,
+        None,
+        context,
+        diagnostics,
+    )? {
         return Ok(Some(value));
     }
     for child in children {
@@ -2986,6 +3535,7 @@ fn infer_call_sequence(
     children: &[NodeId],
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected_result: Option<&TypeDescriptor>,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
@@ -3011,6 +3561,20 @@ fn infer_call_sequence(
     let Some(target) = context.references.get(path.span()).copied() else {
         return Ok(None);
     };
+    if let Some(signature) = context.generic_callables.get(&target) {
+        return infer_generic_call(
+            tree,
+            children,
+            open,
+            path,
+            signature,
+            facts,
+            environment,
+            expected_result,
+            context,
+            diagnostics,
+        );
+    }
     let Some(signature) = context.callables.get(&target) else {
         if context.actions.contains_key(&target) {
             diagnostics.push(body_diagnostic(
@@ -3078,6 +3642,157 @@ fn infer_call_sequence(
         }
     }
     Ok(Some(signature.result.clone()))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn infer_generic_call(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    open: usize,
+    path: &gantry_frontend::SyntaxNode,
+    signature: &GenericCallableSignature,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected_result: Option<&TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let close = children
+        .iter()
+        .enumerate()
+        .skip(open.saturating_add(1))
+        .find(|(_, child)| node_contains_punctuation(tree, **child, Punctuation::RightParenthesis))
+        .map_or(children.len(), |(index, _)| index);
+    let arguments = children
+        .get(open.saturating_add(1)..close)
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .filter(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+        })
+        .collect::<Vec<_>>();
+    if arguments.len() != signature.parameters.len() {
+        diagnostics.push(body_diagnostic(
+            "call-arity",
+            DiagnosticCategory::Type,
+            "a generic workflow call has the wrong number of value arguments",
+            path.span().clone(),
+            [
+                ("actual", arguments.len().to_string()),
+                ("expected", signature.parameters.len().to_string()),
+            ],
+        )?);
+        return Ok(None);
+    }
+
+    let mut actual_arguments = Vec::with_capacity(arguments.len());
+    let mut constraints = Vec::with_capacity(arguments.len().saturating_add(1));
+    for (argument, template) in arguments.iter().zip(&signature.parameters) {
+        let Some(actual) = infer_expression(
+            tree,
+            *argument,
+            facts,
+            environment,
+            None,
+            context,
+            diagnostics,
+        )?
+        else {
+            return Ok(None);
+        };
+        let actual_expression =
+            TypeExpression::closed(&actual, u64::MAX).map_err(|_| AnalysisError::Invariant)?;
+        constraints.push((template.clone(), actual_expression));
+        actual_arguments.push(actual);
+    }
+    if let Some(expected) = expected_result {
+        constraints.push((
+            signature.result.clone(),
+            TypeExpression::closed(expected, u64::MAX).map_err(|_| AnalysisError::Invariant)?,
+        ));
+    }
+
+    let explicit = children
+        .get(..open)
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .find_map(|child| {
+            let node = tree.node(child)?;
+            matches!(node.form(), SyntaxForm::TypeArgumentList).then_some(node)
+        })
+        .map(|list| {
+            list.children()
+                .iter()
+                .filter_map(|child| tree.node(*child))
+                .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
+                .map(|node| {
+                    context
+                        .generic_types
+                        .get(node.span())
+                        .and_then(|expression| expression.to_descriptor(u64::MAX).ok())
+                        .ok_or(TypeInferenceFailure::Incomplete)
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose();
+
+    let substitution = match explicit {
+        Ok(Some(arguments)) => ExactTypeSubstitution::explicit(&signature.required, &arguments),
+        Ok(None) => ExactTypeSubstitution::infer(&signature.required, &constraints),
+        Err(error) => Err(error),
+    };
+    let substitution = match substitution {
+        Ok(substitution) => substitution,
+        Err(error) => {
+            let code = match error {
+                TypeInferenceFailure::Arity => GenericAnalysisCode::TypeArgumentArity,
+                TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
+                    GenericAnalysisCode::ConflictingTypeInference
+                }
+                TypeInferenceFailure::Incomplete => GenericAnalysisCode::IncompleteTypeInference,
+            };
+            diagnostics.push(body_diagnostic(
+                code.wire_name(),
+                DiagnosticCategory::Type,
+                "generic call type inference did not produce one complete substitution",
+                path.span().clone(),
+                [] as [(&str, &str); 0],
+            )?);
+            return Ok(None);
+        }
+    };
+
+    for ((argument, actual), template) in arguments
+        .iter()
+        .zip(&actual_arguments)
+        .zip(&signature.parameters)
+    {
+        let instantiated = substitution
+            .apply(template)
+            .map_err(|_| AnalysisError::Invariant)?;
+        if &instantiated != actual {
+            diagnostics.push(body_diagnostic(
+                "call-argument-type",
+                DiagnosticCategory::Type,
+                "a generic workflow argument differs from its substituted parameter type",
+                tree.node(*argument)
+                    .ok_or(AnalysisError::Invariant)?
+                    .span()
+                    .clone(),
+                [
+                    ("actual", actual.canonical_string()),
+                    ("expected", instantiated.canonical_string()),
+                ],
+            )?);
+        }
+    }
+    substitution
+        .apply(&signature.result)
+        .map(Some)
+        .map_err(|_| AnalysisError::Invariant)
 }
 
 fn direct_binary_operator(
@@ -3232,7 +3947,7 @@ fn infer_match(
             [] as [(&str, &str); 0],
         )?);
     }
-    let universe = coverage_universe(&scrutinee_type, context);
+    let universe = coverage_universe(&scrutinee_type, context)?;
     let mut covered = BTreeSet::new();
     let mut result_type = None;
     for arm in node.children().iter().copied().filter(|child| {
@@ -3320,8 +4035,11 @@ fn infer_match(
     Ok(result_type)
 }
 
-fn coverage_universe(scrutinee: &TypeDescriptor, context: &BodyContext) -> BTreeSet<String> {
-    match scrutinee.kind() {
+fn coverage_universe(
+    scrutinee: &TypeDescriptor,
+    context: &BodyContext,
+) -> Result<BTreeSet<String>, AnalysisError> {
+    Ok(match scrutinee.kind() {
         TypeKind::Option => ["none".to_owned(), "some".to_owned()].into_iter().collect(),
         TypeKind::Result => ["err".to_owned(), "ok".to_owned()].into_iter().collect(),
         TypeKind::OperationError => [
@@ -3336,14 +4054,54 @@ fn coverage_universe(scrutinee: &TypeDescriptor, context: &BodyContext) -> BTree
         .into_iter()
         .map(str::to_owned)
         .collect(),
-        TypeKind::Declared => context
-            .enums
-            .values()
-            .find(|shape| shape.descriptor == *scrutinee)
+        TypeKind::Declared => enum_shape_for_descriptor(context, scrutinee)?
+            .as_ref()
             .map(|shape| shape.variants.keys().map(ToString::to_string).collect())
             .unwrap_or_default(),
         _ => BTreeSet::new(),
+    })
+}
+
+fn enum_shape_for_descriptor(
+    context: &BodyContext,
+    descriptor: &TypeDescriptor,
+) -> Result<Option<EnumShape>, AnalysisError> {
+    if let Some(shape) = context
+        .enums
+        .values()
+        .find(|shape| shape.descriptor == *descriptor)
+    {
+        return Ok(Some(shape.clone()));
     }
+    let Some(path) = descriptor.declared_path() else {
+        return Ok(None);
+    };
+    let Some(shape) = context
+        .generic_enums
+        .values()
+        .find(|shape| shape.path == *path)
+    else {
+        return Ok(None);
+    };
+    let substitution =
+        ExactTypeSubstitution::explicit(&shape.required, &descriptor.immediate_members())
+            .map_err(|_| AnalysisError::Invariant)?;
+    let variants = shape
+        .variants
+        .iter()
+        .map(|(name, payload)| {
+            payload
+                .as_ref()
+                .map(|payload| substitution.apply(payload))
+                .transpose()
+                .map(|payload| (name.clone(), payload))
+                .map_err(|_| AnalysisError::Invariant)
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    Ok(Some(EnumShape {
+        descriptor: descriptor.clone(),
+        variants,
+    }))
 }
 
 fn pattern_coverage(
@@ -3445,10 +4203,7 @@ fn pattern_coverage(
     if scrutinee.kind() == TypeKind::Declared {
         let identifiers = direct_identifiers(tree, pattern)?;
         if identifiers.len() >= 2
-            && let Some(shape) = context
-                .enums
-                .values()
-                .find(|shape| shape.descriptor == *scrutinee)
+            && let Some(shape) = enum_shape_for_descriptor(context, scrutinee)?
             && let Some(variant) = identifiers.last()
             && let Some(payload) = shape.variants.get(variant)
         {
