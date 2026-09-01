@@ -1,0 +1,276 @@
+{
+  "format": "gantry.release-matrix/v1",
+  "overall_status": "qualified-passed",
+  "publication": {
+    "index_path": "protocol/publication/index-v1.json",
+    "publication_set_identity": "2dcfaaa7c5391fe367cf4c1b1831af30760b1302855dd9026942bdff718c3429",
+    "source_revision": "cc8c51a31bfa0d9575848a3cc952aa675135d1ff",
+    "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+  },
+  "inputs": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "9c4639919ee5c7f0f4c202357ab24dbfa1dbe26d231aa23208554243b3e4544c"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "3099a05348bdcb78d97f956d8c2862af43d187aa80ac3393917c623fe38bd9d9"
+    },
+    {
+      "path": "deny.toml",
+      "sha256": "8c44ff148d4b5c3f16bf80b58903d7f0d14c92fe6f699390e32cee39dfc3a306"
+    },
+    {
+      "path": "fuzz/Cargo.lock",
+      "sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb"
+    },
+    {
+      "path": "governance/dependency-ledger-v1.json",
+      "sha256": "c682d978d9b7ea0c5d0f6d4668cce0a24e357462da01f22b6af1756598a97f36"
+    },
+    {
+      "path": "protocol/publication/index-v1.json",
+      "sha256": "2dcfaaa7c5391fe367cf4c1b1831af30760b1302855dd9026942bdff718c3429"
+    }
+  ],
+  "environment": {
+    "architecture": "x86_64",
+    "filesystem": "ext4",
+    "host": "Linux WSL2",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "target": "x86_64-unknown-linux-gnu",
+    "sqlite": {
+      "journal_mode": "delete",
+      "power_loss_qualified": false,
+      "synchronous": 3,
+      "version": "3.53.2",
+      "vfs": "unix"
+    }
+  },
+  "feature_sets": [
+    "none",
+    "frontend",
+    "analyzer",
+    "evaluator",
+    "concurrent",
+    "durable",
+    "combined"
+  ],
+  "product_cells": [
+    {
+      "id": "linux-rust-1.91.0",
+      "os": "linux",
+      "toolchain": "1.91.0",
+      "rustc_commit": "f8297e351a40c1439a467bbbb6879088047f50b3",
+      "target": "x86_64-unknown-linux-gnu",
+      "status": "passed",
+      "claim_supported": true,
+      "feature_sets": [
+        "none",
+        "frontend",
+        "analyzer",
+        "evaluator",
+        "concurrent",
+        "durable",
+        "combined"
+      ],
+      "evidence": [
+        "cargo run --locked -p xtask -- check generated",
+        "cargo run --locked -p xtask -- check workspace",
+        "cargo run --locked -p xtask -- check governance",
+        "cargo test --locked -p gantry-conformance --test external_facade_matrix",
+        "just check",
+        "just clippy",
+        "just test"
+      ]
+    },
+    {
+      "id": "linux-rust-1.97.1",
+      "os": "linux",
+      "toolchain": "1.97.1",
+      "rustc_commit": "8bab26f4f68e0e26f0bb7960be334d5b520ea452",
+      "target": "x86_64-unknown-linux-gnu",
+      "status": "passed",
+      "claim_supported": true,
+      "feature_sets": [
+        "none",
+        "frontend",
+        "analyzer",
+        "evaluator",
+        "concurrent",
+        "durable",
+        "combined"
+      ],
+      "evidence": [
+        "cargo run --locked -p xtask -- check generated",
+        "cargo run --locked -p xtask -- check workspace",
+        "cargo run --locked -p xtask -- check governance",
+        "cargo test --locked -p gantry-conformance --test external_facade_matrix",
+        "just check",
+        "just clippy",
+        "just test"
+      ]
+    },
+    {
+      "id": "linux-rust-stable",
+      "os": "linux",
+      "toolchain": "stable",
+      "resolved_rust": "1.97.1",
+      "rustc_commit": "8bab26f4f68e0e26f0bb7960be334d5b520ea452",
+      "target": "x86_64-unknown-linux-gnu",
+      "status": "passed",
+      "claim_supported": true,
+      "feature_sets": [
+        "none",
+        "frontend",
+        "analyzer",
+        "evaluator",
+        "concurrent",
+        "durable",
+        "combined"
+      ],
+      "evidence": [
+        "cargo run --locked -p xtask -- check generated",
+        "cargo run --locked -p xtask -- check workspace",
+        "cargo run --locked -p xtask -- check governance",
+        "cargo test --locked -p gantry-conformance --test external_facade_matrix",
+        "just check",
+        "just clippy",
+        "just test"
+      ]
+    },
+    {
+      "id": "macos-rust-1.97.1",
+      "os": "macos",
+      "toolchain": "1.97.1",
+      "target": "hosted-macos-runner",
+      "status": "blocked",
+      "claim_supported": false,
+      "feature_sets": [
+        "none",
+        "frontend",
+        "analyzer",
+        "evaluator",
+        "concurrent",
+        "durable",
+        "combined"
+      ],
+      "blocker": "The active pane is Linux WSL2 and cannot execute the declared hosted macOS job; .github/workflows/ci.yml defines the exact macos-latest Rust 1.97.1 cell."
+    },
+    {
+      "id": "macos-rust-stable",
+      "os": "macos",
+      "toolchain": "stable",
+      "target": "hosted-macos-runner",
+      "status": "blocked",
+      "claim_supported": false,
+      "feature_sets": [
+        "none",
+        "frontend",
+        "analyzer",
+        "evaluator",
+        "concurrent",
+        "durable",
+        "combined"
+      ],
+      "blocker": "The active pane is Linux WSL2 and cannot execute the declared hosted macOS job; .github/workflows/ci.yml defines the exact macos-latest rolling-stable cell."
+    }
+  ],
+  "adapter_cells": [
+    {
+      "id": "linux-adapters-rust-1.91.0",
+      "toolchain": "1.91.0",
+      "status": "passed",
+      "suites": [
+        "concurrent_executor",
+        "executor_services",
+        "execution_observation",
+        "durable_events",
+        "journal_storage",
+        "sqlite_storage",
+        "publication_set",
+        "conformance_publication",
+        "external_facade_matrix",
+        "facade"
+      ]
+    },
+    {
+      "id": "linux-adapters-rust-1.97.1",
+      "toolchain": "1.97.1",
+      "status": "passed",
+      "suites": [
+        "concurrent_executor",
+        "executor_services",
+        "execution_observation",
+        "durable_events",
+        "journal_storage",
+        "sqlite_storage",
+        "publication_set",
+        "conformance_publication",
+        "external_facade_matrix",
+        "facade"
+      ]
+    },
+    {
+      "id": "linux-adapters-rust-stable",
+      "toolchain": "stable",
+      "resolved_rust": "1.97.1",
+      "status": "passed",
+      "suites": [
+        "concurrent_executor",
+        "executor_services",
+        "execution_observation",
+        "durable_events",
+        "journal_storage",
+        "sqlite_storage",
+        "publication_set",
+        "conformance_publication",
+        "external_facade_matrix",
+        "facade"
+      ]
+    }
+  ],
+  "dependency_policy": {
+    "tool": "cargo-deny",
+    "version": "0.20.2",
+    "status": "passed",
+    "checks": [
+      "advisories",
+      "bans",
+      "licenses",
+      "sources"
+    ],
+    "result": "advisories ok, bans ok, licenses ok, sources ok"
+  },
+  "fuzz": {
+    "target": "protocol_identity",
+    "toolchain": "nightly-2026-07-01",
+    "rustc": "1.98.0-nightly",
+    "rustc_commit": "f46ec5218fe7829ac18323b5ee0b409a63169f27",
+    "cargo_fuzz": "0.13.2",
+    "libfuzzer_sys": "0.4.9",
+    "runs": 2000,
+    "max_len": 256,
+    "seed": 1881717514,
+    "status": "passed",
+    "retained_inputs": [
+      {
+        "path": "fuzz/corpus/protocol_identity/invalid-uppercase",
+        "sha256": "048f8520562f51906d7c6f2952399a3ba1763704f074870712657e75afe18a3a"
+      },
+      {
+        "path": "fuzz/corpus/protocol_identity/valid-execution",
+        "sha256": "9e3889cf7c0c390808f868896f466555d19322c555a9666d4ff4670d52b7a3e0"
+      },
+      {
+        "path": "fuzz/regressions/protocol_identity/invalid-extra-separator",
+        "sha256": "2bf15749714d6d390b987624dc67da328bd03dd3639433a6b51925089b929034"
+      }
+    ]
+  },
+  "claim_limits": [
+    "No local macOS 1.97.1 result is claimed; that cell remains blocked pending hosted CI evidence.",
+    "No local macOS rolling-stable result is claimed; that cell remains blocked pending hosted CI evidence.",
+    "The Linux WSL2 ext4 run does not establish a stable-media power-loss claim; the SQLite matrix covers deterministic injected cuts and rejects unqualified strict environments."
+  ]
+}
