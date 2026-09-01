@@ -101,7 +101,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "faf37a7adff5c0ccd8fca06bc29dae65fe57b783db4ba9fa5f7efec7f4239ce8"
+      "sha256": "a6db1395a182eba6b2bb054e7d67a932d20b5e37d451c0b0ad1c126a56c63758"
     },
     {
       "path": "protocol/goldens/concurrent-executor-model-v1.json",

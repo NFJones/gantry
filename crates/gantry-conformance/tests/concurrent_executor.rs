@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 
 use gantry::host::contracts::{
     ConcurrentExecutorAdapter, HostError, JitterSource, OwnedTaskResult,
@@ -214,13 +215,16 @@ fn caller_owned_tokio_task_services_are_executor_neutral_and_terminal() {
                     retained_waker: Arc::clone(&retained_waker),
                 }))
                 .unwrap_or_else(|error| panic!("pending submission failed: {error:?}"));
-            for _ in 0..1_000 {
-                if polls.load(Ordering::Acquire) > 0 {
-                    break;
+            let first_poll = tokio::time::timeout(Duration::from_secs(5), async {
+                while polls.load(Ordering::Acquire) == 0 {
+                    tokio::task::yield_now().await;
                 }
-                tokio::task::yield_now().await;
-            }
-            assert!(polls.load(Ordering::Acquire) > 0);
+            })
+            .await;
+            assert!(
+                first_poll.is_ok(),
+                "spawned task was not polled before deadline"
+            );
             assert_eq!(
                 abort_kind(pending.abort().await),
                 ExecutorAbortResultKind::Stopped
