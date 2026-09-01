@@ -148,7 +148,7 @@ fn public_module_graph_symbols_and_resolution_are_canonical() {
         );
         root.write("a.gnt", "struct Thing {}");
         root.write("z.gnt", "use crate::a::Thing; fn consume(value: Thing) {}");
-        let syntax = validate_package_syntax(&root.0, limits())
+        let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
             .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
         let analysis = analyze_package_structure(&syntax)
             .unwrap_or_else(|error| panic!("analysis failed: {error:?}"));
@@ -182,7 +182,7 @@ fn public_module_graph_symbols_and_resolution_are_canonical() {
 
     let missing = TempDirectory::new();
     missing.write("main.gnt", "mod absent; fn main() {}");
-    let syntax = validate_package_syntax(&missing.0, limits())
+    let syntax = validate_package_syntax(&missing.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     let analysis = analyze_package_structure(&syntax)
         .unwrap_or_else(|error| panic!("analysis failed: {error:?}"));
@@ -211,7 +211,7 @@ fn main(Report: String) {
 }
 "#,
     );
-    let syntax = validate_package_syntax(&root.0, limits())
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     let analysis = analyze_package_structure(&syntax)
         .unwrap_or_else(|error| panic!("analysis failed: {error:?}"));

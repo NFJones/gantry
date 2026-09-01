@@ -119,6 +119,10 @@ pub enum SyntaxForm {
     EnumDeclaration,
     /// Enum variant declaration.
     EnumVariant,
+    /// `trait` declaration.
+    TraitDeclaration,
+    /// Trait method signature and effect contract.
+    TraitMethodDeclaration,
     /// `action` declaration.
     ActionDeclaration,
     /// Free workflow declaration.
@@ -129,6 +133,18 @@ pub enum SyntaxForm {
     MethodDeclaration,
     /// Parameter declaration.
     Parameter,
+    /// Generic type-parameter binder list.
+    TypeParameterList,
+    /// Applied or explicit type-argument list.
+    TypeArgumentList,
+    /// Static trait reference.
+    TraitReference,
+    /// Trailing `where` predicate list.
+    WhereClause,
+    /// One `where` predicate.
+    WherePredicate,
+    /// Declared trait-method effect upper bound.
+    EffectContract,
     /// Qualified source path.
     Path,
     /// Value type syntax.

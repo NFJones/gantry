@@ -17,7 +17,9 @@ use gantry_core::protocol::ProtocolSelection;
 use gantry_core::source::FrontendLimits;
 #[cfg(feature = "analyzer")]
 use gantry_frontend::PackageSyntaxStatus;
-use gantry_frontend::{CompletedSyntaxPhase, PackageSyntaxError, validate_package_syntax};
+use gantry_frontend::{
+    CompletedSyntaxPhase, PackageSyntaxError, validate_package_syntax_with_limits,
+};
 use gantry_host::contracts::{
     FreshIdentityAllocator, IdentityAllocationError, IdentitySource, UtcClock,
 };
@@ -280,11 +282,9 @@ impl<'a> ValidatePackageCoordinator<'a> {
             .allocator
             .allocate(self.identity_source, IdentityKind::Activity)
             .map_err(ValidatePackageError::ActivityIdentity)?;
-        let phase = validate_package_syntax(
-            request.package_root,
-            request.frontend_limits.source_limits(),
-        )
-        .map_err(ValidatePackageError::Package)?;
+        let phase =
+            validate_package_syntax_with_limits(request.package_root, request.frontend_limits)
+                .map_err(ValidatePackageError::Package)?;
         let draft = phase.event_draft().clone();
         let (event, delivery) = self
             .complete_and_deliver(activity_id, draft, request.event_delivery)
@@ -313,11 +313,9 @@ impl<'a> ValidatePackageCoordinator<'a> {
             .allocator
             .allocate(self.identity_source, IdentityKind::Activity)
             .map_err(AnalyzePackageError::ActivityIdentity)?;
-        let syntax = validate_package_syntax(
-            request.package_root,
-            request.frontend_limits.source_limits(),
-        )
-        .map_err(AnalyzePackageError::Package)?;
+        let syntax =
+            validate_package_syntax_with_limits(request.package_root, request.frontend_limits)
+                .map_err(AnalyzePackageError::Package)?;
 
         let (parse_event, parse_delivery) = self
             .complete_and_deliver(

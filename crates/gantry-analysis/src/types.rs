@@ -944,7 +944,7 @@ mod tests {
         root.write(source);
         let limits = SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
             .unwrap_or_else(|_| unreachable!("positive limits"));
-        validate_package_syntax(&root.0, limits)
+        validate_package_syntax(&root.0, limits, i64::MAX as u64)
             .unwrap_or_else(|error| panic!("syntax failed: {error:?}"))
     }
 
@@ -994,6 +994,7 @@ mod tests {
             &root.0,
             SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
                 .unwrap_or_else(|_| unreachable!("positive limits")),
+            i64::MAX as u64,
         )
         .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
         let incomplete = analyze_package_types(&syntax)
@@ -1050,6 +1051,7 @@ fn main() {
             &root.0,
             SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
                 .unwrap_or_else(|_| unreachable!("positive limits")),
+            i64::MAX as u64,
         )
         .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
         let result = analyze_package_types_with_artifact_limits(
@@ -2682,6 +2684,7 @@ fn main(value: Report) -> Report { value }
             &root.0,
             SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
                 .unwrap_or_else(|_| unreachable!("positive limits")),
+            i64::MAX as u64,
         )
         .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
         let result = analyze_package_types_with_artifact_limits(

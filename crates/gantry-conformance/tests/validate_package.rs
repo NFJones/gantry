@@ -538,6 +538,74 @@ fn generic_analysis_policy_charges_are_public_and_failure_atomic() {
 }
 
 #[test]
+fn validate_and_analyze_enforce_constructed_type_depth_per_activity() {
+    let root = TempDirectory::new(b"fn main(value: Option<Option<Int>>) {}");
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock(Ok(timestamp()));
+    let selection = selection();
+
+    let admitted_limits = FrontendLimits::new(
+        1, 4_096, 4_096, 128, 8, 4_096, 4_096, 4_096, 4_096, 3, 128, 128,
+    )
+    .unwrap_or_else(|_| unreachable!("positive limits"));
+    let admitted_identities = ScriptedIdentities::new([Ok([21; 32]), Ok([22; 32])]);
+    let validate = ValidatePackageCoordinator::new(&allocator, &admitted_identities, &clock);
+    let admitted = block_on(validate.validate(request_with_limits(
+        &root.0,
+        &selection,
+        admitted_limits,
+        None,
+    )));
+    assert!(admitted.is_ok(), "at-limit validation failed: {admitted:?}");
+
+    let rejected_limits = FrontendLimits::new(
+        1, 4_096, 4_096, 128, 8, 4_096, 4_096, 4_096, 4_096, 2, 128, 128,
+    )
+    .unwrap_or_else(|_| unreachable!("positive limits"));
+    let validate_identities = ScriptedIdentities::new([Ok([23; 32])]);
+    let validate = ValidatePackageCoordinator::new(&allocator, &validate_identities, &clock);
+    let rejected = block_on(validate.validate(request_with_limits(
+        &root.0,
+        &selection,
+        rejected_limits,
+        None,
+    )));
+    assert!(matches!(
+        rejected,
+        Err(ValidatePackageError::Package(error))
+            if matches!(
+                error.frontend_resource_limit(),
+                Some(limit)
+                    if limit.code == FrontendResourceCode::ConstructedTypeDepthLimit
+                        && limit.limit == 2
+                        && limit.observed == Some(3)
+            )
+    ));
+    assert_eq!(validate_identities.calls(), vec![IdentityKind::Activity]);
+
+    let analyze_identities = ScriptedIdentities::new([Ok([24; 32])]);
+    let analyze = AnalyzePackageCoordinator::new(&allocator, &analyze_identities, &clock);
+    let rejected = block_on(analyze.analyze(AnalyzePackageRequest {
+        package_root: &root.0,
+        protocol_selection: &selection,
+        frontend_limits: rejected_limits,
+        event_delivery: None,
+    }));
+    assert!(matches!(
+        rejected,
+        Err(AnalyzePackageError::Package(error))
+            if matches!(
+                error.frontend_resource_limit(),
+                Some(limit)
+                    if limit.code == FrontendResourceCode::ConstructedTypeDepthLimit
+                        && limit.limit == 2
+                        && limit.observed == Some(3)
+            )
+    ));
+    assert_eq!(analyze_identities.calls(), vec![IdentityKind::Activity]);
+}
+
+#[test]
 fn frontend_limit_failure_is_separate_and_retains_diagnostics() {
     let root = TempDirectory::new(
         b"struct Broken { value Int; }\naction read_only missing( -> String;\nfn good() {}",

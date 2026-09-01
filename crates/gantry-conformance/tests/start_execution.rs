@@ -233,6 +233,39 @@ fn syntax_and_analysis_rejections_cross_no_preflight_or_execution_boundary() {
 }
 
 #[test]
+fn constructed_type_depth_rejects_start_before_preflight_or_execution_identity() {
+    let root = TempDirectory::new(b"fn main(value: Option<Option<Int>>) {}");
+    let services = Arc::new(Services::default());
+    let configuration = configuration_with_type_depth(Arc::clone(&services), 2);
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let clock = FixedClock;
+    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let preflight = RecordingPreflight::resolved(Arc::clone(&services));
+    let coordinator = StartExecutionCoordinator::new(
+        &package,
+        &lifecycle,
+        &configuration,
+        &allocator,
+        &preflight,
+    );
+    let selection = selection();
+
+    let result = block_on(coordinator.start(request(&root.0, &selection, None, None)));
+    let StartExecutionResult::Rejected(failure) = result else {
+        panic!("over-depth source was accepted");
+    };
+    assert_eq!(
+        failure.category,
+        StartFailureCategory::FrontendResourceLimit
+    );
+    assert_eq!(&*failure.code, "frontend-resource-limit");
+    assert!(failure.package_activity.is_none());
+    assert!(preflight.calls().is_empty());
+    assert_eq!(services.calls(), [IdentityKind::Activity]);
+}
+
+#[test]
 fn mapping_and_root_preflight_precede_identity_and_accept_normalized_entry() {
     let root = TempDirectory::new(
         br#"
@@ -452,10 +485,27 @@ fn request<'a>(
 }
 
 fn configuration(services: Arc<Services>) -> InterpreterConfiguration {
+    configuration_with_type_depth(services, 256)
+}
+
+fn configuration_with_type_depth(
+    services: Arc<Services>,
+    maximum_constructed_type_depth: u64,
+) -> InterpreterConfiguration {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
-            32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
-            256, 65_536, 1_000_000,
+            32,
+            1_048_576,
+            4_194_304,
+            262_144,
+            256,
+            4_194_304,
+            4_194_304,
+            4_194_304,
+            4_194_304,
+            maximum_constructed_type_depth,
+            65_536,
+            1_000_000,
         )
         .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
         1_048_576,

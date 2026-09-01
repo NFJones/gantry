@@ -114,6 +114,7 @@ fn analyze(root: &TempDirectory) -> gantry::analysis::TypedPackage {
         &root.0,
         SourceLimits::new(8, 1_048_576, 4_194_304, 262_144, 256)
             .unwrap_or_else(|_| unreachable!("positive fixture limits")),
+        i64::MAX as u64,
     )
     .unwrap_or_else(|error| panic!("syntax failed: {error}"));
     let package = analyze_package_types(&syntax)

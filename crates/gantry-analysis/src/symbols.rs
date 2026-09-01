@@ -1966,7 +1966,7 @@ mod tests {
                 "z.gnt",
                 "use crate::a::Thing; fn make(value: Thing) -> Thing { value }",
             );
-            let phase = validate_package_syntax(&root.0, limits(32));
+            let phase = validate_package_syntax(&root.0, limits(32), i64::MAX as u64);
             assert!(phase.is_ok());
             let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
             let analysis = analyze_package_structure(&phase);
@@ -2005,7 +2005,7 @@ mod tests {
     fn missing_and_ambiguous_file_modules_are_analysis_errors() {
         let missing = TempDirectory::new();
         missing.write("main.gnt", "mod absent; fn main() {}");
-        let phase = validate_package_syntax(&missing.0, limits(32));
+        let phase = validate_package_syntax(&missing.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok(), "{phase:?}");
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         assert_eq!(phase.module_resolution_issues().len(), 1);
@@ -2025,7 +2025,7 @@ mod tests {
         ambiguous.write("main.gnt", "mod child; fn main() {}");
         ambiguous.write("child.gnt", "fn flat() {}");
         ambiguous.write("child/mod.gnt", "fn nested() {}");
-        let phase = validate_package_syntax(&ambiguous.0, limits(32));
+        let phase = validate_package_syntax(&ambiguous.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok(), "{phase:?}");
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         assert_eq!(phase.module_resolution_issues().len(), 1);
@@ -2050,7 +2050,7 @@ mod tests {
     fn malformed_module_parent_cycles_are_diagnosed_without_recursion() {
         let root = TempDirectory::new();
         root.write("main.gnt", "fn main() {}");
-        let phase = validate_package_syntax(&root.0, limits(32));
+        let phase = validate_package_syntax(&root.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok(), "{phase:?}");
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         let span = phase.parsed_sources()[0].tree().nodes()[0].span().clone();
@@ -2086,7 +2086,7 @@ mod tests {
             "main.gnt",
             "struct Report { revise: String }\nimpl Report { fn revise(self) {} }\nfn main(Report: String) {}",
         );
-        let phase = validate_package_syntax(&root.0, limits(32));
+        let phase = validate_package_syntax(&root.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok());
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         let analysis = analyze_package_structure(&phase);
@@ -2117,7 +2117,7 @@ fn main() {
 }
 "#,
         );
-        let phase = validate_package_syntax(&root.0, limits(32));
+        let phase = validate_package_syntax(&root.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok(), "{phase:?}");
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         let analysis = analyze_package_structure(&phase);
@@ -2151,7 +2151,7 @@ fn main() {
 }
 "#,
         );
-        let phase = validate_package_syntax(&root.0, limits(32));
+        let phase = validate_package_syntax(&root.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok(), "{phase:?}");
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         let analysis = analyze_package_structure(&phase);
@@ -2191,7 +2191,7 @@ fn main(value: Option<Int>, values: List<Int>) {
 }
 "#,
         );
-        let phase = validate_package_syntax(&root.0, limits(32));
+        let phase = validate_package_syntax(&root.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok(), "{phase:?}");
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         let analysis = analyze_package_structure(&phase);
@@ -2212,7 +2212,7 @@ fn main(value: Option<Int>, values: List<Int>) {
     fn confusable_and_mixed_script_identifiers_warn_without_invalidating() {
         let root = TempDirectory::new();
         root.write("main.gnt", "struct paypal {} struct раypal {} fn main() {}");
-        let phase = validate_package_syntax(&root.0, limits(32));
+        let phase = validate_package_syntax(&root.0, limits(32), i64::MAX as u64);
         assert!(phase.is_ok());
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         let analysis = analyze_package_structure(&phase);
@@ -2241,7 +2241,7 @@ fn main(value: Option<Int>, values: List<Int>) {
             "main.gnt",
             "struct Item {} fn main(Item: String, Item: String) {}",
         );
-        let phase = validate_package_syntax(&root.0, limits(1));
+        let phase = validate_package_syntax(&root.0, limits(1), i64::MAX as u64);
         assert!(phase.is_ok());
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         let analysis = analyze_package_structure(&phase);

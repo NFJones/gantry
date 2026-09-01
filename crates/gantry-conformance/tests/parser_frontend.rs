@@ -13,7 +13,7 @@ fn parse(source: &str, token_limit: u64, diagnostic_limit: u64) -> ParseOutcome 
     let record = records
         .first()
         .unwrap_or_else(|| unreachable!("one source"));
-    Parser::new(record, counters)
+    Parser::new(record, counters, i64::MAX as u64)
         .parse_module()
         .unwrap_or_else(|error| panic!("syntax phase failed: {error}"))
 }
@@ -55,6 +55,58 @@ fn main() -> String {
 }
 
 #[test]
+fn public_parser_supports_parametric_declarations_static_traits_and_generic_paths() {
+    let source = r#"
+struct Envelope<T> where T: Label { value: T }
+enum State<T, E> { Ready(T), Failed(E) }
+trait Convert<T> {
+    fn convert<U>(self, fallback: U) -> T where Self: Label, U: Label,
+        effects { prompt, action(read_only), background };
+}
+impl<T, U> Convert<U> for Envelope<T> where T: Label, U: Label {
+    pure fn convert<V>(self, fallback: V) -> U where V: Label { fallback }
+}
+fn preserve<T>(value: T) -> T where T: Label { value }
+fn main(value: Envelope<String>) {
+    let next: Envelope<String> = Envelope::<String> { value: "ready" };
+    discard preserve::<Envelope<String>>(next);
+    discard Convert::<String>::convert::<String>(value, "fallback");
+    prompt "${Envelope::<String> { value: "ok" }}";
+    match State::<String, String>::Ready("ok") {
+        State::<String, String>::Ready(item) => { discard item; },
+        State::<String, String>::Failed(error) => { discard error; },
+    }
+}
+"#;
+    let outcome = parse(source, 2_048, 32);
+    assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+    let tree = outcome.tree().unwrap_or_else(|| unreachable!("valid tree"));
+    for expected in [
+        SyntaxForm::TraitDeclaration,
+        SyntaxForm::TraitMethodDeclaration,
+        SyntaxForm::TypeParameterList,
+        SyntaxForm::TypeArgumentList,
+        SyntaxForm::WhereClause,
+        SyntaxForm::EffectContract,
+    ] {
+        assert!(tree.nodes().iter().any(|node| {
+            std::mem::discriminant(node.form()) == std::mem::discriminant(&expected)
+        }));
+    }
+
+    for invalid in [
+        "struct Broken<T { value: T }",
+        "fn main() { discard value::<String>; }",
+        "trait Empty { fn missing(self); }",
+        "fn invalid(value: Self) -> Self { value }",
+        "impl Self { pure fn invalid(self) {} }",
+    ] {
+        let outcome = parse(invalid, 256, 8);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {invalid}");
+    }
+}
+
+#[test]
 fn public_parser_distinguishes_statement_and_value_block_forms() {
     let source = r#"fn value(flag: Bool) -> Int {
     if flag { return 1; } else { return 2; }
@@ -65,7 +117,7 @@ fn contexts() -> Int {
 fn matches(value: Int) -> Int {
     match value { _ => 1 }
 }
-fn effects(value: Int) {
+fn effect_case(value: Int) {
     match value { _ => { discard value; } }
 }
 "#;

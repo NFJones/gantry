@@ -546,8 +546,10 @@
       "start_line": 8594,
       "end_line": 8630,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     },
     {
       "key": "section14-excerpt-051",
@@ -555,8 +557,10 @@
       "start_line": 8635,
       "end_line": 8665,
       "classification": "focused-fragment",
-      "state": "planned",
-      "evidence": []
+      "state": "covered",
+      "evidence": [
+        "crates/gantry-conformance/tests/frontend_parser_evidence.rs#section14_excerpts_have_executable_syntax_fixtures"
+      ]
     }
   ]
 }

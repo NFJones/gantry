@@ -181,7 +181,7 @@ fn main() {}
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);
-    let syntax = validate_package_syntax(&root.0, limits())
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     analyze_package_types(&syntax).unwrap_or_else(|error| panic!("type analysis failed: {error:?}"))
 }

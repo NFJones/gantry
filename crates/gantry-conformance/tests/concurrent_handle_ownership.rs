@@ -393,7 +393,7 @@ fn empty() { joinall(); }
 fn main() {}
 "#,
     );
-    let syntax = validate_package_syntax(&root.0, source_limits())
+    let syntax = validate_package_syntax(&root.0, source_limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     let package = analyze_package_types(&syntax)
         .unwrap_or_else(|error| panic!("analysis failed operationally: {error:?}"));

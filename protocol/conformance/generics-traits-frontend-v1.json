@@ -1,0 +1,33 @@
+{
+  "format": "gantry.generics-traits-frontend-evidence/v1",
+  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "issue": "GNT-GEN-FE-001",
+  "capabilities": [
+    {
+      "id": "candidate-source-depth",
+      "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+    },
+    {
+      "id": "constructed-type-depth",
+      "evidence": "crates/gantry-conformance/tests/validate_package.rs#validate_and_analyze_enforce_constructed_type_depth_per_activity"
+    },
+    {
+      "id": "generic-source-syntax",
+      "evidence": "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_supports_parametric_declarations_static_traits_and_generic_paths"
+    },
+    {
+      "id": "reserved-words",
+      "evidence": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+    },
+    {
+      "id": "start-depth",
+      "evidence": "crates/gantry-conformance/tests/start_execution.rs#constructed_type_depth_rejects_start_before_preflight_or_execution_identity"
+    }
+  ],
+  "exclusions": [
+    "Name resolution, arity checking, inference, capability proofs, coherence, and trait selection remain analyzer work.",
+    "Generic instantiation and trait-resolution charge sites remain owned by analyzer issues.",
+    "No frontend, analyzer, publication, or release profile claim is enabled by this evidence slice."
+  ],
+  "profiles": []
+}

@@ -14,8 +14,8 @@ use gantry_core::event::{
 };
 use gantry_core::portable::EventKind;
 use gantry_core::source::{
-    FrontendResourceLimit, PackagePath, SourceError, SourceId, SourceLimits, SourceSnapshot,
-    StructuredDiagnostic,
+    FrontendLimits, FrontendResourceLimit, PackagePath, SourceError, SourceId, SourceLimits,
+    SourceSnapshot, StructuredDiagnostic,
 };
 
 use crate::ast::{SyntaxForm, SyntaxTree};
@@ -239,6 +239,27 @@ impl PackageSyntaxError {
 pub fn validate_package_syntax(
     package_root: &std::path::Path,
     limits: SourceLimits,
+    maximum_constructed_type_depth: u64,
+) -> Result<CompletedSyntaxPhase, PackageSyntaxError> {
+    validate_package_syntax_with_depth(package_root, limits, maximum_constructed_type_depth)
+}
+
+/// Discovers and parses a package under the complete syntax-applicable policy.
+pub fn validate_package_syntax_with_limits(
+    package_root: &std::path::Path,
+    limits: FrontendLimits,
+) -> Result<CompletedSyntaxPhase, PackageSyntaxError> {
+    validate_package_syntax_with_depth(
+        package_root,
+        limits.source_limits(),
+        limits.maximum_constructed_type_depth(),
+    )
+}
+
+fn validate_package_syntax_with_depth(
+    package_root: &std::path::Path,
+    limits: SourceLimits,
+    maximum_constructed_type_depth: u64,
 ) -> Result<CompletedSyntaxPhase, PackageSyntaxError> {
     let provider =
         RootDirectorySourceProvider::open(package_root).map_err(PackageSyntaxError::Source)?;
@@ -255,17 +276,18 @@ pub fn validate_package_syntax(
     while let Some(source) = pending.pop_front() {
         let (record, counters) = loader.record_and_counters_mut(&source);
         let record = record.ok_or(PackageSyntaxError::Invariant)?;
-        let outcome = match Parser::new(record, counters).parse_module() {
-            Ok(outcome) => outcome,
-            Err(ParseError::ResourceLimit {
-                error,
-                diagnostics: mut retained,
-            }) => {
-                diagnostics.append(&mut retained);
-                return Err(PackageSyntaxError::FrontendResourceLimit { error, diagnostics });
-            }
-            Err(error) => return Err(PackageSyntaxError::Parse(error)),
-        };
+        let outcome =
+            match Parser::new(record, counters, maximum_constructed_type_depth).parse_module() {
+                Ok(outcome) => outcome,
+                Err(ParseError::ResourceLimit {
+                    error,
+                    diagnostics: mut retained,
+                }) => {
+                    diagnostics.append(&mut retained);
+                    return Err(PackageSyntaxError::FrontendResourceLimit { error, diagnostics });
+                }
+                Err(error) => return Err(PackageSyntaxError::Parse(error)),
+            };
         diagnostics.extend_from_slice(outcome.diagnostics());
         let valid = outcome.is_valid();
         let Some(tree) = outcome.recovered_tree().cloned() else {
@@ -497,7 +519,7 @@ mod tests {
         assert!(fs::create_dir(root.0.join("outer")).is_ok());
         assert!(fs::write(root.0.join("outer/child.gnt"), b"fn child() {}").is_ok());
 
-        let phase = validate_package_syntax(&root.0, limits(2, 4_096));
+        let phase = validate_package_syntax(&root.0, limits(2, 4_096), i64::MAX as u64);
         assert!(phase.is_ok());
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         assert_eq!(phase.status(), PackageSyntaxStatus::Valid);
@@ -519,7 +541,7 @@ mod tests {
         let root = TempDirectory::new();
         assert!(fs::write(root.0.join("main.gnt"), b"fn broken( {}").is_ok());
 
-        let phase = validate_package_syntax(&root.0, limits(1, 4_096));
+        let phase = validate_package_syntax(&root.0, limits(1, 4_096), i64::MAX as u64);
         assert!(phase.is_ok());
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         assert_eq!(phase.status(), PackageSyntaxStatus::Invalid);
@@ -536,7 +558,7 @@ mod tests {
         assert!(fs::write(root.0.join("main.gnt"), b"mod child;\nfn broken( {").is_ok());
         assert!(fs::write(root.0.join("child.gnt"), b"fn also_broken( {").is_ok());
 
-        let phase = validate_package_syntax(&root.0, limits(2, 4_096));
+        let phase = validate_package_syntax(&root.0, limits(2, 4_096), i64::MAX as u64);
         assert!(phase.is_ok());
         let phase = phase.unwrap_or_else(|_| unreachable!("checked above"));
         assert_eq!(phase.status(), PackageSyntaxStatus::Invalid);
@@ -569,7 +591,11 @@ mod tests {
             .is_ok()
         );
 
-        let result = validate_package_syntax(&root.0, limits_with_diagnostics(1, 4_096, 1));
+        let result = validate_package_syntax(
+            &root.0,
+            limits_with_diagnostics(1, 4_096, 1),
+            i64::MAX as u64,
+        );
         let error = match result {
             Err(error) => error,
             Ok(_) => panic!("the second diagnostic must exceed the activity limit"),
@@ -603,6 +629,7 @@ mod tests {
                 u64::try_from(main.len()).unwrap_or_else(|_| unreachable!("small fixture")),
                 4,
             ),
+            i64::MAX as u64,
         );
         let error = match result {
             Err(error) => error,
@@ -627,7 +654,7 @@ mod tests {
         assert!(fs::write(root.0.join("main.gnt"), b"mod child;").is_ok());
         assert!(fs::write(root.0.join("child.gnt"), b"fn child() {}").is_ok());
 
-        let phase = validate_package_syntax(&root.0, limits(2, 20));
+        let phase = validate_package_syntax(&root.0, limits(2, 20), i64::MAX as u64);
         assert!(matches!(
             phase,
             Err(PackageSyntaxError::FrontendResourceLimit { error, diagnostics })

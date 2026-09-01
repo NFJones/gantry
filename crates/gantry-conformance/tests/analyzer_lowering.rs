@@ -353,7 +353,7 @@ fn public_lowering_artifacts_enforce_exact_limits_and_invalid_boundaries() {
 
     let incomplete_root = TempDirectory::new();
     incomplete_root.write("main.gnt", "mod absent; fn main() {}");
-    let incomplete_phase = validate_package_syntax(&incomplete_root.0, limits())
+    let incomplete_phase = validate_package_syntax(&incomplete_root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
     let incomplete = analyze_package_types(&incomplete_phase)
         .unwrap_or_else(|error| panic!("analysis failed: {error:?}"));
@@ -396,7 +396,7 @@ fn analyze(source: &str) -> TypedPackage {
 fn syntax(source: &str) -> CompletedSyntaxPhase {
     let root = TempDirectory::new();
     root.write("main.gnt", source);
-    validate_package_syntax(&root.0, limits())
+    validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"))
 }
 

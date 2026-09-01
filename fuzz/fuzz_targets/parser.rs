@@ -16,5 +16,5 @@ fuzz_target!(|input: &[u8]| {
     let Some(record) = records.first() else {
         return;
     };
-    let _ = Parser::new(record, counters).parse_module();
+    let _ = Parser::new(record, counters, 256).parse_module();
 });

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
-use gantry_core::portable::{DiagnosticCategory, DiagnosticSeverity};
+use gantry_core::portable::{DiagnosticCategory, DiagnosticSeverity, FrontendResourceCode};
 use gantry_core::source::{
     ByteSpan, DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, FrontendResourceLimit,
     SourceCounters, SourceRecord, SourceSpan, SpanError, StructuredDiagnostic,
@@ -93,12 +93,21 @@ impl std::error::Error for ParseError {}
 pub struct Parser<'a> {
     record: &'a SourceRecord,
     counters: &'a mut SourceCounters,
+    maximum_constructed_type_depth: u64,
 }
 
 impl<'a> Parser<'a> {
-    /// Creates a syntax parser for one selected source record.
-    pub fn new(record: &'a SourceRecord, counters: &'a mut SourceCounters) -> Self {
-        Self { record, counters }
+    /// Creates a syntax parser under one explicit constructed-type depth cap.
+    pub fn new(
+        record: &'a SourceRecord,
+        counters: &'a mut SourceCounters,
+        maximum_constructed_type_depth: u64,
+    ) -> Self {
+        Self {
+            record,
+            counters,
+            maximum_constructed_type_depth,
+        }
     }
 
     /// Lexes and parses the complete `module_source` production.
@@ -110,7 +119,13 @@ impl<'a> Parser<'a> {
                 diagnostics: lexical_diagnostics,
             });
         }
-        Machine::new(self.record, self.counters, tokens).parse_module()
+        Machine::new(
+            self.record,
+            self.counters,
+            tokens,
+            self.maximum_constructed_type_depth,
+        )
+        .parse_module()
     }
 }
 
@@ -239,9 +254,16 @@ enum Task {
     Item,
     ItemList,
     MethodList,
-    ValueType,
+    ValueType {
+        depth: u64,
+    },
+    TypeArgumentList {
+        count: usize,
+        depth: u64,
+    },
     TupleTypeTail {
         count: usize,
+        depth: u64,
     },
     Block(BlockKind),
     BlockContents(BlockKind),
@@ -323,6 +345,8 @@ struct OpenNode {
 struct Machine<'a> {
     record: &'a SourceRecord,
     counters: &'a mut SourceCounters,
+    maximum_constructed_type_depth: u64,
+    resource_limit: Option<FrontendResourceLimit>,
     tokens: Vec<Token>,
     position: usize,
     nodes: Vec<SyntaxNode>,
@@ -332,10 +356,17 @@ struct Machine<'a> {
 }
 
 impl<'a> Machine<'a> {
-    fn new(record: &'a SourceRecord, counters: &'a mut SourceCounters, tokens: Vec<Token>) -> Self {
+    fn new(
+        record: &'a SourceRecord,
+        counters: &'a mut SourceCounters,
+        tokens: Vec<Token>,
+        maximum_constructed_type_depth: u64,
+    ) -> Self {
         Self {
             record,
             counters,
+            maximum_constructed_type_depth,
+            resource_limit: None,
             tokens,
             position: 0,
             nodes: Vec::new(),
@@ -356,6 +387,12 @@ impl<'a> Machine<'a> {
                 .ok_or(ParseError::Invariant)?;
             self.tasks.push(Task::Item);
             if let Err(fault) = self.run_tasks() {
+                if let Some(error) = self.resource_limit.take() {
+                    return Err(ParseError::ResourceLimit {
+                        error,
+                        diagnostics: self.diagnostics,
+                    });
+                }
                 self.nodes.truncate(nodes_before);
                 let root = self.open.first_mut().ok_or(ParseError::Invariant)?;
                 root.children.truncate(children_before);
@@ -396,8 +433,11 @@ impl<'a> Machine<'a> {
             Task::Item => self.parse_item()?,
             Task::ItemList => self.parse_item_list()?,
             Task::MethodList => self.parse_method_list()?,
-            Task::ValueType => self.parse_value_type()?,
-            Task::TupleTypeTail { count } => self.parse_tuple_type_tail(count)?,
+            Task::ValueType { depth } => self.parse_value_type(depth)?,
+            Task::TypeArgumentList { count, depth } => {
+                self.parse_type_argument_list_tail(count, depth)?;
+            }
+            Task::TupleTypeTail { count, depth } => self.parse_tuple_type_tail(count, depth)?,
             Task::Block(kind) => self.parse_block(kind)?,
             Task::BlockContents(kind) => self.parse_block_contents(kind)?,
             Task::AfterBlockExpression(kind) => self.after_block_expression(kind)?,
@@ -507,20 +547,14 @@ impl<'a> Machine<'a> {
             self.parse_struct_declaration()?;
         } else if self.at_word("enum") {
             self.parse_enum_declaration()?;
+        } else if self.at_word("trait") {
+            self.parse_trait_declaration()?;
         } else if self.at_word("action") {
             self.parse_action_declaration()?;
         } else if self.at_word("fn") || self.at_word("pure") {
             self.parse_function_declaration(SyntaxForm::FunctionDeclaration)?;
         } else if self.at_word("impl") {
-            self.begin(SyntaxForm::ImplDeclaration);
-            self.tasks.push(Task::Finish);
-            self.tasks
-                .push(Task::ExpectPunctuation(Punctuation::RightBrace));
-            self.tasks.push(Task::MethodList);
-            self.tasks
-                .push(Task::ExpectPunctuation(Punctuation::LeftBrace));
-            self.tasks.push(Task::ParsePath);
-            self.tasks.push(Task::ExpectWord("impl"));
+            self.parse_impl_declaration()?;
         } else {
             return Err(self.expected("package item"));
         }
@@ -550,6 +584,8 @@ impl<'a> Machine<'a> {
         self.begin(SyntaxForm::StructDeclaration);
         self.consume_word("struct")?;
         self.expect_identifier()?;
+        self.parse_optional_type_parameters()?;
+        self.parse_where_clause()?;
         self.expect_punctuation(Punctuation::LeftBrace)?;
         while !self.at_punctuation(Punctuation::RightBrace) {
             self.begin(SyntaxForm::StructField);
@@ -559,7 +595,7 @@ impl<'a> Machine<'a> {
                 return Err(self.expected("struct field or `}`"));
             }
             let base = self.tasks.len();
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: 1 });
             self.run_tasks_above(base)?;
             if self.at_punctuation(Punctuation::Equal) {
                 self.consume_current()?;
@@ -607,6 +643,8 @@ impl<'a> Machine<'a> {
         self.begin(SyntaxForm::EnumDeclaration);
         self.consume_word("enum")?;
         self.expect_identifier()?;
+        self.parse_optional_type_parameters()?;
+        self.parse_where_clause()?;
         self.expect_punctuation(Punctuation::LeftBrace)?;
         let mut count = 0_usize;
         loop {
@@ -622,7 +660,7 @@ impl<'a> Machine<'a> {
                 let base = self.tasks.len();
                 self.tasks
                     .push(Task::ExpectPunctuation(Punctuation::RightParenthesis));
-                self.tasks.push(Task::ValueType);
+                self.tasks.push(Task::ValueType { depth: 1 });
                 self.run_tasks_above(base)?;
             }
             self.finish().map_err(|_| self.invariant_fault())?;
@@ -633,6 +671,256 @@ impl<'a> Machine<'a> {
         }
         self.expect_punctuation(Punctuation::RightBrace)?;
         self.finish().map_err(|_| self.invariant_fault())?;
+        Ok(())
+    }
+
+    fn parse_optional_type_parameters(&mut self) -> Result<(), SyntaxFault> {
+        if !self.at_punctuation(Punctuation::Less) {
+            return Ok(());
+        }
+        self.begin(SyntaxForm::TypeParameterList);
+        self.consume_current()?;
+        let mut count = 0_usize;
+        loop {
+            if self.at_punctuation(Punctuation::Greater) {
+                if count == 0 {
+                    return Err(self.expected("type parameter"));
+                }
+                self.consume_current()?;
+                break;
+            }
+            if count > 0 {
+                self.expect_punctuation(Punctuation::Comma)?;
+                if self.at_punctuation(Punctuation::Greater) {
+                    self.consume_current()?;
+                    break;
+                }
+            }
+            self.expect_identifier()?;
+            count = count.saturating_add(1);
+        }
+        self.finish().map_err(|_| self.invariant_fault())?;
+        Ok(())
+    }
+
+    fn parse_type_argument_list(&mut self, depth: u64) -> Result<(), SyntaxFault> {
+        let base = self.tasks.len();
+        self.start_type_argument_list(depth)?;
+        self.run_tasks_above(base)
+    }
+
+    fn start_type_argument_list(&mut self, depth: u64) -> Result<(), SyntaxFault> {
+        self.begin(SyntaxForm::TypeArgumentList);
+        self.expect_punctuation(Punctuation::Less)?;
+        self.tasks.push(Task::Finish);
+        self.tasks.push(Task::TypeArgumentList { count: 0, depth });
+        Ok(())
+    }
+
+    fn parse_type_argument_list_tail(
+        &mut self,
+        count: usize,
+        depth: u64,
+    ) -> Result<(), SyntaxFault> {
+        if self.at_punctuation(Punctuation::Greater) {
+            if count == 0 {
+                return Err(self.expected("type argument"));
+            }
+            self.consume_current()?;
+            return Ok(());
+        }
+        if count > 0 {
+            self.expect_punctuation(Punctuation::Comma)?;
+            if self.at_punctuation(Punctuation::Greater) {
+                self.consume_current()?;
+                return Ok(());
+            }
+        }
+        self.tasks.push(Task::TypeArgumentList {
+            count: count.saturating_add(1),
+            depth,
+        });
+        self.tasks.push(Task::ValueType { depth });
+        Ok(())
+    }
+
+    fn parse_trait_reference(&mut self) -> Result<(), SyntaxFault> {
+        self.begin(SyntaxForm::TraitReference);
+        self.parse_path()?;
+        if self.at_punctuation(Punctuation::Less) {
+            self.parse_type_argument_list(1)?;
+        }
+        self.finish().map_err(|_| self.invariant_fault())?;
+        Ok(())
+    }
+
+    fn parse_where_clause(&mut self) -> Result<(), SyntaxFault> {
+        if !self.at_word("where") {
+            return Ok(());
+        }
+        self.begin(SyntaxForm::WhereClause);
+        self.consume_current()?;
+        let mut count = 0_usize;
+        loop {
+            if count > 0 {
+                self.expect_punctuation(Punctuation::Comma)?;
+                if self.at_punctuation(Punctuation::LeftBrace)
+                    || self.at_punctuation(Punctuation::Semicolon)
+                    || self.at_word("effects")
+                {
+                    break;
+                }
+            }
+            self.begin(SyntaxForm::WherePredicate);
+            if self.at_identifier() || self.at_word("Self") && self.self_type_is_in_scope() {
+                self.consume_current()?;
+            } else {
+                return Err(self.expected("where predicate subject"));
+            }
+            self.expect_punctuation(Punctuation::Colon)?;
+            self.parse_trait_reference()?;
+            self.finish().map_err(|_| self.invariant_fault())?;
+            count = count.saturating_add(1);
+            if !self.at_punctuation(Punctuation::Comma) {
+                break;
+            }
+        }
+        if count == 0 {
+            return Err(self.expected("where predicate"));
+        }
+        self.finish().map_err(|_| self.invariant_fault())?;
+        Ok(())
+    }
+
+    fn parse_effect_contract(&mut self) -> Result<(), SyntaxFault> {
+        self.begin(SyntaxForm::EffectContract);
+        self.expect_word("effects")?;
+        self.expect_punctuation(Punctuation::LeftBrace)?;
+        let mut count = 0_usize;
+        loop {
+            if self.at_punctuation(Punctuation::RightBrace) {
+                if count == 0 {
+                    return Err(self.expected("effect name"));
+                }
+                self.consume_current()?;
+                break;
+            }
+            if count > 0 {
+                self.expect_punctuation(Punctuation::Comma)?;
+                if self.at_punctuation(Punctuation::RightBrace) {
+                    self.consume_current()?;
+                    break;
+                }
+            }
+            if self.at_word("action") {
+                self.consume_current()?;
+                self.expect_punctuation(Punctuation::LeftParenthesis)?;
+                if self.at_word("read_only")
+                    || self.at_word("idempotent")
+                    || self.at_word("non_idempotent")
+                {
+                    self.consume_current()?;
+                } else {
+                    return Err(self.expected("action recovery class"));
+                }
+                self.expect_punctuation(Punctuation::RightParenthesis)?;
+            } else if ["prompt", "decide", "spawn", "join", "session", "attempt"]
+                .iter()
+                .any(|word| self.at_word(word))
+                || self.at_identifier_named("background")
+            {
+                self.consume_current()?;
+            } else {
+                return Err(self.expected("effect name"));
+            }
+            count = count.saturating_add(1);
+        }
+        self.finish().map_err(|_| self.invariant_fault())?;
+        Ok(())
+    }
+
+    fn parse_trait_declaration(&mut self) -> Result<(), SyntaxFault> {
+        self.begin(SyntaxForm::TraitDeclaration);
+        self.expect_word("trait")?;
+        self.expect_identifier()?;
+        self.parse_optional_type_parameters()?;
+        self.parse_where_clause()?;
+        self.expect_punctuation(Punctuation::LeftBrace)?;
+        while !self.at_punctuation(Punctuation::RightBrace) {
+            self.begin(SyntaxForm::TraitMethodDeclaration);
+            let pure = self.at_word("pure");
+            if pure {
+                self.consume_current()?;
+            }
+            self.expect_word("fn")?;
+            self.expect_identifier()?;
+            self.parse_optional_type_parameters()?;
+            self.expect_punctuation(Punctuation::LeftParenthesis)?;
+            self.parse_parameter_list(true)?;
+            self.expect_punctuation(Punctuation::RightParenthesis)?;
+            if self.consume_if_punctuation(Punctuation::ThinArrow)? {
+                let base = self.tasks.len();
+                self.tasks.push(Task::ValueType { depth: 1 });
+                self.run_tasks_above(base)?;
+            }
+            self.parse_where_clause()?;
+            if !pure {
+                self.parse_effect_contract()?;
+            }
+            self.expect_punctuation(Punctuation::Semicolon)?;
+            self.finish().map_err(|_| self.invariant_fault())?;
+        }
+        self.expect_punctuation(Punctuation::RightBrace)?;
+        self.finish().map_err(|_| self.invariant_fault())?;
+        Ok(())
+    }
+
+    fn parse_impl_declaration(&mut self) -> Result<(), SyntaxFault> {
+        self.begin(SyntaxForm::ImplDeclaration);
+        self.expect_word("impl")?;
+        self.parse_optional_type_parameters()?;
+
+        let mut cursor = self.position;
+        let mut angle_depth = 0_usize;
+        let mut applied_head = false;
+        let mut trait_impl = false;
+        while let Some(token) = self.tokens.get(cursor) {
+            if token_is_punctuation(token, Punctuation::Less) {
+                angle_depth = angle_depth.saturating_add(1);
+                applied_head = true;
+            } else if token_is_punctuation(token, Punctuation::Greater) {
+                angle_depth = angle_depth.saturating_sub(1);
+            } else if angle_depth == 0 && token_is_word(token, "for") {
+                trait_impl = true;
+                break;
+            } else if angle_depth == 0
+                && (token_is_word(token, "where")
+                    || token_is_punctuation(token, Punctuation::LeftBrace))
+            {
+                break;
+            }
+            cursor = cursor.saturating_add(1);
+        }
+
+        if trait_impl {
+            self.parse_trait_reference()?;
+            self.expect_word("for")?;
+            let base = self.tasks.len();
+            self.tasks.push(Task::ValueType { depth: 1 });
+            self.run_tasks_above(base)?;
+        } else if !applied_head {
+            self.parse_path()?;
+        } else {
+            let base = self.tasks.len();
+            self.tasks.push(Task::ValueType { depth: 1 });
+            self.run_tasks_above(base)?;
+        }
+        self.parse_where_clause()?;
+        self.expect_punctuation(Punctuation::LeftBrace)?;
+        self.tasks.push(Task::Finish);
+        self.tasks
+            .push(Task::ExpectPunctuation(Punctuation::RightBrace));
+        self.tasks.push(Task::MethodList);
         Ok(())
     }
 
@@ -654,7 +942,7 @@ impl<'a> Machine<'a> {
         self.parse_parameter_list(false)?;
         self.expect_punctuation(Punctuation::RightParenthesis)?;
         if self.consume_if_punctuation(Punctuation::ThinArrow)? {
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: 1 });
         }
         Ok(())
     }
@@ -662,12 +950,12 @@ impl<'a> Machine<'a> {
     fn parse_function_declaration(&mut self, form: SyntaxForm) -> Result<(), SyntaxFault> {
         self.begin(form);
         self.tasks.push(Task::Finish);
-        self.tasks.push(Task::Block(BlockKind::Ordinary));
         if self.at_word("pure") {
             self.consume_current()?;
         }
         self.expect_word("fn")?;
         self.expect_identifier()?;
+        self.parse_optional_type_parameters()?;
         self.expect_punctuation(Punctuation::LeftParenthesis)?;
         let method = matches!(
             self.open.last().map(|node| &node.form),
@@ -676,8 +964,12 @@ impl<'a> Machine<'a> {
         self.parse_parameter_list(method)?;
         self.expect_punctuation(Punctuation::RightParenthesis)?;
         if self.consume_if_punctuation(Punctuation::ThinArrow)? {
-            self.tasks.push(Task::ValueType);
+            let base = self.tasks.len();
+            self.tasks.push(Task::ValueType { depth: 1 });
+            self.run_tasks_above(base)?;
         }
+        self.parse_where_clause()?;
+        self.tasks.push(Task::Block(BlockKind::Ordinary));
         Ok(())
     }
 
@@ -711,7 +1003,7 @@ impl<'a> Machine<'a> {
             self.expect_punctuation(Punctuation::Colon)?;
             let base = self.tasks.len();
             self.tasks.push(Task::Finish);
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: 1 });
             self.run_tasks_above(base)?;
             if !self.consume_if_punctuation(Punctuation::Comma)?
                 || self.at_punctuation(Punctuation::RightParenthesis)
@@ -722,39 +1014,70 @@ impl<'a> Machine<'a> {
         Ok(())
     }
 
-    fn parse_value_type(&mut self) -> Result<(), SyntaxFault> {
+    fn parse_value_type(&mut self, depth: u64) -> Result<(), SyntaxFault> {
+        if depth > self.maximum_constructed_type_depth {
+            self.resource_limit = Some(FrontendResourceLimit {
+                code: FrontendResourceCode::ConstructedTypeDepthLimit,
+                limit: self.maximum_constructed_type_depth,
+                observed: Some(depth),
+            });
+            return Err(self.expected("constructed type within configured depth limit"));
+        }
         self.begin(SyntaxForm::ValueType);
         self.tasks.push(Task::Finish);
+        let child_depth = depth.checked_add(1).ok_or_else(|| {
+            self.resource_limit = Some(FrontendResourceLimit {
+                code: FrontendResourceCode::ConstructedTypeDepthLimit,
+                limit: self.maximum_constructed_type_depth,
+                observed: None,
+            });
+            self.expected("constructed type within configured depth limit")
+        })?;
         if self.at_word("Option") || self.at_word("List") {
             self.consume_current()?;
             self.expect_punctuation(Punctuation::Less)?;
             self.tasks
                 .push(Task::ExpectPunctuation(Punctuation::Greater));
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: child_depth });
         } else if self.at_word("Result") {
             self.consume_current()?;
             self.expect_punctuation(Punctuation::Less)?;
             self.tasks
                 .push(Task::ExpectPunctuation(Punctuation::Greater));
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: child_depth });
             self.tasks.push(Task::ExpectPunctuation(Punctuation::Comma));
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: child_depth });
         } else if self.at_word("Tuple") {
             self.consume_current()?;
             self.expect_punctuation(Punctuation::Less)?;
-            self.tasks.push(Task::TupleTypeTail { count: 0 });
-        } else if self.at_builtin_type() {
+            self.tasks.push(Task::TupleTypeTail {
+                count: 0,
+                depth: child_depth,
+            });
+        } else if self.at_builtin_type() || self.at_word("Self") && self.self_type_is_in_scope() {
             self.consume_current()?;
         } else {
-            self.tasks.push(Task::ParsePath);
+            self.parse_path()?;
+            if self.at_punctuation(Punctuation::Less) {
+                self.start_type_argument_list(child_depth)?;
+            }
         }
         Ok(())
     }
 
-    fn parse_tuple_type_tail(&mut self, count: usize) -> Result<(), SyntaxFault> {
+    fn self_type_is_in_scope(&self) -> bool {
+        self.open.iter().any(|node| {
+            matches!(
+                node.form,
+                SyntaxForm::MethodDeclaration | SyntaxForm::TraitMethodDeclaration
+            )
+        })
+    }
+
+    fn parse_tuple_type_tail(&mut self, count: usize, depth: u64) -> Result<(), SyntaxFault> {
         if count == 0 {
-            self.tasks.push(Task::TupleTypeTail { count: 1 });
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::TupleTypeTail { count: 1, depth });
+            self.tasks.push(Task::ValueType { depth });
             return Ok(());
         }
         if self.at_punctuation(Punctuation::Greater) {
@@ -773,8 +1096,9 @@ impl<'a> Machine<'a> {
             }
             self.tasks.push(Task::TupleTypeTail {
                 count: count.saturating_add(1),
+                depth,
             });
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth });
         }
         Ok(())
     }
@@ -798,11 +1122,36 @@ impl<'a> Machine<'a> {
         } else {
             return Err(self.expected("qualified path"));
         }
-        while self.consume_if_punctuation(Punctuation::PathSeparator)? {
+        while self.at_punctuation(Punctuation::PathSeparator) && self.peek_identifier(1) {
+            self.consume_current()?;
             self.expect_identifier()?;
         }
         self.finish().map_err(|_| self.invariant_fault())?;
         Ok(())
+    }
+
+    fn parse_explicit_type_arguments(&mut self) -> Result<(), SyntaxFault> {
+        self.expect_punctuation(Punctuation::PathSeparator)?;
+        self.parse_type_argument_list(1)
+    }
+
+    fn parse_generic_member_tail(&mut self) -> Result<(bool, bool), SyntaxFault> {
+        let mut explicit_arguments = false;
+        let mut member = false;
+        if self.at_explicit_type_arguments() {
+            self.parse_explicit_type_arguments()?;
+            explicit_arguments = true;
+        }
+        if self.at_punctuation(Punctuation::PathSeparator) && self.peek_identifier(1) {
+            self.consume_current()?;
+            self.expect_identifier()?;
+            member = true;
+            if self.at_explicit_type_arguments() {
+                self.parse_explicit_type_arguments()?;
+                explicit_arguments = true;
+            }
+        }
+        Ok((explicit_arguments, member))
     }
 
     fn push_identifier_list(&mut self, closing: Punctuation) {
@@ -908,6 +1257,24 @@ impl<'a> Machine<'a> {
 
     fn at_identifier(&self) -> bool {
         matches!(self.current().kind(), TokenKind::Identifier(_))
+    }
+
+    fn at_identifier_named(&self, expected: &str) -> bool {
+        matches!(self.current().kind(), TokenKind::Identifier(value) if &**value == expected)
+    }
+
+    fn peek_identifier(&self, distance: usize) -> bool {
+        matches!(
+            self.tokens
+                .get(self.position.saturating_add(distance))
+                .map(Token::kind),
+            Some(TokenKind::Identifier(_))
+        )
+    }
+
+    fn at_explicit_type_arguments(&self) -> bool {
+        self.at_punctuation(Punctuation::PathSeparator)
+            && self.peek_punctuation(1, Punctuation::Less)
     }
 
     fn at_integer(&self) -> bool {
@@ -1076,7 +1443,7 @@ impl<'a> Machine<'a> {
                 control_boundary: false,
             });
             self.tasks.push(Task::ExpectPunctuation(Punctuation::Equal));
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: 1 });
             self.tasks.push(Task::ExpectPunctuation(Punctuation::Colon));
             self.consume_current()?;
             if self.at_word("mut") {
@@ -1131,7 +1498,7 @@ impl<'a> Machine<'a> {
             self.tasks.push(Task::Finish);
             self.tasks.push(Task::Block(BlockKind::Ordinary));
             if self.consume_if_punctuation(Punctuation::ThinArrow)? {
-                self.tasks.push(Task::ValueType);
+                self.tasks.push(Task::ValueType { depth: 1 });
             }
         } else if self.at_word("detach") {
             self.begin(SyntaxForm::DetachStatement);
@@ -1390,6 +1757,12 @@ impl<'a> Machine<'a> {
                 return Err(self.expected("postfix member name"));
             }
             self.tasks.push(Task::PostfixTail { mode });
+        } else if self.at_explicit_type_arguments() {
+            self.parse_explicit_type_arguments()?;
+            if !self.at_punctuation(Punctuation::LeftParenthesis) {
+                return Err(self.expected("call after explicit type arguments"));
+            }
+            self.tasks.push(Task::PostfixTail { mode });
         } else if self.consume_if_punctuation(Punctuation::LeftParenthesis)? {
             self.wrap_last_child(SyntaxForm::PostfixExpression)?;
             self.tasks.push(Task::PostfixTail { mode });
@@ -1520,6 +1893,16 @@ impl<'a> Machine<'a> {
             || (self.at_word("self") && self.peek_punctuation(1, Punctuation::PathSeparator))
         {
             self.parse_path()?;
+            let (explicit_arguments, member) = self.parse_generic_member_tail()?;
+            if explicit_arguments
+                && !member
+                && !self.at_punctuation(Punctuation::LeftParenthesis)
+                && !self.at_punctuation(Punctuation::LeftBrace)
+            {
+                return Err(
+                    self.expected("call, constructor, or member after explicit type arguments")
+                );
+            }
             if !control_boundary && self.at_punctuation(Punctuation::LeftBrace) {
                 self.begin(SyntaxForm::StructExpression);
                 self.expect_punctuation(Punctuation::LeftBrace)?;
@@ -1600,7 +1983,12 @@ impl<'a> Machine<'a> {
             .map_err(|_| self.invariant_fault())?;
         let mut tokens = interpolation.tokens().to_vec();
         tokens.push(Token::new(TokenKind::EndOfFile, eof_span));
-        let mut machine = Machine::new(self.record, self.counters, tokens);
+        let mut machine = Machine::new(
+            self.record,
+            self.counters,
+            tokens,
+            self.maximum_constructed_type_depth,
+        );
         machine.begin(SyntaxForm::InterpolationExpression);
         machine.tasks.push(Task::Finish);
         machine.tasks.push(Task::Expression {
@@ -1608,7 +1996,10 @@ impl<'a> Machine<'a> {
             mode: ExpressionMode::Interpolation,
             control_boundary: false,
         });
-        machine.run_tasks()?;
+        if let Err(fault) = machine.run_tasks() {
+            self.resource_limit = machine.resource_limit;
+            return Err(fault);
+        }
         if !machine.at_end() {
             return Err(machine.expected("end of interpolation"));
         }
@@ -1663,7 +2054,7 @@ impl<'a> Machine<'a> {
             if !allow_result_annotation {
                 return Err(self.expected("no result annotation after `decide`"));
             }
-            self.tasks.push(Task::ValueType);
+            self.tasks.push(Task::ValueType { depth: 1 });
         }
         Ok(())
     }
@@ -1793,8 +2184,15 @@ impl<'a> Machine<'a> {
     }
 
     fn parse_pattern_path_tail(&mut self) -> Result<(), SyntaxFault> {
-        while self.consume_if_punctuation(Punctuation::PathSeparator)? {
+        if self.at_explicit_type_arguments() {
+            self.parse_explicit_type_arguments()?;
+        }
+        while self.at_punctuation(Punctuation::PathSeparator) && self.peek_identifier(1) {
+            self.consume_current()?;
             self.expect_identifier()?;
+            if self.at_explicit_type_arguments() {
+                self.parse_explicit_type_arguments()?;
+            }
         }
         if self.consume_if_punctuation(Punctuation::LeftParenthesis)? {
             self.tasks
@@ -2229,7 +2627,25 @@ mod tests {
         let record = records
             .first()
             .unwrap_or_else(|| unreachable!("one source"));
-        Parser::new(record, counters).parse_module()
+        Parser::new(record, counters, i64::MAX as u64).parse_module()
+    }
+
+    fn parse_result_with_depth(
+        source: &str,
+        token_limit: u64,
+        diagnostic_limit: u64,
+        maximum_constructed_type_depth: u64,
+    ) -> Result<super::ParseOutcome, ParseError> {
+        let limits = SourceLimits::new(1, 2_000_000, 2_000_000, token_limit, diagnostic_limit)
+            .unwrap_or_else(|_| unreachable!("positive limits"));
+        let mut builder = SourceSnapshotBuilder::new(limits);
+        assert!(builder.add_file("main.gnt", source.as_bytes()).is_ok());
+        let mut snapshot = builder.finish();
+        let (records, counters) = snapshot.records_and_counters_mut();
+        let record = records
+            .first()
+            .unwrap_or_else(|| unreachable!("one source"));
+        Parser::new(record, counters, maximum_constructed_type_depth).parse_module()
     }
 
     fn parse(source: &str, token_limit: u64, diagnostic_limit: u64) -> super::ParseOutcome {
@@ -2283,6 +2699,129 @@ fn main(request: Request) -> String {
             8,
         );
         assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+    }
+
+    #[test]
+    fn parses_parametric_declarations_static_traits_and_generic_paths() {
+        let source = r#"
+struct Envelope<T> where T: Label { value: T }
+enum ReviewState<T, E> { Ready(T), Failed(E) }
+trait Convert<T> {
+    pure fn convert<U>(self, fallback: U) -> T where Self: Label, U: Label;
+}
+impl<T, U> Convert<U> for Envelope<T> where T: Label, U: Label {
+    pure fn convert<V>(self, fallback: V) -> U where V: Label { fallback }
+}
+fn preserve<T>(value: T) -> T where T: Label { value }
+fn main(value: Envelope<String>) {
+    let next: Envelope<String> = Envelope::<String> { value: "ready" };
+    discard preserve::<Envelope<String>>(next);
+    discard Convert::<String>::convert::<String>(value, "fallback");
+    match ReviewState::<String, String>::Ready("ok") {
+        ReviewState::<String, String>::Ready(item) => { discard item; },
+        ReviewState::<String, String>::Failed(error) => { discard error; },
+    }
+}
+"#;
+        let outcome = parse(source, 2_048, 32);
+        assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+    }
+
+    #[test]
+    fn rejects_malformed_generic_delimiters_and_turbofish_positions() {
+        for source in [
+            "struct Broken<T { value: T }",
+            "fn broken<T>(value: List<Option<T>>) where { value; }",
+            "fn main() { discard value::<String>; }",
+            "fn main() { discard Envelope::<String,> ; }",
+        ] {
+            let outcome = parse(source, 512, 8);
+            assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        }
+    }
+
+    #[test]
+    fn generic_angles_comparisons_and_contextual_self_have_stable_syntax() {
+        for source in [
+            "fn compare<T>(left: T, right: T) -> Bool { 1 < 2 }",
+            "fn nested<T>(value: Envelope< /* outer */ List<\nOption<T>\n> >) {}",
+            "trait Label { pure fn copy(self) -> Self; }",
+            "impl Item { pure fn copy(self) -> Self { self } }",
+            "impl<T> crate::Envelope<T> { pure fn copy(self) -> Self { self } }",
+        ] {
+            let outcome = parse(source, 512, 8);
+            assert!(outcome.is_valid(), "{source}: {:?}", outcome.diagnostics());
+        }
+
+        for source in [
+            "fn invalid(value: Self) -> Self { value }",
+            "struct Invalid { value: Self }",
+            "impl Self { pure fn invalid(self) {} }",
+        ] {
+            let outcome = parse(source, 512, 8);
+            assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        }
+    }
+
+    #[test]
+    fn constructed_type_depth_is_checked_before_retention() {
+        let source = "fn main(value: Option<Option<Int>>) {}";
+        let admitted = parse_result_with_depth(source, 128, 8, 3)
+            .unwrap_or_else(|error| panic!("at-limit type failed: {error}"));
+        assert!(admitted.is_valid(), "{:?}", admitted.diagnostics());
+
+        let rejected = parse_result_with_depth(source, 128, 8, 2);
+        assert!(matches!(
+            rejected,
+            Err(ParseError::ResourceLimit { error, diagnostics })
+                if error.code == FrontendResourceCode::ConstructedTypeDepthLimit
+                    && error.limit == 2
+                    && error.observed == Some(3)
+                    && diagnostics.is_empty()
+        ));
+
+        let explicit_leaf = parse_result_with_depth(
+            "fn preserve<T>(value: T) -> T { value } fn main() { discard preserve::<Int>(1); }",
+            128,
+            8,
+            1,
+        )
+        .unwrap_or_else(|error| panic!("leaf explicit argument failed: {error}"));
+        assert!(
+            explicit_leaf.is_valid(),
+            "{:?}",
+            explicit_leaf.diagnostics()
+        );
+
+        let explicit_nested = parse_result_with_depth(
+            "fn preserve<T>(value: T) -> T { value } fn main() { discard preserve::<Option<Int>>(None); }",
+            128,
+            8,
+            1,
+        );
+        assert!(matches!(
+            explicit_nested,
+            Err(ParseError::ResourceLimit { error, diagnostics })
+                if error.code == FrontendResourceCode::ConstructedTypeDepthLimit
+                    && error.limit == 1
+                    && error.observed == Some(2)
+                    && diagnostics.is_empty()
+        ));
+
+        let declared_depth = 2_000;
+        let mut declared = String::from("fn nested(value: ");
+        declared.push_str(&"Envelope<".repeat(declared_depth));
+        declared.push_str("Int");
+        declared.push_str(&">".repeat(declared_depth));
+        declared.push_str(") {}");
+        let admitted = parse_result_with_depth(
+            &declared,
+            12_000,
+            8,
+            u64::try_from(declared_depth.saturating_add(1)).unwrap_or(u64::MAX),
+        )
+        .unwrap_or_else(|error| panic!("deep declared type failed: {error}"));
+        assert!(admitted.is_valid(), "{:?}", admitted.diagnostics());
     }
 
     #[test]

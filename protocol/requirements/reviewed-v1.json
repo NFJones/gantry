@@ -2095,8 +2095,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_supports_parametric_declarations_static_traits_and_generic_paths"
+              ],
               "rationale": null
             }
           ]
@@ -10443,8 +10445,12 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries",
+                "crates/gantry-conformance/tests/start_execution.rs#constructed_type_depth_rejects_start_before_preflight_or_execution_identity",
+                "crates/gantry-conformance/tests/validate_package.rs#validate_and_analyze_enforce_constructed_type_depth_per_activity"
+              ],
               "rationale": null
             }
           ]
@@ -23515,8 +23521,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             }
           ]
@@ -23584,8 +23592,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             }
           ]
@@ -23653,8 +23663,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             }
           ]
@@ -23864,8 +23876,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             }
           ]
@@ -23933,8 +23947,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             }
           ]

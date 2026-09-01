@@ -942,6 +942,46 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         source_free.ownership_token.clone(),
     );
 
+    let deep_candidate = TempDirectory::new(b"fn main(value: Option<Option<Int>>) {}");
+    let limited_configuration = test_configuration_with_type_depth(Arc::clone(&services), 2);
+    let limited_lifecycle = InterpreterLifecycle::new(&limited_configuration);
+    let limited_allocator = FreshIdentityAllocator::default();
+    let limited_package =
+        AnalyzePackageCoordinator::new(&limited_allocator, services.as_ref(), &clock);
+    let limited_start = StartExecutionCoordinator::new(
+        &limited_package,
+        &limited_lifecycle,
+        &limited_configuration,
+        &limited_allocator,
+        &preflight,
+    );
+    let limited_resume = DurableStartExecutionCoordinator::new(
+        limited_start,
+        &limited_configuration,
+        Arc::clone(&storage_adapter),
+    );
+    let result = block_on(limited_resume.resume(DurableResumeExecutionRequest {
+        journal_id: journal_id.clone(),
+        protocol_selection: &selection,
+        candidate_package_root: Some(&deep_candidate.0),
+        expected_execution_id: Some(execution_id),
+        event_delivery: None,
+    }));
+    let DurableResumeExecutionResult::Rejected(failure) = result else {
+        panic!("over-depth candidate source was accepted");
+    };
+    assert_eq!(
+        failure.category,
+        ResumeStartFailureCategory::FrontendResourceLimit
+    );
+    assert_eq!(&*failure.code, "frontend-resource-limit");
+    assert!(failure.candidate_package_activity.is_none());
+    assert!(failure.release_error.is_none());
+    assert_eq!(
+        read_prefix(storage.as_ref(), &journal_id),
+        prefix_after_start
+    );
+
     let candidate_lifecycle = InterpreterLifecycle::new(&configuration);
     let candidate_allocator = FreshIdentityAllocator::default();
     let candidate_package =
@@ -1230,17 +1270,42 @@ fn release(
 }
 
 fn test_configuration(services: Arc<Services>) -> InterpreterConfiguration {
-    test_configuration_with_quantum(services, 1_000)
+    test_configuration_with_policy(services, 1_000, 256)
 }
 
 fn test_configuration_with_quantum(
     services: Arc<Services>,
     yield_quantum: u64,
 ) -> InterpreterConfiguration {
+    test_configuration_with_policy(services, yield_quantum, 256)
+}
+
+fn test_configuration_with_type_depth(
+    services: Arc<Services>,
+    maximum_constructed_type_depth: u64,
+) -> InterpreterConfiguration {
+    test_configuration_with_policy(services, 1_000, maximum_constructed_type_depth)
+}
+
+fn test_configuration_with_policy(
+    services: Arc<Services>,
+    yield_quantum: u64,
+    maximum_constructed_type_depth: u64,
+) -> InterpreterConfiguration {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
-            32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
-            256, 65_536, 1_000_000,
+            32,
+            1_048_576,
+            4_194_304,
+            262_144,
+            256,
+            4_194_304,
+            4_194_304,
+            4_194_304,
+            4_194_304,
+            maximum_constructed_type_depth,
+            65_536,
+            1_000_000,
         )
         .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
         1_048_576,

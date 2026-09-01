@@ -27,6 +27,9 @@ The complete twelve-field package-activity policy, its reset and applicability
 rules, stable failures, and reference CLI values are documented in
 [`frontend-resource-policy.md`](frontend-resource-policy.md).
 
+The syntax-only boundary for parametric declarations and static traits is
+documented in [`frontend-generics-and-traits.md`](frontend-generics-and-traits.md).
+
 The analyzer profile's written static argument, explicit assumptions, bounded
 model, and counterexample-replay links are documented in
 [`analyzer-package-validity.md`](analyzer-package-validity.md).

@@ -112,11 +112,11 @@ fn reviewed_frontend_lexical_evidence_is_closed() {
 fn lexical_requirement_vectors_cover_reviewed_clauses() {
     let source = concat!(
         "\u{feff}/* outer /* inner */ */ action agent agents as attempt Bool break ",
-        "continue crate Decision decide default detach discard else enum Err false Float fn ",
+        "continue crate Decision decide default detach discard effects else enum Err false Float fn ",
         "fork for idempotent if impl in inline Int join joinall let limit List loop match mod ",
         "mut new non_idempotent None null Ok OperationError Option prompt pure read_only Result ",
-        "return retry_limit self session Some spawn String struct super true Tuple unbounded Unit ",
-        "until use using when while with α_2 _ 0 1_000 2.5e+2 ",
+        "return retry_limit self Self session Some spawn String struct super trait true Tuple ",
+        "unbounded Unit until use using when where while with α_2 _ 0 1_000 2.5e+2 ",
         ":: -> => == != <= >= && || += -= *= /= %= ",
         "\"a\\n\\u{1f642}\" r#\"raw \\\\ text\"#"
     );
@@ -136,6 +136,7 @@ fn lexical_requirement_vectors_cover_reviewed_clauses() {
             "default",
             "detach",
             "discard",
+            "effects",
             "else",
             "enum",
             "Err",
@@ -173,12 +174,14 @@ fn lexical_requirement_vectors_cover_reviewed_clauses() {
             "return",
             "retry_limit",
             "self",
+            "Self",
             "session",
             "Some",
             "spawn",
             "String",
             "struct",
             "super",
+            "trait",
             "true",
             "Tuple",
             "unbounded",
@@ -187,6 +190,7 @@ fn lexical_requirement_vectors_cover_reviewed_clauses() {
             "use",
             "using",
             "when",
+            "where",
             "while",
             "with",
         ];

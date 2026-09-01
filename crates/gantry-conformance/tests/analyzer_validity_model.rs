@@ -303,7 +303,7 @@ fn analyze(source: &str) -> TypedPackage {
 
 fn syntax(source: &str) -> CompletedSyntaxPhase {
     let root = TempDirectory::new(source);
-    validate_package_syntax(&root.0, limits())
+    validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax failed: {error:?}"))
 }
 

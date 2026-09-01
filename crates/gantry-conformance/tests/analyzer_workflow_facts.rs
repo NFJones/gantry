@@ -314,7 +314,7 @@ fn analyze(source: &str) -> gantry::analysis::TypedPackage {
 fn syntax(source: &str) -> CompletedSyntaxPhase {
     let root = TempDirectory::new();
     root.write(source);
-    validate_package_syntax(&root.0, limits())
+    validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"))
 }
 
