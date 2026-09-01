@@ -89,7 +89,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/activity_observation.rs",
-      "sha256": "e54e829c54511d5b36e851f3dfffa8cb2d3e4afef3604dd324271a3f3f3cf93e"
+      "sha256": "28104d6832fe787d907e1a125ac437ce96a1345f6205a8367e70bfa394a198ef"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_gate.rs",

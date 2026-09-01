@@ -204,7 +204,7 @@ fn decode_material(value: &str) -> Result<[u8; 32], &'static str> {
         return Err("identity-generation-failure");
     }
     let mut material = [0_u8; 32];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let text = std::str::from_utf8(pair).map_err(|_| "identity-generation-failure")?;
         material[index] =
             u8::from_str_radix(text, 16).map_err(|_| "identity-generation-failure")?;
