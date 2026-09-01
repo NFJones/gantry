@@ -1,0 +1,25 @@
+{
+  "format": "gantry.publication-index-negatives/v1",
+  "cases": [
+    { "name": "additional-root-field", "mutation": "add-root-field" },
+    { "name": "changed-protocol-meaning", "mutation": "duplicate-family-definition" },
+    { "name": "duplicate-artifact-id", "mutation": "duplicate-artifact-id" },
+    { "name": "duplicate-artifact-uri", "mutation": "duplicate-artifact-uri" },
+    { "name": "invalid-byte-length", "mutation": "leading-zero-byte-length" },
+    { "name": "invalid-media-type", "mutation": "invalid-media-type" },
+    { "name": "invalid-sha256", "mutation": "uppercase-sha256" },
+    { "name": "missing-artifact", "mutation": "remove-required-artifact" },
+    { "name": "noncanonical-artifact-order", "mutation": "reverse-artifact-order" },
+    { "name": "noncanonical-profile-order", "mutation": "reverse-profile-order" },
+    { "name": "noncanonical-protocol-order", "mutation": "reverse-protocol-order" },
+    { "name": "noncanonical-requirement-order", "mutation": "reverse-requirement-order" },
+    { "name": "recursive-index-reference", "mutation": "embed-active-index-digest" },
+    { "name": "unknown-profile", "mutation": "unknown-profile" },
+    { "name": "unknown-protocol", "mutation": "unknown-protocol" },
+    { "name": "unknown-requirement", "mutation": "unknown-requirement" },
+    { "name": "unversioned-uri", "mutation": "unversioned-uri" },
+    { "name": "wrong-byte-length", "mutation": "wrong-byte-length" },
+    { "name": "wrong-digest", "mutation": "wrong-digest" },
+    { "name": "wrong-index-version", "mutation": "wrong-index-version" }
+  ]
+}

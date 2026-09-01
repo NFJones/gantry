@@ -1,0 +1,25 @@
+{
+  "format": "gantry.public-format-negatives/v1",
+  "cases": [
+    {
+      "name": "binary-wrong-magic",
+      "target": "machine-checkpoint/v1",
+      "mutation": "corrupt-binary-magic"
+    },
+    {
+      "name": "journal-extra-field",
+      "target": "gantry.execution-state/v1",
+      "mutation": "add-root-field"
+    },
+    {
+      "name": "journal-wrong-format",
+      "target": "gantry.cancellation/v1",
+      "mutation": "wrong-format"
+    },
+    {
+      "name": "transcript-extra-field",
+      "target": "canonical-transcript/v1",
+      "mutation": "add-root-field"
+    }
+  ]
+}

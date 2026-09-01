@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.example/protocol/schemas/public-checkpoint-formats-v1.schema.json",
+  "title": "Gantry canonical binary checkpoint golden instances v1",
+  "description": "Publication representation of exact binary checkpoint bytes. Each fixture is decoded by the named public decoder and must re-encode byte-for-byte. Length-prefixed integers are unsigned big-endian u64 values; identities and nested byte sequences are length-prefixed; booleans and enum tags are single canonical bytes; maps and task/session collections are in their codec-defined canonical order.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "combined-checkpoint/v1" },
+        "magic": { "const": "GNTCDP01" },
+        "fixture_hex": {
+          "type": "string",
+          "pattern": "^474e544344503031(?:[0-9a-f]{2})+$"
+        }
+      },
+      "required": ["format", "magic", "fixture_hex"]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "machine-checkpoint/v1" },
+        "magic": { "const": "GNTMCP01" },
+        "fixture_hex": {
+          "type": "string",
+          "pattern": "^474e544d43503031(?:[0-9a-f]{2})+$"
+        }
+      },
+      "required": ["format", "magic", "fixture_hex"]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "session-checkpoint/v1" },
+        "magic": { "const": "GNTSSP01" },
+        "fixture_hex": {
+          "type": "string",
+          "pattern": "^474e545353503031(?:[0-9a-f]{2})+$"
+        }
+      },
+      "required": ["format", "magic", "fixture_hex"]
+    }
+  ]
+}

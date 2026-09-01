@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.example/protocol/schemas/public-journal-formats-v1.schema.json",
+  "title": "Gantry public journal, event, and recovery bodies v1",
+  "oneOf": [
+    { "$ref": "#/$defs/cancellation" },
+    { "$ref": "#/$defs/concurrent_evidence" },
+    { "$ref": "#/$defs/event_dispatched" },
+    { "$ref": "#/$defs/event_occurrence" },
+    { "$ref": "#/$defs/event_settled" },
+    { "$ref": "#/$defs/execution_start" },
+    { "$ref": "#/$defs/execution_state" },
+    { "$ref": "#/$defs/logical_evidence" },
+    { "$ref": "#/$defs/recovery_snapshot" }
+  ],
+  "$defs": {
+    "unsigned": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "hex": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{2})*$"
+    },
+    "identity": {
+      "type": "string",
+      "pattern": "^[a-z][a-z-]*:[0-9a-f]{64}$"
+    },
+    "execution_identity": {
+      "type": "string",
+      "pattern": "^execution:[0-9a-f]{64}$"
+    },
+    "task_identity": {
+      "type": "string",
+      "pattern": "^task:[0-9a-f]{64}$"
+    },
+    "event_identity": {
+      "type": "string",
+      "pattern": "^event:[0-9a-f]{64}$"
+    },
+    "attempt_identity": {
+      "type": "string",
+      "pattern": "^delivery-attempt:[0-9a-f]{64}$"
+    },
+    "evidence_identity": {
+      "type": "string",
+      "pattern": "^evidence:[0-9a-f]{64}$"
+    },
+    "nullable_string": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "minLength": 1 }
+      ]
+    },
+    "nullable_hex": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/hex" }
+      ]
+    },
+    "nullable_unsigned": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/unsigned" }
+      ]
+    },
+    "operation": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "action_recovery": { "$ref": "#/$defs/nullable_string" },
+            "dispatch_id": { "$ref": "#/$defs/nullable_string" },
+            "operation_id": { "$ref": "#/$defs/identity" },
+            "outcome": {},
+            "recovery_dispatch": { "$ref": "#/$defs/unsigned" },
+            "request_bytes": { "$ref": "#/$defs/nullable_hex" },
+            "result_bytes": { "$ref": "#/$defs/nullable_hex" },
+            "result_type": { "$ref": "#/$defs/nullable_string" },
+            "retries_left": { "$ref": "#/$defs/nullable_unsigned" },
+            "retry_delay_us": { "$ref": "#/$defs/nullable_unsigned" },
+            "retry_errors": { "type": "array" },
+            "validation_attempt": { "$ref": "#/$defs/unsigned" }
+          },
+          "required": [
+            "action_recovery",
+            "dispatch_id",
+            "operation_id",
+            "outcome",
+            "recovery_dispatch",
+            "request_bytes",
+            "result_bytes",
+            "result_type",
+            "retries_left",
+            "retry_delay_us",
+            "retry_errors",
+            "validation_attempt"
+          ]
+        }
+      ]
+    },
+    "logical_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": { "$ref": "#/$defs/hex" },
+        "cut": { "type": "string", "minLength": 1 },
+        "execution_id": { "$ref": "#/$defs/execution_identity" },
+        "format": { "const": "gantry.logical-evidence/v1" },
+        "operation": { "$ref": "#/$defs/operation" },
+        "sessions": { "$ref": "#/$defs/nullable_hex" },
+        "task_id": { "$ref": "#/$defs/task_identity" }
+      },
+      "required": [
+        "checkpoint",
+        "cut",
+        "execution_id",
+        "format",
+        "operation",
+        "sessions",
+        "task_id"
+      ]
+    },
+    "concurrent_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": { "$ref": "#/$defs/hex" },
+        "cut": { "type": "string", "minLength": 1 },
+        "execution_id": { "$ref": "#/$defs/execution_identity" },
+        "format": { "const": "gantry.concurrent-durable-evidence/v1" },
+        "task_id": { "$ref": "#/$defs/task_identity" }
+      },
+      "required": ["checkpoint", "cut", "execution_id", "format", "task_id"]
+    },
+    "causal_identity": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity": { "$ref": "#/$defs/identity" },
+            "kind": { "enum": ["operation", "task"] }
+          },
+          "required": ["identity", "kind"]
+        }
+      ]
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "causal_identity": { "$ref": "#/$defs/causal_identity" },
+        "category": { "type": "string", "minLength": 1 },
+        "format": { "const": "gantry.cancellation/v1" },
+        "message": { "$ref": "#/$defs/nullable_string" },
+        "state": { "$ref": "#/$defs/hex" }
+      },
+      "required": ["causal_identity", "category", "format", "message", "state"]
+    },
+    "execution_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": { "$ref": "#/$defs/execution_identity" },
+        "format": { "const": "gantry.execution-start/v1" },
+        "metadata": { "$ref": "#/$defs/hex" },
+        "program": { "$ref": "#/$defs/hex" },
+        "state": { "$ref": "#/$defs/hex" },
+        "task_id": { "$ref": "#/$defs/task_identity" }
+      },
+      "required": ["execution_id", "format", "metadata", "program", "state", "task_id"]
+    },
+    "execution_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action_mapping_revision": { "$ref": "#/$defs/nullable_string" },
+        "agent_mapping_revision": { "$ref": "#/$defs/nullable_string" },
+        "execution_id": { "$ref": "#/$defs/execution_identity" },
+        "format": { "const": "gantry.execution-state/v1" },
+        "mutable_policy": {}
+      },
+      "required": [
+        "action_mapping_revision",
+        "agent_mapping_revision",
+        "execution_id",
+        "format",
+        "mutable_policy"
+      ]
+    },
+    "recovery_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "execution_start": { "$ref": "#/$defs/hex" },
+        "execution_state": { "$ref": "#/$defs/nullable_hex" },
+        "format": { "const": "gantry.recovery-snapshot/v1" },
+        "state": { "$ref": "#/$defs/hex" }
+      },
+      "required": ["execution_start", "execution_state", "format", "state"]
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "major": { "const": 1 },
+        "minor": { "const": 0 }
+      },
+      "required": ["major", "minor"]
+    },
+    "source": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "end": { "$ref": "#/$defs/unsigned" },
+            "path": { "type": "string", "minLength": 1 },
+            "start": { "$ref": "#/$defs/unsigned" }
+          },
+          "required": ["end", "path", "start"]
+        }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activity_id": { "$ref": "#/$defs/identity" },
+        "causal_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/identity" },
+          "uniqueItems": true
+        },
+        "event_id": { "$ref": "#/$defs/event_identity" },
+        "execution_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/execution_identity" }
+          ]
+        },
+        "kind": { "type": "string", "minLength": 1 },
+        "layer": { "enum": ["logical", "physical"] },
+        "operation_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/identity" }
+          ]
+        },
+        "payload": { "$ref": "#/$defs/hex" },
+        "per_task_sequence": { "$ref": "#/$defs/nullable_unsigned" },
+        "protected_references": { "type": "array" },
+        "source": { "$ref": "#/$defs/source" },
+        "task_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/task_identity" }
+          ]
+        },
+        "timestamp": { "type": "string", "minLength": 1 },
+        "version": { "$ref": "#/$defs/version" }
+      },
+      "required": [
+        "activity_id",
+        "causal_ids",
+        "event_id",
+        "execution_id",
+        "kind",
+        "layer",
+        "operation_id",
+        "payload",
+        "per_task_sequence",
+        "protected_references",
+        "source",
+        "task_id",
+        "timestamp",
+        "version"
+      ]
+    },
+    "event_occurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "causal_evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "event": { "$ref": "#/$defs/event" },
+        "format": { "const": "gantry.event-occurrence/v1" },
+        "plan": { "type": "array" }
+      },
+      "required": ["causal_evidence_id", "event", "format", "plan"]
+    },
+    "event_dispatched": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": { "$ref": "#/$defs/attempt_identity" },
+        "event_id": { "$ref": "#/$defs/event_identity" },
+        "format": { "const": "gantry.event-delivery-dispatched/v1" },
+        "retry_number": { "$ref": "#/$defs/unsigned" },
+        "sink_id": { "type": "string", "minLength": 1 }
+      },
+      "required": ["attempt_id", "event_id", "format", "retry_number", "sink_id"]
+    },
+    "event_settled": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": { "$ref": "#/$defs/attempt_identity" },
+        "event_id": { "$ref": "#/$defs/event_identity" },
+        "format": { "const": "gantry.event-delivery-settled/v1" },
+        "outcome": { "type": "string", "minLength": 1 },
+        "remaining_retries": { "$ref": "#/$defs/unsigned" },
+        "retry_number": { "$ref": "#/$defs/unsigned" },
+        "selected_delay_us": { "$ref": "#/$defs/nullable_unsigned" },
+        "sink_id": { "type": "string", "minLength": 1 }
+      },
+      "required": [
+        "attempt_id",
+        "event_id",
+        "format",
+        "outcome",
+        "remaining_retries",
+        "retry_number",
+        "selected_delay_us",
+        "sink_id"
+      ]
+    }
+  }
+}

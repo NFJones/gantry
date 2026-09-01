@@ -1,0 +1,112 @@
+{
+  "$id": "https://gantry.example/protocol/schemas/publication-index-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": { "$ref": "#/$defs/artifact" },
+      "minItems": 7,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "publication_index": { "$ref": "#/$defs/version" },
+    "publication_revision": { "minLength": 1, "type": "string" },
+    "source_language": { "$ref": "#/$defs/version" }
+  },
+  "required": [
+    "publication_index",
+    "source_language",
+    "publication_revision",
+    "artifacts"
+  ],
+  "$defs": {
+    "artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_length": {
+          "pattern": "^(?:0|[1-9][0-9]*)$",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "media_type": {
+          "pattern": "^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$",
+          "type": "string"
+        },
+        "profiles": {
+          "items": { "$ref": "#/$defs/profile" },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "protocols": {
+          "items": { "$ref": "#/$defs/protocol" },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "requirements": {
+          "items": {
+            "pattern": "^GNT-[A-Za-z0-9.-]+$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "uri": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "uri",
+        "media_type",
+        "byte_length",
+        "sha256",
+        "protocols",
+        "profiles",
+        "requirements"
+      ],
+      "type": "object"
+    },
+    "profile": {
+      "enum": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ]
+    },
+    "protocol": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "major": { "maximum": 9007199254740991, "minimum": 0, "type": "number" },
+        "minor": { "maximum": 9007199254740991, "minimum": 0, "type": "number" }
+      },
+      "required": ["family", "major", "minor"],
+      "type": "object"
+    },
+    "version": {
+      "additionalProperties": false,
+      "properties": {
+        "major": { "const": 1 },
+        "minor": { "const": 0 }
+      },
+      "required": ["major", "minor"],
+      "type": "object"
+    }
+  },
+  "title": "Gantry publication index v1",
+  "type": "object"
+}

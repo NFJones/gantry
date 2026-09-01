@@ -3,6 +3,7 @@
 mod embedding;
 mod ir;
 mod portable;
+mod publication;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -38,6 +39,7 @@ pub(crate) fn generate(root: &Path) -> Result<(), String> {
     let embedding_changed = embedding::generate(root)?;
     let ir_changed = ir::generate(root)?;
     let portable_changed = portable::generate(root)?;
+    publication::check_generated(root)?;
     if profiles_changed {
         println!("generated {OUTPUT_PATH}");
     }
@@ -62,6 +64,7 @@ pub(crate) fn check_generated(root: &Path) -> Result<(), String> {
     embedding::check_generated(root)?;
     ir::check_generated(root)?;
     portable::check_generated(root)?;
+    publication::check_generated(root)?;
     println!("generated protocol bindings are current");
     Ok(())
 }

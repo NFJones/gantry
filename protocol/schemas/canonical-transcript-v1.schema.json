@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.example/protocol/schemas/canonical-transcript-v1.schema.json",
+  "title": "Gantry canonical logical-session transcript v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "protocol": { "$ref": "#/$defs/version" },
+    "turns": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/turn" }
+    }
+  },
+  "required": ["protocol", "turns"],
+  "$defs": {
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "major": { "const": 1 },
+        "minor": { "const": 0 }
+      },
+      "required": ["major", "minor"]
+    },
+    "typed_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "value": {}
+      },
+      "required": ["type", "value"]
+    },
+    "interpolation_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "type": { "type": "string", "minLength": 1 },
+        "value": {}
+      },
+      "required": ["position", "type", "value"]
+    },
+    "named_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "value": {}
+      },
+      "required": ["name", "type", "value"]
+    },
+    "accepted_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["decision", "unit", "value"] },
+        "type": { "type": "string", "minLength": 1 },
+        "value": {}
+      },
+      "required": ["kind", "type", "value"]
+    },
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accepted_result": { "$ref": "#/$defs/accepted_result" },
+        "interpolation_inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/interpolation_input" }
+        },
+        "operation_kind": { "enum": ["decide", "prompt"] },
+        "rendered_prompt": { "type": "string" },
+        "selected_agent": { "type": "string", "minLength": 1 },
+        "template_representation": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "using_inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/named_input" }
+        }
+      },
+      "required": [
+        "accepted_result",
+        "interpolation_inputs",
+        "operation_kind",
+        "rendered_prompt",
+        "selected_agent",
+        "template_representation",
+        "using_inputs"
+      ]
+    }
+  }
+}
