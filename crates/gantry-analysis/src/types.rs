@@ -19,11 +19,14 @@ use gantry_frontend::{
 };
 use gantry_ir::generated::TypeKind;
 use gantry_ir::{
-    ArtifactLimits, ConcreteEffect, ConcreteIdentity, GenericTemplate, TypeDescriptor,
-    TypeDescriptorError, TypeExpression,
+    ArtifactLimits, CanonicalCallableIdentity, CanonicalSignature, ClosedCallable,
+    ClosedOperationSite, ClosedTaskSite, ConcreteEffect, ConcreteIdentity, ConcreteSourceMapEntry,
+    ExecutableProjection, GenericAnalysisFacts, GenericTemplate, ImplementationHead, ResolvedCall,
+    SourceOriginSet, StaticSiteId, StructuralPosition, TraitContract, TypeDescriptor,
+    TypeDescriptorError, TypeExpression, WorkflowFacts, WorkflowParameter,
 };
 
-use crate::bodies::check_package_bodies;
+use crate::bodies::{BodyAnalysis, EffectNode, InstantiationKey, check_package_bodies};
 use crate::effects::analyze_workflow_facts;
 use crate::executable::lower_executable_program;
 use crate::generics::{
@@ -33,7 +36,7 @@ use crate::generics::{
     collect_type_binders,
 };
 use crate::lowering::{LoweringError, lower_package_artifacts, lower_package_manifest};
-use crate::schemas::{SchemaAnalysisError, analyze_generated_schemas};
+use crate::schemas::{SchemaAnalysisError, SchemaGenericFacts, analyze_generated_schemas};
 use crate::{
     AnalysisError, AnalysisStatus, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind,
     TypeBinder, TypeFact, TypedPackage, analyze_package_structure,
@@ -208,23 +211,27 @@ fn analyze_package_types_with_policy(
         &structure,
         &mut type_diagnostics,
     )?;
-    let (generic_templates, generic_concrete_effects) = finalize_generic_effects(&body_analysis)?;
+    let (mut generic_templates, generic_concrete_effects) =
+        finalize_generic_effects(&body_analysis)?;
     let has_semantic_errors = diagnostics
         .iter()
         .chain(&type_diagnostics)
         .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error);
-    let has_generic_templates = !type_binders.is_empty();
-    let schema_result = if has_semantic_errors || has_generic_templates {
-        Ok((None, None, None))
+    let has_generic_templates = !type_binders.is_empty() || !trait_contracts.is_empty();
+    let schema_result = if has_semantic_errors {
+        Ok((None, None, None, None))
     } else {
         analyze_generated_schemas(
             phase.parsed_sources(),
             &facts_by_source,
+            &generic_types,
+            &type_binders,
             &structure,
             &workflows,
+            &actions,
             artifact_limits,
         )
-        .map(|(entry, schemas, shapes)| (entry, schemas, Some(shapes)))
+        .map(|(entry, schemas, shapes, generic)| (entry, schemas, Some(shapes), Some(generic)))
     };
 
     facts.sort_by(|left, right| left.span.cmp(&right.span));
@@ -252,7 +259,7 @@ fn analyze_package_types_with_policy(
     } else {
         AnalysisStatus::Valid
     };
-    let (entry, schemas, declared_value_shapes) = match schema_result {
+    let (entry, schemas, declared_value_shapes, schema_generic_facts) = match schema_result {
         Ok(inventory) => inventory,
         Err(SchemaAnalysisError::ResourceLimit(error)) => {
             return Err(AnalysisError::ResourceLimit {
@@ -262,50 +269,86 @@ fn analyze_package_types_with_policy(
         }
         Err(SchemaAnalysisError::Invariant) => return Err(AnalysisError::Invariant),
     };
-    let (manifest, canonical_ir, executable, source_map) =
-        if status == AnalysisStatus::Valid && !has_generic_templates {
-            let artifacts = match lower_package_artifacts(
-                phase.snapshot(),
-                phase.parsed_sources(),
-                &body_analysis.expression_types,
-                &workflows,
-                artifact_limits,
-            ) {
-                Ok(artifacts) => artifacts,
-                Err(LoweringError::ResourceLimit(error)) => {
-                    return Err(AnalysisError::ResourceLimit {
-                        error,
-                        diagnostics: retained,
-                    });
-                }
-                Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
-            };
-            let executable = lower_executable_program(
+    if let Some(generic) = &schema_generic_facts {
+        generic_templates.extend(generic.templates.iter().cloned());
+        generic_templates.sort_by(|left, right| {
+            (left.kind(), left.identity()).cmp(&(right.kind(), right.identity()))
+        });
+    }
+    let mut generic_instantiations = body_analysis.generic_instantiations.clone();
+    if let Some(generic) = &schema_generic_facts {
+        generic_instantiations.extend(generic.instantiations.iter().cloned());
+        generic_instantiations.sort_by(|left, right| {
+            (left.kind(), left.template(), left.arguments()).cmp(&(
+                right.kind(),
+                right.template(),
+                right.arguments(),
+            ))
+        });
+    }
+    let (manifest, canonical_ir, executable, source_map) = if status == AnalysisStatus::Valid {
+        let generic = has_generic_templates
+            .then(|| {
+                assemble_generic_analysis_facts(
+                    phase.parsed_sources(),
+                    &workflows,
+                    &body_analysis,
+                    &trait_contracts,
+                    &implementation_heads,
+                    &generic_templates,
+                    &generic_concrete_effects,
+                    schema_generic_facts.as_ref(),
+                )
+            })
+            .transpose()?;
+        let artifacts = match lower_package_artifacts(
+            phase.snapshot(),
+            phase.parsed_sources(),
+            &body_analysis.expression_types,
+            &workflows,
+            generic,
+            &body_analysis.generic_declarations,
+            artifact_limits,
+        ) {
+            Ok(artifacts) => artifacts,
+            Err(LoweringError::ResourceLimit(error)) => {
+                return Err(AnalysisError::ResourceLimit {
+                    error,
+                    diagnostics: retained,
+                });
+            }
+            Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
+        };
+        let executable = if has_generic_templates {
+            None
+        } else {
+            Some(lower_executable_program(
                 phase.parsed_sources(),
                 &facts_by_source,
                 &body_analysis.expression_types,
                 entry.as_ref().ok_or(AnalysisError::Invariant)?,
                 &workflows,
                 &actions,
-            )?;
-            (
-                Some(artifacts.manifest),
-                Some(artifacts.canonical_ir),
-                Some(executable),
-                Some(artifacts.source_map),
-            )
-        } else {
-            let manifest = if phase.module_resolution_issues().is_empty() {
-                match lower_package_manifest(phase.snapshot(), artifact_limits) {
-                    Ok(manifest) => Some(manifest),
-                    Err(LoweringError::ResourceLimit(_)) => None,
-                    Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
-                }
-            } else {
-                None
-            };
-            (manifest, None, None, None)
+            )?)
         };
+        (
+            Some(artifacts.manifest),
+            Some(artifacts.canonical_ir),
+            executable,
+            Some(artifacts.source_map),
+        )
+    } else {
+        let manifest = if phase.module_resolution_issues().is_empty() {
+            match lower_package_manifest(phase.snapshot(), artifact_limits) {
+                Ok(manifest) => Some(manifest),
+                Err(LoweringError::ResourceLimit(_)) => None,
+                Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
+            }
+        } else {
+            None
+        };
+        (manifest, None, None, None)
+    };
     Ok(TypedPackage {
         status,
         structure,
@@ -314,7 +357,7 @@ fn analyze_package_types_with_policy(
         trait_contracts,
         implementation_heads,
         generic_templates,
-        generic_instantiations: body_analysis.generic_instantiations,
+        generic_instantiations,
         generic_concrete_effects,
         types: facts,
         workflows,
@@ -376,6 +419,362 @@ fn finalize_generic_effects(
         .collect::<Result<Vec<_>, AnalysisError>>()?;
     concrete.sort_by(|left, right| left.callable.cmp(&right.callable));
     Ok((templates, concrete))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assemble_generic_analysis_facts(
+    sources: &[ParsedSource],
+    workflows: &[WorkflowFacts],
+    body: &BodyAnalysis,
+    traits: &[TraitContract],
+    implementations: &[ImplementationHead],
+    templates: &[GenericTemplate],
+    concrete_effects: &[ConcreteEffect],
+    schema: Option<&SchemaGenericFacts>,
+) -> Result<GenericAnalysisFacts, AnalysisError> {
+    let identities = body
+        .generic_instantiations
+        .iter()
+        .map(|instantiation| {
+            let ConcreteIdentity::Callable(callable) = instantiation.concrete() else {
+                return Err(AnalysisError::Invariant);
+            };
+            Ok((
+                (
+                    instantiation.template().clone(),
+                    instantiation.arguments().to_vec(),
+                ),
+                callable.clone(),
+            ))
+        })
+        .collect::<Result<BTreeMap<InstantiationKey, CanonicalCallableIdentity>, _>>()?;
+    let source_identities = body
+        .source_callables
+        .iter()
+        .map(|metadata| (metadata.declaration.clone(), metadata.identity.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let effects = concrete_effects
+        .iter()
+        .map(|effect| (effect.callable.clone(), effect.effects))
+        .collect::<BTreeMap<_, _>>();
+    let mut types = schema
+        .into_iter()
+        .flat_map(|schema| schema.concrete_types.iter().cloned())
+        .map(|ty| (ty.canonical_string(), ty))
+        .collect::<BTreeMap<_, _>>();
+    let mut callables = Vec::with_capacity(
+        body.source_callables
+            .len()
+            .saturating_add(body.concrete_callables.len()),
+    );
+    let mut source_map = schema
+        .into_iter()
+        .flat_map(|schema| schema.source_map.iter().cloned())
+        .collect::<Vec<_>>();
+    for metadata in &body.source_callables {
+        let mut pending = metadata
+            .parameters
+            .iter()
+            .map(|parameter| parameter.ty.clone())
+            .chain(std::iter::once(metadata.result.clone()))
+            .collect::<Vec<_>>();
+        while let Some(ty) = pending.pop() {
+            let canonical = ty.canonical_string();
+            if types.insert(canonical, ty.clone()).is_none() {
+                pending.extend(ty.immediate_members());
+            }
+        }
+        let mut direct_calls = metadata
+            .direct_calls
+            .iter()
+            .map(|callee| effect_identity(callee, &identities, &source_identities))
+            .collect::<Result<Vec<_>, _>>()?;
+        direct_calls.sort();
+        direct_calls.dedup();
+        let (operations, task_sites) =
+            closed_callable_sites(workflows, &metadata.declaration, None)?;
+        callables.push(
+            ClosedCallable::with_sites(
+                metadata.identity.clone(),
+                CanonicalSignature::concrete_function(
+                    &metadata.identity,
+                    &metadata.parameters,
+                    &metadata.result,
+                ),
+                metadata.effects,
+                direct_calls,
+                operations,
+                task_sites,
+            )
+            .map_err(|_| AnalysisError::Invariant)?,
+        );
+    }
+    for metadata in &body.concrete_callables {
+        let identity = identities
+            .get(&metadata.key)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        let mut parameters = Vec::new();
+        if let Some(receiver) = &metadata.receiver {
+            parameters.push(WorkflowParameter {
+                mutable: metadata.mutable_receiver,
+                ty: receiver.clone(),
+            });
+        }
+        parameters.extend(
+            metadata
+                .parameters
+                .iter()
+                .cloned()
+                .map(|ty| WorkflowParameter { mutable: false, ty }),
+        );
+        let mut pending = parameters
+            .iter()
+            .map(|parameter| parameter.ty.clone())
+            .chain(std::iter::once(metadata.result.clone()))
+            .collect::<Vec<_>>();
+        while let Some(ty) = pending.pop() {
+            let canonical = ty.canonical_string();
+            if types.insert(canonical, ty.clone()).is_none() {
+                pending.extend(ty.immediate_members());
+            }
+        }
+        let mut direct_calls = metadata
+            .direct_calls
+            .iter()
+            .map(|callee| effect_identity(callee, &identities, &source_identities))
+            .collect::<Result<Vec<_>, _>>()?;
+        direct_calls.sort();
+        direct_calls.dedup();
+        let (operations, task_sites) = closed_callable_sites(
+            workflows,
+            &metadata.declaration,
+            Some(&metadata.operation_results),
+        )?;
+        callables.push(
+            ClosedCallable::with_sites(
+                identity.clone(),
+                CanonicalSignature::concrete_function(&identity, &parameters, &metadata.result),
+                effects.get(&identity).copied().unwrap_or_default(),
+                direct_calls,
+                operations,
+                task_sites,
+            )
+            .map_err(|_| AnalysisError::Invariant)?,
+        );
+        source_map.push(ConcreteSourceMapEntry::new(
+            ConcreteIdentity::Callable(identity),
+            metadata.declaration.clone(),
+            SourceOriginSet::canonicalize(metadata.origins.clone()),
+        ));
+    }
+    callables.sort_by(|left, right| left.identity().cmp(right.identity()));
+    source_map.sort_by(|left, right| left.node().cmp(right.node()));
+    let mut resolved_calls = body
+        .resolved_calls
+        .iter()
+        .map(|metadata| {
+            Ok(ResolvedCall {
+                caller: effect_identity(&metadata.caller, &identities, &source_identities)?,
+                site: resolved_call_site(sources, workflows, body, metadata)?,
+                callee: effect_identity(&metadata.callee, &identities, &source_identities)?,
+                selected_implementation: metadata.selected_implementation.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, AnalysisError>>()?;
+    resolved_calls
+        .sort_by(|left, right| (&left.caller, &left.site).cmp(&(&right.caller, &right.site)));
+    let executable = ExecutableProjection::new(types.into_values().collect(), callables)
+        .map_err(|_| AnalysisError::Invariant)?;
+    let mut instantiations = body.generic_instantiations.clone();
+    instantiations.extend(
+        schema
+            .into_iter()
+            .flat_map(|schema| schema.instantiations.iter().cloned()),
+    );
+    instantiations.sort_by(|left, right| {
+        (left.kind(), left.template(), left.arguments()).cmp(&(
+            right.kind(),
+            right.template(),
+            right.arguments(),
+        ))
+    });
+    GenericAnalysisFacts::new(
+        traits.to_vec(),
+        implementations.to_vec(),
+        templates.to_vec(),
+        instantiations,
+        resolved_calls,
+        concrete_effects.to_vec(),
+        source_map,
+        executable,
+    )
+    .map_err(|_| AnalysisError::Invariant)
+}
+
+fn closed_callable_sites(
+    workflows: &[WorkflowFacts],
+    declaration: &SourceSpan,
+    concrete_results: Option<&BTreeMap<SourceSpan, TypeDescriptor>>,
+) -> Result<(Vec<ClosedOperationSite>, Vec<ClosedTaskSite>), AnalysisError> {
+    let workflow = workflows
+        .iter()
+        .find(|workflow| &workflow.source == declaration)
+        .ok_or(AnalysisError::Invariant)?;
+    let operations = workflow
+        .operations
+        .iter()
+        .map(|operation| {
+            ClosedOperationSite::new(
+                operation.id.position().clone(),
+                operation.kind,
+                concrete_results
+                    .and_then(|results| results.get(&operation.source))
+                    .cloned()
+                    .unwrap_or_else(|| operation.result.clone()),
+                operation.recovery,
+                operation.action.clone(),
+            )
+            .map_err(|_| AnalysisError::Invariant)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let task_sites = workflow
+        .task_controls
+        .iter()
+        .map(|site| ClosedTaskSite {
+            position: site.id.position().clone(),
+            kind: site.kind,
+            handles: site.handles.clone(),
+        })
+        .collect();
+    Ok((operations, task_sites))
+}
+
+fn effect_identity(
+    node: &EffectNode,
+    concrete: &BTreeMap<InstantiationKey, CanonicalCallableIdentity>,
+    source: &BTreeMap<SourceSpan, CanonicalCallableIdentity>,
+) -> Result<CanonicalCallableIdentity, AnalysisError> {
+    match node {
+        EffectNode::Source(span) => source.get(span).cloned(),
+        EffectNode::Concrete(key) => concrete.get(key).cloned(),
+        EffectNode::Template(_) => None,
+    }
+    .ok_or(AnalysisError::Invariant)
+}
+
+fn resolved_call_site(
+    sources: &[ParsedSource],
+    workflows: &[WorkflowFacts],
+    body: &BodyAnalysis,
+    metadata: &crate::bodies::ResolvedCallMetadata,
+) -> Result<StaticSiteId, AnalysisError> {
+    let declaration = match &metadata.caller {
+        EffectNode::Source(source) => source,
+        EffectNode::Concrete(key) => {
+            &body
+                .concrete_callables
+                .iter()
+                .find(|callable| &callable.key == key)
+                .ok_or(AnalysisError::Invariant)?
+                .declaration
+        }
+        EffectNode::Template(_) => return Err(AnalysisError::Invariant),
+    };
+    let workflow = workflows
+        .iter()
+        .find(|workflow| &workflow.source == declaration)
+        .ok_or(AnalysisError::Invariant)?;
+    let tree = sources
+        .iter()
+        .find(|source| {
+            source
+                .tree()
+                .nodes()
+                .iter()
+                .any(|node| node.span() == declaration)
+        })
+        .map(ParsedSource::tree)
+        .ok_or(AnalysisError::Invariant)?;
+    let callable = tree
+        .nodes()
+        .iter()
+        .enumerate()
+        .find(|(_, node)| {
+            matches!(
+                node.form(),
+                SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
+            ) && node.span() == declaration
+        })
+        .map(|(index, _)| NodeId::from_index(index))
+        .ok_or(AnalysisError::Invariant)?;
+    let block = direct_child_form_for_site(
+        tree,
+        tree.node(callable).ok_or(AnalysisError::Invariant)?,
+        SyntaxForm::Block,
+    )
+    .ok_or(AnalysisError::Invariant)?;
+    let mut work = semantic_children_for_site(tree, block)?
+        .into_iter()
+        .enumerate()
+        .rev()
+        .map(|(index, child)| (child, vec![index as u64]))
+        .collect::<Vec<_>>();
+    let mut candidate = None;
+    while let Some((id, position)) = work.pop() {
+        let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        if source_span_contains(node.span(), &metadata.source)
+            && matches!(
+                node.form(),
+                SyntaxForm::Expression | SyntaxForm::BinaryExpression | SyntaxForm::UnaryExpression
+            )
+        {
+            candidate = Some(position.clone());
+        }
+        for (index, child) in semantic_children_for_site(tree, id)?
+            .into_iter()
+            .enumerate()
+            .rev()
+        {
+            let mut child_position = position.clone();
+            child_position.push(index as u64);
+            work.push((child, child_position));
+        }
+    }
+    let position = StructuralPosition::new(candidate.ok_or(AnalysisError::Invariant)?)
+        .map_err(|_| AnalysisError::Invariant)?;
+    Ok(StaticSiteId::new(workflow.path.clone(), position))
+}
+
+fn direct_child_form_for_site(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    form: SyntaxForm,
+) -> Option<NodeId> {
+    node.children().iter().copied().find(|child| {
+        tree.node(*child).is_some_and(|node| {
+            std::mem::discriminant(node.form()) == std::mem::discriminant(&form)
+        })
+    })
+}
+
+fn semantic_children_for_site(tree: &SyntaxTree, id: NodeId) -> Result<Vec<NodeId>, AnalysisError> {
+    let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+    Ok(node
+        .children()
+        .iter()
+        .copied()
+        .filter(|child| {
+            tree.node(*child)
+                .is_some_and(|node| !matches!(node.form(), SyntaxForm::Token(_)))
+        })
+        .collect())
+}
+
+fn source_span_contains(outer: &SourceSpan, inner: &SourceSpan) -> bool {
+    outer.source() == inner.source()
+        && outer.bytes().start() <= inner.bytes().start()
+        && outer.bytes().end() >= inner.bytes().end()
 }
 
 /// Resolves every value-type node in arena construction order. Child type
@@ -1211,6 +1610,7 @@ mod tests {
     use gantry_core::source::{FrontendLimits, SourceLimits};
     use gantry_frontend::validate_package_syntax;
     use gantry_ir::ArtifactLimits;
+    use sha2::{Digest, Sha256};
 
     use super::{
         analyze_package_types, analyze_package_types_with_artifact_limits,
@@ -2747,6 +3147,193 @@ fn main(flag: Bool) -> Int {
     }
 
     #[test]
+    fn generic_executable_projection_retains_closed_operation_and_task_sites() {
+        let package = analyze(
+            "fn execute<T>() -> T where T: ExternalValue { spawn child { return; } discard join(child); prompt \"Generate.\" -> T }\nfn main() -> String { execute::<String>() }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let callable = package
+            .canonical_ir()
+            .and_then(|ir| {
+                ir.generic_facts()
+                    .executable()
+                    .callables()
+                    .iter()
+                    .find(|callable| callable.identity().as_str() == "crate::execute<String>")
+            })
+            .unwrap_or_else(|| unreachable!("closed generic callable is present"));
+        assert_eq!(callable.operations().len(), 1);
+        assert_eq!(callable.operations()[0].kind.wire_name(), "prompt");
+        assert_eq!(
+            callable.operations()[0].result,
+            gantry_ir::TypeDescriptor::STRING
+        );
+        assert_eq!(
+            callable
+                .task_sites()
+                .iter()
+                .map(|site| (
+                    site.kind.wire_name(),
+                    site.handles.iter().map(AsRef::as_ref).collect::<Vec<_>>(),
+                ))
+                .collect::<Vec<_>>(),
+            [("spawn", vec!["child"]), ("join", vec!["child"])]
+        );
+    }
+
+    #[test]
+    fn generic_packages_publish_closed_schemas_and_analysis_artifacts() {
+        let package = analyze(
+            "fn preserve<T>(value: T) -> T { value }\nfn main() -> String { preserve(\"value\") }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(package.schemas().is_some());
+        let ir = package
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("valid generic package has canonical analysis IR"));
+        let generic = ir.generic_facts();
+        assert_eq!(generic.instantiations(), package.generic_instantiations());
+        assert_eq!(
+            generic.concrete_effects(),
+            package.generic_concrete_effects()
+        );
+        assert_eq!(
+            generic
+                .executable()
+                .callables()
+                .iter()
+                .map(|callable| callable.identity().as_str())
+                .collect::<Vec<_>>(),
+            ["crate::main", "crate::preserve<String>"]
+        );
+        assert_eq!(generic.resolved_calls().len(), 1);
+        assert_eq!(generic.resolved_calls()[0].caller.as_str(), "crate::main");
+        assert_eq!(
+            generic.resolved_calls()[0].callee.as_str(),
+            "crate::preserve<String>"
+        );
+        assert!(
+            generic.resolved_calls()[0]
+                .selected_implementation
+                .is_none()
+        );
+        assert!(
+            generic
+                .executable()
+                .types()
+                .iter()
+                .all(|ty| !ty.canonical_string().contains('^'))
+        );
+        let source_map = package
+            .source_map()
+            .unwrap_or_else(|| unreachable!("valid generic package has a source map"));
+        assert_eq!(source_map.generic_entries().len(), 1);
+        assert_eq!(source_map.generic_entries()[0].origins().origins().len(), 1);
+    }
+
+    #[test]
+    fn generic_schema_closure_instantiates_recursive_applications_once() {
+        let package = analyze(
+            "struct Envelope<T> { value: T }\nenum State<T> { Empty, Ready(T) }\nstruct Node<T> { value: T, next: Option<Node<T>> }\nstruct Input { first: Envelope<String>, second: Envelope<String>, state: State<Int>, root: Node<String> }\nfn main(value: Input) { discard value; }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let schemas = package
+            .schemas()
+            .unwrap_or_else(|| unreachable!("closed entry boundary has a schema"));
+        assert_eq!(schemas.entries().len(), 2);
+        let (_, input_schema) = schemas
+            .entries()
+            .iter()
+            .find(|(ty, _)| ty.canonical_string() == "crate::Input")
+            .unwrap_or_else(|| unreachable!("concrete input schema is present"));
+        let schema = std::str::from_utf8(input_schema)
+            .unwrap_or_else(|_| unreachable!("generated schema is UTF-8"));
+        let definition_key =
+            |descriptor: &str| format!("{:x}", Sha256::digest(descriptor.as_bytes()));
+        let input = definition_key("crate::Input");
+        let envelope = definition_key("crate::Envelope<String>");
+        let state = definition_key("crate::State<Int>");
+        let node = definition_key("crate::Node<String>");
+        for key in [&input, &envelope, &state, &node] {
+            assert_eq!(
+                schema.matches(&format!("\"{key}\":")).count(),
+                1,
+                "{schema}"
+            );
+        }
+        assert_eq!(schema.matches(&format!("#/$defs/{envelope}")).count(), 2);
+        assert_eq!(schema.matches(&format!("#/$defs/{node}")).count(), 2);
+        assert!(schema.contains("\"const\":\"Ready\""));
+        assert!(!schema.contains('^'));
+
+        let ir = package
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("valid generic package has canonical analysis IR"));
+        let generic = ir.generic_facts();
+        let type_templates = generic
+            .templates()
+            .iter()
+            .filter(|template| template.kind().wire_name() == "declared-type")
+            .map(|template| template.identity().as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            type_templates,
+            [
+                "crate::Envelope<^0.0>",
+                "crate::Node<^0.0>",
+                "crate::State<^0.0>",
+            ]
+        );
+        let type_instantiations = generic
+            .instantiations()
+            .iter()
+            .filter(|instantiation| instantiation.kind().wire_name() == "declared-type")
+            .map(|instantiation| instantiation.concrete().canonical_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            type_instantiations,
+            [
+                "crate::Envelope<String>",
+                "crate::Node<String>",
+                "crate::State<Int>",
+            ]
+        );
+        assert!(
+            generic
+                .executable()
+                .types()
+                .iter()
+                .all(|ty| !ty.canonical_string().contains('^'))
+        );
+        let source_map = package
+            .source_map()
+            .unwrap_or_else(|| unreachable!("valid generic package has a source map"));
+        let envelope_origins = source_map
+            .generic_entries()
+            .iter()
+            .find(|entry| entry.node().canonical_string() == "crate::Envelope<String>")
+            .unwrap_or_else(|| unreachable!("concrete envelope source mapping is present"))
+            .origins()
+            .origins();
+        assert_eq!(envelope_origins.len(), 3);
+    }
+
+    #[test]
     fn generic_method_effects_follow_retained_concrete_call_graphs() {
         let inherent = analyze(
             "struct Envelope<T> { value: T }\nimpl<T> Envelope<T> { fn leaf(self) { discard prompt \"Generate.\" -> String; } fn outer(self) { self.leaf(); } }\nfn main(value: Envelope<String>) { value.outer(); }",
@@ -2833,6 +3420,38 @@ fn main(flag: Bool) -> Int {
             [
                 ("crate::invoke<crate::Clean>", vec![]),
                 ("crate::invoke<crate::Effectful>", vec!["prompt"]),
+            ]
+        );
+        let ir = package
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("valid generic package has canonical analysis IR"));
+        let selected = ir
+            .generic_facts()
+            .resolved_calls()
+            .iter()
+            .filter_map(|call| {
+                call.selected_implementation.as_ref().map(|implementation| {
+                    (
+                        call.caller.as_str(),
+                        call.callee.as_str(),
+                        implementation.as_str(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selected,
+            [
+                (
+                    "crate::invoke<crate::Clean>",
+                    "<crate::Clean as crate::Render>::render",
+                    "<crate::Clean as crate::Render>",
+                ),
+                (
+                    "crate::invoke<crate::Effectful>",
+                    "<crate::Effectful as crate::Render>::render",
+                    "<crate::Effectful as crate::Render>",
+                ),
             ]
         );
     }

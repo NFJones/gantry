@@ -23,7 +23,7 @@ use gantry_ir::{
     CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath,
     CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet, GenericTemplate,
     ImplementationHead, Predicate, TraitContract, TraitMethodContract, TraitReference,
-    TypeDescriptor, TypeDescriptorError, TypeExpression,
+    TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowParameter,
 };
 
 use crate::generics::{
@@ -79,6 +79,7 @@ pub(crate) type InstantiationKey = (CanonicalTemplateIdentity, Vec<TypeDescripto
 type EffectSummaries = (
     BTreeMap<CanonicalTemplateIdentity, EffectSet>,
     BTreeMap<InstantiationKey, EffectSet>,
+    BTreeMap<SourceSpan, EffectSet>,
 );
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -100,8 +101,40 @@ pub(crate) struct BodyAnalysis {
     pub(crate) expression_types: Vec<BTreeMap<NodeId, TypeDescriptor>>,
     pub(crate) generic_templates: Vec<GenericTemplate>,
     pub(crate) generic_instantiations: Vec<ConcreteInstantiation>,
+    pub(crate) concrete_callables: Vec<ConcreteCallableMetadata>,
+    pub(crate) resolved_calls: Vec<ResolvedCallMetadata>,
+    pub(crate) source_callables: Vec<SourceCallableMetadata>,
+    pub(crate) generic_declarations: BTreeSet<SourceSpan>,
     pub(crate) generic_template_effects: BTreeMap<CanonicalTemplateIdentity, EffectSet>,
     pub(crate) generic_concrete_effects: BTreeMap<InstantiationKey, EffectSet>,
+}
+
+pub(crate) struct ConcreteCallableMetadata {
+    pub(crate) key: InstantiationKey,
+    pub(crate) receiver: Option<TypeDescriptor>,
+    pub(crate) mutable_receiver: bool,
+    pub(crate) parameters: Vec<TypeDescriptor>,
+    pub(crate) result: TypeDescriptor,
+    pub(crate) declaration: SourceSpan,
+    pub(crate) origins: Vec<SourceSpan>,
+    pub(crate) direct_calls: Vec<EffectNode>,
+    pub(crate) operation_results: BTreeMap<SourceSpan, TypeDescriptor>,
+}
+
+pub(crate) struct ResolvedCallMetadata {
+    pub(crate) caller: EffectNode,
+    pub(crate) callee: EffectNode,
+    pub(crate) source: SourceSpan,
+    pub(crate) selected_implementation: Option<CanonicalImplementationIdentity>,
+}
+
+pub(crate) struct SourceCallableMetadata {
+    pub(crate) identity: CanonicalCallableIdentity,
+    pub(crate) parameters: Vec<WorkflowParameter>,
+    pub(crate) result: TypeDescriptor,
+    pub(crate) effects: EffectSet,
+    pub(crate) declaration: SourceSpan,
+    pub(crate) direct_calls: Vec<EffectNode>,
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +211,10 @@ struct BodyContext {
     current_visible_traits: RefCell<BTreeSet<CanonicalPath>>,
     generic_templates: Vec<GenericTemplate>,
     generic_instantiations: RefCell<BTreeMap<InstantiationKey, ConcreteInstantiation>>,
+    generic_instantiation_origins: RefCell<BTreeMap<InstantiationKey, BTreeSet<SourceSpan>>>,
+    resolved_calls: RefCell<
+        BTreeMap<(EffectNode, SourceSpan, EffectNode), Option<CanonicalImplementationIdentity>>,
+    >,
     generic_instantiation_witnesses: RefCell<BTreeMap<InstantiationKey, Vec<InstantiationKey>>>,
     current_instantiation: RefCell<Option<(InstantiationKey, Vec<InstantiationKey>)>>,
     current_type_substitution: RefCell<Option<ExactTypeSubstitution>>,
@@ -748,6 +785,8 @@ fn build_body_context(
         current_visible_traits: RefCell::new(BTreeSet::new()),
         generic_templates,
         generic_instantiations: RefCell::new(BTreeMap::new()),
+        generic_instantiation_origins: RefCell::new(BTreeMap::new()),
+        resolved_calls: RefCell::new(BTreeMap::new()),
         generic_instantiation_witnesses: RefCell::new(BTreeMap::new()),
         current_instantiation: RefCell::new(None),
         current_type_substitution: RefCell::new(None),
@@ -1078,8 +1117,38 @@ pub(crate) fn check_package_bodies(
         }
         check_parametric_generic_bodies(sources, facts, &context, diagnostics)?;
         check_instantiated_generic_bodies(sources, facts, &context, diagnostics)?;
-        let (generic_template_effects, generic_concrete_effects) =
+        let (generic_template_effects, generic_concrete_effects, source_effects) =
             finish_effect_graph(&context, diagnostics)?;
+        let concrete_callables = collect_concrete_callable_metadata(sources, &context)?;
+        let source_callables =
+            collect_source_callable_metadata(sources, facts, structure, &context, &source_effects)?;
+        let resolved_calls = context
+            .resolved_calls
+            .take()
+            .into_iter()
+            .map(
+                |((caller, source, callee), selected_implementation)| ResolvedCallMetadata {
+                    caller,
+                    callee,
+                    source,
+                    selected_implementation,
+                },
+            )
+            .collect();
+        let generic_declarations = context
+            .generic_callables
+            .values()
+            .chain(context.generic_methods.iter())
+            .map(|signature| {
+                sources
+                    .get(signature.source_index)
+                    .and_then(|source| source.tree().node(signature.declaration))
+                    .map(|node| node.span().clone())
+                    .ok_or(AnalysisError::Invariant)
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let mut generic_declarations = generic_declarations;
+        generic_declarations.extend(context.method_sources.values().cloned());
         context.expression_types.borrow_mut().clear();
         Ok(BodyAnalysis {
             expression_types,
@@ -1089,12 +1158,353 @@ pub(crate) fn check_package_bodies(
                 .take()
                 .into_values()
                 .collect(),
+            concrete_callables,
+            resolved_calls,
+            source_callables,
+            generic_declarations,
             generic_template_effects,
             generic_concrete_effects,
         })
     })();
     *generic_analysis_counters = context.generic_analysis_counters.take();
     result
+}
+
+fn collect_concrete_callable_metadata(
+    sources: &[ParsedSource],
+    context: &BodyContext,
+) -> Result<Vec<ConcreteCallableMetadata>, AnalysisError> {
+    context
+        .generic_instantiations
+        .borrow()
+        .keys()
+        .map(|key| {
+            let signature = context
+                .generic_callables
+                .values()
+                .chain(context.generic_methods.iter())
+                .find(|signature| signature.template == key.0)
+                .ok_or(AnalysisError::Invariant)?;
+            let substitution = ExactTypeSubstitution::explicit(&signature.required, &key.1)
+                .map_err(|_| AnalysisError::Invariant)?;
+            let receiver = signature
+                .receiver
+                .as_ref()
+                .map(|receiver| {
+                    substitution
+                        .apply(receiver)
+                        .map_err(|_| AnalysisError::Invariant)
+                })
+                .transpose()?;
+            let parameters = signature
+                .parameters
+                .iter()
+                .map(|parameter| {
+                    substitution
+                        .apply(parameter)
+                        .map_err(|_| AnalysisError::Invariant)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let result = substitution
+                .apply(&signature.result)
+                .map_err(|_| AnalysisError::Invariant)?;
+            let declaration = sources
+                .get(signature.source_index)
+                .and_then(|source| source.tree().node(signature.declaration))
+                .map(|node| node.span().clone())
+                .ok_or(AnalysisError::Invariant)?;
+            let origins = context
+                .generic_instantiation_origins
+                .borrow()
+                .get(key)
+                .map(|origins| origins.iter().cloned().collect())
+                .unwrap_or_default();
+            let direct_calls = context
+                .effect_drafts
+                .borrow()
+                .get(&EffectNode::Concrete(key.clone()))
+                .into_iter()
+                .flat_map(|draft| &draft.calls)
+                .filter(|callee| !matches!(callee, EffectNode::Template(_)))
+                .cloned()
+                .collect();
+            let mutable_receiver = sources
+                .get(signature.source_index)
+                .and_then(|source| source.tree().node(signature.declaration))
+                .is_some_and(|node| {
+                    node_has_reserved_word(sources[signature.source_index].tree(), node, "mut")
+                });
+            let operation_results = concrete_operation_results(
+                sources[signature.source_index].tree(),
+                signature.declaration,
+                &substitution,
+                context,
+            )?;
+            Ok(ConcreteCallableMetadata {
+                key: key.clone(),
+                receiver,
+                mutable_receiver,
+                parameters,
+                result,
+                declaration,
+                origins,
+                direct_calls,
+                operation_results,
+            })
+        })
+        .collect()
+}
+
+fn concrete_operation_results(
+    tree: &SyntaxTree,
+    callable: NodeId,
+    substitution: &ExactTypeSubstitution,
+    context: &BodyContext,
+) -> Result<BTreeMap<SourceSpan, TypeDescriptor>, AnalysisError> {
+    let declaration = tree.node(callable).ok_or(AnalysisError::Invariant)?;
+    let mut results = BTreeMap::new();
+    for operation in tree.nodes().iter().filter(|node| {
+        span_contains(declaration.span(), node.span())
+            && matches!(
+                node.form(),
+                SyntaxForm::PromptExpression
+                    | SyntaxForm::DecideExpression
+                    | SyntaxForm::ActionExpression
+            )
+    }) {
+        let result = match operation.form() {
+            SyntaxForm::PromptExpression => {
+                if let Some(type_node) = direct_child_form(tree, operation, SyntaxForm::ValueType) {
+                    let expression = tree
+                        .node(type_node)
+                        .and_then(|node| context.generic_types.get(node.span()))
+                        .ok_or(AnalysisError::Invariant)?;
+                    substitution
+                        .apply(expression)
+                        .map_err(|_| AnalysisError::Invariant)?
+                } else {
+                    TypeDescriptor::UNIT
+                }
+            }
+            SyntaxForm::DecideExpression => TypeDescriptor::DECISION,
+            SyntaxForm::ActionExpression => {
+                let path = direct_child_form(tree, operation, SyntaxForm::Path)
+                    .ok_or(AnalysisError::Invariant)?;
+                let target = tree
+                    .node(path)
+                    .and_then(|path| context.references.get(path.span()))
+                    .ok_or(AnalysisError::Invariant)?;
+                context
+                    .actions
+                    .get(target)
+                    .map(|signature| signature.result.clone())
+                    .ok_or(AnalysisError::Invariant)?
+            }
+            _ => return Err(AnalysisError::Invariant),
+        };
+        results.insert(operation.span().clone(), result);
+    }
+    Ok(results)
+}
+
+fn collect_source_callable_metadata(
+    sources: &[ParsedSource],
+    facts: &[BTreeMap<NodeId, TypeFact>],
+    structure: &PackageStructure,
+    context: &BodyContext,
+    effects: &BTreeMap<SourceSpan, EffectSet>,
+) -> Result<Vec<SourceCallableMetadata>, AnalysisError> {
+    let symbols = structure
+        .symbols()
+        .iter()
+        .map(|symbol| (symbol.id, symbol))
+        .collect::<BTreeMap<_, _>>();
+    let mut callables = Vec::new();
+    for (symbol_id, signature) in &context.callables {
+        let symbol = symbols.get(symbol_id).ok_or(AnalysisError::Invariant)?;
+        let declaration = context
+            .callable_sources
+            .get(symbol_id)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        let (source_index, tree, callable) = find_source_callable(sources, &declaration)?;
+        let parameters = source_callable_parameters(
+            tree,
+            callable,
+            facts.get(source_index).ok_or(AnalysisError::Invariant)?,
+            None,
+        )?;
+        callables.push(SourceCallableMetadata {
+            identity: CanonicalCallableIdentity::free(&symbol.path, &[]),
+            parameters,
+            result: signature.result.clone(),
+            effects: effects.get(&declaration).copied().unwrap_or_default(),
+            declaration: declaration.clone(),
+            direct_calls: source_direct_calls(context, &declaration),
+        });
+    }
+    for ((implementation, method), declaration) in &context.method_sources {
+        if context.generic_methods.iter().any(|signature| {
+            sources
+                .get(signature.source_index)
+                .and_then(|source| source.tree().node(signature.declaration))
+                .is_some_and(|node| node.span() == declaration)
+        }) {
+            continue;
+        }
+        let head = context
+            .implementation_heads
+            .iter()
+            .find(|head| head.identity() == implementation)
+            .ok_or(AnalysisError::Invariant)?;
+        if !head.receiver().is_closed()
+            || head.trait_reference().is_some_and(|reference| {
+                reference
+                    .arguments()
+                    .iter()
+                    .any(|argument| !argument.is_closed())
+            })
+        {
+            continue;
+        }
+        let receiver = head
+            .receiver()
+            .to_descriptor(u64::MAX)
+            .map_err(|_| AnalysisError::Invariant)?;
+        let method_arguments = Vec::new();
+        let identity = if let Some(reference) = head.trait_reference() {
+            let trait_arguments = reference
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    argument
+                        .to_descriptor(u64::MAX)
+                        .map_err(|_| AnalysisError::Invariant)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            CanonicalCallableIdentity::trait_method(
+                &receiver,
+                reference.path(),
+                &trait_arguments,
+                method,
+                &method_arguments,
+            )
+            .map_err(|_| AnalysisError::Invariant)?
+        } else {
+            CanonicalCallableIdentity::inherent(&receiver, method, &method_arguments)
+                .map_err(|_| AnalysisError::Invariant)?
+        };
+        let (source_index, tree, callable) = find_source_callable(sources, declaration)?;
+        let parameters = source_callable_parameters(
+            tree,
+            callable,
+            facts.get(source_index).ok_or(AnalysisError::Invariant)?,
+            Some(&receiver),
+        )?;
+        let result = callable_result(
+            tree,
+            callable,
+            facts.get(source_index).ok_or(AnalysisError::Invariant)?,
+        );
+        callables.push(SourceCallableMetadata {
+            identity,
+            parameters,
+            result,
+            effects: effects.get(declaration).copied().unwrap_or_default(),
+            declaration: declaration.clone(),
+            direct_calls: source_direct_calls(context, declaration),
+        });
+    }
+    callables.sort_by(|left, right| left.identity.cmp(&right.identity));
+    callables.dedup_by(|left, right| left.identity == right.identity);
+    Ok(callables)
+}
+
+fn find_source_callable<'a>(
+    sources: &'a [ParsedSource],
+    declaration: &SourceSpan,
+) -> Result<(usize, &'a SyntaxTree, NodeId), AnalysisError> {
+    sources
+        .iter()
+        .enumerate()
+        .find_map(|(source_index, source)| {
+            source
+                .tree()
+                .nodes()
+                .iter()
+                .enumerate()
+                .find(|(_, node)| {
+                    matches!(
+                        node.form(),
+                        SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
+                    ) && node.span() == declaration
+                })
+                .map(|(index, _)| (source_index, source.tree(), NodeId::from_index(index)))
+        })
+        .ok_or(AnalysisError::Invariant)
+}
+
+fn source_callable_parameters(
+    tree: &SyntaxTree,
+    callable: NodeId,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    receiver: Option<&TypeDescriptor>,
+) -> Result<Vec<WorkflowParameter>, AnalysisError> {
+    let node = tree.node(callable).ok_or(AnalysisError::Invariant)?;
+    let mut parameters = Vec::new();
+    if let Some(receiver) = receiver {
+        parameters.push(WorkflowParameter {
+            mutable: node_has_reserved_word(tree, node, "mut"),
+            ty: receiver.clone(),
+        });
+    }
+    for parameter in node.children().iter().copied().filter_map(|child| {
+        let parameter = tree.node(child)?;
+        matches!(parameter.form(), SyntaxForm::Parameter).then_some((child, parameter))
+    }) {
+        if node_has_reserved_word(tree, parameter.1, "self") {
+            continue;
+        }
+        let type_node = direct_child_form(tree, parameter.1, SyntaxForm::ValueType)
+            .ok_or(AnalysisError::Invariant)?;
+        let ty = facts
+            .get(&type_node)
+            .map(|fact| fact.descriptor.clone())
+            .ok_or(AnalysisError::Invariant)?;
+        parameters.push(WorkflowParameter {
+            mutable: node_has_reserved_word(tree, parameter.1, "mut"),
+            ty,
+        });
+    }
+    Ok(parameters)
+}
+
+fn callable_result(
+    tree: &SyntaxTree,
+    callable: NodeId,
+    facts: &BTreeMap<NodeId, TypeFact>,
+) -> TypeDescriptor {
+    tree.node(callable)
+        .into_iter()
+        .flat_map(|node| node.children().iter().copied())
+        .rfind(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+        })
+        .and_then(|type_node| facts.get(&type_node))
+        .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone())
+}
+
+fn source_direct_calls(context: &BodyContext, declaration: &SourceSpan) -> Vec<EffectNode> {
+    context
+        .effect_drafts
+        .borrow()
+        .get(&EffectNode::Source(declaration.clone()))
+        .into_iter()
+        .flat_map(|draft| &draft.calls)
+        .filter(|callee| !matches!(callee, EffectNode::Template(_)))
+        .cloned()
+        .collect()
 }
 
 fn check_parametric_generic_bodies(
@@ -1444,13 +1854,20 @@ fn finish_effect_graph(
         })
         .collect();
     let concrete = summaries
-        .into_iter()
+        .iter()
         .filter_map(|(node, effects)| match node {
-            EffectNode::Concrete(key) => Some((key, effects)),
+            EffectNode::Concrete(key) => Some((key.clone(), *effects)),
             EffectNode::Source(_) | EffectNode::Template(_) => None,
         })
         .collect();
-    Ok((templates, concrete))
+    let source = summaries
+        .into_iter()
+        .filter_map(|(node, effects)| match node {
+            EffectNode::Source(source) => Some((source, effects)),
+            EffectNode::Template(_) | EffectNode::Concrete(_) => None,
+        })
+        .collect();
+    Ok((templates, concrete, source))
 }
 
 fn effect_names(effects: EffectSet) -> String {
@@ -4830,6 +5247,7 @@ fn resolve_trait_method(
                 )?,
                 None,
                 None,
+                None,
                 *method.effects(),
             ));
             continue;
@@ -4887,7 +5305,13 @@ fn resolve_trait_method(
                     } else {
                         None
                     };
-                    candidates.push((signature, retained, effect_target, EffectSet::default()));
+                    candidates.push((
+                        signature,
+                        retained,
+                        effect_target,
+                        Some(selected.identity().clone()),
+                        EffectSet::default(),
+                    ));
                 }
             }
             ObligationResult::Cyclic => {
@@ -4937,10 +5361,18 @@ fn resolve_trait_method(
             Ok(None)
         }
         1 => {
-            let (signature, retained, effect_target, direct_effects) =
+            let (signature, retained, effect_target, selected_implementation, direct_effects) =
                 candidates.pop().ok_or(AnalysisError::Invariant)?;
             record_direct_effects(context, direct_effects);
             if let Some(effect_target) = effect_target {
+                if !context.parametric_validation.get()
+                    && let Some(caller) = context.current_effect_owner.borrow().clone()
+                {
+                    context.resolved_calls.borrow_mut().insert(
+                        (caller, source.span().clone(), effect_target.clone()),
+                        selected_implementation,
+                    );
+                }
                 record_effect_call(context, effect_target);
             }
             Ok(Some((signature, retained)))
@@ -5954,6 +6386,25 @@ fn retain_generic_instantiation(
         return Ok(());
     }
     let key = (signature.template.clone(), concrete_arguments.clone());
+    context
+        .generic_instantiation_origins
+        .borrow_mut()
+        .entry(key.clone())
+        .or_default()
+        .insert(call_site.span().clone());
+    if let Some(caller) = context.current_effect_owner.borrow().clone() {
+        let selected_implementation = matches!(signature.kind, TemplateKind::TraitMethod)
+            .then(|| signature.implementation.clone())
+            .flatten();
+        context.resolved_calls.borrow_mut().insert(
+            (
+                caller,
+                call_site.span().clone(),
+                EffectNode::Concrete(key.clone()),
+            ),
+            selected_implementation,
+        );
+    }
     record_effect_call(context, EffectNode::Concrete(key.clone()));
     if context.generic_instantiations.borrow().contains_key(&key) {
         return Ok(());

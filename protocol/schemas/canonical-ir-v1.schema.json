@@ -179,11 +179,12 @@
       "additionalProperties": false,
       "properties": {
         "callee": { "$ref": "#/$defs/callable_identity" },
+        "caller": { "$ref": "#/$defs/callable_identity" },
         "position": { "$ref": "#/$defs/position" },
         "selected_implementation": { "type": "string", "minLength": 1 },
         "workflow": { "$ref": "#/$defs/canonical_path" }
       },
-      "required": ["callee", "position", "workflow"]
+      "required": ["callee", "caller", "position", "workflow"]
     },
     "template": {
       "type": "object",
@@ -221,9 +222,66 @@
         },
         "effects": { "$ref": "#/$defs/effects" },
         "identity": { "$ref": "#/$defs/callable_identity" },
-        "signature": { "type": "string", "minLength": 1 }
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/closed_operation" }
+        },
+        "signature": { "type": "string", "minLength": 1 },
+        "task_sites": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/closed_task_site" }
+        }
       },
-      "required": ["direct_calls", "effects", "identity", "signature"]
+      "required": ["direct_calls", "effects", "identity", "operations", "signature", "task_sites"]
+    },
+    "closed_operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "prompt" },
+            "position": { "$ref": "#/$defs/position" },
+            "result": { "$ref": "#/$defs/closed_type" }
+          },
+          "required": ["kind", "position", "result"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "decide" },
+            "position": { "$ref": "#/$defs/position" },
+            "result": { "$ref": "#/$defs/closed_type" }
+          },
+          "required": ["kind", "position", "result"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "action": { "$ref": "#/$defs/canonical_path" },
+            "kind": { "const": "action" },
+            "position": { "$ref": "#/$defs/position" },
+            "recovery": { "enum": ["read_only", "idempotent", "non_idempotent"] },
+            "result": { "$ref": "#/$defs/closed_type" }
+          },
+          "required": ["action", "kind", "position", "recovery", "result"]
+        }
+      ]
+    },
+    "closed_task_site": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "handles": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "kind": { "enum": ["spawn", "join", "joinall", "detach"] },
+        "position": { "$ref": "#/$defs/position" }
+      },
+      "required": ["handles", "kind", "position"]
     },
     "executable_projection": {
       "type": "object",

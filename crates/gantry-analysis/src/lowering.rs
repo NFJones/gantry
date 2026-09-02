@@ -1,16 +1,16 @@
 //! Bounded canonical artifact construction from analyzer-owned workflow facts.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gantry_core::protocol::ProtocolVersion;
-use gantry_core::source::{FrontendResourceLimit, SourceSnapshot};
+use gantry_core::source::{FrontendResourceLimit, SourceSnapshot, SourceSpan};
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{CoreForm, TaskControlSiteKind};
 use gantry_ir::{
     ArtifactEncodingError, ArtifactLimits, CanonicalIr, CanonicalNode, CanonicalOperationSite,
-    CanonicalSourceMap, CanonicalTaskControlSite, CanonicalWorkflow, IrArtifactError,
-    ManifestError, PackageSourceManifest, SourceMapEntry, StructuralPosition, TypeDescriptor,
-    WorkflowFacts,
+    CanonicalSourceMap, CanonicalTaskControlSite, CanonicalWorkflow, GenericAnalysisFacts,
+    IrArtifactError, ManifestError, PackageSourceManifest, SourceMapEntry, StructuralPosition,
+    TypeDescriptor, WorkflowFacts,
 };
 
 pub(crate) struct LoweredArtifacts {
@@ -37,6 +37,8 @@ pub(crate) fn lower_package_artifacts(
     sources: &[ParsedSource],
     body_types: &[BTreeMap<NodeId, TypeDescriptor>],
     workflows: &[WorkflowFacts],
+    generic: Option<GenericAnalysisFacts>,
+    generic_declarations: &BTreeSet<SourceSpan>,
     limits: ArtifactLimits,
 ) -> Result<LoweredArtifacts, LoweringError> {
     if sources.len() != body_types.len() {
@@ -50,6 +52,7 @@ pub(crate) fn lower_package_artifacts(
     let mut source_entries = Vec::new();
     let canonical_workflows = workflows
         .iter()
+        .filter(|workflow| !generic_declarations.contains(&workflow.source))
         .map(|workflow| {
             let mut nodes = lower_workflow_nodes(sources, body_types, workflow, &results)?;
             nodes.sort_by(|left, right| left.0.position.cmp(&right.0.position));
@@ -67,11 +70,16 @@ pub(crate) fn lower_package_artifacts(
             .map_err(map_ir_error)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let canonical_ir = CanonicalIr::new(canonical_workflows, limits).map_err(map_ir_error)?;
+    let generic = generic.unwrap_or_else(GenericAnalysisFacts::empty);
+    let generic_entries = generic.source_map().to_vec();
+    let canonical_ir = CanonicalIr::with_generic_facts(canonical_workflows, generic, limits)
+        .map_err(map_ir_error)?;
     source_entries.sort_by(|left, right| {
         (&left.workflow, &left.position).cmp(&(&right.workflow, &right.position))
     });
-    let source_map = CanonicalSourceMap::new(source_entries, limits).map_err(map_ir_error)?;
+    let source_map =
+        CanonicalSourceMap::with_generic_entries(source_entries, generic_entries, limits)
+            .map_err(map_ir_error)?;
     Ok(LoweredArtifacts {
         manifest,
         canonical_ir,

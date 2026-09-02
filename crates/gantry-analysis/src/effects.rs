@@ -135,7 +135,15 @@ pub(crate) fn analyze_workflow_facts(
                 &references,
                 &symbols_by_id,
             );
-            let Some(receiver) = receiver else {
+            let owner = receiver.clone().or_else(|| {
+                implementation_trait_path(
+                    source.tree(),
+                    implementation,
+                    &references,
+                    &symbols_by_id,
+                )
+            });
+            let Some(owner) = owner else {
                 continue;
             };
             for method in implementation.children().iter().copied().filter(|child| {
@@ -147,13 +155,13 @@ pub(crate) fn analyze_workflow_facts(
                 let method_node = source.tree().node(method).ok_or(AnalysisError::Invariant)?;
                 let name = direct_identifier(source.tree(), method_node)
                     .ok_or(AnalysisError::Invariant)?;
-                let path = CanonicalPath::method(&receiver, &name)
-                    .map_err(|_| AnalysisError::Invariant)?;
+                let path =
+                    CanonicalPath::method(&owner, &name).map_err(|_| AnalysisError::Invariant)?;
                 drafts.push(analyze_callable(
                     source.tree(),
                     method,
                     path,
-                    Some(&receiver),
+                    receiver.as_ref(),
                     resolved,
                     &context,
                     diagnostics,
@@ -163,13 +171,23 @@ pub(crate) fn analyze_workflow_facts(
     }
     drafts.sort_by(|left, right| left.path.cmp(&right.path));
 
+    let callees = drafts.iter().fold(
+        BTreeMap::<CanonicalPath, Vec<SourceSpan>>::new(),
+        |mut callees, draft| {
+            callees
+                .entry(draft.path.clone())
+                .or_default()
+                .push(draft.span.clone());
+            callees
+        },
+    );
     let mut summaries = drafts
         .iter()
-        .map(|draft| (draft.path.clone(), draft.direct_effects))
+        .map(|draft| (draft.span.clone(), draft.direct_effects))
         .collect::<BTreeMap<_, _>>();
     let mut action_contributors = drafts
         .iter()
-        .map(|draft| (draft.path.clone(), draft.direct_action_contributors.clone()))
+        .map(|draft| (draft.span.clone(), draft.direct_action_contributors.clone()))
         .collect::<BTreeMap<_, _>>();
     loop {
         let mut changed = false;
@@ -177,24 +195,26 @@ pub(crate) fn analyze_workflow_facts(
             let mut summary = draft.direct_effects;
             let mut contributors = draft.direct_action_contributors.clone();
             for call in &draft.calls {
-                if let Some(callee) = summaries.get(&call.callee) {
-                    summary = summary.union(*callee);
-                }
-                if let Some(callee) = action_contributors.get(&call.callee) {
-                    contributors.extend(callee.iter().cloned());
+                for declaration in callees.get(&call.callee).into_iter().flatten() {
+                    if let Some(callee) = summaries.get(declaration) {
+                        summary = summary.union(*callee);
+                    }
+                    if let Some(callee) = action_contributors.get(declaration) {
+                        contributors.extend(callee.iter().cloned());
+                    }
                 }
             }
             contributors.sort_by(|left, right| left.site.cmp(&right.site));
             contributors.dedup_by(|left, right| left.site == right.site);
             let current = summaries
-                .get_mut(&draft.path)
+                .get_mut(&draft.span)
                 .ok_or(AnalysisError::Invariant)?;
             if *current != summary {
                 *current = summary;
                 changed = true;
             }
             let current_contributors = action_contributors
-                .get_mut(&draft.path)
+                .get_mut(&draft.span)
                 .ok_or(AnalysisError::Invariant)?;
             if *current_contributors != contributors {
                 *current_contributors = contributors;
@@ -208,9 +228,9 @@ pub(crate) fn analyze_workflow_facts(
 
     let mut workflows = Vec::with_capacity(drafts.len());
     for draft in drafts {
-        let effects = *summaries.get(&draft.path).ok_or(AnalysisError::Invariant)?;
+        let effects = *summaries.get(&draft.span).ok_or(AnalysisError::Invariant)?;
         let contributors = action_contributors
-            .get(&draft.path)
+            .get(&draft.span)
             .cloned()
             .ok_or(AnalysisError::Invariant)?;
         if draft.pure && !effects.is_empty() {
@@ -1158,12 +1178,27 @@ fn implementation_receiver_path(
     references: &BTreeMap<SourceSpan, SymbolId>,
     symbols: &BTreeMap<SymbolId, &Symbol>,
 ) -> Option<CanonicalPath> {
-    let path = direct_child_form(tree, implementation, SyntaxForm::Path).or_else(|| {
-        direct_child_form(tree, implementation, SyntaxForm::TypeParameterList)?;
-        direct_child_form(tree, implementation, SyntaxForm::ValueType)
-            .and_then(|receiver| tree.node(receiver))
-            .and_then(|receiver| direct_child_form(tree, receiver, SyntaxForm::Path))
-    })?;
+    let path = direct_child_form(tree, implementation, SyntaxForm::ValueType)
+        .and_then(|receiver| tree.node(receiver))
+        .and_then(|receiver| direct_child_form(tree, receiver, SyntaxForm::Path))
+        .or_else(|| direct_child_form(tree, implementation, SyntaxForm::Path))?;
+    let path = tree.node(path)?;
+    references
+        .get(path.span())
+        .and_then(|target| symbols.get(target))
+        .map(|symbol| symbol.path.clone())
+}
+
+fn implementation_trait_path(
+    tree: &SyntaxTree,
+    implementation: &gantry_frontend::SyntaxNode,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    symbols: &BTreeMap<SymbolId, &Symbol>,
+) -> Option<CanonicalPath> {
+    let reference = direct_child_form(tree, implementation, SyntaxForm::TraitReference)?;
+    let path = tree
+        .node(reference)
+        .and_then(|reference| direct_child_form(tree, reference, SyntaxForm::Path))?;
     let path = tree.node(path)?;
     references
         .get(path.span())

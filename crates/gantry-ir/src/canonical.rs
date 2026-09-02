@@ -189,10 +189,10 @@ impl CanonicalSourceMap {
     ) -> Result<Self, IrArtifactError> {
         if entries.windows(2).any(|pair| {
             (&pair[0].workflow, &pair[0].position) >= (&pair[1].workflow, &pair[1].position)
-        }) || generic_entries.windows(2).any(|pair| {
-            pair[0].node().canonical_string().as_bytes()
-                >= pair[1].node().canonical_string().as_bytes()
-        }) {
+        }) || generic_entries
+            .windows(2)
+            .any(|pair| pair[0].node() >= pair[1].node())
+        {
             return Err(IrArtifactError::NoncanonicalOrder);
         }
         let artifact = encode_source_map(&entries, &generic_entries, limits)
@@ -278,8 +278,50 @@ fn encode_ir(
         push_effects(&mut output, *callable.effects())?;
         output.push_str("],\"identity\":")?;
         push_json_string(&mut output, callable.identity().as_str())?;
-        output.push_str(",\"signature\":")?;
+        output.push_str(",\"operations\":[")?;
+        for (operation_index, operation) in callable.operations().iter().enumerate() {
+            if operation_index > 0 {
+                output.push_byte(b',')?;
+            }
+            output.push_byte(b'{')?;
+            if let Some(action) = &operation.action {
+                output.push_str("\"action\":")?;
+                push_json_string(&mut output, action.as_str())?;
+                output.push_byte(b',')?;
+            }
+            output.push_str("\"kind\":")?;
+            push_json_string(&mut output, operation.kind.wire_name())?;
+            output.push_str(",\"position\":")?;
+            push_position(&mut output, &operation.position)?;
+            if let Some(recovery) = operation.recovery {
+                output.push_str(",\"recovery\":")?;
+                push_json_string(&mut output, recovery.wire_name())?;
+            }
+            output.push_str(",\"result\":")?;
+            push_json_string(&mut output, &operation.result.canonical_string())?;
+            output.push_byte(b'}')?;
+        }
+        output.push_str("],\"signature\":")?;
         push_json_string(&mut output, callable.signature().as_str())?;
+        output.push_str(",\"task_sites\":[")?;
+        for (site_index, site) in callable.task_sites().iter().enumerate() {
+            if site_index > 0 {
+                output.push_byte(b',')?;
+            }
+            output.push_str("{\"handles\":[")?;
+            for (handle_index, handle) in site.handles.iter().enumerate() {
+                if handle_index > 0 {
+                    output.push_byte(b',')?;
+                }
+                push_json_string(&mut output, handle)?;
+            }
+            output.push_str("],\"kind\":")?;
+            push_json_string(&mut output, site.kind.wire_name())?;
+            output.push_str(",\"position\":")?;
+            push_position(&mut output, &site.position)?;
+            output.push_byte(b'}')?;
+        }
+        output.push_byte(b']')?;
         output.push_byte(b'}')?;
     }
     output.push_str("],\"types\":[")?;
@@ -335,6 +377,8 @@ fn encode_ir(
         }
         output.push_str("{\"callee\":")?;
         push_json_string(&mut output, call.callee.as_str())?;
+        output.push_str(",\"caller\":")?;
+        push_json_string(&mut output, call.caller.as_str())?;
         output.push_str(",\"position\":")?;
         push_position(&mut output, call.site.position())?;
         if let Some(implementation) = &call.selected_implementation {

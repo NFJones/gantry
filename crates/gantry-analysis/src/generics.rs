@@ -1628,6 +1628,13 @@ pub(crate) fn collect_where_predicates(
         if !matches!(predicate_node.form(), SyntaxForm::WherePredicate) {
             continue;
         }
+        let trait_reference = direct_child(tree, predicate, SyntaxForm::TraitReference)
+            .ok_or(AnalysisError::Invariant)?;
+        let path = direct_child(tree, trait_reference, SyntaxForm::Path)
+            .ok_or(AnalysisError::Invariant)?;
+        if SealedCapability::from_path(&direct_identifiers(tree, path)?).is_some() {
+            continue;
+        }
         let receiver = if direct_reserved_word(tree, predicate)?.as_deref() == Some("Self") {
             TypeExpression::self_type(binder.map_or(0, |binder| binder.depth), u64::MAX)
                 .map_err(|_| AnalysisError::Invariant)?
@@ -1650,8 +1657,6 @@ pub(crate) fn collect_where_predicates(
             )
             .map_err(|_| AnalysisError::Invariant)?
         };
-        let trait_reference = direct_child(tree, predicate, SyntaxForm::TraitReference)
-            .ok_or(AnalysisError::Invariant)?;
         predicates.push(Predicate::new(
             collect_trait_reference(tree, trait_reference, facts, references, symbols)?,
             receiver,

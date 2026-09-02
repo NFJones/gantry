@@ -6,15 +6,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gantry::canonical_json::CanonicalJson;
-use gantry::ir::generated::{ArtifactKind, CoreForm, Effect, OperationSiteKind, TemplateKind};
+use gantry::ir::generated::{
+    ArtifactKind, CoreForm, Effect, OperationSiteKind, RecoveryClass, TaskControlSiteKind,
+    TemplateKind,
+};
 use gantry::ir::{
     ArtifactEncodingError, ArtifactLimits, CanonicalCallableIdentity, CanonicalIr, CanonicalNode,
     CanonicalOperationSite, CanonicalPath, CanonicalSignature, CanonicalSourceMap,
-    CanonicalTemplateIdentity, CanonicalWorkflow, ClosedCallable, ConcreteEffect, ConcreteIdentity,
-    ConcreteInstantiation, ConcreteSourceMapEntry, ExecutableProjection, GeneratedSchemaObject,
-    GenericAnalysisFacts, GenericContractError, GenericTemplate, PackageSourceManifest,
-    SourceMapEntry, SourceOriginSet, StructuralPosition, TypeDescriptor, TypeExpression,
-    WorkflowParameter,
+    CanonicalTemplateIdentity, CanonicalWorkflow, ClosedCallable, ClosedOperationSite,
+    ClosedTaskSite, ConcreteEffect, ConcreteIdentity, ConcreteInstantiation,
+    ConcreteSourceMapEntry, ExecutableProjection, GeneratedSchemaObject, GenericAnalysisFacts,
+    GenericContractError, GenericTemplate, PackageSourceManifest, SourceMapEntry, SourceOriginSet,
+    StructuralPosition, TypeDescriptor, TypeExpression, WorkflowParameter,
 };
 use gantry::protocol::ProtocolVersion;
 use gantry::schema::SchemaValidator;
@@ -300,6 +303,144 @@ fn generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs() {
         ExecutableProjection::new(vec![TypeDescriptor::UNIT], vec![callable]),
         Err(GenericContractError::MissingDirectTarget)
     );
+}
+
+#[test]
+fn closed_operation_and_task_sites_have_exact_bytes_and_fail_closed() {
+    let main_path = CanonicalPath::new("crate::main")
+        .unwrap_or_else(|_| unreachable!("constant path is canonical"));
+    let action_path = CanonicalPath::new("crate::fetch")
+        .unwrap_or_else(|_| unreachable!("constant path is canonical"));
+    let identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let position = |value| {
+        StructuralPosition::new(vec![value])
+            .unwrap_or_else(|_| unreachable!("position is nonempty"))
+    };
+    let action = ClosedOperationSite::new(
+        position(0),
+        OperationSiteKind::Action,
+        TypeDescriptor::STRING,
+        Some(RecoveryClass::Idempotent),
+        Some(action_path.clone()),
+    )
+    .unwrap_or_else(|_| unreachable!("action metadata is complete"));
+    let prompt = ClosedOperationSite::new(
+        position(1),
+        OperationSiteKind::Prompt,
+        TypeDescriptor::STRING,
+        None,
+        None,
+    )
+    .unwrap_or_else(|_| unreachable!("prompt metadata is canonical"));
+    let task_sites = vec![
+        ClosedTaskSite {
+            position: position(2),
+            kind: TaskControlSiteKind::Spawn,
+            handles: vec![Arc::from("child")],
+        },
+        ClosedTaskSite {
+            position: position(3),
+            kind: TaskControlSiteKind::Join,
+            handles: vec![Arc::from("child")],
+        },
+    ];
+    let callable = ClosedCallable::with_sites(
+        identity.clone(),
+        CanonicalSignature::concrete_function(&identity, &[], &TypeDescriptor::UNIT),
+        gantry::ir::EffectSet::default(),
+        Vec::new(),
+        vec![action.clone(), prompt.clone()],
+        task_sites.clone(),
+    )
+    .unwrap_or_else(|_| unreachable!("closed sites are canonically ordered"));
+    let executable = ExecutableProjection::new(
+        vec![TypeDescriptor::STRING, TypeDescriptor::UNIT],
+        vec![callable],
+    )
+    .unwrap_or_else(|_| unreachable!("projection is closed"));
+    let facts = GenericAnalysisFacts::new(
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        executable,
+    )
+    .unwrap_or_else(|_| unreachable!("closed facts are canonical"));
+    let ir = CanonicalIr::with_generic_facts(Vec::new(), facts, limits(8_192))
+        .unwrap_or_else(|_| unreachable!("closed-site IR fits"));
+    assert_eq!(
+        std::str::from_utf8(ir.artifact().canonical_bytes()),
+        Ok(
+            "{\"canonical_ir\":{\"major\":1,\"minor\":0},\"concrete_effects\":[],\"executable_projection\":{\"callables\":[{\"direct_calls\":[],\"effects\":[],\"identity\":\"crate::main\",\"operations\":[{\"action\":\"crate::fetch\",\"kind\":\"action\",\"position\":[\"0\"],\"recovery\":\"idempotent\",\"result\":\"String\"},{\"kind\":\"prompt\",\"position\":[\"1\"],\"result\":\"String\"}],\"signature\":\"fn crate::main()->Unit\",\"task_sites\":[{\"handles\":[\"child\"],\"kind\":\"spawn\",\"position\":[\"2\"]},{\"handles\":[\"child\"],\"kind\":\"join\",\"position\":[\"3\"]}]}],\"types\":[\"String\",\"Unit\"]},\"implementations\":[],\"instantiations\":[],\"resolved_calls\":[],\"templates\":[],\"traits\":[],\"workflows\":[]}"
+        )
+    );
+    assert_canonical_and_schema_valid(
+        "canonical-ir-v1.schema.json",
+        ir.artifact().canonical_bytes(),
+    );
+
+    assert_eq!(
+        ClosedOperationSite::new(
+            position(0),
+            OperationSiteKind::Prompt,
+            TypeDescriptor::STRING,
+            Some(RecoveryClass::Idempotent),
+            Some(action_path.clone()),
+        ),
+        Err(GenericContractError::OperationMetadataMismatch)
+    );
+    assert_eq!(
+        ClosedOperationSite::new(
+            position(0),
+            OperationSiteKind::Action,
+            TypeDescriptor::STRING,
+            None,
+            None,
+        ),
+        Err(GenericContractError::OperationMetadataMismatch)
+    );
+    assert_eq!(
+        ClosedCallable::with_sites(
+            identity.clone(),
+            CanonicalSignature::concrete_function(&identity, &[], &TypeDescriptor::UNIT),
+            gantry::ir::EffectSet::default(),
+            Vec::new(),
+            vec![prompt.clone(), action],
+            task_sites.clone(),
+        ),
+        Err(GenericContractError::NoncanonicalOrder)
+    );
+    assert_eq!(
+        ClosedCallable::with_sites(
+            identity.clone(),
+            CanonicalSignature::concrete_function(&identity, &[], &TypeDescriptor::UNIT),
+            gantry::ir::EffectSet::default(),
+            Vec::new(),
+            vec![prompt],
+            vec![task_sites[1].clone(), task_sites[0].clone()],
+        ),
+        Err(GenericContractError::NoncanonicalOrder)
+    );
+
+    let schema = fs::read(protocol_root().join("schemas/canonical-ir-v1.schema.json"))
+        .unwrap_or_else(|error| panic!("could not read canonical IR schema: {error}"));
+    let validator = SchemaValidator::compile(schema, json_limits())
+        .unwrap_or_else(|error| panic!("could not compile canonical IR schema: {error:?}"));
+    for malformed in [
+        "{\"canonical_ir\":{\"major\":1,\"minor\":0},\"concrete_effects\":[],\"executable_projection\":{\"callables\":[{\"direct_calls\":[],\"effects\":[],\"identity\":\"crate::main\",\"operations\":[{\"action\":\"crate::fetch\",\"kind\":\"action\",\"position\":[\"0\"],\"result\":\"String\"}],\"signature\":\"fn crate::main()->Unit\",\"task_sites\":[]}],\"types\":[\"String\",\"Unit\"]},\"implementations\":[],\"instantiations\":[],\"resolved_calls\":[],\"templates\":[],\"traits\":[],\"workflows\":[]}",
+        "{\"canonical_ir\":{\"major\":1,\"minor\":0},\"concrete_effects\":[],\"executable_projection\":{\"callables\":[{\"direct_calls\":[],\"effects\":[],\"identity\":\"crate::main\",\"operations\":[{\"action\":\"crate::fetch\",\"kind\":\"prompt\",\"position\":[\"0\"],\"recovery\":\"idempotent\",\"result\":\"String\"}],\"signature\":\"fn crate::main()->Unit\",\"task_sites\":[]}],\"types\":[\"String\",\"Unit\"]},\"implementations\":[],\"instantiations\":[],\"resolved_calls\":[],\"templates\":[],\"traits\":[],\"workflows\":[]}",
+    ] {
+        let document = StrictJsonDocument::decode(malformed.as_bytes(), json_limits())
+            .unwrap_or_else(|error| panic!("malformed fixture is valid JSON: {error:?}"));
+        assert!(
+            validator
+                .validate(&document)
+                .is_ok_and(|errors| !errors.is_empty())
+        );
+    }
 }
 
 #[test]

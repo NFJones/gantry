@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use gantry_core::source::SourceSpan;
 
-use crate::generated::TemplateKind;
+use crate::generated::{OperationSiteKind, RecoveryClass, TaskControlSiteKind, TemplateKind};
 use crate::{
     CanonicalCallableIdentity, CanonicalPath, CanonicalSignature, CanonicalTemplateIdentity,
-    EffectSet, StaticSiteId, TypeDescriptor, TypeExpression,
+    EffectSet, StaticSiteId, StructuralPosition, TypeDescriptor, TypeExpression,
 };
 
 /// One canonical trait reference with ordered template arguments.
@@ -473,6 +473,8 @@ impl ConcreteInstantiation {
 /// One statically resolved generic or trait call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedCall {
+    /// Exact concrete callable containing this call site.
+    pub caller: CanonicalCallableIdentity,
     /// Canonical structural call site.
     pub site: StaticSiteId,
     /// Exact direct concrete target.
@@ -562,11 +564,63 @@ impl SourceOriginSet {
 
 /// One monomorphized callable in the closed executable projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClosedOperationSite {
+    /// Canonical structural position within the concrete callable.
+    pub position: StructuralPosition,
+    /// Prompt, decision, or harness-action classification.
+    pub kind: OperationSiteKind,
+    /// Exact successful operation result type before optional attempt wrapping.
+    pub result: TypeDescriptor,
+    /// Declared recovery class, present only for harness actions.
+    pub recovery: Option<RecoveryClass>,
+    /// Canonical harness-action path, present only for harness actions.
+    pub action: Option<CanonicalPath>,
+}
+
+impl ClosedOperationSite {
+    /// Validates action-only metadata for one closed operation site.
+    pub fn new(
+        position: StructuralPosition,
+        kind: OperationSiteKind,
+        result: TypeDescriptor,
+        recovery: Option<RecoveryClass>,
+        action: Option<CanonicalPath>,
+    ) -> Result<Self, GenericContractError> {
+        if matches!(kind, OperationSiteKind::Action) != (recovery.is_some() && action.is_some())
+            || recovery.is_some() != action.is_some()
+        {
+            return Err(GenericContractError::OperationMetadataMismatch);
+        }
+        Ok(Self {
+            position,
+            kind,
+            result,
+            recovery,
+            action,
+        })
+    }
+}
+
+/// One static task-control site in a closed callable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClosedTaskSite {
+    /// Canonical structural position within the concrete callable.
+    pub position: StructuralPosition,
+    /// Spawn, named join, joinall, or detach classification.
+    pub kind: TaskControlSiteKind,
+    /// Exact statically selected handles in source/declaration order.
+    pub handles: Vec<Arc<str>>,
+}
+
+/// One monomorphized callable in the closed executable projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClosedCallable {
     identity: CanonicalCallableIdentity,
     signature: CanonicalSignature,
     effects: EffectSet,
     direct_calls: Vec<CanonicalCallableIdentity>,
+    operations: Vec<ClosedOperationSite>,
+    task_sites: Vec<ClosedTaskSite>,
 }
 
 impl ClosedCallable {
@@ -577,7 +631,35 @@ impl ClosedCallable {
         effects: EffectSet,
         direct_calls: Vec<CanonicalCallableIdentity>,
     ) -> Result<Self, GenericContractError> {
+        Self::with_sites(
+            identity,
+            signature,
+            effects,
+            direct_calls,
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    /// Constructs one closed callable with canonical operation and task sites.
+    pub fn with_sites(
+        identity: CanonicalCallableIdentity,
+        signature: CanonicalSignature,
+        effects: EffectSet,
+        direct_calls: Vec<CanonicalCallableIdentity>,
+        operations: Vec<ClosedOperationSite>,
+        task_sites: Vec<ClosedTaskSite>,
+    ) -> Result<Self, GenericContractError> {
         if direct_calls.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(GenericContractError::NoncanonicalOrder);
+        }
+        if operations
+            .windows(2)
+            .any(|pair| pair[0].position >= pair[1].position)
+            || task_sites
+                .windows(2)
+                .any(|pair| pair[0].position >= pair[1].position)
+        {
             return Err(GenericContractError::NoncanonicalOrder);
         }
         Ok(Self {
@@ -585,6 +667,8 @@ impl ClosedCallable {
             signature,
             effects,
             direct_calls,
+            operations,
+            task_sites,
         })
     }
 
@@ -610,6 +694,18 @@ impl ClosedCallable {
     #[must_use]
     pub fn direct_calls(&self) -> &[CanonicalCallableIdentity] {
         &self.direct_calls
+    }
+
+    /// Returns static operation sites in structural-position order.
+    #[must_use]
+    pub fn operations(&self) -> &[ClosedOperationSite] {
+        &self.operations
+    }
+
+    /// Returns static task-control sites in structural-position order.
+    #[must_use]
+    pub fn task_sites(&self) -> &[ClosedTaskSite] {
+        &self.task_sites
     }
 }
 
@@ -726,7 +822,7 @@ impl GenericAnalysisFacts {
             })
             || resolved_calls
                 .windows(2)
-                .any(|pair| pair[0].site >= pair[1].site)
+                .any(|pair| (&pair[0].caller, &pair[0].site) >= (&pair[1].caller, &pair[1].site))
             || concrete_effects
                 .windows(2)
                 .any(|pair| pair[0].callable >= pair[1].callable)
@@ -765,12 +861,11 @@ impl GenericAnalysisFacts {
             .iter()
             .map(ClosedCallable::identity)
             .collect::<BTreeSet<_>>();
-        if resolved_calls
+        if resolved_calls.iter().any(|call| {
+            !callable_ids.contains(&call.caller) || !callable_ids.contains(&call.callee)
+        }) || concrete_effects
             .iter()
-            .any(|call| !callable_ids.contains(&call.callee))
-            || concrete_effects
-                .iter()
-                .any(|effect| !callable_ids.contains(&effect.callable))
+            .any(|effect| !callable_ids.contains(&effect.callable))
         {
             return Err(GenericContractError::MissingDirectTarget);
         }
@@ -853,6 +948,8 @@ pub enum GenericContractError {
     MissingTemplate,
     /// A resolved trait call names no implementation head.
     MissingImplementation,
+    /// Action-only operation metadata is absent or attached to another operation kind.
+    OperationMetadataMismatch,
 }
 
 impl fmt::Display for GenericContractError {
@@ -865,6 +962,7 @@ impl fmt::Display for GenericContractError {
             Self::MissingDirectTarget => "executable projection has a missing direct target",
             Self::MissingTemplate => "generic instantiation has a missing template",
             Self::MissingImplementation => "resolved call has a missing implementation",
+            Self::OperationMetadataMismatch => "closed operation metadata does not match its kind",
         })
     }
 }

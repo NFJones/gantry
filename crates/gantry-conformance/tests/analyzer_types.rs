@@ -300,9 +300,10 @@ fn main(value: Envelope<String>) -> String {
     assert_eq!(
         identities,
         [
-            "<crate::Envelope<String> as crate::Label>::label",
+            "crate::Envelope<String>",
             "crate::effect<crate::Envelope<String>>",
             "crate::render<crate::Envelope<String>>",
+            "<crate::Envelope<String> as crate::Label>::label",
         ]
     );
     assert!(valid.generic_concrete_effects().iter().any(|effect| {

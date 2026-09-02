@@ -44,10 +44,11 @@ pub use facts::{
     WorkflowFacts,
 };
 pub use generic::{
-    CanonicalImplementationIdentity, ClosedCallable, ConcreteEffect, ConcreteIdentity,
-    ConcreteInstantiation, ConcreteSourceMapEntry, ExecutableProjection, GenericAnalysisFacts,
-    GenericContractError, GenericTemplate, ImplementationHead, Predicate, ResolvedCall,
-    SourceOriginSet, TraitContract, TraitMethodContract, TraitReference,
+    CanonicalImplementationIdentity, ClosedCallable, ClosedOperationSite, ClosedTaskSite,
+    ConcreteEffect, ConcreteIdentity, ConcreteInstantiation, ConcreteSourceMapEntry,
+    ExecutableProjection, GenericAnalysisFacts, GenericContractError, GenericTemplate,
+    ImplementationHead, Predicate, ResolvedCall, SourceOriginSet, TraitContract,
+    TraitMethodContract, TraitReference,
 };
 pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
 pub use path::{CanonicalPath, CanonicalPathError};

@@ -238,7 +238,7 @@ fn main(worker: Worker) -> Worker {
             .iter()
             .map(|(ty, _)| ty.canonical_string())
             .collect::<Vec<_>>(),
-        ["String", "crate::Worker"]
+        ["Int", "String", "crate::Worker"]
     );
     let worker_schema = schemas
         .entries()

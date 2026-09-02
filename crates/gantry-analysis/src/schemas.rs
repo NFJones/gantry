@@ -6,16 +6,20 @@ use std::sync::Arc;
 
 use gantry_core::source::{FrontendResourceLimit, SourceSpan};
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
-use gantry_ir::generated::TypeKind;
+use gantry_ir::generated::{TemplateKind, TypeKind};
 use gantry_ir::{
-    ArtifactEncodingError, ArtifactLimits, CanonicalPath, EntryInventory, GeneratedSchemaObject,
-    SchemaObjectError, TypeDescriptor, WorkflowFacts,
+    ActionInventory, ArtifactEncodingError, ArtifactLimits, CanonicalPath,
+    CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, ConcreteSourceMapEntry,
+    EntryInventory, GeneratedSchemaObject, GenericTemplate, Predicate, SchemaObjectError,
+    SourceOriginSet, TypeDescriptor, TypeExpression, WorkflowFacts,
 };
 use sha2::{Digest, Sha256};
 
+use crate::generics::{ExactTypeSubstitution, TypeParameterKey, collect_where_predicates};
 use crate::{
     AnalysisError, DeclaredEnumVariant, DeclaredStructField, DeclaredValueShape,
-    DeclaredValueShapes, PackageStructure, Symbol, SymbolKind, TypeFact,
+    DeclaredValueShapes, GenericTypeFact, PackageStructure, Symbol, SymbolKind, TypeBinder,
+    TypeFact,
 };
 
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
@@ -23,14 +27,44 @@ const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 #[derive(Clone, Debug)]
 struct StructField {
     name: Arc<str>,
+    ty: TypeExpression,
+    default: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ConcreteStructField {
+    name: Arc<str>,
     ty: TypeDescriptor,
     default: Option<String>,
 }
 
 #[derive(Clone, Debug)]
 enum DeclaredShape {
-    Struct(Vec<StructField>),
+    Struct {
+        declaration: SourceSpan,
+        required: Vec<TypeParameterKey>,
+        predicates: Vec<Predicate>,
+        fields: Vec<StructField>,
+    },
+    Enum {
+        declaration: SourceSpan,
+        required: Vec<TypeParameterKey>,
+        predicates: Vec<Predicate>,
+        variants: Vec<(Arc<str>, Option<TypeExpression>)>,
+    },
+}
+
+#[derive(Clone, Debug)]
+enum ConcreteDeclaredShape {
+    Struct(Vec<ConcreteStructField>),
     Enum(Vec<(Arc<str>, Option<TypeDescriptor>)>),
+}
+
+pub(crate) struct SchemaGenericFacts {
+    pub(crate) templates: Vec<GenericTemplate>,
+    pub(crate) instantiations: Vec<ConcreteInstantiation>,
+    pub(crate) source_map: Vec<ConcreteSourceMapEntry>,
+    pub(crate) concrete_types: Vec<TypeDescriptor>,
 }
 
 pub(crate) enum SchemaAnalysisError {
@@ -38,17 +72,22 @@ pub(crate) enum SchemaAnalysisError {
     Invariant,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn analyze_generated_schemas(
     sources: &[ParsedSource],
     facts: &[BTreeMap<NodeId, TypeFact>],
+    generic_facts: &[GenericTypeFact],
+    binders: &[TypeBinder],
     structure: &PackageStructure,
     workflows: &[WorkflowFacts],
+    actions: &[ActionInventory],
     limits: ArtifactLimits,
 ) -> Result<
     (
         Option<EntryInventory>,
         Option<GeneratedSchemaObject>,
         DeclaredValueShapes,
+        SchemaGenericFacts,
     ),
     SchemaAnalysisError,
 > {
@@ -57,30 +96,85 @@ pub(crate) fn analyze_generated_schemas(
         .iter()
         .map(|symbol| (symbol.span.clone(), symbol))
         .collect::<BTreeMap<_, _>>();
-    let shapes = collect_declared_shapes(sources, facts, &symbols_by_span)?;
+    let symbols_by_id = structure
+        .symbols()
+        .iter()
+        .map(|symbol| (symbol.id, symbol))
+        .collect::<BTreeMap<_, _>>();
+    let references = structure
+        .references()
+        .iter()
+        .map(|reference| (reference.span.clone(), reference.target))
+        .collect::<BTreeMap<_, _>>();
+    let shapes = collect_declared_shapes(
+        sources,
+        facts,
+        generic_facts,
+        binders,
+        &symbols_by_span,
+        &symbols_by_id,
+        &references,
+    )?;
     let entry = collect_entry(sources, facts, structure)?;
-    let mut roots = BTreeMap::<String, TypeDescriptor>::new();
+    let mut roots = BTreeMap::<String, (TypeDescriptor, BTreeSet<SourceSpan>)>::new();
     if let Some(entry) = &entry {
         if let Some(parameter) = &entry.parameter {
-            roots.insert(parameter.canonical_string(), parameter.clone());
+            insert_schema_root(&mut roots, parameter.clone(), generic_facts, None);
         }
-        roots.insert(entry.result.canonical_string(), entry.result.clone());
+        insert_schema_root(&mut roots, entry.result.clone(), generic_facts, None);
     }
     for operation in workflows.iter().flat_map(|workflow| &workflow.operations) {
-        roots.insert(
-            operation.result.canonical_string(),
+        insert_schema_root(
+            &mut roots,
             operation.result.clone(),
+            generic_facts,
+            Some(operation.source.clone()),
         );
     }
+    for action in actions {
+        for parameter in &action.parameters {
+            insert_schema_root(
+                &mut roots,
+                parameter.ty().clone(),
+                generic_facts,
+                Some(action.source.clone()),
+            );
+        }
+        insert_schema_root(
+            &mut roots,
+            action.result.clone(),
+            generic_facts,
+            Some(action.source.clone()),
+        );
+    }
+    let mut generic = schema_generic_templates(&shapes)?;
     if roots.is_empty() {
-        return Ok((entry, None, public_declared_shapes(&shapes)));
+        return Ok((entry, None, public_declared_shapes(&shapes)?, generic));
     }
 
     let mut entries = Vec::with_capacity(roots.len());
-    for root in roots.into_values() {
-        let schema = build_root_schema(&root, &shapes)?;
+    let mut concrete_origins = BTreeMap::<TypeDescriptor, BTreeSet<SourceSpan>>::new();
+    for (root, origins) in roots.into_values() {
+        let (schema, reachable) = build_root_schema(&root, &shapes)?;
+        for descriptor in reachable {
+            let Some(shape) = descriptor.declared_path().and_then(|path| shapes.get(path)) else {
+                return Err(SchemaAnalysisError::Invariant);
+            };
+            if shape_required(shape).is_empty() {
+                continue;
+            }
+            let retained = concrete_origins.entry(descriptor.clone()).or_default();
+            retained.extend(origins.iter().cloned());
+            retained.extend(
+                generic_facts
+                    .iter()
+                    .filter(|fact| fact.descriptor.as_ref() == Some(&descriptor))
+                    .map(|fact| fact.span.clone()),
+            );
+        }
         entries.push((root, Arc::from(schema.into_bytes())));
     }
+    extend_schema_generic_facts(&mut generic, concrete_origins, &shapes)?;
     entries.sort_by(|left, right| {
         left.0
             .canonical_string()
@@ -95,7 +189,135 @@ pub(crate) fn analyze_generated_schemas(
         | SchemaObjectError::InvalidSchemaBytes
         | SchemaObjectError::NoncanonicalOrder => SchemaAnalysisError::Invariant,
     })?;
-    Ok((entry, Some(schemas), public_declared_shapes(&shapes)))
+    Ok((
+        entry,
+        Some(schemas),
+        public_declared_shapes(&shapes)?,
+        generic,
+    ))
+}
+
+fn insert_schema_root(
+    roots: &mut BTreeMap<String, (TypeDescriptor, BTreeSet<SourceSpan>)>,
+    descriptor: TypeDescriptor,
+    generic_facts: &[GenericTypeFact],
+    source: Option<SourceSpan>,
+) {
+    let origins = roots
+        .entry(descriptor.canonical_string())
+        .or_insert_with(|| (descriptor.clone(), BTreeSet::new()));
+    origins.1.extend(
+        generic_facts
+            .iter()
+            .filter(|fact| fact.descriptor.as_ref() == Some(&descriptor))
+            .map(|fact| fact.span.clone()),
+    );
+    origins.1.extend(source);
+}
+
+fn shape_required(shape: &DeclaredShape) -> &[TypeParameterKey] {
+    match shape {
+        DeclaredShape::Struct { required, .. } | DeclaredShape::Enum { required, .. } => required,
+    }
+}
+
+fn shape_template_identity(
+    path: &CanonicalPath,
+    shape: &DeclaredShape,
+) -> Result<CanonicalTemplateIdentity, SchemaAnalysisError> {
+    let arguments = shape_required(shape)
+        .iter()
+        .map(|parameter| {
+            TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                .map_err(|_| SchemaAnalysisError::Invariant)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(CanonicalTemplateIdentity::free(path, &arguments))
+}
+
+fn schema_generic_templates(
+    shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
+) -> Result<SchemaGenericFacts, SchemaAnalysisError> {
+    let mut templates = Vec::new();
+    for (path, shape) in shapes {
+        let required = shape_required(shape);
+        if required.is_empty() {
+            continue;
+        }
+        let predicates = match shape {
+            DeclaredShape::Struct { predicates, .. } | DeclaredShape::Enum { predicates, .. } => {
+                predicates
+            }
+        };
+        templates.push(
+            GenericTemplate::new(
+                TemplateKind::DeclaredType,
+                shape_template_identity(path, shape)?,
+                u64::try_from(required.len()).map_err(|_| SchemaAnalysisError::Invariant)?,
+                predicates.clone(),
+                Default::default(),
+            )
+            .map_err(|_| SchemaAnalysisError::Invariant)?,
+        );
+    }
+    templates.sort_by(|left, right| {
+        (left.kind(), left.identity()).cmp(&(right.kind(), right.identity()))
+    });
+    Ok(SchemaGenericFacts {
+        templates,
+        instantiations: Vec::new(),
+        source_map: Vec::new(),
+        concrete_types: Vec::new(),
+    })
+}
+
+fn extend_schema_generic_facts(
+    generic: &mut SchemaGenericFacts,
+    concrete_origins: BTreeMap<TypeDescriptor, BTreeSet<SourceSpan>>,
+    shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
+) -> Result<(), SchemaAnalysisError> {
+    for (descriptor, origins) in concrete_origins {
+        let path = descriptor
+            .declared_path()
+            .ok_or(SchemaAnalysisError::Invariant)?;
+        let shape = shapes.get(path).ok_or(SchemaAnalysisError::Invariant)?;
+        generic.instantiations.push(
+            ConcreteInstantiation::new(
+                TemplateKind::DeclaredType,
+                shape_template_identity(path, shape)?,
+                descriptor.immediate_members(),
+                ConcreteIdentity::DeclaredType(descriptor.clone()),
+            )
+            .map_err(|_| SchemaAnalysisError::Invariant)?,
+        );
+        let declaration = match shape {
+            DeclaredShape::Struct { declaration, .. } | DeclaredShape::Enum { declaration, .. } => {
+                declaration
+            }
+        };
+        generic.source_map.push(ConcreteSourceMapEntry::new(
+            ConcreteIdentity::DeclaredType(descriptor.clone()),
+            declaration.clone(),
+            SourceOriginSet::canonicalize(origins.into_iter().collect()),
+        ));
+        generic.concrete_types.push(descriptor);
+    }
+    generic.instantiations.sort_by(|left, right| {
+        (left.kind(), left.template(), left.arguments()).cmp(&(
+            right.kind(),
+            right.template(),
+            right.arguments(),
+        ))
+    });
+    generic
+        .source_map
+        .sort_by(|left, right| left.node().cmp(right.node()));
+    generic.concrete_types.sort_by(|left, right| {
+        left.canonical_string()
+            .as_bytes()
+            .cmp(right.canonical_string().as_bytes())
+    });
+    Ok(())
 }
 
 fn collect_entry(
@@ -155,24 +377,60 @@ fn collect_entry(
 fn collect_declared_shapes(
     sources: &[ParsedSource],
     facts: &[BTreeMap<NodeId, TypeFact>],
+    generic_facts: &[GenericTypeFact],
+    binders: &[TypeBinder],
     symbols_by_span: &BTreeMap<SourceSpan, &Symbol>,
+    symbols_by_id: &BTreeMap<crate::SymbolId, &Symbol>,
+    references: &BTreeMap<SourceSpan, crate::SymbolId>,
 ) -> Result<BTreeMap<CanonicalPath, DeclaredShape>, SchemaAnalysisError> {
+    let generic_by_span = generic_facts
+        .iter()
+        .map(|fact| (fact.span.clone(), &fact.expression))
+        .collect::<BTreeMap<_, _>>();
+    let binders_by_declaration = binders
+        .iter()
+        .map(|binder| (binder.declaration.clone(), binder))
+        .collect::<BTreeMap<_, _>>();
     let mut shapes = BTreeMap::new();
     for (source_index, source) in sources.iter().enumerate() {
         let resolved = facts
             .get(source_index)
             .ok_or(SchemaAnalysisError::Invariant)?;
-        for node in source.tree().nodes().iter().filter(|node| {
-            matches!(
-                node.form(),
-                SyntaxForm::StructDeclaration | SyntaxForm::EnumDeclaration
-            )
-        }) {
+        for (index, node) in source
+            .tree()
+            .nodes()
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| {
+                matches!(
+                    node.form(),
+                    SyntaxForm::StructDeclaration | SyntaxForm::EnumDeclaration
+                )
+            })
+        {
             let span = direct_identifier_span(source.tree(), node)
                 .ok_or(SchemaAnalysisError::Invariant)?;
             let Some(symbol) = symbols_by_span.get(&span).copied() else {
                 continue;
             };
+            let binder = binders_by_declaration.get(node.span()).copied();
+            let required = binder
+                .into_iter()
+                .flat_map(|binder| {
+                    binder.parameters.iter().map(|parameter| TypeParameterKey {
+                        binder_depth: binder.depth,
+                        ordinal: parameter.ordinal,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let predicates = collect_where_predicates(
+                source.tree(),
+                NodeId::from_index(index),
+                binder,
+                &generic_by_span,
+                references,
+                symbols_by_id,
+            )?;
             let shape = match node.form() {
                 SyntaxForm::StructDeclaration => {
                     let mut fields = Vec::new();
@@ -186,17 +444,31 @@ fn collect_declared_shapes(
                         }
                         let name = direct_identifier(source.tree(), field)
                             .ok_or(SchemaAnalysisError::Invariant)?;
-                        let ty = direct_child_form(source.tree(), field, SyntaxForm::ValueType)
-                            .and_then(|id| resolved.get(&id))
-                            .map(|fact| fact.descriptor.clone())
+                        let ty_id = direct_child_form(source.tree(), field, SyntaxForm::ValueType)
                             .ok_or(SchemaAnalysisError::Invariant)?;
-                        let default = (ty.kind() == TypeKind::Option)
-                            .then(|| field_default_json(source.tree(), field))
-                            .transpose()?
-                            .flatten();
+                        let ty_node = source
+                            .tree()
+                            .node(ty_id)
+                            .ok_or(SchemaAnalysisError::Invariant)?;
+                        let ty = generic_by_span
+                            .get(ty_node.span())
+                            .cloned()
+                            .cloned()
+                            .or_else(|| {
+                                resolved.get(&ty_id).and_then(|fact| {
+                                    TypeExpression::closed(&fact.descriptor, u64::MAX).ok()
+                                })
+                            })
+                            .ok_or(SchemaAnalysisError::Invariant)?;
+                        let default = field_default_json(source.tree(), field)?;
                         fields.push(StructField { name, ty, default });
                     }
-                    DeclaredShape::Struct(fields)
+                    DeclaredShape::Struct {
+                        declaration: node.span().clone(),
+                        required,
+                        predicates,
+                        fields,
+                    }
                 }
                 SyntaxForm::EnumDeclaration => {
                     let mut variants = Vec::new();
@@ -212,11 +484,32 @@ fn collect_declared_shapes(
                             .ok_or(SchemaAnalysisError::Invariant)?;
                         let payload =
                             direct_child_form(source.tree(), variant, SyntaxForm::ValueType)
-                                .and_then(|id| resolved.get(&id))
-                                .map(|fact| fact.descriptor.clone());
+                                .map(|id| {
+                                    let ty_node = source
+                                        .tree()
+                                        .node(id)
+                                        .ok_or(SchemaAnalysisError::Invariant)?;
+                                    generic_by_span
+                                        .get(ty_node.span())
+                                        .cloned()
+                                        .cloned()
+                                        .or_else(|| {
+                                            resolved.get(&id).and_then(|fact| {
+                                                TypeExpression::closed(&fact.descriptor, u64::MAX)
+                                                    .ok()
+                                            })
+                                        })
+                                        .ok_or(SchemaAnalysisError::Invariant)
+                                })
+                                .transpose()?;
                         variants.push((name, payload));
                     }
-                    DeclaredShape::Enum(variants)
+                    DeclaredShape::Enum {
+                        declaration: node.span().clone(),
+                        required,
+                        predicates,
+                        variants,
+                    }
                 }
                 _ => return Err(SchemaAnalysisError::Invariant),
             };
@@ -226,50 +519,96 @@ fn collect_declared_shapes(
     Ok(shapes)
 }
 
-fn public_declared_shapes(shapes: &BTreeMap<CanonicalPath, DeclaredShape>) -> DeclaredValueShapes {
-    DeclaredValueShapes::new(
-        shapes
+fn public_declared_shapes(
+    shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
+) -> Result<DeclaredValueShapes, SchemaAnalysisError> {
+    let mut public = BTreeMap::new();
+    for (path, shape) in shapes {
+        let required = match shape {
+            DeclaredShape::Struct { required, .. } | DeclaredShape::Enum { required, .. } => {
+                required
+            }
+        };
+        if !required.is_empty() {
+            continue;
+        }
+        let concrete = instantiate_declared_shape(&TypeDescriptor::declared(path.clone()), shapes)?;
+        let shape = match concrete {
+            ConcreteDeclaredShape::Struct(fields) => DeclaredValueShape::Struct(
+                fields
+                    .into_iter()
+                    .map(|field| DeclaredStructField {
+                        name: field.name,
+                        ty: field.ty,
+                        default_json: field.default.map(|value| Arc::from(value.into_bytes())),
+                    })
+                    .collect(),
+            ),
+            ConcreteDeclaredShape::Enum(variants) => DeclaredValueShape::Enum(
+                variants
+                    .into_iter()
+                    .map(|(name, payload)| DeclaredEnumVariant { name, payload })
+                    .collect(),
+            ),
+        };
+        public.insert(path.clone(), shape);
+    }
+    Ok(DeclaredValueShapes::new(public))
+}
+
+fn instantiate_declared_shape(
+    descriptor: &TypeDescriptor,
+    shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
+) -> Result<ConcreteDeclaredShape, SchemaAnalysisError> {
+    let path = descriptor
+        .declared_path()
+        .ok_or(SchemaAnalysisError::Invariant)?;
+    let shape = shapes.get(path).ok_or(SchemaAnalysisError::Invariant)?;
+    let required = match shape {
+        DeclaredShape::Struct { required, .. } | DeclaredShape::Enum { required, .. } => required,
+    };
+    let substitution = ExactTypeSubstitution::explicit(required, &descriptor.immediate_members())
+        .map_err(|_| SchemaAnalysisError::Invariant)?;
+    match shape {
+        DeclaredShape::Struct { fields, .. } => fields
             .iter()
-            .map(|(path, shape)| {
-                let shape = match shape {
-                    DeclaredShape::Struct(fields) => DeclaredValueShape::Struct(
-                        fields
-                            .iter()
-                            .map(|field| DeclaredStructField {
-                                name: Arc::clone(&field.name),
-                                ty: field.ty.clone(),
-                                default_json: field
-                                    .default
-                                    .as_ref()
-                                    .map(|value| Arc::from(value.as_bytes())),
-                            })
-                            .collect(),
-                    ),
-                    DeclaredShape::Enum(variants) => DeclaredValueShape::Enum(
-                        variants
-                            .iter()
-                            .map(|(name, payload)| DeclaredEnumVariant {
-                                name: Arc::clone(name),
-                                payload: payload.clone(),
-                            })
-                            .collect(),
-                    ),
-                };
-                (path.clone(), shape)
+            .map(|field| {
+                Ok(ConcreteStructField {
+                    name: Arc::clone(&field.name),
+                    ty: substitution
+                        .apply(&field.ty)
+                        .map_err(|_| SchemaAnalysisError::Invariant)?,
+                    default: field.default.clone(),
+                })
             })
-            .collect(),
-    )
+            .collect::<Result<Vec<_>, SchemaAnalysisError>>()
+            .map(ConcreteDeclaredShape::Struct),
+        DeclaredShape::Enum { variants, .. } => variants
+            .iter()
+            .map(|(name, payload)| {
+                let payload = payload
+                    .as_ref()
+                    .map(|ty| {
+                        substitution
+                            .apply(ty)
+                            .map_err(|_| SchemaAnalysisError::Invariant)
+                    })
+                    .transpose()?;
+                Ok((Arc::clone(name), payload))
+            })
+            .collect::<Result<Vec<_>, SchemaAnalysisError>>()
+            .map(ConcreteDeclaredShape::Enum),
+    }
 }
 
 fn build_root_schema(
     root: &TypeDescriptor,
     shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
-) -> Result<String, SchemaAnalysisError> {
+) -> Result<(String, BTreeSet<TypeDescriptor>), SchemaAnalysisError> {
     let reachable = reachable_declarations(root, shapes)?;
     let mut definitions = BTreeMap::<String, String>::new();
     let mut identities = BTreeMap::<String, String>::new();
-    for path in reachable {
-        let descriptor = TypeDescriptor::declared(path.clone());
+    for descriptor in &reachable {
         let canonical = descriptor.canonical_string();
         let key = format!("{:x}", Sha256::digest(canonical.as_bytes()));
         if identities
@@ -278,8 +617,8 @@ fn build_root_schema(
         {
             return Err(SchemaAnalysisError::Invariant);
         }
-        let shape = shapes.get(&path).ok_or(SchemaAnalysisError::Invariant)?;
-        definitions.insert(key, declared_definition(shape, shapes)?);
+        let shape = instantiate_declared_shape(descriptor, shapes)?;
+        definitions.insert(key, declared_definition(&shape, shapes)?);
     }
     let fragment = schema_fragment(root, shapes)?;
     let defs = encode_string_object(&definitions);
@@ -289,8 +628,9 @@ fn build_root_schema(
             .strip_prefix("{\"$ref\":")
             .and_then(|value| value.strip_suffix('}'))
             .ok_or(SchemaAnalysisError::Invariant)?;
-        Ok(format!(
-            "{{\"$defs\":{defs},\"$ref\":{reference},\"$schema\":{schema}}}"
+        Ok((
+            format!("{{\"$defs\":{defs},\"$ref\":{reference},\"$schema\":{schema}}}"),
+            reachable,
         ))
     } else {
         let inner = fragment
@@ -298,9 +638,12 @@ fn build_root_schema(
             .and_then(|value| value.strip_suffix('}'))
             .ok_or(SchemaAnalysisError::Invariant)?;
         if definitions.is_empty() {
-            Ok(format!("{{\"$schema\":{schema},{inner}}}"))
+            Ok((format!("{{\"$schema\":{schema},{inner}}}"), reachable))
         } else {
-            Ok(format!("{{\"$defs\":{defs},\"$schema\":{schema},{inner}}}"))
+            Ok((
+                format!("{{\"$defs\":{defs},\"$schema\":{schema},{inner}}}"),
+                reachable,
+            ))
         }
     }
 }
@@ -308,19 +651,19 @@ fn build_root_schema(
 fn reachable_declarations(
     root: &TypeDescriptor,
     shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
-) -> Result<BTreeSet<CanonicalPath>, SchemaAnalysisError> {
+) -> Result<BTreeSet<TypeDescriptor>, SchemaAnalysisError> {
     let mut reachable = BTreeSet::new();
     let mut work = vec![root.clone()];
     while let Some(ty) = work.pop() {
-        if let Some(path) = ty.declared_path() {
-            if !reachable.insert(path.clone()) {
+        if ty.declared_path().is_some() {
+            if !reachable.insert(ty.clone()) {
                 continue;
             }
-            match shapes.get(path).ok_or(SchemaAnalysisError::Invariant)? {
-                DeclaredShape::Struct(fields) => {
+            match instantiate_declared_shape(&ty, shapes)? {
+                ConcreteDeclaredShape::Struct(fields) => {
                     work.extend(fields.iter().map(|field| field.ty.clone()));
                 }
-                DeclaredShape::Enum(variants) => {
+                ConcreteDeclaredShape::Enum(variants) => {
                     work.extend(variants.iter().filter_map(|(_, ty)| ty.clone()));
                 }
             }
@@ -348,16 +691,19 @@ fn schema_fragment(
             }
             continue;
         }
-        let members = ty
-            .immediate_members()
-            .into_iter()
-            .map(|member| {
-                built
-                    .get(&member)
-                    .cloned()
-                    .ok_or(SchemaAnalysisError::Invariant)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let members = if ty.declared_path().is_some() {
+            Vec::new()
+        } else {
+            ty.immediate_members()
+                .into_iter()
+                .map(|member| {
+                    built
+                        .get(&member)
+                        .cloned()
+                        .ok_or(SchemaAnalysisError::Invariant)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
         let value = match ty.kind() {
             TypeKind::Unit => "{\"type\":\"null\"}".to_owned(),
             TypeKind::Bool => "{\"type\":\"boolean\"}".to_owned(),
@@ -371,7 +717,7 @@ fn schema_fragment(
                 if !shapes.contains_key(path) {
                     return Err(SchemaAnalysisError::Invariant);
                 }
-                format!("{{\"$ref\":\"#/$defs/{}\"}}", definition_key(path))
+                format!("{{\"$ref\":\"#/$defs/{}\"}}", definition_key(&ty))
             }
             TypeKind::Option => format!(
                 "{{\"anyOf\":[{{\"type\":\"null\"}},{}]}}",
@@ -400,11 +746,11 @@ fn schema_fragment(
 }
 
 fn declared_definition(
-    shape: &DeclaredShape,
+    shape: &ConcreteDeclaredShape,
     shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
 ) -> Result<String, SchemaAnalysisError> {
     match shape {
-        DeclaredShape::Struct(fields) => {
+        ConcreteDeclaredShape::Struct(fields) => {
             let mut properties = fields
                 .iter()
                 .map(|field| {
@@ -435,7 +781,7 @@ fn declared_definition(
                 "{{\"additionalProperties\":false,\"properties\":{{{properties}}},\"required\":[{required}],\"type\":\"object\"}}"
             ))
         }
-        DeclaredShape::Enum(variants) => {
+        ConcreteDeclaredShape::Enum(variants) => {
             let branches = variants
                 .iter()
                 .map(|(name, payload)| match payload {
@@ -479,9 +825,11 @@ fn unit_variant_schema(name: &str) -> String {
     )
 }
 
-fn definition_key(path: &CanonicalPath) -> String {
-    let descriptor = TypeDescriptor::declared(path.clone()).canonical_string();
-    format!("{:x}", Sha256::digest(descriptor.as_bytes()))
+fn definition_key(descriptor: &TypeDescriptor) -> String {
+    format!(
+        "{:x}",
+        Sha256::digest(descriptor.canonical_string().as_bytes())
+    )
 }
 
 fn encode_string_object(values: &BTreeMap<String, String>) -> String {
