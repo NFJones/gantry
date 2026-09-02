@@ -1,0 +1,187 @@
+{
+  "format": "gantry.generics-traits-conformance-evidence/v1",
+  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "issue": "GNT-GEN-CONF-001",
+  "profiles": [
+    "analyzer",
+    "concurrent-evaluator",
+    "durable-runtime",
+    "embedding",
+    "evaluator",
+    "frontend"
+  ],
+  "prerequisites": [
+    {
+      "issue": "GNT-GEN-API-001",
+      "commit": "b5fffb5"
+    },
+    {
+      "issue": "GNT-GEN-CON-001",
+      "commit": "1140efb"
+    },
+    {
+      "issue": "GNT-GEN-DUR-001",
+      "commit": "5910167"
+    },
+    {
+      "issue": "GNT-GEN-RUN-001",
+      "commit": "60be080"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "21db3502f3ed0da4dad7211f4af3dbeb5b7bfaa29e55be1c6f9493e4bd6aa1d8"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/fuzz_regressions.rs",
+      "sha256": "93f459d1300085e14b8643cf4ee6b59d0c46f9cd0141011b5535484f54f833dc"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/generics_conformance.rs",
+      "sha256": "fb9d27b8b1354194f6028b882c90efce799ee9372b96c0e3fa600cff0625b27b"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/generics_conformance_gate.rs",
+      "sha256": "6989decab5f23721da4f0a66b9c0a721636613357e39d14370c58768dcecfea4"
+    },
+    {
+      "path": "fuzz/Cargo.lock",
+      "sha256": "5922cc323286e0a166d53696a9c737f711492e76b5cf0ad473a8e4995bc500dc"
+    },
+    {
+      "path": "fuzz/Cargo.toml",
+      "sha256": "37970baf1022e4a996e1d4c62ce294b6e22a8792f30ef3d61430967cd620a61c"
+    },
+    {
+      "path": "fuzz/README.md",
+      "sha256": "48168bf7dc340f99ae42623b29d67624d17a0871c1164184f26a3fe8ea7775ee"
+    },
+    {
+      "path": "fuzz/corpus/generic_ir/closed-callable",
+      "sha256": "0d8edcb5ccbc57f11ceadc09a7f9b28b059f8a19ce97d5d8ba9ee8b1c0e2515f"
+    },
+    {
+      "path": "fuzz/corpus/generic_ir/nested-type",
+      "sha256": "111dc5c4c306e7c572a3085c7a244a6a0e230aedf6a51e60185f13e43eeb1ae0"
+    },
+    {
+      "path": "fuzz/corpus/generic_ir/open-template",
+      "sha256": "9ab043e92099207e66c83193ee28975fd194c62c15a452b5e5d17ade30f52c11"
+    },
+    {
+      "path": "fuzz/corpus/generic_package/contextual-self",
+      "sha256": "42fd8686d4ec17b55a80f4476af7f1de2ac3c5384c6b1c9f45b362e02eeace18"
+    },
+    {
+      "path": "fuzz/corpus/generic_package/nested-applications",
+      "sha256": "7deb442cd168e3cb15ab2c6027c9cbbf3247d8aad7377f89fec855409df2e984"
+    },
+    {
+      "path": "fuzz/corpus/generic_package/recursive-obligation",
+      "sha256": "a159c7d60b06b70718a37c3fbfdd45c0f319ecc4364c71cd924cafbcda25c08c"
+    },
+    {
+      "path": "fuzz/corpus/parser/generic-angle-ambiguity",
+      "sha256": "dce3c1e1623d3c51f00a1ec5f63c00809205338bf9d153e1c21ec2d2b12923a9"
+    },
+    {
+      "path": "fuzz/corpus/parser/generic-qualified-call",
+      "sha256": "61db9afc95964ee494d4572e4a2a4c7712dca0af7ab769f1f3f6be236ed97b70"
+    },
+    {
+      "path": "fuzz/fuzz_targets/generic_ir.rs",
+      "sha256": "900016aa02f7eec9f1897250a8b26e4b5dcf3e73a6ede712a033edb41f7aeb3e"
+    },
+    {
+      "path": "fuzz/fuzz_targets/generic_package.rs",
+      "sha256": "4ac9d82aa3de20cd3225b515ee3d4bb315b533d9bc9bf3cb9fcc38748a79940e"
+    },
+    {
+      "path": "protocol/README.md",
+      "sha256": "506d778c56a3fdfb251e2a24835fa8b772d86b364235da7deac23b83be067463"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-adoption-v1.json",
+      "sha256": "36ae395337e98f6a878326d30e3964e51cc3ccfb4735587bb539a1ef4a625ec8"
+    },
+    {
+      "path": "protocol/requirements/reviewed-v1.json",
+      "sha256": "3970e88c1ac54ab6ddd2b0aee59c7571f1eb4df040eaa48f3d7936d5fb381725"
+    }
+  ],
+  "property_evidence": [
+    "crates/gantry-conformance/tests/generics_conformance.rs#generic_canonicalization_properties_are_deterministic"
+  ],
+  "scale_evidence": [
+    "crates/gantry-conformance/tests/generics_conformance.rs#generic_scale_envelopes_are_charged_and_deduplicated"
+  ],
+  "fuzz": {
+    "workflow": ".github/workflows/ci.yml",
+    "smoke_runs": 2000,
+    "scheduled_runs": 100000,
+    "targets": [
+      "generic_ir",
+      "generic_package",
+      "parser"
+    ],
+    "corpora": [
+      "fuzz/corpus/generic_ir/closed-callable",
+      "fuzz/corpus/generic_ir/nested-type",
+      "fuzz/corpus/generic_ir/open-template",
+      "fuzz/corpus/generic_package/contextual-self",
+      "fuzz/corpus/generic_package/nested-applications",
+      "fuzz/corpus/generic_package/recursive-obligation",
+      "fuzz/corpus/parser/generic-angle-ambiguity",
+      "fuzz/corpus/parser/generic-qualified-call"
+    ],
+    "deterministic_replay": "crates/gantry-conformance/tests/fuzz_regressions.rs#generic_fuzz_corpora_replay_through_public_boundaries"
+  },
+  "profile_review_summary": [
+    {
+      "profile": "analyzer",
+      "covered_count": 224,
+      "not_applicable_count": 67,
+      "planned_count": 0
+    },
+    {
+      "profile": "concurrent-evaluator",
+      "covered_count": 323,
+      "not_applicable_count": 6,
+      "planned_count": 0
+    },
+    {
+      "profile": "durable-runtime",
+      "covered_count": 353,
+      "not_applicable_count": 8,
+      "planned_count": 0
+    },
+    {
+      "profile": "embedding",
+      "covered_count": 255,
+      "not_applicable_count": 34,
+      "planned_count": 0
+    },
+    {
+      "profile": "evaluator",
+      "covered_count": 316,
+      "not_applicable_count": 13,
+      "planned_count": 0
+    },
+    {
+      "profile": "frontend",
+      "covered_count": 58,
+      "not_applicable_count": 16,
+      "planned_count": 0
+    }
+  ],
+  "advertises_profiles": [],
+  "environment_gaps": [
+    "Pinned nightly-2026-07-01 fuzz execution is delegated to CI because that toolchain is unavailable in the local read-only rustup environment; deterministic corpus replay and stable-toolchain target compilation remain local evidence."
+  ],
+  "exclusions": [
+    "Final replacement publication assembly remains owned by GNT-GEN-PUB-001.",
+    "Linux and macOS release qualification remains owned by GNT-GEN-REL-001.",
+    "No global profile is advertised while publication and release gates remain open."
+  ]
+}

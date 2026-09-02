@@ -117,8 +117,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -131,8 +134,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#reviewed_frontend_parser_evidence_is_closed"
+              ],
               "rationale": null
             }
           ]
@@ -528,8 +533,10 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -542,8 +549,10 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             }
           ]
@@ -2161,8 +2170,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -2504,8 +2516,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -2863,8 +2878,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/generics_conformance.rs#generic_canonicalization_properties_are_deterministic",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -2943,8 +2961,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/generics_conformance.rs#generic_canonicalization_properties_are_deterministic",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -3024,8 +3045,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/generics_conformance.rs#generic_scale_envelopes_are_charged_and_deduplicated",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -4031,8 +4055,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#nested_generic_enum_constructor_call_preserves_and_executes_the_closed_value",
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+              ],
               "rationale": null
             },
             {
@@ -6499,8 +6526,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -9070,9 +9100,9 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This block governs static name/type analysis or canonical analyzed identities. The frontend profile parses and preserves these source forms but GNT-3.15-generic-profiles explicitly assigns their semantic resolution to the analyzer profile."
             }
           ]
         }
@@ -9495,9 +9525,9 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This block governs static name/type analysis or canonical analyzed identities. The frontend profile parses and preserves these source forms but GNT-3.15-generic-profiles explicitly assigns their semantic resolution to the analyzer profile."
             }
           ]
         }
@@ -9919,9 +9949,9 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This block governs static name/type analysis or canonical analyzed identities. The frontend profile parses and preserves these source forms but GNT-3.15-generic-profiles explicitly assigns their semantic resolution to the analyzer profile."
             }
           ]
         }
@@ -9999,9 +10029,9 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This block governs static name/type analysis or canonical analyzed identities. The frontend profile parses and preserves these source forms but GNT-3.15-generic-profiles explicitly assigns their semantic resolution to the analyzer profile."
             }
           ]
         }
@@ -10079,9 +10109,9 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
+              "state": "not-applicable",
               "evidence": [],
-              "rationale": null
+              "rationale": "This block governs static name/type analysis or canonical analyzed identities. The frontend profile parses and preserves these source forms but GNT-3.15-generic-profiles explicitly assigns their semantic resolution to the analyzer profile."
             }
           ]
         }
@@ -10759,8 +10789,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/generics_conformance.rs#generic_scale_envelopes_are_charged_and_deduplicated",
+                "crates/gantry-conformance/tests/validate_package.rs#generic_analysis_policy_charges_are_public_and_failure_atomic"
+              ],
               "rationale": null
             },
             {
@@ -13003,8 +13036,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/generics_conformance.rs#generic_canonicalization_properties_are_deterministic",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -13164,8 +13200,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#nested_generic_enum_constructor_call_preserves_and_executes_the_closed_value",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -14167,8 +14206,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation",
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_trait_method_returning_self_executes_with_the_closed_receiver_type"
+              ],
               "rationale": null
             },
             {
@@ -18366,8 +18408,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_operation_uses_the_concrete_result_type_and_schema",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -21727,8 +21772,10 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             }
           ]
@@ -23380,8 +23427,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -23394,8 +23444,11 @@
             },
             {
               "profile": "frontend",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#semantic_errors_remain_outside_syntax_only_validation",
+                "crates/gantry-conformance/tests/parser_frontend.rs#public_parser_supports_parametric_declarations_static_traits_and_generic_paths"
+              ],
               "rationale": null
             }
           ]
@@ -23755,8 +23808,11 @@
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/fuzz_regressions.rs#generic_fuzz_corpora_replay_through_public_boundaries"
+              ],
               "rationale": null
             },
             {
@@ -25127,8 +25183,11 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             }
           ]
@@ -25793,8 +25852,11 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/generics_authoring.rs#documented_frontend_policy_round_trips_all_twelve_fields",
+                "crates/gantry-conformance/tests/validate_package.rs#complete_frontend_limit_policy_is_public_and_finite"
+              ],
               "rationale": null
             }
           ]
@@ -25834,8 +25896,11 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/public_protocol_formats.rs#published_public_formats_match_exact_bytes_and_reject_mutations",
+                "crates/gantry-conformance/tests/conformance_publication.rs#generated_conformance_manifest_and_corpus_are_exact_and_complete"
+              ],
               "rationale": null
             }
           ]

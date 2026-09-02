@@ -1,0 +1,8 @@
+trait Convert<T> { pure fn convert<U>(self, fallback: U) -> T; }
+struct Item {}
+impl Convert<String> for Item {
+    pure fn convert<U>(self, fallback: U) -> String { "converted" }
+}
+fn main(value: Item) -> String {
+    Convert::<String>::convert::<Int>(value, 1)
+}

@@ -113,9 +113,15 @@ jobs:
         run: |
           mkdir -p artifacts/protocol_identity
           cargo fuzz run protocol_identity -- -runs="$FUZZ_RUNS" -max_len=256 -artifact_prefix=artifacts/protocol_identity/
+          mkdir -p artifacts/parser
+          cargo fuzz run parser -- -runs="$FUZZ_RUNS" -max_len=65536 -artifact_prefix=artifacts/parser/
+          mkdir -p artifacts/generic_ir
+          cargo fuzz run generic_ir -- -runs="$FUZZ_RUNS" -max_len=65536 -artifact_prefix=artifacts/generic_ir/
+          mkdir -p artifacts/generic_package
+          cargo fuzz run generic_package -- -runs="$FUZZ_RUNS" -max_len=65536 -artifact_prefix=artifacts/generic_package/
       - name: Upload minimized failure candidates
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: protocol-identity-fuzz-artifacts
-          path: fuzz/artifacts/protocol_identity/
+          name: fuzz-artifacts
+          path: fuzz/artifacts/

@@ -113,6 +113,14 @@ replacement `gantry.authoring` artifact definition owns these sources;
 conformance executes or analyzes each package and verifies the documented
 diagnostic spans and chain fields.
 
+Aggregate generics-and-traits conformance evidence in
+`conformance/generics-traits-conformance-v1.json` authenticates deterministic
+canonicalization properties, exact scale boundaries, replayable parser,
+generic-IR, and hostile-package corpora, and the pinned-nightly fuzz targets
+and CI cadence. It also verifies that every applicable profile review is
+closed while global profile advertisement remains withheld for publication
+assembly and release qualification.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

@@ -1,0 +1,1 @@
+Result<List<crate::Envelope<String>>,Option<crate::Failure<Int>>>

@@ -8,8 +8,10 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+gantry-analysis = { path = "../crates/gantry-analysis" }
 gantry-core = { path = "../crates/gantry-core" }
 gantry-frontend = { path = "../crates/gantry-frontend" }
+gantry-ir = { path = "../crates/gantry-ir" }
 libfuzzer-sys = "=0.4.9"
 
 [[bin]]
@@ -36,6 +38,20 @@ bench = false
 [[bin]]
 name = "strict_json"
 path = "fuzz_targets/strict_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "generic_ir"
+path = "fuzz_targets/generic_ir.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "generic_package"
+path = "fuzz_targets/generic_package.rs"
 test = false
 doc = false
 bench = false

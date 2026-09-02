@@ -1,0 +1,11 @@
+trait First<T> { pure fn first(self); }
+trait Second<T> { pure fn second(self); }
+struct Item {}
+struct Envelope<T> { value: T }
+impl<T> First<T> for Envelope<T> where T: Second<Envelope<T>> {
+    pure fn first(self) {}
+}
+impl<T> Second<T> for Item where T: First<Item> {
+    pure fn second(self) {}
+}
+fn main(value: Envelope<Item>) { First::<Item>::first(value); }

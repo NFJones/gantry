@@ -1,0 +1,5 @@
+pure fn preserve<T>(value: T) -> T { value }
+fn main(value: Int) {
+    discard value < 3;
+    discard preserve::<List<String>>(["x"]);
+}

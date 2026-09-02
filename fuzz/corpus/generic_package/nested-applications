@@ -1,0 +1,5 @@
+enum State<T, E> { Ready(T), Failed(E) }
+pure fn preserve<T>(value: T) -> T { value }
+fn main() -> State<List<String>, Int> {
+    preserve::<State<List<String>, Int>>(State::<List<String>, Int>::Ready(["x"]))
+}

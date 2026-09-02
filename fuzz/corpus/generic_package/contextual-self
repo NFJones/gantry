@@ -1,0 +1,8 @@
+trait Repack { pure fn repack(self) -> Self; }
+struct Envelope<T> { value: T }
+impl<T> Repack for Envelope<T> {
+    pure fn repack(self) -> Self { self }
+}
+pure fn main() -> Envelope<String> {
+    Envelope::<String> { value: "x" }.repack()
+}
