@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 const MODEL_EVIDENCE: &str = "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay";
-const OBLIGATIONS: [&str; 8] = [
+const OBLIGATIONS: [&str; 12] = [
     "enabled-machine-progress",
     "type-and-store-preservation",
     "base-handle-ownership-vacuous",
@@ -16,6 +16,10 @@ const OBLIGATIONS: [&str; 8] = [
     "lifecycle-linearization",
     "fixed-outcome-observation-isolation",
     "terminal-completion-uniqueness",
+    "closed-generic-descriptor-preservation",
+    "direct-call-target-preservation",
+    "concrete-effect-and-schema-preservation",
+    "no-runtime-generic-analysis",
 ];
 const ACTIONS: [Action; 17] = [
     Action::AdmitNewWork,
@@ -169,6 +173,10 @@ struct ModelState {
     task: TaskStatus,
     operation: OperationStatus,
     value_type: ValueType,
+    generic_descriptor_closed: bool,
+    concrete_call_target_selected: bool,
+    concrete_effect_and_schema_selected: bool,
+    runtime_generic_analysis_steps: u8,
     remaining_source_steps: u8,
     accepted_results: u8,
     cancelled: bool,
@@ -186,6 +194,10 @@ impl ModelState {
             task: TaskStatus::Running,
             operation: OperationStatus::Absent,
             value_type,
+            generic_descriptor_closed: true,
+            concrete_call_target_selected: true,
+            concrete_effect_and_schema_selected: true,
+            runtime_generic_analysis_steps: 0,
             remaining_source_steps: 1,
             accepted_results: 0,
             cancelled: false,
@@ -217,6 +229,9 @@ enum Action {
     SettleSucceeded,
     TerminalComplete,
     ValidateAccept,
+    PublishOpenGeneric,
+    ResolveTraitAtRuntime,
+    RewriteConcreteCallTarget,
 }
 
 impl Action {
@@ -239,6 +254,9 @@ impl Action {
             "settle-succeeded" => Self::SettleSucceeded,
             "terminal-complete" => Self::TerminalComplete,
             "validate-accept" => Self::ValidateAccept,
+            "publish-open-generic" => Self::PublishOpenGeneric,
+            "resolve-trait-at-runtime" => Self::ResolveTraitAtRuntime,
+            "rewrite-concrete-call-target" => Self::RewriteConcreteCallTarget,
             _ => return None,
         })
     }
@@ -563,6 +581,10 @@ fn waits_for_host(state: ModelState) -> bool {
 }
 
 fn assert_invariants(state: ModelState) {
+    assert!(state.generic_descriptor_closed);
+    assert!(state.concrete_call_target_selected);
+    assert!(state.concrete_effect_and_schema_selected);
+    assert_eq!(state.runtime_generic_analysis_steps, 0);
     assert!(state.accepted_results <= 1);
     assert_eq!(
         state.operation == OperationStatus::Accepted,

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 const MODEL_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay";
-const OBLIGATIONS: [&str; 10] = [
+const OBLIGATIONS: [&str; 15] = [
     "cancellation-nonconsumption",
     "causally-closed-prefix-recovery",
     "commit-before-observation",
@@ -18,6 +18,11 @@ const OBLIGATIONS: [&str; 10] = [
     "recorded-delay-reuse",
     "single-result-consumption",
     "terminal-completion-uniqueness",
+    "retained-generic-projection-equivalence",
+    "source-free-generic-recovery",
+    "selected-target-preservation",
+    "no-recovery-generic-analysis",
+    "fail-closed-generic-artifacts",
 ];
 const ACTIONS: [Action; 25] = [
     Action::AcceptResult,
@@ -179,6 +184,11 @@ enum Representation {
 struct ModelState {
     phase: InterpreterPhase,
     task: TaskState,
+    generic_descriptor_closed: bool,
+    concrete_call_target_selected: bool,
+    concrete_effect_and_schema_selected: bool,
+    executable_projection_validated: bool,
+    recovery_generic_analysis_steps: u8,
     operation: OperationState,
     delivery: DeliveryState,
     barrier: BarrierState,
@@ -195,6 +205,11 @@ impl ModelState {
         Self {
             phase: InterpreterPhase::Running,
             task: TaskState::Running,
+            generic_descriptor_closed: true,
+            concrete_call_target_selected: true,
+            concrete_effect_and_schema_selected: true,
+            executable_projection_validated: true,
+            recovery_generic_analysis_steps: 0,
             operation: OperationState::Absent,
             delivery: DeliveryState::Absent,
             barrier: BarrierState::Pending,
@@ -232,6 +247,11 @@ enum DeliveryRecovery {
 struct RecoveryProjection {
     phase: InterpreterPhase,
     task: TaskState,
+    generic_descriptor_closed: bool,
+    concrete_call_target_selected: bool,
+    concrete_effect_and_schema_selected: bool,
+    executable_projection_validated: bool,
+    recovery_generic_analysis_steps: u8,
     operation: OperationRecovery,
     delivery: DeliveryRecovery,
     barrier: BarrierState,
@@ -269,6 +289,10 @@ enum Action {
     SettleDeliveryTerminal,
     SettleFailed,
     SettleSucceeded,
+    CommitTamperedGenericArtifact,
+    RecoverOpenGeneric,
+    ResolveTraitDuringRecovery,
+    RewriteRecoveredCallTarget,
 }
 
 impl Action {
@@ -299,6 +323,10 @@ impl Action {
             "settle-delivery-terminal" => Self::SettleDeliveryTerminal,
             "settle-failed" => Self::SettleFailed,
             "settle-succeeded" => Self::SettleSucceeded,
+            "commit-tampered-generic-artifact" => Self::CommitTamperedGenericArtifact,
+            "recover-open-generic" => Self::RecoverOpenGeneric,
+            "resolve-trait-during-recovery" => Self::ResolveTraitDuringRecovery,
+            "rewrite-recovered-call-target" => Self::RewriteRecoveredCallTarget,
             _ => return None,
         })
     }
@@ -597,6 +625,11 @@ fn recover(state: ModelState) -> RecoveryProjection {
     RecoveryProjection {
         phase: state.phase,
         task: state.task,
+        generic_descriptor_closed: state.generic_descriptor_closed,
+        concrete_call_target_selected: state.concrete_call_target_selected,
+        concrete_effect_and_schema_selected: state.concrete_effect_and_schema_selected,
+        executable_projection_validated: state.executable_projection_validated,
+        recovery_generic_analysis_steps: state.recovery_generic_analysis_steps,
         operation: match state.operation {
             OperationState::Absent => OperationRecovery::None,
             OperationState::PreparedReadOnly => OperationRecovery::Redispatch,
@@ -635,6 +668,11 @@ fn assert_compaction_equivalence(state: ModelState) {
 }
 
 fn assert_invariants(state: ModelState) {
+    assert!(state.generic_descriptor_closed);
+    assert!(state.concrete_call_target_selected);
+    assert!(state.concrete_effect_and_schema_selected);
+    assert!(state.executable_projection_validated);
+    assert_eq!(state.recovery_generic_analysis_steps, 0);
     assert!(state.accepted_results <= 1);
     assert_eq!(
         state.operation == OperationState::Accepted,

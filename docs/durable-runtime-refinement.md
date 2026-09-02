@@ -13,6 +13,12 @@ The argument is profile-scoped to `durable-runtime` without the concurrent
 refinement. Physical SQLite tables and write behavior are not semantic inputs.
 Combined concurrent-durable task-graph recovery remains outside this claim.
 
+For the generics-and-static-traits amendment, the durable prefix retains the
+canonical analysis artifacts and the distinct closed executable projection
+selected at start. Recovery reconstructs that same projection and machine
+without parsing source, inferring type arguments, proving bounds, selecting an
+implementation, or discovering an instantiation.
+
 ## Assumptions, crash choices, and bounds
 
 The package is well typed, the base sequential-machine invariants hold, and
@@ -28,6 +34,14 @@ required-delivery barrier, one journal owner, and the maximum trace depth in
 results are nondeterministic choices. Genuinely pending host work is not a
 wall-clock termination claim. The search is not an unbounded proof over every
 program, prefix length, operation, event, checkpoint, crash, or adapter.
+
+The amended model carries immutable identities for one retained closed generic
+descriptor, selected trait-call target, concrete effect summary, operation
+schema, and executable projection. Recovery from full and compacted prefixes
+must preserve those coordinates exactly. Public fresh-process, candidate-source,
+tamper, and source-free recovery tests establish the corresponding concrete
+artifact bytes and failure boundaries; the finite coordinates do not model
+source analysis.
 
 ## Recovery-prefix refinement mapping
 
@@ -83,6 +97,41 @@ the source machine. Shutdown is monotonic, uses the same cancellation and
 terminal coordinates, waits for the modeled owner/delivery obligations, and
 publishes one immutable terminal report.
 
+## Generics and static-trait refinement
+
+**Retained-versus-fresh projection equivalence.** Start records the canonical
+analysis IR, closed instantiation set, selected implementation identities,
+exact effects, concrete schemas, source origins, and closed executable
+projection under the selected specification and protocol revisions. A fresh
+analysis of an equivalent candidate source must produce the same execution
+identity inputs and executable projection even when cosmetic source provenance
+differs. Recovery decodes and validates the retained projection and cannot add
+or replace a concrete instantiation.
+
+**Source-free recovery and crash cuts.** Every committed cut retains either
+the complete accepted start metadata or no accepted execution. Once accepted,
+the generic descriptor, direct target, schema identity, and effect summary are
+part of immutable recovered program state. Operation preparation, outcome,
+accepted result, cancellation, settlement, compaction, and owner release may
+advance around crashes, but none may invoke the analyzer or rewrite those
+program facts. Full-prefix and snapshot-plus-suffix recovery therefore drive
+the same concrete machine to the same logical value and failure outcome.
+
+**Fail-closed artifact boundary.** Missing, open, malformed, tampered, stale,
+or mixed-revision generic artifacts fail as
+`source-or-configuration-incompatibility` before recovered interpretation,
+journal acquisition for new work, or authoritative-prefix mutation. The
+failure is not catchable by source `attempt`, and no compatibility migration
+or old-format fallback is inferred.
+
+**Evidence boundary.** `durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering`
+compares retained and freshly lowered artifacts, compacted and full recovery,
+candidate-source resume, source-free fresh-process recovery, and tampered or
+malformed rejection with no journal mutation. The ordinary durable recovery
+and event suites supply the crash-cut and commit-order argument. The shared
+externally visible open-artifact negative is
+`generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs`.
+
 ## Requirement and trace links
 
 The machine-readable mapping is
@@ -91,6 +140,20 @@ the durable-runtime projection of `GNT-3-D-PROPERTIES` and the resolved
 lifecycle kernel. Its trace list points to executable recovery, commit-cut,
 event-gap, delivery, cancellation, shutdown, fencing, and compaction cases
 owned by the existing durable implementation suites.
+
+The generics amendment is mapped separately by
+`protocol/conformance/generics-traits-refinements-v1.json`. It links
+`GNT-2.1`, `GNT-3-F-DOMAINS`, `GNT-3.15-generic-profiles`, `GNT-3-F-GENERICS`,
+`GNT-3-F-INSTANTIATION`, `GNT-3-F-TRAITS`,
+`GNT-3-T-GENERIC-CALL`, `GNT-3-T-PARAMETRIC-PACKAGE`,
+`GNT-5.19`, `GNT-5.20-parametric-types`, `GNT-6.1`,
+`GNT-6.12-static-traits`,
+`GNT-8.13-concrete-generic-schemas`, and
+`GNT-11.11-generic-artifact-recovery` to the immutable recovery coordinates,
+fresh-process/crash-cut evidence, and fail-closed rejection boundary above.
+The manifest separately classifies grammar, static-analysis, diagnostics, and
+artifact-construction clauses as frontend/analyzer prerequisites; durable
+recovery preserves their accepted outputs rather than rerunning those phases.
 
 ## Counterexample replay
 
@@ -102,4 +165,10 @@ before occurrence, duplicate occurrence, delivery settlement before dispatch,
 retry continuation before a recorded delay, foreground and terminal
 duplication, owner release before terminal delivery closure, and shutdown
 completion before owner release.
+
+An attempted post-recovery inference, selected-target rewrite, open generic
+projection, or tampered-artifact commit has no transition from an admitted
+model state. Preservation of the immutable generic coordinates is checked at
+every modeled crash cut, and the linked public negative cases reject such
+inputs before they can affect the authoritative prefix.
 

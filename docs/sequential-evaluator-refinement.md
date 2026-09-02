@@ -28,6 +28,13 @@ The bounded model strengthens this written argument but is not an unbounded proo
 This issue supplies evidence for later gate verification; it does not
 advertise the evaluator or embedding profile by itself.
 
+For the generics-and-static-traits amendment, the base evaluator consumes only
+the analyzer-produced closed executable projection. Generic free calls,
+inherent methods, and statically selected trait methods therefore refine the
+existing ordinary call rule: dispatch names one concrete callable and performs
+no inference, monomorphization, trait lookup, integration operation, event, or
+journal action of its own.
+
 ## Assumptions, fairness, and bounds
 
 - The package has passed syntax and semantic analysis, lowering produced a
@@ -55,6 +62,14 @@ barrier failure, and shutdown. The exact state and terminal-state counts are
 recorded in `protocol/goldens/sequential-evaluator-model-v1.json`. The finite
 depth, one-operation abstraction, and two representative result types are
 explicit bounds; no unconditional termination or all-program proof is claimed.
+
+The amended model also carries one representative closed generic descriptor,
+one direct statically selected trait-call target, one exact concrete effect
+summary, and one concrete operation-schema identity as immutable ghost
+coordinates. Every explored transition preserves them. Public executable
+tests establish the corresponding concrete `Envelope<String>` values, call
+targets, operation result schema, and failure behavior; the ghost coordinates
+do not model or stand in for source-level analyzer algorithms.
 
 ## Refinement mapping
 
@@ -140,6 +155,38 @@ root settlement fixes foreground and terminal to the same language outcome.
 The model permits neither terminal completion before foreground nor a second
 foreground, terminal, shutdown-begin, or shutdown-finish transition.
 
+## Generics and static-trait refinement
+
+**Direct-call preservation.** A retained generic instantiation has already
+closed every descriptor, selected each trait implementation, and fixed each
+call edge before `MachineProgram` construction. Call execution therefore uses
+the existing frame, argument-copy, receiver-copy, return, cancellation, and
+failure transitions. Contextual `Self` is the concrete receiver in the closed
+signature; no runtime state contains its source placeholder. Ordinary dispatch
+adds no effect or semantic label beyond effects and operations reached in the
+selected body.
+
+**Value, effect, operation, and failure preservation.** Parameters, mutable
+and immutable bindings, receivers, returns, operation requests and results,
+and public terminal values retain their full concrete descriptors. Logical
+copies preserve nonaliasing even when immutable storage is shared internally.
+The selected callable's exact effect summary and static operation sites are
+immutable program facts. Operation output is validated against the concrete
+schema before the suspended machine can consume it; a wrong closed type, open
+artifact, runtime failure, cancellation, or `attempt` outcome follows the
+existing transition and precedence rules rather than triggering inference or
+fallback dispatch.
+
+**Evidence boundary.** `analyzed_closed_generic_application_executes_as_a_direct_call`
+and `generic_methods_and_static_trait_calls_preserve_logical_copy_isolation`
+exercise direct calls, receiver copying, returns, and selected trait methods.
+`generic_trait_method_returning_self_executes_with_the_closed_receiver_type`
+covers contextual `Self`. `generic_operation_uses_the_concrete_result_type_and_schema`
+covers exact operation metadata and failure before source consumption, while
+`evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency`
+checks the absence of runtime solver machinery. The externally visible
+negative is `generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs`.
+
 ## Requirement and trace links
 
 - Progress, fairness, genuine host pending, and finite budgets:
@@ -163,6 +210,20 @@ foreground, terminal, shutdown-begin, or shutdown-finish transition.
 - Profile-scoped proof obligation: `GNT-3-D-PROPERTIES`, checked by the bounded
   model and replay test named in the evidence manifest.
 
+The generics amendment is mapped separately by
+`protocol/conformance/generics-traits-refinements-v1.json`. It links
+`GNT-2.1`, `GNT-3-F-DOMAINS`, `GNT-3.15-generic-profiles`, `GNT-3-F-GENERICS`,
+`GNT-3-F-INSTANTIATION`, `GNT-3-F-TRAITS`,
+`GNT-3-T-GENERIC-CALL`, `GNT-3-T-PARAMETRIC-PACKAGE`,
+`GNT-5.19`, `GNT-5.20-parametric-types`, `GNT-6.1`,
+`GNT-6.12-static-traits`, and
+`GNT-8.13-concrete-generic-schemas` to the immutable model coordinates and the
+public direct-call, copy, operation, failure, and rejection evidence above.
+The manifest separately classifies grammar, static-analysis, diagnostics, and
+artifact-construction clauses as prerequisites discharged by the frontend and
+analyzer arguments, rather than pretending that runtime transitions re-prove
+them.
+
 The manifest lists every reviewed clause changed from planned to covered by
 this issue and every exact public conformance-test anchor used by the argument.
 
@@ -177,3 +238,9 @@ trace must reach its reviewed prefix and reject the named next action. A future
 implementation or model change that admits one of these traces must update the
 argument and reviewed requirement evidence rather than silently weakening the
 property.
+
+An attempted runtime trait-selection step, direct-target rewrite, or open
+generic boundary has no transition from an admitted model state. The bounded
+model checks preservation of the immutable generic coordinates on every
+existing transition, while the linked public negative rejects malformed or
+open executable artifacts before machine construction.

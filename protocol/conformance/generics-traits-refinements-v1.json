@@ -1,0 +1,149 @@
+{
+  "format": "gantry.generics-traits-refinement-evidence/v1",
+  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "issue": "GNT-GEN-PROOF-002",
+  "profiles": [
+    "concurrent-evaluator",
+    "durable-runtime",
+    "evaluator"
+  ],
+  "static_prerequisite_requirements": [
+    "GNT-1.0#clause-001",
+    "GNT-12.11-generic-diagnostics#clause-001",
+    "GNT-12.9#clause-001",
+    "GNT-13.2#clause-001",
+    "GNT-13.3#clause-001",
+    "GNT-13.4#clause-001",
+    "GNT-13.6#clause-001",
+    "GNT-13.7#clause-001",
+    "GNT-4.14#clause-001",
+    "GNT-4.15#clause-001",
+    "GNT-4.16#clause-001",
+    "GNT-4.17-generic-analysis-limits#clause-001",
+    "GNT-4.4#clause-001",
+    "GNT-4.9#clause-001"
+  ],
+  "profile_arguments": [
+    {
+      "profile": "concurrent-evaluator",
+      "argument": "docs/concurrent-evaluator-refinement.md",
+      "model": "protocol/goldens/concurrent-refinement-model-v1.json",
+      "model_evidence": "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay",
+      "implementation_evidence_manifest": "protocol/conformance/generics-traits-concurrent-v1.json",
+      "preservation_requirements": [
+        "GNT-2.1#clause-001",
+        "GNT-3-F-DOMAINS#clause-001",
+        "GNT-3-F-GENERICS#clause-001",
+        "GNT-3-F-INSTANTIATION#clause-001",
+        "GNT-3-F-TRAITS#clause-001",
+        "GNT-3-T-GENERIC-CALL#clause-001",
+        "GNT-3-T-PARAMETRIC-PACKAGE#clause-001",
+        "GNT-3.15-generic-profiles#clause-001",
+        "GNT-5.19#clause-001",
+        "GNT-5.20-parametric-types#clause-001",
+        "GNT-6.1#clause-001",
+        "GNT-6.12-static-traits#clause-001",
+        "GNT-8.13-concrete-generic-schemas#clause-001"
+      ],
+      "obligations": [
+        "closed-generic-task-transfer",
+        "no-concurrent-generic-analysis",
+        "schedule-independent-static-selection"
+      ],
+      "positive_evidence": [
+        "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules",
+        "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_capture_result_and_join_preserve_exact_application",
+        "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_descriptors_survive_mixed_join_detach_cancel_and_shutdown",
+        "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_operation_schema_and_result_survive_task_boundary"
+      ],
+      "negative_evidence": [
+        "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
+      ]
+    },
+    {
+      "profile": "durable-runtime",
+      "argument": "docs/durable-runtime-refinement.md",
+      "model": "protocol/goldens/durable-refinement-model-v1.json",
+      "model_evidence": "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay",
+      "implementation_evidence_manifest": "protocol/conformance/generics-traits-durable-v1.json",
+      "preservation_requirements": [
+        "GNT-11.11-generic-artifact-recovery#clause-001",
+        "GNT-2.1#clause-001",
+        "GNT-3-F-DOMAINS#clause-001",
+        "GNT-3-F-GENERICS#clause-001",
+        "GNT-3-F-INSTANTIATION#clause-001",
+        "GNT-3-F-TRAITS#clause-001",
+        "GNT-3-T-GENERIC-CALL#clause-001",
+        "GNT-3-T-PARAMETRIC-PACKAGE#clause-001",
+        "GNT-3.15-generic-profiles#clause-001",
+        "GNT-5.19#clause-001",
+        "GNT-5.20-parametric-types#clause-001",
+        "GNT-6.1#clause-001",
+        "GNT-6.12-static-traits#clause-001",
+        "GNT-8.13-concrete-generic-schemas#clause-001"
+      ],
+      "obligations": [
+        "fail-closed-generic-artifacts",
+        "no-recovery-generic-analysis",
+        "retained-generic-projection-equivalence",
+        "selected-target-preservation",
+        "source-free-generic-recovery"
+      ],
+      "positive_evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+      ],
+      "negative_evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering",
+        "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
+      ]
+    },
+    {
+      "profile": "evaluator",
+      "argument": "docs/sequential-evaluator-refinement.md",
+      "model": "protocol/goldens/sequential-evaluator-model-v1.json",
+      "model_evidence": "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay",
+      "implementation_evidence_manifest": "protocol/conformance/generics-traits-runtime-v1.json",
+      "preservation_requirements": [
+        "GNT-2.1#clause-001",
+        "GNT-3-F-DOMAINS#clause-001",
+        "GNT-3-F-GENERICS#clause-001",
+        "GNT-3-F-INSTANTIATION#clause-001",
+        "GNT-3-F-TRAITS#clause-001",
+        "GNT-3-T-GENERIC-CALL#clause-001",
+        "GNT-3-T-PARAMETRIC-PACKAGE#clause-001",
+        "GNT-3.15-generic-profiles#clause-001",
+        "GNT-5.19#clause-001",
+        "GNT-5.20-parametric-types#clause-001",
+        "GNT-6.1#clause-001",
+        "GNT-6.12-static-traits#clause-001",
+        "GNT-8.13-concrete-generic-schemas#clause-001"
+      ],
+      "obligations": [
+        "closed-generic-descriptor-preservation",
+        "concrete-effect-and-schema-preservation",
+        "direct-call-target-preservation",
+        "no-runtime-generic-analysis"
+      ],
+      "positive_evidence": [
+        "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_closed_generic_application_executes_as_a_direct_call",
+        "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency",
+        "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation",
+        "crates/gantry-conformance/tests/executable_bridge.rs#generic_operation_uses_the_concrete_result_type_and_schema",
+        "crates/gantry-conformance/tests/executable_bridge.rs#generic_trait_method_returning_self_executes_with_the_closed_receiver_type"
+      ],
+      "negative_evidence": [
+        "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
+      ]
+    }
+  ],
+  "assumptions": [
+    "The analyzer package-validity argument establishes complete substitution, coherent static selection, finite instantiation closure, and closed lowering before any evaluator starts.",
+    "The profile implementation evidence manifests identify the complete reviewed requirement slices whose runtime preservation is argued here.",
+    "The bounded models strengthen but do not replace the written unbounded preservation arguments or the linked concrete public tests."
+  ],
+  "exclusions": [
+    "The static analyzer-validity argument remains owned by GNT-GEN-PROOF-001.",
+    "This evidence does not add runtime implementation behavior, compatibility recovery, or a new source-language rule.",
+    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+  ]
+}

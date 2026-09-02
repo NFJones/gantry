@@ -36,7 +36,7 @@
   "advertises_profiles": [],
   "exclusions": [
     "Embedding-profile closeout remains separate from this durable-runtime evidence slice.",
-    "Formal durable and concurrent refinement amendments remain owned by GNT-GEN-PROOF-002.",
+    "Formal durable preservation is linked by protocol/conformance/generics-traits-refinements-v1.json; concurrent refinement remains a separate profile argument.",
     "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
   ]
 }

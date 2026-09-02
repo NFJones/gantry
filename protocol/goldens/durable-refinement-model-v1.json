@@ -13,7 +13,12 @@
     "indeterminate-operation-classification",
     "recorded-delay-reuse",
     "single-result-consumption",
-    "terminal-completion-uniqueness"
+    "terminal-completion-uniqueness",
+    "retained-generic-projection-equivalence",
+    "source-free-generic-recovery",
+    "selected-target-preservation",
+    "no-recovery-generic-analysis",
+    "fail-closed-generic-artifacts"
   ],
   "assumptions": [
     "The analyzed package is well typed and recovery reconstructs the shared explicit-frame Machine.",
@@ -29,10 +34,14 @@
     { "id": "double-terminal", "trace": ["settle-succeeded", "commit-foreground", "commit-terminal"], "rejected_action": "commit-terminal", "invariant": "terminal-completion-uniqueness" },
     { "id": "finish-shutdown-before-release", "trace": ["begin-shutdown", "settle-succeeded", "commit-foreground", "commit-terminal", "settle-barrier-success"], "rejected_action": "finish-shutdown", "invariant": "fixed-outcome-status-isolation" },
     { "id": "foreground-before-settlement", "trace": [], "rejected_action": "commit-foreground", "invariant": "commit-before-observation" },
+    { "id": "open-generic-recovery", "trace": [], "rejected_action": "recover-open-generic", "invariant": "fail-closed-generic-artifacts" },
     { "id": "owner-release-before-closure", "trace": ["settle-succeeded", "commit-foreground", "commit-terminal"], "rejected_action": "release-owner", "invariant": "fixed-outcome-status-isolation" },
     { "id": "retry-ready-before-delay", "trace": ["prepare-read-only", "commit-operation-outcome"], "rejected_action": "operation-retry-ready", "invariant": "recorded-delay-reuse" },
+    { "id": "runtime-trait-selection", "trace": [], "rejected_action": "resolve-trait-during-recovery", "invariant": "no-recovery-generic-analysis" },
+    { "id": "selected-target-rewrite", "trace": [], "rejected_action": "rewrite-recovered-call-target", "invariant": "selected-target-preservation" },
     { "id": "settle-cancelled-before-commit", "trace": [], "rejected_action": "settle-cancelled", "invariant": "commit-before-observation" },
-    { "id": "source-after-cancellation", "trace": ["commit-cancellation"], "rejected_action": "prepare-read-only", "invariant": "cancellation-nonconsumption" }
+    { "id": "source-after-cancellation", "trace": ["commit-cancellation"], "rejected_action": "prepare-read-only", "invariant": "cancellation-nonconsumption" },
+    { "id": "tampered-artifact-commit", "trace": [], "rejected_action": "commit-tampered-generic-artifact", "invariant": "fail-closed-generic-artifacts" }
   ]
 }
 

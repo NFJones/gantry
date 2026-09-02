@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 const MODEL_EVIDENCE: &str = "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay";
-const OBLIGATIONS: [&str; 12] = [
+const OBLIGATIONS: [&str; 15] = [
     "all-settled-source-order",
     "cancellation-nonconsumption",
     "enabled-task-progress",
@@ -20,6 +20,9 @@ const OBLIGATIONS: [&str; 12] = [
     "task-settlement-at-most-once",
     "terminal-completion-uniqueness",
     "weak-fair-runnable-polling",
+    "closed-generic-task-transfer",
+    "schedule-independent-static-selection",
+    "no-concurrent-generic-analysis",
 ];
 const ACTIONS: [Action; 25] = [
     Action::BarrierFail,
@@ -159,6 +162,9 @@ enum TerminalCategory {
 struct ModelState {
     phase: InterpreterPhase,
     root: TaskStatus,
+    generic_descriptor_closed: bool,
+    concrete_call_target_selected: bool,
+    concurrent_generic_analysis_steps: u8,
     child_a: TaskStatus,
     child_b: TaskStatus,
     handle_a: HandleStatus,
@@ -178,6 +184,9 @@ impl ModelState {
         Self {
             phase: InterpreterPhase::Running,
             root: TaskStatus::Running,
+            generic_descriptor_closed: true,
+            concrete_call_target_selected: true,
+            concurrent_generic_analysis_steps: 0,
             child_a: TaskStatus::Absent,
             child_b: TaskStatus::Absent,
             handle_a: HandleStatus::Absent,
@@ -222,6 +231,9 @@ enum Action {
     SubmitBFailed,
     SubmitBOk,
     TerminalComplete,
+    ResolveTraitAtRuntime,
+    RewriteConcreteCallTarget,
+    SubmitOpenGeneric,
 }
 
 impl Action {
@@ -253,6 +265,9 @@ impl Action {
             "submit-b-failed" => Self::SubmitBFailed,
             "submit-b-ok" => Self::SubmitBOk,
             "terminal-complete" => Self::TerminalComplete,
+            "resolve-trait-at-runtime" => Self::ResolveTraitAtRuntime,
+            "rewrite-concrete-call-target" => Self::RewriteConcreteCallTarget,
+            "submit-open-generic" => Self::SubmitOpenGeneric,
             _ => return None,
         })
     }
@@ -616,6 +631,9 @@ fn terminal_category(state: ModelState) -> TerminalCategory {
 }
 
 fn assert_invariants(state: ModelState) {
+    assert!(state.generic_descriptor_closed);
+    assert!(state.concrete_call_target_selected);
+    assert_eq!(state.concurrent_generic_analysis_steps, 0);
     assert_eq!(
         state.child_a == TaskStatus::Absent,
         state.handle_a == HandleStatus::Absent

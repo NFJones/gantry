@@ -15,7 +15,10 @@
     "shutdown-cohort-closure",
     "task-settlement-at-most-once",
     "terminal-completion-uniqueness",
-    "weak-fair-runnable-polling"
+    "weak-fair-runnable-polling",
+    "closed-generic-task-transfer",
+    "schedule-independent-static-selection",
+    "no-concurrent-generic-analysis"
   ],
   "assumptions": [
     "The analyzed package is well typed and every child executes the shared explicit-frame Machine.",
@@ -61,10 +64,28 @@
       "invariant": "foreground-terminal-separation"
     },
     {
+      "id": "open-generic-submission",
+      "trace": [],
+      "rejected_action": "submit-open-generic",
+      "invariant": "closed-generic-task-transfer"
+    },
+    {
       "id": "root-settlement-before-attached-drain",
       "trace": ["spawn-a", "submit-a-ok", "fail-root"],
       "rejected_action": "settle-root-failed",
       "invariant": "task-settlement-at-most-once"
+    },
+    {
+      "id": "runtime-trait-selection",
+      "trace": [],
+      "rejected_action": "resolve-trait-at-runtime",
+      "invariant": "no-concurrent-generic-analysis"
+    },
+    {
+      "id": "schedule-dependent-target-rewrite",
+      "trace": [],
+      "rejected_action": "rewrite-concrete-call-target",
+      "invariant": "schedule-independent-static-selection"
     },
     {
       "id": "source-after-cancellation",

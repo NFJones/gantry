@@ -11,7 +11,11 @@
     "cancellation-nonconsumption",
     "lifecycle-linearization",
     "fixed-outcome-observation-isolation",
-    "terminal-completion-uniqueness"
+    "terminal-completion-uniqueness",
+    "closed-generic-descriptor-preservation",
+    "direct-call-target-preservation",
+    "concrete-effect-and-schema-preservation",
+    "no-runtime-generic-analysis"
   ],
   "assumptions": [
     "The analyzed executable program is well typed and one nondurable root execution has been accepted.",
@@ -55,16 +59,34 @@
       "invariant": "terminal-completion-uniqueness"
     },
     {
+      "id": "open-generic-boundary",
+      "trace": [],
+      "rejected_action": "publish-open-generic",
+      "invariant": "closed-generic-descriptor-preservation"
+    },
+    {
       "id": "operation-redispatch-after-accept",
       "trace": ["prepare-operation", "observe-host-outcome", "validate-accept"],
       "rejected_action": "prepare-operation",
       "invariant": "operation-single-consumption"
     },
     {
+      "id": "runtime-trait-selection",
+      "trace": [],
+      "rejected_action": "resolve-trait-at-runtime",
+      "invariant": "no-runtime-generic-analysis"
+    },
+    {
       "id": "source-after-cancel",
       "trace": ["cancel"],
       "rejected_action": "deterministic-step",
       "invariant": "cancellation-nonconsumption"
+    },
+    {
+      "id": "target-rewrite",
+      "trace": [],
+      "rejected_action": "rewrite-concrete-call-target",
+      "invariant": "direct-call-target-preservation"
     },
     {
       "id": "terminal-before-foreground",
