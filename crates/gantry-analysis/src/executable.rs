@@ -647,11 +647,24 @@ impl Compiler<'_> {
         }
         if let Some(callee) = self.direct_target(&node) {
             let receiver_type = callee.receiver_type();
-            let receiver = receiver_type
+            let constructed_receiver = receiver_type.as_ref().and_then(|_| {
+                descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
+            });
+            let named_receiver = receiver_type
                 .as_ref()
                 .and_then(|_| postfix_method_receiver(self.tree, &node));
-            if let (Some(receiver), Some(receiver_type)) = (&receiver, receiver_type) {
-                self.emit(receiver_type, InstructionKind::Load(receiver.clone()))?;
+            let has_implicit_receiver = constructed_receiver.is_some() || named_receiver.is_some();
+            if let (Some(struct_expression), Some(receiver_type)) =
+                (constructed_receiver, receiver_type.as_ref())
+            {
+                self.compile_struct(expression, struct_expression, receiver_type.clone())?;
+            } else if let (Some(receiver), Some(receiver_type)) =
+                (&named_receiver, receiver_type.as_ref())
+            {
+                self.emit(
+                    receiver_type.clone(),
+                    InstructionKind::Load(receiver.clone()),
+                )?;
             }
             let arguments = direct_expressions(self.tree, &node);
             for argument in &arguments {
@@ -663,7 +676,7 @@ impl Compiler<'_> {
                     callee,
                     arguments: arguments
                         .len()
-                        .saturating_add(usize::from(receiver.is_some())),
+                        .saturating_add(usize::from(has_implicit_receiver)),
                 },
             )?;
             return Ok(ty);

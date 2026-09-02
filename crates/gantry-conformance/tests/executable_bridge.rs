@@ -283,6 +283,52 @@ pure fn main() -> Tuple<Int, Int, String> {
 }
 
 #[test]
+fn generic_trait_method_returning_self_executes_with_the_closed_receiver_type() {
+    let root = TempDirectory::new(
+        r#"
+trait Repack { pure fn repack(self) -> Self; }
+struct Envelope<T> { value: T }
+impl<T> Repack for Envelope<T> {
+    pure fn repack(self) -> Self { self }
+}
+pure fn main() -> Envelope<String> {
+    Envelope::<String> { value: "x" }.repack()
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("contextual-Self package omitted its executable program"));
+    assert!(program.callable_identities().iter().any(|identity| {
+        identity.as_str() == "<crate::Envelope<String> as crate::Repack>::repack"
+    }));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x53; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("contextual-Self program was rejected: {error:?}"));
+
+    let outcome = drive(&mut machine);
+    assert!(matches!(
+        outcome,
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Struct { type_name, .. }
+                if type_name == "crate::Envelope<String>")
+                && value.canonical_json().bytes() == br#"{"value":"x"}"#
+    ));
+}
+
+#[test]
 fn generic_operation_uses_the_concrete_result_type_and_schema() {
     let root = TempDirectory::new(
         r#"

@@ -156,6 +156,20 @@ impl ExactTypeSubstitution {
         TypeDescriptor::from_canonical_string(&canonical)
             .map_err(|_| TypeInferenceFailure::Incomplete)
     }
+
+    pub(crate) fn apply_with_receiver(
+        &self,
+        expression: &TypeExpression,
+        receiver: Option<&TypeDescriptor>,
+    ) -> Result<TypeDescriptor, TypeInferenceFailure> {
+        let substituted = receiver
+            .map(|receiver| {
+                substitute_self_type(expression, receiver)
+                    .map_err(|_| TypeInferenceFailure::Conflict)
+            })
+            .transpose()?;
+        self.apply(substituted.as_ref().unwrap_or(expression))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1230,12 +1230,12 @@ fn collect_concrete_callable_metadata(
                 .iter()
                 .map(|parameter| {
                     substitution
-                        .apply(parameter)
+                        .apply_with_receiver(parameter, receiver.as_ref())
                         .map_err(|_| AnalysisError::Invariant)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let result = substitution
-                .apply(&signature.result)
+                .apply_with_receiver(&signature.result, receiver.as_ref())
                 .map_err(|_| AnalysisError::Invariant)?;
             let declaration = sources
                 .get(signature.source_index)
@@ -1267,6 +1267,7 @@ fn collect_concrete_callable_metadata(
                 sources[signature.source_index].tree(),
                 signature.declaration,
                 &substitution,
+                receiver.as_ref(),
                 context,
             )?;
             let declaration_types = context
@@ -1302,6 +1303,7 @@ fn concrete_operation_results(
     tree: &SyntaxTree,
     callable: NodeId,
     substitution: &ExactTypeSubstitution,
+    receiver: Option<&TypeDescriptor>,
     context: &BodyContext,
 ) -> Result<BTreeMap<SourceSpan, TypeDescriptor>, AnalysisError> {
     let declaration = tree.node(callable).ok_or(AnalysisError::Invariant)?;
@@ -1323,7 +1325,7 @@ fn concrete_operation_results(
                         .and_then(|node| context.generic_types.get(node.span()))
                         .ok_or(AnalysisError::Invariant)?;
                     substitution
-                        .apply(expression)
+                        .apply_with_receiver(expression, receiver)
                         .map_err(|_| AnalysisError::Invariant)?
                 } else {
                     TypeDescriptor::UNIT
@@ -1667,7 +1669,7 @@ fn check_parametric_generic_bodies(
                 continue;
             };
             let descriptor = substitution
-                .apply(expression)
+                .apply_with_receiver(expression, receiver.as_ref())
                 .map_err(|_| AnalysisError::Invariant)?;
             substituted_facts.insert(
                 NodeId::from_index(index),
@@ -1723,6 +1725,15 @@ fn check_instantiated_generic_bodies(
             .ok_or(AnalysisError::Invariant)?;
         let substitution = ExactTypeSubstitution::explicit(&signature.required, &key.1)
             .map_err(|_| AnalysisError::Invariant)?;
+        let receiver = signature
+            .receiver
+            .as_ref()
+            .map(|receiver| {
+                substitution
+                    .apply(receiver)
+                    .map_err(|_| AnalysisError::Invariant)
+            })
+            .transpose()?;
         let source = sources
             .get(signature.source_index)
             .ok_or(AnalysisError::Invariant)?;
@@ -1744,7 +1755,7 @@ fn check_instantiated_generic_bodies(
                 continue;
             };
             let descriptor = substitution
-                .apply(expression)
+                .apply_with_receiver(expression, receiver.as_ref())
                 .map_err(|_| AnalysisError::Invariant)?;
             substituted_facts.insert(
                 NodeId::from_index(index),
@@ -3408,16 +3419,37 @@ fn infer_expression_inner(
         tree.node(*child)
             .is_some_and(|node| matches!(node.form(), SyntaxForm::StructExpression))
     }) {
-        return infer_struct(
+        let has_member = node
+            .children()
+            .iter()
+            .copied()
+            .any(|child| node_contains_punctuation(tree, child, Punctuation::Dot));
+        let receiver = infer_struct(
             tree,
             node,
             struct_expression,
             facts,
             environment,
-            expected,
+            if has_member { None } else { expected },
             context,
             diagnostics,
-        );
+        )?;
+        if has_member {
+            return match receiver {
+                Some(receiver) => infer_member_sequence(
+                    tree,
+                    node.children(),
+                    facts,
+                    environment,
+                    Some(receiver),
+                    expected,
+                    context,
+                    diagnostics,
+                ),
+                None => Ok(None),
+            };
+        }
+        return Ok(receiver);
     }
     if matches!(
         direct_reserved_word(tree, node).as_deref(),
@@ -3496,6 +3528,7 @@ fn infer_expression_inner(
         node.children(),
         facts,
         environment,
+        None,
         expected,
         context,
         diagnostics,
@@ -4769,6 +4802,7 @@ fn infer_operand_sequence(
         facts,
         environment,
         None,
+        None,
         context,
         diagnostics,
     )? {
@@ -4813,11 +4847,13 @@ fn infer_operand_sequence(
     Ok(None)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn infer_member_sequence(
     tree: &SyntaxTree,
     children: &[NodeId],
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    receiver: Option<TypeDescriptor>,
     expected: Option<&TypeDescriptor>,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
@@ -4828,25 +4864,32 @@ fn infer_member_sequence(
     else {
         return Ok(None);
     };
-    let root = children
-        .get(..dot)
-        .unwrap_or_default()
-        .iter()
-        .find_map(|child| {
-            let node = tree.node(*child)?;
-            match node.form() {
-                SyntaxForm::Path => direct_identifier(tree, *child).ok().flatten(),
-                SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
-                    Some(Arc::from("self"))
+    let receiver = if let Some(receiver) = receiver {
+        receiver
+    } else {
+        let root = children
+            .get(..dot)
+            .unwrap_or_default()
+            .iter()
+            .find_map(|child| {
+                let node = tree.node(*child)?;
+                match node.form() {
+                    SyntaxForm::Path => direct_identifier(tree, *child).ok().flatten(),
+                    SyntaxForm::Token(TokenKind::ReservedWord(word))
+                        if word.spelling() == "self" =>
+                    {
+                        Some(Arc::from("self"))
+                    }
+                    _ => None,
                 }
-                _ => None,
-            }
-        });
-    let Some(root) = root else {
-        return Ok(None);
-    };
-    let Some(receiver) = environment.get(&root).cloned() else {
-        return Ok(None);
+            });
+        let Some(root) = root else {
+            return Ok(None);
+        };
+        let Some(receiver) = environment.get(&root).cloned() else {
+            return Ok(None);
+        };
+        receiver
     };
     let member_id = children
         .get(dot.saturating_add(1))
@@ -5124,14 +5167,15 @@ fn instantiate_generic_method(
     }
     for (template, argument) in signature.parameters.iter().zip(actual_arguments) {
         constraints.push((
-            template.clone(),
+            substitute_self_type(template, receiver).map_err(|_| TypeInferenceFailure::Conflict)?,
             TypeExpression::closed(argument, u64::MAX)
                 .map_err(|_| TypeInferenceFailure::Conflict)?,
         ));
     }
     if let Some(expected) = expected_result {
         constraints.push((
-            signature.result.clone(),
+            substitute_self_type(&signature.result, receiver)
+                .map_err(|_| TypeInferenceFailure::Conflict)?,
             TypeExpression::closed(expected, u64::MAX)
                 .map_err(|_| TypeInferenceFailure::Conflict)?,
         ));
@@ -5149,9 +5193,9 @@ fn instantiate_generic_method(
     let parameters = signature
         .parameters
         .iter()
-        .map(|parameter| substitution.apply(parameter))
+        .map(|parameter| substitution.apply_with_receiver(parameter, Some(receiver)))
         .collect::<Result<Vec<_>, _>>()?;
-    let result = substitution.apply(&signature.result)?;
+    let result = substitution.apply_with_receiver(&signature.result, Some(receiver))?;
     Ok(GenericMethodResolution {
         signature: signature.clone(),
         concrete_arguments,

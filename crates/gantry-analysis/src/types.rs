@@ -891,6 +891,7 @@ fn resolve_type_node(
             };
             TypeDescriptor::tuple(members).ok()
         }
+        Some("Self") => None,
         Some(_) => return Err(AnalysisError::Invariant),
         None => {
             let path = node
@@ -3549,6 +3550,27 @@ fn main(flag: Bool) -> Int {
                     instantiation.concrete().canonical_string()
                         == "<crate::Envelope<String> as crate::Label>::label"
                 })
+        );
+
+        let contextual_self = analyze(
+            "trait Repack { pure fn repack(self) -> Self; }\nstruct Envelope<T> { value: T }\nimpl<T> Repack for Envelope<T> { pure fn repack(self) -> Self { self } }\npure fn main() -> Envelope<String> { Envelope::<String> { value: \"x\" }.repack() }",
+        );
+        assert_eq!(
+            contextual_self.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            contextual_self.diagnostics()
+        );
+        assert!(
+            contextual_self
+                .generic_instantiations()
+                .iter()
+                .any(|instantiation| {
+                    instantiation.concrete().canonical_string()
+                        == "<crate::Envelope<String> as crate::Repack>::repack"
+                }),
+            "{:?}",
+            contextual_self.generic_instantiations()
         );
     }
 
