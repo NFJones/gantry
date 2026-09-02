@@ -44,6 +44,11 @@ logical-copy behavior, concrete operation schemas, and no-runtime-solver
 boundary are documented in
 [`sequential-generics-and-traits.md`](sequential-generics-and-traits.md).
 
+The nondurable concurrent evaluator's exact generic task captures and results,
+task-path operation identities, all-settled and lifecycle behavior, and
+deterministic/Tokio schedule equivalence are documented in
+[`concurrent-generics-and-traits.md`](concurrent-generics-and-traits.md).
+
 The nondurable sequential evaluator's progress, preservation, cancellation,
 operation-consumption, lifecycle, observation, and terminal-uniqueness
 argument is documented in

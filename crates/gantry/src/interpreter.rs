@@ -1189,7 +1189,7 @@ fn decode_declared_value(
                     Ok((field.name.to_string(), value))
                 })
                 .collect::<Result<Vec<_>, RunExecutionError>>()?;
-            LogicalValue::structure(path.to_string(), values, limits)
+            LogicalValue::structure(ty.canonical_string(), values, limits)
                 .map_err(|_| RunExecutionError::InvalidEntryValue)
         }
         DeclaredValueShape::Enum(variants) => {
@@ -1207,8 +1207,13 @@ fn decode_declared_value(
                 None if members.len() == 1 => None,
                 _ => return Err(RunExecutionError::InvalidEntryValue),
             };
-            LogicalValue::enumeration(path.to_string(), variant.name.to_string(), payload, limits)
-                .map_err(|_| RunExecutionError::InvalidEntryValue)
+            LogicalValue::enumeration(
+                ty.canonical_string(),
+                variant.name.to_string(),
+                payload,
+                limits,
+            )
+            .map_err(|_| RunExecutionError::InvalidEntryValue)
         }
     }
 }

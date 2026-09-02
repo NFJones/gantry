@@ -624,6 +624,24 @@ impl Machine {
         self.execution_foreground
     }
 
+    /// Binds a pristine spawned machine to its scheduler-owned dynamic task path.
+    #[cfg(feature = "concurrent")]
+    pub(crate) fn bind_concurrent_task_path(&mut self, task_path: &[Arc<str>]) -> bool {
+        if self.execution_foreground
+            || task_path.is_empty()
+            || self.frames.len() != 1
+            || self.frames[0].pc != 0
+            || self.frames[0].occurrence_base != 0
+            || !self.occurrences.is_empty()
+            || self.status != MachineStatus::Running
+        {
+            return false;
+        }
+        self.occurrences.extend(task_path.iter().cloned());
+        self.frames[0].occurrence_base = self.occurrences.len();
+        true
+    }
+
     /// Returns the fixed foreground outcome, when terminal.
     #[must_use]
     pub fn outcome(&self) -> Option<&MachineOutcome> {
@@ -2252,9 +2270,7 @@ pub(crate) fn value_matches_type(value: &LogicalValue, expected: &TypeDescriptor
             TypeKind::Declared => match value.view() {
                 LogicalValueView::Struct { type_name, .. }
                 | LogicalValueView::Enum { type_name, .. }
-                    if expected
-                        .declared_path()
-                        .is_some_and(|path| path.as_str() == type_name) => {}
+                    if expected.canonical_string() == type_name => {}
                 _ => return false,
             },
             TypeKind::Option => {

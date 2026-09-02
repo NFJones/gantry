@@ -271,14 +271,14 @@ pub enum LogicalValueView<'a> {
     Tuple(usize),
     /// A declared struct and its field count.
     Struct {
-        /// Canonical declared type name.
+        /// Complete canonical declared type descriptor, including arguments.
         type_name: &'a str,
         /// Number of complete normalized fields.
         field_count: usize,
     },
     /// A declared enum variant.
     Enum {
-        /// Canonical declared type name.
+        /// Complete canonical declared type descriptor, including arguments.
         type_name: &'a str,
         /// Selected variant name.
         variant: &'a str,
@@ -410,6 +410,9 @@ impl LogicalValue {
     }
 
     /// Constructs one complete declared Struct in declaration-field order.
+    ///
+    /// `type_name` is the complete canonical declared type descriptor, including
+    /// every applied generic argument.
     pub fn structure(
         type_name: impl Into<String>,
         fields: Vec<(String, Self)>,
@@ -440,6 +443,9 @@ impl LogicalValue {
     }
 
     /// Constructs one declared Enum value.
+    ///
+    /// `type_name` is the complete canonical declared type descriptor, including
+    /// every applied generic argument.
     pub fn enumeration(
         type_name: impl Into<String>,
         variant: impl Into<String>,

@@ -101,8 +101,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#reviewed_concurrent_generic_evidence_is_closed"
+              ],
               "rationale": null
             },
             {
@@ -508,8 +510,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#concurrent_operation_identities_include_the_dynamic_task_path"
+              ],
               "rationale": null
             },
             {
@@ -2137,8 +2141,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+              ],
               "rationale": null
             },
             {
@@ -2476,8 +2482,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_descriptors_survive_mixed_join_detach_cancel_and_shutdown"
+              ],
               "rationale": null
             },
             {
@@ -2831,8 +2839,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_capture_result_and_join_preserve_exact_application"
+              ],
               "rationale": null
             },
             {
@@ -2907,8 +2917,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+              ],
               "rationale": null
             },
             {
@@ -2984,8 +2996,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+              ],
               "rationale": null
             },
             {
@@ -3987,8 +4001,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+              ],
               "rationale": null
             },
             {
@@ -6451,8 +6467,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+              ],
               "rationale": null
             },
             {
@@ -9010,8 +9028,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -9431,8 +9451,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9851,8 +9873,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9927,8 +9951,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -10003,8 +10029,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+              ],
               "rationale": null
             },
             {
@@ -10687,8 +10715,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#generic_analysis_policy_charges_are_public_and_failure_atomic"
+              ],
               "rationale": null
             },
             {
@@ -12927,8 +12957,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_capture_result_and_join_preserve_exact_application"
+              ],
               "rationale": null
             },
             {
@@ -13084,8 +13116,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_descriptors_survive_mixed_join_detach_cancel_and_shutdown"
+              ],
               "rationale": null
             },
             {
@@ -13228,8 +13262,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+              ],
               "rationale": null
             },
             {
@@ -14079,8 +14115,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+              ],
               "rationale": null
             },
             {
@@ -18274,8 +18312,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_operation_schema_and_result_survive_task_boundary"
+              ],
               "rationale": null
             },
             {
@@ -23282,8 +23322,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -23653,8 +23695,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures"
+              ],
               "rationale": null
             },
             {
@@ -24069,8 +24113,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24146,8 +24192,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24223,8 +24271,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24444,8 +24494,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24521,8 +24573,10 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {

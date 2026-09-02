@@ -774,10 +774,7 @@ impl Compiler<'_> {
             for payload in &expressions {
                 self.compile_expression(*payload)?;
             }
-            let type_name = ty
-                .declared_path()
-                .map(|path| Arc::from(path.as_str()))
-                .ok_or(AnalysisError::Invariant)?;
+            let type_name = Arc::from(ty.canonical_string());
             self.emit(
                 ty.clone(),
                 InstructionKind::Aggregate {
@@ -817,10 +814,7 @@ impl Compiler<'_> {
         struct_expression: NodeId,
         ty: TypeDescriptor,
     ) -> Result<TypeDescriptor, AnalysisError> {
-        let type_name = ty
-            .declared_path()
-            .map(ToString::to_string)
-            .ok_or(AnalysisError::Invariant)?;
+        let type_name = ty.canonical_string();
         let constructor = self.node(struct_expression)?.clone();
         let mut fields = Vec::new();
         for initializer in semantic_children(self.tree, struct_expression)? {

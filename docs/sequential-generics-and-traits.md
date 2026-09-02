@@ -51,10 +51,12 @@ and proving restart equivalence are owned by `GNT-GEN-DUR-001`. That later work
 must reconstruct the same closed program without adding source analysis to the
 runtime.
 
-This implementation does not claim concurrent transfer of concrete captures or
-results; that work remains owned by `GNT-GEN-CON-001`. Global evaluator profile
-advertisement also remains disabled until the complete generics-and-traits
-adoption gate closes.
+Concurrent transfer of concrete captures and results is implemented separately
+and documented in
+[`concurrent-generics-and-traits.md`](concurrent-generics-and-traits.md).
+Durable retention and reconstruction remain owned by `GNT-GEN-DUR-001`.
+Global evaluator profile advertisement also remains disabled until the complete
+generics-and-traits adoption gate closes.
 
 ## Executable evidence
 

@@ -146,11 +146,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "e1ba7c0cb2fcbb137719fb700c008eb46262f78e7152d15f4809ba91616c1988"
+      "sha256": "2c0fa58a53064b2649aa6a74332985252f1fcf36715f70a38ad3547673e196a3"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "1166624bc0916617c1c5e8c5e0e4324dceb9304c33f53d1ad3d0a9b1779ad163"
+      "sha256": "fbeb7df9db998116a798e64c6bac90290b67bdf77d489e25131dcd301efdf2b6"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

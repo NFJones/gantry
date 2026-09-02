@@ -3,6 +3,10 @@
 //! This module records language task state independently of executor handles.
 //! The scheduler added by the concurrent profile can therefore create and
 //! settle one task identity without deriving semantics from adapter timing.
+//! Applied generic captures and results retain complete closed descriptors;
+//! pristine child machines are bound to their canonical task path before any
+//! operation identity can be derived. Scheduling never instantiates a template
+//! or repeats analyzer-owned trait selection.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -1475,11 +1479,20 @@ impl ConcurrentSchedulerV1 {
         result: Result<Machine, HostError>,
     ) -> Result<(), TaskStateError> {
         match result {
-            Ok(machine) => {
+            Ok(mut machine) => {
                 if machine.execution_id() != self.state.execution_id
                     || machine.is_execution_foreground()
                     || self.machines.contains_key(&task_id)
                 {
+                    return Err(TaskStateError::InvalidTaskMachine);
+                }
+                let task_path = self
+                    .state
+                    .task(task_id)
+                    .ok_or(TaskStateError::UnknownTask)?
+                    .task_path()
+                    .to_vec();
+                if !machine.bind_concurrent_task_path(&task_path) {
                     return Err(TaskStateError::InvalidTaskMachine);
                 }
                 self.state.resolve_submission(task_id, Ok(()))?;

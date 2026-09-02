@@ -9,10 +9,17 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
+use gantry::analysis::{AnalysisStatus, analyze_package_types};
+use gantry::frontend::validate_package_syntax;
 use gantry::host::contracts::{
     ConcurrentExecutorAdapter, HostError, JitterSource, OwnedTaskResult,
 };
-use gantry::portable::ExecutorAbortResultKind;
+use gantry::identity::ProtocolIdentity;
+use gantry::ir::{CanonicalPath, InstructionKind, MachineProgram};
+use gantry::portable::{ExecutorAbortResultKind, IdentityKind};
+use gantry::runtime::{Machine, MachineLimits, MachineOutcome, MachineStep};
+use gantry::source::SourceLimits;
+use gantry::value::DEFAULT_VALUE_LIMITS;
 use gantry_adapter_tokio::TokioExecutor;
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
@@ -22,6 +29,7 @@ use tokio::runtime::Builder;
 
 const MODEL_EVIDENCE: &str = "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic";
 const ADAPTER_EVIDENCE: &str = "crates/gantry-conformance/tests/concurrent_executor.rs#caller_owned_tokio_task_services_are_executor_neutral_and_terminal";
+const GENERIC_EVIDENCE_PATH: &str = "protocol/conformance/generics-traits-concurrent-v1.json";
 
 #[derive(Debug, Deserialize)]
 struct EvidenceManifest {
@@ -69,6 +77,24 @@ struct ProfileReview {
 }
 
 #[derive(Debug, Deserialize)]
+struct GenericEvidenceManifest {
+    format: String,
+    specification_sha256: String,
+    issue: String,
+    profile: String,
+    entries: Vec<GenericEvidenceEntry>,
+    advertises_profiles: Vec<String>,
+    exclusions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+struct GenericEvidenceEntry {
+    requirement: String,
+    clause: String,
+    evidence: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct ConcurrentExecutorModel {
     format: String,
     maximum_tasks: usize,
@@ -85,6 +111,65 @@ struct ReplayCase {
     id: String,
     actions: Vec<String>,
     invariant: String,
+}
+
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
+struct TempDirectory(PathBuf);
+
+impl TempDirectory {
+    fn new(source: &str) -> Self {
+        let suffix = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "gantry-concurrent-generic-{}-{suffix}",
+            std::process::id()
+        ));
+        fs::create_dir(&path)
+            .unwrap_or_else(|error| panic!("could not create {}: {error}", path.display()));
+        fs::write(path.join("main.gnt"), source)
+            .unwrap_or_else(|error| panic!("could not write generic fixture: {error}"));
+        Self(path)
+    }
+}
+
+impl Drop for TempDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+struct ClosedGenericTask {
+    machine: Machine,
+}
+
+impl Future for ClosedGenericTask {
+    type Output = OwnedTaskResult;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.machine.step() {
+            MachineStep::Transition(_) => {
+                context.waker().wake_by_ref();
+                Poll::Pending
+            }
+            MachineStep::YieldRequired => {
+                assert!(self.machine.resume_after_yield());
+                context.waker().wake_by_ref();
+                Poll::Pending
+            }
+            MachineStep::Complete(MachineOutcome::Succeeded(value)) => {
+                Poll::Ready(OwnedTaskResult {
+                    canonical_bytes: Arc::from(value.canonical_json().bytes()),
+                })
+            }
+            MachineStep::Complete(outcome) => panic!("generic task failed: {outcome:?}"),
+            MachineStep::WaitingSessionScope(scope) => {
+                panic!("generic task requested session scope: {scope:?}")
+            }
+            MachineStep::WaitingOperation(operation) => {
+                panic!("generic task requested operation: {operation:?}")
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -188,6 +273,57 @@ fn reviewed_concurrent_executor_evidence_is_current() {
 }
 
 #[test]
+fn reviewed_concurrent_generic_evidence_is_closed() {
+    let root = workspace_root();
+    let manifest: GenericEvidenceManifest = read_json(&root.join(GENERIC_EVIDENCE_PATH));
+    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
+
+    assert_eq!(
+        manifest.format,
+        "gantry.generics-traits-concurrent-evidence/v1"
+    );
+    assert_eq!(manifest.issue, "GNT-GEN-CON-001");
+    assert_eq!(manifest.profile, "concurrent-evaluator");
+    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert_eq!(
+        manifest.specification_sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION
+    );
+    assert_eq!(manifest.entries.len(), 27);
+    assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(manifest.advertises_profiles.is_empty());
+    assert_eq!(manifest.exclusions.len(), 3);
+    assert!(gantry::advertised_profiles().is_empty());
+
+    for entry in manifest.entries {
+        assert_anchor_exists(&root, &entry.evidence);
+        let clause = review
+            .requirements
+            .iter()
+            .find(|requirement| requirement.id == entry.requirement)
+            .and_then(|requirement| {
+                requirement
+                    .clauses
+                    .iter()
+                    .find(|clause| clause.key == entry.clause)
+            })
+            .unwrap_or_else(|| panic!("missing {}:{}", entry.requirement, entry.clause));
+        let profile = clause
+            .profile_reviews
+            .iter()
+            .find(|profile| profile.profile == "concurrent-evaluator")
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing concurrent-evaluator review for {}:{}",
+                    entry.requirement, entry.clause
+                )
+            });
+        assert_eq!(profile.state, "covered");
+        assert_eq!(profile.evidence, [entry.evidence]);
+    }
+}
+
+#[test]
 fn caller_owned_tokio_task_services_are_executor_neutral_and_terminal() {
     for runtime in [
         Builder::new_current_thread().enable_time().build(),
@@ -250,6 +386,54 @@ fn caller_owned_tokio_task_services_are_executor_neutral_and_terminal() {
                 Err(HostError { ref code, .. }) if code.as_ref() == "executor-failure"
             ));
         });
+    }
+}
+
+#[test]
+fn closed_generic_tasks_are_executor_neutral_across_schedules() {
+    let (program, root) = closed_generic_program();
+    let expected = OwnedTaskResult {
+        canonical_bytes: Arc::from(&br#"[1,7,"counter"]"#[..]),
+    };
+
+    for pattern in [&[0, 1][..], &[1, 0], &[0, 0, 1], &[1, 1, 0]] {
+        let results = replay_closed_generic_schedule(Arc::clone(&program), &root, pattern);
+        assert_eq!(results, [expected.clone(), expected.clone()]);
+    }
+
+    for runtime in [
+        Builder::new_current_thread().enable_time().build(),
+        Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_time()
+            .build(),
+    ] {
+        let runtime =
+            runtime.unwrap_or_else(|error| panic!("runtime construction failed: {error}"));
+        let adapter = TokioExecutor::new(runtime.handle().clone(), Arc::new(FixedJitter));
+        let results = runtime.block_on(async {
+            let first = adapter
+                .spawn(Box::pin(ClosedGenericTask {
+                    machine: closed_generic_machine(Arc::clone(&program), &root, 0x71),
+                }))
+                .unwrap_or_else(|error| panic!("first generic submission failed: {error:?}"));
+            let second = adapter
+                .spawn(Box::pin(ClosedGenericTask {
+                    machine: closed_generic_machine(Arc::clone(&program), &root, 0x72),
+                }))
+                .unwrap_or_else(|error| panic!("second generic submission failed: {error:?}"));
+            [
+                first
+                    .join()
+                    .await
+                    .unwrap_or_else(|error| panic!("first generic join failed: {error:?}")),
+                second
+                    .join()
+                    .await
+                    .unwrap_or_else(|error| panic!("second generic join failed: {error:?}")),
+            ]
+        });
+        assert_eq!(results, [expected.clone(), expected.clone()]);
     }
 }
 
@@ -447,6 +631,129 @@ fn fair_schedules(polls_per_task: usize, maximum_consecutive: usize) -> Vec<Vec<
     output
 }
 
+fn replay_closed_generic_schedule(
+    program: Arc<MachineProgram>,
+    root: &CanonicalPath,
+    pattern: &[u64],
+) -> [OwnedTaskResult; 2] {
+    let executor = DeterministicConcurrentExecutor::default();
+    let first = executor
+        .spawn(Box::pin(ClosedGenericTask {
+            machine: closed_generic_machine(Arc::clone(&program), root, 0x73),
+        }))
+        .unwrap_or_else(|error| panic!("first generic submission failed: {error:?}"));
+    let second = executor
+        .spawn(Box::pin(ClosedGenericTask {
+            machine: closed_generic_machine(program, root, 0x74),
+        }))
+        .unwrap_or_else(|error| panic!("second generic submission failed: {error:?}"));
+    let mut results = [None, None];
+    for turn in 0..10_000 {
+        if results.iter().all(Option::is_some) {
+            break;
+        }
+        let task_id = pattern[turn % pattern.len()];
+        let index = usize::try_from(task_id)
+            .unwrap_or_else(|_| unreachable!("fixture task identity is in range"));
+        if results[index].is_some() {
+            continue;
+        }
+        match executor
+            .poll_task(task_id)
+            .unwrap_or_else(|error| panic!("generic schedule poll failed: {error:?}"))
+        {
+            DeterministicTaskPoll::Pending => {}
+            DeterministicTaskPoll::Settled(result) => results[index] = Some(result),
+            other => panic!("generic task reached unexpected executor state: {other:?}"),
+        }
+    }
+    let results = results.map(|result| {
+        result.unwrap_or_else(|| panic!("generic task did not settle within the schedule bound"))
+    });
+    assert_eq!(ready(first.join()), Ok(results[0].clone()));
+    assert_eq!(ready(second.join()), Ok(results[1].clone()));
+    results
+}
+
+fn closed_generic_program() -> (Arc<MachineProgram>, CanonicalPath) {
+    let root = TempDirectory::new(
+        r#"
+struct Counter<T> { value: T }
+trait Label { pure fn label(self) -> String; }
+impl<T> Counter<T> {
+    pure fn get(self) -> T { self.value }
+    pure fn replace(mut self, value: T) -> Counter<T> { self.value = value; self }
+}
+impl<T> Label for Counter<T> {
+    pure fn label(self) -> String { "counter" }
+}
+pure fn main() -> Tuple<Int, Int, String> {
+    let original: Counter<Int> = Counter::<Int> { value: 1 };
+    let changed: Counter<Int> = original.replace(7);
+    (original.get(), changed.get(), changed.label())
+}
+"#,
+    );
+    let syntax = validate_package_syntax(
+        &root.0,
+        SourceLimits::new(8, 1_048_576, 4_194_304, 262_144, 256)
+            .unwrap_or_else(|_| unreachable!("positive fixture limits")),
+        i64::MAX as u64,
+    )
+    .unwrap_or_else(|error| panic!("generic syntax failed: {error}"));
+    let package = analyze_package_types(&syntax)
+        .unwrap_or_else(|error| panic!("generic analysis failed operationally: {error}"));
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("generic package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("generic package omitted its executable program"));
+    assert!(
+        program.callable_identities().iter().any(|identity| {
+            identity.as_str() == "<crate::Counter<Int> as crate::Label>::label"
+        })
+    );
+    assert!(program.workflows().iter().all(|workflow| {
+        workflow
+            .instructions
+            .iter()
+            .all(|instruction| match &instruction.kind {
+                InstructionKind::Call { callee, .. } => {
+                    !callee.as_str().contains('^') && program.callable(callee).is_some()
+                }
+                _ => true,
+            })
+    }));
+    (Arc::new(program), entry.path.clone())
+}
+
+fn closed_generic_machine(
+    program: Arc<MachineProgram>,
+    root: &CanonicalPath,
+    identity_byte: u8,
+) -> Machine {
+    let execution =
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [identity_byte; 32])
+            .unwrap_or_else(|error| panic!("generic execution identity failed: {error}"));
+    Machine::new(
+        program,
+        root,
+        Vec::new(),
+        execution,
+        MachineLimits::new(1_000, 100, 100, 64, 100, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| unreachable!("positive generic limits")),
+    )
+    .unwrap_or_else(|error| panic!("closed generic machine failed: {error:?}"))
+}
+
 fn abort_kind(
     response: Result<gantry::host::contracts::HostResponse, HostError>,
 ) -> ExecutorAbortResultKind {
@@ -493,4 +800,16 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> T {
         fs::read(path).unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()));
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|error| panic!("could not decode {}: {error}", path.display()))
+}
+
+fn assert_anchor_exists(root: &Path, evidence: &str) {
+    let (path, anchor) = evidence
+        .split_once('#')
+        .unwrap_or_else(|| panic!("evidence has no anchor: {evidence}"));
+    let source = fs::read_to_string(root.join(path))
+        .unwrap_or_else(|error| panic!("could not read evidence {path}: {error}"));
+    assert!(
+        source.contains(&format!("fn {anchor}")),
+        "missing evidence anchor {evidence}"
+    );
 }

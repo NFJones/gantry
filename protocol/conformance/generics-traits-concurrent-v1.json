@@ -1,0 +1,149 @@
+{
+  "format": "gantry.generics-traits-concurrent-evidence/v1",
+  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "issue": "GNT-GEN-CON-001",
+  "profile": "concurrent-evaluator",
+  "entries": [
+    {
+      "requirement": "GNT-1.0",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#reviewed_concurrent_generic_evidence_is_closed"
+    },
+    {
+      "requirement": "GNT-12.11-generic-diagnostics",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures"
+    },
+    {
+      "requirement": "GNT-12.9",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+    },
+    {
+      "requirement": "GNT-13.2",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+    },
+    {
+      "requirement": "GNT-13.3",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-13.4",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-13.6",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-13.7",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-2.1",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concurrent_operation_identities_include_the_dynamic_task_path"
+    },
+    {
+      "requirement": "GNT-3-F-DOMAINS",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_descriptors_survive_mixed_join_detach_cancel_and_shutdown"
+    },
+    {
+      "requirement": "GNT-3-F-GENERICS",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_capture_result_and_join_preserve_exact_application"
+    },
+    {
+      "requirement": "GNT-3-F-INSTANTIATION",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+    },
+    {
+      "requirement": "GNT-3-F-TRAITS",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+    },
+    {
+      "requirement": "GNT-3-T-GENERIC-CALL",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+    },
+    {
+      "requirement": "GNT-3-T-PARAMETRIC-PACKAGE",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+    },
+    {
+      "requirement": "GNT-3.15-generic-profiles",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+    },
+    {
+      "requirement": "GNT-4.14",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+    },
+    {
+      "requirement": "GNT-4.15",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+    },
+    {
+      "requirement": "GNT-4.16",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+    },
+    {
+      "requirement": "GNT-4.17-generic-analysis-limits",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/validate_package.rs#generic_analysis_policy_charges_are_public_and_failure_atomic"
+    },
+    {
+      "requirement": "GNT-4.4",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+    },
+    {
+      "requirement": "GNT-4.9",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+    },
+    {
+      "requirement": "GNT-5.19",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_capture_result_and_join_preserve_exact_application"
+    },
+    {
+      "requirement": "GNT-5.20-parametric-types",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_descriptors_survive_mixed_join_detach_cancel_and_shutdown"
+    },
+    {
+      "requirement": "GNT-6.1",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+    },
+    {
+      "requirement": "GNT-6.12-static-traits",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_executor.rs#closed_generic_tasks_are_executor_neutral_across_schedules"
+    },
+    {
+      "requirement": "GNT-8.13-concrete-generic-schemas",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_operation_schema_and_result_survive_task_boundary"
+    }
+  ],
+  "advertises_profiles": [],
+  "exclusions": [
+    "Durable retention and fresh-process reconstruction remain owned by GNT-GEN-DUR-001.",
+    "Formal concurrent and durable refinement amendments remain owned by GNT-GEN-PROOF-002.",
+    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+  ]
+}
