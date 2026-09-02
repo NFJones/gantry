@@ -30,13 +30,17 @@ use gantry::source::FrontendLimits;
 #[cfg(feature = "evaluator")]
 use gantry::value::DEFAULT_VALUE_LIMITS;
 #[cfg(feature = "analyzer")]
-use gantry::{AnalyzePackageCoordinator, AnalyzePackageRequest, AnalyzePackageStatus};
+use gantry::{
+    AnalyzePackageCoordinator, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
+};
 #[cfg(feature = "evaluator")]
 use gantry::{Interpreter, StartExecutionRequest, StartExecutionResult};
 #[cfg(feature = "frontend")]
 use gantry::{ValidatePackageCoordinator, ValidatePackageRequest};
 #[cfg(feature = "evaluator")]
 use gantry_adapter_tokio::TokioExecutor;
+#[cfg(feature = "analyzer")]
+use serde_json::{Map, Value, json};
 
 mod services;
 
@@ -67,6 +71,12 @@ fn run(arguments: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) -
         [command] if command == "analyze" => {
             analyze_command(std::path::Path::new("."), stdout, stderr)
         }
+        [command, format] if command == "analyze" && format == "--json" => {
+            analyze_json_command(std::path::Path::new("."), stdout, stderr)
+        }
+        [command, format, package_root] if command == "analyze" && format == "--json" => {
+            analyze_json_command(std::path::Path::new(package_root), stdout, stderr)
+        }
         [command, package_root] if command == "analyze" => {
             analyze_command(std::path::Path::new(package_root), stdout, stderr)
         }
@@ -75,7 +85,10 @@ fn run(arguments: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) -
             run_command(std::path::Path::new(package_root), stdout, stderr)
         }
         _ => {
-            let _ = writeln!(stderr, "usage: gantry (check|analyze|run) [PACKAGE_ROOT]");
+            let _ = writeln!(
+                stderr,
+                "usage: gantry (check|analyze [--json]|run) [PACKAGE_ROOT]"
+            );
             EXIT_USAGE
         }
     }
@@ -158,6 +171,25 @@ fn analyze_command(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> u8 {
+    analyze_command_with_format(package_root, false, stdout, stderr)
+}
+
+#[cfg(feature = "analyzer")]
+fn analyze_json_command(
+    package_root: &std::path::Path,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    analyze_command_with_format(package_root, true, stdout, stderr)
+}
+
+#[cfg(feature = "analyzer")]
+fn analyze_command_with_format(
+    package_root: &std::path::Path,
+    json_output: bool,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
     let selection = published_selection();
     let limits = cli_frontend_limits();
     let allocator = FreshIdentityAllocator::default();
@@ -172,11 +204,10 @@ fn analyze_command(
     }));
     match result {
         Ok(result) => {
-            let diagnostics = result.analysis.as_ref().map_or_else(
-                || result.syntax.diagnostics(),
-                |analysis| analysis.diagnostics(),
-            );
-            for diagnostic in diagnostics {
+            if json_output {
+                return write_analysis_json(&result, stdout, stderr);
+            }
+            for diagnostic in result.diagnostics() {
                 match render_diagnostic(
                     diagnostic,
                     result.syntax.snapshot(),
@@ -209,8 +240,107 @@ fn analyze_command(
     }
 }
 
+#[cfg(feature = "analyzer")]
+fn write_analysis_json(
+    result: &AnalyzePackageResult,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    let document = match analysis_json(result) {
+        Ok(document) => document,
+        Err(_) => {
+            let _ = writeln!(stderr, "operational-failure[analysis-encoding-failure]");
+            return EXIT_OPERATIONAL_FAILURE;
+        }
+    };
+    if serde_json::to_writer(&mut *stdout, &document).is_err() || writeln!(stdout).is_err() {
+        let _ = writeln!(stderr, "operational-failure[output-failure]");
+        return EXIT_OPERATIONAL_FAILURE;
+    }
+    if result.status == AnalyzePackageStatus::SourceValid {
+        EXIT_SUCCESS
+    } else {
+        EXIT_SOURCE_INVALID
+    }
+}
+
+#[cfg(feature = "analyzer")]
+fn analysis_json(result: &AnalyzePackageResult) -> Result<Value, serde_json::Error> {
+    let artifacts = result
+        .artifacts()
+        .map(|artifacts| {
+            Ok(json!({
+                "canonical_ir": serde_json::from_slice::<Value>(
+                    artifacts.canonical_ir.artifact().canonical_bytes(),
+                )?,
+                "package_source_manifest": serde_json::from_slice::<Value>(
+                    artifacts.package_source_manifest.artifact().canonical_bytes(),
+                )?,
+                "schemas": serde_json::from_slice::<Value>(
+                    artifacts.schemas.artifact().canonical_bytes(),
+                )?,
+                "source_map": serde_json::from_slice::<Value>(
+                    artifacts.source_map.artifact().canonical_bytes(),
+                )?,
+            }))
+        })
+        .transpose()?
+        .unwrap_or(Value::Null);
+    Ok(json!({
+        "artifacts": artifacts,
+        "diagnostics": result
+            .diagnostics()
+            .iter()
+            .map(diagnostic_json)
+            .collect::<Vec<_>>(),
+        "format": "gantry.analysis/v1",
+        "status": result.status.wire_name(),
+    }))
+}
+
+#[cfg(feature = "analyzer")]
+fn diagnostic_json(diagnostic: &gantry::source::StructuredDiagnostic) -> Value {
+    let fields = diagnostic
+        .fields
+        .iter()
+        .map(|(key, value)| (key.to_string(), Value::String(value.to_string())))
+        .collect::<Map<_, _>>();
+    json!({
+        "category": diagnostic.category.wire_name(),
+        "code": diagnostic.code.as_str(),
+        "fields": fields,
+        "message": diagnostic.message.as_ref(),
+        "phase": diagnostic.phase.wire_name(),
+        "primary": diagnostic.primary.as_ref().map(source_span_json),
+        "related": diagnostic.related.iter().map(|related| json!({
+            "label": related.label.as_ref(),
+            "span": source_span_json(&related.span),
+        })).collect::<Vec<_>>(),
+        "severity": diagnostic.severity.wire_name(),
+    })
+}
+
+#[cfg(feature = "analyzer")]
+fn source_span_json(span: &gantry::source::SourceSpan) -> Value {
+    json!({
+        "end": span.bytes().end().to_string(),
+        "path": span.source().to_string(),
+        "start": span.bytes().start().to_string(),
+    })
+}
+
 #[cfg(not(feature = "analyzer"))]
 fn analyze_command(
+    _package_root: &std::path::Path,
+    _stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    let _ = writeln!(stderr, "operational-failure[analyzer-unavailable]");
+    EXIT_OPERATIONAL_FAILURE
+}
+
+#[cfg(not(feature = "analyzer"))]
+fn analyze_json_command(
     _package_root: &std::path::Path,
     _stdout: &mut dyn Write,
     stderr: &mut dyn Write,
@@ -543,7 +673,9 @@ mod tests {
             run(&[OsString::from("unknown")], &mut stdout, &mut stderr),
             EXIT_USAGE
         );
-        assert!(String::from_utf8_lossy(&stderr).contains("usage: gantry (check|analyze|run)"));
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("usage: gantry (check|analyze [--json]|run)")
+        );
     }
 
     #[cfg(feature = "analyzer")]
@@ -580,6 +712,68 @@ mod tests {
         );
         assert_eq!(stdout, b"source-invalid\n");
         assert!(String::from_utf8_lossy(&stderr).contains("type"));
+    }
+
+    #[cfg(feature = "analyzer")]
+    #[test]
+    fn analyze_json_exposes_generic_artifacts_and_structured_diagnostics() {
+        let valid = TempDirectory::new(
+            b"fn keep<T>(value: T) -> T { value } fn main() { discard keep(1); }",
+        );
+        let invalid = TempDirectory::new(b"fn main() -> Int { \"wrong\" }");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        assert_eq!(
+            run(
+                &[
+                    OsString::from("analyze"),
+                    OsString::from("--json"),
+                    valid.0.clone().into_os_string(),
+                ],
+                &mut stdout,
+                &mut stderr,
+            ),
+            EXIT_SUCCESS
+        );
+        assert_eq!(
+            stdout,
+            include_bytes!("../tests/goldens/analyze-generic-v1.json")
+        );
+        let output: serde_json::Value = serde_json::from_slice(&stdout)
+            .unwrap_or_else(|error| panic!("structured analysis output is JSON: {error}"));
+        assert_eq!(output["format"], "gantry.analysis/v1");
+        assert_eq!(output["status"], "source-valid");
+        assert_eq!(output["diagnostics"], serde_json::json!([]));
+        assert_eq!(
+            output["artifacts"]["canonical_ir"]["instantiations"][0]["arguments"],
+            serde_json::json!(["Int"])
+        );
+        assert!(output["artifacts"]["source_map"]["generic_entries"].is_array());
+        assert!(stderr.is_empty());
+
+        stdout.clear();
+        stderr.clear();
+        assert_eq!(
+            run(
+                &[
+                    OsString::from("analyze"),
+                    OsString::from("--json"),
+                    invalid.0.clone().into_os_string(),
+                ],
+                &mut stdout,
+                &mut stderr,
+            ),
+            EXIT_SOURCE_INVALID
+        );
+        let output: serde_json::Value = serde_json::from_slice(&stdout)
+            .unwrap_or_else(|error| panic!("structured diagnostic output is JSON: {error}"));
+        assert_eq!(output["status"], "source-invalid");
+        assert!(output["artifacts"].is_null());
+        assert_eq!(output["diagnostics"][0]["category"], "type");
+        assert_eq!(output["diagnostics"][0]["phase"], "analysis");
+        assert_eq!(output["diagnostics"][0]["primary"]["path"], "main.gnt");
+        assert!(stderr.is_empty());
     }
 
     #[cfg(feature = "evaluator")]

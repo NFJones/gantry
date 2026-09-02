@@ -16,6 +16,8 @@ use gantry_core::portable::{IdentityKind, ProtocolFamily};
 use gantry_core::protocol::ProtocolSelection;
 use gantry_core::source::FrontendLimits;
 #[cfg(feature = "analyzer")]
+use gantry_core::source::StructuredDiagnostic;
+#[cfg(feature = "analyzer")]
 use gantry_frontend::PackageSyntaxStatus;
 use gantry_frontend::{
     CompletedSyntaxPhase, PackageSyntaxError, validate_package_syntax_with_limits,
@@ -31,7 +33,14 @@ use gantry_observe::{
 
 #[cfg(feature = "analyzer")]
 use gantry_analysis::{
-    AnalysisError, AnalysisStatus, TypedPackage, analyze_package_types_with_limits,
+    AnalysisError, AnalysisStatus, GenericTypeFact, TypeBinder, TypedPackage,
+    analyze_package_types_with_limits,
+};
+#[cfg(feature = "analyzer")]
+use gantry_ir::{
+    CanonicalIr, CanonicalSourceMap, ConcreteEffect, ConcreteInstantiation, ConcreteSourceMapEntry,
+    ExecutableProjection, GeneratedSchemaObject, GenericTemplate, ImplementationHead,
+    PackageSourceManifest, ResolvedCall, TraitContract,
 };
 
 /// One syntax-only package validation request.
@@ -171,6 +180,121 @@ pub struct AnalyzePackageResult {
     pub events: Vec<EventEnvelope>,
     /// Optional delivery settlements in the same order as `events`.
     pub deliveries: Option<Vec<ActivityDeliveryResult>>,
+}
+
+/// Source-valid canonical artifacts returned by semantic package analysis.
+///
+/// This borrowed facade DTO keeps artifact ownership in [`TypedPackage`] while
+/// allowing embedding consumers to obtain every versioned output directly.
+#[cfg(feature = "analyzer")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AnalyzePackageArtifacts<'a> {
+    /// Immutable package-source audit manifest.
+    pub package_source_manifest: &'a PackageSourceManifest,
+    /// Canonical analysis IR, including generic facts and the closed projection.
+    pub canonical_ir: &'a CanonicalIr,
+    /// Canonical source map, including multi-origin concrete entries.
+    pub source_map: &'a CanonicalSourceMap,
+    /// Deduplicated concrete schemas for every exposed boundary root.
+    pub schemas: &'a GeneratedSchemaObject,
+}
+
+/// Structured generic and trait facts returned by source-valid analysis.
+///
+/// Concrete instantiation arguments are the complete inferred substitutions;
+/// their concrete identities and source-origin entries let tools associate
+/// those substitutions with call and constructor sites without parsing text.
+#[cfg(feature = "analyzer")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AnalyzePackageGenericFacts<'a> {
+    /// Authored generic binders in canonical declaration-span order.
+    pub binders: &'a [TypeBinder],
+    /// Open and closed authored type expressions with optional concrete forms.
+    pub types: &'a [GenericTypeFact],
+    /// Canonical source trait contracts.
+    pub traits: &'a [TraitContract],
+    /// Canonical inherent and trait implementation heads.
+    pub implementations: &'a [ImplementationHead],
+    /// Generic declared-type and callable templates.
+    pub templates: &'a [GenericTemplate],
+    /// Retained applications whose ordered arguments are complete substitutions.
+    pub instantiations: &'a [ConcreteInstantiation],
+    /// Statically resolved direct calls and selected implementation identities.
+    pub resolved_calls: &'a [ResolvedCall],
+    /// Exact least-fixed-point effects for concrete callables.
+    pub concrete_effects: &'a [ConcreteEffect],
+    /// Canonical declaration and multi-origin mappings for concrete identities.
+    pub source_origins: &'a [ConcreteSourceMapEntry],
+    /// Runtime-facing projection containing only closed types and direct calls.
+    pub executable: &'a ExecutableProjection,
+}
+
+#[cfg(feature = "analyzer")]
+impl AnalyzePackageResult {
+    /// Returns ordered structured diagnostics for syntax or semantic analysis.
+    ///
+    /// Machine consumers should inspect these fields rather than rendered CLI
+    /// text. Syntax-invalid activities obtain diagnostics from the syntax phase.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[StructuredDiagnostic] {
+        self.analysis.as_ref().map_or_else(
+            || self.syntax.diagnostics(),
+            |analysis| analysis.diagnostics(),
+        )
+    }
+
+    /// Returns all source-valid canonical artifacts without copying their bytes.
+    ///
+    /// ```
+    /// # fn inspect(result: &gantry::AnalyzePackageResult) {
+    /// if let Some(artifacts) = result.artifacts() {
+    ///     assert!(!artifacts.canonical_ir.artifact().canonical_bytes().is_empty());
+    ///     assert!(!artifacts.schemas.entries().is_empty());
+    /// }
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn artifacts(&self) -> Option<AnalyzePackageArtifacts<'_>> {
+        let analysis = self.analysis.as_ref()?;
+        Some(AnalyzePackageArtifacts {
+            package_source_manifest: analysis.manifest()?,
+            canonical_ir: analysis.canonical_ir()?,
+            source_map: analysis.source_map()?,
+            schemas: analysis.schemas()?,
+        })
+    }
+
+    /// Returns structured generic facts and the distinct closed projection.
+    ///
+    /// ```
+    /// # fn inspect(result: &gantry::AnalyzePackageResult) {
+    /// if let Some(facts) = result.generic_facts() {
+    ///     for instantiation in facts.instantiations {
+    ///         for argument in instantiation.arguments() {
+    ///             assert!(!argument.canonical_string().contains('^'));
+    ///         }
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn generic_facts(&self) -> Option<AnalyzePackageGenericFacts<'_>> {
+        let analysis = self.analysis.as_ref()?;
+        let canonical_ir = analysis.canonical_ir()?;
+        let generic = canonical_ir.generic_facts();
+        Some(AnalyzePackageGenericFacts {
+            binders: analysis.type_binders(),
+            types: analysis.generic_types(),
+            traits: generic.traits(),
+            implementations: generic.implementations(),
+            templates: generic.templates(),
+            instantiations: generic.instantiations(),
+            resolved_calls: generic.resolved_calls(),
+            concrete_effects: generic.concrete_effects(),
+            source_origins: generic.source_map(),
+            executable: generic.executable(),
+        })
+    }
 }
 
 /// Operational failure for which no source judgment is returned.

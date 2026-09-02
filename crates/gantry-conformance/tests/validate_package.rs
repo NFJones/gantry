@@ -282,7 +282,9 @@ fn reviewed_analyzer_package_evidence_is_closed() {
 
 #[test]
 fn analyze_package_sequences_phases_and_exposes_valid_artifacts() {
-    let valid = TempDirectory::new(b"fn main() {}");
+    let valid = TempDirectory::new(
+        b"struct Envelope<T> { value: T }\nfn preserve<T>(value: T) -> T { value }\nfn main(value: Envelope<String>) { discard preserve(value); }",
+    );
     let identities = ScriptedIdentities::new([Ok([1; 32]), Ok([2; 32]), Ok([3; 32])]);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock(Ok(timestamp()));
@@ -321,6 +323,47 @@ fn analyze_package_sequences_phases_and_exposes_valid_artifacts() {
     assert!(analysis.canonical_ir().is_some());
     assert!(analysis.source_map().is_some());
     assert!(analysis.schemas().is_some());
+    assert!(result.diagnostics().is_empty());
+    let artifacts = result
+        .artifacts()
+        .unwrap_or_else(|| unreachable!("source-valid artifacts are exposed"));
+    assert!(
+        !artifacts
+            .package_source_manifest
+            .artifact()
+            .canonical_bytes()
+            .is_empty()
+    );
+    assert!(
+        !artifacts
+            .canonical_ir
+            .artifact()
+            .canonical_bytes()
+            .is_empty()
+    );
+    assert!(!artifacts.source_map.artifact().canonical_bytes().is_empty());
+    assert!(
+        artifacts
+            .schemas
+            .entries()
+            .iter()
+            .any(|(ty, _)| ty.canonical_string() == "crate::Envelope<String>")
+    );
+    let generic = result
+        .generic_facts()
+        .unwrap_or_else(|| unreachable!("source-valid generic facts are exposed"));
+    assert_eq!(generic.binders.len(), 2);
+    assert!(generic.instantiations.iter().any(|instantiation| {
+        instantiation
+            .arguments()
+            .iter()
+            .map(|argument| argument.canonical_string())
+            .eq(["crate::Envelope<String>"])
+    }));
+    assert_eq!(generic.resolved_calls.len(), 1);
+    assert_eq!(generic.concrete_effects.len(), 1);
+    assert!(!generic.source_origins.is_empty());
+    assert!(generic.executable.callables().len() >= 2);
     assert_eq!(
         identities.calls(),
         vec![
@@ -345,6 +388,9 @@ fn analyze_package_stops_after_syntax_failure_and_reports_semantic_failure() {
     let result = result.unwrap_or_else(|_| unreachable!("checked above"));
     assert_eq!(result.status, AnalyzePackageStatus::SourceInvalid);
     assert!(result.analysis.is_none());
+    assert!(result.artifacts().is_none());
+    assert!(result.generic_facts().is_none());
+    assert!(!result.diagnostics().is_empty());
     assert_eq!(result.events.len(), 1);
     assert_eq!(result.events[0].kind(), EventKind::Parse);
     assert_eq!(
@@ -369,6 +415,9 @@ fn analyze_package_stops_after_syntax_failure_and_reports_semantic_failure() {
     assert_eq!(analysis.status(), AnalysisStatus::Invalid);
     assert!(analysis.canonical_ir().is_none());
     assert!(analysis.source_map().is_none());
+    assert!(result.artifacts().is_none());
+    assert!(result.generic_facts().is_none());
+    assert!(!result.diagnostics().is_empty());
     assert!(
         std::str::from_utf8(result.events[1].payload().canonical_bytes())
             .is_ok_and(|payload| payload.contains("\"status\":\"source-invalid\"")

@@ -114,6 +114,20 @@ just run -- check [PACKAGE_ROOT]
 `syntax-valid` when its source is syntactically valid; otherwise it reports
 diagnostics, prints `syntax-invalid`, and exits with status 1.
 
+Run complete semantic analysis in concise text mode or deterministic
+machine-readable mode:
+
+```sh
+just run -- analyze [PACKAGE_ROOT]
+just run -- analyze --json [PACKAGE_ROOT]
+```
+
+The JSON form emits `gantry.analysis/v1` with structured diagnostics and, for
+source-valid packages, the canonical package manifest, analysis IR, source
+map, concrete schemas, generic substitutions, selected calls, exact effects,
+source origins, and closed executable projection. Operational failures remain
+separate from source-invalid results.
+
 For repository development:
 
 ```sh

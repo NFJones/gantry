@@ -161,6 +161,7 @@ dependencies = [
  "gantry",
  "gantry-adapter-tokio",
  "getrandom",
+ "serde_json",
  "tokio",
 ]
 

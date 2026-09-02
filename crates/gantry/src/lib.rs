@@ -62,7 +62,8 @@ pub use start::{
 };
 #[cfg(feature = "analyzer")]
 pub use validate::{
-    AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
+    AnalyzePackageArtifacts, AnalyzePackageError, AnalyzePackageGenericFacts,
+    AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
 };
 #[cfg(feature = "frontend")]
 pub use validate::{

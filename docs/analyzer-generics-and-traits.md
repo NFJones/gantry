@@ -74,9 +74,12 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   separately. Exact effects are the least fixed point over the reachable
   closed call graph, including generic free workflows, generic inherent
   methods, and the implementation selected for each trait call.
-- `TypedPackage::generic_templates`, `generic_instantiations`, and
-  `generic_concrete_effects` expose the canonical analyzer result without
-  requiring consumers to parse display strings or rerun inference.
+- `TypedPackage` retains the complete analyzer result. The supported `gantry`
+  facade exposes borrowed `AnalyzePackageArtifacts` and
+  `AnalyzePackageGenericFacts` views, including complete substitutions,
+  selected calls, exact effects, concrete schemas, source origins, and the
+  distinct closed executable projection. Consumers do not need to parse
+  display strings or rerun inference or trait selection.
 
 For example, this declaration and use are valid:
 
@@ -110,6 +113,27 @@ The application `Envelope<Node<Decision>>` is invalid because `Decision` is
 not equatable, and `Option<Node<List<T>>>` inside `Node<T>` is invalid because
 the recursive application changes its own substitution.
 
+## Facade and CLI access
+
+`AnalyzePackageResult::diagnostics()` returns syntax or analysis diagnostics
+with stable phase, severity, category, code, primary and related spans, and
+structured fields. For source-valid packages, `artifacts()` returns the
+package-source manifest, canonical IR, source map, and concrete schema object;
+`generic_facts()` returns typed generic facts and the closed executable
+projection without copying their canonical data.
+
+The CLI keeps its concise text mode and also supports deterministic structured
+output:
+
+```sh
+gantry analyze --json [PACKAGE_ROOT]
+```
+
+The JSON document has format `gantry.analysis/v1`. It contains `status`, the
+complete structured `diagnostics` array, and, for source-valid packages, the
+four canonical analysis artifacts as JSON values. Source-invalid output uses
+`null` for `artifacts`; operational failures remain separate CLI failures.
+
 ## Portable limits and diagnostics
 
 Public analysis must call `analyze_package_types_with_limits`. The analyzer
@@ -135,11 +159,9 @@ use stable diagnostics such as `duplicate-type-parameter`,
 
 ## Deliberate stage boundary
 
-This analyzer stage checks generic bodies, selects user-defined
-implementations, retains the reachable closed callable-instantiation closure,
-and computes exact concrete effects. It does not yet encode concrete generic
-schemas, publish the final closed executable projection, or attach complete
-multi-origin source maps. Packages with generic templates therefore retain
-complete body/effect analysis facts but still withhold executable publication.
-Those artifact contracts are owned by the subsequent concrete-schema and
-closed-artifact stage.
+The analyzer checks generic bodies, selects user-defined implementations,
+retains the reachable closed type and callable instantiation closure, computes
+exact concrete effects, emits concrete schemas, and publishes canonical
+analysis and closed executable projections with multi-origin source maps. It
+does not execute the projection, schedule tasks, invoke hooks, or reconstruct
+durable state; those behaviors remain owned by evaluator-derived profiles.

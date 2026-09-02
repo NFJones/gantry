@@ -2,7 +2,7 @@
   "version": 1,
   "publication_lockfile": {
     "path": "Cargo.lock",
-    "sha256": "3099a05348bdcb78d97f956d8c2862af43d187aa80ac3393917c623fe38bd9d9"
+    "sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436"
   },
   "fuzz_lockfile": {
     "path": "fuzz/Cargo.lock",
@@ -164,17 +164,19 @@
         "std",
         "unbounded_depth"
       ],
-      "owner": "xtask and gantry-conformance",
-      "purpose": "Decode reviewed repository metadata and independently inspect canonical protocol fixtures after admission.",
+      "owner": "gantry-cli, xtask, and gantry-conformance",
+      "purpose": "Decode reviewed repository metadata, independently inspect canonical protocol fixtures after admission, and encode the analyzer-only CLI's deterministic structured result from already validated artifacts and diagnostics.",
       "data_or_protocol_versions": [
-        "RFC 8259 tooling envelopes only"
+        "RFC 8259 tooling envelopes and gantry.analysis/v1 CLI output only"
       ],
-      "bounded_spike": "Canonical protocol and requirement fixtures are decoded independently and compared with Gantry-owned generated/public contracts.",
+      "bounded_spike": "Canonical protocol and requirement fixtures are decoded independently and compared with Gantry-owned generated/public contracts; the CLI output is pinned by an exact generic-analysis golden and does not replace Gantry-owned semantic artifact encoders.",
       "acceptance_evidence": [
+        "crates/gantry-cli/src/main.rs",
+        "crates/gantry-cli/tests/goldens/analyze-generic-v1.json",
         "crates/gantry-conformance/tests/canonical_protocol.rs",
         "crates/gantry-conformance/tests/requirements_ledger.rs"
       ],
-      "fallback": "Use the Gantry strict value decoder for semantic inputs and a small repository-only parser for reviewed tooling envelopes."
+      "fallback": "Use the Gantry strict value decoder for semantic inputs, a small repository-only parser for reviewed tooling envelopes, and a Gantry-owned bounded encoder for structured CLI output."
     },
     {
       "id": "serde-private-tooling",

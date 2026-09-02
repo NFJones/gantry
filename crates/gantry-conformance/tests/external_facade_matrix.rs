@@ -73,7 +73,7 @@ fn run_external_consumer(name: &str, features: &[&str], expected: [bool; 5]) {
         ""
     };
     let analyzer_contract = if expected[1] {
-        "    let _ = std::mem::size_of::<gantry::AnalyzePackageRequest<'static>>();\n    let _: Option<gantry::AnalyzePackageCoordinator<'static>> = None;\n"
+        "    let _ = std::mem::size_of::<gantry::AnalyzePackageRequest<'static>>();\n    let _ = std::mem::size_of::<gantry::AnalyzePackageArtifacts<'static>>();\n    let _ = std::mem::size_of::<gantry::AnalyzePackageGenericFacts<'static>>();\n    let _: Option<gantry::AnalyzePackageCoordinator<'static>> = None;\n    let _inspect = |result: &gantry::AnalyzePackageResult| {\n        let _: Option<gantry::AnalyzePackageArtifacts<'_>> = result.artifacts();\n        let _: Option<gantry::AnalyzePackageGenericFacts<'_>> = result.generic_facts();\n        let _ = result.diagnostics();\n    };\n"
     } else {
         ""
     };
