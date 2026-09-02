@@ -104,6 +104,7 @@ pub(crate) struct BodyAnalysis {
     pub(crate) concrete_callables: Vec<ConcreteCallableMetadata>,
     pub(crate) resolved_calls: Vec<ResolvedCallMetadata>,
     pub(crate) source_callables: Vec<SourceCallableMetadata>,
+    pub(crate) closed_enums: BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
     pub(crate) generic_declarations: BTreeSet<SourceSpan>,
     pub(crate) generic_template_effects: BTreeMap<CanonicalTemplateIdentity, EffectSet>,
     pub(crate) generic_concrete_effects: BTreeMap<InstantiationKey, EffectSet>,
@@ -116,6 +117,8 @@ pub(crate) struct ConcreteCallableMetadata {
     pub(crate) parameters: Vec<TypeDescriptor>,
     pub(crate) result: TypeDescriptor,
     pub(crate) declaration: SourceSpan,
+    pub(crate) declaration_types: BTreeMap<NodeId, TypeFact>,
+    pub(crate) expression_types: BTreeMap<NodeId, TypeDescriptor>,
     pub(crate) origins: Vec<SourceSpan>,
     pub(crate) direct_calls: Vec<EffectNode>,
     pub(crate) operation_results: BTreeMap<SourceSpan, TypeDescriptor>,
@@ -130,6 +133,7 @@ pub(crate) struct ResolvedCallMetadata {
 
 pub(crate) struct SourceCallableMetadata {
     pub(crate) identity: CanonicalCallableIdentity,
+    pub(crate) receiver: Option<TypeDescriptor>,
     pub(crate) parameters: Vec<WorkflowParameter>,
     pub(crate) result: TypeDescriptor,
     pub(crate) effects: EffectSet,
@@ -229,6 +233,9 @@ struct BodyContext {
     generic_analysis_counters: RefCell<Option<GenericAnalysisCounters>>,
     trait_obligations: RefCell<BTreeMap<String, ObligationProof>>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
+    concrete_declaration_types: RefCell<BTreeMap<InstantiationKey, BTreeMap<NodeId, TypeFact>>>,
+    concrete_expression_types:
+        RefCell<BTreeMap<InstantiationKey, BTreeMap<NodeId, TypeDescriptor>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -801,6 +808,8 @@ fn build_body_context(
         generic_analysis_counters: RefCell::new(generic_analysis_counters),
         trait_obligations: RefCell::new(BTreeMap::new()),
         expression_types: RefCell::new(BTreeMap::new()),
+        concrete_declaration_types: RefCell::new(BTreeMap::new()),
+        concrete_expression_types: RefCell::new(BTreeMap::new()),
     })
 }
 
@@ -1135,6 +1144,25 @@ pub(crate) fn check_package_bodies(
                 },
             )
             .collect();
+        let mut closed_types = expression_types
+            .iter()
+            .flat_map(BTreeMap::values)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        closed_types.extend(
+            context
+                .concrete_expression_types
+                .borrow()
+                .values()
+                .flat_map(BTreeMap::values)
+                .cloned(),
+        );
+        let mut closed_enums = BTreeMap::new();
+        for descriptor in closed_types {
+            if let Some(shape) = enum_shape_for_descriptor(&context, &descriptor)? {
+                closed_enums.insert(descriptor, shape.variants);
+            }
+        }
         let generic_declarations = context
             .generic_callables
             .values()
@@ -1161,6 +1189,7 @@ pub(crate) fn check_package_bodies(
             concrete_callables,
             resolved_calls,
             source_callables,
+            closed_enums,
             generic_declarations,
             generic_template_effects,
             generic_concrete_effects,
@@ -1240,6 +1269,18 @@ fn collect_concrete_callable_metadata(
                 &substitution,
                 context,
             )?;
+            let declaration_types = context
+                .concrete_declaration_types
+                .borrow()
+                .get(key)
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?;
+            let expression_types = context
+                .concrete_expression_types
+                .borrow()
+                .get(key)
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?;
             Ok(ConcreteCallableMetadata {
                 key: key.clone(),
                 receiver,
@@ -1247,6 +1288,8 @@ fn collect_concrete_callable_metadata(
                 parameters,
                 result,
                 declaration,
+                declaration_types,
+                expression_types,
                 origins,
                 direct_calls,
                 operation_results,
@@ -1336,11 +1379,36 @@ fn collect_source_callable_metadata(
         )?;
         callables.push(SourceCallableMetadata {
             identity: CanonicalCallableIdentity::free(&symbol.path, &[]),
+            receiver: None,
             parameters,
             result: signature.result.clone(),
             effects: effects.get(&declaration).copied().unwrap_or_default(),
             declaration: declaration.clone(),
             direct_calls: source_direct_calls(context, &declaration),
+        });
+    }
+    for ((receiver, method), declaration) in &context.inherent_method_sources {
+        let (source_index, tree, callable) = find_source_callable(sources, declaration)?;
+        let parameters = source_callable_parameters(
+            tree,
+            callable,
+            facts.get(source_index).ok_or(AnalysisError::Invariant)?,
+            Some(receiver),
+        )?;
+        let result = callable_result(
+            tree,
+            callable,
+            facts.get(source_index).ok_or(AnalysisError::Invariant)?,
+        );
+        callables.push(SourceCallableMetadata {
+            identity: CanonicalCallableIdentity::inherent(receiver, method, &[])
+                .map_err(|_| AnalysisError::Invariant)?,
+            receiver: Some(receiver.clone()),
+            parameters,
+            result,
+            effects: effects.get(declaration).copied().unwrap_or_default(),
+            declaration: declaration.clone(),
+            direct_calls: source_direct_calls(context, declaration),
         });
     }
     for ((implementation, method), declaration) in &context.method_sources {
@@ -1408,6 +1476,7 @@ fn collect_source_callable_metadata(
         );
         callables.push(SourceCallableMetadata {
             identity,
+            receiver: Some(receiver),
             parameters,
             result,
             effects: effects.get(declaration).copied().unwrap_or_default(),
@@ -1694,6 +1763,7 @@ fn check_instantiated_generic_bodies(
         *context.current_instantiation.borrow_mut() = Some((key.clone(), witness));
         *context.current_type_substitution.borrow_mut() = Some(substitution);
         *context.current_effect_owner.borrow_mut() = Some(EffectNode::Concrete(key.clone()));
+        context.expression_types.borrow_mut().clear();
         let check = check_callable(
             source.tree(),
             signature.declaration,
@@ -1701,10 +1771,19 @@ fn check_instantiated_generic_bodies(
             context,
             diagnostics,
         );
+        let expression_types = context.expression_types.take();
         *context.current_type_substitution.borrow_mut() = None;
         *context.current_instantiation.borrow_mut() = None;
         *context.current_effect_owner.borrow_mut() = None;
         check?;
+        context
+            .concrete_declaration_types
+            .borrow_mut()
+            .insert(key.clone(), substituted_facts);
+        context
+            .concrete_expression_types
+            .borrow_mut()
+            .insert(key.clone(), expression_types);
         checked.insert(key);
     }
     Ok(())

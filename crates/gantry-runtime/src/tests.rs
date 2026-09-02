@@ -7,7 +7,9 @@ use gantry_core::value::{
     DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView, ValueLimits, ValuePathSegment,
 };
 use gantry_ir::generated::Effect;
-use gantry_ir::{CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor};
+use gantry_ir::{
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor,
+};
 
 use crate::{
     Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError, MachineLabel,
@@ -17,6 +19,10 @@ use crate::{
 
 fn path(name: &str) -> CanonicalPath {
     CanonicalPath::new(name).unwrap_or_else(|error| panic!("invalid fixture path: {error}"))
+}
+
+fn callable(name: &str) -> CanonicalCallableIdentity {
+    CanonicalCallableIdentity::free(&path(name), &[])
 }
 
 fn site(index: u64) -> StructuralPosition {
@@ -180,7 +186,7 @@ fn explicit_frames_are_stack_safe_and_enforce_exact_depth() {
                     0,
                     TypeDescriptor::UNIT,
                     InstructionKind::Call {
-                        callee: path(&format!("crate::f{:04}", index + 1)),
+                        callee: callable(&format!("crate::f{:04}", index + 1)),
                         arguments: 0,
                     },
                 ),
@@ -705,7 +711,7 @@ fn workflow_return_restores_dynamic_agent_and_session_scopes() {
                 2,
                 TypeDescriptor::UNIT,
                 InstructionKind::Call {
-                    callee: path("crate::callee"),
+                    callee: callable("crate::callee"),
                     arguments: 0,
                 },
             ),
@@ -1050,7 +1056,7 @@ fn root_and_call_arguments_preserve_analyzed_types() {
                 1,
                 TypeDescriptor::INT,
                 InstructionKind::Call {
-                    callee: path("crate::callee"),
+                    callee: callable("crate::callee"),
                     arguments: 1,
                 },
             ),

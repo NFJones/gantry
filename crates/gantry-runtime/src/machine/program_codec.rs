@@ -5,9 +5,9 @@ use std::sync::Arc;
 use gantry_core::value::{ValueLimits, ValuePathSegment};
 use gantry_ir::generated::{Effect, OperationSiteKind, RecoveryClass};
 use gantry_ir::{
-    ActionParameter, AggregateKind, CanonicalPath, CanonicalSignature, Comparison, EffectSet,
-    ExecutableAction, ExecutableOperation, Instruction, InstructionKind, LoopPhase, MachineProgram,
-    Parameter, Primitive, Projection, TypeDescriptor, Workflow,
+    ActionParameter, AggregateKind, CanonicalCallableIdentity, CanonicalPath, CanonicalSignature,
+    Comparison, EffectSet, ExecutableAction, ExecutableOperation, Instruction, InstructionKind,
+    LoopPhase, MachineProgram, Parameter, Primitive, Projection, TypeDescriptor, Workflow,
 };
 
 use super::MachineRecoveryError;
@@ -164,6 +164,14 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
             writer.usize(*when_some);
             writer.usize(*when_none);
         }
+        InstructionKind::BranchEnum { arms } => {
+            writer.u8(25);
+            writer.count(arms.len());
+            for (variant, target) in arms {
+                writer.string(variant);
+                writer.usize(*target);
+            }
+        }
         InstructionKind::EnterLoop {
             phase,
             source_limit,
@@ -254,7 +262,8 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<InstructionKind, MachineR
         },
         14 => InstructionKind::LeaveOccurrence,
         15 => InstructionKind::Call {
-            callee: path(&reader.string()?)?,
+            callee: CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
+                .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
             arguments: reader.usize()?,
         },
         16 => InstructionKind::Return,
@@ -271,6 +280,14 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<InstructionKind, MachineR
         22 => InstructionKind::EnterSession(Arc::from(reader.string()?)),
         23 => InstructionKind::ExitSession,
         24 => InstructionKind::CancellationCheck,
+        25 => {
+            let count = reader.count()?;
+            let mut arms = Vec::with_capacity(count);
+            for _ in 0..count {
+                arms.push((Arc::from(reader.string()?), reader.usize()?));
+            }
+            InstructionKind::BranchEnum { arms }
+        }
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     })
 }

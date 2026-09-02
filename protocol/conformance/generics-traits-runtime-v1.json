@@ -1,0 +1,149 @@
+{
+  "format": "gantry.generics-traits-runtime-evidence/v1",
+  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "issue": "GNT-GEN-RUN-001",
+  "profile": "evaluator",
+  "entries": [
+    {
+      "requirement": "GNT-1.0",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#reviewed_generic_runtime_evidence_is_closed"
+    },
+    {
+      "requirement": "GNT-12.11-generic-diagnostics",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures"
+    },
+    {
+      "requirement": "GNT-12.9",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+    },
+    {
+      "requirement": "GNT-13.2",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+    },
+    {
+      "requirement": "GNT-13.3",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-13.4",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-13.6",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-13.7",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+    },
+    {
+      "requirement": "GNT-2.1",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#reviewed_generic_runtime_evidence_is_closed"
+    },
+    {
+      "requirement": "GNT-3-F-DOMAINS",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+    },
+    {
+      "requirement": "GNT-3-F-GENERICS",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#closed_generic_enum_construction_and_matching_execute_without_runtime_analysis"
+    },
+    {
+      "requirement": "GNT-3-F-INSTANTIATION",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_closed_generic_application_executes_as_a_direct_call"
+    },
+    {
+      "requirement": "GNT-3-F-TRAITS",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+    },
+    {
+      "requirement": "GNT-3-T-GENERIC-CALL",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+    },
+    {
+      "requirement": "GNT-3-T-PARAMETRIC-PACKAGE",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+    },
+    {
+      "requirement": "GNT-3.15-generic-profiles",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+    },
+    {
+      "requirement": "GNT-4.14",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+    },
+    {
+      "requirement": "GNT-4.15",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+    },
+    {
+      "requirement": "GNT-4.16",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+    },
+    {
+      "requirement": "GNT-4.17-generic-analysis-limits",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/validate_package.rs#generic_analysis_policy_charges_are_public_and_failure_atomic"
+    },
+    {
+      "requirement": "GNT-4.4",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+    },
+    {
+      "requirement": "GNT-4.9",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+    },
+    {
+      "requirement": "GNT-5.19",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+    },
+    {
+      "requirement": "GNT-5.20-parametric-types",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#closed_generic_enum_construction_and_matching_execute_without_runtime_analysis"
+    },
+    {
+      "requirement": "GNT-6.1",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+    },
+    {
+      "requirement": "GNT-6.12-static-traits",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+    },
+    {
+      "requirement": "GNT-8.13-concrete-generic-schemas",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_operation_uses_the_concrete_result_type_and_schema"
+    }
+  ],
+  "advertises_profiles": [],
+  "exclusions": [
+    "Concurrent scheduling and task transfer remain owned by GNT-GEN-CON-001.",
+    "Durable retention and fresh-process reconstruction remain owned by GNT-GEN-DUR-001.",
+    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+  ]
+}

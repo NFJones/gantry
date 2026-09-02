@@ -42,7 +42,7 @@
   "artifacts": [
     {
       "path": "crates/gantry-analysis/src/bodies.rs",
-      "sha256": "146d56f1745f7e509365197bf69c541b7e92a81cfe405207839d89078a28910d"
+      "sha256": "100b8fc3bf359c2119d992755ce7b046426ab5b1182498c2c8356dfd29937f13"
     },
     {
       "path": "crates/gantry-analysis/src/effects.rs",
@@ -62,7 +62,7 @@
     },
     {
       "path": "crates/gantry-analysis/src/types.rs",
-      "sha256": "5ab46c8befc1117daa0ecc3b1b826387b184d3ec43b2d9446cf0c8d2d68314d3"
+      "sha256": "641cdf3cb177da8f89ae12fad87b24b10c492e5e6164b26b8c63348e9b067cf8"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
@@ -146,11 +146,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "d50fd3303d2efe33a2327966c853e74bdc0f23c293002fccb66e77dab675fbf7"
+      "sha256": "e1ba7c0cb2fcbb137719fb700c008eb46262f78e7152d15f4809ba91616c1988"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "3ea501dec37d381314526b3f4d0f7ac7355fb423b4ddacd0f3a85f8f4e70f944"
+      "sha256": "1166624bc0916617c1c5e8c5e0e4324dceb9304c33f53d1ad3d0a9b1779ad163"
     },
     {
       "path": "protocol/requirements/section14-v1.json",

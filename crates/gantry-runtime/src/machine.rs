@@ -11,8 +11,9 @@ use gantry_core::unicode::{is_white_space, to_full_lowercase, to_full_uppercase}
 use gantry_core::value::{LogicalValue, LogicalValueView, ValueError, ValueLimitKind, ValueLimits};
 use gantry_ir::generated::Effect;
 use gantry_ir::{
-    AggregateKind, CanonicalPath, Comparison, ExecutableOperation, Instruction, InstructionKind,
-    LoopPhase, MachineProgram, Primitive, Projection, StructuralPosition, TypeDescriptor,
+    AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison, ExecutableOperation,
+    Instruction, InstructionKind, LoopPhase, MachineProgram, Primitive, Projection,
+    StructuralPosition, TypeDescriptor,
 };
 
 use crate::session::SessionCreationModeV1;
@@ -926,6 +927,7 @@ impl Machine {
                 when_some,
                 when_none,
             } => self.branch_option(&workflow, &site, when_some, when_none),
+            InstructionKind::BranchEnum { arms } => self.branch_enum(&workflow, &site, &arms),
             InstructionKind::EnterLoop {
                 phase,
                 source_limit,
@@ -1223,6 +1225,53 @@ impl Machine {
         Ok(())
     }
 
+    fn branch_enum(
+        &mut self,
+        workflow: &CanonicalPath,
+        site: &StructuralPosition,
+        arms: &[(Arc<str>, usize)],
+    ) -> Result<(), RuntimeCode> {
+        let value = self
+            .values
+            .last()
+            .cloned()
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        let LogicalValueView::Enum {
+            variant,
+            has_payload,
+            ..
+        } = value.view()
+        else {
+            return Err(RuntimeCode::InternalInvariant);
+        };
+        let (arm, target) = arms
+            .iter()
+            .enumerate()
+            .find_map(|(index, (candidate, target))| {
+                (candidate.as_ref() == variant).then_some((index, *target))
+            })
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        let payload = has_payload
+            .then(|| value.payload().ok_or(RuntimeCode::InternalInvariant))
+            .transpose()?;
+        let occurrence = Arc::from(format!(
+            "branch:{}:{}:{arm}",
+            workflow.as_str(),
+            position_key(site)
+        ));
+        self.charge_transition()?;
+        self.values.pop();
+        if let Some(payload) = payload {
+            self.values.push(payload);
+        }
+        self.occurrences.push(occurrence);
+        self.frames
+            .last_mut()
+            .ok_or(RuntimeCode::InternalInvariant)?
+            .pc = target;
+        Ok(())
+    }
+
     fn enter_loop(
         &mut self,
         workflow: &CanonicalPath,
@@ -1298,7 +1347,7 @@ impl Machine {
         &mut self,
         workflow: CanonicalPath,
         site: StructuralPosition,
-        callee: CanonicalPath,
+        callee: CanonicalCallableIdentity,
         arguments: usize,
     ) -> MachineStep {
         if u64::try_from(self.frames.len()).map_or(true, |depth| {
@@ -1314,7 +1363,7 @@ impl Machine {
             Ok(values) => values.to_vec(),
             Err(code) => return self.fail_at(code, workflow, site),
         };
-        let Some(callee_index) = self.program.workflow_index(&callee) else {
+        let Some(callee_index) = self.program.callable_index(&callee) else {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         };
         let callee_workflow = &self.program.workflows()[callee_index];
@@ -1857,7 +1906,9 @@ fn instruction_name(instruction: &InstructionKind) -> Arc<str> {
         InstructionKind::EnterScope => "scope-enter",
         InstructionKind::ExitScope => "scope-exit",
         InstructionKind::Jump(_) => "jump",
-        InstructionKind::Branch { .. } | InstructionKind::BranchOption { .. } => "branch",
+        InstructionKind::Branch { .. }
+        | InstructionKind::BranchOption { .. }
+        | InstructionKind::BranchEnum { .. } => "branch",
         InstructionKind::EnterLoop { .. } => "loop",
         InstructionKind::LeaveOccurrence => "occurrence-exit",
         InstructionKind::Call { .. } => "call",

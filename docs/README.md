@@ -39,6 +39,11 @@ The analyzer profile's written static argument, explicit assumptions, bounded
 model, and counterexample-replay links are documented in
 [`analyzer-package-validity.md`](analyzer-package-validity.md).
 
+The nondurable evaluator's closed generic applications, static trait calls,
+logical-copy behavior, concrete operation schemas, and no-runtime-solver
+boundary are documented in
+[`sequential-generics-and-traits.md`](sequential-generics-and-traits.md).
+
 The nondurable sequential evaluator's progress, preservation, cancellation,
 operation-consumption, lifecycle, observation, and terminal-uniqueness
 argument is documented in

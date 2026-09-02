@@ -2,7 +2,11 @@
 //!
 //! This crate owns the one deterministic machine later refined by concurrent
 //! scheduling and durable recovery. It contains no host orchestration,
-//! executor implementation, hook transport, or journal backend.
+//! executor implementation, hook transport, or journal backend. Generic and
+//! trait calls arrive only as closed [`gantry_ir::CanonicalCallableIdentity`]
+//! values with concrete descriptors and direct targets; this crate contains no
+//! analyzer, unifier, trait solver, implementation lookup, or monomorphization
+//! fallback.
 
 mod configuration;
 mod containment;

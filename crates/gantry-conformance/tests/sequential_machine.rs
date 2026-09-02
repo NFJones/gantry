@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gantry::identity::ProtocolIdentity;
-use gantry::ir::{CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor};
+use gantry::ir::{
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor,
+};
 use gantry::numeric::{GantryFloat, GantryInt};
 use gantry::portable::{DeterministicEvaluationCode, IdentityKind};
 use gantry::runtime::{
@@ -23,6 +25,10 @@ const FRAME_EVIDENCE: &str = "crates/gantry-conformance/tests/sequential_machine
 const VALUE_EVIDENCE: &str = "crates/gantry-conformance/tests/sequential_machine.rs#public_deterministic_values_and_failures_match_the_machine_contract";
 const STRING_EVIDENCE: &str = "crates/gantry-conformance/tests/sequential_machine.rs#public_string_primitives_are_exact_bounded_and_nontrimming";
 const BUDGET_EVIDENCE: &str = "crates/gantry-conformance/tests/sequential_machine.rs#public_budgets_cancellation_and_dynamic_identities_are_exact";
+
+fn callable(name: &str) -> CanonicalCallableIdentity {
+    CanonicalCallableIdentity::free(&path(name), &[])
+}
 
 #[derive(Debug, Deserialize)]
 struct EvidenceManifest {
@@ -147,7 +153,7 @@ fn public_explicit_frames_calls_and_lifecycle_are_stack_safe() {
                     0,
                     TypeDescriptor::UNIT,
                     InstructionKind::Call {
-                        callee: path(&format!("crate::f{:04}", index + 1)),
+                        callee: callable(&format!("crate::f{:04}", index + 1)),
                         arguments: 0,
                     },
                 ),
@@ -765,7 +771,7 @@ fn public_budgets_cancellation_and_dynamic_identities_are_exact() {
                 0,
                 TypeDescriptor::UNIT,
                 InstructionKind::Call {
-                    callee: path("crate::callee"),
+                    callee: callable("crate::callee"),
                     arguments: 0,
                 },
             ),

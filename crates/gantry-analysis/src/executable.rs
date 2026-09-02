@@ -12,12 +12,13 @@ use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValuePathSegment};
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::Effect;
 use gantry_ir::{
-    ActionInventory, AggregateKind, CanonicalPath, Comparison, EffectSet, EntryInventory,
-    ExecutableAction, ExecutableOperation, Instruction, InstructionKind, LoopPhase, MachineProgram,
-    Parameter, Primitive, ProgramError, Projection, StructuralPosition, TypeDescriptor, Workflow,
-    WorkflowFacts,
+    ActionInventory, AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison,
+    EffectSet, EntryInventory, ExecutableAction, ExecutableOperation, Instruction, InstructionKind,
+    LoopPhase, MachineProgram, Parameter, Primitive, ProgramError, Projection, StructuralPosition,
+    TypeDescriptor, Workflow, WorkflowFacts,
 };
 
+use crate::bodies::{BodyAnalysis, EffectNode};
 use crate::{AnalysisError, TypeFact};
 
 pub(crate) fn lower_executable_program(
@@ -27,37 +28,115 @@ pub(crate) fn lower_executable_program(
     entry: &EntryInventory,
     workflows: &[WorkflowFacts],
     actions: &[ActionInventory],
+    body: &BodyAnalysis,
 ) -> Result<MachineProgram, AnalysisError> {
     if sources.len() != type_facts.len() || sources.len() != body_types.len() {
         return Err(AnalysisError::Invariant);
     }
-    let by_path = workflows
+
+    let source_identities = body
+        .source_callables
         .iter()
-        .map(|facts| (facts.path.clone(), facts))
+        .map(|callable| (callable.declaration.clone(), callable.identity.clone()))
         .collect::<BTreeMap<_, _>>();
+    let concrete_identities = body
+        .generic_instantiations
+        .iter()
+        .filter_map(|instantiation| {
+            let gantry_ir::ConcreteIdentity::Callable(identity) = instantiation.concrete() else {
+                return None;
+            };
+            Some((
+                (
+                    instantiation.template().clone(),
+                    instantiation.arguments().to_vec(),
+                ),
+                identity.clone(),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let identity_for = |node: &EffectNode| -> Result<CanonicalCallableIdentity, AnalysisError> {
+        match node {
+            EffectNode::Source(source) => source_identities.get(source),
+            EffectNode::Concrete(key) => concrete_identities.get(key),
+            EffectNode::Template(_) => None,
+        }
+        .cloned()
+        .ok_or(AnalysisError::Invariant)
+    };
+    let mut direct_targets = BTreeMap::<
+        CanonicalCallableIdentity,
+        Vec<(gantry_core::source::SourceSpan, CanonicalCallableIdentity)>,
+    >::new();
+    for call in &body.resolved_calls {
+        direct_targets
+            .entry(identity_for(&call.caller)?)
+            .or_default()
+            .push((call.source.clone(), identity_for(&call.callee)?));
+    }
+    for targets in direct_targets.values_mut() {
+        targets.sort();
+        targets.dedup();
+    }
+    let mut edges = BTreeMap::<CanonicalCallableIdentity, Vec<CanonicalCallableIdentity>>::new();
+    for callable in &body.source_callables {
+        edges.insert(
+            callable.identity.clone(),
+            callable
+                .direct_calls
+                .iter()
+                .map(&identity_for)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
+    for callable in &body.concrete_callables {
+        let identity = concrete_identities
+            .get(&callable.key)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        edges.insert(
+            identity,
+            callable
+                .direct_calls
+                .iter()
+                .map(&identity_for)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
+    let root_identity = CanonicalCallableIdentity::free(&entry.path, &[]);
     let mut reachable = BTreeSet::new();
-    let mut pending = vec![entry.path.clone()];
-    while let Some(path) = pending.pop() {
-        if !reachable.insert(path.clone()) {
+    let mut pending = vec![root_identity.clone()];
+    while let Some(identity) = pending.pop() {
+        if !reachable.insert(identity.clone()) {
             continue;
         }
-        let facts = by_path.get(&path).ok_or(AnalysisError::Invariant)?;
-        pending.extend(facts.calls.iter().map(|call| call.callee.clone()));
+        pending.extend(
+            edges
+                .get(&identity)
+                .ok_or(AnalysisError::Invariant)?
+                .iter()
+                .cloned(),
+        );
     }
-
-    let root = by_path
-        .get(&entry.path)
-        .copied()
+    let root = body
+        .source_callables
+        .iter()
+        .find(|callable| callable.identity == root_identity)
         .ok_or(AnalysisError::Invariant)?;
     let unsupported = [Effect::Spawn, Effect::Join, Effect::Background]
         .into_iter()
         .any(|effect| root.effects.contains(effect));
     let mut lowered = Vec::with_capacity(reachable.len());
-    for facts in workflows
+    for metadata in body
+        .source_callables
         .iter()
-        .filter(|facts| reachable.contains(&facts.path))
+        .filter(|callable| reachable.contains(&callable.identity))
     {
-        let (source_index, tree, callable) = find_callable(sources, facts)?;
+        let facts = workflows
+            .iter()
+            .find(|facts| facts.source == metadata.declaration)
+            .ok_or(AnalysisError::Invariant)?;
+        let (source_index, tree, callable) = find_callable(sources, &metadata.declaration)?;
         let mut compiler = Compiler {
             tree,
             declaration_types: type_facts
@@ -67,23 +146,78 @@ pub(crate) fn lower_executable_program(
                 .get(source_index)
                 .ok_or(AnalysisError::Invariant)?,
             facts,
+            receiver_type: metadata.receiver.as_ref(),
+            result: &metadata.result,
+            effects: metadata.effects,
+            direct_targets: direct_targets
+                .get(&metadata.identity)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+            operation_results: None,
+            closed_enums: &body.closed_enums,
             actions,
             instructions: Vec::new(),
         };
         if unsupported {
-            if facts.path == entry.path {
-                lowered.push(compiler.compile_unsupported_root(callable)?);
+            if metadata.identity == root_identity {
+                lowered.push((
+                    metadata.identity.clone(),
+                    compiler.compile_unsupported_root(callable)?,
+                ));
             }
         } else {
-            lowered.push(compiler.compile_callable(callable)?);
+            let compiled = compiler.compile_callable(callable)?;
+            lowered.push((metadata.identity.clone(), compiled));
         }
     }
-    MachineProgram::new(lowered).map_err(|_| AnalysisError::Invariant)
+    if !unsupported {
+        for metadata in body.concrete_callables.iter().filter(|callable| {
+            concrete_identities
+                .get(&callable.key)
+                .is_some_and(|identity| reachable.contains(identity))
+        }) {
+            let identity = concrete_identities
+                .get(&metadata.key)
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?;
+            let facts = workflows
+                .iter()
+                .find(|facts| facts.source == metadata.declaration)
+                .ok_or(AnalysisError::Invariant)?;
+            let (_, tree, callable) = find_callable(sources, &metadata.declaration)?;
+            let effects = body
+                .generic_concrete_effects
+                .get(&metadata.key)
+                .copied()
+                .ok_or(AnalysisError::Invariant)?;
+            let mut compiler = Compiler {
+                tree,
+                declaration_types: &metadata.declaration_types,
+                body_types: &metadata.expression_types,
+                facts,
+                receiver_type: metadata.receiver.as_ref(),
+                result: &metadata.result,
+                effects,
+                direct_targets: direct_targets
+                    .get(&identity)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+                operation_results: Some(&metadata.operation_results),
+                closed_enums: &body.closed_enums,
+                actions,
+                instructions: Vec::new(),
+            };
+            let compiled = compiler.compile_callable(callable)?;
+            lowered.push((identity, compiled));
+        }
+    }
+    lowered.sort_by(|left, right| left.0.cmp(&right.0));
+    MachineProgram::with_callable_identities(lowered).map_err(|_| AnalysisError::Invariant)
 }
 
 fn find_callable<'a>(
     sources: &'a [ParsedSource],
-    facts: &WorkflowFacts,
+    declaration: &gantry_core::source::SourceSpan,
 ) -> Result<(usize, &'a SyntaxTree, NodeId), AnalysisError> {
     sources
         .iter()
@@ -98,7 +232,7 @@ fn find_callable<'a>(
                     matches!(
                         node.form(),
                         SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
-                    ) && node.span() == &facts.source
+                    ) && node.span() == declaration
                 })
                 .map(|(index, _)| (source_index, source.tree(), NodeId::from_index(index)))
         })
@@ -110,6 +244,12 @@ struct Compiler<'a> {
     declaration_types: &'a BTreeMap<NodeId, TypeFact>,
     body_types: &'a BTreeMap<NodeId, TypeDescriptor>,
     facts: &'a WorkflowFacts,
+    receiver_type: Option<&'a TypeDescriptor>,
+    result: &'a TypeDescriptor,
+    effects: EffectSet,
+    direct_targets: &'a [(gantry_core::source::SourceSpan, CanonicalCallableIdentity)],
+    operation_results: Option<&'a BTreeMap<gantry_core::source::SourceSpan, TypeDescriptor>>,
+    closed_enums: &'a BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
     actions: &'a [ActionInventory],
     instructions: Vec<Instruction>,
 }
@@ -125,8 +265,8 @@ impl Compiler<'_> {
         Ok(Workflow {
             path: self.facts.path.clone(),
             parameters,
-            result: self.facts.result.clone(),
-            effects: self.facts.effects,
+            result: self.result.clone(),
+            effects: self.effects,
             instructions: std::mem::take(&mut self.instructions),
         })
     }
@@ -140,8 +280,8 @@ impl Compiler<'_> {
         Ok(Workflow {
             path: self.facts.path.clone(),
             parameters,
-            result: self.facts.result.clone(),
-            effects: self.facts.effects,
+            result: self.result.clone(),
+            effects: self.effects,
             instructions: std::mem::take(&mut self.instructions),
         })
     }
@@ -151,17 +291,22 @@ impl Compiler<'_> {
         let mut parameters = Vec::new();
         if matches!(node.form(), SyntaxForm::MethodDeclaration) {
             let receiver = self
-                .facts
-                .path
-                .as_str()
-                .strip_prefix('<')
-                .and_then(|value| value.split_once(">::"))
-                .and_then(|(path, _)| CanonicalPath::new(path).ok())
+                .receiver_type
+                .cloned()
                 .ok_or(AnalysisError::Invariant)?;
+            let mutable = semantic_children(self.tree, callable)?
+                .into_iter()
+                .any(|parameter| {
+                    self.tree.node(parameter).is_some_and(|parameter| {
+                        matches!(parameter.form(), SyntaxForm::Parameter)
+                            && node_has_word(self.tree, parameter, "self")
+                            && node_has_word(self.tree, parameter, "mut")
+                    })
+                });
             parameters.push(Parameter {
                 name: Arc::from("self"),
-                ty: TypeDescriptor::declared(receiver),
-                mutable: node_has_word(self.tree, node, "mut"),
+                ty: receiver,
+                mutable,
             });
         }
         for parameter in semantic_children(self.tree, callable)? {
@@ -254,7 +399,7 @@ impl Compiler<'_> {
             cursor = cursor.saturating_add(1);
         }
         if mode == BlockMode::Callable {
-            if self.facts.result != TypeDescriptor::UNIT {
+            if self.result != &TypeDescriptor::UNIT {
                 return Err(AnalysisError::Invariant);
             }
             self.emit(
@@ -297,7 +442,7 @@ impl Compiler<'_> {
         };
         let expression = direct_child_form(self.tree, node, SyntaxForm::Expression)
             .ok_or(AnalysisError::Invariant)?;
-        let operator = direct_punctuation(self.tree, node).ok_or(AnalysisError::Invariant)?;
+        let operator = assignment_operator(self.tree, node).ok_or(AnalysisError::Invariant)?;
         if operator != Punctuation::Equal {
             self.emit(
                 TypeDescriptor::UNIT,
@@ -453,7 +598,7 @@ impl Compiler<'_> {
         if let Some(match_expression) =
             descendant_form(self.tree, expression, &[SyntaxForm::MatchExpression])
         {
-            return self.compile_option_match(match_expression, ty);
+            return self.compile_match(match_expression, ty);
         }
         if let Some(operation) = descendant_form(
             self.tree,
@@ -500,6 +645,29 @@ impl Compiler<'_> {
             )?;
             return Ok(ty);
         }
+        if let Some(callee) = self.direct_target(&node) {
+            let receiver_type = callee.receiver_type();
+            let receiver = receiver_type
+                .as_ref()
+                .and_then(|_| postfix_method_receiver(self.tree, &node));
+            if let (Some(receiver), Some(receiver_type)) = (&receiver, receiver_type) {
+                self.emit(receiver_type, InstructionKind::Load(receiver.clone()))?;
+            }
+            let arguments = direct_expressions(self.tree, &node);
+            for argument in &arguments {
+                self.compile_expression(*argument)?;
+            }
+            self.emit(
+                ty.clone(),
+                InstructionKind::Call {
+                    callee,
+                    arguments: arguments
+                        .len()
+                        .saturating_add(usize::from(receiver.is_some())),
+                },
+            )?;
+            return Ok(ty);
+        }
         if let Some(call) = self
             .facts
             .calls
@@ -518,7 +686,7 @@ impl Compiler<'_> {
             self.emit(
                 ty.clone(),
                 InstructionKind::Call {
-                    callee: call.callee.clone(),
+                    callee: CanonicalCallableIdentity::free(&call.callee, &[]),
                     arguments: arguments
                         .len()
                         .saturating_add(usize::from(receiver.is_some())),
@@ -530,6 +698,14 @@ impl Compiler<'_> {
             descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
         {
             return self.compile_struct(expression, struct_expression, ty);
+        }
+        if let Some((root, field)) = postfix_field_projection(self.tree, &node) {
+            self.emit(ty.clone(), InstructionKind::Load(root))?;
+            self.emit(
+                ty.clone(),
+                InstructionKind::Project(Projection::Field(field)),
+            )?;
+            return Ok(ty);
         }
         if let Some(projection) = self.compile_static_projection(expression, &node, &ty)? {
             return Ok(projection);
@@ -583,8 +759,44 @@ impl Compiler<'_> {
             )?;
             return Ok(ty);
         }
+        if let Some(variant) =
+            enum_constructor_variant(self.tree, &node, self.closed_enums.get(&ty))
+        {
+            let variants = self.closed_enums.get(&ty).ok_or(AnalysisError::Invariant)?;
+            let has_payload = variants
+                .get(&variant)
+                .ok_or(AnalysisError::Invariant)?
+                .is_some();
+            let expressions = direct_expressions(self.tree, &node);
+            if expressions.len() != usize::from(has_payload) {
+                return Err(AnalysisError::Invariant);
+            }
+            for payload in &expressions {
+                self.compile_expression(*payload)?;
+            }
+            let type_name = ty
+                .declared_path()
+                .map(|path| Arc::from(path.as_str()))
+                .ok_or(AnalysisError::Invariant)?;
+            self.emit(
+                ty.clone(),
+                InstructionKind::Aggregate {
+                    kind: AggregateKind::Enum {
+                        type_name,
+                        variant,
+                        has_payload,
+                    },
+                    operands: expressions.len(),
+                },
+            )?;
+            return Ok(ty);
+        }
         if let Some(value) = literal_value(self.tree, &node)? {
             self.emit(ty.clone(), InstructionKind::Push(value))?;
+            return Ok(ty);
+        }
+        if node_has_word(self.tree, &node, "self") {
+            self.emit(ty.clone(), InstructionKind::Load(Arc::from("self")))?;
             return Ok(ty);
         }
         if let Some(path) = direct_child_form(self.tree, &node, SyntaxForm::Path) {
@@ -683,7 +895,7 @@ impl Compiler<'_> {
         Ok(Some(ty.clone()))
     }
 
-    fn compile_option_match(
+    fn compile_match(
         &mut self,
         match_expression: NodeId,
         ty: TypeDescriptor,
@@ -692,6 +904,9 @@ impl Compiler<'_> {
         let scrutinee = direct_child_form(self.tree, &node, SyntaxForm::Expression)
             .ok_or(AnalysisError::Invariant)?;
         let scrutinee_type = self.compile_expression(scrutinee)?;
+        if self.closed_enums.contains_key(&scrutinee_type) {
+            return self.compile_enum_match(match_expression, scrutinee_type, ty);
+        }
         let member_type = scrutinee_type
             .immediate_members()
             .into_iter()
@@ -750,6 +965,65 @@ impl Compiler<'_> {
             when_none,
         };
         self.instructions[jump].kind = InstructionKind::Jump(end);
+        Ok(ty)
+    }
+
+    fn compile_enum_match(
+        &mut self,
+        match_expression: NodeId,
+        scrutinee_type: TypeDescriptor,
+        ty: TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let variants = self
+            .closed_enums
+            .get(&scrutinee_type)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        let source_arms = semantic_children(self.tree, match_expression)?
+            .into_iter()
+            .filter(|child| {
+                self.tree
+                    .node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::MatchArm))
+            })
+            .collect::<Vec<_>>();
+        let branch = self.emit(
+            scrutinee_type,
+            InstructionKind::BranchEnum { arms: Vec::new() },
+        )?;
+        let mut lowered_arms = Vec::with_capacity(source_arms.len());
+        let mut jumps = Vec::with_capacity(source_arms.len());
+        for arm in source_arms {
+            let variant =
+                enum_pattern_variant(self.tree, arm, &variants).ok_or(AnalysisError::Invariant)?;
+            let payload = variants.get(&variant).ok_or(AnalysisError::Invariant)?;
+            let target = self.instructions.len();
+            lowered_arms.push((variant, target));
+            self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+            if let Some(payload) = payload {
+                if let Some(binding) = enum_pattern_binding(self.tree, arm) {
+                    self.emit(
+                        payload.clone(),
+                        InstructionKind::Bind {
+                            name: binding,
+                            ty: payload.clone(),
+                            mutable: false,
+                        },
+                    )?;
+                } else {
+                    self.emit(payload.clone(), InstructionKind::Pop)?;
+                }
+            }
+            self.compile_match_arm(arm)?;
+            self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
+            self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+            jumps.push(self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?);
+        }
+        let end = self.instructions.len();
+        for jump in jumps {
+            self.instructions[jump].kind = InstructionKind::Jump(end);
+        }
+        self.instructions[branch].kind = InstructionKind::BranchEnum { arms: lowered_arms };
         Ok(ty)
     }
 
@@ -843,6 +1117,11 @@ impl Compiler<'_> {
             .iter()
             .find(|site| site.source == operation_source)
             .ok_or(AnalysisError::Invariant)?;
+        let result_type = self
+            .operation_results
+            .and_then(|results| results.get(&operation_source))
+            .cloned()
+            .unwrap_or_else(|| site.result.clone());
         let action = site
             .action
             .as_ref()
@@ -861,7 +1140,7 @@ impl Compiler<'_> {
             .transpose()?;
         let metadata = ExecutableOperation {
             kind: site.kind,
-            result_type: site.result.clone(),
+            result_type,
             action,
             template_segments: operation_template_segments(self.tree, &actual_node),
             interpolation_types,
@@ -903,6 +1182,25 @@ impl Compiler<'_> {
 
     fn node(&self, id: NodeId) -> Result<&gantry_frontend::SyntaxNode, AnalysisError> {
         self.tree.node(id).ok_or(AnalysisError::Invariant)
+    }
+
+    fn direct_target(
+        &self,
+        expression: &gantry_frontend::SyntaxNode,
+    ) -> Option<CanonicalCallableIdentity> {
+        let arguments = direct_expressions(self.tree, expression)
+            .into_iter()
+            .filter_map(|argument| self.tree.node(argument).map(|node| node.span()))
+            .collect::<Vec<_>>();
+        self.direct_targets
+            .iter()
+            .find(|(source, _)| {
+                source_span_contains(expression.span(), source)
+                    && !arguments
+                        .iter()
+                        .any(|argument| source_span_contains(argument, source))
+            })
+            .map(|(_, target)| target.clone())
     }
 }
 
@@ -989,6 +1287,15 @@ fn direct_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> 
         .collect()
 }
 
+fn source_span_contains(
+    outer: &gantry_core::source::SourceSpan,
+    inner: &gantry_core::source::SourceSpan,
+) -> bool {
+    outer.source() == inner.source()
+        && outer.bytes().start() <= inner.bytes().start()
+        && outer.bytes().end() >= inner.bytes().end()
+}
+
 fn postfix_method_receiver(
     tree: &SyntaxTree,
     expression: &gantry_frontend::SyntaxNode,
@@ -1024,6 +1331,61 @@ fn postfix_method_receiver(
             }
             _ => None,
         })
+}
+
+fn postfix_field_projection(
+    tree: &SyntaxTree,
+    expression: &gantry_frontend::SyntaxNode,
+) -> Option<(Arc<str>, Arc<str>)> {
+    let mut tokens = Vec::new();
+    let mut work = expression
+        .children()
+        .iter()
+        .rev()
+        .copied()
+        .collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    if tokens.iter().any(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(
+                Punctuation::LeftParenthesis | Punctuation::LeftBracket
+            ))
+        )
+    }) {
+        return None;
+    }
+    let dot = tokens.iter().position(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    })?;
+    let root = tokens
+        .get(..dot)?
+        .iter()
+        .find_map(|node| match node.form() {
+            SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.clone()),
+            SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+                Some(Arc::from("self"))
+            }
+            _ => None,
+        })?;
+    let field = tokens
+        .get(dot.saturating_add(1)..)?
+        .iter()
+        .find_map(|node| match node.form() {
+            SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.clone()),
+            _ => None,
+        })?;
+    Some((root, field))
 }
 
 fn method_receiver_type(path: &CanonicalPath) -> Result<TypeDescriptor, AnalysisError> {
@@ -1142,6 +1504,25 @@ fn direct_punctuation(
         .filter_map(|child| tree.node(*child))
         .find_map(|node| match node.form() {
             SyntaxForm::Token(TokenKind::Punctuation(value)) => Some(*value),
+            _ => None,
+        })
+}
+
+fn assignment_operator(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+) -> Option<Punctuation> {
+    node.children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .find_map(|node| match node.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(
+                value @ (Punctuation::Equal
+                | Punctuation::PlusEqual
+                | Punctuation::MinusEqual
+                | Punctuation::StarEqual
+                | Punctuation::SlashEqual),
+            )) => Some(*value),
             _ => None,
         })
 }
@@ -1285,6 +1666,59 @@ fn integer_literal(tree: &SyntaxTree, root: NodeId) -> Option<usize> {
         work.extend(node.children().iter().rev().copied());
     }
     None
+}
+
+fn enum_constructor_variant(
+    tree: &SyntaxTree,
+    expression: &gantry_frontend::SyntaxNode,
+    variants: Option<&BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
+) -> Option<Arc<str>> {
+    let variants = variants?;
+    let mut selected = None;
+    let mut work = expression
+        .children()
+        .iter()
+        .rev()
+        .copied()
+        .collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        match node.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => break,
+            SyntaxForm::Token(TokenKind::Identifier(candidate))
+                if variants.contains_key(candidate) =>
+            {
+                selected = Some(candidate.clone());
+            }
+            SyntaxForm::Token(_) => {}
+            _ => work.extend(node.children().iter().rev().copied()),
+        }
+    }
+    selected
+}
+
+fn enum_pattern_variant(
+    tree: &SyntaxTree,
+    arm: NodeId,
+    variants: &BTreeMap<Arc<str>, Option<TypeDescriptor>>,
+) -> Option<Arc<str>> {
+    let pattern = tree.node(arm)?.children().iter().copied().find(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::Pattern))
+    })?;
+    direct_identifiers(tree, pattern)
+        .into_iter()
+        .rev()
+        .find(|candidate| variants.contains_key(candidate))
+}
+
+fn enum_pattern_binding(tree: &SyntaxTree, arm: NodeId) -> Option<Arc<str>> {
+    let pattern = tree.node(arm)?.children().iter().copied().find(|child| {
+        tree.node(*child)
+            .is_some_and(|node| matches!(node.form(), SyntaxForm::Pattern))
+    })?;
+    let nested = direct_child_form(tree, tree.node(pattern)?, SyntaxForm::Pattern)?;
+    direct_identifier(tree, nested)
 }
 
 fn pattern_word(tree: &SyntaxTree, arm: NodeId, expected: &str) -> bool {

@@ -231,14 +231,14 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         );
         assert_anchor_exists(&root, &entry.evidence);
     }
-    assert_eq!(corpus.entries.len(), 117);
+    assert_eq!(corpus.entries.len(), 123);
     assert_eq!(
         corpus
             .entries
             .iter()
             .map(|entry| entry.mappings.len())
             .sum::<usize>(),
-        2_030
+        2_057
     );
 
     assert_eq!(manifest.requirement_registry.path, REQUIREMENTS_PATH);
@@ -262,8 +262,8 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
     assert_eq!(manifest.requirement_registry.mapping_count, 1_673);
     assert_eq!(manifest.corpus.path, CORPUS_PATH);
     assert_eq!(manifest.corpus.sha256, sha256(&corpus_bytes));
-    assert_eq!(manifest.corpus.evidence_count, 117);
-    assert_eq!(manifest.corpus.mapping_count, 2_030);
+    assert_eq!(manifest.corpus.evidence_count, 123);
+    assert_eq!(manifest.corpus.mapping_count, 2_057);
 
     assert_eq!(manifest.schemas.len(), 2);
     for schema in &manifest.schemas {
@@ -276,7 +276,7 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         &manifest.negative_vectors.sha256,
     );
 
-    assert_eq!(manifest.manifests.len(), 40);
+    assert_eq!(manifest.manifests.len(), 41);
     assert!(
         manifest
             .manifests

@@ -319,18 +319,15 @@ fn analyze_package_types_with_policy(
             }
             Err(LoweringError::Invariant) => return Err(AnalysisError::Invariant),
         };
-        let executable = if has_generic_templates {
-            None
-        } else {
-            Some(lower_executable_program(
-                phase.parsed_sources(),
-                &facts_by_source,
-                &body_analysis.expression_types,
-                entry.as_ref().ok_or(AnalysisError::Invariant)?,
-                &workflows,
-                &actions,
-            )?)
-        };
+        let executable = Some(lower_executable_program(
+            phase.parsed_sources(),
+            &facts_by_source,
+            &body_analysis.expression_types,
+            entry.as_ref().ok_or(AnalysisError::Invariant)?,
+            &workflows,
+            &actions,
+            &body_analysis,
+        )?);
         (
             Some(artifacts.manifest),
             Some(artifacts.canonical_ir),

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::generated::{Effect, OperationSiteKind, RecoveryClass};
 use crate::{
-    ActionParameter, CanonicalPath, CanonicalSignature, EffectSet, StructuralPosition,
-    TypeDescriptor,
+    ActionParameter, CanonicalCallableIdentity, CanonicalPath, CanonicalSignature, EffectSet,
+    StructuralPosition, TypeDescriptor,
 };
 use gantry_core::value::{LogicalValue, ValuePathSegment};
 
@@ -172,6 +172,11 @@ pub enum InstructionKind {
         /// Program counter for the `None` arm.
         when_none: usize,
     },
+    /// Select one analyzer-validated declared-enum arm by exact variant name.
+    BranchEnum {
+        /// Distinct variant names and their arm program counters in source order.
+        arms: Vec<(Arc<str>, usize)>,
+    },
     /// Enter one dynamic loop condition or body occurrence.
     EnterLoop {
         /// Condition or body phase.
@@ -183,8 +188,8 @@ pub enum InstructionKind {
     LeaveOccurrence,
     /// Call one workflow with the reported number of stack arguments.
     Call {
-        /// Canonical callee path.
-        callee: CanonicalPath,
+        /// Analyzer-selected closed callee identity.
+        callee: CanonicalCallableIdentity,
         /// Number of completed arguments.
         arguments: usize,
     },
@@ -246,50 +251,107 @@ pub struct Workflow {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MachineProgram {
     workflows: Vec<Workflow>,
-    indexes: BTreeMap<CanonicalPath, usize>,
+    callable_identities: Vec<CanonicalCallableIdentity>,
+    callable_indexes: BTreeMap<CanonicalCallableIdentity, usize>,
+    entry_indexes: BTreeMap<CanonicalPath, usize>,
 }
 
 impl MachineProgram {
     /// Validates canonical workflow order, instruction targets, and call seams.
     pub fn new(workflows: Vec<Workflow>) -> Result<Self, ProgramError> {
-        if workflows.is_empty() {
+        let callables = workflows
+            .into_iter()
+            .map(|workflow| {
+                (
+                    CanonicalCallableIdentity::free(&workflow.path, &[]),
+                    workflow,
+                )
+            })
+            .collect();
+        Self::with_callable_identities(callables)
+    }
+
+    /// Validates a program whose analyzer assigned every closed callable identity.
+    pub fn with_callable_identities(
+        callables: Vec<(CanonicalCallableIdentity, Workflow)>,
+    ) -> Result<Self, ProgramError> {
+        if callables.is_empty() {
             return Err(ProgramError::EmptyProgram);
         }
-        if workflows
-            .windows(2)
-            .any(|pair| pair[0].path >= pair[1].path)
-        {
+        if callables.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
             return Err(ProgramError::WorkflowOrder);
         }
-        let indexes = workflows
+        let callable_identities = callables
+            .iter()
+            .map(|(identity, _)| identity.clone())
+            .collect::<Vec<_>>();
+        let workflows = callables
+            .into_iter()
+            .map(|(_, workflow)| workflow)
+            .collect::<Vec<_>>();
+        let callable_indexes = callable_identities
             .iter()
             .enumerate()
+            .map(|(index, identity)| (identity.clone(), index))
+            .collect::<BTreeMap<_, _>>();
+        let entry_indexes = workflows
+            .iter()
+            .enumerate()
+            .filter(|(index, workflow)| {
+                callable_identities[*index] == CanonicalCallableIdentity::free(&workflow.path, &[])
+            })
             .map(|(index, workflow)| (workflow.path.clone(), index))
             .collect::<BTreeMap<_, _>>();
         for workflow in &workflows {
-            validate_workflow(workflow, &workflows, &indexes)?;
+            validate_workflow(workflow, &workflows, &callable_indexes)?;
         }
-        Ok(Self { workflows, indexes })
+        Ok(Self {
+            workflows,
+            callable_identities,
+            callable_indexes,
+            entry_indexes,
+        })
     }
 
-    /// Returns workflows in canonical path order.
+    /// Returns workflows in the same canonical callable-identity order as
+    /// [`Self::callable_identities`].
     #[must_use]
     pub fn workflows(&self) -> &[Workflow] {
         &self.workflows
     }
 
+    /// Returns closed callable identities in the same order as [`Self::workflows`].
+    #[must_use]
+    pub fn callable_identities(&self) -> &[CanonicalCallableIdentity] {
+        &self.callable_identities
+    }
+
     /// Resolves one canonical workflow.
     #[must_use]
     pub fn workflow(&self, path: &CanonicalPath) -> Option<&Workflow> {
-        self.indexes
+        self.entry_indexes
             .get(path)
+            .and_then(|index| self.workflows.get(*index))
+    }
+
+    /// Resolves one analyzer-selected closed callable identity.
+    #[must_use]
+    pub fn callable(&self, identity: &CanonicalCallableIdentity) -> Option<&Workflow> {
+        self.callable_indexes
+            .get(identity)
             .and_then(|index| self.workflows.get(*index))
     }
 
     /// Returns the stable index of one canonical workflow in this program.
     #[must_use]
     pub fn workflow_index(&self, path: &CanonicalPath) -> Option<usize> {
-        self.indexes.get(path).copied()
+        self.entry_indexes.get(path).copied()
+    }
+
+    /// Returns the stable index of one closed callable identity.
+    #[must_use]
+    pub fn callable_index(&self, identity: &CanonicalCallableIdentity) -> Option<usize> {
+        self.callable_indexes.get(identity).copied()
     }
 
     /// Returns the first reachable effect unsupported by the base sequential profile.
@@ -309,7 +371,7 @@ impl MachineProgram {
             }
             for instruction in &workflow.instructions {
                 if let InstructionKind::Call { callee, .. } = &instruction.kind
-                    && let Some(index) = self.workflow_index(callee)
+                    && let Some(index) = self.callable_index(callee)
                 {
                     pending.push(index);
                 }
@@ -345,7 +407,7 @@ pub enum ProgramError {
 fn validate_workflow(
     workflow: &Workflow,
     workflows: &[Workflow],
-    indexes: &BTreeMap<CanonicalPath, usize>,
+    indexes: &BTreeMap<CanonicalCallableIdentity, usize>,
 ) -> Result<(), ProgramError> {
     if workflow.instructions.is_empty() {
         return Err(ProgramError::EmptyWorkflow(workflow.path.clone()));
@@ -381,6 +443,15 @@ fn validate_workflow(
                 return Err(ProgramError::InvalidTarget(workflow.path.clone()));
             }
             InstructionKind::BranchOption { when_none, .. } if *when_none >= length => {
+                return Err(ProgramError::InvalidTarget(workflow.path.clone()));
+            }
+            InstructionKind::BranchEnum { arms }
+                if arms.is_empty()
+                    || arms
+                        .iter()
+                        .any(|(variant, target)| variant.is_empty() || *target >= length)
+                    || !enum_arms_are_unique(arms) =>
+            {
                 return Err(ProgramError::InvalidTarget(workflow.path.clone()));
             }
             InstructionKind::Call { callee, arguments } => {
@@ -430,4 +501,10 @@ fn validate_workflow(
         }
     }
     Ok(())
+}
+
+fn enum_arms_are_unique(arms: &[(Arc<str>, usize)]) -> bool {
+    let mut variants = BTreeSet::new();
+    arms.iter()
+        .all(|(variant, _)| variants.insert(variant.as_ref()))
 }

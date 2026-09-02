@@ -108,8 +108,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#reviewed_generic_runtime_evidence_is_closed"
+              ],
               "rationale": null
             },
             {
@@ -507,8 +509,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#reviewed_generic_runtime_evidence_is_closed"
+              ],
               "rationale": null
             },
             {
@@ -2098,8 +2102,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+              ],
               "rationale": null
             },
             {
@@ -2431,8 +2437,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+              ],
               "rationale": null
             }
           ]
@@ -2778,8 +2786,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#closed_generic_enum_construction_and_matching_execute_without_runtime_analysis"
+              ],
               "rationale": null
             }
           ]
@@ -2850,8 +2860,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+              ],
               "rationale": null
             }
           ]
@@ -2923,8 +2935,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#analyzed_closed_generic_application_executes_as_a_direct_call"
+              ],
               "rationale": null
             }
           ]
@@ -3912,8 +3926,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+              ],
               "rationale": null
             }
           ]
@@ -6346,8 +6362,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+              ],
               "rationale": null
             }
           ]
@@ -8845,8 +8863,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -9254,8 +9274,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9662,8 +9684,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9734,8 +9758,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -9806,8 +9832,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+              ],
               "rationale": null
             },
             {
@@ -10488,8 +10516,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#generic_analysis_policy_charges_are_public_and_failure_atomic"
+              ],
               "rationale": null
             },
             {
@@ -12684,8 +12714,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency"
+              ],
               "rationale": null
             }
           ]
@@ -12835,8 +12867,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#closed_generic_enum_construction_and_matching_execute_without_runtime_analysis"
+              ],
               "rationale": null
             }
           ]
@@ -12967,8 +13001,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+              ],
               "rationale": null
             }
           ]
@@ -13798,8 +13834,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_methods_and_static_trait_calls_preserve_logical_copy_isolation"
+              ],
               "rationale": null
             }
           ]
@@ -17921,8 +17959,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/executable_bridge.rs#generic_operation_uses_the_concrete_result_type_and_schema"
+              ],
               "rationale": null
             }
           ]
@@ -22823,8 +22863,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -23186,8 +23228,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures"
+              ],
               "rationale": null
             }
           ]
@@ -23588,8 +23632,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -23661,8 +23707,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23734,8 +23782,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23949,8 +23999,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24022,8 +24074,10 @@
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {

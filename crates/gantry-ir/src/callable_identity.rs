@@ -112,6 +112,17 @@ impl CanonicalCallableIdentity {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Returns the closed receiver descriptor for an inherent or trait method.
+    #[must_use]
+    pub fn receiver_type(&self) -> Option<TypeDescriptor> {
+        let receiver = match ParsedIdentity::parse(self.as_str()).ok()? {
+            ParsedIdentity::Free { .. } => return None,
+            ParsedIdentity::Inherent { receiver, .. }
+            | ParsedIdentity::TraitMethod { receiver, .. } => receiver,
+        };
+        TypeDescriptor::from_canonical_string(receiver).ok()
+    }
 }
 
 impl fmt::Display for CanonicalCallableIdentity {
