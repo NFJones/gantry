@@ -448,6 +448,59 @@ pure fn main() -> Int {
 }
 
 #[test]
+fn nested_generic_enum_constructor_call_preserves_and_executes_the_closed_value() {
+    let root = TempDirectory::new(
+        r#"
+enum State<T, E> { Ready(T), Failed(E) }
+pure fn preserve<T>(value: T) -> T { value }
+fn main() -> State<List<String>, Int> {
+    preserve::<State<List<String>, Int>>(
+        State::<List<String>, Int>::Ready(["x"])
+    )
+}
+"#,
+    );
+    let package = analyze(&root);
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid nested generic package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("nested generic package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x50; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("nested generic program was rejected: {error:?}"));
+
+    let outcome = drive(&mut machine);
+    assert!(
+        matches!(
+            outcome,
+            MachineOutcome::Succeeded(ref value)
+                if matches!(value.view(), LogicalValueView::Enum {
+                    type_name: "crate::State<List<String>,Int>",
+                    variant: "Ready",
+                    has_payload: true,
+                }) && value.canonical_json().bytes() == br#"{"value":["x"],"variant":"Ready"}"#
+        ),
+        "nested generic program did not preserve Ready([\"x\"]): {outcome:?}"
+    );
+}
+
+#[test]
 fn evaluator_program_contains_only_closed_direct_calls_and_no_analyzer_dependency() {
     let root = TempDirectory::new(
         r#"

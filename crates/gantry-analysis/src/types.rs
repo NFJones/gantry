@@ -3065,6 +3065,37 @@ fn main(flag: Bool) -> Int {
     }
 
     #[test]
+    fn nested_generic_enum_constructor_remains_an_outer_call_argument() {
+        let package = analyze(
+            "enum State<T, E> { Ready(T), Failed(E) }\npure fn preserve<T>(value: T) -> T { value }\nfn main() -> State<List<String>, Int> { preserve::<State<List<String>, Int>>(State::<List<String>, Int>::Ready([\"x\"])) }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .all(|diagnostic| diagnostic.code.as_str() != "call-arity")
+        );
+        let identities = package
+            .generic_instantiations()
+            .iter()
+            .map(|instantiation| instantiation.concrete().canonical_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            identities,
+            [
+                "crate::State<List<String>,Int>",
+                "crate::preserve<crate::State<List<String>,Int>>",
+            ]
+        );
+    }
+
+    #[test]
     fn generic_workflow_closure_is_transitive_and_rejects_polymorphic_recursion() {
         let nested = analyze(
             "fn wrap<T>(value: T) -> List<T> { [value] }\nfn outer<T>(value: T) -> List<T> { wrap(value) }\nfn main() -> List<String> { outer(\"value\") }",

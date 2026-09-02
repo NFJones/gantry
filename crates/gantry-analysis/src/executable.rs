@@ -723,6 +723,35 @@ impl Compiler<'_> {
         if let Some(projection) = self.compile_static_projection(expression, &node, &ty)? {
             return Ok(projection);
         }
+        if let Some(variant) =
+            enum_constructor_variant(self.tree, &node, self.closed_enums.get(&ty))
+        {
+            let variants = self.closed_enums.get(&ty).ok_or(AnalysisError::Invariant)?;
+            let has_payload = variants
+                .get(&variant)
+                .ok_or(AnalysisError::Invariant)?
+                .is_some();
+            let expressions = direct_expressions(self.tree, &node);
+            if expressions.len() != usize::from(has_payload) {
+                return Err(AnalysisError::Invariant);
+            }
+            for payload in &expressions {
+                self.compile_expression(*payload)?;
+            }
+            let type_name = Arc::from(ty.canonical_string());
+            self.emit(
+                ty.clone(),
+                InstructionKind::Aggregate {
+                    kind: AggregateKind::Enum {
+                        type_name,
+                        variant,
+                        has_payload,
+                    },
+                    operands: expressions.len(),
+                },
+            )?;
+            return Ok(ty);
+        }
         if let Some(list) = descendant_form(self.tree, expression, &[SyntaxForm::ListExpression]) {
             let members = direct_expressions(self.tree, self.node(list)?);
             for member in &members {
@@ -767,35 +796,6 @@ impl Compiler<'_> {
                 ty.clone(),
                 InstructionKind::Aggregate {
                     kind,
-                    operands: expressions.len(),
-                },
-            )?;
-            return Ok(ty);
-        }
-        if let Some(variant) =
-            enum_constructor_variant(self.tree, &node, self.closed_enums.get(&ty))
-        {
-            let variants = self.closed_enums.get(&ty).ok_or(AnalysisError::Invariant)?;
-            let has_payload = variants
-                .get(&variant)
-                .ok_or(AnalysisError::Invariant)?
-                .is_some();
-            let expressions = direct_expressions(self.tree, &node);
-            if expressions.len() != usize::from(has_payload) {
-                return Err(AnalysisError::Invariant);
-            }
-            for payload in &expressions {
-                self.compile_expression(*payload)?;
-            }
-            let type_name = Arc::from(ty.canonical_string());
-            self.emit(
-                ty.clone(),
-                InstructionKind::Aggregate {
-                    kind: AggregateKind::Enum {
-                        type_name,
-                        variant,
-                        has_payload,
-                    },
                     operands: expressions.len(),
                 },
             )?;

@@ -6084,7 +6084,7 @@ fn infer_call_sequence(
         .iter()
         .enumerate()
         .skip(open.saturating_add(1))
-        .find(|(_, child)| node_contains_punctuation(tree, **child, Punctuation::RightParenthesis))
+        .find(|(_, child)| node_is_punctuation(tree, **child, Punctuation::RightParenthesis))
         .map_or(children.len(), |(index, _)| index);
     let arguments = children
         .get(open.saturating_add(1)..close)
@@ -6211,7 +6211,7 @@ fn infer_qualified_trait_call(
         .iter()
         .enumerate()
         .skip(open.saturating_add(1))
-        .find(|(_, child)| node_contains_punctuation(tree, **child, Punctuation::RightParenthesis))
+        .find(|(_, child)| node_is_punctuation(tree, **child, Punctuation::RightParenthesis))
         .map_or(children.len(), |(index, _)| index);
     let arguments = children
         .get(open.saturating_add(1)..close)
@@ -6339,7 +6339,7 @@ fn infer_generic_call(
         .iter()
         .enumerate()
         .skip(open.saturating_add(1))
-        .find(|(_, child)| node_contains_punctuation(tree, **child, Punctuation::RightParenthesis))
+        .find(|(_, child)| node_is_punctuation(tree, **child, Punctuation::RightParenthesis))
         .map_or(children.len(), |(index, _)| index);
     let arguments = children
         .get(open.saturating_add(1)..close)
@@ -6773,6 +6773,12 @@ fn node_contains_punctuation(tree: &SyntaxTree, id: NodeId, expected: Punctuatio
                     matches!(child.form(), SyntaxForm::Token(TokenKind::Punctuation(value)) if *value == expected)
                 })
             })
+    })
+}
+
+fn node_is_punctuation(tree: &SyntaxTree, id: NodeId, expected: Punctuation) -> bool {
+    tree.node(id).is_some_and(|node| {
+        matches!(node.form(), SyntaxForm::Token(TokenKind::Punctuation(value)) if *value == expected)
     })
 }
 
