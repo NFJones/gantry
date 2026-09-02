@@ -1,20 +1,28 @@
 {
   "format": "gantry.analyzer-validity-model/v1",
-  "maximum_depth": 6,
-  "explored_state_count": 64,
+  "maximum_depth": 13,
+  "explored_state_count": 8192,
   "expected_conforming_states": 1,
   "obligations": [
     "module-resolution-security",
     "types-patterns-completion-schemas",
+    "binder-substitution-well-formedness",
+    "complete-unique-inference",
+    "structural-capability-proof",
+    "trait-coherence-and-termination",
+    "finite-monomorphization-closure",
     "linear-task-ownership",
-    "effects-and-purity",
-    "canonical-lowering",
+    "concrete-effects-and-purity",
+    "concrete-schema-closure",
+    "diagnostic-precedence-and-witnesses",
+    "closed-lowering-preservation",
     "bounded-artifact-admission"
   ],
   "assumptions": [
     "The package snapshot is immutable, completely selected, and syntax-valid.",
     "Protocol versions and the specification digest are the reviewed Gantry v1 values.",
-    "The Boolean model abstracts finite implementation judgments and is not an enumeration of all source programs."
+    "The Boolean model abstracts finite implementation judgments and is not an enumeration of all source programs.",
+    "Capture-avoiding substitution, unification, coherence, and lowering are justified by the written argument and property evidence rather than by the finite Boolean search."
   ],
   "counterexamples": [
     {
@@ -24,10 +32,22 @@
       "expected_code": "canonical-ir-byte-limit"
     },
     {
+      "id": "binder-well-formedness",
+      "source": "fn keep<T,T>(value: T) -> T { value } fn main() {}",
+      "outcome": "source-invalid",
+      "expected_code": "duplicate-type-parameter"
+    },
+    {
       "id": "effects-purity",
       "source": "pure fn main() { discard prompt \"x\" -> String; }",
       "outcome": "source-invalid",
       "expected_code": "impure-workflow"
+    },
+    {
+      "id": "inference-completeness",
+      "source": "fn empty<T>() {} fn main() { empty(); }",
+      "outcome": "source-invalid",
+      "expected_code": "incomplete-type-inference"
     },
     {
       "id": "linear-ownership",
@@ -42,10 +62,37 @@
       "expected_code": "missing-module-source"
     },
     {
+      "id": "monomorphization-finiteness",
+      "source": "fn grow<T>() { grow::<List<T>>() } fn main() { grow::<String>() }",
+      "outcome": "source-invalid",
+      "expected_code": "polymorphic-recursion",
+      "expected_field": "instantiation_witness"
+    },
+    {
       "id": "name-resolution",
       "source": "fn main() { missing_name; }",
       "outcome": "source-invalid",
       "expected_code": "unresolved-reference"
+    },
+    {
+      "id": "structural-capability",
+      "source": "struct Envelope<T> where T: Equatable { value: T } fn inspect(value: Envelope<Decision>) {} fn main() {}",
+      "outcome": "source-invalid",
+      "expected_code": "unsatisfied-bound",
+      "expected_field": "capability"
+    },
+    {
+      "id": "trait-coherence",
+      "source": "trait Label { pure fn label(self) -> String; } struct Envelope<T> { value: T } impl<T> Label for Envelope<T> { pure fn label(self) -> String { \"generic\" } } impl Label for Envelope<String> { pure fn label(self) -> String { \"specific\" } } fn main() {}",
+      "outcome": "source-invalid",
+      "expected_code": "overlapping-implementation"
+    },
+    {
+      "id": "trait-obligation-cycle",
+      "source": "trait First<T> { pure fn label(self) -> String; } trait Second<T> { pure fn second(self) -> String; } struct Item {} struct Envelope<T> { value: T } impl<T> First<T> for Envelope<T> where T: Second<Envelope<T>> { pure fn label(self) -> String { \"first\" } } impl<T> Second<T> for Item where T: First<Item> { pure fn second(self) -> String { \"second\" } } fn main(value: Envelope<Item>) -> String { First::<Item>::label(value) }",
+      "outcome": "source-invalid",
+      "expected_code": "cyclic-trait-obligation",
+      "expected_field": "obligation_chain"
     },
     {
       "id": "type-completion",
@@ -58,5 +105,22 @@
     "compact": "fn main() { discard prompt \"x\" -> String; }",
     "cosmetic": "// layout-only change\nfn main() {\n    discard prompt \"x\" -> String;\n}",
     "semantic": "fn main() { discard prompt \"y\" -> String; }"
-  }
+  },
+  "metamorphic_cases": [
+    {
+      "id": "alpha-renaming",
+      "left": "fn keep<T>(value: T) -> T { value } fn main() { discard keep(1); }",
+      "right": "fn keep<U>(value: U) -> U { value } fn main() { discard keep(1); }"
+    },
+    {
+      "id": "implementation-order",
+      "left": "trait Label { pure fn label(self) -> String; } struct First {} struct Second {} impl Label for First { pure fn label(self) -> String { \"first\" } } impl Label for Second { pure fn label(self) -> String { \"second\" } } fn main() {}",
+      "right": "trait Label { pure fn label(self) -> String; } struct First {} struct Second {} impl Label for Second { pure fn label(self) -> String { \"second\" } } impl Label for First { pure fn label(self) -> String { \"first\" } } fn main() {}"
+    },
+    {
+      "id": "predicate-order",
+      "left": "trait First { pure fn first(self); } trait Second { pure fn second(self); } struct Item {} impl First for Item { pure fn first(self) {} } impl Second for Item { pure fn second(self) {} } fn inspect<T>(value: T) where T: First, T: Second { value.first(); value.second(); } fn main(value: Item) { inspect(value); }",
+      "right": "trait First { pure fn first(self); } trait Second { pure fn second(self); } struct Item {} impl First for Item { pure fn first(self) {} } impl Second for Item { pure fn second(self) {} } fn inspect<T>(value: T) where T: Second, T: First { value.first(); value.second(); } fn main(value: Item) { inspect(value); }"
+    }
+  ]
 }

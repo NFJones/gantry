@@ -14,13 +14,34 @@ use gantry::source::SourceLimits;
 use serde::Deserialize;
 
 const MODEL_EVIDENCE: &str = "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay";
-const OBLIGATIONS: [&str; 6] = [
+const OBLIGATIONS: [&str; 13] = [
     "module-resolution-security",
     "types-patterns-completion-schemas",
+    "binder-substitution-well-formedness",
+    "complete-unique-inference",
+    "structural-capability-proof",
+    "trait-coherence-and-termination",
+    "finite-monomorphization-closure",
     "linear-task-ownership",
-    "effects-and-purity",
-    "canonical-lowering",
+    "concrete-effects-and-purity",
+    "concrete-schema-closure",
+    "diagnostic-precedence-and-witnesses",
+    "closed-lowering-preservation",
     "bounded-artifact-admission",
+];
+const GENERIC_REQUIREMENTS: [&str; 12] = [
+    "GNT-3.15-generic-profiles",
+    "GNT-3-F-GENERICS",
+    "GNT-3-F-INSTANTIATION",
+    "GNT-3-F-TRAITS",
+    "GNT-3-T-GENERIC-CALL",
+    "GNT-3-T-PARAMETRIC-PACKAGE",
+    "GNT-4.17-generic-analysis-limits",
+    "GNT-5.20-parametric-types",
+    "GNT-6.12-static-traits",
+    "GNT-8.13-concrete-generic-schemas",
+    "GNT-12.11-generic-diagnostics",
+    "GNT-12.9",
 ];
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -35,7 +56,16 @@ struct ValidityManifest {
     model: String,
     model_evidence: String,
     evidence_manifests: Vec<String>,
+    lemmas: Vec<Lemma>,
     exclusions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Lemma {
+    id: String,
+    argument: String,
+    requirements: Vec<String>,
+    evidence: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +78,7 @@ struct ValidityModel {
     assumptions: Vec<String>,
     counterexamples: Vec<Counterexample>,
     canonicalization: CanonicalizationCases,
+    metamorphic_cases: Vec<MetamorphicCase>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +87,7 @@ struct Counterexample {
     source: String,
     outcome: String,
     expected_code: String,
+    expected_field: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +95,13 @@ struct CanonicalizationCases {
     compact: String,
     cosmetic: String,
     semantic: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MetamorphicCase {
+    id: String,
+    left: String,
+    right: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -154,15 +193,26 @@ fn bounded_analyzer_validity_model_and_counterexamples_replay() {
                 let package = analyze_package_types(&phase)
                     .unwrap_or_else(|error| panic!("analysis failed operationally: {error:?}"));
                 assert_eq!(package.status(), AnalysisStatus::Invalid, "{}", case.id);
+                let diagnostic = package
+                    .diagnostics()
+                    .iter()
+                    .find(|diagnostic| diagnostic.code.as_str() == case.expected_code);
                 assert!(
-                    package
-                        .diagnostics()
-                        .iter()
-                        .any(|diagnostic| diagnostic.code.as_str() == case.expected_code),
+                    diagnostic.is_some(),
                     "{}: {:?}",
                     case.id,
                     package.diagnostics()
                 );
+                if let Some(field) = &case.expected_field {
+                    assert!(
+                        diagnostic.is_some_and(|diagnostic| diagnostic
+                            .fields
+                            .contains_key(field.as_str())),
+                        "{}: missing {field} in {:?}",
+                        case.id,
+                        package.diagnostics()
+                    );
+                }
                 assert!(package.canonical_ir().is_none());
             }
             "operational-failure" => {
@@ -190,6 +240,86 @@ fn bounded_analyzer_validity_model_and_counterexamples_replay() {
     assert_eq!(ir_bytes(&compact), ir_bytes(&cosmetic));
     assert_ne!(manifest_bytes(&compact), manifest_bytes(&cosmetic));
     assert_ne!(ir_bytes(&compact), ir_bytes(&semantic));
+
+    assert_eq!(
+        model
+            .metamorphic_cases
+            .iter()
+            .map(|case| case.id.as_str())
+            .collect::<Vec<_>>(),
+        ["alpha-renaming", "implementation-order", "predicate-order"]
+    );
+    for case in &model.metamorphic_cases {
+        let left = analyze(&case.left);
+        let right = analyze(&case.right);
+        assert_eq!(ir_bytes(&left), ir_bytes(&right), "{}", case.id);
+    }
+}
+
+#[test]
+fn generic_analyzer_lemmas_preserve_closed_outputs() {
+    let package = analyze(
+        "trait Label { pure fn label(self) -> String; }\nstruct Envelope<T> { value: T }\nimpl<T> Label for Envelope<T> { pure fn label(self) -> String { \"label\" } }\nfn render<T>(value: T) -> String where T: Label { value.label() }\nfn effect<T>(value: T) -> T { discard prompt \"Generate.\" -> String; value }\nfn main(value: Envelope<String>) -> String { discard effect(value); render(value) }",
+    );
+    let ir = package
+        .canonical_ir()
+        .unwrap_or_else(|| unreachable!("valid generic package has canonical IR"));
+    let generic = ir.generic_facts();
+    let callable_ids = generic
+        .executable()
+        .callables()
+        .iter()
+        .map(|callable| callable.identity())
+        .collect::<BTreeSet<_>>();
+
+    assert!(generic.instantiations().iter().all(|instantiation| {
+        instantiation
+            .arguments()
+            .iter()
+            .all(|argument| !argument.canonical_string().contains('^'))
+            && !instantiation.concrete().canonical_string().contains('^')
+    }));
+    assert!(
+        generic
+            .executable()
+            .types()
+            .iter()
+            .all(|ty| { !ty.canonical_string().contains('^') })
+    );
+    assert!(generic.executable().callables().iter().all(|callable| {
+        !callable.identity().as_str().contains('^')
+            && !callable.signature().as_str().contains('^')
+            && callable
+                .direct_calls()
+                .iter()
+                .all(|callee| callable_ids.contains(callee))
+            && callable
+                .operations()
+                .iter()
+                .all(|operation| !operation.result.canonical_string().contains('^'))
+    }));
+    assert!(generic.resolved_calls().iter().all(|call| {
+        callable_ids.contains(&call.caller) && callable_ids.contains(&call.callee)
+    }));
+    assert!(
+        generic
+            .concrete_effects()
+            .iter()
+            .all(|effect| callable_ids.contains(&effect.callable))
+    );
+    assert!(
+        package
+            .schemas()
+            .unwrap_or_else(|| unreachable!("valid generic package has schemas"))
+            .entries()
+            .iter()
+            .all(|(ty, schema)| {
+                !ty.canonical_string().contains('^') && !schema.contains(&b'^')
+            })
+    );
+    assert!(generic.source_map().iter().all(|entry| {
+        !entry.node().canonical_string().contains('^') && !entry.origins().origins().is_empty()
+    }));
 }
 
 #[test]
@@ -199,11 +329,8 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
         read_json(&root.join("protocol/conformance/analyzer-validity-v1.json"));
     let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
     assert_eq!(manifest.format, "gantry.analyzer-validity-evidence/v1");
-    assert!(gantry_conformance::evidence_revision_is_expected(
-        &manifest.specification_sha256,
-        &review.specification_sha256,
-    ));
-    assert_eq!(manifest.issue, "GNT-AN-007");
+    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert_eq!(manifest.issue, "GNT-GEN-PROOF-001");
     assert_eq!(manifest.profile, "analyzer");
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
     assert!(
@@ -213,6 +340,13 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
             .all(|pair| pair[0] < pair[1])
     );
     assert_eq!(manifest.evidence_manifests.len(), 6);
+    assert_eq!(manifest.lemmas.len(), 9);
+    assert!(
+        manifest
+            .lemmas
+            .windows(2)
+            .all(|pair| pair[0].id < pair[1].id)
+    );
     assert_eq!(manifest.exclusions.len(), 3);
 
     let argument = fs::read_to_string(root.join(&manifest.argument))
@@ -228,6 +362,32 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
     }
     assert!(argument.contains("not an unbounded proof"));
     assert!(root.join(&manifest.model).is_file());
+
+    for lemma in &manifest.lemmas {
+        assert!(OBLIGATIONS.contains(&lemma.id.as_str()));
+        assert!(argument.contains(&format!("## Lemma: {}", lemma.argument)));
+        assert!(!lemma.requirements.is_empty());
+        assert!(!lemma.evidence.is_empty());
+        for requirement in &lemma.requirements {
+            assert!(
+                review
+                    .requirements
+                    .iter()
+                    .any(|candidate| candidate.id == *requirement)
+            );
+        }
+        for evidence in &lemma.evidence {
+            validate_evidence_anchor(&root, evidence);
+        }
+    }
+    assert_eq!(
+        manifest
+            .lemmas
+            .iter()
+            .flat_map(|lemma| lemma.requirements.iter().map(String::as_str))
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(GENERIC_REQUIREMENTS)
+    );
 
     for path in &manifest.evidence_manifests {
         let value: serde_json::Value = read_json(&root.join(path));
@@ -285,6 +445,18 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
     assert_eq!(
         dependencies,
         BTreeSet::from(["gantry-core", "gantry-frontend", "gantry-ir", "sha2"])
+    );
+}
+
+fn validate_evidence_anchor(root: &Path, evidence: &str) {
+    let (path, test) = evidence
+        .split_once('#')
+        .unwrap_or_else(|| panic!("evidence anchor has no test: {evidence}"));
+    let source = fs::read_to_string(root.join(path))
+        .unwrap_or_else(|error| panic!("could not read evidence {path}: {error}"));
+    assert!(
+        source.contains(&format!("fn {test}(")),
+        "missing {evidence}"
     );
 }
 
