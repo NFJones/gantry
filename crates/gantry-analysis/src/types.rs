@@ -24,7 +24,9 @@ use crate::bodies::check_package_bodies;
 use crate::effects::analyze_workflow_facts;
 use crate::executable::lower_executable_program;
 use crate::generics::{
-    charge_generic_instantiations, check_sealed_declaration_bounds, collect_generic_type_facts,
+    charge_generic_instantiations, check_implementation_heads, check_sealed_declaration_bounds,
+    check_trait_implementation_coherence, check_trait_implementation_methods,
+    collect_generic_type_facts, collect_trait_contracts_and_implementation_heads,
     collect_type_binders,
 };
 use crate::lowering::{LoweringError, lower_package_artifacts, lower_package_manifest};
@@ -92,6 +94,35 @@ fn analyze_package_types_with_policy(
         &type_binders,
         &mut type_diagnostics,
     )?;
+    check_implementation_heads(
+        phase.parsed_sources(),
+        &generic_types,
+        &mut type_diagnostics,
+    )?;
+    let (trait_contracts, implementation_heads, implementation_spans) =
+        collect_trait_contracts_and_implementation_heads(
+            phase.parsed_sources(),
+            &structure,
+            &type_binders,
+            &generic_types,
+        )?;
+    check_trait_implementation_coherence(
+        phase.parsed_sources(),
+        &trait_contracts,
+        &implementation_heads,
+        &implementation_spans,
+        &mut type_diagnostics,
+    )?;
+    check_trait_implementation_methods(
+        phase.parsed_sources(),
+        &structure,
+        &type_binders,
+        &generic_types,
+        &trait_contracts,
+        &implementation_heads,
+        &implementation_spans,
+        &mut type_diagnostics,
+    )?;
     let mut generic_counters = frontend_limits.map(GenericAnalysisCounters::new);
     if let Some(counters) = generic_counters.as_mut()
         && let Err(error) = charge_generic_instantiations(&generic_types, counters)
@@ -153,7 +184,10 @@ fn analyze_package_types_with_policy(
         &generic_types,
         &type_binders,
         &structure,
+        &trait_contracts,
+        &implementation_heads,
         frontend_limits.map(FrontendLimits::maximum_constructed_type_depth),
+        &mut generic_counters,
         &mut type_diagnostics,
     ) {
         Ok(body_types) => body_types,
@@ -273,6 +307,8 @@ fn analyze_package_types_with_policy(
         structure,
         type_binders,
         generic_types,
+        trait_contracts,
+        implementation_heads,
         types: facts,
         workflows,
         actions,
@@ -772,16 +808,47 @@ fn check_impl_targets(
             .iter()
             .filter(|node| matches!(node.form(), SyntaxForm::ImplDeclaration))
         {
-            let Some(path) = implementation
+            if implementation.children().iter().copied().any(|child| {
+                source
+                    .tree()
+                    .node(child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::TraitReference))
+            }) {
+                continue;
+            }
+            let path = implementation
                 .children()
                 .iter()
-                .filter_map(|child| {
-                    let node = source.tree().node(*child)?;
-                    matches!(node.form(), SyntaxForm::Path).then_some(node)
-                })
-                .next()
-            else {
-                return Err(AnalysisError::Invariant);
+                .filter_map(|child| source.tree().node(*child))
+                .find(|node| matches!(node.form(), SyntaxForm::Path))
+                .or_else(|| {
+                    implementation
+                        .children()
+                        .iter()
+                        .filter_map(|child| source.tree().node(*child))
+                        .find(|node| matches!(node.form(), SyntaxForm::ValueType))
+                        .and_then(|receiver| {
+                            receiver
+                                .children()
+                                .iter()
+                                .filter_map(|child| source.tree().node(*child))
+                                .find(|node| matches!(node.form(), SyntaxForm::Path))
+                        })
+                });
+            let Some(path) = path else {
+                let receiver = implementation
+                    .children()
+                    .iter()
+                    .filter_map(|child| source.tree().node(*child))
+                    .find(|node| matches!(node.form(), SyntaxForm::ValueType))
+                    .ok_or(AnalysisError::Invariant)?;
+                diagnostics.push(type_diagnostic(
+                    "invalid-impl-target",
+                    "an inherent implementation target is not a package struct",
+                    receiver.span().clone(),
+                    [("canonical_path", "<built-in>")],
+                )?);
+                continue;
             };
             let Some(target) = references.get(path.span()) else {
                 continue;
@@ -1114,6 +1181,14 @@ mod tests {
 
         fn write(&self, source: &str) {
             assert!(fs::write(self.0.join("main.gnt"), source).is_ok());
+        }
+
+        fn write_file(&self, relative: &str, source: &str) {
+            let path = self.0.join(relative);
+            if let Some(parent) = path.parent() {
+                assert!(fs::create_dir_all(parent).is_ok());
+            }
+            assert!(fs::write(path, source).is_ok());
         }
     }
 
@@ -1710,6 +1785,409 @@ fn main(flag: Bool) -> Int {
                 .iter()
                 .any(|diagnostic| diagnostic.code.as_str() == "duplicate-where-predicate")
         );
+    }
+
+    #[test]
+    fn trait_contracts_admit_constrained_heads_and_reject_naked_receivers() {
+        let valid = analyze(
+            "trait Label { pure fn label(self) -> String; }\nstruct Envelope<T> { value: T }\nimpl<T> Label for Envelope<T> { pure fn label(self) -> String { \"label\" } }\nfn main() {}",
+        );
+        assert_eq!(
+            valid.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            valid.diagnostics()
+        );
+        assert_eq!(valid.trait_contracts().len(), 1);
+        assert_eq!(valid.trait_contracts()[0].path().as_str(), "crate::Label");
+        assert_eq!(valid.trait_contracts()[0].methods()[0].name(), "label");
+        assert_eq!(valid.implementation_heads().len(), 1);
+        assert_eq!(
+            valid.implementation_heads()[0].identity().as_str(),
+            "<crate::Envelope<^0.0> as crate::Label>"
+        );
+
+        let invalid = analyze(
+            "trait Label { pure fn label(self) -> String; }\nimpl<T> Label for T { pure fn label(self) -> String { \"label\" } }\nfn main() {}",
+        );
+        assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+        assert!(
+            invalid
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-implementation-head")
+        );
+
+        let unconstrained = analyze(
+            "trait Label<T> { pure fn label(self) -> String; }\nstruct Envelope<T> { value: T }\nimpl<T,U> Label<T> for Envelope<T> { pure fn label(self) -> String { \"label\" } }\nfn main() {}",
+        );
+        assert_eq!(unconstrained.status(), AnalysisStatus::Invalid);
+        assert!(
+            unconstrained
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-implementation-head"),
+            "{:?}",
+            unconstrained.diagnostics()
+        );
+
+        let wrong_trait_arity = analyze(
+            "trait Label<T> { pure fn label(self) -> String; }\nstruct Item {}\nimpl Label for Item { pure fn label(self) -> String { \"label\" } }\nfn main() {}",
+        );
+        assert_eq!(wrong_trait_arity.status(), AnalysisStatus::Invalid);
+        assert!(
+            wrong_trait_arity
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "type-argument-arity"),
+            "{:?}",
+            wrong_trait_arity.diagnostics()
+        );
+
+        let closed_builtin = analyze(
+            "trait Label { pure fn label(self) -> String; }\nimpl Label for List<String> { pure fn label(self) -> String { \"list\" } }\nfn main(value: List<String>) -> String { value.label() }",
+        );
+        assert_eq!(
+            closed_builtin.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            closed_builtin.diagnostics()
+        );
+
+        let open_builtin = analyze(
+            "trait Label { pure fn label(self) -> String; }\nimpl<T> Label for List<T> { pure fn label(self) -> String { \"list\" } }\nfn main() {}",
+        );
+        assert_eq!(open_builtin.status(), AnalysisStatus::Invalid);
+        assert!(
+            open_builtin
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-implementation-head"),
+            "{:?}",
+            open_builtin.diagnostics()
+        );
+    }
+
+    #[test]
+    fn overlapping_trait_implementations_are_source_order_independent() {
+        for implementations in [
+            "impl<T> Label for Envelope<T> { pure fn label(self) -> String { \"generic\" } }\nimpl Label for Envelope<String> { pure fn label(self) -> String { \"specific\" } }",
+            "impl Label for Envelope<String> { pure fn label(self) -> String { \"specific\" } }\nimpl<T> Label for Envelope<T> { pure fn label(self) -> String { \"generic\" } }",
+        ] {
+            let package = analyze(&format!(
+                "trait Label {{ pure fn label(self) -> String; }}\nstruct Envelope<T> {{ value: T }}\n{implementations}\nfn main() {{}}"
+            ));
+            assert_eq!(package.status(), AnalysisStatus::Invalid);
+            assert_eq!(
+                package
+                    .diagnostics()
+                    .iter()
+                    .filter(|diagnostic| diagnostic.code.as_str() == "overlapping-implementation")
+                    .count(),
+                1,
+                "{:?}",
+                package.diagnostics()
+            );
+        }
+    }
+
+    #[test]
+    fn overlapping_generic_inherent_methods_are_source_order_independent() {
+        for implementations in [
+            "impl<T> Envelope<T> { pure fn label(self) -> String { \"generic\" } }\nimpl Envelope<String> { pure fn label(self) -> String { \"specific\" } }",
+            "impl Envelope<String> { pure fn label(self) -> String { \"specific\" } }\nimpl<T> Envelope<T> { pure fn label(self) -> String { \"generic\" } }",
+        ] {
+            let package = analyze(&format!(
+                "struct Envelope<T> {{ value: T }}\n{implementations}\nfn main() {{}}"
+            ));
+            assert_eq!(package.status(), AnalysisStatus::Invalid);
+            assert_eq!(
+                package
+                    .diagnostics()
+                    .iter()
+                    .filter(|diagnostic| diagnostic.code.as_str() == "overlapping-inherent-method")
+                    .count(),
+                1,
+                "{:?}",
+                package.diagnostics()
+            );
+        }
+    }
+
+    #[test]
+    fn trait_implementations_match_complete_exact_method_contracts() {
+        for implementation in [
+            "impl Label for Item {}",
+            "impl Label for Item { pure fn label(self) -> String { \"ok\" } pure fn extra(self) {} }",
+            "impl Label for Item { pure fn label(self) -> Int { 1 } }",
+        ] {
+            let package = analyze(&format!(
+                "trait Label {{ pure fn label(self) -> String; }}\nstruct Item {{}}\n{implementation}\nfn main() {{}}"
+            ));
+            assert_eq!(package.status(), AnalysisStatus::Invalid);
+            assert!(
+                package.diagnostics().iter().any(|diagnostic| {
+                    diagnostic.code.as_str() == "implementation-method-mismatch"
+                }),
+                "{:?}",
+                package.diagnostics()
+            );
+        }
+
+        let predicate_mismatch = analyze(
+            "trait Marker { pure fn marker(self); }\ntrait Label { pure fn label<T>(self) -> String where T: Marker; }\nstruct Item {}\nimpl Label for Item { pure fn label<T>(self) -> String { \"ok\" } }\nfn main() {}",
+        );
+        assert_eq!(predicate_mismatch.status(), AnalysisStatus::Invalid);
+        assert!(
+            predicate_mismatch
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| { diagnostic.code.as_str() == "implementation-method-mismatch" }),
+            "{:?}",
+            predicate_mismatch.diagnostics()
+        );
+    }
+
+    #[test]
+    fn static_trait_lookup_is_unique_or_explicitly_qualified() {
+        let selected = analyze(
+            "trait Label { pure fn label(self) -> String; }\nstruct Item {}\nimpl Label for Item { pure fn label(self) -> String { \"label\" } }\nfn main(value: Item) -> String { value.label() }",
+        );
+        assert_eq!(
+            selected.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            selected.diagnostics()
+        );
+
+        let missing = analyze(
+            "trait Label { pure fn label(self) -> String; }\nstruct Item {}\nfn main(value: Item) { discard value.label(); }",
+        );
+        assert_eq!(missing.status(), AnalysisStatus::Invalid);
+        assert!(
+            missing
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "missing-implementation")
+        );
+
+        let ambiguous = analyze(
+            "trait Label { pure fn name(self) -> String; }\ntrait Title { pure fn name(self) -> String; }\nstruct Item {}\nimpl Label for Item { pure fn name(self) -> String { \"label\" } }\nimpl Title for Item { pure fn name(self) -> String { \"title\" } }\nfn main(value: Item) -> String { value.name() }",
+        );
+        assert_eq!(ambiguous.status(), AnalysisStatus::Invalid);
+        assert!(
+            ambiguous
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "ambiguous-trait-method")
+        );
+
+        let qualified = analyze(
+            "trait Label { pure fn name(self) -> String; }\ntrait Title { pure fn name(self) -> String; }\nstruct Item {}\nimpl Label for Item { pure fn name(self) -> String { \"label\" } }\nimpl Title for Item { pure fn name(self) -> String { \"title\" } }\nfn main(value: Item) -> String { Label::name(value) }",
+        );
+        assert_eq!(
+            qualified.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            qualified.diagnostics()
+        );
+    }
+
+    #[test]
+    fn postfix_trait_lookup_uses_only_module_local_or_imported_traits() {
+        let analyze_files = |consumer: &str| {
+            let root = TempDirectory::new();
+            root.write("mod traits; mod consumer; fn main() {}");
+            root.write_file(
+                "traits.gnt",
+                "trait Label { pure fn label(self) -> String; }\nstruct Item {}\nimpl Label for Item { pure fn label(self) -> String { \"item\" } }",
+            );
+            root.write_file("consumer.gnt", consumer);
+            let limits = SourceLimits::new(4, 65_536, 65_536, 65_536, 64)
+                .unwrap_or_else(|_| unreachable!("positive limits"));
+            let syntax = validate_package_syntax(&root.0, limits, i64::MAX as u64)
+                .unwrap_or_else(|error| panic!("syntax failed: {error:?}"));
+            analyze_package_types(&syntax)
+                .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"))
+        };
+
+        let hidden =
+            analyze_files("fn inspect(value: crate::traits::Item) -> String { value.label() }");
+        assert_eq!(hidden.status(), AnalysisStatus::Invalid);
+        assert!(
+            hidden
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "unknown-member"),
+            "{:?}",
+            hidden.diagnostics()
+        );
+
+        let imported = analyze_files(
+            "use crate::traits::Label;\nfn inspect(value: crate::traits::Item) -> String { value.label() }",
+        );
+        assert_eq!(
+            imported.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            imported.diagnostics()
+        );
+
+        let qualified = analyze_files(
+            "fn inspect(value: crate::traits::Item) -> String { crate::traits::Label::label(value) }",
+        );
+        assert_eq!(
+            qualified.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            qualified.diagnostics()
+        );
+    }
+
+    #[test]
+    fn qualified_trait_calls_accept_complete_trait_and_method_arguments() {
+        let source = "trait Convert<T> { pure fn convert<U>(self, fallback: U) -> T; }\nstruct Item {}\nimpl Convert<String> for Item { pure fn convert<U>(self, fallback: U) -> String { \"converted\" } }\nfn main(value: Item) -> String { Convert::<String>::convert::<Int>(value, 1) }";
+        let phase = syntax(source);
+        let package = analyze_package_types(&phase)
+            .unwrap_or_else(|error| panic!("type analysis failed: {error:?}"));
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+
+    #[test]
+    fn qualified_trait_calls_infer_complete_trait_and_method_arguments() {
+        let inferred = analyze(
+            "trait Convert<T> { pure fn convert<U>(self, fallback: U) -> T; }\nstruct Item {}\nimpl Convert<String> for Item { pure fn convert<U>(self, fallback: U) -> String { \"converted\" } }\nfn main(value: Item) -> String { Convert::convert(value, 1) }",
+        );
+        assert_eq!(
+            inferred.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            inferred.diagnostics()
+        );
+
+        let incomplete = analyze(
+            "trait Convert<T> { pure fn convert<U>(self, fallback: U) -> T; }\nstruct Item {}\nimpl Convert<String> for Item { pure fn convert<U>(self, fallback: U) -> String { \"converted\" } }\nfn main(value: Item) { discard Convert::convert(value, 1); }",
+        );
+        assert_eq!(incomplete.status(), AnalysisStatus::Invalid);
+        assert!(
+            incomplete
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "incomplete-type-inference"),
+            "{:?}",
+            incomplete.diagnostics()
+        );
+    }
+
+    #[test]
+    fn trait_declaration_predicates_are_required_by_concrete_obligations() {
+        let source = |argument, receiver| {
+            format!(
+                "trait Marker {{ pure fn marker(self); }}\ntrait Wrapped<T> where T: Marker {{ pure fn wrapped(self) -> String; }}\nstruct Item {{}}\nstruct Missing {{}}\nstruct Envelope<T> {{ value: T }}\nimpl Marker for Item {{ pure fn marker(self) {{}} }}\nimpl<T> Wrapped<T> for Envelope<T> {{ pure fn wrapped(self) -> String {{ \"wrapped\" }} }}\nfn main(value: {receiver}) -> String {{ Wrapped::<{argument}>::wrapped(value) }}"
+            )
+        };
+
+        let admitted = analyze(&source("Item", "Envelope<Item>"));
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            admitted.diagnostics()
+        );
+
+        let rejected = analyze(&source("Missing", "Envelope<Missing>"));
+        assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "missing-implementation"),
+            "{:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    #[test]
+    fn trait_lookup_solves_retained_implementation_predicates() {
+        let source = |receiver| {
+            format!(
+                "trait Label {{ pure fn label(self) -> String; }}\nstruct Item {{}}\nstruct Missing {{}}\nstruct Envelope<T> {{ value: T }}\nimpl Label for Item {{ pure fn label(self) -> String {{ \"item\" }} }}\nimpl<T> Label for Envelope<T> where T: Label {{ pure fn label(self) -> String {{ \"envelope\" }} }}\nfn main(value: {receiver}) -> String {{ value.label() }}"
+            )
+        };
+
+        let selected = analyze(&source("Envelope<Item>"));
+        assert_eq!(
+            selected.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            selected.diagnostics()
+        );
+        let generic_head = selected
+            .implementation_heads()
+            .iter()
+            .find(|head| head.identity().as_str().contains("Envelope<"))
+            .unwrap_or_else(|| unreachable!("generic implementation head is retained"));
+        assert_eq!(generic_head.predicates().len(), 1);
+        assert_eq!(
+            generic_head.predicates()[0].canonical_string(),
+            "crate::Label for ^0.0"
+        );
+
+        let missing = analyze(&source("Envelope<Missing>"));
+        assert_eq!(missing.status(), AnalysisStatus::Invalid);
+        assert!(
+            missing
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "missing-implementation")
+        );
+    }
+
+    #[test]
+    fn trait_obligation_cycles_are_rejected_and_memoized_queries_charge_once() {
+        let cyclic = analyze(
+            "trait First<T> { pure fn label(self) -> String; }\ntrait Second<T> { pure fn second(self) -> String; }\nstruct Item {}\nstruct Envelope<T> { value: T }\nimpl<T> First<T> for Envelope<T> where T: Second<Envelope<T>> { pure fn label(self) -> String { \"first\" } }\nimpl<T> Second<T> for Item where T: First<Item> { pure fn second(self) -> String { \"second\" } }\nfn main(value: Envelope<Item>) -> String { First::<Item>::label(value) }",
+        );
+        assert_eq!(cyclic.status(), AnalysisStatus::Invalid);
+        assert!(
+            cyclic
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "cyclic-trait-obligation")
+        );
+        let cycle = cyclic
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "cyclic-trait-obligation")
+            .unwrap_or_else(|| unreachable!("cycle diagnostic is present"));
+        assert_eq!(
+            cycle.fields.get("obligation_chain").map(AsRef::as_ref),
+            Some(
+                "crate::First<crate::Item> for crate::Envelope<crate::Item> -> crate::Second<crate::Envelope<crate::Item>> for crate::Item -> crate::First<crate::Item> for crate::Envelope<crate::Item>"
+            )
+        );
+
+        let phase = syntax(
+            "trait Label { pure fn label(self) -> String; }\nstruct Item {}\nstruct Envelope<T> { value: T }\nimpl Label for Item { pure fn label(self) -> String { \"item\" } }\nimpl<T> Label for Envelope<T> where T: Label { pure fn label(self) -> String { \"envelope\" } }\nfn main(value: Envelope<Item>) { discard value.label(); discard value.label(); }",
+        );
+        let admitted = analyze_package_types_with_limits(&phase, trait_limits(6))
+            .unwrap_or_else(|error| panic!("memoized obligation analysis failed: {error:?}"));
+        assert_eq!(
+            admitted.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            admitted.diagnostics()
+        );
+        assert!(matches!(
+            analyze_package_types_with_limits(&phase, trait_limits(5)),
+            Err(AnalysisError::ResourceLimit { error, .. })
+                if error.code == FrontendResourceCode::TraitResolutionStepLimit
+        ));
     }
 
     #[test]

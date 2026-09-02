@@ -214,6 +214,55 @@ fn main() {}
     }));
 }
 
+#[test]
+fn public_static_trait_resolution_is_coherent_and_diagnostic() {
+    let valid = analyze(
+        r#"
+trait Convert<T> {
+    pure fn convert<U>(self, fallback: U) -> T;
+}
+struct Item {}
+impl Convert<String> for Item {
+    pure fn convert<U>(self, fallback: U) -> String { "converted" }
+}
+fn main(value: Item) -> String {
+    Convert::<String>::convert::<Int>(value, 1)
+}
+"#,
+    );
+    assert_eq!(
+        valid.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        valid.diagnostics()
+    );
+    assert_eq!(valid.trait_contracts().len(), 1);
+    assert_eq!(valid.implementation_heads().len(), 1);
+
+    let invalid = analyze(
+        r#"
+trait Label { pure fn label(self) -> String; }
+struct Envelope<T> { value: T }
+impl<T> Label for Envelope<T> {
+    pure fn label(self) -> String { "generic" }
+}
+impl Label for Envelope<String> {
+    pure fn label(self) -> String { "specific" }
+}
+fn main() {}
+"#,
+    );
+    assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+    assert!(
+        invalid
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "overlapping-implementation"),
+        "{:?}",
+        invalid.diagnostics()
+    );
+}
+
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);

@@ -3,8 +3,9 @@
 The analyzer resolves the parametric syntax described in
 [`frontend-generics-and-traits.md`](frontend-generics-and-traits.md) into
 deterministic binder and type facts. This document describes the implemented
-static boundary for generic declared types and free workflow calls. `SPEC.md`
-remains normative.
+static boundary for generic declared types, free workflow calls, coherent
+user-trait implementations, and concrete static trait calls. `SPEC.md` remains
+normative.
 
 ## Implemented judgments
 
@@ -19,6 +20,28 @@ remains normative.
   arguments, initialized fields, payloads, and expected results. Inference has
   no coercions, default type arguments, overload guessing, or trait-driven
   guessing.
+- Trait contracts and implementation heads are retained in canonical path and
+  implementation-identity order. Every implementation parameter must occur in
+  its receiver or trait arguments. A trait implementation may target a
+  package-declared type or a closed built-in type; naked parameters and open
+  built-in receivers are rejected.
+- Coherence freshens and pairwise-unifies receiver and trait-reference heads.
+  Unifiable trait implementations are rejected regardless of source order or
+  `where` predicates. Generic inherent implementations are rejected when
+  unifiable heads provide the same method.
+- Trait implementations must provide exactly the declared methods. Receiver
+  form, method-generic arity, substituted parameter and result types, method
+  predicates, and conservative effect bounds are checked exactly.
+- Postfix lookup gives inherent methods precedence and otherwise considers
+  only module-local or imported traits. A qualified `Trait::method(...)` call
+  restricts lookup explicitly. Trait and method type arguments are inferred
+  independently from the receiver, value arguments, and expected result, or
+  supplied as complete independent lists.
+- Concrete obligations use a canonical trait-and-outer-receiver candidate
+  index. Trait and implementation predicates are expanded in canonical order;
+  results are memoized, cache hits retain exact charging semantics, and an
+  active obligation that re-enters itself is rejected with a bounded
+  `cyclic-trait-obligation` chain.
 - Declaration bounds using the compiler-owned `Equatable`, `Interpolatable`,
   and `ExternalValue` capabilities are proved only after substitution is
   complete. Capability proof is structural, memoized, native-stack-safe, and
@@ -43,7 +66,19 @@ struct Envelope<T> where T: Equatable {
     value: T,
 }
 
-fn inspect(value: Envelope<Node<String>>) {}
+trait Label {
+    pure fn label(self) -> String;
+}
+
+impl<T> Label for Envelope<T> where T: Equatable {
+    pure fn label(self) -> String {
+        "envelope"
+    }
+}
+
+fn inspect(value: Envelope<Node<String>>) -> String {
+    value.label()
+}
 fn main() {}
 ```
 
@@ -68,13 +103,18 @@ Operational exhaustion uses `constructed-type-depth-limit`,
 use stable diagnostics such as `duplicate-type-parameter`,
 `shadowed-type-parameter`, `escaped-type-parameter`, `type-argument-arity`,
 `incomplete-type-inference`, `conflicting-type-inference`,
-`unsatisfied-bound`, and `polymorphic-recursion`.
+`unsatisfied-bound`, `invalid-implementation-head`,
+`overlapping-implementation`, `overlapping-inherent-method`,
+`implementation-method-mismatch`, `missing-implementation`,
+`ambiguous-trait-method`, `cyclic-trait-obligation`, and
+`polymorphic-recursion`.
 
 ## Deliberate stage boundary
 
-This analyzer stage does not select user-defined trait implementations, check
-generic callable bodies parametrically, enumerate executable instantiations,
-emit concrete generic schemas, or monomorphize executable code. Packages with
-generic templates therefore retain generic analysis facts but do not publish a
-closed executable projection from this stage. Those contracts are owned by the
-subsequent trait-resolution, generic-body, and concrete-artifact stages.
+This analyzer stage selects user-defined implementations for concrete calls,
+but it does not yet check every generic callable body parametrically, enumerate
+the complete reachable executable-instantiation closure, emit concrete generic
+schemas, or monomorphize executable code. Packages with generic templates
+therefore retain generic and trait analysis facts but do not publish a closed
+generic executable projection from this stage. Those remaining contracts are
+owned by the subsequent generic-body and concrete-artifact stages.

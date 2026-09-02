@@ -8,8 +8,8 @@ use gantry_core::source::{
 };
 use gantry_ir::{
     ActionInventory, CanonicalIr, CanonicalPath, CanonicalSourceMap, EntryInventory,
-    GeneratedSchemaObject, MachineProgram, PackageSourceManifest, TypeDescriptor, TypeExpression,
-    WorkflowFacts,
+    GeneratedSchemaObject, ImplementationHead, MachineProgram, PackageSourceManifest,
+    TraitContract, TypeDescriptor, TypeExpression, WorkflowFacts,
 };
 
 /// Dense deterministic identifier for one discovered source module.
@@ -174,6 +174,7 @@ pub struct PackageStructure {
     pub(crate) modules: Vec<Module>,
     pub(crate) symbols: Vec<Symbol>,
     pub(crate) references: Vec<ResolvedReference>,
+    pub(crate) visible_items: BTreeMap<ModuleId, BTreeMap<Arc<str>, SymbolId>>,
     pub(crate) agents: Vec<AgentName>,
     pub(crate) default_agent: Option<Arc<str>>,
     pub(crate) diagnostics: Vec<StructuredDiagnostic>,
@@ -203,6 +204,12 @@ impl PackageStructure {
     #[must_use]
     pub fn references(&self) -> &[ResolvedReference] {
         &self.references
+    }
+
+    /// Returns module-local and imported item bindings by module.
+    #[must_use]
+    pub(crate) const fn visible_items(&self) -> &BTreeMap<ModuleId, BTreeMap<Arc<str>, SymbolId>> {
+        &self.visible_items
     }
 
     /// Returns merged agent names in unsigned UTF-8 spelling order.
@@ -304,6 +311,8 @@ pub struct TypedPackage {
     pub(crate) structure: PackageStructure,
     pub(crate) type_binders: Vec<TypeBinder>,
     pub(crate) generic_types: Vec<GenericTypeFact>,
+    pub(crate) trait_contracts: Vec<TraitContract>,
+    pub(crate) implementation_heads: Vec<ImplementationHead>,
     pub(crate) types: Vec<TypeFact>,
     pub(crate) workflows: Vec<WorkflowFacts>,
     pub(crate) actions: Vec<ActionInventory>,
@@ -341,6 +350,18 @@ impl TypedPackage {
     #[must_use]
     pub fn generic_types(&self) -> &[GenericTypeFact] {
         &self.generic_types
+    }
+
+    /// Returns canonical source trait contracts in trait-path order.
+    #[must_use]
+    pub fn trait_contracts(&self) -> &[TraitContract] {
+        &self.trait_contracts
+    }
+
+    /// Returns canonical implementation heads in identity order.
+    #[must_use]
+    pub fn implementation_heads(&self) -> &[ImplementationHead] {
+        &self.implementation_heads
     }
 
     /// Returns canonical type facts in source-span order.

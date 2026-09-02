@@ -131,6 +131,7 @@ pub fn analyze_package_structure(
     finish_structure(
         package,
         references,
+        import_names,
         agents,
         default_agent,
         diagnostics,
@@ -886,7 +887,12 @@ fn collect_member_and_scope_bindings(
                             )?;
                         }
                     }
-                    collect_impl_members(tree, child, package, imports, module, bindings)?;
+                    if !child_node.children().iter().copied().any(|part| {
+                        tree.node(part)
+                            .is_some_and(|node| matches!(node.form(), SyntaxForm::TraitReference))
+                    }) {
+                        collect_impl_members(tree, child, package, imports, module, bindings)?;
+                    }
                 }
                 _ => {}
             }
@@ -1554,7 +1560,7 @@ fn resolve_path(
             } else if package
                 .symbols
                 .get(found.index() as usize)
-                .is_some_and(|symbol| symbol.kind == SymbolKind::Enum)
+                .is_some_and(|symbol| matches!(symbol.kind, SymbolKind::Enum | SymbolKind::Trait))
                 && index + 2 == path.segments.len()
             {
                 return Some(found);
@@ -1921,6 +1927,7 @@ fn safe_package_path(value: &str) -> String {
 fn finish_structure(
     package: CollectedPackage,
     references: Vec<ResolvedReference>,
+    imports: BTreeMap<ModuleId, BTreeMap<Arc<str>, SymbolId>>,
     agents: Vec<AgentName>,
     default_agent: Option<Arc<str>>,
     mut diagnostics: Vec<StructuredDiagnostic>,
@@ -1946,11 +1953,16 @@ fn finish_structure(
     } else {
         AnalysisStatus::Valid
     };
+    let mut visible_items = package.local_names.clone();
+    for (module, imported) in imports {
+        visible_items.entry(module).or_default().extend(imported);
+    }
     Ok(PackageStructure {
         status,
         modules: package.modules,
         symbols: package.symbols,
         references,
+        visible_items,
         agents,
         default_agent,
         diagnostics: retained,

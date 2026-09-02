@@ -1,9 +1,11 @@
-//! Generic binder ownership, exact substitution, and sealed capabilities.
+//! Generic binders, trait contracts, coherence, and sealed capabilities.
 //!
 //! This pass retains open analyzer-only type expressions, proves closed
-//! declaration bounds structurally, and charges portable generic-analysis
-//! work. User-trait selection, parametric body validation, and executable
-//! monomorphization remain separate later analyzer stages.
+//! declaration bounds structurally, collects canonical user-trait contracts
+//! and implementation heads, rejects incoherent implementations, and charges
+//! portable generic-analysis work. Concrete user-trait selection occurs in
+//! body typing; parametric body validation and executable monomorphization
+//! remain separate later analyzer stages.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -14,8 +16,11 @@ use gantry_core::source::{
     GenericAnalysisCounters, RelatedSpan, SourceSpan, StructuredDiagnostic,
 };
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
-use gantry_ir::generated::TypeKind;
-use gantry_ir::{TypeDescriptor, TypeExpression};
+use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
+use gantry_ir::{
+    EffectSet, ImplementationHead, Predicate, TraitContract, TraitMethodContract, TraitReference,
+    TypeDescriptor, TypeExpression,
+};
 
 use crate::{
     AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
@@ -35,6 +40,56 @@ struct BinderDraft {
 pub(crate) struct TypeParameterKey {
     pub(crate) binder_depth: u64,
     pub(crate) ordinal: u64,
+}
+
+/// Returns every binder-qualified parameter used by canonical expressions.
+pub(crate) fn collect_type_parameter_keys(
+    expressions: &[&TypeExpression],
+) -> Result<Vec<TypeParameterKey>, AnalysisError> {
+    let mut parameters = BTreeSet::new();
+    let mut work = expressions
+        .iter()
+        .map(|expression| expression.as_str().to_owned())
+        .collect::<Vec<_>>();
+    while let Some(expression) = work.pop() {
+        match expression_root(&expression).map_err(|_| AnalysisError::Invariant)? {
+            ExpressionRoot::Parameter(parameter) => {
+                parameters.insert(parameter);
+            }
+            ExpressionRoot::Application { arguments, .. } => {
+                work.extend(arguments.into_iter().map(str::to_owned));
+            }
+            ExpressionRoot::SelfType(_) => {}
+        }
+    }
+    Ok(parameters.into_iter().collect())
+}
+
+/// Replaces contextual `Self` leaves with one concrete receiver expression.
+pub(crate) fn substitute_self_type(
+    expression: &TypeExpression,
+    receiver: &TypeDescriptor,
+) -> Result<TypeExpression, AnalysisError> {
+    let mut output = String::with_capacity(expression.as_str().len());
+    let mut cursor = 0_usize;
+    while cursor < expression.as_str().len() {
+        let suffix = expression
+            .as_str()
+            .get(cursor..)
+            .ok_or(AnalysisError::Invariant)?;
+        if suffix.starts_with("^self:") {
+            let end = suffix.find([',', '>', '<']).unwrap_or(suffix.len());
+            output.push_str(&receiver.canonical_string());
+            cursor = cursor.checked_add(end).ok_or(AnalysisError::Invariant)?;
+            continue;
+        }
+        let scalar = suffix.chars().next().ok_or(AnalysisError::Invariant)?;
+        output.push(scalar);
+        cursor = cursor
+            .checked_add(scalar.len_utf8())
+            .ok_or(AnalysisError::Invariant)?;
+    }
+    TypeExpression::from_canonical_string(&output, u64::MAX).map_err(|_| AnalysisError::Invariant)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -618,6 +673,1019 @@ pub(crate) fn charge_generic_instantiations(
         counters.charge_generic_instantiation()?;
     }
     Ok(())
+}
+
+/// Rejects implementation heads whose receiver has no concrete outer constructor.
+pub(crate) fn check_implementation_heads(
+    sources: &[ParsedSource],
+    facts: &[GenericTypeFact],
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let facts = facts
+        .iter()
+        .map(|fact| (fact.span.clone(), &fact.expression))
+        .collect::<BTreeMap<_, _>>();
+    for source in sources {
+        let tree = source.tree();
+        for implementation in tree
+            .nodes()
+            .iter()
+            .filter(|node| matches!(node.form(), SyntaxForm::ImplDeclaration))
+        {
+            if direct_child(
+                tree,
+                implementation_id(tree, implementation)?,
+                SyntaxForm::TraitReference,
+            )
+            .is_none()
+            {
+                continue;
+            }
+            let receiver = implementation
+                .children()
+                .iter()
+                .copied()
+                .find(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+                })
+                .ok_or(AnalysisError::Invariant)?;
+            let receiver_node = tree.node(receiver).ok_or(AnalysisError::Invariant)?;
+            let Some(expression) = facts.get(receiver_node.span()).copied() else {
+                continue;
+            };
+            let open_builtin = expression.kind() == TypeExpressionKind::BuiltinApplication
+                && !expression.is_closed();
+            if expression.kind() == TypeExpressionKind::Parameter || open_builtin {
+                diagnostics.push(generic_diagnostic(
+                    GenericAnalysisCode::InvalidImplementationHead,
+                    "an implementation receiver must have a declared outer constructor or be a closed built-in type",
+                    receiver_node.span().clone(),
+                    vec![RelatedSpan {
+                        label: Arc::from("implementation declaration"),
+                        span: implementation.span().clone(),
+                    }],
+                    [("receiver", expression.as_str())],
+                )?);
+            }
+        }
+    }
+    Ok(())
+}
+
+type TraitContractCollection = (Vec<TraitContract>, Vec<ImplementationHead>, Vec<SourceSpan>);
+
+/// Collects canonical user-trait contracts and implementation heads.
+pub(crate) fn collect_trait_contracts_and_implementation_heads(
+    sources: &[ParsedSource],
+    structure: &PackageStructure,
+    binders: &[TypeBinder],
+    facts: &[GenericTypeFact],
+) -> Result<TraitContractCollection, AnalysisError> {
+    let references = structure
+        .references()
+        .iter()
+        .map(|reference| (reference.span.clone(), reference.target))
+        .collect::<BTreeMap<_, _>>();
+    let symbols_by_id = structure
+        .symbols()
+        .iter()
+        .map(|symbol| (symbol.id, symbol))
+        .collect::<BTreeMap<_, _>>();
+    let symbols_by_span = structure
+        .symbols()
+        .iter()
+        .map(|symbol| (symbol.span.clone(), symbol))
+        .collect::<BTreeMap<_, _>>();
+    let binders = binders
+        .iter()
+        .map(|binder| (binder.declaration.clone(), binder))
+        .collect::<BTreeMap<_, _>>();
+    let facts = facts
+        .iter()
+        .map(|fact| (fact.span.clone(), &fact.expression))
+        .collect::<BTreeMap<_, _>>();
+    let mut traits = Vec::new();
+    let mut implementations = Vec::new();
+
+    for source in sources {
+        let tree = source.tree();
+        for (index, declaration) in tree.nodes().iter().enumerate() {
+            match declaration.form() {
+                SyntaxForm::TraitDeclaration => {
+                    let owner = NodeId::from_index(index);
+                    let name_span = direct_identifiers(tree, owner)?
+                        .into_iter()
+                        .next()
+                        .map(|(_, span)| span)
+                        .ok_or(AnalysisError::Invariant)?;
+                    let Some(symbol) = symbols_by_span.get(&name_span).copied() else {
+                        continue;
+                    };
+                    let parameter_count = binders
+                        .get(declaration.span())
+                        .map_or(0, |binder| binder.parameters.len());
+                    let parameter_count =
+                        u64::try_from(parameter_count).map_err(|_| AnalysisError::Invariant)?;
+                    let mut methods = declaration
+                        .children()
+                        .iter()
+                        .copied()
+                        .filter(|child| {
+                            tree.node(*child).is_some_and(|node| {
+                                matches!(node.form(), SyntaxForm::TraitMethodDeclaration)
+                            })
+                        })
+                        .map(|method| {
+                            collect_trait_method(
+                                tree,
+                                method,
+                                &binders,
+                                &facts,
+                                &references,
+                                &symbols_by_id,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    methods.sort_by(|left, right| left.name().cmp(right.name()));
+                    let predicates = collect_where_predicates(
+                        tree,
+                        owner,
+                        binders.get(declaration.span()).copied(),
+                        &facts,
+                        &references,
+                        &symbols_by_id,
+                    )?;
+                    traits.push(
+                        TraitContract::new(
+                            symbol.path.clone(),
+                            parameter_count,
+                            predicates,
+                            methods,
+                        )
+                        .map_err(|_| AnalysisError::Invariant)?,
+                    );
+                }
+                SyntaxForm::ImplDeclaration => {
+                    let owner = NodeId::from_index(index);
+                    let parameter_count = binders
+                        .get(declaration.span())
+                        .map_or(0, |binder| binder.parameters.len());
+                    let parameter_count =
+                        u64::try_from(parameter_count).map_err(|_| AnalysisError::Invariant)?;
+                    let receiver = implementation_receiver_expression(
+                        tree,
+                        owner,
+                        &facts,
+                        &references,
+                        &symbols_by_id,
+                    )?;
+                    let trait_reference = direct_child(tree, owner, SyntaxForm::TraitReference)
+                        .map(|reference| {
+                            collect_trait_reference(
+                                tree,
+                                reference,
+                                &facts,
+                                &references,
+                                &symbols_by_id,
+                            )
+                        })
+                        .transpose()?;
+                    let predicates = collect_where_predicates(
+                        tree,
+                        owner,
+                        binders.get(declaration.span()).copied(),
+                        &facts,
+                        &references,
+                        &symbols_by_id,
+                    )?;
+                    implementations.push((
+                        ImplementationHead::new(
+                            parameter_count,
+                            receiver,
+                            trait_reference,
+                            predicates,
+                        )
+                        .map_err(|_| AnalysisError::Invariant)?,
+                        declaration.span().clone(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    traits.sort_by(|left, right| left.path().cmp(right.path()));
+    implementations.sort_by(|left, right| left.0.identity().cmp(right.0.identity()));
+    let (implementations, implementation_spans) = implementations.into_iter().unzip();
+    Ok((traits, implementations, implementation_spans))
+}
+
+/// Rejects pairwise-unifiable user-trait implementation heads in canonical order.
+pub(crate) fn check_trait_implementation_coherence(
+    sources: &[ParsedSource],
+    contracts: &[TraitContract],
+    implementations: &[ImplementationHead],
+    spans: &[SourceSpan],
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if implementations.len() != spans.len() {
+        return Err(AnalysisError::Invariant);
+    }
+    let contract_arities = contracts
+        .iter()
+        .map(|contract| (contract.path(), contract.parameter_count()))
+        .collect::<BTreeMap<_, _>>();
+    for (implementation, span) in implementations.iter().zip(spans) {
+        let mut expressions = vec![implementation.receiver()];
+        if let Some(trait_reference) = implementation.trait_reference() {
+            expressions.extend(trait_reference.arguments());
+            let expected = contract_arities
+                .get(trait_reference.path())
+                .copied()
+                .ok_or(AnalysisError::Invariant)?;
+            let observed = u64::try_from(trait_reference.arguments().len())
+                .map_err(|_| AnalysisError::Invariant)?;
+            if observed != expected {
+                diagnostics.push(generic_diagnostic(
+                    GenericAnalysisCode::TypeArgumentArity,
+                    "a trait reference has the wrong number of type arguments",
+                    span.clone(),
+                    Vec::new(),
+                    [
+                        ("expected", expected.to_string()),
+                        ("observed", observed.to_string()),
+                        ("trait", trait_reference.path().as_str().to_owned()),
+                    ],
+                )?);
+            }
+        }
+        let constrained = collect_type_parameter_keys(&expressions)?;
+        let constrained_count =
+            u64::try_from(constrained.len()).map_err(|_| AnalysisError::Invariant)?;
+        if constrained_count != implementation.parameter_count() {
+            diagnostics.push(generic_diagnostic(
+                GenericAnalysisCode::InvalidImplementationHead,
+                "every implementation parameter must occur in its receiver or trait arguments",
+                span.clone(),
+                Vec::new(),
+                [
+                    (
+                        "declared_parameters",
+                        implementation.parameter_count().to_string(),
+                    ),
+                    ("constrained_parameters", constrained_count.to_string()),
+                ],
+            )?);
+        }
+    }
+    for right in 1..implementations.len() {
+        for left in 0..right {
+            if trait_implementation_heads_unify(
+                implementations.get(left).ok_or(AnalysisError::Invariant)?,
+                implementations.get(right).ok_or(AnalysisError::Invariant)?,
+            )? {
+                diagnostics.push(generic_diagnostic(
+                    GenericAnalysisCode::OverlappingImplementation,
+                    "two trait implementation heads apply to a common concrete obligation",
+                    spans.get(right).cloned().ok_or(AnalysisError::Invariant)?,
+                    vec![RelatedSpan {
+                        label: Arc::from("overlapping implementation"),
+                        span: spans.get(left).cloned().ok_or(AnalysisError::Invariant)?,
+                    }],
+                    [
+                        (
+                            "first",
+                            implementations[left].identity().as_str().to_owned(),
+                        ),
+                        (
+                            "second",
+                            implementations[right].identity().as_str().to_owned(),
+                        ),
+                    ],
+                )?);
+            }
+        }
+    }
+    let method_names = inherent_method_names(sources)?;
+    for right in 1..implementations.len() {
+        let right_head = implementations.get(right).ok_or(AnalysisError::Invariant)?;
+        if right_head.trait_reference().is_some() {
+            continue;
+        }
+        for left in 0..right {
+            let left_head = implementations.get(left).ok_or(AnalysisError::Invariant)?;
+            if left_head.trait_reference().is_some()
+                || !inherent_implementation_heads_unify(left_head, right_head)?
+            {
+                continue;
+            }
+            let left_span = spans.get(left).ok_or(AnalysisError::Invariant)?;
+            let right_span = spans.get(right).ok_or(AnalysisError::Invariant)?;
+            let left_methods = method_names
+                .get(left_span)
+                .ok_or(AnalysisError::Invariant)?;
+            let right_methods = method_names
+                .get(right_span)
+                .ok_or(AnalysisError::Invariant)?;
+            for method in left_methods.intersection(right_methods) {
+                diagnostics.push(generic_diagnostic(
+                    GenericAnalysisCode::OverlappingInherentMethod,
+                    "two inherent implementation heads overlap for the same method",
+                    right_span.clone(),
+                    vec![RelatedSpan {
+                        label: Arc::from("overlapping inherent implementation"),
+                        span: left_span.clone(),
+                    }],
+                    [
+                        ("first", left_head.identity().as_str().to_owned()),
+                        ("method", method.as_ref().to_owned()),
+                        ("second", right_head.identity().as_str().to_owned()),
+                    ],
+                )?);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn inherent_method_names(
+    sources: &[ParsedSource],
+) -> Result<BTreeMap<SourceSpan, BTreeSet<Arc<str>>>, AnalysisError> {
+    let mut names = BTreeMap::new();
+    for source in sources {
+        let tree = source.tree();
+        for (index, implementation) in tree.nodes().iter().enumerate() {
+            if !matches!(implementation.form(), SyntaxForm::ImplDeclaration) {
+                continue;
+            }
+            let owner = NodeId::from_index(index);
+            if direct_child(tree, owner, SyntaxForm::TraitReference).is_some() {
+                continue;
+            }
+            let methods = implementation
+                .children()
+                .iter()
+                .copied()
+                .filter(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
+                })
+                .map(|method| {
+                    direct_identifiers(tree, method)?
+                        .into_iter()
+                        .next()
+                        .map(|(name, _)| name)
+                        .ok_or(AnalysisError::Invariant)
+                })
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            names.insert(implementation.span().clone(), methods);
+        }
+    }
+    Ok(names)
+}
+
+fn inherent_implementation_heads_unify(
+    left: &ImplementationHead,
+    right: &ImplementationHead,
+) -> Result<bool, AnalysisError> {
+    let offset = maximum_parameter_depth([left.receiver(), right.receiver()].into_iter())?
+        .checked_add(1)
+        .ok_or(AnalysisError::Invariant)?;
+    let right_receiver = freshen_expression(right.receiver(), offset)?;
+    let mut bindings = BTreeMap::new();
+    Ok(unify_type_expressions(left.receiver(), &right_receiver, &mut bindings).is_ok())
+}
+
+/// Requires each trait implementation to define exactly its trait's methods.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn check_trait_implementation_methods(
+    sources: &[ParsedSource],
+    structure: &PackageStructure,
+    binders: &[TypeBinder],
+    facts: &[GenericTypeFact],
+    contracts: &[TraitContract],
+    implementations: &[ImplementationHead],
+    implementation_spans: &[SourceSpan],
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if implementations.len() != implementation_spans.len() {
+        return Err(AnalysisError::Invariant);
+    }
+    let references = structure
+        .references()
+        .iter()
+        .map(|reference| (reference.span.clone(), reference.target))
+        .collect::<BTreeMap<_, _>>();
+    let symbols = structure
+        .symbols()
+        .iter()
+        .map(|symbol| (symbol.id, symbol))
+        .collect::<BTreeMap<_, _>>();
+    let binders = binders
+        .iter()
+        .map(|binder| (binder.declaration.clone(), binder))
+        .collect::<BTreeMap<_, _>>();
+    let facts = facts
+        .iter()
+        .map(|fact| (fact.span.clone(), &fact.expression))
+        .collect::<BTreeMap<_, _>>();
+    let contracts = contracts
+        .iter()
+        .map(|contract| (contract.path(), contract))
+        .collect::<BTreeMap<_, _>>();
+    let implementations = implementation_spans
+        .iter()
+        .zip(implementations)
+        .collect::<BTreeMap<_, _>>();
+
+    for source in sources {
+        let tree = source.tree();
+        for (index, implementation) in tree.nodes().iter().enumerate() {
+            if !matches!(implementation.form(), SyntaxForm::ImplDeclaration) {
+                continue;
+            }
+            let owner = NodeId::from_index(index);
+            let Some(reference) = direct_child(tree, owner, SyntaxForm::TraitReference) else {
+                continue;
+            };
+            let path =
+                direct_child(tree, reference, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
+            let path_node = tree.node(path).ok_or(AnalysisError::Invariant)?;
+            let target = references
+                .get(path_node.span())
+                .copied()
+                .ok_or(AnalysisError::Invariant)?;
+            let trait_symbol = symbols
+                .get(&target)
+                .copied()
+                .ok_or(AnalysisError::Invariant)?;
+            let contract = contracts
+                .get(&trait_symbol.path)
+                .copied()
+                .ok_or(AnalysisError::Invariant)?;
+            let head = implementations
+                .get(implementation.span())
+                .copied()
+                .ok_or(AnalysisError::Invariant)?;
+            let mut methods = implementation
+                .children()
+                .iter()
+                .copied()
+                .filter(|child| {
+                    tree.node(*child)
+                        .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
+                })
+                .map(|method| {
+                    collect_trait_method(tree, method, &binders, &facts, &references, &symbols)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            methods.sort_by(|left, right| left.name().cmp(right.name()));
+
+            let mut complete = methods.len() == contract.methods().len();
+            if complete {
+                for (actual, expected) in methods.iter().zip(contract.methods()) {
+                    if !trait_method_matches_head(actual, expected, contract, head)? {
+                        complete = false;
+                        break;
+                    }
+                }
+            }
+            if complete {
+                continue;
+            }
+            diagnostics.push(generic_diagnostic(
+                GenericAnalysisCode::ImplementationMethodMismatch,
+                "a trait implementation does not exactly implement its trait methods",
+                implementation.span().clone(),
+                vec![RelatedSpan {
+                    label: Arc::from("trait declaration"),
+                    span: trait_symbol.span.clone(),
+                }],
+                [
+                    ("implementation_method_count", methods.len().to_string()),
+                    ("trait_method_count", contract.methods().len().to_string()),
+                ],
+            )?);
+        }
+    }
+    Ok(())
+}
+
+fn trait_method_matches_head(
+    actual: &TraitMethodContract,
+    expected: &TraitMethodContract,
+    contract: &TraitContract,
+    implementation: &ImplementationHead,
+) -> Result<bool, AnalysisError> {
+    let reference = implementation
+        .trait_reference()
+        .ok_or(AnalysisError::Invariant)?;
+    if reference.path() != contract.path()
+        || reference.arguments().len()
+            != usize::try_from(contract.parameter_count()).map_err(|_| AnalysisError::Invariant)?
+        || actual.name() != expected.name()
+        || actual.parameter_count() != expected.parameter_count()
+        || actual.mutable_receiver() != expected.mutable_receiver()
+        || !actual
+            .effects()
+            .iter()
+            .all(|effect| expected.effects().contains(effect))
+    {
+        return Ok(false);
+    }
+    let substitutions = reference
+        .arguments()
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(ordinal, argument)| {
+            Ok((
+                TypeParameterKey {
+                    binder_depth: 0,
+                    ordinal: u64::try_from(ordinal).map_err(|_| AnalysisError::Invariant)?,
+                },
+                argument,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, AnalysisError>>()?;
+    let mut substitutions = substitutions;
+    let expected_method_depth = u64::from(contract.parameter_count() > 0);
+    let actual_method_depth = u64::from(implementation.parameter_count() > 0);
+    for ordinal in 0..expected.parameter_count() {
+        substitutions.insert(
+            TypeParameterKey {
+                binder_depth: expected_method_depth,
+                ordinal,
+            },
+            TypeExpression::parameter(actual_method_depth, ordinal, u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)?,
+        );
+    }
+    let expected_parameters = expected
+        .parameters()
+        .iter()
+        .map(|parameter| substitute_selected_parameters(parameter, &substitutions))
+        .collect::<Result<Vec<_>, _>>()?;
+    let expected_result = substitute_selected_parameters(expected.result(), &substitutions)?;
+    let mut expected_predicates = expected
+        .predicates()
+        .iter()
+        .map(|predicate| substitute_predicate_parameters(predicate, &substitutions))
+        .collect::<Result<Vec<_>, _>>()?;
+    expected_predicates.sort_by_key(Predicate::canonical_string);
+    Ok(actual.parameters() == expected_parameters
+        && actual.result() == &expected_result
+        && actual.predicates() == expected_predicates)
+}
+
+fn substitute_predicate_parameters(
+    predicate: &Predicate,
+    substitutions: &BTreeMap<TypeParameterKey, TypeExpression>,
+) -> Result<Predicate, AnalysisError> {
+    let arguments = predicate
+        .trait_reference()
+        .arguments()
+        .iter()
+        .map(|argument| substitute_selected_parameters(argument, substitutions))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Predicate::new(
+        TraitReference::new(predicate.trait_reference().path().clone(), arguments),
+        substitute_selected_parameters(predicate.receiver(), substitutions)?,
+    ))
+}
+
+fn substitute_selected_parameters(
+    expression: &TypeExpression,
+    substitutions: &BTreeMap<TypeParameterKey, TypeExpression>,
+) -> Result<TypeExpression, AnalysisError> {
+    let mut output = String::with_capacity(expression.as_str().len());
+    let mut cursor = 0_usize;
+    while cursor < expression.as_str().len() {
+        let suffix = expression
+            .as_str()
+            .get(cursor..)
+            .ok_or(AnalysisError::Invariant)?;
+        if suffix.starts_with('^') && !suffix.starts_with("^self:") {
+            let end = suffix.find([',', '>', '<']).unwrap_or(suffix.len());
+            let marker = suffix.get(..end).ok_or(AnalysisError::Invariant)?;
+            let ExpressionRoot::Parameter(parameter) =
+                expression_root(marker).map_err(|_| AnalysisError::Invariant)?
+            else {
+                return Err(AnalysisError::Invariant);
+            };
+            output.push_str(
+                substitutions
+                    .get(&parameter)
+                    .map_or(marker, TypeExpression::as_str),
+            );
+            cursor = cursor.checked_add(end).ok_or(AnalysisError::Invariant)?;
+            continue;
+        }
+        let scalar = suffix.chars().next().ok_or(AnalysisError::Invariant)?;
+        output.push(scalar);
+        cursor = cursor
+            .checked_add(scalar.len_utf8())
+            .ok_or(AnalysisError::Invariant)?;
+    }
+    TypeExpression::from_canonical_string(&output, u64::MAX).map_err(|_| AnalysisError::Invariant)
+}
+
+fn trait_implementation_heads_unify(
+    left: &ImplementationHead,
+    right: &ImplementationHead,
+) -> Result<bool, AnalysisError> {
+    let (Some(left_trait), Some(right_trait)) = (left.trait_reference(), right.trait_reference())
+    else {
+        return Ok(false);
+    };
+    if left_trait.path() != right_trait.path()
+        || left_trait.arguments().len() != right_trait.arguments().len()
+    {
+        return Ok(false);
+    }
+    let offset = maximum_parameter_depth(
+        std::iter::once(left.receiver())
+            .chain(left_trait.arguments())
+            .chain(std::iter::once(right.receiver()))
+            .chain(right_trait.arguments()),
+    )?
+    .checked_add(1)
+    .ok_or(AnalysisError::Invariant)?;
+    let right_receiver = freshen_expression(right.receiver(), offset)?;
+    let right_arguments = right_trait
+        .arguments()
+        .iter()
+        .map(|argument| freshen_expression(argument, offset))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut bindings = BTreeMap::new();
+    if unify_type_expressions(left.receiver(), &right_receiver, &mut bindings).is_err() {
+        return Ok(false);
+    }
+    for (left, right) in left_trait.arguments().iter().zip(&right_arguments) {
+        if unify_type_expressions(left, right, &mut bindings).is_err() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn maximum_parameter_depth<'a>(
+    expressions: impl Iterator<Item = &'a TypeExpression>,
+) -> Result<u64, AnalysisError> {
+    let mut maximum = 0_u64;
+    let mut work = expressions
+        .map(|expression| expression.as_str().to_owned())
+        .collect::<Vec<_>>();
+    while let Some(expression) = work.pop() {
+        match expression_root(&expression).map_err(|_| AnalysisError::Invariant)? {
+            ExpressionRoot::Parameter(parameter) => {
+                maximum = maximum.max(parameter.binder_depth);
+            }
+            ExpressionRoot::SelfType(depth) => maximum = maximum.max(depth),
+            ExpressionRoot::Application { arguments, .. } => {
+                work.extend(arguments.into_iter().map(str::to_owned));
+            }
+        }
+    }
+    Ok(maximum)
+}
+
+fn freshen_expression(
+    expression: &TypeExpression,
+    binder_offset: u64,
+) -> Result<TypeExpression, AnalysisError> {
+    let mut output = String::with_capacity(expression.as_str().len());
+    let mut cursor = 0_usize;
+    while cursor < expression.as_str().len() {
+        let suffix = expression
+            .as_str()
+            .get(cursor..)
+            .ok_or(AnalysisError::Invariant)?;
+        if suffix.starts_with("^self:") {
+            return Err(AnalysisError::Invariant);
+        }
+        if suffix.starts_with('^') {
+            let end = suffix.find([',', '>', '<']).unwrap_or(suffix.len());
+            let marker = suffix.get(..end).ok_or(AnalysisError::Invariant)?;
+            let ExpressionRoot::Parameter(parameter) =
+                expression_root(marker).map_err(|_| AnalysisError::Invariant)?
+            else {
+                return Err(AnalysisError::Invariant);
+            };
+            let binder_depth = parameter
+                .binder_depth
+                .checked_add(binder_offset)
+                .ok_or(AnalysisError::Invariant)?;
+            output.push_str(&format!("^{binder_depth}.{}", parameter.ordinal));
+            cursor = cursor.checked_add(end).ok_or(AnalysisError::Invariant)?;
+            continue;
+        }
+        let scalar = suffix.chars().next().ok_or(AnalysisError::Invariant)?;
+        output.push(scalar);
+        cursor = cursor
+            .checked_add(scalar.len_utf8())
+            .ok_or(AnalysisError::Invariant)?;
+    }
+    TypeExpression::from_canonical_string(&output, u64::MAX).map_err(|_| AnalysisError::Invariant)
+}
+
+fn collect_trait_method(
+    tree: &SyntaxTree,
+    method: NodeId,
+    binders: &BTreeMap<SourceSpan, &TypeBinder>,
+    facts: &BTreeMap<SourceSpan, &TypeExpression>,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    symbols: &BTreeMap<SymbolId, &Symbol>,
+) -> Result<TraitMethodContract, AnalysisError> {
+    let method_node = tree.node(method).ok_or(AnalysisError::Invariant)?;
+    let name = direct_identifiers(tree, method)?
+        .into_iter()
+        .next()
+        .map(|(name, _)| name)
+        .ok_or(AnalysisError::Invariant)?;
+    let parameter_count = binders
+        .get(method_node.span())
+        .map_or(0, |binder| binder.parameters.len());
+    let parameter_count = u64::try_from(parameter_count).map_err(|_| AnalysisError::Invariant)?;
+    let receiver = method_node
+        .children()
+        .iter()
+        .copied()
+        .find(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Parameter))
+        })
+        .ok_or(AnalysisError::Invariant)?;
+    let mutable_receiver = tree
+        .node(receiver)
+        .ok_or(AnalysisError::Invariant)?
+        .children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .any(|node| {
+            matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "mut")
+        });
+    let parameters = method_node
+        .children()
+        .iter()
+        .copied()
+        .filter_map(|child| {
+            let parameter = tree.node(child)?;
+            matches!(parameter.form(), SyntaxForm::Parameter).then_some(parameter)
+        })
+        .filter(|parameter| {
+            !parameter.children().iter().filter_map(|child| tree.node(*child)).any(|node| {
+                matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self")
+            })
+        })
+        .filter_map(|parameter| direct_child_node(tree, parameter, SyntaxForm::ValueType))
+        .map(|type_node| {
+            let span = tree.node(type_node).ok_or(AnalysisError::Invariant)?.span();
+            facts.get(span).copied().cloned().ok_or(AnalysisError::Invariant)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = method_node
+        .children()
+        .iter()
+        .copied()
+        .rfind(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+        })
+        .map(|type_node| {
+            let span = tree.node(type_node).ok_or(AnalysisError::Invariant)?.span();
+            facts
+                .get(span)
+                .copied()
+                .cloned()
+                .ok_or(AnalysisError::Invariant)
+        })
+        .transpose()?
+        .unwrap_or(
+            TypeExpression::closed(&TypeDescriptor::UNIT, u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)?,
+        );
+    let effects = direct_child(tree, method, SyntaxForm::EffectContract)
+        .map(|contract| collect_effect_contract(tree, contract))
+        .transpose()?
+        .unwrap_or_default();
+    let predicates = collect_where_predicates(
+        tree,
+        method,
+        binders.get(method_node.span()).copied(),
+        facts,
+        references,
+        symbols,
+    )?;
+    TraitMethodContract::new(
+        &name,
+        parameter_count,
+        mutable_receiver,
+        parameters,
+        result,
+        predicates,
+        effects,
+    )
+    .map_err(|_| AnalysisError::Invariant)
+}
+
+fn collect_effect_contract(
+    tree: &SyntaxTree,
+    contract: NodeId,
+) -> Result<EffectSet, AnalysisError> {
+    let contract = tree.node(contract).ok_or(AnalysisError::Invariant)?;
+    let mut effects = EffectSet::default();
+    let tokens = contract
+        .children()
+        .iter()
+        .filter_map(|child| tree.node(*child))
+        .collect::<Vec<_>>();
+    for (index, token) in tokens.iter().enumerate() {
+        let spelling = match token.form() {
+            SyntaxForm::Token(TokenKind::ReservedWord(word)) => word.spelling(),
+            SyntaxForm::Token(TokenKind::Identifier(value)) => value,
+            _ => continue,
+        };
+        let effect = match spelling {
+            "prompt" => Some(Effect::Prompt),
+            "decide" => Some(Effect::Decide),
+            "spawn" => Some(Effect::Spawn),
+            "join" => Some(Effect::Join),
+            "background" => Some(Effect::Background),
+            "session" => Some(Effect::Session),
+            "attempt" => Some(Effect::Attempt),
+            "action" => match tokens.get(index.saturating_add(2)).map(|node| node.form()) {
+                Some(SyntaxForm::Token(TokenKind::ReservedWord(word)))
+                    if word.spelling() == "read_only" =>
+                {
+                    Some(Effect::ActionReadOnly)
+                }
+                Some(SyntaxForm::Token(TokenKind::ReservedWord(word)))
+                    if word.spelling() == "idempotent" =>
+                {
+                    Some(Effect::ActionIdempotent)
+                }
+                Some(SyntaxForm::Token(TokenKind::ReservedWord(word)))
+                    if word.spelling() == "non_idempotent" =>
+                {
+                    Some(Effect::ActionNonIdempotent)
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(effect) = effect {
+            effects.insert(effect);
+        }
+    }
+    Ok(effects)
+}
+
+fn implementation_receiver_expression(
+    tree: &SyntaxTree,
+    implementation: NodeId,
+    facts: &BTreeMap<SourceSpan, &TypeExpression>,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    symbols: &BTreeMap<SymbolId, &Symbol>,
+) -> Result<TypeExpression, AnalysisError> {
+    if let Some(receiver) = direct_child(tree, implementation, SyntaxForm::ValueType) {
+        let span = tree.node(receiver).ok_or(AnalysisError::Invariant)?.span();
+        return facts
+            .get(span)
+            .copied()
+            .cloned()
+            .ok_or(AnalysisError::Invariant);
+    }
+    let path =
+        direct_child(tree, implementation, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
+    let path_node = tree.node(path).ok_or(AnalysisError::Invariant)?;
+    let target = references
+        .get(path_node.span())
+        .copied()
+        .ok_or(AnalysisError::Invariant)?;
+    let symbol = symbols
+        .get(&target)
+        .copied()
+        .ok_or(AnalysisError::Invariant)?;
+    TypeExpression::declared(symbol.path.clone(), Vec::new(), u64::MAX)
+        .map_err(|_| AnalysisError::Invariant)
+}
+
+fn collect_trait_reference(
+    tree: &SyntaxTree,
+    reference: NodeId,
+    facts: &BTreeMap<SourceSpan, &TypeExpression>,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    symbols: &BTreeMap<SymbolId, &Symbol>,
+) -> Result<TraitReference, AnalysisError> {
+    let path = direct_child(tree, reference, SyntaxForm::Path).ok_or(AnalysisError::Invariant)?;
+    let path_node = tree.node(path).ok_or(AnalysisError::Invariant)?;
+    let target = references
+        .get(path_node.span())
+        .copied()
+        .ok_or(AnalysisError::Invariant)?;
+    let symbol = symbols
+        .get(&target)
+        .copied()
+        .ok_or(AnalysisError::Invariant)?;
+    let arguments = direct_child(tree, reference, SyntaxForm::TypeArgumentList)
+        .map(|list| {
+            tree.node(list)
+                .ok_or(AnalysisError::Invariant)?
+                .children()
+                .iter()
+                .filter_map(|child| tree.node(*child))
+                .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
+                .map(|node| {
+                    facts
+                        .get(node.span())
+                        .copied()
+                        .cloned()
+                        .ok_or(AnalysisError::Invariant)
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(TraitReference::new(symbol.path.clone(), arguments))
+}
+
+fn collect_where_predicates(
+    tree: &SyntaxTree,
+    owner: NodeId,
+    binder: Option<&TypeBinder>,
+    facts: &BTreeMap<SourceSpan, &TypeExpression>,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    symbols: &BTreeMap<SymbolId, &Symbol>,
+) -> Result<Vec<Predicate>, AnalysisError> {
+    let Some(where_clause) = direct_child(tree, owner, SyntaxForm::WhereClause) else {
+        return Ok(Vec::new());
+    };
+    let clause = tree.node(where_clause).ok_or(AnalysisError::Invariant)?;
+    let mut predicates = Vec::new();
+    for predicate in clause.children().iter().copied() {
+        let predicate_node = tree.node(predicate).ok_or(AnalysisError::Invariant)?;
+        if !matches!(predicate_node.form(), SyntaxForm::WherePredicate) {
+            continue;
+        }
+        let receiver = if direct_reserved_word(tree, predicate)?.as_deref() == Some("Self") {
+            TypeExpression::self_type(binder.map_or(0, |binder| binder.depth), u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)?
+        } else {
+            let Some((subject, _)) = direct_identifiers(tree, predicate)?.into_iter().next() else {
+                continue;
+            };
+            let Some(parameter) = binder.and_then(|binder| {
+                binder
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.name == subject)
+            }) else {
+                continue;
+            };
+            TypeExpression::parameter(
+                binder.map_or(0, |binder| binder.depth),
+                parameter.ordinal,
+                u64::MAX,
+            )
+            .map_err(|_| AnalysisError::Invariant)?
+        };
+        let trait_reference = direct_child(tree, predicate, SyntaxForm::TraitReference)
+            .ok_or(AnalysisError::Invariant)?;
+        predicates.push(Predicate::new(
+            collect_trait_reference(tree, trait_reference, facts, references, symbols)?,
+            receiver,
+        ));
+    }
+    predicates.sort_by(|left, right| {
+        left.canonical_string()
+            .as_bytes()
+            .cmp(right.canonical_string().as_bytes())
+    });
+    Ok(predicates)
+}
+
+fn direct_child_node(
+    tree: &SyntaxTree,
+    node: &gantry_frontend::SyntaxNode,
+    form: SyntaxForm,
+) -> Option<NodeId> {
+    node.children().iter().copied().find(|child| {
+        tree.node(*child).is_some_and(|node| {
+            std::mem::discriminant(node.form()) == std::mem::discriminant(&form)
+        })
+    })
+}
+
+fn implementation_id(
+    tree: &SyntaxTree,
+    implementation: &gantry_frontend::SyntaxNode,
+) -> Result<NodeId, AnalysisError> {
+    tree.nodes()
+        .iter()
+        .position(|candidate| std::ptr::eq(candidate, implementation))
+        .map(NodeId::from_index)
+        .ok_or(AnalysisError::Invariant)
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

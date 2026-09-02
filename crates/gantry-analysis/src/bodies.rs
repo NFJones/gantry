@@ -1,8 +1,10 @@
-//! Body typing, pattern coverage, and normal-completion validation.
+//! Body typing, static trait selection, and completion validation.
 //!
 //! This pass intentionally uses explicit syntax-node work collections. It
-//! validates deterministic value flow without performing ownership, effect,
-//! operation, or lowering work owned by later analyzer stages.
+//! validates deterministic value flow, module-visible trait lookup, concrete
+//! obligation proof, and pattern coverage without performing effect inference,
+//! executable monomorphization, or lowering work owned by later analyzer
+//! stages.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -12,15 +14,23 @@ use gantry_core::portable::{
     DiagnosticCategory, DiagnosticSeverity, FrontendResourceCode, GenericAnalysisCode,
 };
 use gantry_core::source::{
-    DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, FrontendResourceLimit, SourceSpan,
-    StructuredDiagnostic,
+    DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, FrontendResourceLimit,
+    GenericAnalysisCounters, SourceSpan, StructuredDiagnostic,
 };
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::TypeKind;
-use gantry_ir::{CanonicalPath, TypeDescriptor, TypeDescriptorError, TypeExpression};
+use gantry_ir::{
+    CanonicalPath, ImplementationHead, TraitContract, TraitMethodContract, TypeDescriptor,
+    TypeDescriptorError, TypeExpression,
+};
 
-use crate::generics::{ExactTypeSubstitution, TypeInferenceFailure, TypeParameterKey};
-use crate::{AnalysisError, GenericTypeFact, PackageStructure, SymbolId, TypeBinder, TypeFact};
+use crate::generics::{
+    ExactTypeSubstitution, TypeInferenceFailure, TypeParameterKey, collect_type_parameter_keys,
+    substitute_self_type,
+};
+use crate::{
+    AnalysisError, GenericTypeFact, PackageStructure, SymbolId, SymbolKind, TypeBinder, TypeFact,
+};
 
 #[derive(Clone, Debug)]
 struct BlockResult {
@@ -101,29 +111,99 @@ struct BodyContext {
     generic_structs: BTreeMap<SymbolId, GenericStructShape>,
     enums: BTreeMap<SymbolId, EnumShape>,
     generic_enums: BTreeMap<SymbolId, GenericEnumShape>,
+    trait_symbols: BTreeMap<SymbolId, CanonicalPath>,
+    trait_contracts: Vec<TraitContract>,
+    implementation_heads: Vec<ImplementationHead>,
+    implementation_candidates: BTreeMap<(CanonicalPath, Arc<str>), Vec<usize>>,
+    callable_visible_traits: BTreeMap<SourceSpan, BTreeSet<CanonicalPath>>,
+    current_visible_traits: RefCell<BTreeSet<CanonicalPath>>,
+    generic_analysis_counters: RefCell<Option<GenericAnalysisCounters>>,
+    trait_obligations: RefCell<BTreeMap<String, ObligationProof>>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObligationResult {
+    Proven,
+    Unsatisfied,
+    Cyclic,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ObligationProof {
+    result: ObligationResult,
+    chain: Vec<String>,
+    selected_implementation: Option<usize>,
 }
 
 type PatternAnalysis = (BTreeSet<String>, BTreeMap<Arc<str>, TypeDescriptor>);
 
+#[allow(clippy::too_many_arguments)]
 fn build_body_context(
     sources: &[ParsedSource],
     facts: &[BTreeMap<NodeId, TypeFact>],
     generic_facts: &[GenericTypeFact],
     binders: &[TypeBinder],
     structure: &PackageStructure,
+    trait_contracts: &[TraitContract],
+    implementation_heads: &[ImplementationHead],
     maximum_constructed_type_depth: Option<u64>,
+    generic_analysis_counters: Option<GenericAnalysisCounters>,
 ) -> Result<BodyContext, AnalysisError> {
     let symbols_by_span = structure
         .symbols()
         .iter()
         .map(|symbol| (symbol.span.clone(), symbol))
         .collect::<BTreeMap<_, _>>();
-    let symbols_by_id = structure
+    let trait_symbols = structure
         .symbols()
         .iter()
-        .map(|symbol| (symbol.id, symbol))
+        .filter(|symbol| symbol.kind == SymbolKind::Trait)
+        .map(|symbol| (symbol.id, symbol.path.clone()))
         .collect::<BTreeMap<_, _>>();
+    let visible_traits_by_module = structure
+        .visible_items()
+        .iter()
+        .map(|(module, items)| {
+            let traits = items
+                .values()
+                .filter_map(|symbol| trait_symbols.get(symbol).cloned())
+                .collect::<BTreeSet<_>>();
+            (*module, traits)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut callable_visible_traits = BTreeMap::new();
+    for source in sources {
+        for node in source.tree().nodes().iter().filter(|node| {
+            matches!(
+                node.form(),
+                SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
+            )
+        }) {
+            let visible = structure
+                .modules()
+                .iter()
+                .filter(|module| span_contains(&module.span, node.span()))
+                .min_by_key(|module| span_width(&module.span))
+                .and_then(|module| visible_traits_by_module.get(&module.id))
+                .cloned()
+                .unwrap_or_default();
+            callable_visible_traits.insert(node.span().clone(), visible);
+        }
+    }
+    let mut implementation_candidates = BTreeMap::<(CanonicalPath, Arc<str>), Vec<usize>>::new();
+    for (index, implementation) in implementation_heads.iter().enumerate() {
+        let Some(reference) = implementation.trait_reference() else {
+            continue;
+        };
+        implementation_candidates
+            .entry((
+                reference.path().clone(),
+                outer_type_constructor(implementation.receiver().as_str()),
+            ))
+            .or_default()
+            .push(index);
+    }
     let references = structure
         .references()
         .iter()
@@ -132,6 +212,10 @@ fn build_body_context(
     let generic_by_span = generic_facts
         .iter()
         .map(|fact| (fact.span.clone(), fact))
+        .collect::<BTreeMap<_, _>>();
+    let generic_types = generic_facts
+        .iter()
+        .map(|fact| (fact.span.clone(), fact.expression.clone()))
         .collect::<BTreeMap<_, _>>();
     let binders_by_declaration = binders
         .iter()
@@ -417,16 +501,19 @@ fn build_body_context(
             .iter()
             .filter(|node| matches!(node.form(), SyntaxForm::ImplDeclaration))
         {
-            let path = direct_child_form(source.tree(), node, SyntaxForm::Path)
-                .ok_or(AnalysisError::Invariant)?;
-            let path_node = source.tree().node(path).ok_or(AnalysisError::Invariant)?;
-            let Some(target) = references.get(path_node.span()) else {
+            if direct_child_form(source.tree(), node, SyntaxForm::TraitReference).is_some() {
+                continue;
+            }
+            let Some(receiver) = implementation_receiver_descriptor(
+                source.tree(),
+                node,
+                &generic_types,
+                &references,
+                &structs,
+            )?
+            else {
                 continue;
             };
-            let Some(symbol) = symbols_by_id.get(target) else {
-                return Err(AnalysisError::Invariant);
-            };
-            let receiver = TypeDescriptor::declared(symbol.path.clone());
             for method in node.children().iter().copied().filter(|child| {
                 source
                     .tree()
@@ -473,10 +560,7 @@ fn build_body_context(
     Ok(BodyContext {
         callables,
         generic_callables,
-        generic_types: generic_facts
-            .iter()
-            .map(|fact| (fact.span.clone(), fact.expression.clone()))
-            .collect(),
+        generic_types,
         maximum_constructed_type_depth,
         actions,
         methods,
@@ -485,18 +569,30 @@ fn build_body_context(
         generic_structs,
         enums,
         generic_enums,
+        trait_symbols,
+        trait_contracts: trait_contracts.to_vec(),
+        implementation_heads: implementation_heads.to_vec(),
+        implementation_candidates,
+        callable_visible_traits,
+        current_visible_traits: RefCell::new(BTreeSet::new()),
+        generic_analysis_counters: RefCell::new(generic_analysis_counters),
+        trait_obligations: RefCell::new(BTreeMap::new()),
         expression_types: RefCell::new(BTreeMap::new()),
     })
 }
 
 /// Checks every free-function and method body against its declared signature.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn check_package_bodies(
     sources: &[ParsedSource],
     facts: &[BTreeMap<NodeId, TypeFact>],
     generic_facts: &[GenericTypeFact],
     binders: &[TypeBinder],
     structure: &PackageStructure,
+    trait_contracts: &[TraitContract],
+    implementation_heads: &[ImplementationHead],
     maximum_constructed_type_depth: Option<u64>,
+    generic_analysis_counters: &mut Option<GenericAnalysisCounters>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Vec<BTreeMap<NodeId, TypeDescriptor>>, AnalysisError> {
     let context = build_body_context(
@@ -505,32 +601,53 @@ pub(crate) fn check_package_bodies(
         generic_facts,
         binders,
         structure,
+        trait_contracts,
+        implementation_heads,
         maximum_constructed_type_depth,
+        generic_analysis_counters.take(),
     )?;
-    let mut expression_types = Vec::with_capacity(sources.len());
-    for (source_index, source) in sources.iter().enumerate() {
-        let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
-        for (index, node) in source.tree().nodes().iter().enumerate() {
-            if !matches!(
-                node.form(),
-                SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
-            ) {
-                continue;
+    let result = (|| {
+        let mut expression_types = Vec::with_capacity(sources.len());
+        for (source_index, source) in sources.iter().enumerate() {
+            let resolved = facts.get(source_index).ok_or(AnalysisError::Invariant)?;
+            for (index, node) in source.tree().nodes().iter().enumerate() {
+                if !matches!(
+                    node.form(),
+                    SyntaxForm::FunctionDeclaration | SyntaxForm::MethodDeclaration
+                ) {
+                    continue;
+                }
+                if matches!(node.form(), SyntaxForm::MethodDeclaration)
+                    && source.tree().nodes().iter().any(|implementation| {
+                        matches!(implementation.form(), SyntaxForm::ImplDeclaration)
+                            && direct_child_form(
+                                source.tree(),
+                                implementation,
+                                SyntaxForm::TraitReference,
+                            )
+                            .is_some()
+                            && span_contains(implementation.span(), node.span())
+                    })
+                {
+                    continue;
+                }
+                if direct_child_form(source.tree(), node, SyntaxForm::TypeParameterList).is_some() {
+                    continue;
+                }
+                check_callable(
+                    source.tree(),
+                    NodeId::from_index(index),
+                    resolved,
+                    &context,
+                    diagnostics,
+                )?;
             }
-            if direct_child_form(source.tree(), node, SyntaxForm::TypeParameterList).is_some() {
-                continue;
-            }
-            check_callable(
-                source.tree(),
-                NodeId::from_index(index),
-                resolved,
-                &context,
-                diagnostics,
-            )?;
+            expression_types.push(context.expression_types.take());
         }
-        expression_types.push(context.expression_types.take());
-    }
-    Ok(expression_types)
+        Ok(expression_types)
+    })();
+    *generic_analysis_counters = context.generic_analysis_counters.take();
+    result
 }
 
 fn check_callable(
@@ -541,6 +658,11 @@ fn check_callable(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let node = tree.node(callable).ok_or(AnalysisError::Invariant)?;
+    *context.current_visible_traits.borrow_mut() = context
+        .callable_visible_traits
+        .get(node.span())
+        .cloned()
+        .unwrap_or_default();
     let mut environment = BTreeMap::<Arc<str>, TypeDescriptor>::new();
     for parameter in node.children().iter().copied().filter(|child| {
         tree.node(*child)
@@ -1619,16 +1741,43 @@ fn method_receiver_type(
     }) else {
         return Ok(None);
     };
+    implementation_receiver_descriptor(
+        tree,
+        implementation,
+        &context.generic_types,
+        &context.references,
+        &context.structs,
+    )
+}
+
+fn implementation_receiver_descriptor(
+    tree: &SyntaxTree,
+    implementation: &gantry_frontend::SyntaxNode,
+    generic_types: &BTreeMap<SourceSpan, TypeExpression>,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    structs: &BTreeMap<SymbolId, StructShape>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    if let Some(receiver) = direct_child_form(tree, implementation, SyntaxForm::ValueType) {
+        let receiver = tree.node(receiver).ok_or(AnalysisError::Invariant)?;
+        let Some(expression) = generic_types.get(receiver.span()) else {
+            return Ok(None);
+        };
+        return if expression.is_closed() {
+            expression
+                .to_descriptor(u64::MAX)
+                .map(Some)
+                .map_err(|_| AnalysisError::Invariant)
+        } else {
+            Ok(None)
+        };
+    }
     let path = direct_child_form(tree, implementation, SyntaxForm::Path)
         .ok_or(AnalysisError::Invariant)?;
     let path_node = tree.node(path).ok_or(AnalysisError::Invariant)?;
-    let Some(target) = context.references.get(path_node.span()) else {
+    let Some(target) = references.get(path_node.span()) else {
         return Ok(None);
     };
-    Ok(context
-        .structs
-        .get(target)
-        .map(|shape| shape.descriptor.clone()))
+    Ok(structs.get(target).map(|shape| shape.descriptor.clone()))
 }
 
 fn span_contains(outer: &SourceSpan, inner: &SourceSpan) -> bool {
@@ -3343,23 +3492,29 @@ fn infer_member_sequence(
         .get(dot.saturating_add(2))
         .is_some_and(|child| node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis));
     if call_open {
-        let signature = builtin_method_signature(&receiver, &member)?.or_else(|| {
+        let inherent = builtin_method_signature(&receiver, &member)?.or_else(|| {
             context
                 .methods
                 .get(&(receiver.clone(), member.clone()))
                 .cloned()
         });
+        let signature = if inherent.is_some() {
+            inherent
+        } else {
+            resolve_trait_method(
+                &receiver,
+                &member,
+                None,
+                None,
+                None,
+                None,
+                None,
+                context,
+                member_node,
+                diagnostics,
+            )?
+        };
         let Some(signature) = signature else {
-            diagnostics.push(body_diagnostic(
-                "unknown-member",
-                DiagnosticCategory::Type,
-                "a receiver type has no field or inherent method with this name",
-                member_node.span().clone(),
-                [
-                    ("member", member.as_ref()),
-                    ("receiver", receiver.canonical_string().as_str()),
-                ],
-            )?);
             return Ok(None);
         };
         let open = dot.saturating_add(2);
@@ -3450,6 +3605,588 @@ fn infer_member_sequence(
         ],
     )?);
     Ok(None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_trait_method(
+    receiver: &TypeDescriptor,
+    member: &str,
+    restricted_trait: Option<&CanonicalPath>,
+    explicit_trait_arguments: Option<&[TypeDescriptor]>,
+    explicit_method_arguments: Option<&[TypeDescriptor]>,
+    actual_arguments: Option<&[TypeDescriptor]>,
+    expected_result: Option<&TypeDescriptor>,
+    context: &BodyContext,
+    source: &gantry_frontend::SyntaxNode,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<CallableSignature>, AnalysisError> {
+    let visible_traits = context.current_visible_traits.borrow().clone();
+    let declaring_traits = context
+        .trait_contracts
+        .iter()
+        .filter(|contract| restricted_trait.is_none_or(|path| contract.path() == path))
+        .filter(|contract| restricted_trait.is_some() || visible_traits.contains(contract.path()))
+        .filter(|contract| {
+            contract
+                .methods()
+                .iter()
+                .any(|method| method.name() == member)
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut inference_failed = false;
+    for contract in &declaring_traits {
+        let method = contract
+            .methods()
+            .iter()
+            .find(|method| method.name() == member)
+            .ok_or(AnalysisError::Invariant)?;
+        if let Some(arguments) = explicit_trait_arguments {
+            let expected = usize::try_from(contract.parameter_count())
+                .map_err(|_| AnalysisError::Invariant)?;
+            if arguments.len() != expected {
+                diagnostics.push(body_diagnostic(
+                    GenericAnalysisCode::TypeArgumentArity.wire_name(),
+                    DiagnosticCategory::Type,
+                    "a qualified trait call has the wrong number of trait type arguments",
+                    source.span().clone(),
+                    [
+                        ("actual", arguments.len().to_string()),
+                        ("expected", expected.to_string()),
+                    ],
+                )?);
+                continue;
+            }
+        }
+        if let Some(arguments) = explicit_method_arguments {
+            let expected =
+                usize::try_from(method.parameter_count()).map_err(|_| AnalysisError::Invariant)?;
+            if arguments.len() != expected {
+                diagnostics.push(body_diagnostic(
+                    GenericAnalysisCode::TypeArgumentArity.wire_name(),
+                    DiagnosticCategory::Type,
+                    "a trait method call has the wrong number of method type arguments",
+                    source.span().clone(),
+                    [
+                        ("actual", arguments.len().to_string()),
+                        ("expected", expected.to_string()),
+                    ],
+                )?);
+                continue;
+            }
+        }
+        let (trait_arguments, method_arguments) = match infer_trait_call_arguments(
+            receiver,
+            contract,
+            method,
+            explicit_trait_arguments,
+            explicit_method_arguments,
+            actual_arguments,
+            expected_result,
+        ) {
+            Ok(arguments) => arguments,
+            Err(error) => {
+                inference_failed = true;
+                let code = match error {
+                    TypeInferenceFailure::Arity => GenericAnalysisCode::TypeArgumentArity,
+                    TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
+                        GenericAnalysisCode::ConflictingTypeInference
+                    }
+                    TypeInferenceFailure::Incomplete => {
+                        GenericAnalysisCode::IncompleteTypeInference
+                    }
+                };
+                diagnostics.push(body_diagnostic(
+                    code.wire_name(),
+                    DiagnosticCategory::Type,
+                    "trait call type inference did not produce one complete substitution",
+                    source.span().clone(),
+                    [("trait", contract.path().as_str())],
+                )?);
+                continue;
+            }
+        };
+        let mut active = BTreeSet::new();
+        let proof = prove_trait_obligation(
+            contract.path(),
+            &trait_arguments,
+            receiver,
+            context,
+            &mut active,
+        )?;
+        match proof.result {
+            ObligationResult::Proven => {
+                let selected = proof
+                    .selected_implementation
+                    .and_then(|index| context.implementation_heads.get(index))
+                    .ok_or(AnalysisError::Invariant)?;
+                if let Some(signature) = instantiate_trait_method(
+                    receiver,
+                    contract,
+                    method,
+                    selected,
+                    &trait_arguments,
+                    Some(&method_arguments),
+                )? {
+                    candidates.push(signature);
+                }
+            }
+            ObligationResult::Cyclic => {
+                diagnostics.push(body_diagnostic(
+                    GenericAnalysisCode::CyclicTraitObligation.wire_name(),
+                    DiagnosticCategory::Type,
+                    "a concrete trait obligation depends on itself",
+                    source.span().clone(),
+                    [
+                        (
+                            "obligation",
+                            obligation_key(contract.path(), &trait_arguments, receiver),
+                        ),
+                        ("obligation_chain", proof.chain.join(" -> ")),
+                    ],
+                )?);
+            }
+            ObligationResult::Unsatisfied => {}
+        }
+    }
+    match candidates.len() {
+        0 if inference_failed => Ok(None),
+        0 if !declaring_traits.is_empty() => {
+            diagnostics.push(body_diagnostic(
+                GenericAnalysisCode::MissingImplementation.wire_name(),
+                DiagnosticCategory::Type,
+                "no trait implementation applies to this receiver and method",
+                source.span().clone(),
+                [
+                    ("member", member.to_owned()),
+                    ("receiver", receiver.canonical_string()),
+                ],
+            )?);
+            Ok(None)
+        }
+        0 => {
+            diagnostics.push(body_diagnostic(
+                "unknown-member",
+                DiagnosticCategory::Type,
+                "a receiver type has no field, inherent method, or visible trait method",
+                source.span().clone(),
+                [
+                    ("member", member.to_owned()),
+                    ("receiver", receiver.canonical_string()),
+                ],
+            )?);
+            Ok(None)
+        }
+        1 => Ok(candidates.pop()),
+        _ => {
+            diagnostics.push(body_diagnostic(
+                GenericAnalysisCode::AmbiguousTraitMethod.wire_name(),
+                DiagnosticCategory::Type,
+                "more than one trait supplies an applicable method",
+                source.span().clone(),
+                [
+                    ("member", member.to_owned()),
+                    ("receiver", receiver.canonical_string()),
+                ],
+            )?);
+            Ok(None)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn infer_trait_call_arguments(
+    receiver: &TypeDescriptor,
+    contract: &TraitContract,
+    method: &TraitMethodContract,
+    explicit_trait_arguments: Option<&[TypeDescriptor]>,
+    explicit_method_arguments: Option<&[TypeDescriptor]>,
+    actual_arguments: Option<&[TypeDescriptor]>,
+    expected_result: Option<&TypeDescriptor>,
+) -> Result<(Vec<TypeDescriptor>, Vec<TypeDescriptor>), TypeInferenceFailure> {
+    let trait_required = (0..contract.parameter_count())
+        .map(|ordinal| TypeParameterKey {
+            binder_depth: 0,
+            ordinal,
+        })
+        .collect::<Vec<_>>();
+    let method_depth = u64::from(contract.parameter_count() > 0);
+    let method_required = (0..method.parameter_count())
+        .map(|ordinal| TypeParameterKey {
+            binder_depth: method_depth,
+            ordinal,
+        })
+        .collect::<Vec<_>>();
+    let required = trait_required
+        .iter()
+        .chain(&method_required)
+        .copied()
+        .collect::<Vec<_>>();
+    let mut constraints = Vec::new();
+    if let Some(arguments) = explicit_trait_arguments {
+        for (parameter, argument) in trait_required.iter().zip(arguments) {
+            constraints.push((
+                TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+                TypeExpression::closed(argument, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+            ));
+        }
+    }
+    if let Some(arguments) = explicit_method_arguments {
+        for (parameter, argument) in method_required.iter().zip(arguments) {
+            constraints.push((
+                TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+                TypeExpression::closed(argument, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+            ));
+        }
+    }
+    if let Some(arguments) = actual_arguments {
+        if arguments.len() != method.parameters().len() {
+            return Err(TypeInferenceFailure::Arity);
+        }
+        for (template, argument) in method.parameters().iter().zip(arguments) {
+            constraints.push((
+                substitute_self_type(template, receiver)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+                TypeExpression::closed(argument, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+            ));
+        }
+    }
+    if let Some(expected) = expected_result {
+        constraints.push((
+            substitute_self_type(method.result(), receiver)
+                .map_err(|_| TypeInferenceFailure::Conflict)?,
+            TypeExpression::closed(expected, u64::MAX)
+                .map_err(|_| TypeInferenceFailure::Conflict)?,
+        ));
+    }
+    let substitution = ExactTypeSubstitution::infer(&required, &constraints)?;
+    let trait_arguments = trait_required
+        .iter()
+        .map(|parameter| {
+            let expression =
+                TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?;
+            substitution.apply(&expression)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let method_arguments = method_required
+        .iter()
+        .map(|parameter| {
+            let expression =
+                TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?;
+            substitution.apply(&expression)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((trait_arguments, method_arguments))
+}
+
+fn prove_trait_obligation(
+    trait_path: &CanonicalPath,
+    trait_arguments: &[TypeDescriptor],
+    receiver: &TypeDescriptor,
+    context: &BodyContext,
+    active: &mut BTreeSet<String>,
+) -> Result<ObligationProof, AnalysisError> {
+    let key = obligation_key(trait_path, trait_arguments, receiver);
+    charge_trait_resolution_step(context)?;
+    if let Some(proof) = context.trait_obligations.borrow().get(&key).cloned() {
+        return Ok(proof);
+    }
+    if !active.insert(key.clone()) {
+        return Ok(ObligationProof {
+            result: ObligationResult::Cyclic,
+            chain: vec![key],
+            selected_implementation: None,
+        });
+    }
+
+    let contract = context
+        .trait_contracts
+        .iter()
+        .find(|contract| contract.path() == trait_path)
+        .ok_or(AnalysisError::Invariant)?;
+    let required = (0..contract.parameter_count())
+        .map(|ordinal| TypeParameterKey {
+            binder_depth: 0,
+            ordinal,
+        })
+        .collect::<Vec<_>>();
+    let trait_substitution = match ExactTypeSubstitution::explicit(&required, trait_arguments) {
+        Ok(substitution) => substitution,
+        Err(TypeInferenceFailure::Arity) => {
+            active.remove(&key);
+            return Ok(ObligationProof {
+                result: ObligationResult::Unsatisfied,
+                chain: vec![key],
+                selected_implementation: None,
+            });
+        }
+        Err(_) => return Err(AnalysisError::Invariant),
+    };
+    for predicate in contract.predicates() {
+        charge_trait_resolution_step(context)?;
+        let predicate_receiver = substitute_self_type(predicate.receiver(), receiver)?;
+        let predicate_receiver = trait_substitution
+            .apply(&predicate_receiver)
+            .map_err(|_| AnalysisError::Invariant)?;
+        let predicate_arguments = predicate
+            .trait_reference()
+            .arguments()
+            .iter()
+            .map(|argument| {
+                let argument = substitute_self_type(argument, receiver)?;
+                trait_substitution
+                    .apply(&argument)
+                    .map_err(|_| AnalysisError::Invariant)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let nested = prove_trait_obligation(
+            predicate.trait_reference().path(),
+            &predicate_arguments,
+            &predicate_receiver,
+            context,
+            active,
+        )?;
+        if nested.result != ObligationResult::Proven {
+            let proof = ObligationProof {
+                result: nested.result,
+                chain: std::iter::once(key.clone()).chain(nested.chain).collect(),
+                selected_implementation: None,
+            };
+            active.remove(&key);
+            context
+                .trait_obligations
+                .borrow_mut()
+                .insert(key, proof.clone());
+            return Ok(proof);
+        }
+    }
+
+    let mut proof = ObligationProof {
+        result: ObligationResult::Unsatisfied,
+        chain: vec![key.clone()],
+        selected_implementation: None,
+    };
+    let candidate_key = (
+        trait_path.clone(),
+        outer_type_constructor(&receiver.canonical_string()),
+    );
+    let candidate_indices = context
+        .implementation_candidates
+        .get(&candidate_key)
+        .cloned()
+        .unwrap_or_default();
+    for index in candidate_indices {
+        let head = context
+            .implementation_heads
+            .get(index)
+            .ok_or(AnalysisError::Invariant)?;
+        charge_trait_resolution_step(context)?;
+        let Some((substitution, _)) =
+            infer_implementation_substitution(receiver, Some(trait_arguments), head)?
+        else {
+            continue;
+        };
+        let mut candidate = ObligationProof {
+            result: ObligationResult::Proven,
+            chain: Vec::new(),
+            selected_implementation: Some(index),
+        };
+        for predicate in head.predicates() {
+            charge_trait_resolution_step(context)?;
+            let predicate_receiver = substitute_self_type(predicate.receiver(), receiver)?;
+            let predicate_receiver = substitution
+                .apply(&predicate_receiver)
+                .map_err(|_| AnalysisError::Invariant)?;
+            let predicate_arguments = predicate
+                .trait_reference()
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    let argument = substitute_self_type(argument, receiver)?;
+                    substitution
+                        .apply(&argument)
+                        .map_err(|_| AnalysisError::Invariant)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let nested = prove_trait_obligation(
+                predicate.trait_reference().path(),
+                &predicate_arguments,
+                &predicate_receiver,
+                context,
+                active,
+            )?;
+            if nested.result != ObligationResult::Proven {
+                candidate.result = nested.result;
+                candidate.chain = std::iter::once(key.clone()).chain(nested.chain).collect();
+                candidate.selected_implementation = None;
+                break;
+            }
+        }
+        if candidate.result == ObligationResult::Proven {
+            proof = candidate;
+            break;
+        }
+        if candidate.result == ObligationResult::Cyclic {
+            proof = candidate;
+        }
+    }
+    active.remove(&key);
+    context
+        .trait_obligations
+        .borrow_mut()
+        .insert(key, proof.clone());
+    Ok(proof)
+}
+
+fn outer_type_constructor(canonical: &str) -> Arc<str> {
+    Arc::from(
+        canonical
+            .split_once('<')
+            .map_or(canonical, |(outer, _)| outer),
+    )
+}
+
+fn charge_trait_resolution_step(context: &BodyContext) -> Result<(), AnalysisError> {
+    let mut counters = context.generic_analysis_counters.borrow_mut();
+    let Some(counters) = counters.as_mut() else {
+        return Ok(());
+    };
+    counters
+        .charge_trait_resolution_steps(1)
+        .map_err(|error| AnalysisError::ResourceLimit {
+            error,
+            diagnostics: Vec::new(),
+        })
+}
+
+fn obligation_key(
+    trait_path: &CanonicalPath,
+    trait_arguments: &[TypeDescriptor],
+    receiver: &TypeDescriptor,
+) -> String {
+    let mut key = trait_path.as_str().to_owned();
+    if !trait_arguments.is_empty() {
+        key.push('<');
+        for (index, argument) in trait_arguments.iter().enumerate() {
+            if index > 0 {
+                key.push(',');
+            }
+            key.push_str(&argument.canonical_string());
+        }
+        key.push('>');
+    }
+    format!("{key} for {}", receiver.canonical_string())
+}
+
+fn infer_implementation_substitution(
+    receiver: &TypeDescriptor,
+    trait_arguments: Option<&[TypeDescriptor]>,
+    head: &ImplementationHead,
+) -> Result<Option<(ExactTypeSubstitution, Vec<TypeDescriptor>)>, AnalysisError> {
+    let trait_reference = head.trait_reference().ok_or(AnalysisError::Invariant)?;
+    if trait_arguments.is_some_and(|arguments| arguments.len() != trait_reference.arguments().len())
+    {
+        return Ok(None);
+    }
+    let mut head_expressions = vec![head.receiver()];
+    head_expressions.extend(trait_reference.arguments());
+    let required = collect_type_parameter_keys(&head_expressions)?;
+    let mut constraints = vec![(
+        head.receiver().clone(),
+        TypeExpression::closed(receiver, u64::MAX).map_err(|_| AnalysisError::Invariant)?,
+    )];
+    if let Some(arguments) = trait_arguments {
+        for (template, argument) in trait_reference.arguments().iter().zip(arguments) {
+            constraints.push((
+                template.clone(),
+                TypeExpression::closed(argument, u64::MAX).map_err(|_| AnalysisError::Invariant)?,
+            ));
+        }
+    }
+    let substitution = match ExactTypeSubstitution::infer(&required, &constraints) {
+        Ok(substitution) => substitution,
+        Err(
+            TypeInferenceFailure::Arity
+            | TypeInferenceFailure::Conflict
+            | TypeInferenceFailure::Incomplete
+            | TypeInferenceFailure::OccursCheck,
+        ) => return Ok(None),
+    };
+    let resolved_arguments = trait_reference
+        .arguments()
+        .iter()
+        .map(|argument| substitution.apply(argument))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AnalysisError::Invariant)?;
+    Ok(Some((substitution, resolved_arguments)))
+}
+
+fn instantiate_trait_method(
+    receiver: &TypeDescriptor,
+    contract: &TraitContract,
+    method: &TraitMethodContract,
+    head: &ImplementationHead,
+    trait_arguments: &[TypeDescriptor],
+    method_arguments: Option<&[TypeDescriptor]>,
+) -> Result<Option<CallableSignature>, AnalysisError> {
+    let Some((_, resolved_trait_arguments)) =
+        infer_implementation_substitution(receiver, Some(trait_arguments), head)?
+    else {
+        return Ok(None);
+    };
+    if resolved_trait_arguments != trait_arguments {
+        return Ok(None);
+    }
+    let mut required = (0..contract.parameter_count())
+        .map(|ordinal| TypeParameterKey {
+            binder_depth: 0,
+            ordinal,
+        })
+        .collect::<Vec<_>>();
+    let Some(method_arguments) =
+        method_arguments.or_else(|| (method.parameter_count() == 0).then_some([].as_slice()))
+    else {
+        return Ok(None);
+    };
+    let method_depth = u64::from(contract.parameter_count() > 0);
+    required.extend(
+        (0..method.parameter_count()).map(|ordinal| TypeParameterKey {
+            binder_depth: method_depth,
+            ordinal,
+        }),
+    );
+    let arguments = trait_arguments
+        .iter()
+        .chain(method_arguments)
+        .cloned()
+        .collect::<Vec<_>>();
+    let substitution = ExactTypeSubstitution::explicit(&required, &arguments)
+        .map_err(|_| AnalysisError::Invariant)?;
+    let parameters = method
+        .parameters()
+        .iter()
+        .map(|parameter| instantiate_trait_type(parameter, receiver, &substitution))
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = instantiate_trait_type(method.result(), receiver, &substitution)?;
+    Ok(Some(CallableSignature { parameters, result }))
+}
+
+fn instantiate_trait_type(
+    expression: &TypeExpression,
+    receiver: &TypeDescriptor,
+    substitution: &ExactTypeSubstitution,
+) -> Result<TypeDescriptor, AnalysisError> {
+    let expression = substitute_self_type(expression, receiver)?;
+    substitution
+        .apply(&expression)
+        .map_err(|_| AnalysisError::Invariant)
 }
 
 fn builtin_method_signature(
@@ -3561,6 +4298,20 @@ fn infer_call_sequence(
     let Some(target) = context.references.get(path.span()).copied() else {
         return Ok(None);
     };
+    if let Some(trait_path) = context.trait_symbols.get(&target) {
+        return infer_qualified_trait_call(
+            tree,
+            children,
+            open,
+            path,
+            trait_path,
+            facts,
+            environment,
+            expected_result,
+            context,
+            diagnostics,
+        );
+    }
     if let Some(signature) = context.generic_callables.get(&target) {
         return infer_generic_call(
             tree,
@@ -3642,6 +4393,182 @@ fn infer_call_sequence(
         }
     }
     Ok(Some(signature.result.clone()))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn infer_qualified_trait_call(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    open: usize,
+    path: &gantry_frontend::SyntaxNode,
+    trait_path: &CanonicalPath,
+    facts: &BTreeMap<NodeId, TypeFact>,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected_result: Option<&TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let path_index = children
+        .get(..open)
+        .unwrap_or_default()
+        .iter()
+        .position(|child| {
+            tree.node(*child)
+                .is_some_and(|node| std::ptr::eq(node, path))
+        })
+        .ok_or(AnalysisError::Invariant)?;
+    let separate_method = children
+        .get(path_index.saturating_add(1)..open)
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, child)| tree.node(*child).map(|node| (offset, node)))
+        .rfind(|(_, node)| matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(_))))
+        .map(|(offset, node)| (path_index.saturating_add(1).saturating_add(offset), node));
+    let (method_index, method_node) = if let Some((index, node)) = separate_method {
+        (Some(index), node)
+    } else {
+        let node = path
+            .children()
+            .iter()
+            .filter_map(|child| tree.node(*child))
+            .rfind(|node| matches!(node.form(), SyntaxForm::Token(TokenKind::Identifier(_))))
+            .ok_or(AnalysisError::Invariant)?;
+        (None, node)
+    };
+    let SyntaxForm::Token(TokenKind::Identifier(method)) = method_node.form() else {
+        return Err(AnalysisError::Invariant);
+    };
+    let explicit_trait_arguments = children
+        .get(path_index.saturating_add(1)..method_index.unwrap_or(path_index.saturating_add(1)))
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .find(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::TypeArgumentList))
+        })
+        .map(|list| closed_type_arguments(tree, list, context))
+        .transpose()?;
+    let explicit_method_arguments = children
+        .get(
+            method_index.map_or(path_index.saturating_add(1), |index| {
+                index.saturating_add(1)
+            })..open,
+        )
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .find(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::TypeArgumentList))
+        })
+        .map(|list| closed_type_arguments(tree, list, context))
+        .transpose()?;
+    let close = children
+        .iter()
+        .enumerate()
+        .skip(open.saturating_add(1))
+        .find(|(_, child)| node_contains_punctuation(tree, **child, Punctuation::RightParenthesis))
+        .map_or(children.len(), |(index, _)| index);
+    let arguments = children
+        .get(open.saturating_add(1)..close)
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .filter(|child| {
+            tree.node(*child)
+                .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
+        })
+        .collect::<Vec<_>>();
+    let Some(receiver_expression) = arguments.first().copied() else {
+        diagnostics.push(body_diagnostic(
+            "call-arity",
+            DiagnosticCategory::Type,
+            "a qualified trait call requires its receiver as the first argument",
+            method_node.span().clone(),
+            [] as [(&str, &str); 0],
+        )?);
+        return Ok(None);
+    };
+    let Some(receiver) = infer_expression(
+        tree,
+        receiver_expression,
+        facts,
+        environment,
+        None,
+        context,
+        diagnostics,
+    )?
+    else {
+        return Ok(None);
+    };
+    let value_arguments = arguments.get(1..).unwrap_or_default();
+    let mut actual_arguments = Vec::with_capacity(value_arguments.len());
+    for argument in value_arguments {
+        let Some(actual) = infer_expression(
+            tree,
+            *argument,
+            facts,
+            environment,
+            None,
+            context,
+            diagnostics,
+        )?
+        else {
+            return Ok(None);
+        };
+        actual_arguments.push(actual);
+    }
+    let Some(signature) = resolve_trait_method(
+        &receiver,
+        method,
+        Some(trait_path),
+        explicit_trait_arguments.as_deref(),
+        explicit_method_arguments.as_deref(),
+        Some(&actual_arguments),
+        expected_result,
+        context,
+        method_node,
+        diagnostics,
+    )?
+    else {
+        return Ok(None);
+    };
+    if value_arguments.len() != signature.parameters.len() {
+        diagnostics.push(body_diagnostic(
+            "call-arity",
+            DiagnosticCategory::Type,
+            "a qualified trait call has the wrong number of value arguments",
+            method_node.span().clone(),
+            [
+                ("actual", value_arguments.len().to_string()),
+                ("expected", signature.parameters.len().to_string()),
+            ],
+        )?);
+    }
+    for ((argument, actual), expected) in value_arguments
+        .iter()
+        .zip(&actual_arguments)
+        .zip(&signature.parameters)
+    {
+        if actual != expected {
+            diagnostics.push(body_diagnostic(
+                "call-argument-type",
+                DiagnosticCategory::Type,
+                "a qualified trait argument differs from its exact parameter type",
+                tree.node(*argument)
+                    .ok_or(AnalysisError::Invariant)?
+                    .span()
+                    .clone(),
+                [
+                    ("actual", actual.canonical_string()),
+                    ("expected", expected.canonical_string()),
+                ],
+            )?);
+        }
+    }
+    Ok(Some(signature.result))
 }
 
 #[allow(clippy::too_many_arguments)]
