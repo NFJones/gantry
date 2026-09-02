@@ -1,11 +1,13 @@
 //! Public-facade regressions for durable start and resume pre-acceptance behavior.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::{Pin, pin};
-use std::sync::Arc;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use gantry::host::contracts::{
@@ -19,10 +21,12 @@ use gantry::host::event::{
     SinkId,
 };
 use gantry::host::journal::{
-    AcquireJournalOwnerV1, JournalCommitReceiptV1, JournalCommitRequestV1, JournalError,
-    JournalErrorCode, JournalId, JournalOwnershipV1, JournalPrefixV1, ReadJournalPrefixV1,
-    ReleaseJournalOwnerV1, ResolveJournalPayloadV1, ResolvedJournalPayloadV1,
+    AcquireJournalOwnerV1, FullJournalPrefixV1, JournalCommitReceiptV1, JournalCommitRequestV1,
+    JournalError, JournalErrorCode, JournalId, JournalOwnershipV1, JournalPrefixV1,
+    ReadJournalPrefixV1, ReleaseJournalOwnerV1, ResolveJournalPayloadV1, ResolvedJournalPayloadV1,
+    SnapshotJournalPrefixV1,
 };
+use gantry::ir::InstructionKind;
 use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
     CancellationReasonCategory, DeliveryOutcome, ExecutionObservationState, IdentityKind,
@@ -31,13 +35,14 @@ use gantry::portable::{
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    CancellationReason, FinalShutdownEventSettlement, InMemoryJournalStore,
-    InterpreterConfiguration, InterpreterLifecycle, MachineOutcome, RequiredConfiguration,
+    CancellationReason, DurableExecutionStartV1, DurableRecoverySnapshotV1,
+    FinalShutdownEventSettlement, InMemoryJournalStore, InterpreterConfiguration,
+    InterpreterLifecycle, MachineOutcome, MachineStep, RequiredConfiguration,
     recover_authoritative_prefix_with_retained_program,
 };
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
-use gantry::value::ValueLimits;
+use gantry::value::{LogicalValueView, ValueLimits};
 use gantry::{
     AnalyzePackageCoordinator, DurableCancelExecutionResult, DurableJournalOwnerState,
     DurableLifecycleCoordinator, DurableQueryExecutionRequest, DurableQueryExecutionResult,
@@ -48,6 +53,8 @@ use gantry::{
 use serde::Deserialize;
 
 const DURABLE_START_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries";
+const DURABLE_GENERIC_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering";
+const DURABLE_GENERIC_EVIDENCE_PATH: &str = "protocol/conformance/generics-traits-durable-v1.json";
 
 #[derive(Debug, Deserialize)]
 struct EvidenceManifest {
@@ -105,6 +112,24 @@ struct DurableStartVectors {
     resume_modes: Vec<String>,
     compatibility_classes: Vec<String>,
     cases: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DurableGenericEvidenceManifest {
+    format: String,
+    specification_sha256: String,
+    issue: String,
+    profile: String,
+    entries: Vec<DurableGenericEvidenceEntry>,
+    advertises_profiles: Vec<String>,
+    exclusions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+struct DurableGenericEvidenceEntry {
+    requirement: String,
+    clause: String,
+    evidence: String,
 }
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -186,7 +211,9 @@ impl EventSink for FixedSink {
 struct InstrumentedJournalStore {
     inner: InMemoryJournalStore,
     fail_commits: AtomicBool,
+    commit_calls: AtomicU64,
     release_calls: AtomicU64,
+    prefix_override: Mutex<Option<JournalPrefixV1>>,
 }
 
 impl InstrumentedJournalStore {
@@ -196,6 +223,17 @@ impl InstrumentedJournalStore {
 
     fn release_calls(&self) -> u64 {
         self.release_calls.load(Ordering::Acquire)
+    }
+
+    fn commit_calls(&self) -> u64 {
+        self.commit_calls.load(Ordering::Acquire)
+    }
+
+    fn set_prefix_override(&self, prefix: JournalPrefixV1) {
+        *self
+            .prefix_override
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(prefix);
     }
 }
 
@@ -211,6 +249,14 @@ impl JournalStorage for InstrumentedJournalStore {
         &'a self,
         request: ReadJournalPrefixV1,
     ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        if let Some(prefix) = self
+            .prefix_override
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+        {
+            return Box::pin(async move { Ok(prefix) });
+        }
         self.inner.read_prefix(request)
     }
 
@@ -218,6 +264,7 @@ impl JournalStorage for InstrumentedJournalStore {
         &'a self,
         request: JournalCommitRequestV1,
     ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        self.commit_calls.fetch_add(1, Ordering::AcqRel);
         if self.fail_commits.load(Ordering::Acquire) {
             Box::pin(async { Err(JournalError::new(JournalErrorCode::Internal)) })
         } else {
@@ -347,6 +394,67 @@ fn checked_in_durable_start_evidence_is_narrow_and_current() {
     assert_eq!(vectors.compatibility_classes.len(), 3);
     assert_eq!(vectors.cases.len(), 6);
     assert_eq!(schema["properties"]["format"]["const"], vectors.format);
+}
+
+#[test]
+fn reviewed_durable_generic_evidence_is_closed() {
+    let root = workspace_root();
+    let manifest: DurableGenericEvidenceManifest =
+        read_json(&root.join(DURABLE_GENERIC_EVIDENCE_PATH));
+    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
+
+    assert_eq!(
+        manifest.format,
+        "gantry.generics-traits-durable-evidence/v1"
+    );
+    assert_eq!(manifest.issue, "GNT-GEN-DUR-001");
+    assert_eq!(manifest.profile, "durable-runtime");
+    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert_eq!(
+        manifest.specification_sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION
+    );
+    assert_eq!(manifest.entries.len(), 28);
+    assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(manifest.advertises_profiles.is_empty());
+    assert_eq!(manifest.exclusions.len(), 3);
+    assert!(gantry::advertised_profiles().is_empty());
+
+    for entry in &manifest.entries {
+        assert_anchor_exists(&root, &entry.evidence);
+        let clause = review
+            .requirements
+            .iter()
+            .find(|requirement| requirement.id == entry.requirement)
+            .and_then(|requirement| {
+                requirement
+                    .clauses
+                    .iter()
+                    .find(|clause| clause.key == entry.clause)
+            })
+            .unwrap_or_else(|| panic!("missing {}:{}", entry.requirement, entry.clause));
+        let profile = clause
+            .profile_reviews
+            .iter()
+            .find(|profile| profile.profile == "durable-runtime")
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing durable-runtime review for {}:{}",
+                    entry.requirement, entry.clause
+                )
+            });
+        assert_eq!(profile.state, "covered");
+        assert_eq!(
+            profile.evidence.as_slice(),
+            std::slice::from_ref(&entry.evidence)
+        );
+    }
+    assert!(
+        manifest
+            .entries
+            .iter()
+            .any(|entry| entry.evidence == DURABLE_GENERIC_EVIDENCE)
+    );
 }
 
 #[test]
@@ -1170,6 +1278,551 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     );
 }
 
+#[test]
+fn durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering() {
+    if let Some(snapshot) = std::env::var_os("GANTRY_DURABLE_GENERIC_RECOVERY_CHILD") {
+        recover_generic_snapshot_in_fresh_process(&snapshot);
+        return;
+    }
+    let root = TempDirectory::new(
+        br#"
+struct Envelope<T> { value: T }
+trait Label { pure fn label(self) -> String; }
+impl<T> Label for Envelope<T> {
+    pure fn label(self) -> String { "label" }
+}
+pure fn main(number: Envelope<Int>) -> Envelope<String> {
+    discard number.label();
+    let text: Envelope<String> = Envelope::<String> { value: "retained" };
+    discard text.label();
+    text
+}
+"#,
+    );
+    let services = Arc::new(Services::default());
+    let configuration = test_configuration(Arc::clone(&services));
+    let selection = selection();
+    let storage = Arc::new(InstrumentedJournalStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("durable-generic-artifacts")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let clock = FixedClock;
+    let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let start = StartExecutionCoordinator::new(
+        &package,
+        &lifecycle,
+        &configuration,
+        &allocator,
+        &preflight,
+    );
+    let durable =
+        DurableStartExecutionCoordinator::new(start, &configuration, Arc::clone(&storage_adapter));
+    let accepted = match block_on(durable.start(DurableStartExecutionRequest {
+        journal_id: journal_id.clone(),
+        start: StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: Some(br#"{"value":7}"#),
+            root_session: None,
+            event_delivery: None,
+        },
+    })) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("generic durable start was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.start.execution_id;
+    let analysis = accepted
+        .start
+        .package_activity
+        .analysis
+        .as_ref()
+        .unwrap_or_else(|| panic!("generic durable start omitted analysis"));
+    let expected_program = analysis
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("generic durable start omitted its executable program"));
+    let expected_ir = analysis
+        .canonical_ir()
+        .unwrap_or_else(|| panic!("generic durable start omitted canonical IR"))
+        .artifact()
+        .canonical_bytes()
+        .to_vec();
+    let expected_ir_identity = analysis
+        .canonical_ir()
+        .unwrap_or_else(|| panic!("generic durable start omitted canonical IR"))
+        .artifact()
+        .sha256_hex();
+    let expected_schemas = analysis
+        .schemas()
+        .unwrap_or_else(|| panic!("generic durable start omitted concrete schemas"))
+        .artifact()
+        .canonical_bytes()
+        .to_vec();
+    let expected_schemas_identity = analysis
+        .schemas()
+        .unwrap_or_else(|| panic!("generic durable start omitted concrete schemas"))
+        .artifact()
+        .sha256_hex();
+    let expected_manifest = analysis
+        .manifest()
+        .unwrap_or_else(|| panic!("generic durable start omitted package manifest"))
+        .artifact()
+        .canonical_bytes()
+        .to_vec();
+    let expected_manifest_identity = analysis
+        .manifest()
+        .unwrap_or_else(|| panic!("generic durable start omitted package manifest"))
+        .artifact()
+        .sha256_hex();
+    let expected_source_map = analysis
+        .source_map()
+        .unwrap_or_else(|| panic!("generic durable start omitted source map"))
+        .artifact()
+        .canonical_bytes()
+        .to_vec();
+    let expected_source_map_identity = analysis
+        .source_map()
+        .unwrap_or_else(|| panic!("generic durable start omitted source map"))
+        .artifact()
+        .sha256_hex();
+    assert!(
+        expected_program
+            .callable_identities()
+            .iter()
+            .map(|identity| identity.as_str())
+            .filter(|identity| identity.ends_with(" as crate::Label>::label"))
+            .eq([
+                "<crate::Envelope<Int> as crate::Label>::label",
+                "<crate::Envelope<String> as crate::Label>::label",
+            ])
+    );
+    let main = expected_program
+        .callable_identities()
+        .iter()
+        .zip(expected_program.workflows())
+        .find_map(|(identity, workflow)| (identity.as_str() == "crate::main").then_some(workflow))
+        .unwrap_or_else(|| panic!("generic durable program omitted its entry workflow"));
+    assert_eq!(
+        main.instructions
+            .iter()
+            .filter_map(|instruction| match &instruction.kind {
+                InstructionKind::Call { callee, .. } => Some(callee.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        [
+            "<crate::Envelope<Int> as crate::Label>::label",
+            "<crate::Envelope<String> as crate::Label>::label",
+        ]
+    );
+    assert!(
+        expected_program
+            .callable_identities()
+            .iter()
+            .zip(expected_program.workflows())
+            .filter(|(identity, _)| identity.as_str().ends_with(" as crate::Label>::label"))
+            .all(|(_, workflow)| workflow.effects.is_empty())
+    );
+    assert!(
+        std::str::from_utf8(&expected_schemas)
+            .is_ok_and(|schemas| schemas.contains("crate::Envelope<Int>")
+                && schemas.contains("crate::Envelope<String>"))
+    );
+    let prefix = read_prefix(storage.as_ref(), &journal_id);
+    assert_eq!(storage.commit_calls(), 1);
+    let JournalPrefixV1::Full(initial_full) = &prefix else {
+        panic!("generic start did not produce a full prefix");
+    };
+    let retained_program =
+        DurableExecutionStartV1::retained_program(&initial_full.evidence[0].canonical_body)
+            .unwrap_or_else(|error| panic!("retained generic program failed: {error:?}"));
+    assert_eq!(retained_program, expected_program);
+    let decoded_start = DurableExecutionStartV1::decode(
+        &retained_program,
+        &initial_full.evidence[0].canonical_body,
+    )
+    .unwrap_or_else(|error| panic!("generic execution start failed: {error:?}"));
+    let (recovered_program, recovered_state) =
+        recover_authoritative_prefix_with_retained_program(&prefix)
+            .unwrap_or_else(|error| panic!("generic sequence-one recovery failed: {error:?}"));
+    assert_eq!(recovered_program.as_ref(), &expected_program);
+    assert_eq!(recovered_state.latest_sequence(), 1);
+    let compacted_state = decoded_start.state().clone();
+    let snapshot = DurableRecoverySnapshotV1::new(decoded_start, compacted_state)
+        .unwrap_or_else(|error| panic!("generic recovery snapshot failed: {error:?}"));
+    let compacted_prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
+        journal_id: initial_full.journal_id.clone(),
+        snapshot_version: 2,
+        frontier: 1,
+        canonical_snapshot: Arc::from(snapshot.canonical_body()),
+        retained_evidence: BTreeMap::from([(initial_full.evidence[0].evidence_id, 1)]),
+        suffix: Arc::from([]),
+        committed_through: initial_full.committed_through,
+    });
+    let (compacted_program, compacted_state) =
+        recover_authoritative_prefix_with_retained_program(&compacted_prefix)
+            .unwrap_or_else(|error| panic!("compacted generic recovery failed: {error:?}"));
+    assert_eq!(compacted_program.as_ref(), &expected_program);
+    assert_eq!(compacted_state.latest_sequence(), 1);
+    let compacted_outcome = drive_recovered_generic_machine(compacted_state.into_machine());
+    assert_generic_string_envelope(&compacted_outcome);
+
+    let snapshot_path = root.0.join("generic-recovery.snapshot");
+    fs::write(&snapshot_path, snapshot.canonical_body())
+        .unwrap_or_else(|error| panic!("generic recovery snapshot write failed: {error}"));
+    let executable = std::env::current_exe()
+        .unwrap_or_else(|error| panic!("current test executable lookup failed: {error}"));
+    let fresh_process = Command::new(executable)
+        .arg("--exact")
+        .arg("durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering")
+        .arg("--nocapture")
+        .env("GANTRY_DURABLE_GENERIC_RECOVERY_CHILD", &snapshot_path)
+        .env(
+            "GANTRY_DURABLE_GENERIC_EVIDENCE_ID",
+            initial_full.evidence[0].evidence_id.to_string(),
+        )
+        .output()
+        .unwrap_or_else(|error| panic!("fresh generic recovery process failed to start: {error}"));
+    assert!(
+        fresh_process.status.success(),
+        "fresh generic recovery process failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&fresh_process.stdout),
+        String::from_utf8_lossy(&fresh_process.stderr)
+    );
+    release(
+        storage.as_ref(),
+        &journal_id,
+        accepted.ownership_token.clone(),
+    );
+
+    let source_free_lifecycle = InterpreterLifecycle::new(&configuration);
+    let source_free_allocator = FreshIdentityAllocator::default();
+    let source_free_package =
+        AnalyzePackageCoordinator::new(&source_free_allocator, services.as_ref(), &clock);
+    let source_free_start = StartExecutionCoordinator::new(
+        &source_free_package,
+        &source_free_lifecycle,
+        &configuration,
+        &source_free_allocator,
+        &preflight,
+    );
+    let source_free_resume = DurableStartExecutionCoordinator::new(
+        source_free_start,
+        &configuration,
+        Arc::clone(&storage_adapter),
+    );
+    let source_free = match block_on(source_free_resume.resume(DurableResumeExecutionRequest {
+        journal_id: journal_id.clone(),
+        protocol_selection: &selection,
+        candidate_package_root: None,
+        expected_execution_id: Some(execution_id),
+        event_delivery: None,
+    })) {
+        DurableResumeExecutionResult::Accepted(accepted) => accepted,
+        DurableResumeExecutionResult::Rejected(failure) => {
+            panic!("source-free generic resume was rejected: {failure:?}")
+        }
+    };
+    assert_eq!(
+        source_free.source_comparison,
+        DurableResumeSourceComparison::SourceFree
+    );
+    assert!(source_free.candidate_package_activity.is_none());
+    assert_eq!(source_free.retained_artifacts.canonical_ir(), expected_ir);
+    assert_eq!(
+        source_free.retained_artifacts.canonical_ir_identity(),
+        expected_ir_identity
+    );
+    assert_eq!(
+        source_free.retained_artifacts.generated_schemas(),
+        expected_schemas
+    );
+    assert_eq!(
+        source_free.retained_artifacts.generated_schemas_identity(),
+        expected_schemas_identity
+    );
+    assert_eq!(source_free.retained_artifacts.manifest(), expected_manifest);
+    assert_eq!(
+        source_free.retained_artifacts.manifest_identity(),
+        expected_manifest_identity
+    );
+    assert_eq!(
+        source_free.retained_artifacts.source_map(),
+        expected_source_map
+    );
+    assert_eq!(
+        source_free.retained_artifacts.source_map_identity(),
+        expected_source_map_identity
+    );
+    let retained_program = source_free
+        .recovered
+        .execution_start()
+        .unwrap_or_else(|| panic!("source-free resume omitted sequence one"))
+        .program()
+        .unwrap_or_else(|error| panic!("retained generic program was invalid: {error:?}"));
+    assert_eq!(retained_program, expected_program);
+    assert!(
+        retained_program
+            .callable_identities()
+            .iter()
+            .all(|identity| { !identity.as_str().contains('^') })
+    );
+    let outcome = drive_recovered_generic_machine(source_free.recovered.into_machine());
+    assert_generic_string_envelope(&outcome);
+    release(
+        storage.as_ref(),
+        &journal_id,
+        source_free.ownership_token.clone(),
+    );
+
+    let candidate_lifecycle = InterpreterLifecycle::new(&configuration);
+    let candidate_allocator = FreshIdentityAllocator::default();
+    let candidate_package =
+        AnalyzePackageCoordinator::new(&candidate_allocator, services.as_ref(), &clock);
+    let candidate_start = StartExecutionCoordinator::new(
+        &candidate_package,
+        &candidate_lifecycle,
+        &configuration,
+        &candidate_allocator,
+        &preflight,
+    );
+    let candidate_resume = DurableStartExecutionCoordinator::new(
+        candidate_start,
+        &configuration,
+        Arc::clone(&storage_adapter),
+    );
+    let candidate = match block_on(candidate_resume.resume(DurableResumeExecutionRequest {
+        journal_id: journal_id.clone(),
+        protocol_selection: &selection,
+        candidate_package_root: Some(&root.0),
+        expected_execution_id: Some(execution_id),
+        event_delivery: None,
+    })) {
+        DurableResumeExecutionResult::Accepted(accepted) => accepted,
+        DurableResumeExecutionResult::Rejected(failure) => {
+            panic!("candidate generic resume was rejected: {failure:?}")
+        }
+    };
+    assert_eq!(
+        candidate.source_comparison,
+        DurableResumeSourceComparison::ExactManifest
+    );
+    assert!(candidate.candidate_package_activity.is_some());
+    assert_eq!(
+        candidate.retained_artifacts.generated_schemas(),
+        expected_schemas
+    );
+    release(
+        storage.as_ref(),
+        &journal_id,
+        candidate.ownership_token.clone(),
+    );
+
+    let (program, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("generic prefix recovery failed: {error:?}"));
+    let execution_start = recovered
+        .execution_start()
+        .unwrap_or_else(|| panic!("generic prefix omitted sequence one"));
+    let mut metadata: serde_json::Value = serde_json::from_slice(execution_start.metadata())
+        .unwrap_or_else(|error| panic!("generic metadata failed to decode: {error}"));
+    let encoded_schemas = metadata["generated_schemas"]
+        .as_str()
+        .unwrap_or_else(|| panic!("generic metadata omitted generated schemas"));
+    let mut tampered_schemas = encoded_schemas.as_bytes().to_vec();
+    tampered_schemas[0] = if tampered_schemas[0] == b'0' {
+        b'1'
+    } else {
+        b'0'
+    };
+    metadata["generated_schemas"] = serde_json::Value::String(
+        String::from_utf8(tampered_schemas)
+            .unwrap_or_else(|error| panic!("tampered hex was not UTF-8: {error}")),
+    );
+    let tampered_metadata = serde_json::to_vec(&metadata)
+        .unwrap_or_else(|error| panic!("tampered metadata failed to encode: {error}"));
+    let tampered_start = DurableExecutionStartV1::new(
+        execution_start.execution_id(),
+        execution_start.task_id(),
+        &program,
+        Arc::<[u8]>::from(tampered_metadata),
+        execution_start.state().clone(),
+    )
+    .unwrap_or_else(|error| panic!("tampered execution start failed to build: {error:?}"));
+    let JournalPrefixV1::Full(full) = prefix else {
+        panic!("generic start did not produce a full prefix");
+    };
+    let original_evidence = full.evidence.to_vec();
+    let mut evidence = original_evidence.clone();
+    evidence[0].canonical_body = Arc::from(tampered_start.canonical_body());
+    storage.set_prefix_override(JournalPrefixV1::Full(FullJournalPrefixV1 {
+        journal_id: full.journal_id.clone(),
+        evidence: Arc::from(evidence),
+        committed_through: full.committed_through,
+    }));
+    let commits_before_tamper = storage.commit_calls();
+    let tamper_lifecycle = InterpreterLifecycle::new(&configuration);
+    let tamper_allocator = FreshIdentityAllocator::default();
+    let tamper_package =
+        AnalyzePackageCoordinator::new(&tamper_allocator, services.as_ref(), &clock);
+    let tamper_start = StartExecutionCoordinator::new(
+        &tamper_package,
+        &tamper_lifecycle,
+        &configuration,
+        &tamper_allocator,
+        &preflight,
+    );
+    let tamper_resume = DurableStartExecutionCoordinator::new(
+        tamper_start,
+        &configuration,
+        Arc::clone(&storage_adapter),
+    );
+    let DurableResumeExecutionResult::Rejected(failure) =
+        block_on(tamper_resume.resume(DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        }))
+    else {
+        panic!("tampered retained generic artifact was accepted");
+    };
+    assert_eq!(
+        failure.category,
+        ResumeStartFailureCategory::SourceOrConfigurationIncompatibility
+    );
+    assert_eq!(&*failure.code, "invalid-retained-artifact");
+    assert!(failure.release_error.is_none());
+    assert_eq!(storage.commit_calls(), commits_before_tamper);
+
+    let mut malformed_start: serde_json::Value =
+        serde_json::from_slice(&original_evidence[0].canonical_body)
+            .unwrap_or_else(|error| panic!("generic start body failed to decode: {error}"));
+    let encoded_program = malformed_start["program"]
+        .as_str()
+        .unwrap_or_else(|| panic!("generic start body omitted retained program"));
+    let mut malformed_program = encoded_program.as_bytes().to_vec();
+    malformed_program[0] = if malformed_program[0] == b'0' {
+        b'1'
+    } else {
+        b'0'
+    };
+    malformed_start["program"] = serde_json::Value::String(
+        String::from_utf8(malformed_program)
+            .unwrap_or_else(|error| panic!("malformed program hex was not UTF-8: {error}")),
+    );
+    let mut malformed_evidence = original_evidence;
+    malformed_evidence[0].canonical_body = Arc::from(
+        serde_json::to_vec(&malformed_start)
+            .unwrap_or_else(|error| panic!("malformed start body failed to encode: {error}")),
+    );
+    storage.set_prefix_override(JournalPrefixV1::Full(FullJournalPrefixV1 {
+        journal_id: full.journal_id,
+        evidence: Arc::from(malformed_evidence),
+        committed_through: full.committed_through,
+    }));
+    let malformed_lifecycle = InterpreterLifecycle::new(&configuration);
+    let malformed_allocator = FreshIdentityAllocator::default();
+    let malformed_package =
+        AnalyzePackageCoordinator::new(&malformed_allocator, services.as_ref(), &clock);
+    let malformed_start = StartExecutionCoordinator::new(
+        &malformed_package,
+        &malformed_lifecycle,
+        &configuration,
+        &malformed_allocator,
+        &preflight,
+    );
+    let malformed_resume = DurableStartExecutionCoordinator::new(
+        malformed_start,
+        &configuration,
+        Arc::clone(&storage_adapter),
+    );
+    let DurableResumeExecutionResult::Rejected(failure) =
+        block_on(malformed_resume.resume(DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        }))
+    else {
+        panic!("malformed retained generic program was accepted");
+    };
+    assert_eq!(
+        failure.category,
+        ResumeStartFailureCategory::SourceOrConfigurationIncompatibility
+    );
+    assert_eq!(&*failure.code, "invalid-retained-artifact");
+    assert!(failure.release_error.is_none());
+    assert_eq!(storage.commit_calls(), commits_before_tamper);
+}
+
+fn recover_generic_snapshot_in_fresh_process(snapshot: &std::ffi::OsStr) {
+    let evidence_id = std::env::var("GANTRY_DURABLE_GENERIC_EVIDENCE_ID")
+        .ok()
+        .and_then(|value| {
+            gantry::identity::ProtocolIdentity::parse_kind(&value, IdentityKind::Evidence).ok()
+        })
+        .unwrap_or_else(|| panic!("fresh generic recovery process omitted its evidence identity"));
+    let prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
+        journal_id: JournalId::new("durable-generic-artifacts")
+            .unwrap_or_else(|error| panic!("fresh recovery journal identity failed: {error:?}")),
+        snapshot_version: 2,
+        frontier: 1,
+        canonical_snapshot: Arc::from(
+            fs::read(Path::new(snapshot))
+                .unwrap_or_else(|error| panic!("fresh recovery snapshot read failed: {error}")),
+        ),
+        retained_evidence: BTreeMap::from([(evidence_id, 1)]),
+        suffix: Arc::from([]),
+        committed_through: 1,
+    });
+    let (program, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("fresh-process generic recovery failed: {error:?}"));
+    assert_eq!(
+        program
+            .callable_identities()
+            .iter()
+            .map(|identity| identity.as_str())
+            .filter(|identity| identity.ends_with(" as crate::Label>::label"))
+            .collect::<Vec<_>>(),
+        [
+            "<crate::Envelope<Int> as crate::Label>::label",
+            "<crate::Envelope<String> as crate::Label>::label",
+        ]
+    );
+    let outcome = drive_recovered_generic_machine(recovered.into_machine());
+    assert_generic_string_envelope(&outcome);
+}
+
+fn drive_recovered_generic_machine(mut machine: gantry::runtime::Machine) -> MachineOutcome {
+    loop {
+        match machine.step() {
+            MachineStep::Transition(_) => {}
+            MachineStep::YieldRequired => assert!(machine.resume_after_yield()),
+            MachineStep::Complete(outcome) => return outcome,
+            other => panic!("recovered generic machine waited unexpectedly: {other:?}"),
+        }
+    }
+}
+
+fn assert_generic_string_envelope(outcome: &MachineOutcome) {
+    assert!(matches!(
+        outcome,
+        MachineOutcome::Succeeded(value)
+            if matches!(value.view(), LogicalValueView::Struct { type_name, .. }
+                if type_name == "crate::Envelope<String>")
+                && value.canonical_json().bytes() == br#"{"value":"retained"}"#
+    ));
+}
+
 fn start_request<'a>(
     package_root: &'a Path,
     protocol_selection: &'a ProtocolSelection,
@@ -1387,4 +2040,16 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> T {
         fs::read(path).unwrap_or_else(|error| panic!("could not read {}: {error}", path.display()));
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|error| panic!("could not decode {}: {error}", path.display()))
+}
+
+fn assert_anchor_exists(root: &Path, evidence: &str) {
+    let (path, test) = evidence
+        .split_once('#')
+        .unwrap_or_else(|| panic!("evidence anchor is malformed: {evidence}"));
+    let source = fs::read_to_string(root.join(path))
+        .unwrap_or_else(|error| panic!("could not read evidence source {path}: {error}"));
+    assert!(
+        source.contains(&format!("fn {test}(")),
+        "missing evidence anchor {evidence}"
+    );
 }

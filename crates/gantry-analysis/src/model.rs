@@ -287,21 +287,21 @@ pub enum DeclaredValueShape {
     Enum(Vec<DeclaredEnumVariant>),
 }
 
-/// Canonical-path-indexed declared value shapes retained for typed normalization.
+/// Complete-descriptor-indexed declared value shapes retained for typed normalization.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclaredValueShapes {
-    shapes: BTreeMap<CanonicalPath, DeclaredValueShape>,
+    shapes: BTreeMap<TypeDescriptor, DeclaredValueShape>,
 }
 
 impl DeclaredValueShapes {
-    pub(crate) fn new(shapes: BTreeMap<CanonicalPath, DeclaredValueShape>) -> Self {
+    pub(crate) fn new(shapes: BTreeMap<TypeDescriptor, DeclaredValueShape>) -> Self {
         Self { shapes }
     }
 
-    /// Returns the analyzed shape of one canonical declared type.
+    /// Returns the analyzed shape of one complete declared type descriptor.
     #[must_use]
-    pub fn get(&self, path: &CanonicalPath) -> Option<&DeclaredValueShape> {
-        self.shapes.get(path)
+    pub fn get(&self, descriptor: &TypeDescriptor) -> Option<&DeclaredValueShape> {
+        self.shapes.get(descriptor)
     }
 }
 

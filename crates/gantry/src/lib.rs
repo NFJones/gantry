@@ -27,9 +27,9 @@ pub use durable_lifecycle::{
 #[cfg(feature = "durable")]
 pub use durable_start::{
     DurableResumeExecutionAccepted, DurableResumeExecutionFailure, DurableResumeExecutionRequest,
-    DurableResumeExecutionResult, DurableResumeSourceComparison, DurableStartExecutionAccepted,
-    DurableStartExecutionCoordinator, DurableStartExecutionFailure, DurableStartExecutionRequest,
-    DurableStartExecutionResult,
+    DurableResumeExecutionResult, DurableResumeSourceComparison, DurableRetainedArtifacts,
+    DurableStartExecutionAccepted, DurableStartExecutionCoordinator, DurableStartExecutionFailure,
+    DurableStartExecutionRequest, DurableStartExecutionResult,
 };
 #[cfg(feature = "analyzer")]
 pub use gantry_analysis as analysis;

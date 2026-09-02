@@ -149,7 +149,7 @@ pub(crate) fn analyze_generated_schemas(
     }
     let mut generic = schema_generic_templates(&shapes)?;
     if roots.is_empty() {
-        return Ok((entry, None, public_declared_shapes(&shapes)?, generic));
+        return Ok((entry, None, public_declared_shapes(&shapes, &[])?, generic));
     }
 
     let mut entries = Vec::with_capacity(roots.len());
@@ -189,10 +189,11 @@ pub(crate) fn analyze_generated_schemas(
         | SchemaObjectError::InvalidSchemaBytes
         | SchemaObjectError::NoncanonicalOrder => SchemaAnalysisError::Invariant,
     })?;
+    let concrete_types = generic.concrete_types.clone();
     Ok((
         entry,
         Some(schemas),
-        public_declared_shapes(&shapes)?,
+        public_declared_shapes(&shapes, &concrete_types)?,
         generic,
     ))
 }
@@ -521,6 +522,7 @@ fn collect_declared_shapes(
 
 fn public_declared_shapes(
     shapes: &BTreeMap<CanonicalPath, DeclaredShape>,
+    concrete_types: &[TypeDescriptor],
 ) -> Result<DeclaredValueShapes, SchemaAnalysisError> {
     let mut public = BTreeMap::new();
     for (path, shape) in shapes {
@@ -532,7 +534,8 @@ fn public_declared_shapes(
         if !required.is_empty() {
             continue;
         }
-        let concrete = instantiate_declared_shape(&TypeDescriptor::declared(path.clone()), shapes)?;
+        let descriptor = TypeDescriptor::declared(path.clone());
+        let concrete = instantiate_declared_shape(&descriptor, shapes)?;
         let shape = match concrete {
             ConcreteDeclaredShape::Struct(fields) => DeclaredValueShape::Struct(
                 fields
@@ -551,7 +554,29 @@ fn public_declared_shapes(
                     .collect(),
             ),
         };
-        public.insert(path.clone(), shape);
+        public.insert(descriptor, shape);
+    }
+    for descriptor in concrete_types {
+        let concrete = instantiate_declared_shape(descriptor, shapes)?;
+        let shape = match concrete {
+            ConcreteDeclaredShape::Struct(fields) => DeclaredValueShape::Struct(
+                fields
+                    .into_iter()
+                    .map(|field| DeclaredStructField {
+                        name: field.name,
+                        ty: field.ty,
+                        default_json: field.default.map(|value| Arc::from(value.into_bytes())),
+                    })
+                    .collect(),
+            ),
+            ConcreteDeclaredShape::Enum(variants) => DeclaredValueShape::Enum(
+                variants
+                    .into_iter()
+                    .map(|(name, payload)| DeclaredEnumVariant { name, payload })
+                    .collect(),
+            ),
+        };
+        public.insert(descriptor.clone(), shape);
     }
     Ok(DeclaredValueShapes::new(public))
 }

@@ -1159,11 +1159,8 @@ fn decode_declared_value(
     limits: ValueLimits,
     shapes: Option<&DeclaredValueShapes>,
 ) -> Result<LogicalValue, RunExecutionError> {
-    let path = ty
-        .declared_path()
-        .ok_or(RunExecutionError::InvalidEntryValue)?;
     let shape = shapes
-        .and_then(|shapes| shapes.get(path))
+        .and_then(|shapes| shapes.get(ty))
         .ok_or(RunExecutionError::InvalidEntryValue)?;
     match shape {
         DeclaredValueShape::Struct(fields) => {

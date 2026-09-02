@@ -97,6 +97,14 @@ contract and adapter evidence. Evaluator composition, concurrent spawn/join/
 abort, durable persistence, and provider-specific timeout behavior remain with
 their owning issues.
 
+Durable generics-and-traits evidence in
+`conformance/generics-traits-durable-v1.json` maps the amended durable-runtime
+clauses to authenticated sequence-one artifacts, exact closed callable and
+schema reconstruction, full/compacted and fresh-process recovery,
+source-free/candidate comparison, and pre-mutation corruption rejection. It
+does not advertise a global profile while the broader language-adoption gate
+remains blocked.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

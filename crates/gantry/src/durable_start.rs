@@ -95,6 +95,69 @@ pub enum DurableResumeSourceComparison {
     CosmeticManifestDifference,
 }
 
+/// Authenticated analyzer artifacts retained by the accepted durable execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DurableRetainedArtifacts {
+    canonical_ir: Arc<[u8]>,
+    canonical_ir_identity: Arc<str>,
+    generated_schemas: Arc<[u8]>,
+    generated_schemas_identity: Arc<str>,
+    manifest: Arc<[u8]>,
+    manifest_identity: Arc<str>,
+    source_map: Arc<[u8]>,
+    source_map_identity: Arc<str>,
+}
+
+impl DurableRetainedArtifacts {
+    /// Returns the exact retained canonical analysis IR bytes.
+    #[must_use]
+    pub fn canonical_ir(&self) -> &[u8] {
+        &self.canonical_ir
+    }
+
+    /// Returns the authenticated canonical analysis IR identity.
+    #[must_use]
+    pub fn canonical_ir_identity(&self) -> &str {
+        &self.canonical_ir_identity
+    }
+
+    /// Returns the exact retained concrete generated-schema object.
+    #[must_use]
+    pub fn generated_schemas(&self) -> &[u8] {
+        &self.generated_schemas
+    }
+
+    /// Returns the authenticated generated-schema object identity.
+    #[must_use]
+    pub fn generated_schemas_identity(&self) -> &str {
+        &self.generated_schemas_identity
+    }
+
+    /// Returns the exact retained package-source audit manifest.
+    #[must_use]
+    pub fn manifest(&self) -> &[u8] {
+        &self.manifest
+    }
+
+    /// Returns the authenticated package-source manifest identity.
+    #[must_use]
+    pub fn manifest_identity(&self) -> &str {
+        &self.manifest_identity
+    }
+
+    /// Returns the exact retained canonical source-map bytes.
+    #[must_use]
+    pub fn source_map(&self) -> &[u8] {
+        &self.source_map
+    }
+
+    /// Returns the authenticated canonical source-map identity.
+    #[must_use]
+    pub fn source_map_identity(&self) -> &str {
+        &self.source_map_identity
+    }
+}
+
 /// Accepted recovered execution after compatibility and dependency preflight settled.
 #[derive(Debug)]
 pub struct DurableResumeExecutionAccepted {
@@ -112,6 +175,8 @@ pub struct DurableResumeExecutionAccepted {
     pub candidate_package_activity: Option<Box<AnalyzePackageResult>>,
     /// Whether source was omitted, exact, or cosmetically different.
     pub source_comparison: DurableResumeSourceComparison,
+    /// Exact authenticated analysis artifacts retained without reparsing source.
+    pub retained_artifacts: DurableRetainedArtifacts,
 }
 
 /// Durable resume rejection retaining the primary failure and separate owner-release outcome.
@@ -395,6 +460,18 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         };
         let (_, mut recovered) = match recover_authoritative_prefix_with_retained_program(&prefix) {
             Ok(recovered) => recovered,
+            Err(DurableEvidenceError::Checkpoint(_)) => {
+                return self
+                    .reject_resume_and_release(
+                        journal_id,
+                        ownership.token,
+                        ResumeRejection::new(
+                            ResumeStartFailureCategory::SourceOrConfigurationIncompatibility,
+                            "invalid-retained-artifact",
+                        ),
+                    )
+                    .await;
+            }
             Err(_) => {
                 return self
                     .reject_resume_and_release(
@@ -721,6 +798,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             ownership_token: ownership.token,
             candidate_package_activity: candidate_package_activity.map(Box::new),
             source_comparison,
+            retained_artifacts: metadata.retained_artifacts,
         }))
     }
 
@@ -898,8 +976,7 @@ struct ResumeMetadata {
     protocol_selection: String,
     configuration: String,
     required_event_sinks: String,
-    canonical_ir_identity: String,
-    manifest_identity: String,
+    retained_artifacts: DurableRetainedArtifacts,
     agent_names: Vec<String>,
     action_signatures: Vec<String>,
     agent_mapping_revision: Option<String>,
@@ -985,6 +1062,8 @@ fn decode_resume_metadata(
             "entry",
             "execution_id",
             "format",
+            "generated_schemas",
+            "generated_schemas_identity",
             "journal_schema",
             "manifest",
             "manifest_identity",
@@ -1030,6 +1109,31 @@ fn decode_resume_metadata(
         canonical_metadata_node(&document, metadata_field(root, "required_event_sinks")?)?;
     let mutable_policy =
         canonical_metadata_node(&document, metadata_field(root, "mutable_policy")?)?;
+    let canonical_ir_identity =
+        metadata_string(&document, metadata_field(root, "canonical_ir_identity")?)?;
+    let manifest_identity = metadata_string(&document, metadata_field(root, "manifest_identity")?)?;
+    let source_map_identity =
+        metadata_string(&document, metadata_field(root, "source_map_identity")?)?;
+    let generated_schemas_identity = metadata_string(
+        &document,
+        metadata_field(root, "generated_schemas_identity")?,
+    )?;
+    let canonical_ir = retained_artifact(
+        metadata_string(&document, metadata_field(root, "canonical_ir")?)?,
+        canonical_ir_identity,
+    )?;
+    let generated_schemas = retained_artifact(
+        metadata_string(&document, metadata_field(root, "generated_schemas")?)?,
+        generated_schemas_identity,
+    )?;
+    let manifest = retained_artifact(
+        metadata_string(&document, metadata_field(root, "manifest")?)?,
+        manifest_identity,
+    )?;
+    let source_map = retained_artifact(
+        metadata_string(&document, metadata_field(root, "source_map")?)?,
+        source_map_identity,
+    )?;
     if !canonical_identity_matches(
         &protocol_selection,
         metadata_string(
@@ -1070,13 +1174,16 @@ fn decode_resume_metadata(
         protocol_selection,
         configuration,
         required_event_sinks,
-        canonical_ir_identity: metadata_string(
-            &document,
-            metadata_field(root, "canonical_ir_identity")?,
-        )?
-        .to_owned(),
-        manifest_identity: metadata_string(&document, metadata_field(root, "manifest_identity")?)?
-            .to_owned(),
+        retained_artifacts: DurableRetainedArtifacts {
+            canonical_ir,
+            canonical_ir_identity: Arc::from(canonical_ir_identity),
+            generated_schemas,
+            generated_schemas_identity: Arc::from(generated_schemas_identity),
+            manifest,
+            manifest_identity: Arc::from(manifest_identity),
+            source_map,
+            source_map_identity: Arc::from(source_map_identity),
+        },
         agent_names: metadata_string_array(&document, metadata_field(root, "agent_names")?)?,
         action_signatures: metadata_string_array(
             &document,
@@ -1118,14 +1225,14 @@ fn compare_candidate_source(
             "missing-candidate-manifest",
         )
     })?;
-    if canonical_ir.artifact().sha256_hex() != metadata.canonical_ir_identity {
+    if canonical_ir.artifact().sha256_hex() != metadata.retained_artifacts.canonical_ir_identity() {
         return Err(ResumeRejection::new(
             ResumeStartFailureCategory::SourceOrConfigurationIncompatibility,
             "canonical-ir-identity-mismatch",
         ));
     }
     Ok(
-        if manifest.artifact().sha256_hex() == metadata.manifest_identity {
+        if manifest.artifact().sha256_hex() == metadata.retained_artifacts.manifest_identity() {
             DurableResumeSourceComparison::ExactManifest
         } else {
             DurableResumeSourceComparison::CosmeticManifestDifference
@@ -1435,6 +1542,42 @@ fn canonical_identity_matches(value: &str, expected: &str) -> bool {
     })
 }
 
+fn retained_artifact(encoded: &str, expected: &str) -> Result<Arc<[u8]>, ResumeRejection> {
+    decode_lower_hex(encoded)
+        .filter(|bytes| {
+            std::str::from_utf8(bytes)
+                .is_ok_and(|value| canonical_identity_matches(value, expected))
+        })
+        .map(Arc::from)
+        .ok_or_else(|| {
+            ResumeRejection::new(
+                ResumeStartFailureCategory::SourceOrConfigurationIncompatibility,
+                "invalid-retained-artifact",
+            )
+        })
+}
+
+fn decode_lower_hex(value: &str) -> Option<Vec<u8>> {
+    if !value.len().is_multiple_of(2) {
+        return None;
+    }
+    let mut decoded = Vec::with_capacity(value.len() / 2);
+    for pair in value.as_bytes().chunks_exact(2) {
+        let high = lower_hex_nibble(pair[0])?;
+        let low = lower_hex_nibble(pair[1])?;
+        decoded.push((high << 4) | low);
+    }
+    Some(decoded)
+}
+
+const fn lower_hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        _ => None,
+    }
+}
+
 fn json_string_array(values: &[String]) -> String {
     let mut output = String::from("[");
     for (index, value) in values.iter().enumerate() {
@@ -1569,6 +1712,9 @@ fn execution_start_metadata(
     let source_map = analysis
         .source_map()
         .ok_or_else(|| start_failure(StartFailureCategory::Internal, "missing-source-map"))?;
+    let schemas = analysis
+        .schemas()
+        .ok_or_else(|| start_failure(StartFailureCategory::Internal, "missing-schemas"))?;
     let entry = analysis
         .entry()
         .ok_or_else(|| start_failure(StartFailureCategory::Internal, "missing-entry"))?;
@@ -1654,7 +1800,11 @@ fn execution_start_metadata(
     output.push('}');
     output.push_str(",\"execution_id\":");
     push_json_string(&mut output, &prepared.execution_id.to_string());
-    output.push_str(",\"format\":\"gantry.execution-start-metadata/v1\",\"journal_schema\":{\"major\":1,\"minor\":0},\"manifest\":");
+    output.push_str(",\"format\":\"gantry.execution-start-metadata/v1\",\"generated_schemas\":");
+    push_json_string(&mut output, &hex(schemas.artifact().canonical_bytes()));
+    output.push_str(",\"generated_schemas_identity\":");
+    push_json_string(&mut output, &schemas.artifact().sha256_hex());
+    output.push_str(",\"journal_schema\":{\"major\":1,\"minor\":0},\"manifest\":");
     push_json_string(&mut output, &hex(manifest.artifact().canonical_bytes()));
     output.push_str(",\"manifest_identity\":");
     push_json_string(&mut output, &manifest.artifact().sha256_hex());

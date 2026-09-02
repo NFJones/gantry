@@ -24,7 +24,12 @@ pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
     let mut writer = Writer::default();
     writer.raw(MAGIC);
     writer.count(program.workflows().len());
-    for workflow in program.workflows() {
+    for (identity, workflow) in program
+        .callable_identities()
+        .iter()
+        .zip(program.workflows())
+    {
+        writer.string(identity.as_str());
         writer.string(workflow.path.as_str());
         writer.count(workflow.parameters.len());
         for parameter in &workflow.parameters {
@@ -54,8 +59,11 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
         return Err(MachineRecoveryError::InvalidEncoding);
     }
     let workflow_count = reader.count()?;
-    let mut workflows = Vec::with_capacity(workflow_count);
+    let mut callables = Vec::with_capacity(workflow_count);
     for _ in 0..workflow_count {
+        let identity =
+            CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
+                .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
         let path = path(&reader.string()?)?;
         let parameter_count = reader.count()?;
         let mut parameters = Vec::with_capacity(parameter_count);
@@ -83,19 +91,22 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
                 kind: read_instruction(&mut reader)?,
             });
         }
-        workflows.push(Workflow {
-            path,
-            parameters,
-            result,
-            effects,
-            instructions,
-        });
+        callables.push((
+            identity,
+            Workflow {
+                path,
+                parameters,
+                result,
+                effects,
+                instructions,
+            },
+        ));
     }
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
-    let program =
-        MachineProgram::new(workflows).map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    let program = MachineProgram::with_callable_identities(callables)
+        .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
     if encode_machine_program(&program) != bytes {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
@@ -570,6 +581,15 @@ fn read_primitive(reader: &mut Reader<'_>) -> Result<Primitive, MachineRecoveryE
 }
 
 fn path(value: &str) -> Result<CanonicalPath, MachineRecoveryError> {
+    if let Some((receiver, method)) = value
+        .strip_prefix('<')
+        .and_then(|value| value.split_once(">::"))
+    {
+        let receiver =
+            CanonicalPath::new(receiver).map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+        return CanonicalPath::method(&receiver, method)
+            .map_err(|_| MachineRecoveryError::InvalidEncoding);
+    }
     CanonicalPath::new(value).map_err(|_| MachineRecoveryError::InvalidEncoding)
 }
 fn ty(value: &str) -> Result<TypeDescriptor, MachineRecoveryError> {
@@ -613,8 +633,8 @@ mod tests {
 
     use gantry_core::value::LogicalValue;
     use gantry_ir::{
-        CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, StructuralPosition,
-        TypeDescriptor, Workflow,
+        CanonicalCallableIdentity, CanonicalPath, EffectSet, Instruction, InstructionKind,
+        MachineProgram, Parameter, StructuralPosition, TypeDescriptor, Workflow,
     };
 
     use super::{decode_machine_program, encode_machine_program};
@@ -665,5 +685,88 @@ mod tests {
             Err(MachineRecoveryError::InvalidEncoding)
         );
         let _ = Arc::<[u8]>::from(trailing);
+    }
+
+    #[test]
+    fn executable_program_codec_preserves_closed_generic_callable_identities() {
+        let main_path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("main path failed: {error}"));
+        let preserve_path = CanonicalPath::new("crate::preserve")
+            .unwrap_or_else(|error| panic!("preserve path failed: {error}"));
+        let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+        let preserve_identity =
+            CanonicalCallableIdentity::free(&preserve_path, &[TypeDescriptor::STRING]);
+        let program = MachineProgram::with_callable_identities(vec![
+            (
+                main_identity,
+                Workflow {
+                    path: main_path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::STRING,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Push(
+                                LogicalValue::string("retained", super::codec_limits())
+                                    .unwrap_or_else(|error| panic!("value failed: {error:?}")),
+                            ),
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Call {
+                                callee: preserve_identity.clone(),
+                                arguments: 1,
+                            },
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![2])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ),
+            (
+                preserve_identity.clone(),
+                Workflow {
+                    path: preserve_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("value"),
+                        ty: TypeDescriptor::STRING,
+                        mutable: false,
+                    }],
+                    result: TypeDescriptor::STRING,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Load(Arc::from("value")),
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::STRING,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ),
+        ])
+        .unwrap_or_else(|error| panic!("generic program failed: {error:?}"));
+
+        let encoded = encode_machine_program(&program);
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("generic program decode failed: {error:?}"));
+        assert_eq!(decoded, program);
+        assert_eq!(decoded.callable_identities()[1], preserve_identity);
+        assert_eq!(encode_machine_program(&decoded), encoded);
     }
 }

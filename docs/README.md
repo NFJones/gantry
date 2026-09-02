@@ -49,6 +49,11 @@ task-path operation identities, all-settled and lifecycle behavior, and
 deterministic/Tokio schedule equivalence are documented in
 [`concurrent-generics-and-traits.md`](concurrent-generics-and-traits.md).
 
+The durable runtime's authenticated generic artifacts, source-free and
+candidate-source resume, compacted and fresh-process reconstruction, and
+pre-execution tamper rejection are documented in
+[`durable-generics-and-traits.md`](durable-generics-and-traits.md).
+
 The nondurable sequential evaluator's progress, preservation, cancellation,
 operation-consumption, lifecycle, observation, and terminal-uniqueness
 argument is documented in

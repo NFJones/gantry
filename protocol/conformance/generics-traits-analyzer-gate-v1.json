@@ -58,7 +58,7 @@
     },
     {
       "path": "crates/gantry-analysis/src/schemas.rs",
-      "sha256": "20538afdb1e6d44022306809e406c2dc7cf77500068eb4ae73fe1ff447ae69bb"
+      "sha256": "40a4b790ff13b28c5574ef4d150885d0f865e7d7194532c96b4abf6e80b5006a"
     },
     {
       "path": "crates/gantry-analysis/src/types.rs",
@@ -106,7 +106,7 @@
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "1f063cb0581c1d21de47d5b8f80eb3ce30e5f38b1510600a30b0c84e67321948"
+      "sha256": "7b09e119b1b55fe566b6f772101f69c168f9e2aef075ef9ea534fd49df14e203"
     },
     {
       "path": "crates/gantry/src/validate.rs",
@@ -146,11 +146,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "2c0fa58a53064b2649aa6a74332985252f1fcf36715f70a38ad3547673e196a3"
+      "sha256": "75f9b6fb7eb35273efa690dc58a24048afcc3ae4104748576075643addd8711c"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "fbeb7df9db998116a798e64c6bac90290b67bdf77d489e25131dcd301efdf2b6"
+      "sha256": "a60ea2308b0d7f0b000611d52b36976562214a071633c35f34d677b0e9aca2ae"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
@@ -180,7 +180,10 @@
   },
   "section14_excerpt_count": 51,
   "claim": {
-    "profiles": ["analyzer", "frontend"],
+    "profiles": [
+      "analyzer",
+      "frontend"
+    ],
     "advertises_profiles": [],
     "excludes_profiles": [
       "concurrent-evaluator",

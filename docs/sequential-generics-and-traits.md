@@ -44,17 +44,14 @@ branch targets.
 ## Serialization and scope
 
 The in-memory executable program retains concrete workflow descriptors, direct
-call identities, and enum branch tables. The existing private durable codec
-continues to preserve the pre-amendment public bytes for nongeneric programs;
-retaining concrete workflow identities, authenticating the amended artifact,
-and proving restart equivalence are owned by `GNT-GEN-DUR-001`. That later work
-must reconstruct the same closed program without adding source analysis to the
-runtime.
+call identities, and enum branch tables. Durable retention now preserves those
+same closed identities and authenticates the analyzer artifacts without adding
+source analysis to the runtime. That boundary is documented in
+[`durable-generics-and-traits.md`](durable-generics-and-traits.md).
 
 Concurrent transfer of concrete captures and results is implemented separately
 and documented in
 [`concurrent-generics-and-traits.md`](concurrent-generics-and-traits.md).
-Durable retention and reconstruction remain owned by `GNT-GEN-DUR-001`.
 Global evaluator profile advertisement also remains disabled until the complete
 generics-and-traits adoption gate closes.
 

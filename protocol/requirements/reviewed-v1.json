@@ -98,8 +98,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#reviewed_durable_generic_evidence_is_closed"
+              ],
               "rationale": null
             },
             {
@@ -501,8 +503,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#reviewed_durable_generic_evidence_is_closed"
+              ],
               "rationale": null
             },
             {
@@ -2096,8 +2100,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -2433,8 +2439,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -2784,8 +2792,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -2860,8 +2870,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -2937,8 +2949,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -3930,8 +3944,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -6368,8 +6384,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -8877,8 +8895,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -9290,8 +9310,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9702,8 +9724,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9778,8 +9802,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -9854,8 +9880,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+              ],
               "rationale": null
             },
             {
@@ -10534,8 +10562,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#generic_analysis_policy_charges_are_public_and_failure_atomic"
+              ],
               "rationale": null
             },
             {
@@ -12734,8 +12764,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -12889,8 +12921,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -13031,8 +13065,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -13860,8 +13896,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -17987,8 +18025,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -21262,8 +21302,10 @@
           "profile_reviews": [
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -22893,8 +22935,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
+              ],
               "rationale": null
             },
             {
@@ -23260,8 +23304,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures"
+              ],
               "rationale": null
             },
             {
@@ -23672,8 +23718,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -23749,8 +23797,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -23826,8 +23876,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24045,8 +24097,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24122,8 +24176,10 @@
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
