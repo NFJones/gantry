@@ -1,22 +1,82 @@
 {
   "format": "gantry.durable-start-evidence/v1",
-  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-DUR-003",
   "capabilities": [
-    { "id": "candidate-and-source-free-resume", "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries" },
-    { "id": "execution-state-revisions", "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries" },
-    { "id": "fresh-target-and-sequence-one", "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries" },
-    { "id": "nonmutation-and-owner-release", "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries" },
-    { "id": "resume-compatibility-and-preflight", "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries" },
-    { "id": "sequence-one-metadata", "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries" }
+    {
+      "id": "candidate-and-source-free-resume",
+      "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+    },
+    {
+      "id": "execution-state-revisions",
+      "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+    },
+    {
+      "id": "fresh-target-and-sequence-one",
+      "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+    },
+    {
+      "id": "nonmutation-and-owner-release",
+      "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+    },
+    {
+      "id": "resume-compatibility-and-preflight",
+      "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+    },
+    {
+      "id": "sequence-one-metadata",
+      "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+    }
   ],
   "reviewed_clauses": [
-    { "requirement": "GNT-11.10", "clause": "clause-001", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"] },
-    { "requirement": "GNT-11.10", "clause": "clause-002", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"] },
-    { "requirement": "GNT-11.10", "clause": "clause-003", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"] },
-    { "requirement": "GNT-11.10", "clause": "clause-004", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"] },
-    { "requirement": "GNT-11.10", "clause": "clause-005", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"] },
-    { "requirement": "GNT-11.10", "clause": "clause-006", "profile": "durable-runtime", "evidence": ["crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"] }
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-001",
+      "profile": "durable-runtime",
+      "evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+      ]
+    },
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-002",
+      "profile": "durable-runtime",
+      "evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+      ]
+    },
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-003",
+      "profile": "durable-runtime",
+      "evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+      ]
+    },
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-004",
+      "profile": "durable-runtime",
+      "evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+      ]
+    },
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-005",
+      "profile": "durable-runtime",
+      "evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+      ]
+    },
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-006",
+      "profile": "durable-runtime",
+      "evidence": [
+        "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+      ]
+    }
   ],
   "exclusions": [
     "Durable query, cancellation, await, shutdown, and terminal owner-release reporting remain owned by GNT-DUR-004.",

@@ -1,6 +1,6 @@
 {
   "format": "gantry.analyzer-workflow-evidence/v1",
-  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-AN-004",
   "entries": [
     {
@@ -17,11 +17,6 @@
       "requirement": "GNT-10.8",
       "clause": "clause-001",
       "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_task_ownership_contracts_are_path_sensitive"
-    },
-    {
-      "requirement": "GNT-12.9",
-      "clause": "clause-001",
-      "evidence": "crates/gantry-conformance/tests/analyzer_workflow_facts.rs#public_workflow_effect_schema_and_inventory_contracts"
     },
     {
       "requirement": "GNT-3-T-JOIN",

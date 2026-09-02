@@ -7,8 +7,8 @@ must never be used to recreate or redefine them.
 - `catalogs/` contains closed vocabularies and dependency catalogs.
 - `schemas/` contains their versioned JSON Schemas.
 - `goldens/` contains exact canonical encodings and negative fixtures.
-- `publication/` contains inputs used to assemble, but not impersonate, a
-  complete publication index.
+- `publication/` contains the assembled seven-artifact set, canonical index,
+  and independent verification report.
 - `conformance/` contains digest-bound gate evidence assembled from canonical
   inputs and independently checked public surfaces.
 - `requirements/` contains reviewed normative-span, applicability, clause,

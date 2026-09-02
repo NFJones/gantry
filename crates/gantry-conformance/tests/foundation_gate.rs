@@ -161,7 +161,7 @@ fn checked_in_foundation_evidence_is_current_and_makes_no_profile_claim() {
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert!(validate_manifest(&root, &manifest).is_err());
+    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]

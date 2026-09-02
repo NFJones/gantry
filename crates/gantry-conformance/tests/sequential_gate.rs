@@ -5,7 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -160,7 +159,7 @@ fn checked_in_sequential_profile_gate_is_current() {
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert!(validate_manifest(&root, &manifest).is_err());
+    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
@@ -195,40 +194,12 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     {
         return Err("sequential gate identity or status is invalid".to_owned());
     }
-    let advertised_profiles_are_valid =
-        if gantry::compiled_features().concurrent && gantry::compiled_features().durable {
-            gantry::advertised_profiles()
-                == [
-                    ConformanceProfile::Analyzer,
-                    ConformanceProfile::ConcurrentEvaluator,
-                    ConformanceProfile::DurableRuntime,
-                    ConformanceProfile::Embedding,
-                    ConformanceProfile::Evaluator,
-                    ConformanceProfile::Frontend,
-                ]
-        } else if gantry::compiled_features().concurrent {
-            gantry::advertised_profiles()
-                == [
-                    ConformanceProfile::Analyzer,
-                    ConformanceProfile::ConcurrentEvaluator,
-                    ConformanceProfile::Embedding,
-                    ConformanceProfile::Evaluator,
-                    ConformanceProfile::Frontend,
-                ]
-        } else {
-            gantry::advertised_profiles()
-                == [
-                    ConformanceProfile::Analyzer,
-                    ConformanceProfile::Embedding,
-                    ConformanceProfile::Evaluator,
-                    ConformanceProfile::Frontend,
-                ]
-        };
     if manifest.claim.profiles != ["analyzer", "embedding", "evaluator", "frontend"]
-        || manifest.claim.advertises_profiles != manifest.claim.profiles
+        || !manifest.claim.advertises_profiles.is_empty()
         || manifest.claim.excludes_profiles != ["concurrent-evaluator", "durable-runtime"]
         || manifest.claim.excludes_capabilities != ["journal", "resume"]
-        || !advertised_profiles_are_valid
+        || gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().is_empty()
     {
         return Err("sequential claim is invalid or overstates a later profile".to_owned());
     }
@@ -423,7 +394,7 @@ fn validate_semantic_evidence(
         || summary.maximum_depth != 12
         || summary.explored_state_count != 836
         || summary.terminal_state_count != 276
-        || summary.counterexample_count != 9
+        || summary.counterexample_count != 12
     {
         return Err("sequential semantic evidence summary is invalid".to_owned());
     }
@@ -480,9 +451,13 @@ fn validate_semantic_evidence(
     let expected_obligations = [
         "base-handle-ownership-vacuous",
         "cancellation-nonconsumption",
+        "closed-generic-descriptor-preservation",
+        "concrete-effect-and-schema-preservation",
+        "direct-call-target-preservation",
         "enabled-machine-progress",
         "fixed-outcome-observation-isolation",
         "lifecycle-linearization",
+        "no-runtime-generic-analysis",
         "operation-single-consumption",
         "terminal-completion-uniqueness",
         "type-and-store-preservation",
@@ -508,7 +483,11 @@ fn validate_semantic_evidence(
             .map(|counterexample| counterexample.id.as_str()),
     )?;
     if model.counterexamples.iter().any(|counterexample| {
-        counterexample.trace.is_empty()
+        let static_generic_rejection = matches!(
+            counterexample.rejected_action.as_str(),
+            "publish-open-generic" | "resolve-trait-at-runtime" | "rewrite-concrete-call-target"
+        );
+        (counterexample.trace.is_empty() && !static_generic_rejection)
             || counterexample.rejected_action.trim().is_empty()
             || counterexample.invariant.trim().is_empty()
     }) {

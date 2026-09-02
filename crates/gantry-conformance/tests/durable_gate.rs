@@ -5,7 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -176,7 +175,7 @@ fn checked_in_durable_profile_gate_is_current() {
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert!(validate_manifest(&root, &manifest).is_err());
+    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
@@ -219,19 +218,12 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         "frontend",
     ];
     if manifest.claim.profiles != claimed
-        || manifest.claim.advertises_profiles != claimed
+        || !manifest.claim.advertises_profiles.is_empty()
         || manifest.claim.excludes_profiles != ["concurrent-evaluator"]
         || manifest.claim.excludes_capabilities != ["combined-concurrent-durable"]
         || !gantry::compiled_features().durable
-        || gantry::advertised_profiles()
-            != [
-                ConformanceProfile::Analyzer,
-                ConformanceProfile::ConcurrentEvaluator,
-                ConformanceProfile::DurableRuntime,
-                ConformanceProfile::Embedding,
-                ConformanceProfile::Evaluator,
-                ConformanceProfile::Frontend,
-            ]
+        || gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().is_empty()
     {
         return Err("durable claim is invalid or overstates combined behavior".to_owned());
     }
@@ -420,7 +412,7 @@ fn validate_semantic_evidence(
         || summary.maximum_depth != 15
         || summary.explored_state_count != 3_724
         || summary.terminal_state_count != 2_772
-        || summary.counterexample_count != 11
+        || summary.counterexample_count != 15
     {
         return Err("durable semantic evidence summary is invalid".to_owned());
     }
@@ -474,11 +466,16 @@ fn validate_semantic_evidence(
         "causally-closed-prefix-recovery",
         "commit-before-observation",
         "compaction-equivalent-projection",
+        "fail-closed-generic-artifacts",
         "fixed-outcome-status-isolation",
         "indeterminate-delivery-classification",
         "indeterminate-operation-classification",
+        "no-recovery-generic-analysis",
         "recorded-delay-reuse",
+        "retained-generic-projection-equivalence",
+        "selected-target-preservation",
         "single-result-consumption",
+        "source-free-generic-recovery",
         "terminal-completion-uniqueness",
     ]
     .into_iter()

@@ -26,7 +26,6 @@ struct ProfileCatalog {
     major: u64,
     minor: u64,
     specification_revision: String,
-    superseded_specification_revision: String,
     claims_enabled: bool,
     profiles: Vec<ProfileInput>,
 }
@@ -127,15 +126,6 @@ fn validate_catalog(root: &Path, catalog: &ProfileCatalog) -> Result<(), String>
         .map_err(|error| format!("could not read SPEC.md: {error}"))?;
     if catalog.specification_revision != format!("{:x}", Sha256::digest(specification)) {
         return Err("profile catalog specification revision is stale".to_owned());
-    }
-    if catalog.superseded_specification_revision == catalog.specification_revision
-        || catalog.superseded_specification_revision.len() != 64
-        || !catalog
-            .superseded_specification_revision
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-    {
-        return Err("profile catalog superseded revision is invalid".to_owned());
     }
     if catalog.profiles.is_empty() {
         return Err("profile catalog must not be empty".to_owned());
@@ -263,8 +253,8 @@ fn render_canonical_json(catalog: &ProfileCatalog) -> String {
         output.push_str(&format!("],\"rust_name\":\"{}\"}}", profile.rust_name));
     }
     output.push_str(&format!(
-        "],\"specification_revision\":\"{}\",\"superseded_specification_revision\":\"{}\"}}\n",
-        catalog.specification_revision, catalog.superseded_specification_revision
+        "],\"specification_revision\":\"{}\"}}\n",
+        catalog.specification_revision
     ));
     output
 }
@@ -296,12 +286,6 @@ pub enum ConformanceProfile {\n",
 pub const PROFILE_SPECIFICATION_REVISION: &str = \"",
     );
     output.push_str(&catalog.specification_revision);
-    output.push_str(
-        "\";\n\n\
-/// SHA-256 of the isolated pre-adoption specification revision.\n\
-pub const PROFILE_SUPERSEDED_SPECIFICATION_REVISION: &str = \"",
-    );
-    output.push_str(&catalog.superseded_specification_revision);
     output.push_str(
         "\";\n\n\
 /// Whether this staged baseline may advertise conformance profiles.\n\
@@ -401,7 +385,6 @@ mod tests {
             major: 1,
             minor: 0,
             specification_revision: format!("{:x}", Sha256::digest(b"test specification")),
-            superseded_specification_revision: "0".repeat(64),
             profiles: vec![
                 ProfileInput {
                     name: "analyzer".to_owned(),
@@ -488,7 +471,6 @@ mod tests {
             "major": catalog.major,
             "minor": catalog.minor,
             "specification_revision": catalog.specification_revision,
-            "superseded_specification_revision": catalog.superseded_specification_revision,
             "profiles": catalog.profiles.iter().map(|profile| serde_json::json!({
                 "name": profile.name,
                 "rust_name": profile.rust_name,

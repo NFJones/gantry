@@ -286,14 +286,7 @@ fn validate_manifest(
             .blocked_by
             .iter()
             .any(|issue| issue == "GNT-GEN-CONF-001")
-        || !adoption
-            .blocked_by
-            .iter()
-            .any(|issue| issue == "GNT-GEN-PUB-001")
-        || !adoption
-            .blocked_by
-            .iter()
-            .any(|issue| issue == "GNT-GEN-REL-001")
+        || adoption.blocked_by != ["GNT-GEN-REL-001"]
     {
         return Err("generic conformance gate overclaims publication or release".to_owned());
     }

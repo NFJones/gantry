@@ -11,10 +11,6 @@
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
     },
-    "superseded_specification_revision": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
-    },
     "profiles": {
       "items": {
         "additionalProperties": false,
@@ -40,7 +36,6 @@
     "major",
     "minor",
     "specification_revision",
-    "superseded_specification_revision",
     "profiles"
   ],
   "title": "Gantry v1 profile catalog input",

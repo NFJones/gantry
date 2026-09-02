@@ -87,23 +87,23 @@ the repository commit containing `SPEC.md` or the lowercase hexadecimal
 SHA-256 digest of the exact `SPEC.md` bytes. The claim applies to the complete
 identified revision, not to a selected subset of its requirements.
 
-This repository revision does not include the publication index or protocol
-artifacts required by Section 15.8. It is therefore an incomplete draft for
-embedding interoperability and cannot by itself support a conforming Gantry v1
-deployment claim. The source-language contract remains reviewable and
-implementable in stages under the profiles below, but interoperability claims
-must wait for those versioned schemas, fixtures, and conformance artifacts.
+This repository revision includes the publication index and protocol artifacts
+required by Section 15.8. Together they form the current amended baseline for
+embedding interoperability. Publication readiness does not itself enable a
+conforming Gantry v1 deployment or profile claim: those remain withdrawn until
+release qualification validates the required toolchain, platform, package,
+supply-chain, and fuzz matrices.
 
 The parametric-generics and static-traits amendment in this revision replaces
 the preceding pre-adoption draft language in place. It does not define a
 legacy parser, feature-selected grammar, parallel canonical encoding, protocol
-migration, or old-artifact recovery path. Until one complete publication set
-contains the amended specification, schemas, goldens, requirement mappings,
-authoring fixtures, and conformance evidence, every profile and publication
-claim affected by the amendment is withdrawn. The replacement publication is
-the sole v1 baseline; exact-version immutability in Section 15.8 applies to
-that complete adopted set and later sets, not to superseded pre-adoption draft
-bytes.
+migration, or old-artifact recovery path. The complete publication set in this
+revision contains the amended specification, schemas, goldens, requirement
+mappings, authoring fixtures, and conformance evidence. It is the sole v1
+baseline. It does not by itself enable profile claims; those remain withdrawn
+until release qualification. Exact-version immutability in Section 15.8
+applies to this complete amended set and later sets, not to superseded
+pre-adoption draft bytes.
 
 Sections 1.1 through 1.4 and Section 14 are non-normative reading and
 authoring aids. The remainder of Sections 1 through 13 and all of Section 15

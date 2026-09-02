@@ -1,31 +1,88 @@
 {
   "format": "gantry.concurrent-refinement-evidence/v1",
-  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-CON-005",
   "profile": "concurrent-evaluator",
   "argument": "docs/concurrent-evaluator-refinement.md",
   "model": "protocol/goldens/concurrent-refinement-model-v1.json",
   "model_evidence": "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay",
   "reviewed_clauses": [
-    { "requirement": "GNT-3-D-PROPERTIES", "clause": "clause-001" },
-    { "requirement": "GNT-3-M-FAIL", "clause": "clause-001" },
-    { "requirement": "GNT-3-M-LABELS", "clause": "clause-001" },
-    { "requirement": "GNT-3-M-LABELS", "clause": "clause-002" },
-    { "requirement": "GNT-3-M-LABELS", "clause": "clause-003" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-001" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-002" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-003" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-004" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-005" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-009" },
-    { "requirement": "GNT-3-M-STATE", "clause": "clause-002" },
-    { "requirement": "GNT-3-M-TASK-SETTLE", "clause": "clause-001" },
-    { "requirement": "GNT-3.13", "clause": "clause-001" },
-    { "requirement": "GNT-3.15", "clause": "clause-001" },
-    { "requirement": "GNT-3.15-liveness", "clause": "clause-001" },
-    { "requirement": "GNT-3.15-liveness", "clause": "clause-002" },
-    { "requirement": "GNT-3.15-liveness", "clause": "clause-003" },
-    { "requirement": "GNT-3.15-liveness", "clause": "clause-004" }
+    {
+      "requirement": "GNT-3-D-PROPERTIES",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3-M-FAIL",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3-M-LABELS",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3-M-LABELS",
+      "clause": "clause-002"
+    },
+    {
+      "requirement": "GNT-3-M-LABELS",
+      "clause": "clause-003"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-002"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-003"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-004"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-005"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-009"
+    },
+    {
+      "requirement": "GNT-3-M-STATE",
+      "clause": "clause-002"
+    },
+    {
+      "requirement": "GNT-3-M-TASK-SETTLE",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3.13",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3.15",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3.15-liveness",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3.15-liveness",
+      "clause": "clause-002"
+    },
+    {
+      "requirement": "GNT-3.15-liveness",
+      "clause": "clause-003"
+    },
+    {
+      "requirement": "GNT-3.15-liveness",
+      "clause": "clause-004"
+    }
   ],
   "trace_evidence": [
     "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",
@@ -52,4 +109,3 @@
     "Durable commit, recovery, SQLite, and combined concurrent-durable obligations remain owned by Phase 6 and the combined gate."
   ]
 }
-

@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
   },
   "prerequisites": [
     {
@@ -41,31 +41,31 @@
   "artifacts": [
     {
       "path": "SPEC.md",
-      "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+      "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
     },
     {
       "path": "crates/gantry-conformance/tests/durable_events.rs",
-      "sha256": "ee1e005da5619123b1ac37b152534cbb24c3b0b3e4b6ec211f6fa3cb446949e4"
+      "sha256": "279da2e8152e6f4f2ca2a992737fedcf8b40fae7d91faf17b4eb2dd4f4d9856c"
     },
     {
       "path": "crates/gantry-conformance/tests/durable_gate.rs",
-      "sha256": "587f34671c625e1c02c717b7b569821c12a96b7765b512ac9c4f3d5e59689371"
+      "sha256": "4b9b897cad3c9ac0c990aaa372bfa56c10775c69dbdf8c56033e8801bb4e97bc"
     },
     {
       "path": "crates/gantry-conformance/tests/durable_recovery.rs",
-      "sha256": "f771443581ab9eb810276bb3ec121e77eba59cb853e86d0173526d98895e7c0c"
+      "sha256": "5c587531d7942720bd7d3bda1a17947d50bf1b0c6d4928b43d28c329108141c5"
     },
     {
       "path": "crates/gantry-conformance/tests/durable_refinement_model.rs",
-      "sha256": "d3ac372ee500801a12b1c9246e51502688bfc86f26a3acc289c2b17561963e30"
+      "sha256": "9f7e94db144971c5cbb302e8129f29d3f13236669dfd115cfa18c2169a5a1ea6"
     },
     {
       "path": "crates/gantry-conformance/tests/durable_start.rs",
-      "sha256": "5a00d050a4f81fa9fc3598d9a6baf15565cd62f5f3ebf9624851036701bbebe6"
+      "sha256": "a189394f0e1447fec111a751a2f454230b0608ac94b2d82eb23e0d18aeac777a"
     },
     {
       "path": "crates/gantry-conformance/tests/journal_storage.rs",
-      "sha256": "8def4a9c842e415416e8cc5539678d45fa4c856090334a6c02403fffda03067a"
+      "sha256": "a7e7af4ff4f96301977c6f5af7064e5c431468c2d0ea7ff2754683e367b21589"
     },
     {
       "path": "crates/gantry-conformance/tests/sqlite_storage.rs",
@@ -73,11 +73,11 @@
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "1d888268bed4261cf556e749a2eaf7d905c452deec1fb09b9ca76d705ab832cb"
+      "sha256": "b5659ea418e9bc717d21e9819db83ec8410fb9a6bc790c6f2b706b84a8e41555"
     },
     {
       "path": "docs/durable-runtime-refinement.md",
-      "sha256": "4d60fb2c2be3fbd5f75b7518bb7711384f43b6ece043e654cd55f82f61ce3bac"
+      "sha256": "805999d7661e34c57eb435df6dbc7a737ebaf177260e2700f86d424e5cca1186"
     },
     {
       "path": "docs/sqlite-journal-storage.md",
@@ -85,27 +85,27 @@
     },
     {
       "path": "protocol/conformance/durable-events-v1.json",
-      "sha256": "d2529845cda9a7bddfc6d6f5874f9a6a6ade60f055714aaa77384d15cee5150c"
+      "sha256": "2a1fee57c4801f6fe4f8fdbbed6e44f5053a854d9bc87e338b48ca5dbab02185"
     },
     {
       "path": "protocol/conformance/durable-recovery-v1.json",
-      "sha256": "d131cc36566c5eeb17db6cd463205464c8f6dd778ce8fb4a15fe84b0a4f9ea46"
+      "sha256": "be6a07e5f1d98605078236d96eed12aed21a261be7d001c18be35d95fe7031d2"
     },
     {
       "path": "protocol/conformance/durable-refinement-v1.json",
-      "sha256": "b8039d77db93647615c3dad8584984af72b6904604bff0b1a103d72ccad9b181"
+      "sha256": "6a08afc76d8ca0ed22bf85f10e23a1f02b781b2fb6d9f18aff5daff1fc3ccba8"
     },
     {
       "path": "protocol/conformance/durable-start-v1.json",
-      "sha256": "8547c89668c8c12ddb4d6f2a3c1ed9a5fbd5372eac123871754ac31250a1b939"
+      "sha256": "9471b778cae9f8944c064be649d736667124b2bf65eff6b9f0dbc35d8bc2edac"
     },
     {
       "path": "protocol/conformance/journal-storage-v1.json",
-      "sha256": "de8343bb1f2e57e5e04ad748b10c00cbd9e7d207cc17cfefa4f2f7ca3669c479"
+      "sha256": "39b52dc338effc186d78fe6472809fcce335d7ab03e79aeb89bd1cbda8f0e3a5"
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "a6db1395a182eba6b2bb054e7d67a932d20b5e37d451c0b0ad1c126a56c63758"
+      "sha256": "1ae04c067dc1874178f10fc5c7e0e137471d15522110c129e56fe6e390530d1a"
     },
     {
       "path": "protocol/conformance/sqlite-storage-v1.json",
@@ -121,7 +121,7 @@
     },
     {
       "path": "protocol/goldens/durable-refinement-model-v1.json",
-      "sha256": "4d529583fd95e939a09577cdaca32a4a7dc4ebe477bb187825135823023c09bb"
+      "sha256": "5d8ab4f85e48fe04abbd4fc48a55bf326cc279e62defdb1865a6028ab40608bc"
     },
     {
       "path": "protocol/goldens/durable-start-v1.json",
@@ -137,25 +137,25 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
+      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "f419eca99aecb460bf23ee8c6ef28271253a293e5688c453a259ea54c3be6e59"
+      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "67dd6bc831afdfc92be61f16a60e7f6c0efb77fb65bb078700c476ecb65ff976"
+      "sha256": "5e8bc20e5a515338ba969ef56913445ea5e0c5f3f6f0fab9a7475712958575dc"
     }
   ],
   "review_summary": {
     "profile": "durable-runtime",
-    "applicable_clause_count": 411,
-    "covered_count": 403,
+    "applicable_clause_count": 361,
+    "covered_count": 353,
     "not_applicable_count": 8
   },
-  "evidence_anchor_count": 83,
-  "section14_excerpt_count": 49,
+  "evidence_anchor_count": 87,
+  "section14_excerpt_count": 51,
   "semantic_evidence": {
     "manifest": "protocol/conformance/durable-refinement-v1.json",
     "argument": "docs/durable-runtime-refinement.md",
@@ -163,7 +163,7 @@
     "maximum_depth": 15,
     "explored_state_count": 3724,
     "terminal_state_count": 2772,
-    "counterexample_count": 11
+    "counterexample_count": 15
   },
   "required_evidence": [
     "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement",
@@ -187,13 +187,7 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [
-      "analyzer",
-      "durable-runtime",
-      "embedding",
-      "evaluator",
-      "frontend"
-    ],
+    "advertises_profiles": [],
     "excludes_profiles": [
       "concurrent-evaluator"
     ],

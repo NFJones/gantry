@@ -1,6 +1,6 @@
 {
   "format": "gantry.analyzer-validity-evidence/v1",
-  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-GEN-PROOF-001",
   "profile": "analyzer",
   "argument": "docs/analyzer-package-validity.md",
@@ -18,7 +18,10 @@
     {
       "id": "binder-substitution-well-formedness",
       "argument": "Binder and substitution well-formedness",
-      "requirements": ["GNT-3-F-GENERICS", "GNT-5.20-parametric-types"],
+      "requirements": [
+        "GNT-3-F-GENERICS",
+        "GNT-5.20-parametric-types"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns",
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
@@ -27,7 +30,11 @@
     {
       "id": "closed-lowering-preservation",
       "argument": "Closed lowering preservation",
-      "requirements": ["GNT-3.15-generic-profiles", "GNT-3-T-PARAMETRIC-PACKAGE", "GNT-12.9"],
+      "requirements": [
+        "GNT-3.15-generic-profiles",
+        "GNT-3-T-PARAMETRIC-PACKAGE",
+        "GNT-12.9"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs",
         "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
@@ -36,7 +43,10 @@
     {
       "id": "complete-unique-inference",
       "argument": "Complete and unique inference",
-      "requirements": ["GNT-3-T-GENERIC-CALL", "GNT-5.20-parametric-types"],
+      "requirements": [
+        "GNT-3-T-GENERIC-CALL",
+        "GNT-5.20-parametric-types"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
@@ -45,7 +55,10 @@
     {
       "id": "concrete-effects-and-purity",
       "argument": "Concrete effects fixed point",
-      "requirements": ["GNT-3-T-PARAMETRIC-PACKAGE", "GNT-6.12-static-traits"],
+      "requirements": [
+        "GNT-3-T-PARAMETRIC-PACKAGE",
+        "GNT-6.12-static-traits"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs"
@@ -54,7 +67,10 @@
     {
       "id": "concrete-schema-closure",
       "argument": "Concrete schema closure",
-      "requirements": ["GNT-3-T-PARAMETRIC-PACKAGE", "GNT-8.13-concrete-generic-schemas"],
+      "requirements": [
+        "GNT-3-T-PARAMETRIC-PACKAGE",
+        "GNT-8.13-concrete-generic-schemas"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs",
         "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
@@ -63,7 +79,9 @@
     {
       "id": "diagnostic-precedence-and-witnesses",
       "argument": "Diagnostic determinism and witnesses",
-      "requirements": ["GNT-12.11-generic-diagnostics"],
+      "requirements": [
+        "GNT-12.11-generic-diagnostics"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic",
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
@@ -72,7 +90,11 @@
     {
       "id": "finite-monomorphization-closure",
       "argument": "Finite monomorphization closure",
-      "requirements": ["GNT-3-F-INSTANTIATION", "GNT-3-T-PARAMETRIC-PACKAGE", "GNT-4.17-generic-analysis-limits"],
+      "requirements": [
+        "GNT-3-F-INSTANTIATION",
+        "GNT-3-T-PARAMETRIC-PACKAGE",
+        "GNT-4.17-generic-analysis-limits"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
@@ -81,7 +103,9 @@
     {
       "id": "structural-capability-proof",
       "argument": "Structural capability proof",
-      "requirements": ["GNT-5.20-parametric-types"],
+      "requirements": [
+        "GNT-5.20-parametric-types"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns",
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
@@ -90,7 +114,10 @@
     {
       "id": "trait-coherence-and-termination",
       "argument": "Trait coherence and termination",
-      "requirements": ["GNT-3-F-TRAITS", "GNT-6.12-static-traits"],
+      "requirements": [
+        "GNT-3-F-TRAITS",
+        "GNT-6.12-static-traits"
+      ],
       "evidence": [
         "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic",
         "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"

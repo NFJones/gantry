@@ -1,6 +1,6 @@
 {
   "format": "gantry.generics-traits-conformance-evidence/v1",
-  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-GEN-CONF-001",
   "profiles": [
     "analyzer",
@@ -43,7 +43,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/generics_conformance_gate.rs",
-      "sha256": "6989decab5f23721da4f0a66b9c0a721636613357e39d14370c58768dcecfea4"
+      "sha256": "38af6c89a6539b09a7f28a91bc7f84951f974e3bd4005192203a8fcfca3822ec"
     },
     {
       "path": "fuzz/Cargo.lock",
@@ -99,15 +99,15 @@
     },
     {
       "path": "protocol/README.md",
-      "sha256": "506d778c56a3fdfb251e2a24835fa8b772d86b364235da7deac23b83be067463"
+      "sha256": "d9effdd2cce0e4c165c053612ba86c555fb96fb89a293b4e5d2e7220ae571213"
     },
     {
       "path": "protocol/conformance/generics-traits-adoption-v1.json",
-      "sha256": "36ae395337e98f6a878326d30e3964e51cc3ccfb4735587bb539a1ef4a625ec8"
+      "sha256": "c5939ce742402c2bab7db4eb6a25a9b84bb31f8b8686d974545a188943640db5"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "3970e88c1ac54ab6ddd2b0aee59c7571f1eb4df040eaa48f3d7936d5fb381725"
+      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
     }
   ],
   "property_evidence": [
@@ -180,8 +180,8 @@
     "Pinned nightly-2026-07-01 fuzz execution is delegated to CI because that toolchain is unavailable in the local read-only rustup environment; deterministic corpus replay and stable-toolchain target compilation remain local evidence."
   ],
   "exclusions": [
-    "Final replacement publication assembly remains owned by GNT-GEN-PUB-001.",
+    "Replacement publication integrity is independently assembled and validated by GNT-GEN-PUB-001.",
     "Linux and macOS release qualification remains owned by GNT-GEN-REL-001.",
-    "No global profile is advertised while publication and release gates remain open."
+    "No global profile is advertised while release qualification remains open."
   ]
 }

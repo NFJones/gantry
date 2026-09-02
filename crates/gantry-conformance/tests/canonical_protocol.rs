@@ -27,7 +27,6 @@ struct ProfileCatalog {
     major: u64,
     minor: u64,
     specification_revision: String,
-    superseded_specification_revision: String,
     profiles: Vec<ProfileInput>,
 }
 
@@ -97,10 +96,6 @@ fn canonical_profile_catalog_matches_the_public_binding() {
     assert_eq!(
         catalog.specification_revision,
         gantry::PROFILE_SPECIFICATION_REVISION
-    );
-    assert_eq!(
-        catalog.superseded_specification_revision,
-        gantry::PROFILE_SUPERSEDED_SPECIFICATION_REVISION
     );
     assert!(!catalog.claims_enabled);
     assert!(gantry::advertised_profiles().is_empty());

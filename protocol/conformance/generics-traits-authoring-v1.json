@@ -1,20 +1,38 @@
 {
   "format": "gantry.generics-traits-authoring-evidence/v1",
-  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-GEN-DOC-001",
   "capabilities": [
-    { "id": "cli-help", "evidence": "crates/gantry-cli/src/main.rs#check_command_maps_valid_invalid_operational_and_usage_results" },
-    { "id": "complete-package", "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#complete_generics_authoring_package_executes_with_closed_static_calls" },
-    { "id": "frontend-policy", "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#documented_frontend_policy_round_trips_all_twelve_fields" },
-    { "id": "guide-excerpts-and-indexes", "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#generics_guide_source_excerpts_are_analyzable_and_indexed" },
-    { "id": "invalid-diagnostics", "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#invalid_generics_authoring_packages_expose_exact_structured_diagnostics" },
-    { "id": "section14-classification", "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#generic_section14_excerpts_remain_classified_and_executable" }
+    {
+      "id": "cli-help",
+      "evidence": "crates/gantry-cli/src/main.rs#check_command_maps_valid_invalid_operational_and_usage_results"
+    },
+    {
+      "id": "complete-package",
+      "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#complete_generics_authoring_package_executes_with_closed_static_calls"
+    },
+    {
+      "id": "frontend-policy",
+      "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#documented_frontend_policy_round_trips_all_twelve_fields"
+    },
+    {
+      "id": "guide-excerpts-and-indexes",
+      "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#generics_guide_source_excerpts_are_analyzable_and_indexed"
+    },
+    {
+      "id": "invalid-diagnostics",
+      "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#invalid_generics_authoring_packages_expose_exact_structured_diagnostics"
+    },
+    {
+      "id": "section14-classification",
+      "evidence": "crates/gantry-conformance/tests/generics_authoring.rs#generic_section14_excerpts_remain_classified_and_executable"
+    }
   ],
   "profiles": [],
   "advertises_profiles": [],
   "exclusions": [
-    "Cross-profile generics-and-traits conformance closure remains owned by GNT-GEN-CONF-001.",
-    "The replacement publication artifact and authenticated publication index remain owned by GNT-GEN-PUB-001.",
-    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+    "Cross-profile generics-and-traits conformance is authenticated by the GNT-GEN-CONF-001 evidence gate.",
+    "The replacement publication artifact and authenticated index are independently assembled by GNT-GEN-PUB-001.",
+    "Global profile advertisement remains withheld pending GNT-GEN-REL-001 release qualification."
   ]
 }

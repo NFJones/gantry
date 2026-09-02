@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
   },
   "prerequisites": [
     {
@@ -41,67 +41,67 @@
   "artifacts": [
     {
       "path": "SPEC.md",
-      "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+      "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_gate.rs",
-      "sha256": "f55feb384836015bce2bf4551556834b85027b1c85bc6af2540caefbd38e07a5"
+      "sha256": "3bb10a189d9aa371a5b7f0083be8efe5e282602746419410758f76f1691ca5fe"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
-      "sha256": "52f5db2c5bf5b6c0b375f897aad8178242c8ed3df5784b7602d87245ea40e12f"
+      "sha256": "30b94ea161a5d7e55bf54f92242f53eed268f4434889cd60ee30a030ced0fcee"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_lifecycle.rs",
-      "sha256": "29c78dbd14dfad4cdd4b7a5c205ebf9b65cdcaf7d0c8ef04b58691c89f4d0d97"
+      "sha256": "cc2a95db91aa76c4944cbc6d7fa36060f9e54b131209e821f88f59bf6c9cff39"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_refinement_model.rs",
-      "sha256": "391edb2b200d0bf6afd1d30da1f3a1698bcf2a93962a4f8d73bf2f9a304ca311"
+      "sha256": "750f82984597fd2886103c77fa9386767bfd91f0120bc2e90905e07cfa32f952"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_task_state.rs",
-      "sha256": "11d7f2ad811848b0229880c72d55f726ac41876ded921f70615db28c2dd1c113"
+      "sha256": "5c06d498d989eff34301ddfae13c4701b065646c0ed03c76e94c3f97b56f588a"
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "1d888268bed4261cf556e749a2eaf7d905c452deec1fb09b9ca76d705ab832cb"
+      "sha256": "b5659ea418e9bc717d21e9819db83ec8410fb9a6bc790c6f2b706b84a8e41555"
     },
     {
       "path": "docs/concurrent-evaluator-refinement.md",
-      "sha256": "cd8aabb511dd387311911d162c2eb96e093638d6835b6718bec257a672fbb795"
+      "sha256": "6af5185f1a2f6a6216e6db244465d3385bcf6b0eaa5737309b84a97b523b92f0"
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
-      "sha256": "4d53dbd1dcc8ad22e98193a4a52ce30b65d54ca43269d6326c0c738c1e5d7ef3"
+      "sha256": "f68251ac91d567b0f6fc37679ba412f80f5bfd5a524d1050b7a7aaa748ea3b23"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "fc9f75a1d396c7a23942ae1218d03b69c66a0e34489fe6bec4f5ad310a4a2b94"
+      "sha256": "1de4a0d3bdc63b06aec39e8a147c2451745e1f36abab323a30755f1d46ea67e7"
     },
     {
       "path": "protocol/conformance/concurrent-executor-v1.json",
-      "sha256": "ddc5a1d660a69e67a2e0943fe81d861c8adca59d92e1d5fb02fe9875af279374"
+      "sha256": "56adfbf7225781874e571299088983e9f83a823886e706e1a99cb76437e34b29"
     },
     {
       "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
-      "sha256": "3efc0b78eb1b46a05e6aafea42ed38df4a872ef458db4842352a557b8b8a5a6f"
+      "sha256": "fd040d96be748fe97cadc6bbc09b84e2aa3c2c6a1e642110d4f166d18bbc78c1"
     },
     {
       "path": "protocol/conformance/concurrent-lifecycle-v1.json",
-      "sha256": "a7d1a786bbebf9c6f26998ac0753832efef1b2fb7bdc4e41f4d192e4d2309aac"
+      "sha256": "c5a5ecf1766eee17519a5cbd149ab89b2830f428b3e6e7566d23fcea230edbc9"
     },
     {
       "path": "protocol/conformance/concurrent-refinement-v1.json",
-      "sha256": "20477739cf8ad6b56c78f36dcee8c2b1ab8148317ce9e86422702092aecdc55a"
+      "sha256": "d3d24d673455e102a6a97941064b509df72c3877a09cab0ee9275ea6eea0ea10"
     },
     {
       "path": "protocol/conformance/concurrent-task-state-v1.json",
-      "sha256": "030e61157c3d272de006c345da35440f0543e31254da8397963fcc8319ad4b24"
+      "sha256": "547c54694afd1759def605c9cb08de76951aac30d8c9623ee263df9060a6b6e3"
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "a6db1395a182eba6b2bb054e7d67a932d20b5e37d451c0b0ad1c126a56c63758"
+      "sha256": "1ae04c067dc1874178f10fc5c7e0e137471d15522110c129e56fe6e390530d1a"
     },
     {
       "path": "protocol/goldens/concurrent-executor-model-v1.json",
@@ -113,7 +113,7 @@
     },
     {
       "path": "protocol/goldens/concurrent-refinement-model-v1.json",
-      "sha256": "ed976b65a2da5d76b940b090d400419a7454d3e46998dda52e5aa56277967198"
+      "sha256": "111dec1e40066e9c8c8a9fc74b3d7294de138522af0c31f54f8a9496b4a82d80"
     },
     {
       "path": "protocol/publication/artifacts-v1.json",
@@ -121,25 +121,25 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
+      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "f419eca99aecb460bf23ee8c6ef28271253a293e5688c453a259ea54c3be6e59"
+      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "67dd6bc831afdfc92be61f16a60e7f6c0efb77fb65bb078700c476ecb65ff976"
+      "sha256": "5e8bc20e5a515338ba969ef56913445ea5e0c5f3f6f0fab9a7475712958575dc"
     }
   ],
   "review_summary": {
     "profile": "concurrent-evaluator",
-    "applicable_clause_count": 380,
-    "covered_count": 374,
+    "applicable_clause_count": 329,
+    "covered_count": 323,
     "not_applicable_count": 6
   },
-  "evidence_anchor_count": 75,
-  "section14_excerpt_count": 49,
+  "evidence_anchor_count": 84,
+  "section14_excerpt_count": 51,
   "semantic_evidence": {
     "manifest": "protocol/conformance/concurrent-refinement-v1.json",
     "argument": "docs/concurrent-evaluator-refinement.md",
@@ -147,7 +147,7 @@
     "maximum_depth": 14,
     "explored_state_count": 9986,
     "terminal_state_count": 2482,
-    "counterexample_count": 11
+    "counterexample_count": 14
   },
   "required_evidence": [
     "crates/gantry-conformance/tests/concurrent_executor.rs#bounded_schedules_and_failure_replays_are_deterministic",
@@ -170,13 +170,7 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [
-      "analyzer",
-      "concurrent-evaluator",
-      "embedding",
-      "evaluator",
-      "frontend"
-    ],
+    "advertises_profiles": [],
     "excludes_profiles": [
       "durable-runtime"
     ],

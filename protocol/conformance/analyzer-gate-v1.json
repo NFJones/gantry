@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
   },
   "profile": "analyzer",
   "prerequisites": [
@@ -56,47 +56,47 @@
     },
     {
       "path": "docs/analyzer-package-validity.md",
-      "sha256": "acbc256ebce407f3e9c2b14ecdb87cd457ba107b4299c7acf8d1eb626f930110"
+      "sha256": "2e07ec0f3eb9da03cdae8e551c50e5ae7e4425ad98e5b1b55688ec9f9f9a6085"
     },
     {
       "path": "protocol/catalogs/ir-contracts-v1.json",
-      "sha256": "40a0162dfb85c97691035e6791d781c1da7b704486dbfa29f9358ff34ba65274"
+      "sha256": "bde2088d7fd8e7513d01e068c82e79d4987ec7b3d2d6ff4f070439983e804f84"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "fc9f75a1d396c7a23942ae1218d03b69c66a0e34489fe6bec4f5ad310a4a2b94"
+      "sha256": "1de4a0d3bdc63b06aec39e8a147c2451745e1f36abab323a30755f1d46ea67e7"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
-      "sha256": "1f3996c212dbd3c86a565d10e20d051ca3efbfc30b1477a13f54ad4850cca97c"
+      "sha256": "ab8ac7956ead0d16cde6aaf5c859231f86fec7a08849b514cd4f86fbf34a10c2"
     },
     {
       "path": "protocol/conformance/analyzer-lowering-v1.json",
-      "sha256": "f2bd947b3cd0151d5b05b16053abba6e6795d8bb666c4d6b89e17a40b63df3a1"
+      "sha256": "457d54bbfc74c324c4b3f25b7896127cc740668f696140ce614afc3d2a2613a6"
     },
     {
       "path": "protocol/conformance/analyzer-package-v1.json",
-      "sha256": "5b29c5be4bd5a05aea132357422186391d4e63d40340585beb863492bd10406b"
+      "sha256": "11640b7f3e10d0aee2d30dd6dd85296e56bf3446a06ffd772204c402c9ce6111"
     },
     {
       "path": "protocol/conformance/analyzer-symbols-v1.json",
-      "sha256": "f0b94629a72f8870762f34b3a90b31852f36e466be6a75170aaee64605a6eb5a"
+      "sha256": "7b680bbd968ba3cdcd7d0b60bcbc32ee6161ae81df261c368f5d3cbbf967b5d5"
     },
     {
       "path": "protocol/conformance/analyzer-types-v1.json",
-      "sha256": "9c396303cf423f5cbba21f948ee3bb27c8445587a2753395053190249c61c9fa"
+      "sha256": "c3cfb20573db52b15512d9fa79e32a246d326652047d4047d166be3f9ae58511"
     },
     {
       "path": "protocol/conformance/analyzer-validity-v1.json",
-      "sha256": "a62a5f69fd1beb2364fc450bf513a5b337fb6f4db17c49238b6e4233f3c5af47"
+      "sha256": "5304b30713b6043aade5e7d11030915ddbc425fbc488bfa367df218fe0583292"
     },
     {
       "path": "protocol/conformance/analyzer-workflows-v1.json",
-      "sha256": "36894ef32c1627bb153342c0d40181cb96ed0a8eef88ec51bbb9fb520497731b"
+      "sha256": "61ebecd2d84eed5b040eec7c7224edd61d82826d4d4373af977acfe9295cabc3"
     },
     {
       "path": "protocol/conformance/frontend-gate-v1.json",
-      "sha256": "c102b0a350f1cdbd7f7a39679bb3801c8f49748de49decef4d2db2e6c8115fde"
+      "sha256": "6ac0e9e7e3001ea1ada64234f5a99bc4f1a019f07fb4bd1188c3bb606652319f"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -104,31 +104,31 @@
     },
     {
       "path": "protocol/goldens/analyzer-validity-model-v1.json",
-      "sha256": "3a5b7bb07b849821dd40c73bb833f4882c4117b09b5c76e9adc1c19372b7db82"
+      "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
     },
     {
       "path": "protocol/goldens/ir-artifact-vectors-v1.json",
-      "sha256": "5625b08c1953a3602a0b3afcbf45bc9cec628dd9297f2dd802c1e160ff728085"
+      "sha256": "6c938bfc4eb59903dccd023e69a464270f3a37be66970c7e9865124db5701e4e"
     },
     {
       "path": "protocol/goldens/ir-contracts-v1.canonical.json",
-      "sha256": "2e970a1c8fc4b3fd01e09f9fe3cfd157d7c1e4d7f9dd483ede9fa78f11cf3819"
+      "sha256": "1f516cf54d10782466fda89fa427a6e09ade2de82df4f3eb65e1c0bc82b181bd"
     },
     {
       "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "c1c5c7090e5681e418b5003b49fea77d06a17dc367891366986f3d7640f31bbb"
+      "sha256": "8d601151ad6840f7d96acb4470d639027321ee96007690857e94deb4f79f8314"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
+      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "f419eca99aecb460bf23ee8c6ef28271253a293e5688c453a259ea54c3be6e59"
+      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "67dd6bc831afdfc92be61f16a60e7f6c0efb77fb65bb078700c476ecb65ff976"
+      "sha256": "5e8bc20e5a515338ba969ef56913445ea5e0c5f3f6f0fab9a7475712958575dc"
     },
     {
       "path": "protocol/schemas/activity-observation-v1.schema.json",
@@ -136,7 +136,7 @@
     },
     {
       "path": "protocol/schemas/canonical-ir-v1.schema.json",
-      "sha256": "f83c9ba0fc0c11c8fc0af6f984690cec33160828264a27d1d87f210e282f911b"
+      "sha256": "2688463892cbf1423a90efd1542f2d96e5b3d81e10c89ad0998bb4e063436fea"
     },
     {
       "path": "protocol/schemas/generated-schema-object-v1.schema.json",
@@ -152,28 +152,25 @@
     },
     {
       "path": "protocol/schemas/profile-catalog-v1.schema.json",
-      "sha256": "53dd2e1994ec3cfcc64965289d7f44cbf8f1e63e7e01861d048c7760e59e83a7"
+      "sha256": "74b9513e5b7325da1202f5e349c3f6ece75694392b5406773ee98248ef720b80"
     },
     {
       "path": "protocol/schemas/source-map-v1.schema.json",
-      "sha256": "9ee63df1fcd9c19cf6cfc6fa06873706db085c918572ebca73528d6f2dfc5e35"
+      "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
     }
   ],
   "review_summary": {
-    "applicable_clause_count": 342,
-    "covered_count": 275,
+    "applicable_clause_count": 291,
+    "covered_count": 224,
     "not_applicable_count": 67
   },
-  "section14_excerpt_count": 49,
+  "section14_excerpt_count": 51,
   "claim": {
     "profiles": [
       "analyzer",
       "frontend"
     ],
-    "advertises_profiles": [
-      "analyzer",
-      "frontend"
-    ],
+    "advertises_profiles": [],
     "excludes_profiles": [
       "concurrent-evaluator",
       "durable-runtime",

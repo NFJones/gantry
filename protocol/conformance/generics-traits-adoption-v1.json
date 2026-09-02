@@ -2,7 +2,7 @@
   "format": "gantry.language-adoption/v1",
   "gate": "GNT-GEN-GATE-000",
   "status": "blocked",
-  "specification_sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "amended_profiles": [
     "analyzer",
     "concurrent-evaluator",
@@ -13,15 +13,6 @@
   ],
   "advertises_profiles": [],
   "blocked_by": [
-    "GNT-GEN-AN-001",
-    "GNT-GEN-AN-002",
-    "GNT-GEN-AN-003",
-    "GNT-GEN-AN-004",
-    "GNT-GEN-API-001",
-    "GNT-GEN-PROOF-001",
-    "GNT-GEN-PROOF-002",
-    "GNT-GEN-PUB-001",
     "GNT-GEN-REL-001"
-  ],
-  "superseded_publication_revision": "gantry-v1-78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+  ]
 }

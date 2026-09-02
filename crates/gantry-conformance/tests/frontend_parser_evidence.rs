@@ -144,23 +144,6 @@ fn reviewed_frontend_parser_evidence_is_closed() {
         section14.specification_sha256,
         requirements.specification_sha256
     );
-    if !gantry::PROFILE_CLAIMS_ENABLED {
-        assert_eq!(manifest.section14_excerpt_count, 49);
-        assert_eq!(section14.excerpts.len(), 51);
-        assert_eq!(
-            section14
-                .excerpts
-                .iter()
-                .filter(|excerpt| excerpt.state == "planned")
-                .count(),
-            0
-        );
-        for excerpt in &section14.excerpts[49..] {
-            assert_eq!(excerpt.state, "covered", "{}", excerpt.key);
-            assert_eq!(excerpt.evidence, [AUTHORING_EVIDENCE], "{}", excerpt.key);
-        }
-        return;
-    }
     assert_eq!(manifest.section14_excerpt_count, section14.excerpts.len());
     assert!(
         manifest
@@ -197,9 +180,11 @@ fn reviewed_frontend_parser_evidence_is_closed() {
             "{}:{}",
             entry.requirement, entry.clause
         );
-        assert_eq!(
-            review.evidence,
-            [PARSER_EVIDENCE],
+        assert!(
+            review
+                .evidence
+                .iter()
+                .any(|evidence| evidence == PARSER_EVIDENCE),
             "{}:{}",
             entry.requirement,
             entry.clause

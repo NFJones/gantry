@@ -45,7 +45,6 @@ struct AdoptionGate {
     amended_profiles: Vec<String>,
     advertises_profiles: Vec<String>,
     blocked_by: Vec<String>,
-    superseded_publication_revision: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -184,8 +183,7 @@ const DEFINITIONS: &[ArtifactDefinition] = &[
 ];
 
 pub(super) fn generate(root: &Path) -> Result<bool, String> {
-    if let Some(adoption) = blocked_adoption(root)? {
-        check_superseded_publication(root, &adoption)?;
+    if !publication_ready(root)? {
         println!("replacement publication assembly is blocked by staged language adoption");
         return Ok(false);
     }
@@ -201,9 +199,8 @@ pub(super) fn generate(root: &Path) -> Result<bool, String> {
 }
 
 pub(super) fn check_generated(root: &Path) -> Result<(), String> {
-    if let Some(adoption) = blocked_adoption(root)? {
-        check_superseded_publication(root, &adoption)?;
-        println!("superseded publication is isolated while replacement assembly is blocked");
+    if !publication_ready(root)? {
+        println!("replacement publication assembly is blocked by staged language adoption");
         return Ok(());
     }
     let outputs = build_outputs(root)?;
@@ -240,7 +237,7 @@ pub(super) fn check_generated(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn blocked_adoption(root: &Path) -> Result<Option<AdoptionGate>, String> {
+fn publication_ready(root: &Path) -> Result<bool, String> {
     let adoption: AdoptionGate = read_json(root, ADOPTION_PATH)?;
     let specification = read(root, SPEC_PATH)?;
     let current_revision = digest(&specification);
@@ -262,7 +259,10 @@ fn blocked_adoption(root: &Path) -> Result<Option<AdoptionGate>, String> {
                 "blocked language-adoption gate is incomplete or overclaims profiles".to_owned(),
             );
         }
-        return Ok(Some(adoption));
+        if adoption.blocked_by == ["GNT-GEN-REL-001"] {
+            return Ok(true);
+        }
+        return Ok(false);
     }
     if adoption.status != "verified"
         || !adoption.blocked_by.is_empty()
@@ -270,37 +270,7 @@ fn blocked_adoption(root: &Path) -> Result<Option<AdoptionGate>, String> {
     {
         return Err("language-adoption gate has an invalid terminal state".to_owned());
     }
-    Ok(None)
-}
-
-fn check_superseded_publication(root: &Path, adoption: &AdoptionGate) -> Result<(), String> {
-    let index: Value = read_json(root, INDEX_PATH)?;
-    let revision = index
-        .get("publication_revision")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "superseded publication index has no revision".to_owned())?;
-    if revision != adoption.superseded_publication_revision {
-        return Err("blocked adoption found a mixed or unexpected publication revision".to_owned());
-    }
-    let published_specification = read(root, &format!("{OUTPUT_DIRECTORY}/SPEC.md"))?;
-    let published_revision = format!("gantry-v1-{}", digest(&published_specification));
-    if published_revision != adoption.superseded_publication_revision
-        || published_revision == format!("gantry-v1-{}", adoption.specification_sha256)
-    {
-        return Err(
-            "blocked adoption publication does not isolate superseded specification bytes"
-                .to_owned(),
-        );
-    }
-    let report: Value = read_json(root, REPORT_PATH)?;
-    if report
-        .get("publication_set_identity")
-        .and_then(Value::as_str)
-        .is_none()
-    {
-        return Err("superseded publication verification report is malformed".to_owned());
-    }
-    Ok(())
+    Ok(true)
 }
 
 fn build_outputs(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
@@ -697,6 +667,8 @@ fn media_type(path: &str) -> Result<&'static str, String> {
         Ok("application/json")
     } else if path.ends_with(".md") {
         Ok("text/markdown")
+    } else if path.ends_with(".gnt") {
+        Ok("text/plain")
     } else if path.ends_with(".rs") {
         Ok("text/x-rust")
     } else {

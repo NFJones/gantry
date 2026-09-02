@@ -1,22 +1,52 @@
 {
   "format": "gantry.durable-refinement-evidence/v1",
-  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-DUR-006",
   "profile": "durable-runtime",
   "argument": "docs/durable-runtime-refinement.md",
   "model": "protocol/goldens/durable-refinement-model-v1.json",
   "model_evidence": "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay",
   "reviewed_clauses": [
-    { "requirement": "GNT-3-D-PROPERTIES", "clause": "clause-001" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-001" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-002" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-003" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-004" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-005" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-006" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-007" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-008" },
-    { "requirement": "GNT-3-M-LIFECYCLES", "clause": "clause-009" }
+    {
+      "requirement": "GNT-3-D-PROPERTIES",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-001"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-002"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-003"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-004"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-005"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-006"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-007"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-008"
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-009"
+    }
   ],
   "trace_evidence": [
     "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement",
@@ -43,4 +73,3 @@
     "Genuinely pending integration work remains outside enabled-machine progress until its documented prerequisite resolves."
   ]
 }
-

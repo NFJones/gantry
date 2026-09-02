@@ -1,10 +1,20 @@
 {
   "format": "gantry.concurrent-task-state-evidence/v1",
-  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "issue": "GNT-CON-001",
   "entries": [
-    { "requirement": "GNT-3-M-SPAWN", "clause": "clause-001", "profile": "concurrent-evaluator", "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path" },
-    { "requirement": "GNT-3-M-SPAWN", "clause": "clause-001", "profile": "concurrent-evaluator", "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated" }
+    {
+      "requirement": "GNT-3-M-SPAWN",
+      "clause": "clause-001",
+      "profile": "concurrent-evaluator",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path"
+    },
+    {
+      "requirement": "GNT-3-M-SPAWN",
+      "clause": "clause-001",
+      "profile": "concurrent-evaluator",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated"
+    }
   ],
   "exclusions": [
     "Join, joinall, handle consumption, and aggregate result delivery remain owned by GNT-CON-002.",

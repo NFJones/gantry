@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
   },
   "prerequisites": [
     {
@@ -38,7 +38,7 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
+      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
     },
     {
       "path": "protocol/schemas/source-substrate-v1.schema.json",
@@ -51,7 +51,7 @@
       "kind": "golden",
       "visibility": "public-facade",
       "state": "verified",
-      "revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+      "revision": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
       "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs"
     },
     {
@@ -59,7 +59,7 @@
       "kind": "requirement",
       "visibility": "public-facade",
       "state": "verified",
-      "revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+      "revision": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
       "path": "crates/gantry-conformance/tests/requirements_ledger.rs"
     },
     {
@@ -67,7 +67,7 @@
       "kind": "public-api",
       "visibility": "public-facade",
       "state": "verified",
-      "revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+      "revision": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
       "path": "crates/gantry-conformance/tests/source_provider.rs"
     },
     {
@@ -75,7 +75,7 @@
       "kind": "fixture",
       "visibility": "public-facade",
       "state": "verified",
-      "revision": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+      "revision": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
       "path": "crates/gantry-conformance/tests/source_substrate.rs"
     }
   ],

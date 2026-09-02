@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
   },
   "prerequisites": [
     {
@@ -26,11 +26,11 @@
   "artifacts": [
     {
       "path": "SPEC.md",
-      "sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+      "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
     },
     {
       "path": "crates/gantry-conformance/tests/combined_gate.rs",
-      "sha256": "de2e7e8157cd5e86d57ba2bbef292e2b366bcc165506f153f60539a7acd03886"
+      "sha256": "a71f3d8dad0aac4c697a918a6ce0442ec33b0aaa9b4377ae8e97dbf084f02268"
     },
     {
       "path": "crates/gantry-conformance/tests/combined_refinement.rs",
@@ -42,7 +42,7 @@
     },
     {
       "path": "crates/gantry-runtime/src/task.rs",
-      "sha256": "d084f29069b37492df285c4661dfb409d47be85b94ae1567fb85e423017596fd"
+      "sha256": "a76315e2c162553b7fda2b2a3a48bf6480f5b2b70e1f503beb8032b4610b9d45"
     },
     {
       "path": "crates/gantry-runtime/src/task/combined_checkpoint.rs",
@@ -50,23 +50,23 @@
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "1d888268bed4261cf556e749a2eaf7d905c452deec1fb09b9ca76d705ab832cb"
+      "sha256": "b5659ea418e9bc717d21e9819db83ec8410fb9a6bc790c6f2b706b84a8e41555"
     },
     {
       "path": "protocol/conformance/concurrent-gate-v1.json",
-      "sha256": "658d15120d252e2ae67b1e90f75a760af0b249844636d44eda870a68e1dbd188"
+      "sha256": "5878ed2d8318bceebf8567e9f45c3eab30559e76aa8dcede57fa525857d1de6a"
     },
     {
       "path": "protocol/conformance/durable-gate-v1.json",
-      "sha256": "94a81f70c33bbc6f3708dd9d87cffcd17ada01f10f642334ec44f83ccbbfeba0"
+      "sha256": "7f7a4388ab7ae464a3e33f0b766090043421b4a76ae49f1735c4d35bea1305bb"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
+      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "f419eca99aecb460bf23ee8c6ef28271253a293e5688c453a259ea54c3be6e59"
+      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
     }
   ],
   "composed_obligations": [
@@ -189,14 +189,7 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [
-      "analyzer",
-      "concurrent-evaluator",
-      "durable-runtime",
-      "embedding",
-      "evaluator",
-      "frontend"
-    ],
+    "advertises_profiles": [],
     "excludes_profiles": [],
     "excludes_capabilities": []
   },

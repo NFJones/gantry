@@ -59,19 +59,14 @@ fn reviewed_frontend_lexical_evidence_is_closed() {
 
     assert_eq!(manifest.format, "gantry.frontend-lexical-evidence/v1");
     assert_eq!(manifest.issue, "GNT-FE-001");
-    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
     assert!(gantry_conformance::evidence_revision_is_expected(
         &manifest.specification_sha256,
         &review.specification_sha256,
     ));
-    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert!(!manifest.entries.is_empty());
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
 
     for entry in manifest.entries {
-        if !evidence_is_current {
-            continue;
-        }
         let clause = review
             .requirements
             .iter()
@@ -98,9 +93,11 @@ fn reviewed_frontend_lexical_evidence_is_closed() {
             "{}:{}",
             entry.requirement, entry.clause
         );
-        assert_eq!(
-            review.evidence,
-            [EVIDENCE_ID],
+        assert!(
+            review
+                .evidence
+                .iter()
+                .any(|evidence| evidence == EVIDENCE_ID),
             "{}:{}",
             entry.requirement,
             entry.clause

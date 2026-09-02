@@ -87,12 +87,23 @@ the repository commit containing `SPEC.md` or the lowercase hexadecimal
 SHA-256 digest of the exact `SPEC.md` bytes. The claim applies to the complete
 identified revision, not to a selected subset of its requirements.
 
-This repository revision does not include the publication index or protocol
-artifacts required by Section 15.8. It is therefore an incomplete draft for
-embedding interoperability and cannot by itself support a conforming Gantry v1
-deployment claim. The source-language contract remains reviewable and
-implementable in stages under the profiles below, but interoperability claims
-must wait for those versioned schemas, fixtures, and conformance artifacts.
+This repository revision includes the publication index and protocol artifacts
+required by Section 15.8. Together they form the current amended baseline for
+embedding interoperability. Publication readiness does not itself enable a
+conforming Gantry v1 deployment or profile claim: those remain withdrawn until
+release qualification validates the required toolchain, platform, package,
+supply-chain, and fuzz matrices.
+
+The parametric-generics and static-traits amendment in this revision replaces
+the preceding pre-adoption draft language in place. It does not define a
+legacy parser, feature-selected grammar, parallel canonical encoding, protocol
+migration, or old-artifact recovery path. The complete publication set in this
+revision contains the amended specification, schemas, goldens, requirement
+mappings, authoring fixtures, and conformance evidence. It is the sole v1
+baseline. It does not by itself enable profile claims; those remain withdrawn
+until release qualification. Exact-version immutability in Section 15.8
+applies to this complete amended set and later sets, not to superseded
+pre-adoption draft bytes.
 
 Sections 1.1 through 1.4 and Section 14 are non-normative reading and
 authoring aids. The remainder of Sections 1 through 13 and all of Section 15
@@ -517,16 +528,20 @@ in later sections:
   source values include `Unit`, `Bool`, bounded exact `Int`, finite binary64
   `Float`, strings, structs, enums, options, results, lists, tuples, sealed
   decisions, and sealed operation errors. Numeric operations are deliberately
-  small and deterministic.
+  small and deterministic. Parametric declared types and workflows provide
+  reusable value behavior, and coherent traits provide statically selected
+  receiver methods. They do not add references, object identity, dynamic
+  dispatch, or user-overloadable primitives.
 - Integration-backed work is limited to the explicit `prompt`, `decide`, and
   `action` operations. `prompt` and `decide` are model-facing. `action` invokes
   a typed capability declared by the package and resolved by the integrating
   harness.
 - V1 has checked arithmetic, numeric ordering, short-circuit Boolean algebra,
-  exact equality, finite list `for` iteration, and a small deterministic String
-  library, but no user-defined generics, traits, general exception handling,
-  regular expressions, or locale-sensitive text processing. Semantic
-  judgments remain agent-mediated.
+  exact equality, finite list `for` iteration, a small deterministic String
+  library, invariant parametric value types, and statically dispatched traits.
+  It has no trait objects, dynamic dispatch, specialization, associated items,
+  operator overloading, general exception handling, regular expressions, or
+  locale-sensitive text processing. Semantic judgments remain agent-mediated.
 - Raw entry input and raw hook output are subject to explicit byte limits, and
   every value is subject to explicit nesting-depth and total-node limits,
   before it can consume unbounded parser or interpreter resources. These
@@ -757,17 +772,17 @@ than one block.
 | Normative scope | Registered identifiers |
 | --- | --- |
 | Status, terminology, and normativity | `GNT-1.0`, `GNT-1.5`, `GNT-2.0`, `GNT-2.1` |
-| Implementation summary items | `GNT-3.0`, `GNT-3.1` through `GNT-3.15` |
+| Implementation summary items | `GNT-3.0`, `GNT-3.1` through `GNT-3.15`, `GNT-3.15-liveness`, `GNT-3.15-generic-profiles` |
 | Formal kernel | Every named `GNT-3-F-*`, `GNT-3-T-*`, `GNT-3-M-*`, and `GNT-3-D-*` rule in Sections 3.1 through 3.6 |
-| Source organization | `GNT-4.0`, `GNT-4.1` through `GNT-4.17` |
-| Values and types | `GNT-5.0`, `GNT-5.1` through `GNT-5.20`, `GNT-5.13-automatic-storage` |
-| Workflows and actions | `GNT-6.0`, `GNT-6.1` through `GNT-6.12` |
+| Source organization | `GNT-4.0`, `GNT-4.1` through `GNT-4.17`, `GNT-4.17-frontend-resource-limits`, `GNT-4.17-generic-analysis-limits` |
+| Values and types | `GNT-5.0`, `GNT-5.1` through `GNT-5.20`, `GNT-5.13-automatic-storage`, `GNT-5.20-parametric-types` |
+| Workflows and actions | `GNT-6.0`, `GNT-6.1` through `GNT-6.12`, `GNT-6.12-static-traits` |
 | Integration operations | `GNT-7.0`, `GNT-7.1` through `GNT-7.18` |
-| Structured output | `GNT-8.0`, `GNT-8.1` through `GNT-8.13` |
+| Structured output | `GNT-8.0`, `GNT-8.1` through `GNT-8.13`, `GNT-8.13-concrete-generic-schemas` |
 | Control flow | `GNT-9.0`, `GNT-9.1` through `GNT-9.12` |
 | Parallel execution | `GNT-10.0`, `GNT-10.1` through `GNT-10.14` |
-| Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11` |
-| Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11` |
+| Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11`, `GNT-11.11-generic-artifact-recovery` |
+| Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11`, `GNT-12.11-generic-diagnostics` |
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
 | Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10` |
 
@@ -1047,6 +1062,36 @@ through 15. If a process is forcibly terminated or a host service violates
 those contracts, only the authoritative durable-prefix guarantees in Section
 11 survive; Gantry MUST NOT fabricate successful completion or cancellation.
 
+<a id="GNT-3.15-generic-profiles"></a>
+
+**15b. Generics and traits by profile.** A frontend-profile implementation
+tokenizes and parses the integrated Section 13 forms, preserves their spans
+and recovery, and enforces constructed-type depth, but performs no name
+resolution, inference, bound proof, implementation selection, or
+instantiation. An analyzer-profile implementation additionally proves binder
+and substitution well-formedness, complete exact inference, structural
+capabilities, package-wide coherence, terminating obligations, finite
+instantiation closure, concrete effects and schemas, and closed analysis and
+executable artifacts under all three generic-analysis limits.
+
+An evaluator-profile implementation executes only closed descriptors and
+direct concrete call targets; it contains no unifier, trait solver,
+implementation lookup, dictionary, vtable, or monomorphization fallback. The
+concurrent profile copies only concrete captures and results, and scheduling
+cannot instantiate a template or change a selected implementation. The
+durable profile retains and verifies the amended analysis artifact and
+reconstructs the identical closed executable projection without source-level
+analysis. The embedding profile exposes all twelve frontend-policy fields,
+stable structured diagnostics, concrete analysis results, and versioned
+closed artifacts without exposing solver state or source trait objects in host
+service interfaces.
+
+The requirement manifest MUST classify every requirement added for generics
+and traits for each profile and role. Frontend-only builds MUST NOT acquire
+analyzer behavior; analyzer-only activities MUST perform no integration
+operation; and every evaluator-derived profile MUST consume the same closed
+artifact contract.
+
 ### 3.1 Formal domains and core language
 
 <a id="GNT-3-F-META"></a>
@@ -1082,15 +1127,18 @@ The metavariables are:
 **[GNT-3-F-DOMAINS] Core domains.** Canonical types are exactly:
 
 ```text
-τ ::= Unit | Bool | Int | Float | String | D
+τ ::= Unit | Bool | Int | Float | String | D | D<τ1,...,τn>
     | Option<τ> | Result<τ1,τ2> | List<τ> | Tuple<τ1,...,τn>
     | Decision | OperationError
 ```
 
-`D` is a resolved declared struct or enum path, `n ≥ 2`, and distinct indexed
-metavariables denote independently chosen types unless a rule explicitly
-requires equality. Every type satisfies Section 5's well-formedness
-restrictions. Values are exactly the finite,
+`D` is a resolved zero-parameter declared struct or enum path;
+`D<τ1,...,τn>` is a resolved declared application whose positive arity `n`
+equals that declaration's fixed arity. The tuple arity is at least two, and
+distinct indexed metavariables denote independently chosen types unless a rule
+explicitly requires equality. Every declared application is closed and
+satisfies its declaration predicates. Every type satisfies Section 5's
+well-formedness restrictions. Values are exactly the finite,
 normalized inhabitants described by Section 5. A task handle is not a value.
 The ownership environment maps each handle visible to the current task to one
 of `attached(κ, τ)`, `joined(κ, τ)`, `detached(κ, τ)`, or
@@ -1183,6 +1231,71 @@ Their domains, successful results, and named analysis or runtime failures are
 exactly those in Sections 4 through 10 and 13. No conforming v1 implementation
 may extend one of these domains.
 
+<a id="GNT-3-F-GENERICS"></a>
+
+**[GNT-3-F-GENERICS] Parametric signatures and closed types.** Let `α[b,i]`
+denote the zero-based parameter at ordinal `i` of canonical binder `b`.
+Template type expressions are exactly:
+
+```text
+θ ::= τ | α[b,i] | Self[b]
+    | Option<θ> | Result<θ1,θ2> | List<θ> | Tuple<θ1,...,θn>
+    | D<θ1,...,θn>
+```
+
+Here `τ` is a closed type from `GNT-3-F-DOMAINS`, and `D` is a declared struct
+or enum constructor with fixed arity. `Self[b]` is admitted only in the method
+contexts defined in Sections 5, 6, and 13. A substitution `σ` is a finite map
+from parameters and contextual `Self` entries to closed types. Application
+`σ(θ)` is capture-avoiding, preserves argument order, and is defined only when
+every free entry in `θ` is mapped. A type is **closed** exactly when it contains
+no parameter or `Self` entry. Runtime values, executable core terms, schemas,
+operation requests, events, journal evidence, recovery projections, and public
+execution results contain only closed types.
+
+`Σ` additionally contains generic binders, declared predicates, trait method
+contracts, implementation heads, generic callable templates, and the finite
+set of retained closed instantiations. Binder identity and parameter ordinals,
+not parameter source names, participate in canonical identity. Predicate sets
+are canonicalized by unsigned canonical bytes; source order and cache state do
+not affect substitution, proof, selection, or diagnostics.
+
+<a id="GNT-3-F-TRAITS"></a>
+
+**[GNT-3-F-TRAITS] Trait obligations and static selection.** A trait
+obligation is a canonical pair `Trait<θ...> for θreceiver`. Under a complete
+substitution, `resolve(Σ, obligation)` either selects exactly one coherent
+implementation method or yields the specified analysis error. Resolution
+MUST NOT supply facts to type inference. It begins only after exact unification
+has produced one complete substitution, processes candidates and substituted
+predicates in canonical order, and rejects re-entry of an active user-trait
+obligation as `cyclic-trait-obligation`. An explicit predicate of the generic
+declaration currently being checked may justify its corresponding trait-method
+slot; it does not prove an unrelated recursive obligation.
+
+The compiler-owned capabilities `Equatable`, `Interpolatable`, and
+`ExternalValue` use the structural fixed-point rules in Section 5 rather than
+source implementations. They never create implementation identities or
+participate in user-trait coherence.
+
+<a id="GNT-3-F-INSTANTIATION"></a>
+
+**[GNT-3-F-INSTANTIATION] Instantiation and executable closure.** A concrete
+instantiation key is `(template-kind, template-identity,
+ordered-closed-type-arguments)`. Starting from every retained non-generic
+callable and concrete public or durable schema root, analysis interns keys in
+unsigned canonical-byte order and follows direct substituted call edges until
+closure. One key is retained once. A callable-template strongly connected
+component may recurse only with the same ordered substitution; a cycle that
+changes one of its own type arguments is `polymorphic-recursion`.
+
+For each retained key, analysis substitutes `Self` and declaration,
+implementation, trait, and method parameters in their specified binder order;
+proves every predicate; selects each trait implementation; and emits one
+closed callable with direct call targets and an exact effect summary. The
+runtime projection contains no template call, open type, inference variable,
+trait dictionary, vtable, candidate set, or dynamic resolution operation.
+
 ### 3.2 Static semantics
 
 <a id="GNT-3-T-JUDGMENTS"></a>
@@ -1270,6 +1383,38 @@ copy. Callee and member resolution occurs before operand analysis. The rule
 has no direct integration effect: all effects of executing the body are in
 `εf`. There is no derivation for an action path used as an ordinary call,
 wrong arity, a non-callable value, or a type mismatch.
+
+<a id="GNT-3-T-GENERIC-CALL"></a>
+
+**[GNT-3-T-GENERIC-CALL] Generic inference and static trait calls.** For a
+generic callable template `g`, `infer` uses only explicit type arguments,
+receiver type, ordered argument types, constructor members, and an available
+expected result type. It performs exact unification with an occurs check and
+has no coercion, subtyping, default type argument, implementation-guided
+guessing, or unconstrained global inference:
+
+```text
+infer(Σ,g,explicit?,receiver?,τargs,expected?)=σ
+predicates_ok(Σ,σ(g.predicates))
+instantiate(Σ,g,σ)=fclosed
+Σ;Γ;Ω ⊢ call(fclosed,e1...en):τ ! ε ⇒ Ω'
+──────────────────────────────────────────────────────── T-Generic-Call
+Σ;Γ;Ω ⊢ generic-call(g,explicit?,e1...en):τ ! ε ⇒ Ω'
+```
+
+`infer` is defined only for one complete substitution. No solution, conflicting
+facts, more than one solution, or an unconstrained parameter is the
+corresponding analysis error in Section 12. A complete explicit list fixes the
+listed substitution and is checked by the same premises. Partial explicit
+lists and `_` placeholders have no derivation.
+
+A postfix trait call first applies inherent-method precedence and otherwise
+requires one in-scope applicable trait member. A qualified
+`Trait::method(receiver, ...)` call restricts lookup to that trait. Within a
+generic body, a declared predicate resolves the call to its trait-method slot;
+within a retained concrete instantiation, that slot is replaced by the one
+selected implementation method before executable IR is published. The dynamic
+machine therefore uses ordinary `T-Call` and has no trait-selection transition.
 
 <a id="GNT-3-T-OPERATION"></a>
 
@@ -1566,6 +1711,28 @@ effects equal this least fixed point; every grammar-adjacent rule in Section
 13 holds; and every required entry, agent, action, and package-wide condition
 holds. Failure of any premise is an analysis error. There is no other route to
 the package-valid judgment.
+
+<a id="GNT-3-T-PARAMETRIC-PACKAGE"></a>
+
+**[GNT-3-T-PARAMETRIC-PACKAGE] Parametric package validity and lowering.**
+Every generic declared type, function, method, trait, and implementation is
+checked even when unreachable. Its body and signatures are valid under only
+the predicates it declares; a capability that happens to hold for one later
+substitution cannot justify undeclared generic behavior. Trait method effect
+contracts provide conservative summaries during this parametric check. An
+implementation method's exact inferred effects MUST be a subset of its trait
+method contract.
+
+After package-wide coherence succeeds, analysis computes the finite
+instantiation closure in `GNT-3-F-INSTANTIATION`, then computes the existing
+least effect fixed point over the resulting direct concrete call graph.
+Package validity requires every retained type and callable to be closed, every
+bound to be proved, every selected implementation to be unique, every public
+or durable type to have one concrete schema, and lowering to preserve types,
+effects, operation sites, task sites, source origins, and call targets. A
+conforming analyzer MAY use another algorithm only if it accepts and rejects
+the same packages, charges the same portable resource units, and emits the
+same canonical analysis and executable artifacts.
 
 ### 3.4 Dynamic semantics
 
@@ -2149,13 +2316,14 @@ identifier policy, canonical paths, and immutable source snapshots.
    does not inherit unstated Rust lexical or semantic rules.
 <a id="GNT-4.4"></a>
 
-4. Gantry uses lexical scope for parameters, local bindings, pattern bindings,
-   and task handles; those names MUST be declared before use and MUST obey the
-   no-shadowing rule in item 15. Package-item and module declarations are
-   order-independent within the discovered package graph. A function, type,
-   action, module, or inherent method may therefore be referenced before its
-   declaration when ordinary path and import resolution finds exactly one
-   item. Analysis MUST NOT depend on source-file traversal, filesystem
+4. Gantry uses lexical scope for type parameters, value parameters, local
+   bindings, pattern bindings, and task handles; those names MUST be declared
+   before use and MUST obey the no-shadowing rules in item 15 and Section 6.
+   Package-item and module declarations are order-independent within the
+   discovered package graph. A function, declared type, trait, action, module,
+   inherent method, or trait method may therefore be referenced before its
+   declaration when ordinary path, member, and import resolution finds exactly
+   one item. Analysis MUST NOT depend on source-file traversal, filesystem
    enumeration, or parser implementation order.
 <a id="GNT-4.5"></a>
 
@@ -2191,7 +2359,7 @@ identifier policy, canonical paths, and immutable source snapshots.
    path.
 <a id="GNT-4.9"></a>
 
-9. Module cycles, duplicate ordinary item or module declarations, and
+9. Module cycles, duplicate ordinary item, trait, or module declarations, and
    duplicate module resolutions are analysis errors. Repeated logical agent
    names remain the explicit idempotent exception defined in Section 7.
    Visibility constraints are excluded from v1.
@@ -2243,20 +2411,26 @@ identifier policy, canonical paths, and immutable source snapshots.
 <a id="GNT-4.14"></a>
 
 14. Gantry MUST first discover the complete module graph, then collect
-    package-wide agent names and every module-item and inherent-method
-    signature, and only then resolve type definitions and executable bodies.
+    package-wide agent names, every module item, generic binder, trait method
+    contract, inherent-method signature, and implementation head, and only
+    then resolve type definitions, coherence, and executable bodies.
     `use` declarations contribute to their module's lexical item namespace
     regardless of textual position. An import target, `impl` target, and every
     type or item named by a signature MUST resolve against that collected
     package graph; collection does not excuse an unresolved or ambiguous path.
-    Within one module, item names MUST be unique across structs, enums,
+    Within one module, item names MUST be unique across structs, enums, traits,
     functions, actions, and modules. An imported name MUST NOT collide with
-    another import or local item. These rules make declaration reordering a
-    nonsemantic edit while retaining explicit, unambiguous lookup.
+    another import or local item. Trait methods occupy their trait-local member
+    namespace and implementation methods are checked against that namespace;
+    they are not independent module items. These rules make declaration
+    reordering a nonsemantic edit while retaining explicit, unambiguous
+    lookup.
 <a id="GNT-4.15"></a>
 
-15. Struct field names, parameter names, and method names for one receiver type
-   MUST each be unique. A local binding or task handle MUST NOT duplicate or
+15. Struct field names, type-parameter names in one binder, value-parameter
+   names, and method names for one receiver type or trait MUST each be unique.
+   A nested generic binder MUST NOT duplicate an enclosing type-parameter name.
+   A local binding or task handle MUST NOT duplicate or
     shadow any parameter, binding, or task handle visible at its declaration
     point. A parameter, local binding, or task handle also MUST NOT reuse the
     unqualified name of a module item or import visible at its declaration
@@ -2280,12 +2454,19 @@ identifier policy, canonical paths, and immutable source snapshots.
    canonical item or workflow path MUST use a `crate::`-rooted path after
     resolving `use`, `self`, and `super`. The root function `main` is therefore
     `crate::main`; an item `inspect` in nested modules `quality::checks` is
-    `crate::quality::checks::inspect`. A free function uses its canonical item
-    path as its workflow path. An inherent method uses
-    `<T>::method`, where `T` is the receiver's canonical struct type descriptor
-    from Section 5, for example
-    `<crate::domain::Report>::revise`. Canonical paths MUST use exact NFC item
-    spellings and MUST NOT retain a source-level import alias or relative root.
+    `crate::quality::checks::inspect`. A concrete free function uses its
+    canonical item path followed immediately by its complete ordered closed
+    type-argument list when nonempty, for example
+    `crate::preserve<crate::domain::Report>`. An inherent method uses
+    `<T>::method` followed by its complete method-type-argument list when
+    nonempty, where `T` is the receiver's canonical closed type descriptor from
+    Section 5. Examples are `<crate::domain::Report>::revise` and
+    `<crate::Envelope<String>>::convert<crate::Compact>`. A selected trait
+    method uses `<T as TRAIT>::method`, with complete closed trait arguments in
+    `TRAIT` and complete method arguments after `method`; for example,
+    `<crate::Report as crate::Convert<String>>::convert<crate::Compact>`.
+    Canonical paths MUST use exact NFC item spellings and MUST NOT retain a
+    source-level import alias or relative root.
 
     A canonical workflow or action signature is one UTF-8 string constructed
     from that path and the canonical type descriptors in Section 5. A
@@ -2307,7 +2488,14 @@ identifier policy, canonical paths, and immutable source snapshots.
     `action[read_only] crate::search(request:crate::SearchRequest)->Result<List<crate::Source>,crate::SearchFailure>`,
     and
     `fn <crate::domain::Report>::revise(mut self,String)->crate::domain::Report`.
-    This format is metadata rather than source syntax.
+    This format is metadata rather than source syntax. Canonical template-only
+    type expressions encode a type parameter as `^B.P`, where `B` is the
+    zero-based lexical binder depth from outermost to innermost and `P` is its
+    zero-based declaration ordinal; both are unsigned decimal without leading
+    zero except `0`. Contextual `Self` is `^self:B`. These markers occur only
+    in analysis-template artifacts and are replaced by closed descriptors in
+    every concrete workflow path, signature, schema, executable artifact, and
+    runtime or durable protocol field.
 <a id="GNT-4.17"></a>
 
 17. Package loading MUST operate on one immutable source snapshot per dry-run,
@@ -2426,6 +2614,48 @@ reported as source invalidity or as one of the portable counters above. Host
 physical-memory exhaustion that cannot be safely reported remains within the
 implementation-defined boundary in requirement
 `GNT-5.13-automatic-storage`.
+
+<a id="GNT-4.17-generic-analysis-limits"></a>
+
+**17b. Generic-analysis resource limits.** The frontend activity policy MUST
+add the positive fields `maximum_constructed_type_depth`,
+`maximum_generic_instantiations_per_activity`, and
+`maximum_trait_resolution_steps_per_activity`. Each field is required, has no
+implicit default, rejects zero, and is no greater than `2^63 - 1`. All three
+counters reset once at the start of each admitted public package activity and
+are shared by every module and analysis phase in that activity. Constructed-
+type depth applies to `ValidatePackage`, `AnalyzePackage`, `StartExecution`,
+and candidate-source resume; the instantiation and trait-resolution counters
+apply only when semantic analysis is performed. Recovery from retained
+canonical artifacts performs none of this charged source analysis.
+
+Type-expression depth is one for a primitive, parameter, or contextual `Self`
+leaf and one plus the maximum argument depth for a built-in or declared type
+application. Gantry MUST charge and reject a deeper authored, inferred,
+substituted, or decoded type before retaining it. One generic-instantiation
+unit is charged before retaining each new canonical `(template-kind,
+template-identity, ordered-closed-type-arguments)` key for a declared type,
+free workflow, inherent method, or selected trait method. Reuse of an already
+retained key is not charged again.
+
+Trait-resolution work charges one unit for a top-level obligation lookup,
+each candidate-head unification, each substituted predicate expansion, and
+each structural sealed-capability node or edge visit. A memoized lookup still
+charges its lookup unit but not work skipped by the cached result. Candidate,
+predicate, node, edge, and instantiation processing MUST use canonical order;
+all arithmetic is checked; and every charge occurs before work or output is
+retained. Source order, worker scheduling, allocation strategy, and cold or
+warm caches therefore cannot change the first failing unit or retained
+diagnostic prefix.
+
+The exact `frontend-resource-limit` codes are respectively
+`constructed-type-depth-limit`, `generic-instantiation-limit`, and
+`trait-resolution-step-limit`. Exceeding one publishes no partial analysis or
+executable artifact and follows the same validate, analyze, start, and
+candidate-resume result boundaries as item 17a. These counters are activity
+policy rather than package or durable execution identity; changing them may
+admit or reject an activity but cannot change the canonical meaning or bytes
+of a package admitted under both policies.
 
 ## 5. Values, Bindings, Structs, and Tagged Types
 
@@ -2930,10 +3160,14 @@ implementation- or embedding-defined and is not catchable by `attempt`.
 19. Every protocol field that identifies a Gantry type MUST use one canonical
    UTF-8 type descriptor. `Unit`, `Bool`, `Int`, `Float`, `String`,
     `Decision`, and `OperationError` are
-    encoded exactly as their source names; a declared struct or enum is encoded as its
-    `crate::`-rooted qualified path; and constructed types are encoded as
-    `Option<T>`, `Result<T,E>`, `List<T>`, or `Tuple<T1,T2,...,Tn>` with no
-    whitespace and with each member recursively encoded by this rule. The
+    encoded exactly as their source names. A zero-parameter declared struct or
+    enum is encoded as its `crate::`-rooted qualified path. A declared type
+    with parameters is encoded as that path followed by `<T1,T2,...,Tn>`, with
+    its complete ordered closed arguments recursively encoded by this rule.
+    Built-in constructed types are encoded as `Option<T>`, `Result<T,E>`,
+    `List<T>`, or `Tuple<T1,T2,...,Tn>` with no whitespace and with each member
+    recursively encoded by this rule. Thus `crate::Envelope<String>` and
+    `crate::ReviewState<crate::Report,crate::ReviewError>` are canonical. The
     no-information result form is encoded as `Unit`. Source aliases introduced by `use`
     MUST be resolved before a descriptor is produced. Canonical descriptors
     are metadata rather than source values, but they ensure that hooks,
@@ -2950,6 +3184,61 @@ implementation- or embedding-defined and is not catchable by `attempt`.
     assignment, arguments, returns, aggregate members, equality, or arithmetic.
     Unary `-` is an operator rather than part of a numeric token.
 
+<a id="GNT-5.20-parametric-types"></a>
+
+**20a. Parametric value types.** A declared struct or enum MAY bind one or
+more invariant value-type parameters and MAY constrain them through a trailing
+`where` clause. A type parameter ranges over exactly the first-class Gantry
+value types in this section; v1 has no lifetime, reference, const, variadic,
+higher-kinded, or default type parameter. An applied declared type supplies the
+complete ordered argument list or obtains one complete list from an admitted
+inference context. Wrong arity, an open type at a public or runtime boundary,
+or an unsatisfied declaration predicate is an analysis error.
+
+Inference is exact and local. It may use receiver, argument, initialized-field,
+enum-payload, scrutinee, explicit-type-argument, and expected-result facts. It
+MUST perform an occurs check and MUST NOT use coercion, subtyping, overload
+choice, a trait implementation, or an implementation-private default to guess
+an argument. Bounds are proved only after one complete substitution exists.
+An applied constructor or call with zero, conflicting, or several complete
+substitutions is invalid. Explicit callable or constructor arguments are all
+or nothing; `_` and partial lists are excluded.
+
+The compiler-owned capabilities are `Equatable`, `Interpolatable`, and
+`ExternalValue`. Source cannot declare or implement them. `Equatable` permits
+the existing exact equality operation; `Interpolatable` permits the existing
+deterministic interpolation encoding; and `ExternalValue` establishes a
+canonical strict-value encoding and concrete schema subject to the contextual
+entry, operation, and sealed-value exclusions already defined. Arithmetic,
+ordering, conversion, serialization, schema generation, and operation
+dispatch do not become user-overloadable.
+
+Capability satisfaction is structural after substitution. For a finite
+declared-type graph, analysis condenses strongly connected components and
+solves each capability as a deterministic fixed point in canonical node order.
+A guarded back-edge within an already valid regular recursive component is
+provisionally satisfied; the component succeeds only if every nonrecursive
+member and every outgoing edge satisfies the capability. This structural
+proof is separate from user-trait obligation resolution and is charged under
+the trait-resolution-step policy.
+
+A generic direct self-recursive occurrence MUST use the same declared
+constructor with the same parameter ordinals in the same order and MUST remain
+guarded by `Option` or `List`. Thus `Node<T>` may contain
+`Option<Node<T>>`; `Node<List<T>>`, reordered parameters, recursion through a
+second declared type, and recursive enum payloads are invalid. Construction,
+copying, assignment, capture, return, join, equality, serialization, storage,
+and recovery of `Envelope<Report>` or another closed application use the same
+deep nonaliasing logical-value semantics as every nongeneric value. No runtime
+value records a template parameter, inference variable, trait dictionary, or
+implementation pointer.
+
+A field default in a generic struct is checked once with the struct's declared
+predicates available and MUST be valid for every admitted substitution. After
+substitution, an omitted field uses the resulting concrete default exactly as
+item 12 specifies. Evaluating or substituting a default performs no trait
+selection beyond its declared predicates and introduces no effect.
+
 ## 6. Workflows, Methods, and Actions
 
 <a id="GNT-6.0"></a>
@@ -2962,15 +3251,15 @@ defined here and in Section 7 cross the integration boundary.
 <a id="GNT-6.1"></a>
 
 1. Gantry MUST support free functions and inherent methods declared in
-   Rust-inspired `impl` blocks. An `impl` target MUST resolve to a struct
-   declared in the same Gantry package. Because the grammar accepts only a
-   qualified path after `impl`, built-in types, constructed types such as
-   `Option<T>`, `List<T>`, and `Tuple<...>`, and the `Unit` type cannot be
-   written as `impl` targets in v1. A qualified path that resolves to a
-   function, module, or other non-struct item is an analysis error.
-   A package MAY split one struct's methods across multiple `impl` blocks,
-   subject to the package-wide duplicate-method rule below. Traits are
-   excluded from v1.
+   Rust-inspired `impl` blocks. An inherent `impl` target MUST have a
+   package-declared struct or enum as its outer constructor and MAY apply that
+   type to the implementation's parameters and closed arguments. A built-in
+   type, naked type parameter, function, module, trait, or other non-declared
+   value type is not a valid inherent target. A package MAY split one declared
+   type's methods across multiple `impl` blocks, subject to the package-wide
+   coherence and overlapping-inherent-method rules in item 12a. Trait
+   declarations and trait implementations use the distinct forms and rules in
+   item 12a.
 <a id="GNT-6.2"></a>
 
 2. Methods MUST support `self` and `mut self` receivers.
@@ -3231,6 +3520,67 @@ defined here and in Section 7 cross the integration boundary.
     have no agent, session, prompt template, or provider policy in Gantry
     source. The integration resolves their canonical signatures during
     preflight under Section 7.
+
+<a id="GNT-6.12-static-traits"></a>
+
+**12a. Generic workflows and static traits.** Functions and methods MAY bind
+value-type parameters and trailing where predicates. `main`, actions, action
+invocations, and entry signatures MUST NOT be generic or contain a free type
+parameter. A generic callable MAY mention a parameter at an entry, prompt,
+action, event, journal, or embedding boundary only when its declared sealed
+capabilities prove the applicable contract and monomorphization replaces it
+with one closed type before lowering.
+
+A source trait declares receiver methods only. Every method has `self` or
+`mut self`, binds zero or more method parameters, and declares either `pure`
+or one nonempty conservative `effects { ... }` set in canonical effect order.
+An omitted contract and `effects {}` are invalid. Traits have no associated
+functions, associated types, associated constants, supertraits, default
+bodies, aliases, trait values, trait objects, vtables, reflection, downcasts,
+negative implementations, specialization, or operator-overload role.
+
+`Self` is contextual. In a trait it denotes the eventual receiver; in a trait
+or inherent implementation it denotes the fully applied receiver. It is in
+scope only in method signatures, method where clauses, and method bodies, and
+is substituted before bound solving and identity construction. It is not a
+type parameter and cannot appear in an implementation head, free workflow,
+declared type, action, or unrelated item.
+
+An implementation receiver MUST have a concrete outer constructor. A naked
+receiver parameter is invalid. Every implementation parameter MUST occur in
+the receiver or trait arguments. An inherent implementation is restricted to
+a package-declared receiver; a trait implementation may target a package type
+or closed built-in constructor. Compiler-owned capabilities have no source
+implementation. Because v1 has no external package dependency model,
+coherence is checked across the complete package.
+
+Two trait implementation heads are overlapping when freshened receiver and
+trait-reference heads unify. Two inherent implementation heads overlap when
+their receiver heads unify for the same method name. Where predicates are
+conservatively treated as satisfiable and cannot make unifiable heads disjoint.
+Every overlap is an analysis error; source order, specialization, priorities,
+and negative reasoning cannot select a winner. A trait implementation MUST
+define each trait method exactly once, no extra method, and after substitution
+MUST match receiver form, generic arity, parameter and result types, and where
+predicates exactly. It cannot strengthen preconditions, and its inferred
+effects MUST be a subset of the declared method contract.
+
+Postfix lookup chooses one exact inherent method first. Otherwise it considers
+module-local or imported traits containing the member and requires exactly one
+applicable candidate. `Trait::method(receiver, ...)` explicitly restricts
+lookup to that trait. Generic trait and method argument lists are independently
+complete or inferred. User-trait obligations are memoized in canonical order;
+re-entering an active obligation is `cyclic-trait-obligation` and never proves
+itself.
+
+Generic and trait dispatch is ordinary workflow dispatch. During parametric
+checking a bound supplies the trait method's conservative effect contract.
+For each retained closed instantiation, analysis selects one implementation,
+lowers the call to its direct concrete callable identity, and computes exact
+effects over the closed call graph. Dispatch itself creates no operation,
+event, journal evidence, or dynamic semantic label. Only an explicit
+`prompt`, `decide`, or `action` reached in the selected body crosses the
+integration boundary.
 
 ## 7. Integration Operations, Agents, Hooks, and Sessions
 
@@ -4316,6 +4666,25 @@ operation modifiers defined in Sections 6 and 13.
     that consumer. The default policy MUST report source spans without copying
     source snippets. Raw integration output MUST NOT be included in validation
     diagnostics under any disclosure policy.
+
+<a id="GNT-8.13-concrete-generic-schemas"></a>
+
+**13a. Concrete generic schemas.** Schema generation accepts only closed
+types. Each distinct applied declared type has one canonical descriptor and
+one deduplicated definition identity derived by the existing SHA-256 rule from
+that complete descriptor. A generic declaration by itself produces no open
+JSON Schema parameter or wildcard schema. Every concrete entry, action,
+prompt, decision, event, journal, recovery, and embedding type is a schema
+root; analysis recursively closes its reachable concrete type graph.
+
+Substitution occurs before the structural rules in items 1 through 8 are
+applied. Concrete regular recursion uses finite `$defs` and `$ref` entries.
+Several concrete applications of one template have distinct descriptors and
+definition keys, while repeated use of the same application shares one
+definition. An unresolved parameter, contextual `Self`, unproved external
+capability, missing concrete definition, or encoder resource-limit failure
+rejects the analysis artifact before an operation request, execution, event,
+journal record, or public result can expose an open schema.
 
 ## 9. Control Flow
 
@@ -5479,6 +5848,27 @@ major version change.
 11. These resume guarantees do not create a deterministic-replay guarantee for a
    new execution.
 
+<a id="GNT-11.11-generic-artifact-recovery"></a>
+
+**11a. Recovery of generic analysis artifacts.** The canonical analysis IR
+retained by a durable execution MUST include generic templates, binders,
+predicates, trait contracts, implementation heads, the closed retained
+instantiation set, selected implementation-method identities, exact concrete
+effects, schema roots, and the source-origin set for each interned concrete
+node. Its distinct executable projection contains only closed descriptors,
+monomorphized callables, direct call targets, exact effects, and static
+operation and task sites. Both artifacts and their schemas are selected by the
+recorded specification and protocol revisions.
+
+Recovery MUST validate the retained closed-instantiation section and
+reconstruct an executable projection equivalent to the one used before
+interruption. It MUST NOT parse source, infer a type argument, prove a bound,
+run coherence, select an implementation, or discover another instantiation.
+A missing, open, malformed, tampered, stale, or mixed-revision generic artifact
+is `source-or-configuration-incompatibility` before recovered interpretation
+or authoritative journal mutation. V1 defines no migration from the
+pre-adoption draft artifacts and no compatibility resume path.
+
 ## 12. Observability and Tooling Modes
 
 <a id="GNT-12.0"></a>
@@ -6008,7 +6398,14 @@ nonrecursive sink-delivery exception still applies.
    A successful analysis result MUST include the per-workflow call edges,
    direct integration-operation and task-control sites, canonical inferred
    effect sets with contributing action paths, and checked `pure` assertions
-   required by Section 6.
+   required by Section 6. It MUST additionally include generic binders and
+   predicates, inferred complete substitutions at generic call and constructor
+   sites, trait contracts and implementation facts, selected implementation
+   identities, the closed retained-instantiation set, conservative template
+   effects, exact concrete effects, concrete schema roots, multi-origin source
+   mappings, and the distinct closed executable projection. These fields are
+   structured protocol data; a consumer MUST NOT have to parse display text or
+   rerun inference or trait selection to recover them.
 <a id="GNT-12.10"></a>
 
 10. Normal execution MUST complete semantic analysis successfully before its
@@ -6048,6 +6445,46 @@ nonrecursive sink-delivery exception still applies.
     subcodes, but the only machine-usable representation of an error MUST NOT
     be free-form text. The redaction rules in this section continue to apply to
     every diagnostic field.
+
+<a id="GNT-12.11-generic-diagnostics"></a>
+
+**11a. Generics and traits diagnostics.** The following exact analysis codes
+are portable and reserved: `duplicate-type-parameter`,
+`shadowed-type-parameter`, `escaped-type-parameter`, `invalid-self-type`,
+`type-argument-arity`, `incomplete-type-inference`,
+`ambiguous-type-inference`, `conflicting-type-inference`,
+`unsatisfied-bound`, `sealed-capability-unsatisfied`,
+`sealed-trait-implementation`, `invalid-implementation-head`,
+`unconstrained-implementation-parameter`, `missing-implementation`,
+`ambiguous-trait-method`, `overlapping-implementation`,
+`overlapping-inherent-method`, `implementation-method-mismatch`,
+`cyclic-trait-obligation`, `polymorphic-recursion`, `open-runtime-type`, and
+`missing-concrete-schema`. The three generic resource failures use the
+operational codes in `GNT-4.17-generic-analysis-limits`, not source-invalid
+diagnostics.
+
+A generic diagnostic MUST identify its authored primary span and include
+labeled related spans for the owning binder, generic declaration, predicate,
+candidate implementation, conflicting implementation, or call site whenever
+that entity exists. A concrete-instantiation failure MUST include a bounded
+canonical instantiation-witness chain from a retained root to the failing
+template; an obligation failure MUST likewise include its bounded canonical
+obligation chain. Each chain is complete through the first repeated or failing
+node and is intrinsically bounded by the applicable instantiation or trait-
+resolution activity limit. An implementation MUST NOT truncate a chain by an
+unpublished implementation-private count.
+
+For one source position, lexical and syntax failure takes precedence over
+semantic analysis; binder/scope and arity failures precede inference;
+inference completion precedes bound solving; declaration and coherence
+failures precede call-site selection; trait selection precedes
+monomorphization; and closed-type and schema checks follow substitution and
+selection. An operational resource limit stops work at its exact charged unit
+and retains only the deterministic diagnostic prefix already produced. Within
+one precedence class, diagnostics are ordered by package-relative path, start
+byte, end byte, portable code, and then unsigned canonical related-identity
+bytes. Parallel analysis and cache state MUST produce the same order and
+machine fields.
 
 ## 13. Formal Lexical and Syntactic Grammar
 
@@ -6311,15 +6748,15 @@ The reserved words are:
 action     agent      agents      as           attempt     Bool        break
 continue   crate      Decision      decide      default     detach
 discard
-else       enum       Err         false        Float       fn          fork        if
+effects    else       enum       Err         false        Float       fn          fork        if
 for        idempotent in          impl        inline       join        joinall      let
 limit
 Int        List       loop        match         mod         mut         new
 non_idempotent None    null       Ok           OperationError Option
 prompt     pure       read_only   Result       return      retry_limit self
-session    Some       spawn       String       struct      super       true
-Tuple      unbounded  Unit       until       use          using       when        while
-with
+Self       session    Some       spawn       String       struct      super       trait
+true       Tuple      unbounded  Unit       until       use          using       when
+where      while      with
 ```
 
 `as` is reserved for future compatible extension even though v1 has no alias
@@ -6342,6 +6779,7 @@ item                    = agents_declaration
                         | use_declaration
                         | struct_declaration
                         | enum_declaration
+                        | trait_declaration
                         | action_declaration
                         | function_declaration
                         | impl_declaration ;
@@ -6362,7 +6800,24 @@ qualified_path          = relative_path
                         | "super", "::", { "super", "::" }, relative_path ;
 relative_path           = identifier_token, { "::", identifier_token } ;
 
-struct_declaration      = "struct", identifier_token, "{",
+type_parameter_list     = "<", identifier_token,
+                          { ",", identifier_token }, [ "," ], ">" ;
+type_argument_list      = "<", value_type,
+                          { ",", value_type }, [ "," ], ">" ;
+trait_reference         = qualified_path, [ type_argument_list ] ;
+where_clause            = "where", where_predicate,
+                          { ",", where_predicate }, [ "," ] ;
+where_predicate         = where_subject, ":", trait_reference ;
+where_subject           = identifier_token | "Self" ;
+effect_contract         = "effects", "{", effect_name,
+                          { ",", effect_name }, [ "," ], "}" ;
+effect_name             = "prompt" | "decide"
+                        | "action", "(", action_recovery_class, ")"
+                        | "spawn" | "join" | "background"
+                        | "session" | "attempt" ;
+
+struct_declaration      = "struct", identifier_token,
+                          [ type_parameter_list ], [ where_clause ], "{",
                           [ struct_field_list ], "}" ;
 struct_field_list       = struct_field, { ",", struct_field }, [ "," ] ;
 struct_field            = identifier_token, ":", value_type,
@@ -6375,9 +6830,21 @@ field_default           = boolean_literal
                         | "(", ")"
                         | "None" ;
 
-enum_declaration        = "enum", identifier_token, "{",
+enum_declaration        = "enum", identifier_token,
+                          [ type_parameter_list ], [ where_clause ], "{",
                           enum_variant, { ",", enum_variant }, [ "," ], "}" ;
 enum_variant            = identifier_token, [ "(", value_type, ")" ] ;
+
+trait_declaration       = "trait", identifier_token,
+                          [ type_parameter_list ], [ where_clause ], "{",
+                          { trait_method_declaration }, "}" ;
+trait_method_declaration
+                        = "pure", trait_method_signature, ";"
+                        | trait_method_signature, effect_contract, ";" ;
+trait_method_signature  = "fn", identifier_token,
+                          [ type_parameter_list ], "(", receiver,
+                          [ ",", parameter, { ",", parameter } ], [ "," ],
+                          ")", [ result_annotation ], [ where_clause ] ;
 
 action_declaration      = "action", action_recovery_class,
                           identifier_token, "(",
@@ -6394,7 +6861,8 @@ value_type              = "Unit"
                         | "String"
                         | "Decision"
                         | "OperationError"
-                        | qualified_path
+                        | "Self"
+                        | qualified_path, [ type_argument_list ]
                         | "Option", "<", value_type, ">"
                         | "Result", "<", value_type, ",", value_type, ">"
                         | "List", "<", value_type, ">"
@@ -6404,9 +6872,13 @@ result_type             = value_type ;
 result_annotation       = "->", result_type ;
 ```
 
-The built-in type alternatives take precedence over `qualified_path`. A
-`Tuple` has at least two member types by grammar. An enum has at least one
-variant, and an action declaration has no body and exactly one recovery class.
+The built-in type alternatives take precedence over `qualified_path`. An
+unqualified identifier in `value_type` denotes a type parameter only when the
+innermost active binder declares it; otherwise ordinary path resolution
+applies. `Self` is contextual and is rejected outside the method positions
+defined in Section 6. A `Tuple` has at least two member types by grammar. An
+enum has at least one variant, and an action declaration has no body and
+exactly one recovery class.
 `Unit` is the result type for no-information work; `None` is only the absent
 value of an expected `Option<T>`. Field defaults are deliberately limited to
 `()`, Boolean literals, optionally negated numeric literals, ordinary or raw
@@ -6427,17 +6899,21 @@ receiver.
 <a id="GNT-13.4"></a>
 
 ```ebnf
-function_declaration    = [ "pure" ], "fn", identifier_token, "(",
+function_declaration    = [ "pure" ], "fn", identifier_token,
+                          [ type_parameter_list ], "(",
                           [ parameter_list ], ")",
-                          [ result_annotation ], block ;
+                          [ result_annotation ], [ where_clause ], block ;
 parameter_list          = parameter, { ",", parameter }, [ "," ] ;
 parameter               = [ "mut" ], identifier_token, ":", value_type ;
 
-impl_declaration        = "impl", qualified_path, "{",
+impl_declaration        = "impl", [ type_parameter_list ],
+                          ( trait_reference, "for", value_type
+                          | value_type ), [ where_clause ], "{",
                           { method_declaration }, "}" ;
-method_declaration      = [ "pure" ], "fn", identifier_token, "(", receiver,
+method_declaration      = [ "pure" ], "fn", identifier_token,
+                          [ type_parameter_list ], "(", receiver,
                           [ ",", parameter, { ",", parameter } ], [ "," ], ")",
-                          [ result_annotation ], block ;
+                          [ result_annotation ], [ where_clause ], block ;
 receiver                = "self" | "mut", "self" ;
 ```
 
@@ -6457,6 +6933,17 @@ the copy rules in Section 10 rather than introducing a new receiver.
 The root module's function named `main` is additionally restricted by Section
 4 to zero parameters or exactly one typed parameter; this is an entry-point
 semantic constraint rather than a separate function grammar.
+
+Generic parameter scopes nest from the enclosing trait or implementation to
+the method binder. A nested binder cannot redeclare an enclosing parameter,
+and no binder may declare `Self`. Bounds use only the trailing `where` form;
+empty and duplicate predicates are invalid, predicate order is nonsemantic,
+and `Self` may head a predicate only where contextual `Self` is in scope. A
+trait method uses exactly one of the two grammar alternatives: `pure`, or a
+nonempty `effects` contract whose members are unique and written in the
+canonical effect order from Section 3.1. Within an effect contract,
+`background` is a contextual spelling of the existing effect rather than a
+reserved word; it remains available as an `identifier_token` everywhere else.
 
 ### 13.5 Blocks and statements
 
@@ -6571,9 +7058,14 @@ operation_expression    = prompt_expression
 
 postfix_expression      = primary_expression, { postfix_suffix } ;
 postfix_suffix          = ".", postfix_member_name
+                        | explicit_type_arguments
                         | "(", [ argument_list ], ")"
                         | "[", expression, "]" ;
 postfix_member_name     = identifier_token | "join" ;
+explicit_type_arguments = "::", type_argument_list ;
+applied_item_path       = qualified_path, [ explicit_type_arguments ] ;
+generic_member_path     = applied_item_path, "::", identifier_token,
+                          [ explicit_type_arguments ] ;
 primary_expression      = boolean_literal
                         | integer_literal_token
                         | float_literal_token
@@ -6588,10 +7080,12 @@ primary_expression      = boolean_literal
                         | struct_expression
                         | list_expression
                         | tuple_expression
+                        | generic_member_path
                         | qualified_path
                         | "(", expression, ")" ;
 
-struct_expression       = qualified_path, "{", [ field_initializer_list ], "}" ;
+struct_expression       = applied_item_path, "{",
+                          [ field_initializer_list ], "}" ;
 field_initializer_list  = field_initializer, { ",", field_initializer },
                           [ "," ] ;
 field_initializer       = identifier_token, [ ":", expression ] ;
@@ -6625,12 +7119,7 @@ pattern                 = "_"
                         | tuple_pattern ;
 operation_error_pattern = "OperationError", "::", identifier_token,
                           [ "(", pattern, ")" ] ;
-enum_variant_pattern    = path_segment, "::", path_segment,
-                          { "::", path_segment },
-                          [ "(", pattern, ")" ]
-                        | ( "crate" | "self" ), "::", relative_path,
-                          [ "(", pattern, ")" ]
-                        | "super", "::", { "super", "::" }, relative_path,
+enum_variant_pattern    = applied_item_path, "::", identifier_token,
                           [ "(", pattern, ")" ] ;
 path_segment            = identifier_token ;
 tuple_pattern           = "(", pattern, ",", pattern,
@@ -6649,6 +7138,22 @@ of zero, so a positive source override on such an action is an analysis error.
 The grammar admits `self` as a primary expression so the same expression
 productions can parse method bodies and their nested blocks. Semantic analysis
 MUST enforce the receiver scope specified in Section 13.4.
+
+An `explicit_type_arguments` suffix is legal only immediately before a call,
+struct constructor, or enum/trait-member selector. It is never a first-class
+value. A call or constructor either infers every argument or supplies one
+complete list; a qualified trait call may independently supply a complete
+trait list before the member selector and a complete method list after the
+method name. Thus the grammar admits `Envelope::<Report> { ... }`,
+`ReviewState::<Report,Error>::Ready(report)`,
+`preserve::<Report>(report)`, `value.convert::<String>()`,
+`Convert::<String>::convert(value)`, and
+`Convert::<String>::convert::<Compact>(value)`. Semantic analysis rejects a
+suffix in every other position and rejects partial or placeholder lists.
+For `generic_member_path` and `enum_variant_pattern`, the member selector is
+the rightmost `::` outside all type-argument delimiters and before any method
+type-argument suffix. The preceding tokens form the complete applied item
+path. This split is syntactic and does not depend on name or type resolution.
 
 `join` is the sole reserved word admitted as a postfix member name because
 `List<String>.join(separator)` is a deterministic built-in while bare
@@ -6804,6 +7309,7 @@ interpolation_unary     = ("!" | "-"), interpolation_unary
 interpolation_postfix   = interpolation_primary,
                           { interpolation_suffix } ;
 interpolation_suffix    = ".", interpolation_member_name
+                        | explicit_type_arguments
                         | "(", [ interpolation_argument_list ], ")"
                         | "[", interpolation_expression, "]" ;
 interpolation_member_name
@@ -6824,10 +7330,11 @@ interpolation_primary   = boolean_literal
                         | interpolation_struct
                         | interpolation_list
                         | interpolation_tuple
+                        | generic_member_path
                         | qualified_path
                         | "self"
                         | "(", interpolation_expression, ")" ;
-interpolation_struct    = qualified_path, "{",
+interpolation_struct    = applied_item_path, "{",
                           [ interpolation_field_list ], "}" ;
 interpolation_field_list
                         = interpolation_field,
@@ -6886,12 +7393,16 @@ lexical rules, so delimiters inside quoted or raw string tokens or comments do
 not affect that balance. Comment delimiters inside strings remain literal text.
 An unclosed, mismatched, or syntactically invalid island is a syntax error.
 
-Interpolation and named inputs permit only the restricted grammar above. A
+Interpolation and named inputs permit only the restricted grammar above.
+Applied paths and explicit type arguments are admitted only to construct a
+closed deterministic aggregate or select a sealed deterministic built-in; they
+do not relax the capability and operation restrictions in Section 6. A
 postfix call is legal only for a declared enum payload constructor or a sealed
 deterministic built-in in Section 5, with the exact argument count and types
-defined for that target; it cannot dispatch a workflow or source-defined
-method. A qualified path without a call may denote a unit enum variant, while
-an unqualified path denotes a visible binding under the ordinary name rules.
+defined for that target; it cannot dispatch a workflow, source-defined
+method, or trait method. A qualified path without a call may denote a unit
+enum variant, while an unqualified path denotes a visible binding under the
+ordinary name rules.
 A projection index MUST obey the list and tuple rules in Section 5. Neither
 form admits any other function or method call, `prompt`, `decide`, `action`,
 joins, mutation, or control flow. Primitive operators use the same typing,
@@ -8078,6 +8589,81 @@ if decide "Should this optional report be published? ${maybe_report}" {
 }
 ```
 
+Generic declarations and static traits require complete, coherent types:
+
+```rust
+struct Envelope<T> {
+    value: T,
+    source: String,
+}
+
+trait Summarize {
+    pure fn summarize(self) -> String;
+}
+
+impl Summarize for Report {
+    pure fn summarize(self) -> String {
+        self.summary
+    }
+}
+
+impl<T> Summarize for Envelope<T>
+where
+    T: Summarize,
+{
+    pure fn summarize(self) -> String {
+        self.value.summarize()
+    }
+}
+
+pure fn preserve<T>(value: T) -> T {
+    value
+}
+
+fn summarize_envelope(report: Report) -> String {
+    let envelope: Envelope<Report> = Envelope::<Report> {
+        value: preserve::<Report>(report),
+        source: "author",
+    };
+    envelope.summarize()
+}
+```
+
+Inference never consults implementations to guess a type argument, and
+coherence never chooses an overlapping implementation by source order:
+
+```rust
+// Analysis error `incomplete-type-inference`: T is unconstrained.
+pure fn missing_type<T>() -> Unit {
+    ()
+}
+missing_type();
+
+// Valid: the complete type argument is explicit.
+missing_type::<Report>();
+
+trait Label {
+    pure fn label(self) -> String;
+}
+
+// Analysis error `overlapping-implementation`: both heads apply to
+// Envelope<Report>; where predicates cannot make unifiable heads disjoint.
+impl<T> Label for Envelope<T>
+where
+    T: Summarize,
+{
+    pure fn label(self) -> String {
+        self.value.summarize()
+    }
+}
+
+impl Label for Envelope<Report> {
+    pure fn label(self) -> String {
+        self.value.summary
+    }
+}
+```
+
 These invalid examples are explanatory only; the normative grammar and
 semantic requirements in Sections 5, 6, 9, 10, and 13 determine rejection.
 
@@ -8190,11 +8776,14 @@ the detailed start, resume, observation, and shutdown rules below:
   semantic analysis, and returns source-valid or source-invalid status plus
   ordered diagnostics, or a separate operational failure defined in Sections
   4, 7, 12, or 15. A source-valid result also returns the package-source
-  manifest, canonical IR and source map, canonical schemas, and inferred
-  workflow effects. A source-invalid result MAY return the manifest under
-  Section 11 but MUST NOT return executable canonical IR or an execution
-  package identity. The operation has the same semantic-repeatability boundary
-  as `ValidatePackage`, creates no execution, and invokes no source-visible
+  manifest, canonical analysis IR and source map, closed executable projection,
+  canonical concrete schemas, generic binders and predicates, inferred call-
+  site substitutions, selected implementation identities, retained concrete
+  instantiations, conservative template effects, and exact concrete workflow
+  effects. A source-invalid result MAY return the manifest under Section 11
+  but MUST NOT return executable canonical IR or an execution package identity.
+  The operation has the same semantic-repeatability boundary as
+  `ValidatePackage`, creates no execution, and invokes no source-visible
   operation, integration preflight, or hook; activity-identity allocation and
   configured standalone event delivery are still permitted.
 - `CancelExecution` accepts an execution ID and `CancellationReason` and
@@ -8680,7 +9269,9 @@ Interpreter configuration MUST include the default model-output
    bytes, maximum package-source bytes, maximum source tokens, maximum
    diagnostics per activity, maximum package-source-manifest bytes, maximum
    canonical-IR bytes, maximum source-map bytes, maximum generated-schema
-   bytes, maximum entry-input bytes, maximum hook-output bytes, maximum
+   bytes, maximum constructed-type depth, maximum generic instantiations per
+   activity, maximum trait-resolution steps per activity, maximum entry-input
+   bytes, maximum hook-output bytes, maximum
    value nesting depth, maximum value nodes, maximum String scalar count,
    maximum List item count, maximum workflow-call depth, maximum tasks per
    execution, maximum deterministic transitions per execution, maximum logical
@@ -8705,6 +9296,11 @@ Interpreter configuration MUST include the default model-output
    and drain with finite nonnegative durations; zero requests immediate
    cancellation or immediate return after cancellation, respectively. Every
    frontend limit MUST be positive and no greater than `2^63 - 1`.
+   The three generic-analysis fields use the exact counting, reset,
+   applicability, and failure rules in requirement
+   `GNT-4.17-generic-analysis-limits`; like the other nine frontend fields,
+   they have no implicit default and are excluded from durable execution
+   identity.
    The deterministic-transition yield quantum counts transitions, MUST be no
    greater than `2^63 - 1`, and remains subject to the nonzero requirement in
    Section 3.
@@ -8754,9 +9350,11 @@ and negative static semantics, schema/hash goldens, RFC 8785 differential
 cases, cross-implementation logical traces, crash injection at every commit
 cut, idempotency and unknown outcomes, Unicode security, recovery projection
 and compaction equivalence,
-and property/model tests for linear task ownership and single result
-consumption. A profile claim maps every applicable requirement ID to at least
-one corpus test and publishes the results.
+property/model tests for linear task ownership and single result consumption,
+and the generic inference, coherence, monomorphization, closed-schema,
+resource-accounting, direct-call, and recovery obligations in this revision.
+A profile claim maps every applicable requirement ID to at least one corpus
+test and publishes the results.
 
 The publication index MUST expose at least these stable artifact IDs and one
 versioned URI for each:
@@ -8766,8 +9364,8 @@ versioned URI for each:
 | `gantry.spec` | Exact normative `SPEC.md` bytes for this publication revision |
 | `gantry.embedding` | Lifecycle, preflight, hook, cancellation, executor, journal, event-delivery, and observation request/result envelopes from Sections 15.1 through 15.7 |
 | `gantry.values` | Canonical value, transcript, diagnostic, event, configuration, and protected-reference schemas |
-| `gantry.ir` | Canonical core IR and source-map schemas and desugaring fixtures |
-| `gantry.journal` | Logical evidence, ownership, and commit schemas; normative recovery projection and recovery/compaction goldens |
+| `gantry.ir` | Canonical analysis IR, closed executable projection, generic template and instantiation records, concrete descriptors, direct-call identities, source-map schemas, and desugaring fixtures |
+| `gantry.journal` | Logical evidence, ownership, retained amended analysis artifacts, and commit schemas; normative recovery projection and recovery/compaction goldens |
 | `gantry.conformance` | Requirement-ID registry, manifest schema, corpus index, and published results |
 | `gantry.authoring` | Executable positive and negative fixtures corresponding to the examples and common errors in Section 14 |
 
@@ -8780,6 +9378,15 @@ containing only source fixtures need not invent either form.
 Sections 15.1 through 15.7 refer to these logical IDs; repository paths and
 transport URLs may change only through a new publication index that preserves
 their versioned identities.
+
+The amendment MUST be published atomically. One accepted set contains the
+amended `gantry.spec`, all twelve frontend-policy fields, stable generic
+diagnostics, generic analysis and closed executable schemas, concrete type and
+callable identity goldens, durable reconstruction fixtures, conformance
+evidence, and authoring fixtures. A set that mixes any pre-adoption artifact
+with amended semantics is incomplete and MUST be rejected. The repository and
+embedding API expose no compatibility parser, legacy artifact selector,
+parallel protocol family, or migration input for the superseded draft.
 
 <a id="GNT-15.8-publication-integrity"></a>
 
