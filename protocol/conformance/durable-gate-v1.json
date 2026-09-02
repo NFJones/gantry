@@ -49,7 +49,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/durable_gate.rs",
-      "sha256": "4b9b897cad3c9ac0c990aaa372bfa56c10775c69dbdf8c56033e8801bb4e97bc"
+      "sha256": "6cc0f68f3d404c499f22a49330bbc81808229ee83cbe3556fa44b4ef3cfcd4bd"
     },
     {
       "path": "crates/gantry-conformance/tests/durable_recovery.rs",
@@ -61,7 +61,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/durable_start.rs",
-      "sha256": "a189394f0e1447fec111a751a2f454230b0608ac94b2d82eb23e0d18aeac777a"
+      "sha256": "921539da09d227a8ea76b8217682095194c8a7b33a2c83e2f87d09dadca1a085"
     },
     {
       "path": "crates/gantry-conformance/tests/journal_storage.rs",
@@ -105,7 +105,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "1ae04c067dc1874178f10fc5c7e0e137471d15522110c129e56fe6e390530d1a"
+      "sha256": "b8867b6e3ab351b2ea71f39f8813206713e03d46b5b587ac34b7fe470d71ba82"
     },
     {
       "path": "protocol/conformance/sqlite-storage-v1.json",
@@ -187,7 +187,13 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "analyzer",
+      "durable-runtime",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
     "excludes_profiles": [
       "concurrent-evaluator"
     ],

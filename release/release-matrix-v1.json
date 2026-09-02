@@ -3,18 +3,18 @@
   "overall_status": "qualified-passed",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "1d5321e188b9f70ec3bb50720b7a880828b7f6ed8710bb41c96f10bd83e17c87",
-    "source_revision": "823640133587f92f74f90fc82a5b771156b00134",
-    "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22"
+    "publication_set_identity": "5763b12ed78d5c594898898c5e188a414ea64fd95a5f13ef6ea64f942620aeb0",
+    "source_revision": "5502650b48a77d2b209a3042be4a5e075a6255b0",
+    "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
   },
   "inputs": [
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "9c4639919ee5c7f0f4c202357ab24dbfa1dbe26d231aa23208554243b3e4544c"
+      "sha256": "21db3502f3ed0da4dad7211f4af3dbeb5b7bfaa29e55be1c6f9493e4bd6aa1d8"
     },
     {
       "path": "Cargo.lock",
-      "sha256": "3099a05348bdcb78d97f956d8c2862af43d187aa80ac3393917c623fe38bd9d9"
+      "sha256": "e26d919c14529b890d0a6695c21a651e4c357045b8062a56e6c2b44d84f99436"
     },
     {
       "path": "deny.toml",
@@ -22,15 +22,15 @@
     },
     {
       "path": "fuzz/Cargo.lock",
-      "sha256": "c20682ef9ef1e85c86a34972182c84f1afa667f62e87f9d9fc945dcf078c1bfb"
+      "sha256": "5922cc323286e0a166d53696a9c737f711492e76b5cf0ad473a8e4995bc500dc"
     },
     {
       "path": "governance/dependency-ledger-v1.json",
-      "sha256": "c682d978d9b7ea0c5d0f6d4668cce0a24e357462da01f22b6af1756598a97f36"
+      "sha256": "c767c6c8fc207ac8f086a6650821f525cefff11df6d8c672e31742c31d7fcb44"
     },
     {
       "path": "protocol/publication/index-v1.json",
-      "sha256": "1d5321e188b9f70ec3bb50720b7a880828b7f6ed8710bb41c96f10bd83e17c87"
+      "sha256": "5763b12ed78d5c594898898c5e188a414ea64fd95a5f13ef6ea64f942620aeb0"
     }
   ],
   "environment": {
@@ -57,33 +57,6 @@
     "combined"
   ],
   "product_cells": [
-    {
-      "id": "linux-rust-1.91.0",
-      "os": "linux",
-      "toolchain": "1.91.0",
-      "rustc_commit": "f8297e351a40c1439a467bbbb6879088047f50b3",
-      "target": "x86_64-unknown-linux-gnu",
-      "status": "passed",
-      "claim_supported": true,
-      "feature_sets": [
-        "none",
-        "frontend",
-        "analyzer",
-        "evaluator",
-        "concurrent",
-        "durable",
-        "combined"
-      ],
-      "evidence": [
-        "cargo run --locked -p xtask -- check generated",
-        "cargo run --locked -p xtask -- check workspace",
-        "cargo run --locked -p xtask -- check governance",
-        "cargo test --locked -p gantry-conformance --test external_facade_matrix",
-        "just check",
-        "just clippy",
-        "just test"
-      ]
-    },
     {
       "id": "linux-rust-1.97.1",
       "os": "linux",
@@ -178,23 +151,6 @@
   ],
   "adapter_cells": [
     {
-      "id": "linux-adapters-rust-1.91.0",
-      "toolchain": "1.91.0",
-      "status": "passed",
-      "suites": [
-        "concurrent_executor",
-        "executor_services",
-        "execution_observation",
-        "durable_events",
-        "journal_storage",
-        "sqlite_storage",
-        "publication_set",
-        "conformance_publication",
-        "external_facade_matrix",
-        "facade"
-      ]
-    },
-    {
       "id": "linux-adapters-rust-1.97.1",
       "toolchain": "1.97.1",
       "status": "passed",
@@ -243,28 +199,92 @@
     "result": "advisories ok, bans ok, licenses ok, sources ok"
   },
   "fuzz": {
-    "target": "protocol_identity",
     "toolchain": "nightly-2026-07-01",
     "rustc": "1.98.0-nightly",
     "rustc_commit": "f46ec5218fe7829ac18323b5ee0b409a63169f27",
     "cargo_fuzz": "0.13.2",
     "libfuzzer_sys": "0.4.9",
-    "runs": 2000,
-    "max_len": 256,
-    "seed": 1881717514,
-    "status": "passed",
-    "retained_inputs": [
+    "scheduled_runs": 100000,
+    "campaigns": [
       {
-        "path": "fuzz/corpus/protocol_identity/invalid-uppercase",
-        "sha256": "048f8520562f51906d7c6f2952399a3ba1763704f074870712657e75afe18a3a"
+        "target": "generic_ir",
+        "runs": 2000,
+        "max_len": 65536,
+        "seed": 1881717514,
+        "status": "passed",
+        "retained_inputs": [
+          {
+            "path": "fuzz/corpus/generic_ir/closed-callable",
+            "sha256": "0d8edcb5ccbc57f11ceadc09a7f9b28b059f8a19ce97d5d8ba9ee8b1c0e2515f"
+          },
+          {
+            "path": "fuzz/corpus/generic_ir/nested-type",
+            "sha256": "111dc5c4c306e7c572a3085c7a244a6a0e230aedf6a51e60185f13e43eeb1ae0"
+          },
+          {
+            "path": "fuzz/corpus/generic_ir/open-template",
+            "sha256": "9ab043e92099207e66c83193ee28975fd194c62c15a452b5e5d17ade30f52c11"
+          }
+        ]
       },
       {
-        "path": "fuzz/corpus/protocol_identity/valid-execution",
-        "sha256": "9e3889cf7c0c390808f868896f466555d19322c555a9666d4ff4670d52b7a3e0"
+        "target": "generic_package",
+        "runs": 2000,
+        "max_len": 65536,
+        "seed": 1881717514,
+        "status": "passed",
+        "retained_inputs": [
+          {
+            "path": "fuzz/corpus/generic_package/contextual-self",
+            "sha256": "42fd8686d4ec17b55a80f4476af7f1de2ac3c5384c6b1c9f45b362e02eeace18"
+          },
+          {
+            "path": "fuzz/corpus/generic_package/nested-applications",
+            "sha256": "7deb442cd168e3cb15ab2c6027c9cbbf3247d8aad7377f89fec855409df2e984"
+          },
+          {
+            "path": "fuzz/corpus/generic_package/recursive-obligation",
+            "sha256": "a159c7d60b06b70718a37c3fbfdd45c0f319ecc4364c71cd924cafbcda25c08c"
+          }
+        ]
       },
       {
-        "path": "fuzz/regressions/protocol_identity/invalid-extra-separator",
-        "sha256": "2bf15749714d6d390b987624dc67da328bd03dd3639433a6b51925089b929034"
+        "target": "parser",
+        "runs": 2000,
+        "max_len": 65536,
+        "seed": 1881717514,
+        "status": "passed",
+        "retained_inputs": [
+          {
+            "path": "fuzz/corpus/parser/generic-angle-ambiguity",
+            "sha256": "dce3c1e1623d3c51f00a1ec5f63c00809205338bf9d153e1c21ec2d2b12923a9"
+          },
+          {
+            "path": "fuzz/corpus/parser/generic-qualified-call",
+            "sha256": "61db9afc95964ee494d4572e4a2a4c7712dca0af7ab769f1f3f6be236ed97b70"
+          }
+        ]
+      },
+      {
+        "target": "protocol_identity",
+        "runs": 2000,
+        "max_len": 256,
+        "seed": 1881717514,
+        "status": "passed",
+        "retained_inputs": [
+          {
+            "path": "fuzz/corpus/protocol_identity/invalid-uppercase",
+            "sha256": "048f8520562f51906d7c6f2952399a3ba1763704f074870712657e75afe18a3a"
+          },
+          {
+            "path": "fuzz/corpus/protocol_identity/valid-execution",
+            "sha256": "9e3889cf7c0c390808f868896f466555d19322c555a9666d4ff4670d52b7a3e0"
+          },
+          {
+            "path": "fuzz/regressions/protocol_identity/invalid-extra-separator",
+            "sha256": "2bf15749714d6d390b987624dc67da328bd03dd3639433a6b51925089b929034"
+          }
+        ]
       }
     ]
   },

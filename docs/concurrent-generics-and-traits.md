@@ -75,6 +75,6 @@ transfer, fixed closed call targets, and identical concrete results.
 
 `protocol/conformance/generics-traits-concurrent-v1.json` maps the applicable
 concurrent-evaluator clauses to these cases and to prerequisite frontend,
-analyzer, IR, diagnostic, and resource-limit evidence. Global profile
-advertisement remains withheld until the complete generics-and-traits adoption
-gate closes.
+analyzer, IR, diagnostic, and resource-limit evidence. The qualified release
+advertises the concurrent-evaluator profile on its recorded Linux platform
+cells.

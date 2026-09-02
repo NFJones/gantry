@@ -145,10 +145,12 @@
       "evidence": "crates/gantry-conformance/tests/durable_start.rs#durable_generic_artifacts_reconstruct_without_runtime_analysis_and_reject_tampering"
     }
   ],
-  "advertises_profiles": [],
+  "advertises_profiles": [
+    "durable-runtime"
+  ],
   "exclusions": [
     "Embedding-profile closeout remains separate from this durable-runtime evidence slice.",
     "Formal durable preservation is linked by protocol/conformance/generics-traits-refinements-v1.json; concurrent refinement remains a separate profile argument.",
-    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+    "The durable-runtime claim is limited to the qualified platform and stable-media cells in the adopted release record."
   ]
 }

@@ -43,7 +43,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/generics_conformance_gate.rs",
-      "sha256": "38af6c89a6539b09a7f28a91bc7f84951f974e3bd4005192203a8fcfca3822ec"
+      "sha256": "f621ce6d0fde294a9efa5ce4513268418fc5b703ee2a0895126b123ab54bbe0a"
     },
     {
       "path": "fuzz/Cargo.lock",
@@ -99,11 +99,11 @@
     },
     {
       "path": "protocol/README.md",
-      "sha256": "d9effdd2cce0e4c165c053612ba86c555fb96fb89a293b4e5d2e7220ae571213"
+      "sha256": "a2966dc0c4dda6ccd390592e99d6824f33078a47b61e13a2f6a5c1d498c4bfc9"
     },
     {
       "path": "protocol/conformance/generics-traits-adoption-v1.json",
-      "sha256": "c5939ce742402c2bab7db4eb6a25a9b84bb31f8b8686d974545a188943640db5"
+      "sha256": "6e4b31402566e5dbf29d513bfcfa46471bcff6b5502ed4d4f83af4a3b1412ad9"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
@@ -175,13 +175,20 @@
       "planned_count": 0
     }
   ],
-  "advertises_profiles": [],
+  "advertises_profiles": [
+    "analyzer",
+    "concurrent-evaluator",
+    "durable-runtime",
+    "embedding",
+    "evaluator",
+    "frontend"
+  ],
   "environment_gaps": [
-    "Pinned nightly-2026-07-01 fuzz execution is delegated to CI because that toolchain is unavailable in the local read-only rustup environment; deterministic corpus replay and stable-toolchain target compilation remain local evidence."
+    "Hosted macOS qualification remains pending; local release evidence covers the recorded Linux cells only."
   ],
   "exclusions": [
     "Replacement publication integrity is independently assembled and validated by GNT-GEN-PUB-001.",
-    "Linux and macOS release qualification remains owned by GNT-GEN-REL-001.",
-    "No global profile is advertised while release qualification remains open."
+    "The qualified release record limits the implementation claim to its tested platform cells.",
+    "Stable-media power-loss behavior remains excluded where the release record does not qualify the host environment."
   ]
 }

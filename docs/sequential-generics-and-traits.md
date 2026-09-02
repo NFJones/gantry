@@ -53,8 +53,8 @@ source analysis to the runtime. That boundary is documented in
 Concurrent transfer of concrete captures and results is implemented separately
 and documented in
 [`concurrent-generics-and-traits.md`](concurrent-generics-and-traits.md).
-Global evaluator profile advertisement also remains disabled until the complete
-generics-and-traits adoption gate closes.
+The qualified release advertises the evaluator profile on its recorded Linux
+platform cells; macOS remains separately qualified in the release matrix.
 
 ## Executable evidence
 

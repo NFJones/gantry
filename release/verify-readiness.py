@@ -98,6 +98,7 @@ def main() -> None:
     require_digest(conformance["requirement_registry"])
     require_digest(conformance["manifest"])
     require_digest(conformance["combined_gate"])
+    require_digest(conformance["adoption_gate"])
     manifest = json.loads((ROOT / conformance["manifest"]["path"]).read_text())
     if manifest["profile_results"] != conformance["profile_results"]:
         raise SystemExit("profile readiness results differ")
@@ -113,6 +114,15 @@ def main() -> None:
         or conformance["combined_gate"]["advertises_profiles"] != PROFILES
     ):
         raise SystemExit("combined readiness gate differs")
+    adoption = json.loads((ROOT / conformance["adoption_gate"]["path"]).read_text())
+    if (
+        adoption["gate"] != conformance["adoption_gate"]["gate"]
+        or adoption["status"] != "verified"
+        or adoption["specification_sha256"] != record["specification_sha256"]
+        or adoption["advertises_profiles"] != PROFILES
+        or adoption["blocked_by"]
+    ):
+        raise SystemExit("language-adoption readiness gate differs")
 
     packaging = record["packaging"]
     if packaging["version"] != "0.1.0":
@@ -122,7 +132,7 @@ def main() -> None:
     if packaging["private_packages"] != ["gantry-cli", "gantry-conformance", "xtask"]:
         raise SystemExit("private package set differs")
     require_digest(packaging["package_verifier"])
-    if packaging["verified_toolchains"] != ["1.91.0", "1.97.1", "stable"]:
+    if packaging["verified_toolchains"] != ["1.97.1", "stable"]:
         raise SystemExit("package verification toolchains differ")
     packages = cargo_metadata()
     for name in PUBLISHABLE_LIBRARIES:

@@ -45,7 +45,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_gate.rs",
-      "sha256": "3bb10a189d9aa371a5b7f0083be8efe5e282602746419410758f76f1691ca5fe"
+      "sha256": "cd20a1e30afd913565e6700429dd1c91a5cf88c62581e26c71e5149d49836b6a"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
@@ -77,7 +77,7 @@
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "1de4a0d3bdc63b06aec39e8a147c2451745e1f36abab323a30755f1d46ea67e7"
+      "sha256": "e70e1d812e9ba93671078945149e652a8ccf1f0d2d23990e196e465a8e9f8cd3"
     },
     {
       "path": "protocol/conformance/concurrent-executor-v1.json",
@@ -101,7 +101,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "1ae04c067dc1874178f10fc5c7e0e137471d15522110c129e56fe6e390530d1a"
+      "sha256": "b8867b6e3ab351b2ea71f39f8813206713e03d46b5b587ac34b7fe470d71ba82"
     },
     {
       "path": "protocol/goldens/concurrent-executor-model-v1.json",
@@ -170,7 +170,13 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "analyzer",
+      "concurrent-evaluator",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
     "excludes_profiles": [
       "durable-runtime"
     ],

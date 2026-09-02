@@ -2,8 +2,8 @@
 
 This document describes the implemented durable-runtime boundary for closed
 generic applications and statically selected trait methods. `SPEC.md` remains
-normative. The complete generics-and-traits adoption gate and global profile
-advertisement remain separate release work.
+normative. The qualified release advertises this profile with explicit platform
+and stable-media limitations in the release record.
 
 ## Retained artifacts
 
@@ -52,7 +52,7 @@ Retained generic artifact failures use the
 `source-or-configuration-incompatibility` category and the stable
 `invalid-retained-artifact` code where no narrower compatibility code applies.
 
-This is the amended pre-adoption v1 draft contract. Gantry does not migrate or
+This is the adopted amended v1 contract. Gantry does not migrate or
 compatibility-resume older draft execution-start metadata or program bytes.
 
 ## Executable evidence
@@ -72,5 +72,5 @@ compatibility-resume older draft execution-start metadata or program bytes.
 
 `protocol/conformance/generics-traits-durable-v1.json` maps every applicable
 durable-runtime generics-and-traits clause to this regression or to its
-frontend, analyzer, and IR prerequisite evidence. Global profile advertisement
-remains withheld until the complete adoption gate closes.
+frontend, analyzer, and IR prerequisite evidence. The qualified release record
+states the remaining macOS and stable-media limitations.

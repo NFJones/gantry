@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -101,7 +102,7 @@ struct Section14Excerpt {
 fn checked_in_frontend_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertised_profiles().contains(&ConformanceProfile::Frontend));
     assert!(gantry_conformance::evidence_revision_is_expected(
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
@@ -132,7 +133,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         return Err("frontend gate identity or status is invalid".to_owned());
     }
     if manifest.claim.profiles != ["frontend"]
-        || !manifest.claim.advertises_profiles.is_empty()
+        || manifest.claim.advertises_profiles != manifest.claim.profiles
         || manifest.claim.excludes_profiles
             != [
                 "analyzer",
@@ -141,8 +142,8 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
                 "embedding",
                 "evaluator",
             ]
-        || gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().is_empty()
+        || !gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().contains(&ConformanceProfile::Frontend)
     {
         return Err("frontend claim is invalid or overstates another profile".to_owned());
     }

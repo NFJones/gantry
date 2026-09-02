@@ -140,10 +140,12 @@
       "evidence": "crates/gantry-conformance/tests/executable_bridge.rs#generic_operation_uses_the_concrete_result_type_and_schema"
     }
   ],
-  "advertises_profiles": [],
+  "advertises_profiles": [
+    "evaluator"
+  ],
   "exclusions": [
     "Concurrent scheduling and task transfer are covered by the separate GNT-GEN-CON-001 evidence slice.",
     "Durable retention and fresh-process reconstruction are covered by the separate GNT-GEN-DUR-001 evidence slice.",
-    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+    "The evaluator claim is limited to the qualified platform cells in the adopted release record."
   ]
 }

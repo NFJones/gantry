@@ -2,64 +2,70 @@
   "format": "gantry.release-readiness/v1",
   "status": "qualified-release-ready",
   "unqualified_full_v1": false,
-  "source_revision": "823640133587f92f74f90fc82a5b771156b00134",
-  "specification_sha256": "78fc02332a01a8a53ca4cbe82b3cdd01125b2aae7039c940274ae97559391e22",
+  "source_revision": "5502650b48a77d2b209a3042be4a5e075a6255b0",
+  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "1d5321e188b9f70ec3bb50720b7a880828b7f6ed8710bb41c96f10bd83e17c87",
+    "publication_set_identity": "5763b12ed78d5c594898898c5e188a414ea64fd95a5f13ef6ea64f942620aeb0",
     "verification_path": "protocol/publication/verification-v1.json",
-    "verification_sha256": "741f62da81847fd45ca346736e11fd3a874dc1005713d850a3d4516810d3a36f"
+    "verification_sha256": "e5f9744e511707d9d6bb9fdfbf561b2bee0f8f40919c04350bdef2cf0ff8e142"
   },
   "conformance": {
     "requirement_registry": {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "f58db8c84220032eecda0891cb6c0bccac1f65e7746fbdce3cb70b34cf4b8073"
+      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
     },
     "manifest": {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "0bd6b0b6a8495ceb16885ca800fe6ccdac27a5812d74e4b4a18243422156b81a"
+      "sha256": "645ebe534bda1c1823e8d777af3637c3f80a532575bb0ae3202c6eaa3a143c29"
     },
     "profile_results": [
       {
         "profile": "analyzer",
-        "covered_count": 275,
+        "covered_count": 224,
         "not_applicable_count": 67,
+        "planned_count": 0,
         "status": "verified"
       },
       {
         "profile": "concurrent-evaluator",
-        "covered_count": 374,
+        "covered_count": 323,
         "not_applicable_count": 6,
+        "planned_count": 0,
         "status": "verified"
       },
       {
         "profile": "durable-runtime",
-        "covered_count": 403,
+        "covered_count": 353,
         "not_applicable_count": 8,
+        "planned_count": 0,
         "status": "verified"
       },
       {
         "profile": "embedding",
-        "covered_count": 282,
+        "covered_count": 255,
         "not_applicable_count": 34,
+        "planned_count": 0,
         "status": "verified"
       },
       {
         "profile": "evaluator",
-        "covered_count": 367,
+        "covered_count": 316,
         "not_applicable_count": 13,
+        "planned_count": 0,
         "status": "verified"
       },
       {
         "profile": "frontend",
-        "covered_count": 106,
-        "not_applicable_count": 22,
+        "covered_count": 58,
+        "not_applicable_count": 16,
+        "planned_count": 0,
         "status": "verified"
       }
     ],
     "combined_gate": {
       "path": "protocol/conformance/combined-gate-v1.json",
-      "sha256": "10f7f8897ea744e87c9e0696e143620e6d73833f7acc75e8951bd3f472e82471",
+      "sha256": "49b65bbf773fe1cfb85bea78f93b520163696f72d399d761e1dbe2952de027cf",
       "gate": "GNT-COMB-001",
       "status": "verified",
       "advertises_profiles": [
@@ -70,6 +76,11 @@
         "evaluator",
         "frontend"
       ]
+    },
+    "adoption_gate": {
+      "path": "protocol/conformance/generics-traits-adoption-v1.json",
+      "sha256": "6e4b31402566e5dbf29d513bfcfa46471bcff6b5502ed4d4f83af4a3b1412ad9",
+      "gate": "GNT-GEN-GATE-000"
     }
   },
   "packaging": {
@@ -96,7 +107,6 @@
       "sha256": "2de80e86073cb70280bf8e9bf56122b0ed1aebd3f82fb71a27adcd288284a52a"
     },
     "verified_toolchains": [
-      "1.91.0",
       "1.97.1",
       "stable"
     ],
@@ -112,12 +122,11 @@
   },
   "matrix": {
     "path": "release/release-matrix-v1.json",
-    "sha256": "e9efac0e96f0111bdb15944b02774daa242868ac9f0b5cc09252e30f63890245",
+    "sha256": "331f3080c9f9cedb36750b104d991320f22d20f2cc00b395a0e63e8f8d2b1fd5",
     "verifier_path": "release/verify-release-matrix.py",
-    "verifier_sha256": "764801c23692a455cef423547d8a19ee5d250e69482b13b4816fcbcb672b21d5",
+    "verifier_sha256": "7287379ca38dab009bdd3f0b7001276f261250aae329c4cd6a5f7e2d3fbe214d",
     "status": "qualified-passed",
     "passed_cells": [
-      "linux-rust-1.91.0",
       "linux-rust-1.97.1",
       "linux-rust-stable"
     ],

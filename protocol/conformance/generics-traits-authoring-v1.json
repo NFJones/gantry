@@ -33,6 +33,6 @@
   "exclusions": [
     "Cross-profile generics-and-traits conformance is authenticated by the GNT-GEN-CONF-001 evidence gate.",
     "The replacement publication artifact and authenticated index are independently assembled by GNT-GEN-PUB-001.",
-    "Global profile advertisement remains withheld pending GNT-GEN-REL-001 release qualification."
+    "Authoring evidence is not itself an implementation profile claim; adopted implementation claims are recorded by the release qualification."
   ]
 }

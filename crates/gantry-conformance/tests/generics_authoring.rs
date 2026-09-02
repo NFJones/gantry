@@ -141,7 +141,7 @@ fn checked_in_generics_authoring_evidence_is_current() {
     assert!(manifest.profiles.is_empty());
     assert!(manifest.advertises_profiles.is_empty());
     assert_eq!(manifest.exclusions.len(), 3);
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertises_any_profile());
     for capability in &manifest.capabilities {
         assert!(!capability.id.is_empty());
         assert_anchor_exists(&root, &capability.evidence);

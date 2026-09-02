@@ -416,9 +416,9 @@ fn reviewed_durable_generic_evidence_is_closed() {
     );
     assert_eq!(manifest.entries.len(), 28);
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
-    assert!(manifest.advertises_profiles.is_empty());
+    assert_eq!(manifest.advertises_profiles, ["durable-runtime"]);
     assert_eq!(manifest.exclusions.len(), 3);
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertised_profiles().contains(&gantry::ConformanceProfile::DurableRuntime));
 
     for entry in &manifest.entries {
         assert_anchor_exists(&root, &entry.evidence);

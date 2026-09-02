@@ -102,8 +102,8 @@ Durable generics-and-traits evidence in
 clauses to authenticated sequence-one artifacts, exact closed callable and
 schema reconstruction, full/compacted and fresh-process recovery,
 source-free/candidate comparison, and pre-mutation corruption rejection. It
-does not advertise a global profile while the broader language-adoption gate
-remains blocked.
+supports the qualified durable-runtime claim recorded by the adopted language
+release.
 
 The amended authoring corpus includes `docs/generics-and-traits.md`, the
 complete executable package under `examples/generics-and-traits/`, the focused
@@ -118,8 +118,8 @@ Aggregate generics-and-traits conformance evidence in
 canonicalization properties, exact scale boundaries, replayable parser,
 generic-IR, and hostile-package corpora, and the pinned-nightly fuzz targets
 and CI cadence. It also verifies that every applicable profile review is
-closed while global profile advertisement remains withheld for publication
-assembly and release qualification.
+closed. The release record binds those results to the adopted publication and
+states the remaining platform and stable-media qualifications.
 
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while

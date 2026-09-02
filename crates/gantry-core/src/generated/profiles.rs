@@ -37,7 +37,7 @@ impl ConformanceProfile {
 pub const PROFILE_SPECIFICATION_REVISION: &str = "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf";
 
 /// Whether this staged baseline may advertise conformance profiles.
-pub const PROFILE_CLAIMS_ENABLED: bool = false;
+pub const PROFILE_CLAIMS_ENABLED: bool = true;
 
 /// One profile and its direct prerequisite profiles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

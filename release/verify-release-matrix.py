@@ -35,6 +35,13 @@ ADAPTER_SUITES = [
     "facade",
 ]
 
+FUZZ_CAMPAIGNS = {
+    "generic_ir": 65536,
+    "generic_package": 65536,
+    "parser": 65536,
+    "protocol_identity": 256,
+}
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -100,7 +107,6 @@ def main() -> None:
         raise SystemExit("feature-set matrix differs")
     product_cells = {cell["id"]: cell for cell in matrix["product_cells"]}
     expected_product_ids = {
-        "linux-rust-1.91.0",
         "linux-rust-1.97.1",
         "linux-rust-stable",
         "macos-rust-1.97.1",
@@ -124,7 +130,6 @@ def main() -> None:
 
     adapter_cells = {cell["id"]: cell for cell in matrix["adapter_cells"]}
     if set(adapter_cells) != {
-        "linux-adapters-rust-1.91.0",
         "linux-adapters-rust-1.97.1",
         "linux-adapters-rust-stable",
     }:
@@ -144,25 +149,57 @@ def main() -> None:
         raise SystemExit("dependency-policy result differs")
 
     fuzz = matrix["fuzz"]
+    require_exact_keys(
+        fuzz,
+        {
+            "toolchain",
+            "rustc",
+            "rustc_commit",
+            "cargo_fuzz",
+            "libfuzzer_sys",
+            "scheduled_runs",
+            "campaigns",
+        },
+        "fuzz",
+    )
     if (
-        fuzz["target"] != "protocol_identity"
-        or fuzz["toolchain"] != "nightly-2026-07-01"
+        fuzz["toolchain"] != "nightly-2026-07-01"
         or fuzz["rustc"] != "1.98.0-nightly"
         or fuzz["rustc_commit"] != "f46ec5218fe7829ac18323b5ee0b409a63169f27"
         or fuzz["cargo_fuzz"] != "0.13.2"
         or fuzz["libfuzzer_sys"] != "0.4.9"
-        or fuzz["runs"] != 2000
-        or fuzz["max_len"] != 256
-        or fuzz["seed"] != 1881717514
-        or fuzz["status"] != "passed"
+        or fuzz["scheduled_runs"] != 100000
     ):
-        raise SystemExit("fuzz result differs")
-    retained_paths = [entry["path"] for entry in fuzz["retained_inputs"]]
-    if retained_paths != sorted(retained_paths):
-        raise SystemExit("retained fuzz inputs are not sorted")
-    for entry in fuzz["retained_inputs"]:
-        if sha256(ROOT / entry["path"]) != entry["sha256"]:
-            raise SystemExit(f"retained fuzz input differs: {entry['path']}")
+        raise SystemExit("fuzz toolchain or scheduled cadence differs")
+    campaigns = {campaign["target"]: campaign for campaign in fuzz["campaigns"]}
+    if list(campaigns) != sorted(FUZZ_CAMPAIGNS) or set(campaigns) != set(FUZZ_CAMPAIGNS):
+        raise SystemExit("fuzz campaign membership or ordering differs")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    for target, max_len in FUZZ_CAMPAIGNS.items():
+        campaign = campaigns[target]
+        require_exact_keys(
+            campaign,
+            {"target", "runs", "max_len", "seed", "status", "retained_inputs"},
+            f"fuzz campaign {target}",
+        )
+        if (
+            campaign["runs"] != 2000
+            or campaign["max_len"] != max_len
+            or campaign["seed"] != 1881717514
+            or campaign["status"] != "passed"
+        ):
+            raise SystemExit(f"fuzz result differs: {target}")
+        if f"cargo fuzz run {target} --" not in workflow or f"-max_len={max_len}" not in workflow:
+            raise SystemExit(f"fuzz workflow differs: {target}")
+        retained_paths = [entry["path"] for entry in campaign["retained_inputs"]]
+        if retained_paths != sorted(retained_paths) or not retained_paths:
+            raise SystemExit(f"retained fuzz inputs differ: {target}")
+        for entry in campaign["retained_inputs"]:
+            require_exact_keys(entry, {"path", "sha256"}, f"retained fuzz input {entry['path']}")
+            if sha256(ROOT / entry["path"]) != entry["sha256"]:
+                raise SystemExit(f"retained fuzz input differs: {entry['path']}")
+    if "'100000'" not in workflow or "'2000'" not in workflow:
+        raise SystemExit("fuzz workflow run cadence differs")
 
     if len(matrix["claim_limits"]) != 3 or not all(matrix["claim_limits"]):
         raise SystemExit("claim limits differ")

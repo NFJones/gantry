@@ -140,10 +140,12 @@
       "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concrete_generic_operation_schema_and_result_survive_task_boundary"
     }
   ],
-  "advertises_profiles": [],
+  "advertises_profiles": [
+    "concurrent-evaluator"
+  ],
   "exclusions": [
     "Durable retention and fresh-process reconstruction are covered by the separate GNT-GEN-DUR-001 evidence slice.",
     "Formal concurrent preservation is linked by protocol/conformance/generics-traits-refinements-v1.json; durable refinement remains a separate profile argument.",
-    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+    "The concurrent-evaluator claim is limited to the qualified platform cells in the adopted release record."
   ]
 }

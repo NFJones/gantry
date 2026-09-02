@@ -155,7 +155,7 @@ struct ValidityManifest {
 fn checked_in_analyzer_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertises_any_profile());
     assert_eq!(
         manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION
@@ -193,7 +193,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         return Err("analyzer gate identity or status is invalid".to_owned());
     }
     if manifest.claim.profiles != ["analyzer", "frontend"]
-        || !manifest.claim.advertises_profiles.is_empty()
+        || manifest.claim.advertises_profiles != manifest.claim.profiles
         || manifest.claim.excludes_profiles
             != [
                 "concurrent-evaluator",
@@ -201,8 +201,8 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
                 "embedding",
                 "evaluator",
             ]
-        || gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().is_empty()
+        || !gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertises_any_profile()
     {
         return Err("analyzer claim is invalid or overstates a later profile".to_owned());
     }
@@ -340,7 +340,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     )?;
     if manifest.environment_gaps
         != [
-            "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes; hosted macOS qualification is owned by GNT-GEN-REL-001 and is not claimed by this Linux evidence gate.",
+            "The analyzer and frontend claims are qualified on the recorded Linux cells; hosted macOS qualification is not claimed by this evidence gate.",
         ]
     {
         return Err("validation commands or environment gaps are incomplete".to_owned());

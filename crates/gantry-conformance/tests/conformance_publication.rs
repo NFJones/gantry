@@ -300,11 +300,7 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
             .all(|pair| pair[0].gate < pair[1].gate)
     );
     for gate in &manifest.gates {
-        if gate.gate == "GNT-GEN-GATE-000" {
-            assert_eq!(gate.status, "blocked");
-        } else {
-            assert_eq!(gate.status, "verified");
-        }
+        assert_eq!(gate.status, "verified");
         assert_digest(&root, &gate.path, &gate.sha256);
     }
 

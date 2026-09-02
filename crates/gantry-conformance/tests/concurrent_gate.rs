@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -156,7 +157,7 @@ struct Counterexample {
 fn checked_in_concurrent_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertised_profiles().contains(&ConformanceProfile::ConcurrentEvaluator));
     assert!(gantry_conformance::evidence_revision_is_expected(
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
@@ -204,11 +205,11 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         "frontend",
     ];
     if manifest.claim.profiles != claimed
-        || !manifest.claim.advertises_profiles.is_empty()
+        || manifest.claim.advertises_profiles != claimed
         || manifest.claim.excludes_profiles != ["durable-runtime"]
         || manifest.claim.excludes_capabilities != ["journal", "resume"]
-        || gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().is_empty()
+        || !gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().contains(&ConformanceProfile::ConcurrentEvaluator)
         || !gantry::compiled_features().concurrent
     {
         return Err("concurrent claim is invalid or overstates durability".to_owned());

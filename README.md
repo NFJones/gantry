@@ -118,10 +118,10 @@ concurrent-evaluator, durable-runtime, and embedding profiles describe which
 parts of the contract an implementation or integration provides. This lets a
 deployment make precise capability claims without changing source meaning.
 
-Global profile advertisement remains withheld while the amended language
-adoption gate is incomplete. The profile-specific evidence documents record
-which implementation layers are already verified without turning those staged
-results into a release claim.
+The amended language publication advertises all six profiles for the qualified
+Linux implementation release. The release record keeps macOS validation and
+stable-media power-loss behavior explicitly qualified rather than inferring
+untested platform guarantees.
 
 ## Getting started
 

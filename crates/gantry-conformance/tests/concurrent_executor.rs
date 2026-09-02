@@ -291,9 +291,11 @@ fn reviewed_concurrent_generic_evidence_is_closed() {
     );
     assert_eq!(manifest.entries.len(), 27);
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
-    assert!(manifest.advertises_profiles.is_empty());
+    assert_eq!(manifest.advertises_profiles, ["concurrent-evaluator"]);
     assert_eq!(manifest.exclusions.len(), 3);
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(
+        gantry::advertised_profiles().contains(&gantry::ConformanceProfile::ConcurrentEvaluator)
+    );
 
     for entry in manifest.entries {
         assert_anchor_exists(&root, &entry.evidence);

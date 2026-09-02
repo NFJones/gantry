@@ -144,6 +144,6 @@
   "exclusions": [
     "The static analyzer-validity argument remains owned by GNT-GEN-PROOF-001.",
     "This evidence does not add runtime implementation behavior, compatibility recovery, or a new source-language rule.",
-    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
+    "Adopted profile claims remain bounded by the qualified release record rather than by this proof artifact."
   ]
 }

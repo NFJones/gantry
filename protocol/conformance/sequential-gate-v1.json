@@ -93,7 +93,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
-      "sha256": "f671a13b375823a745f6d0812040823094032211450c77146654cbd622c56604"
+      "sha256": "2d4573f05aa934c2c90834a7009151ea40e0ae24b05ec8166bdccde82d7f8978"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
@@ -113,15 +113,15 @@
     },
     {
       "path": "crates/gantry-conformance/tests/canonical_protocol.rs",
-      "sha256": "25063b75fc03cc02f2c4bc2177319641b8fcd415a3d979d1cf3646a64a134671"
+      "sha256": "17e41bd9c54195c1c34be9d4a57f7e0978ebd9c84c4110f57ebadf332ffec550"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_executor.rs",
-      "sha256": "00c0ddd6d04d1c547c61d91d9a1e5755d834ac05ea0863e8ce3754cf0a474318"
+      "sha256": "399906801743ec4bab54e0a762fb0afcddc74d8b53828029d023e78573098745"
     },
     {
       "path": "crates/gantry-conformance/tests/conformance_publication.rs",
-      "sha256": "adcedff420e75f0bea77565dba89671b25193d892f86633c810776b6c5e5fd7f"
+      "sha256": "9a506644784394b2846626e12b40a2707ee76a961b4a3629e6dfc7ac629aa49d"
     },
     {
       "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
@@ -129,11 +129,11 @@
     },
     {
       "path": "crates/gantry-conformance/tests/durable_start.rs",
-      "sha256": "a189394f0e1447fec111a751a2f454230b0608ac94b2d82eb23e0d18aeac777a"
+      "sha256": "921539da09d227a8ea76b8217682095194c8a7b33a2c83e2f87d09dadca1a085"
     },
     {
       "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-      "sha256": "0839ffc0e84f1e69eec3a236e1789ae0165c02337bb4248e6a234fed589e04f1"
+      "sha256": "bf9887c2ecbf49441dbec8aea882dc966da56da5949db59f92b71b6342292ff1"
     },
     {
       "path": "crates/gantry-conformance/tests/execution_observation.rs",
@@ -153,7 +153,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/frontend_gate.rs",
-      "sha256": "bcd122983b6f47a0be9f951f0895d31d42c35d5ce61d99150bbff50f0cfe0aa3"
+      "sha256": "2f4e41837e1b98ba6c1bd5a886137bcc8daef407225f102d0f84289a7b9f1748"
     },
     {
       "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
@@ -173,7 +173,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/generics_authoring.rs",
-      "sha256": "3f0aa5801f4c1f781db5d80d3356ff87bc81a727f3ccc1132f3b03f1ed911592"
+      "sha256": "1395d275194af02082a540615664e65643381e96968572c7ac4430147d62bf7e"
     },
     {
       "path": "crates/gantry-conformance/tests/generics_conformance.rs",
@@ -269,11 +269,11 @@
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "1de4a0d3bdc63b06aec39e8a147c2451745e1f36abab323a30755f1d46ea67e7"
+      "sha256": "e70e1d812e9ba93671078945149e652a8ccf1f0d2d23990e196e465a8e9f8cd3"
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "974e6e09e23432a5b3756a6b4068673c49ff4575b60bda0d2836916ba3ce737e"
+      "sha256": "410bdeae149b1d69259485a32171cfbe227ece5e35449eaa7d1a0894a9205620"
     },
     {
       "path": "protocol/conformance/execution-observation-v1.json",
@@ -369,7 +369,12 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "analyzer",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
     "excludes_profiles": [
       "concurrent-evaluator",
       "durable-runtime"

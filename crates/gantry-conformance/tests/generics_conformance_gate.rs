@@ -190,7 +190,7 @@ fn validate_manifest(
     if manifest.format != "gantry.generics-traits-conformance-evidence/v1"
         || manifest.issue != "GNT-GEN-CONF-001"
         || manifest.profiles != PROFILES
-        || !manifest.advertises_profiles.is_empty()
+        || manifest.advertises_profiles != PROFILES
     {
         return Err("generic conformance identity or profile claim is invalid".to_owned());
     }
@@ -280,13 +280,14 @@ fn validate_manifest(
     {
         return Err("generic conformance profile reviews remain open".to_owned());
     }
-    if adoption.status != "blocked"
-        || !adoption.advertises_profiles.is_empty()
+    if manifest.advertises_profiles != PROFILES
+        || adoption.status != "verified"
+        || adoption.advertises_profiles != PROFILES
         || adoption
             .blocked_by
             .iter()
             .any(|issue| issue == "GNT-GEN-CONF-001")
-        || adoption.blocked_by != ["GNT-GEN-REL-001"]
+        || !adoption.blocked_by.is_empty()
     {
         return Err("generic conformance gate overclaims publication or release".to_owned());
     }

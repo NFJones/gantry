@@ -97,8 +97,8 @@ fn canonical_profile_catalog_matches_the_public_binding() {
         catalog.specification_revision,
         gantry::PROFILE_SPECIFICATION_REVISION
     );
-    assert!(!catalog.claims_enabled);
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(catalog.claims_enabled);
+    assert!(gantry::advertises_any_profile());
 
     let public = PROFILE_DEFINITIONS
         .iter()
