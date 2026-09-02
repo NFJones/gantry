@@ -506,6 +506,11 @@ impl Compiler<'_> {
             .iter()
             .find(|call| &call.source == node.span())
         {
+            let receiver = postfix_method_receiver(self.tree, &node);
+            if let Some(receiver) = &receiver {
+                let receiver_type = method_receiver_type(&call.callee)?;
+                self.emit(receiver_type, InstructionKind::Load(receiver.clone()))?;
+            }
             let arguments = direct_expressions(self.tree, &node);
             for argument in &arguments {
                 self.compile_expression(*argument)?;
@@ -514,7 +519,9 @@ impl Compiler<'_> {
                 ty.clone(),
                 InstructionKind::Call {
                     callee: call.callee.clone(),
-                    arguments: arguments.len(),
+                    arguments: arguments
+                        .len()
+                        .saturating_add(usize::from(receiver.is_some())),
                 },
             )?;
             return Ok(ty);
@@ -980,6 +987,53 @@ fn direct_expressions(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> 
                 .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
         })
         .collect()
+}
+
+fn postfix_method_receiver(
+    tree: &SyntaxTree,
+    expression: &gantry_frontend::SyntaxNode,
+) -> Option<Arc<str>> {
+    let mut tokens = Vec::new();
+    let mut work = expression
+        .children()
+        .iter()
+        .rev()
+        .copied()
+        .collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let dot = tokens.iter().position(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    })?;
+    tokens
+        .get(..dot)?
+        .iter()
+        .find_map(|node| match node.form() {
+            SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.clone()),
+            SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+                Some(Arc::from("self"))
+            }
+            _ => None,
+        })
+}
+
+fn method_receiver_type(path: &CanonicalPath) -> Result<TypeDescriptor, AnalysisError> {
+    let receiver = path
+        .as_str()
+        .strip_prefix('<')
+        .and_then(|value| value.split_once(">::"))
+        .map(|(receiver, _)| receiver)
+        .ok_or(AnalysisError::Invariant)?;
+    TypeDescriptor::from_canonical_string(receiver).map_err(|_| AnalysisError::Invariant)
 }
 
 fn operation_template_segments(

@@ -18,7 +18,10 @@ use gantry_frontend::{
     CompletedSyntaxPhase, NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind,
 };
 use gantry_ir::generated::TypeKind;
-use gantry_ir::{ArtifactLimits, TypeDescriptor, TypeDescriptorError, TypeExpression};
+use gantry_ir::{
+    ArtifactLimits, ConcreteEffect, ConcreteIdentity, GenericTemplate, TypeDescriptor,
+    TypeDescriptorError, TypeExpression,
+};
 
 use crate::bodies::check_package_bodies;
 use crate::effects::analyze_workflow_facts;
@@ -178,7 +181,7 @@ fn analyze_package_types_with_policy(
         &generic_types,
         &mut type_diagnostics,
     )?;
-    let body_types = match check_package_bodies(
+    let body_analysis = match check_package_bodies(
         phase.parsed_sources(),
         &facts_by_source,
         &generic_types,
@@ -190,7 +193,7 @@ fn analyze_package_types_with_policy(
         &mut generic_counters,
         &mut type_diagnostics,
     ) {
-        Ok(body_types) => body_types,
+        Ok(body_analysis) => body_analysis,
         Err(AnalysisError::ResourceLimit { error, .. }) => {
             diagnostics.append(&mut type_diagnostics);
             diagnostics.sort();
@@ -205,6 +208,7 @@ fn analyze_package_types_with_policy(
         &structure,
         &mut type_diagnostics,
     )?;
+    let (generic_templates, generic_concrete_effects) = finalize_generic_effects(&body_analysis)?;
     let has_semantic_errors = diagnostics
         .iter()
         .chain(&type_diagnostics)
@@ -263,7 +267,7 @@ fn analyze_package_types_with_policy(
             let artifacts = match lower_package_artifacts(
                 phase.snapshot(),
                 phase.parsed_sources(),
-                &body_types,
+                &body_analysis.expression_types,
                 &workflows,
                 artifact_limits,
             ) {
@@ -279,7 +283,7 @@ fn analyze_package_types_with_policy(
             let executable = lower_executable_program(
                 phase.parsed_sources(),
                 &facts_by_source,
-                &body_types,
+                &body_analysis.expression_types,
                 entry.as_ref().ok_or(AnalysisError::Invariant)?,
                 &workflows,
                 &actions,
@@ -309,6 +313,9 @@ fn analyze_package_types_with_policy(
         generic_types,
         trait_contracts,
         implementation_heads,
+        generic_templates,
+        generic_instantiations: body_analysis.generic_instantiations,
+        generic_concrete_effects,
         types: facts,
         workflows,
         actions,
@@ -322,6 +329,53 @@ fn analyze_package_types_with_policy(
         diagnostics: retained,
         counters,
     })
+}
+
+fn finalize_generic_effects(
+    body: &crate::bodies::BodyAnalysis,
+) -> Result<(Vec<GenericTemplate>, Vec<ConcreteEffect>), AnalysisError> {
+    let mut templates = Vec::with_capacity(body.generic_templates.len());
+    for template in &body.generic_templates {
+        let effect = body
+            .generic_template_effects
+            .get(template.identity())
+            .copied()
+            .unwrap_or_default();
+        templates.push(
+            GenericTemplate::new(
+                template.kind(),
+                template.identity().clone(),
+                template.parameter_count(),
+                template.predicates().to_vec(),
+                effect,
+            )
+            .map_err(|_| AnalysisError::Invariant)?,
+        );
+    }
+    let mut concrete = body
+        .generic_instantiations
+        .iter()
+        .map(|instantiation| {
+            let key = (
+                instantiation.template().clone(),
+                instantiation.arguments().to_vec(),
+            );
+            let effect = body
+                .generic_concrete_effects
+                .get(&key)
+                .copied()
+                .unwrap_or_default();
+            let ConcreteIdentity::Callable(callable) = instantiation.concrete() else {
+                return Err(AnalysisError::Invariant);
+            };
+            Ok(ConcreteEffect {
+                callable: callable.clone(),
+                effects: effect,
+            })
+        })
+        .collect::<Result<Vec<_>, AnalysisError>>()?;
+    concrete.sort_by(|left, right| left.callable.cmp(&right.callable));
+    Ok((templates, concrete))
 }
 
 /// Resolves every value-type node in arena construction order. Child type
@@ -2572,6 +2626,313 @@ fn main(flag: Bool) -> Int {
                 .diagnostics()
                 .iter()
                 .any(|diagnostic| { diagnostic.code.as_str() == "type-argument-arity" })
+        );
+    }
+
+    #[test]
+    fn generic_workflow_instantiations_are_canonical_deduplicated_and_charged() {
+        let source = "fn preserve<T>(value: T) -> T { value }\nfn main() { discard preserve(\"first\"); discard preserve::<String>(\"second\"); discard preserve(1); }";
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert_eq!(package.generic_templates().len(), 1);
+        assert_eq!(
+            package.generic_templates()[0].identity().as_str(),
+            "crate::preserve<^0.0>"
+        );
+        let identities = package
+            .generic_instantiations()
+            .iter()
+            .map(|instantiation| instantiation.concrete().canonical_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            identities,
+            ["crate::preserve<Int>", "crate::preserve<String>"]
+        );
+
+        let phase = syntax(source);
+        let admitted = analyze_package_types_with_limits(&phase, generic_limits(2))
+            .unwrap_or_else(|error| panic!("at-limit analysis failed: {error:?}"));
+        assert_eq!(admitted.status(), AnalysisStatus::Valid);
+        assert!(matches!(
+            analyze_package_types_with_limits(&phase, generic_limits(1)),
+            Err(AnalysisError::ResourceLimit { error, .. })
+                if error.code == FrontendResourceCode::GenericInstantiationLimit
+                    && error.observed == Some(2)
+        ));
+    }
+
+    #[test]
+    fn generic_workflow_closure_is_transitive_and_rejects_polymorphic_recursion() {
+        let nested = analyze(
+            "fn wrap<T>(value: T) -> List<T> { [value] }\nfn outer<T>(value: T) -> List<T> { wrap(value) }\nfn main() -> List<String> { outer(\"value\") }",
+        );
+        assert_eq!(
+            nested.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            nested.diagnostics()
+        );
+        let identities = nested
+            .generic_instantiations()
+            .iter()
+            .map(|instantiation| instantiation.concrete().canonical_string())
+            .collect::<Vec<_>>();
+        assert_eq!(identities, ["crate::outer<String>", "crate::wrap<String>"]);
+
+        let recursive = analyze(
+            "fn repeat<T>(value: T) -> T { repeat(value) }\nfn main() -> String { repeat(\"value\") }",
+        );
+        assert_eq!(
+            recursive.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            recursive.diagnostics()
+        );
+        assert_eq!(recursive.generic_instantiations().len(), 1);
+
+        let polymorphic =
+            analyze("fn grow<T>() { grow::<List<T>>() }\nfn main() { grow::<String>() }");
+        assert_eq!(polymorphic.status(), AnalysisStatus::Invalid);
+        let diagnostic = polymorphic
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "polymorphic-recursion")
+            .unwrap_or_else(|| unreachable!("polymorphic recursion is diagnosed"));
+        assert_eq!(
+            diagnostic
+                .fields
+                .get("instantiation_witness")
+                .map(AsRef::as_ref),
+            Some("crate::grow<^0.0> => [String] -> crate::grow<^0.0> => [List<String>]")
+        );
+    }
+
+    #[test]
+    fn generic_workflow_effects_are_exact_for_each_retained_callable() {
+        let package = analyze(
+            "fn leaf<T>(value: T) -> T { discard prompt \"Generate.\" -> String; value }\nfn outer<T>(value: T) -> T { leaf(value) }\nfn main() -> String { outer(\"value\") }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let effects = package
+            .generic_concrete_effects()
+            .iter()
+            .map(|effect| {
+                (
+                    effect.callable.as_str(),
+                    effect
+                        .effects
+                        .iter()
+                        .map(|effect| effect.wire_name())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            effects,
+            [
+                ("crate::leaf<String>", vec!["prompt"]),
+                ("crate::outer<String>", vec!["prompt"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn generic_method_effects_follow_retained_concrete_call_graphs() {
+        let inherent = analyze(
+            "struct Envelope<T> { value: T }\nimpl<T> Envelope<T> { fn leaf(self) { discard prompt \"Generate.\" -> String; } fn outer(self) { self.leaf(); } }\nfn main(value: Envelope<String>) { value.outer(); }",
+        );
+        assert_eq!(
+            inherent.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            inherent.diagnostics()
+        );
+        let effects = inherent
+            .generic_concrete_effects()
+            .iter()
+            .map(|effect| {
+                (
+                    effect.callable.as_str(),
+                    effect
+                        .effects
+                        .iter()
+                        .map(|effect| effect.wire_name())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            effects,
+            [
+                ("<crate::Envelope<String>>::leaf", vec!["prompt"]),
+                ("<crate::Envelope<String>>::outer", vec!["prompt"]),
+            ]
+        );
+
+        let selected_trait = analyze(
+            "trait Render { fn render(self) effects { prompt }; }\nstruct Envelope<T> { value: T }\nimpl<T> Render for Envelope<T> { fn render(self) { discard prompt \"Generate.\" -> String; } }\nfn main(value: Envelope<String>) { value.render(); }",
+        );
+        assert_eq!(
+            selected_trait.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            selected_trait.diagnostics()
+        );
+        assert!(
+            selected_trait
+                .generic_concrete_effects()
+                .iter()
+                .any(|effect| {
+                    effect.callable.as_str() == "<crate::Envelope<String> as crate::Render>::render"
+                        && effect
+                            .effects
+                            .iter()
+                            .map(|effect| effect.wire_name())
+                            .eq(["prompt"])
+                })
+        );
+    }
+
+    #[test]
+    fn concrete_generic_effects_follow_each_selected_trait_implementation() {
+        let package = analyze(
+            "trait Render { fn render(self) effects { prompt }; }\nstruct Clean {}\nstruct Effectful {}\nstruct Inputs { clean: Clean, effectful: Effectful }\nimpl Render for Clean { pure fn render(self) {} }\nimpl Render for Effectful { fn render(self) { discard prompt \"Generate.\" -> String; } }\nfn invoke<T>(value: T) where T: Render { value.render(); }\nfn main(inputs: Inputs) { invoke(inputs.clean); invoke(inputs.effectful); }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        let effects = package
+            .generic_concrete_effects()
+            .iter()
+            .map(|effect| {
+                (
+                    effect.callable.as_str(),
+                    effect
+                        .effects
+                        .iter()
+                        .map(|effect| effect.wire_name())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            effects,
+            [
+                ("crate::invoke<crate::Clean>", vec![]),
+                ("crate::invoke<crate::Effectful>", vec!["prompt"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn generic_bodies_use_only_declared_trait_predicates() {
+        let accepted = analyze(
+            "trait Label { pure fn label(self) -> String; }\nfn render<T>(value: T) -> String where T: Label { value.label() }\nstruct Item {}\nimpl Label for Item { pure fn label(self) -> String { \"item\" } }\nfn main(value: Item) -> String { render(value) }",
+        );
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            accepted.diagnostics()
+        );
+        let template = accepted
+            .generic_templates()
+            .iter()
+            .find(|template| template.identity().as_str() == "crate::render<^0.0>")
+            .unwrap_or_else(|| unreachable!("generic render template is retained"));
+        assert_eq!(template.predicates().len(), 1);
+        assert_eq!(
+            template.predicates()[0].canonical_string(),
+            "crate::Label for ^0.0"
+        );
+
+        let rejected = analyze(
+            "trait Label { pure fn label(self) -> String; }\nfn render<T>(value: T) -> String { value.label() }\nfn main() {}",
+        );
+        assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "missing-implementation"),
+            "{:?}",
+            rejected.diagnostics()
+        );
+    }
+
+    #[test]
+    fn unreachable_generic_bodies_are_checked_parametrically() {
+        let package = analyze("fn invalid<T>(value: T) -> Int { value }\nfn main() {}");
+        assert_eq!(package.status(), AnalysisStatus::Invalid);
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "type-mismatch"),
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+
+    #[test]
+    fn generic_inherent_and_trait_methods_are_retained_and_checked() {
+        let inherent = analyze(
+            "struct Envelope<T> { value: T }\nimpl<T> Envelope<T> { pure fn get(self) -> T { self.value } }\nfn main(value: Envelope<String>) -> String { value.get() }",
+        );
+        assert_eq!(
+            inherent.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            inherent.diagnostics()
+        );
+        assert!(
+            inherent
+                .generic_templates()
+                .iter()
+                .any(|template| { template.identity().as_str() == "<crate::Envelope<^0.0>>::get" })
+        );
+        assert!(
+            inherent
+                .generic_instantiations()
+                .iter()
+                .any(|instantiation| {
+                    instantiation.concrete().canonical_string() == "<crate::Envelope<String>>::get"
+                })
+        );
+
+        let trait_method = analyze(
+            "trait Label { pure fn label(self) -> String; }\nstruct Envelope<T> { value: T }\nimpl<T> Label for Envelope<T> { pure fn label(self) -> String { \"label\" } }\nfn main(value: Envelope<String>) -> String { value.label() }",
+        );
+        assert_eq!(
+            trait_method.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            trait_method.diagnostics()
+        );
+        assert!(trait_method.generic_templates().iter().any(|template| {
+            template.identity().as_str() == "<crate::Envelope<^0.0> as crate::Label>::label"
+        }));
+        assert!(
+            trait_method
+                .generic_instantiations()
+                .iter()
+                .any(|instantiation| {
+                    instantiation.concrete().canonical_string()
+                        == "<crate::Envelope<String> as crate::Label>::label"
+                })
         );
     }
 

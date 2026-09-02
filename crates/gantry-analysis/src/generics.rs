@@ -3,9 +3,9 @@
 //! This pass retains open analyzer-only type expressions, proves closed
 //! declaration bounds structurally, collects canonical user-trait contracts
 //! and implementation heads, rejects incoherent implementations, and charges
-//! portable generic-analysis work. Concrete user-trait selection occurs in
-//! body typing; parametric body validation and executable monomorphization
-//! remain separate later analyzer stages.
+//! portable generic-analysis work. Body typing consumes these contracts for
+//! parametric validation, concrete trait selection, and reachable generic
+//! instantiation; final executable projection remains a later analyzer stage.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -1610,7 +1610,7 @@ fn collect_trait_reference(
     Ok(TraitReference::new(symbol.path.clone(), arguments))
 }
 
-fn collect_where_predicates(
+pub(crate) fn collect_where_predicates(
     tree: &SyntaxTree,
     owner: NodeId,
     binder: Option<&TypeBinder>,

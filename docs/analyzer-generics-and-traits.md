@@ -2,10 +2,11 @@
 
 The analyzer resolves the parametric syntax described in
 [`frontend-generics-and-traits.md`](frontend-generics-and-traits.md) into
-deterministic binder and type facts. This document describes the implemented
-static boundary for generic declared types, free workflow calls, coherent
-user-trait implementations, and concrete static trait calls. `SPEC.md` remains
-normative.
+deterministic binder, type, callable-template, and closed-instantiation facts.
+This document describes the implemented static boundary for generic declared
+types and callable bodies, coherent user-trait implementations, concrete
+static trait calls, reachable monomorphization, and exact concrete effects.
+`SPEC.md` remains normative.
 
 ## Implemented judgments
 
@@ -53,6 +54,29 @@ normative.
   parameter ordinals in the same order and remain guarded by `Option` or
   `List`. Type-changing, reordered, enum, and multi-declaration recursion are
   rejected.
+- Every generic function and generic inherent or trait implementation method
+  is checked parametrically, including unreachable declarations. The check
+  uses rigid internal representatives and only the declaration's canonical
+  predicates; those predicates supply trait-method slots without selecting a
+  concrete implementation or retaining a synthetic instantiation.
+- Calls reached from non-generic roots seed a canonical worklist of closed
+  generic free workflows, inherent methods, and selected trait methods.
+  Substituted bodies extend the worklist transitively. Equal template and type
+  argument keys are interned once, same-substitution recursion is finite, and
+  type-changing recursion is rejected with a deterministic
+  `instantiation_witness` chain.
+- Each retained method receives its canonical closed identity, such as
+  `<crate::Envelope<String>>::get` or
+  `<crate::Envelope<String> as crate::Label>::label`. Substituted receiver and
+  field shapes are used while checking its body, and inherent lookup continues
+  to take precedence over trait lookup.
+- Conservative template effects and exact concrete effects are retained
+  separately. Exact effects are the least fixed point over the reachable
+  closed call graph, including generic free workflows, generic inherent
+  methods, and the implementation selected for each trait call.
+- `TypedPackage::generic_templates`, `generic_instantiations`, and
+  `generic_concrete_effects` expose the canonical analyzer result without
+  requiring consumers to parse display strings or rerun inference.
 
 For example, this declaration and use are valid:
 
@@ -93,7 +117,7 @@ shares one activity-scoped policy across modules and charges:
 
 - inferred and substituted descriptor depth against
   `maximum_constructed_type_depth`;
-- each unique closed generic declared application against
+- each newly retained canonical closed generic type or callable key against
   `maximum_generic_instantiations_per_activity`; and
 - each obligation lookup, predicate expansion, and structural capability node
   or edge visit against `maximum_trait_resolution_steps_per_activity`.
@@ -111,10 +135,11 @@ use stable diagnostics such as `duplicate-type-parameter`,
 
 ## Deliberate stage boundary
 
-This analyzer stage selects user-defined implementations for concrete calls,
-but it does not yet check every generic callable body parametrically, enumerate
-the complete reachable executable-instantiation closure, emit concrete generic
-schemas, or monomorphize executable code. Packages with generic templates
-therefore retain generic and trait analysis facts but do not publish a closed
-generic executable projection from this stage. Those remaining contracts are
-owned by the subsequent generic-body and concrete-artifact stages.
+This analyzer stage checks generic bodies, selects user-defined
+implementations, retains the reachable closed callable-instantiation closure,
+and computes exact concrete effects. It does not yet encode concrete generic
+schemas, publish the final closed executable projection, or attach complete
+multi-origin source maps. Packages with generic templates therefore retain
+complete body/effect analysis facts but still withhold executable publication.
+Those artifact contracts are owned by the subsequent concrete-schema and
+closed-artifact stage.

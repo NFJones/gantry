@@ -263,6 +263,74 @@ fn main() {}
     );
 }
 
+#[test]
+fn public_generic_bodies_retain_closed_calls_effects_and_failures() {
+    let valid = analyze(
+        r#"
+trait Label { pure fn label(self) -> String; }
+struct Envelope<T> { value: T }
+impl<T> Label for Envelope<T> {
+    pure fn label(self) -> String { "label" }
+}
+fn render<T>(value: T) -> String where T: Label { value.label() }
+fn effect<T>(value: T) -> T {
+    discard prompt "Generate." -> String;
+    value
+}
+fn main(value: Envelope<String>) -> String {
+    discard effect(value);
+    render(value)
+}
+"#,
+    );
+    assert_eq!(
+        valid.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        valid.diagnostics()
+    );
+    assert!(valid.generic_templates().iter().any(|template| {
+        template.identity().as_str() == "crate::render<^0.0>" && template.predicates().len() == 1
+    }));
+    let identities = valid
+        .generic_instantiations()
+        .iter()
+        .map(|instantiation| instantiation.concrete().canonical_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        identities,
+        [
+            "<crate::Envelope<String> as crate::Label>::label",
+            "crate::effect<crate::Envelope<String>>",
+            "crate::render<crate::Envelope<String>>",
+        ]
+    );
+    assert!(valid.generic_concrete_effects().iter().any(|effect| {
+        effect.callable.as_str() == "crate::effect<crate::Envelope<String>>"
+            && effect
+                .effects
+                .iter()
+                .map(|effect| effect.wire_name())
+                .eq(["prompt"])
+    }));
+
+    let invalid_body = analyze("fn invalid<T>(value: T) -> Int { value } fn main() {}");
+    assert_eq!(invalid_body.status(), AnalysisStatus::Invalid);
+    assert!(
+        invalid_body
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "type-mismatch")
+    );
+
+    let polymorphic = analyze("fn grow<T>() { grow::<List<T>>() } fn main() { grow::<String>() }");
+    assert_eq!(polymorphic.status(), AnalysisStatus::Invalid);
+    assert!(polymorphic.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code.as_str() == "polymorphic-recursion"
+            && diagnostic.fields.contains_key("instantiation_witness")
+    }));
+}
+
 fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let root = TempDirectory::new();
     root.write(source);

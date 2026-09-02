@@ -7,9 +7,10 @@ use gantry_core::source::{
     FrontendResourceLimit, SourceCounters, SourceSpan, StructuredDiagnostic,
 };
 use gantry_ir::{
-    ActionInventory, CanonicalIr, CanonicalPath, CanonicalSourceMap, EntryInventory,
-    GeneratedSchemaObject, ImplementationHead, MachineProgram, PackageSourceManifest,
-    TraitContract, TypeDescriptor, TypeExpression, WorkflowFacts,
+    ActionInventory, CanonicalIr, CanonicalPath, CanonicalSourceMap, ConcreteEffect,
+    ConcreteInstantiation, EntryInventory, GeneratedSchemaObject, GenericTemplate,
+    ImplementationHead, MachineProgram, PackageSourceManifest, TraitContract, TypeDescriptor,
+    TypeExpression, WorkflowFacts,
 };
 
 /// Dense deterministic identifier for one discovered source module.
@@ -313,6 +314,9 @@ pub struct TypedPackage {
     pub(crate) generic_types: Vec<GenericTypeFact>,
     pub(crate) trait_contracts: Vec<TraitContract>,
     pub(crate) implementation_heads: Vec<ImplementationHead>,
+    pub(crate) generic_templates: Vec<GenericTemplate>,
+    pub(crate) generic_instantiations: Vec<ConcreteInstantiation>,
+    pub(crate) generic_concrete_effects: Vec<ConcreteEffect>,
     pub(crate) types: Vec<TypeFact>,
     pub(crate) workflows: Vec<WorkflowFacts>,
     pub(crate) actions: Vec<ActionInventory>,
@@ -362,6 +366,24 @@ impl TypedPackage {
     #[must_use]
     pub fn implementation_heads(&self) -> &[ImplementationHead] {
         &self.implementation_heads
+    }
+
+    /// Returns generic callable templates in canonical template-key order.
+    #[must_use]
+    pub fn generic_templates(&self) -> &[GenericTemplate] {
+        &self.generic_templates
+    }
+
+    /// Returns retained concrete generic instantiations in canonical key order.
+    #[must_use]
+    pub fn generic_instantiations(&self) -> &[ConcreteInstantiation] {
+        &self.generic_instantiations
+    }
+
+    /// Returns exact least-fixed-point effects for concrete generic callables.
+    #[must_use]
+    pub fn generic_concrete_effects(&self) -> &[ConcreteEffect] {
+        &self.generic_concrete_effects
     }
 
     /// Returns canonical type facts in source-span order.

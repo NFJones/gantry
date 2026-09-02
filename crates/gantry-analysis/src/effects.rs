@@ -129,11 +129,12 @@ pub(crate) fn analyze_workflow_facts(
             .iter()
             .filter(|node| matches!(node.form(), SyntaxForm::ImplDeclaration))
         {
-            let receiver = direct_child_form(source.tree(), implementation, SyntaxForm::Path)
-                .and_then(|path| source.tree().node(path))
-                .and_then(|path| references.get(path.span()))
-                .and_then(|target| symbols_by_id.get(target))
-                .map(|symbol| symbol.path.clone());
+            let receiver = implementation_receiver_path(
+                source.tree(),
+                implementation,
+                &references,
+                &symbols_by_id,
+            );
             let Some(receiver) = receiver else {
                 continue;
             };
@@ -1126,11 +1127,8 @@ fn collect_methods(
             .iter()
             .filter(|node| matches!(node.form(), SyntaxForm::ImplDeclaration))
         {
-            let Some(receiver) = direct_child_form(source.tree(), implementation, SyntaxForm::Path)
-                .and_then(|path| source.tree().node(path))
-                .and_then(|path| references.get(path.span()))
-                .and_then(|target| symbols.get(target))
-                .map(|symbol| symbol.path.clone())
+            let Some(receiver) =
+                implementation_receiver_path(source.tree(), implementation, references, symbols)
             else {
                 continue;
             };
@@ -1152,6 +1150,25 @@ fn collect_methods(
         }
     }
     Ok(methods)
+}
+
+fn implementation_receiver_path(
+    tree: &SyntaxTree,
+    implementation: &gantry_frontend::SyntaxNode,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    symbols: &BTreeMap<SymbolId, &Symbol>,
+) -> Option<CanonicalPath> {
+    let path = direct_child_form(tree, implementation, SyntaxForm::Path).or_else(|| {
+        direct_child_form(tree, implementation, SyntaxForm::TypeParameterList)?;
+        direct_child_form(tree, implementation, SyntaxForm::ValueType)
+            .and_then(|receiver| tree.node(receiver))
+            .and_then(|receiver| direct_child_form(tree, receiver, SyntaxForm::Path))
+    })?;
+    let path = tree.node(path)?;
+    references
+        .get(path.span())
+        .and_then(|target| symbols.get(target))
+        .map(|symbol| symbol.path.clone())
 }
 
 fn callable_environment(

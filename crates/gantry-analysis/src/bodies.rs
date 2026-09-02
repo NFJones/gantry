@@ -2,11 +2,11 @@
 //!
 //! This pass intentionally uses explicit syntax-node work collections. It
 //! validates deterministic value flow, module-visible trait lookup, concrete
-//! obligation proof, and pattern coverage without performing effect inference,
-//! executable monomorphization, or lowering work owned by later analyzer
-//! stages.
+//! obligation proof, pattern coverage, parametric generic bodies, and the
+//! canonical reachable instantiation closure. Exact effect inference and final
+//! executable-artifact lowering remain owned by later analyzer passes.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -18,18 +18,21 @@ use gantry_core::source::{
     GenericAnalysisCounters, SourceSpan, StructuredDiagnostic,
 };
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
-use gantry_ir::generated::TypeKind;
+use gantry_ir::generated::{Effect, TemplateKind, TypeKind};
 use gantry_ir::{
-    CanonicalPath, ImplementationHead, TraitContract, TraitMethodContract, TypeDescriptor,
-    TypeDescriptorError, TypeExpression,
+    CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath,
+    CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet, GenericTemplate,
+    ImplementationHead, Predicate, TraitContract, TraitMethodContract, TraitReference,
+    TypeDescriptor, TypeDescriptorError, TypeExpression,
 };
 
 use crate::generics::{
     ExactTypeSubstitution, TypeInferenceFailure, TypeParameterKey, collect_type_parameter_keys,
-    substitute_self_type,
+    collect_where_predicates, substitute_self_type,
 };
 use crate::{
-    AnalysisError, GenericTypeFact, PackageStructure, SymbolId, SymbolKind, TypeBinder, TypeFact,
+    AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
+    TypeFact,
 };
 
 #[derive(Clone, Debug)]
@@ -55,9 +58,64 @@ struct CallableSignature {
 
 #[derive(Clone, Debug)]
 struct GenericCallableSignature {
+    kind: TemplateKind,
+    path: CanonicalPath,
+    template: CanonicalTemplateIdentity,
+    receiver: Option<TypeExpression>,
+    trait_reference: Option<TraitReference>,
+    method_name: Option<Arc<str>>,
+    implementation: Option<CanonicalImplementationIdentity>,
+    implementation_parameter_count: usize,
+    source_index: usize,
+    declaration: NodeId,
     required: Vec<TypeParameterKey>,
+    predicates: Vec<Predicate>,
     parameters: Vec<TypeExpression>,
     result: TypeExpression,
+}
+
+pub(crate) type InstantiationKey = (CanonicalTemplateIdentity, Vec<TypeDescriptor>);
+
+type EffectSummaries = (
+    BTreeMap<CanonicalTemplateIdentity, EffectSet>,
+    BTreeMap<InstantiationKey, EffectSet>,
+);
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum EffectNode {
+    Source(SourceSpan),
+    Template(CanonicalTemplateIdentity),
+    Concrete(InstantiationKey),
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct EffectDraft {
+    pub(crate) direct: EffectSet,
+    pub(crate) calls: BTreeSet<EffectNode>,
+    pub(crate) pure: bool,
+    pub(crate) source: Option<SourceSpan>,
+}
+
+pub(crate) struct BodyAnalysis {
+    pub(crate) expression_types: Vec<BTreeMap<NodeId, TypeDescriptor>>,
+    pub(crate) generic_templates: Vec<GenericTemplate>,
+    pub(crate) generic_instantiations: Vec<ConcreteInstantiation>,
+    pub(crate) generic_template_effects: BTreeMap<CanonicalTemplateIdentity, EffectSet>,
+    pub(crate) generic_concrete_effects: BTreeMap<InstantiationKey, EffectSet>,
+}
+
+#[derive(Clone, Debug)]
+struct GenericMethodResolution {
+    signature: GenericCallableSignature,
+    concrete_arguments: Vec<TypeDescriptor>,
+    callable: CallableSignature,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DeclaredTraitObligation {
+    trait_path: CanonicalPath,
+    trait_arguments: Vec<TypeDescriptor>,
+    receiver: TypeDescriptor,
 }
 
 #[derive(Clone, Debug)]
@@ -102,6 +160,7 @@ struct GenericEnumShape {
 struct BodyContext {
     callables: BTreeMap<SymbolId, CallableSignature>,
     generic_callables: BTreeMap<SymbolId, GenericCallableSignature>,
+    generic_methods: Vec<GenericCallableSignature>,
     generic_types: BTreeMap<SourceSpan, TypeExpression>,
     maximum_constructed_type_depth: Option<u64>,
     actions: BTreeMap<SymbolId, CallableSignature>,
@@ -117,6 +176,19 @@ struct BodyContext {
     implementation_candidates: BTreeMap<(CanonicalPath, Arc<str>), Vec<usize>>,
     callable_visible_traits: BTreeMap<SourceSpan, BTreeSet<CanonicalPath>>,
     current_visible_traits: RefCell<BTreeSet<CanonicalPath>>,
+    generic_templates: Vec<GenericTemplate>,
+    generic_instantiations: RefCell<BTreeMap<InstantiationKey, ConcreteInstantiation>>,
+    generic_instantiation_witnesses: RefCell<BTreeMap<InstantiationKey, Vec<InstantiationKey>>>,
+    current_instantiation: RefCell<Option<(InstantiationKey, Vec<InstantiationKey>)>>,
+    current_type_substitution: RefCell<Option<ExactTypeSubstitution>>,
+    current_declared_obligations: RefCell<Vec<DeclaredTraitObligation>>,
+    current_effect_owner: RefCell<Option<EffectNode>>,
+    effect_drafts: RefCell<BTreeMap<EffectNode, EffectDraft>>,
+    callable_sources: BTreeMap<SymbolId, SourceSpan>,
+    method_sources: BTreeMap<(CanonicalImplementationIdentity, Arc<str>), SourceSpan>,
+    inherent_method_sources: BTreeMap<(TypeDescriptor, Arc<str>), SourceSpan>,
+    action_effects: BTreeMap<SymbolId, Effect>,
+    parametric_validation: Cell<bool>,
     generic_analysis_counters: RefCell<Option<GenericAnalysisCounters>>,
     trait_obligations: RefCell<BTreeMap<String, ObligationProof>>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
@@ -154,6 +226,11 @@ fn build_body_context(
         .symbols()
         .iter()
         .map(|symbol| (symbol.span.clone(), symbol))
+        .collect::<BTreeMap<_, _>>();
+    let symbols_by_id = structure
+        .symbols()
+        .iter()
+        .map(|symbol| (symbol.id, symbol))
         .collect::<BTreeMap<_, _>>();
     let trait_symbols = structure
         .symbols()
@@ -217,14 +294,23 @@ fn build_body_context(
         .iter()
         .map(|fact| (fact.span.clone(), fact.expression.clone()))
         .collect::<BTreeMap<_, _>>();
+    let generic_type_references = generic_facts
+        .iter()
+        .map(|fact| (fact.span.clone(), &fact.expression))
+        .collect::<BTreeMap<_, _>>();
     let binders_by_declaration = binders
         .iter()
         .map(|binder| (binder.declaration.clone(), binder))
         .collect::<BTreeMap<_, _>>();
     let mut callables = BTreeMap::new();
     let mut generic_callables = BTreeMap::new();
+    let mut generic_templates = Vec::new();
+    let mut callable_sources = BTreeMap::new();
     let mut actions = BTreeMap::new();
+    let mut action_effects = BTreeMap::new();
     let mut methods = BTreeMap::new();
+    let mut method_sources = BTreeMap::new();
+    let mut inherent_method_sources = BTreeMap::new();
     let mut structs = BTreeMap::new();
     let mut generic_structs = BTreeMap::new();
     let mut enums = BTreeMap::new();
@@ -240,7 +326,44 @@ fn build_body_context(
             };
             match node.form() {
                 SyntaxForm::FunctionDeclaration => {
+                    callable_sources.insert(symbol.id, node.span().clone());
                     if let Some(binder) = binders_by_declaration.get(node.span()).copied() {
+                        let required = binder
+                            .parameters
+                            .iter()
+                            .map(|parameter| TypeParameterKey {
+                                binder_depth: binder.depth,
+                                ordinal: parameter.ordinal,
+                            })
+                            .collect::<Vec<_>>();
+                        let template_arguments = required
+                            .iter()
+                            .map(|parameter| {
+                                TypeExpression::parameter(
+                                    parameter.binder_depth,
+                                    parameter.ordinal,
+                                    u64::MAX,
+                                )
+                                .map_err(|_| AnalysisError::Invariant)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let template =
+                            CanonicalTemplateIdentity::free(&symbol.path, &template_arguments);
+                        let declaration = source
+                            .tree()
+                            .nodes()
+                            .iter()
+                            .position(|candidate| std::ptr::eq(candidate, node))
+                            .map(NodeId::from_index)
+                            .ok_or(AnalysisError::Invariant)?;
+                        let predicates = collect_where_predicates(
+                            source.tree(),
+                            declaration,
+                            Some(binder),
+                            &generic_type_references,
+                            &references,
+                            &symbols_by_id,
+                        )?;
                         let parameters = node
                             .children()
                             .iter()
@@ -276,17 +399,32 @@ fn build_body_context(
                         generic_callables.insert(
                             symbol.id,
                             GenericCallableSignature {
-                                required: binder
-                                    .parameters
-                                    .iter()
-                                    .map(|parameter| TypeParameterKey {
-                                        binder_depth: binder.depth,
-                                        ordinal: parameter.ordinal,
-                                    })
-                                    .collect(),
+                                kind: TemplateKind::FreeWorkflow,
+                                path: symbol.path.clone(),
+                                template: template.clone(),
+                                receiver: None,
+                                trait_reference: None,
+                                method_name: None,
+                                implementation: None,
+                                implementation_parameter_count: 0,
+                                source_index,
+                                declaration,
+                                required,
+                                predicates: predicates.clone(),
                                 parameters,
                                 result,
                             },
+                        );
+                        generic_templates.push(
+                            GenericTemplate::new(
+                                TemplateKind::FreeWorkflow,
+                                template,
+                                u64::try_from(binder.parameters.len())
+                                    .map_err(|_| AnalysisError::Invariant)?,
+                                predicates,
+                                gantry_ir::EffectSet::default(),
+                            )
+                            .map_err(|_| AnalysisError::Invariant)?,
                         );
                         continue;
                     }
@@ -318,6 +456,16 @@ fn build_body_context(
                     callables.insert(symbol.id, CallableSignature { parameters, result });
                 }
                 SyntaxForm::ActionDeclaration => {
+                    let effect = if node_has_reserved_word(source.tree(), node, "read_only") {
+                        Effect::ActionReadOnly
+                    } else if node_has_reserved_word(source.tree(), node, "idempotent") {
+                        Effect::ActionIdempotent
+                    } else if node_has_reserved_word(source.tree(), node, "non_idempotent") {
+                        Effect::ActionNonIdempotent
+                    } else {
+                        return Err(AnalysisError::Invariant);
+                    };
+                    action_effects.insert(symbol.id, effect);
                     let parameters = node
                         .children()
                         .iter()
@@ -554,12 +702,35 @@ fn build_body_context(
                     (receiver.clone(), name),
                     CallableSignature { parameters, result },
                 );
+                inherent_method_sources.insert(
+                    (
+                        receiver.clone(),
+                        direct_identifier(source.tree(), method)?
+                            .ok_or(AnalysisError::Invariant)?,
+                    ),
+                    method_node.span().clone(),
+                );
             }
         }
     }
+    let generic_methods = collect_generic_method_signatures(
+        sources,
+        &generic_types,
+        &binders_by_declaration,
+        &references,
+        &trait_symbols,
+        &symbols_by_id,
+        implementation_heads,
+        &mut method_sources,
+        &mut generic_templates,
+    )?;
+    generic_templates.sort_by(|left, right| {
+        (left.kind(), left.identity()).cmp(&(right.kind(), right.identity()))
+    });
     Ok(BodyContext {
         callables,
         generic_callables,
+        generic_methods,
         generic_types,
         maximum_constructed_type_depth,
         actions,
@@ -575,10 +746,273 @@ fn build_body_context(
         implementation_candidates,
         callable_visible_traits,
         current_visible_traits: RefCell::new(BTreeSet::new()),
+        generic_templates,
+        generic_instantiations: RefCell::new(BTreeMap::new()),
+        generic_instantiation_witnesses: RefCell::new(BTreeMap::new()),
+        current_instantiation: RefCell::new(None),
+        current_type_substitution: RefCell::new(None),
+        current_declared_obligations: RefCell::new(Vec::new()),
+        current_effect_owner: RefCell::new(None),
+        effect_drafts: RefCell::new(BTreeMap::new()),
+        callable_sources,
+        method_sources,
+        inherent_method_sources,
+        action_effects,
+        parametric_validation: Cell::new(false),
         generic_analysis_counters: RefCell::new(generic_analysis_counters),
         trait_obligations: RefCell::new(BTreeMap::new()),
         expression_types: RefCell::new(BTreeMap::new()),
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_generic_method_signatures(
+    sources: &[ParsedSource],
+    generic_types: &BTreeMap<SourceSpan, TypeExpression>,
+    binders: &BTreeMap<SourceSpan, &TypeBinder>,
+    references: &BTreeMap<SourceSpan, SymbolId>,
+    trait_symbols: &BTreeMap<SymbolId, CanonicalPath>,
+    symbols: &BTreeMap<SymbolId, &Symbol>,
+    implementation_heads: &[ImplementationHead],
+    method_sources: &mut BTreeMap<(CanonicalImplementationIdentity, Arc<str>), SourceSpan>,
+    templates: &mut Vec<GenericTemplate>,
+) -> Result<Vec<GenericCallableSignature>, AnalysisError> {
+    let mut methods = Vec::new();
+    let generic_type_references = generic_types
+        .iter()
+        .map(|(span, expression)| (span.clone(), expression))
+        .collect::<BTreeMap<_, _>>();
+    for (source_index, source) in sources.iter().enumerate() {
+        let tree = source.tree();
+        for implementation in tree.nodes() {
+            if !matches!(implementation.form(), SyntaxForm::ImplDeclaration) {
+                continue;
+            }
+            let Some(receiver_node) =
+                direct_child_form(tree, implementation, SyntaxForm::ValueType)
+            else {
+                continue;
+            };
+            let receiver = tree
+                .node(receiver_node)
+                .and_then(|node| generic_types.get(node.span()))
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?;
+            let implementation_binder = binders.get(implementation.span()).copied();
+            let implementation_required = implementation_binder
+                .into_iter()
+                .flat_map(|binder| {
+                    binder
+                        .parameters
+                        .iter()
+                        .map(move |parameter| TypeParameterKey {
+                            binder_depth: binder.depth,
+                            ordinal: parameter.ordinal,
+                        })
+                })
+                .collect::<Vec<_>>();
+            let trait_reference =
+                direct_child_form(tree, implementation, SyntaxForm::TraitReference)
+                    .map(|reference| {
+                        let reference_node =
+                            tree.node(reference).ok_or(AnalysisError::Invariant)?;
+                        let path = direct_child_form(tree, reference_node, SyntaxForm::Path)
+                            .ok_or(AnalysisError::Invariant)?;
+                        let target = references
+                            .get(tree.node(path).ok_or(AnalysisError::Invariant)?.span())
+                            .copied()
+                            .ok_or(AnalysisError::Invariant)?;
+                        let trait_path = trait_symbols
+                            .get(&target)
+                            .cloned()
+                            .ok_or(AnalysisError::Invariant)?;
+                        let arguments =
+                            direct_child_form(tree, reference_node, SyntaxForm::TypeArgumentList)
+                                .map(|list| {
+                                    tree.node(list)
+                                        .ok_or(AnalysisError::Invariant)?
+                                        .children()
+                                        .iter()
+                                        .filter_map(|child| tree.node(*child))
+                                        .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
+                                        .map(|node| {
+                                            generic_types
+                                                .get(node.span())
+                                                .cloned()
+                                                .ok_or(AnalysisError::Invariant)
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()
+                                })
+                                .transpose()?
+                                .unwrap_or_default();
+                        Ok(TraitReference::new(trait_path, arguments))
+                    })
+                    .transpose()?;
+            let implementation_identity = trait_reference.as_ref().map_or_else(
+                || CanonicalImplementationIdentity::inherent(&receiver),
+                |reference| {
+                    CanonicalImplementationIdentity::trait_implementation(&receiver, reference)
+                },
+            );
+            let Some(implementation_head) = implementation_heads
+                .iter()
+                .find(|head| head.identity() == &implementation_identity)
+            else {
+                continue;
+            };
+            for method in implementation.children().iter().copied().filter(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
+            }) {
+                let method_node = tree.node(method).ok_or(AnalysisError::Invariant)?;
+                let method_binder = binders.get(method_node.span()).copied();
+                let method_name =
+                    direct_identifier(tree, method)?.ok_or(AnalysisError::Invariant)?;
+                method_sources.insert(
+                    (implementation_identity.clone(), method_name.clone()),
+                    method_node.span().clone(),
+                );
+                if implementation_required.is_empty() && method_binder.is_none() {
+                    continue;
+                }
+                let method_required = method_binder
+                    .into_iter()
+                    .flat_map(|binder| {
+                        binder
+                            .parameters
+                            .iter()
+                            .map(move |parameter| TypeParameterKey {
+                                binder_depth: binder.depth,
+                                ordinal: parameter.ordinal,
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                let mut required = implementation_required.clone();
+                required.extend(method_required.iter().copied());
+                let mut predicates = implementation_head.predicates().to_vec();
+                predicates.extend(collect_where_predicates(
+                    tree,
+                    method,
+                    method_binder,
+                    &generic_type_references,
+                    references,
+                    symbols,
+                )?);
+                predicates.sort_by(|left, right| {
+                    left.canonical_string()
+                        .as_bytes()
+                        .cmp(right.canonical_string().as_bytes())
+                });
+                predicates.dedup();
+                let method_arguments = method_required
+                    .iter()
+                    .map(|parameter| {
+                        TypeExpression::parameter(
+                            parameter.binder_depth,
+                            parameter.ordinal,
+                            u64::MAX,
+                        )
+                        .map_err(|_| AnalysisError::Invariant)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let (kind, template) = if let Some(reference) = &trait_reference {
+                    (
+                        TemplateKind::TraitMethod,
+                        CanonicalTemplateIdentity::trait_method(
+                            &receiver,
+                            reference.path(),
+                            reference.arguments(),
+                            &method_name,
+                            &method_arguments,
+                        )
+                        .map_err(|_| AnalysisError::Invariant)?,
+                    )
+                } else {
+                    (
+                        TemplateKind::InherentMethod,
+                        CanonicalTemplateIdentity::inherent(
+                            &receiver,
+                            &method_name,
+                            &method_arguments,
+                        )
+                        .map_err(|_| AnalysisError::Invariant)?,
+                    )
+                };
+                let parameters = method_node
+                    .children()
+                    .iter()
+                    .filter_map(|child| tree.node(*child))
+                    .filter(|node| {
+                        matches!(node.form(), SyntaxForm::Parameter)
+                            && !node_has_reserved_word(tree, node, "self")
+                    })
+                    .filter_map(|parameter| {
+                        direct_child_form(tree, parameter, SyntaxForm::ValueType)
+                    })
+                    .map(|type_node| {
+                        generic_types
+                            .get(tree.node(type_node).ok_or(AnalysisError::Invariant)?.span())
+                            .cloned()
+                            .ok_or(AnalysisError::Invariant)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let result = method_node
+                    .children()
+                    .iter()
+                    .copied()
+                    .rfind(|child| {
+                        tree.node(*child)
+                            .is_some_and(|node| matches!(node.form(), SyntaxForm::ValueType))
+                    })
+                    .map(|type_node| {
+                        generic_types
+                            .get(tree.node(type_node).ok_or(AnalysisError::Invariant)?.span())
+                            .cloned()
+                            .ok_or(AnalysisError::Invariant)
+                    })
+                    .transpose()?
+                    .unwrap_or(
+                        TypeExpression::closed(&TypeDescriptor::UNIT, u64::MAX)
+                            .map_err(|_| AnalysisError::Invariant)?,
+                    );
+                let Ok(outer) =
+                    CanonicalPath::new(outer_type_constructor(receiver.as_str()).as_ref())
+                else {
+                    continue;
+                };
+                let path = CanonicalPath::method(&outer, &method_name)
+                    .map_err(|_| AnalysisError::Invariant)?;
+                templates.push(
+                    GenericTemplate::new(
+                        kind,
+                        template.clone(),
+                        u64::try_from(required.len()).map_err(|_| AnalysisError::Invariant)?,
+                        predicates.clone(),
+                        gantry_ir::EffectSet::default(),
+                    )
+                    .map_err(|_| AnalysisError::Invariant)?,
+                );
+                methods.push(GenericCallableSignature {
+                    kind,
+                    path,
+                    template,
+                    receiver: Some(receiver.clone()),
+                    trait_reference: trait_reference.clone(),
+                    method_name: Some(method_name),
+                    implementation: Some(implementation_identity.clone()),
+                    implementation_parameter_count: implementation_required.len(),
+                    source_index,
+                    declaration: method,
+                    required,
+                    predicates,
+                    parameters,
+                    result,
+                });
+            }
+        }
+    }
+    methods.sort_by(|left, right| (left.kind, &left.template).cmp(&(right.kind, &right.template)));
+    Ok(methods)
 }
 
 /// Checks every free-function and method body against its declared signature.
@@ -594,7 +1028,7 @@ pub(crate) fn check_package_bodies(
     maximum_constructed_type_depth: Option<u64>,
     generic_analysis_counters: &mut Option<GenericAnalysisCounters>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<Vec<BTreeMap<NodeId, TypeDescriptor>>, AnalysisError> {
+) -> Result<BodyAnalysis, AnalysisError> {
     let context = build_body_context(
         sources,
         facts,
@@ -618,15 +1052,9 @@ pub(crate) fn check_package_bodies(
                     continue;
                 }
                 if matches!(node.form(), SyntaxForm::MethodDeclaration)
-                    && source.tree().nodes().iter().any(|implementation| {
-                        matches!(implementation.form(), SyntaxForm::ImplDeclaration)
-                            && direct_child_form(
-                                source.tree(),
-                                implementation,
-                                SyntaxForm::TraitReference,
-                            )
-                            .is_some()
-                            && span_contains(implementation.span(), node.span())
+                    && context.generic_methods.iter().any(|method| {
+                        method.source_index == source_index
+                            && method.declaration == NodeId::from_index(index)
                     })
                 {
                     continue;
@@ -634,20 +1062,425 @@ pub(crate) fn check_package_bodies(
                 if direct_child_form(source.tree(), node, SyntaxForm::TypeParameterList).is_some() {
                     continue;
                 }
-                check_callable(
+                *context.current_effect_owner.borrow_mut() =
+                    Some(EffectNode::Source(node.span().clone()));
+                let check = check_callable(
                     source.tree(),
                     NodeId::from_index(index),
                     resolved,
                     &context,
                     diagnostics,
-                )?;
+                );
+                *context.current_effect_owner.borrow_mut() = None;
+                check?;
             }
             expression_types.push(context.expression_types.take());
         }
-        Ok(expression_types)
+        check_parametric_generic_bodies(sources, facts, &context, diagnostics)?;
+        check_instantiated_generic_bodies(sources, facts, &context, diagnostics)?;
+        let (generic_template_effects, generic_concrete_effects) =
+            finish_effect_graph(&context, diagnostics)?;
+        context.expression_types.borrow_mut().clear();
+        Ok(BodyAnalysis {
+            expression_types,
+            generic_templates: context.generic_templates.clone(),
+            generic_instantiations: context
+                .generic_instantiations
+                .take()
+                .into_values()
+                .collect(),
+            generic_template_effects,
+            generic_concrete_effects,
+        })
     })();
     *generic_analysis_counters = context.generic_analysis_counters.take();
     result
+}
+
+fn check_parametric_generic_bodies(
+    sources: &[ParsedSource],
+    facts: &[BTreeMap<NodeId, TypeFact>],
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    context.parametric_validation.set(true);
+    for (signature_index, signature) in context
+        .generic_callables
+        .values()
+        .chain(context.generic_methods.iter())
+        .enumerate()
+    {
+        let rigid_arguments = signature
+            .required
+            .iter()
+            .enumerate()
+            .map(|(parameter_index, _)| {
+                CanonicalPath::new(&format!(
+                    "crate::__gantry_parametric_{signature_index}_{parameter_index}"
+                ))
+                .map(TypeDescriptor::declared)
+                .map_err(|_| AnalysisError::Invariant)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let substitution = ExactTypeSubstitution::explicit(&signature.required, &rigid_arguments)
+            .map_err(|_| AnalysisError::Invariant)?;
+        let receiver = signature
+            .receiver
+            .as_ref()
+            .map(|receiver| {
+                substitution
+                    .apply(receiver)
+                    .map_err(|_| AnalysisError::Invariant)
+            })
+            .transpose()?;
+        let declared_obligations = signature
+            .predicates
+            .iter()
+            .map(|predicate| {
+                let predicate_receiver = if let Some(receiver) = &receiver {
+                    substitute_self_type(predicate.receiver(), receiver)?
+                } else {
+                    predicate.receiver().clone()
+                };
+                let predicate_receiver = substitution
+                    .apply(&predicate_receiver)
+                    .map_err(|_| AnalysisError::Invariant)?;
+                let trait_arguments = predicate
+                    .trait_reference()
+                    .arguments()
+                    .iter()
+                    .map(|argument| {
+                        let argument = if let Some(receiver) = &receiver {
+                            substitute_self_type(argument, receiver)?
+                        } else {
+                            argument.clone()
+                        };
+                        substitution
+                            .apply(&argument)
+                            .map_err(|_| AnalysisError::Invariant)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(DeclaredTraitObligation {
+                    trait_path: predicate.trait_reference().path().clone(),
+                    trait_arguments,
+                    receiver: predicate_receiver,
+                })
+            })
+            .collect::<Result<Vec<_>, AnalysisError>>()?;
+        let source = sources
+            .get(signature.source_index)
+            .ok_or(AnalysisError::Invariant)?;
+        let declaration = source
+            .tree()
+            .node(signature.declaration)
+            .ok_or(AnalysisError::Invariant)?;
+        let mut substituted_facts = facts
+            .get(signature.source_index)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        for (index, node) in source.tree().nodes().iter().enumerate() {
+            if !matches!(node.form(), SyntaxForm::ValueType)
+                || !span_contains(declaration.span(), node.span())
+            {
+                continue;
+            }
+            let Some(expression) = context.generic_types.get(node.span()) else {
+                continue;
+            };
+            let descriptor = substitution
+                .apply(expression)
+                .map_err(|_| AnalysisError::Invariant)?;
+            substituted_facts.insert(
+                NodeId::from_index(index),
+                TypeFact {
+                    span: node.span().clone(),
+                    descriptor,
+                },
+            );
+        }
+        *context.current_type_substitution.borrow_mut() = Some(substitution);
+        *context.current_declared_obligations.borrow_mut() = declared_obligations;
+        *context.current_effect_owner.borrow_mut() =
+            Some(EffectNode::Template(signature.template.clone()));
+        let check = check_callable(
+            source.tree(),
+            signature.declaration,
+            &substituted_facts,
+            context,
+            diagnostics,
+        );
+        *context.current_type_substitution.borrow_mut() = None;
+        context.current_declared_obligations.borrow_mut().clear();
+        *context.current_effect_owner.borrow_mut() = None;
+        check?;
+    }
+    context.parametric_validation.set(false);
+    Ok(())
+}
+
+fn check_instantiated_generic_bodies(
+    sources: &[ParsedSource],
+    facts: &[BTreeMap<NodeId, TypeFact>],
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let mut checked = BTreeSet::<InstantiationKey>::new();
+    loop {
+        let next = context
+            .generic_instantiations
+            .borrow()
+            .keys()
+            .find(|key| !checked.contains(*key))
+            .cloned();
+        let Some(key) = next else {
+            break;
+        };
+        let signature = context
+            .generic_callables
+            .values()
+            .chain(context.generic_methods.iter())
+            .find(|signature| signature.template == key.0)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        let substitution = ExactTypeSubstitution::explicit(&signature.required, &key.1)
+            .map_err(|_| AnalysisError::Invariant)?;
+        let source = sources
+            .get(signature.source_index)
+            .ok_or(AnalysisError::Invariant)?;
+        let declaration = source
+            .tree()
+            .node(signature.declaration)
+            .ok_or(AnalysisError::Invariant)?;
+        let mut substituted_facts = facts
+            .get(signature.source_index)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        for (index, node) in source.tree().nodes().iter().enumerate() {
+            if !matches!(node.form(), SyntaxForm::ValueType)
+                || !span_contains(declaration.span(), node.span())
+            {
+                continue;
+            }
+            let Some(expression) = context.generic_types.get(node.span()) else {
+                continue;
+            };
+            let descriptor = substitution
+                .apply(expression)
+                .map_err(|_| AnalysisError::Invariant)?;
+            substituted_facts.insert(
+                NodeId::from_index(index),
+                TypeFact {
+                    span: node.span().clone(),
+                    descriptor,
+                },
+            );
+        }
+        let witness = context
+            .generic_instantiation_witnesses
+            .borrow()
+            .get(&key)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        *context.current_instantiation.borrow_mut() = Some((key.clone(), witness));
+        *context.current_type_substitution.borrow_mut() = Some(substitution);
+        *context.current_effect_owner.borrow_mut() = Some(EffectNode::Concrete(key.clone()));
+        let check = check_callable(
+            source.tree(),
+            signature.declaration,
+            &substituted_facts,
+            context,
+            diagnostics,
+        );
+        *context.current_type_substitution.borrow_mut() = None;
+        *context.current_instantiation.borrow_mut() = None;
+        *context.current_effect_owner.borrow_mut() = None;
+        check?;
+        checked.insert(key);
+    }
+    Ok(())
+}
+
+fn initialize_effect_draft(
+    tree: &SyntaxTree,
+    callable: &gantry_frontend::SyntaxNode,
+    context: &BodyContext,
+) -> Result<(), AnalysisError> {
+    let Some(owner) = context.current_effect_owner.borrow().clone() else {
+        return Ok(());
+    };
+    let block =
+        direct_child_form(tree, callable, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
+    let mut direct = EffectSet::default();
+    let mut work = vec![block];
+    while let Some(id) = work.pop() {
+        let node = tree.node(id).ok_or(AnalysisError::Invariant)?;
+        match node.form() {
+            SyntaxForm::PromptExpression => {
+                direct.insert(Effect::Prompt);
+                if subtree_has_reserved_word(tree, node, "fork")
+                    || subtree_has_reserved_word(tree, node, "new")
+                {
+                    direct.insert(Effect::Session);
+                }
+            }
+            SyntaxForm::DecideExpression => {
+                direct.insert(Effect::Decide);
+                if subtree_has_reserved_word(tree, node, "fork")
+                    || subtree_has_reserved_word(tree, node, "new")
+                {
+                    direct.insert(Effect::Session);
+                }
+            }
+            SyntaxForm::ActionExpression => {
+                if let Some(path) = direct_child_form(tree, node, SyntaxForm::Path)
+                    && let Some(target) = tree
+                        .node(path)
+                        .and_then(|path| context.references.get(path.span()))
+                    && let Some(effect) = context.action_effects.get(target)
+                {
+                    direct.insert(*effect);
+                }
+            }
+            SyntaxForm::AttemptExpression => {
+                direct.insert(Effect::Attempt);
+            }
+            SyntaxForm::SpawnStatement => {
+                direct.insert(Effect::Spawn);
+            }
+            SyntaxForm::JoinExpression | SyntaxForm::JoinAllExpression => {
+                direct.insert(Effect::Join);
+            }
+            SyntaxForm::DetachStatement => {
+                direct.insert(Effect::Background);
+            }
+            SyntaxForm::SessionStatement | SyntaxForm::SessionExpression
+                if subtree_has_reserved_word(tree, node, "fork")
+                    || subtree_has_reserved_word(tree, node, "new") =>
+            {
+                direct.insert(Effect::Session);
+            }
+            SyntaxForm::LoopStatement | SyntaxForm::WhileStatement | SyntaxForm::UntilStatement
+                if subtree_has_reserved_word(tree, node, "fork")
+                    || subtree_has_reserved_word(tree, node, "new") =>
+            {
+                direct.insert(Effect::Session);
+            }
+            _ => {}
+        }
+        work.extend(node.children().iter().rev().copied());
+    }
+    let mut drafts = context.effect_drafts.borrow_mut();
+    let draft = drafts.entry(owner).or_default();
+    draft.direct = draft.direct.union(direct);
+    draft.pure = node_has_reserved_word(tree, callable, "pure");
+    draft.source = Some(callable.span().clone());
+    Ok(())
+}
+
+fn subtree_has_reserved_word(
+    tree: &SyntaxTree,
+    root: &gantry_frontend::SyntaxNode,
+    expected: &str,
+) -> bool {
+    let mut work = root.children().to_vec();
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            return false;
+        };
+        if matches!(node.form(), SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == expected)
+        {
+            return true;
+        }
+        work.extend(node.children().iter().copied());
+    }
+    false
+}
+
+fn finish_effect_graph(
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<EffectSummaries, AnalysisError> {
+    let drafts = context.effect_drafts.borrow().clone();
+    let mut summaries = drafts
+        .iter()
+        .map(|(node, draft)| (node.clone(), draft.direct))
+        .collect::<BTreeMap<_, _>>();
+    loop {
+        let mut changed = false;
+        for (node, draft) in &drafts {
+            let mut summary = draft.direct;
+            for callee in &draft.calls {
+                if let Some(effects) = summaries.get(callee) {
+                    summary = summary.union(*effects);
+                }
+            }
+            let current = summaries.get_mut(node).ok_or(AnalysisError::Invariant)?;
+            if *current != summary {
+                *current = summary;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for (node, draft) in &drafts {
+        let effects = summaries.get(node).copied().unwrap_or_default();
+        if draft.pure && !effects.is_empty() {
+            diagnostics.push(body_diagnostic(
+                "impure-workflow",
+                DiagnosticCategory::Type,
+                "a pure generic workflow has a nonempty transitive inferred effect set",
+                draft.source.clone().ok_or(AnalysisError::Invariant)?,
+                [("effects", effect_names(effects))],
+            )?);
+        }
+    }
+    let templates = summaries
+        .iter()
+        .filter_map(|(node, effects)| match node {
+            EffectNode::Template(template) => Some((template.clone(), *effects)),
+            EffectNode::Source(_) | EffectNode::Concrete(_) => None,
+        })
+        .collect();
+    let concrete = summaries
+        .into_iter()
+        .filter_map(|(node, effects)| match node {
+            EffectNode::Concrete(key) => Some((key, effects)),
+            EffectNode::Source(_) | EffectNode::Template(_) => None,
+        })
+        .collect();
+    Ok((templates, concrete))
+}
+
+fn effect_names(effects: EffectSet) -> String {
+    effects
+        .iter()
+        .map(Effect::wire_name)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn record_effect_call(context: &BodyContext, callee: EffectNode) {
+    let Some(owner) = context.current_effect_owner.borrow().clone() else {
+        return;
+    };
+    context
+        .effect_drafts
+        .borrow_mut()
+        .entry(owner)
+        .or_default()
+        .calls
+        .insert(callee);
+}
+
+fn record_direct_effects(context: &BodyContext, effects: EffectSet) {
+    let Some(owner) = context.current_effect_owner.borrow().clone() else {
+        return;
+    };
+    let mut drafts = context.effect_drafts.borrow_mut();
+    let draft = drafts.entry(owner).or_default();
+    draft.direct = draft.direct.union(effects);
 }
 
 fn check_callable(
@@ -658,6 +1491,7 @@ fn check_callable(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
     let node = tree.node(callable).ok_or(AnalysisError::Invariant)?;
+    initialize_effect_draft(tree, node, context)?;
     *context.current_visible_traits.borrow_mut() = context
         .callable_visible_traits
         .get(node.span())
@@ -1741,13 +2575,33 @@ fn method_receiver_type(
     }) else {
         return Ok(None);
     };
-    implementation_receiver_descriptor(
+    let receiver = implementation_receiver_descriptor(
         tree,
         implementation,
         &context.generic_types,
         &context.references,
         &context.structs,
-    )
+    )?;
+    if receiver.is_some() {
+        return Ok(receiver);
+    }
+    let Some(receiver_node) = direct_child_form(tree, implementation, SyntaxForm::ValueType) else {
+        return Ok(None);
+    };
+    let expression = tree
+        .node(receiver_node)
+        .and_then(|node| context.generic_types.get(node.span()))
+        .ok_or(AnalysisError::Invariant)?;
+    context
+        .current_type_substitution
+        .borrow()
+        .as_ref()
+        .map(|substitution| {
+            substitution
+                .apply(expression)
+                .map_err(|_| AnalysisError::Invariant)
+        })
+        .transpose()
 }
 
 fn implementation_receiver_descriptor(
@@ -2146,6 +3000,7 @@ fn infer_expression_inner(
         node.children(),
         facts,
         environment,
+        expected,
         context,
         diagnostics,
     )? {
@@ -2971,12 +3826,23 @@ fn closed_type_arguments(
         .filter_map(|child| tree.node(*child))
         .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
         .map(|node| {
-            context
+            let expression = context
                 .generic_types
                 .get(node.span())
-                .ok_or(AnalysisError::Invariant)?
-                .to_descriptor(u64::MAX)
-                .map_err(|_| AnalysisError::Invariant)
+                .ok_or(AnalysisError::Invariant)?;
+            if expression.is_closed() {
+                expression
+                    .to_descriptor(u64::MAX)
+                    .map_err(|_| AnalysisError::Invariant)
+            } else {
+                context
+                    .current_type_substitution
+                    .borrow()
+                    .as_ref()
+                    .ok_or(AnalysisError::Invariant)?
+                    .apply(expression)
+                    .map_err(|_| AnalysisError::Invariant)
+            }
         })
         .collect()
 }
@@ -3401,9 +4267,15 @@ fn infer_operand_sequence(
         }
         return Ok(None);
     }
-    if let Some(value) =
-        infer_member_sequence(tree, children, facts, environment, context, diagnostics)?
-    {
+    if let Some(value) = infer_member_sequence(
+        tree,
+        children,
+        facts,
+        environment,
+        None,
+        context,
+        diagnostics,
+    )? {
         return Ok(Some(value));
     }
     if let Some(value) = infer_call_sequence(
@@ -3450,6 +4322,7 @@ fn infer_member_sequence(
     children: &[NodeId],
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    expected: Option<&TypeDescriptor>,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
@@ -3489,35 +4362,12 @@ fn infer_member_sequence(
         _ => return Ok(None),
     };
     let call_open = children
-        .get(dot.saturating_add(2))
-        .is_some_and(|child| node_contains_punctuation(tree, *child, Punctuation::LeftParenthesis));
-    if call_open {
-        let inherent = builtin_method_signature(&receiver, &member)?.or_else(|| {
-            context
-                .methods
-                .get(&(receiver.clone(), member.clone()))
-                .cloned()
-        });
-        let signature = if inherent.is_some() {
-            inherent
-        } else {
-            resolve_trait_method(
-                &receiver,
-                &member,
-                None,
-                None,
-                None,
-                None,
-                None,
-                context,
-                member_node,
-                diagnostics,
-            )?
-        };
-        let Some(signature) = signature else {
-            return Ok(None);
-        };
-        let open = dot.saturating_add(2);
+        .iter()
+        .enumerate()
+        .skip(dot.saturating_add(2))
+        .find(|(_, child)| node_contains_punctuation(tree, **child, Punctuation::LeftParenthesis))
+        .map(|(index, _)| index);
+    if let Some(open) = call_open {
         let close = children
             .iter()
             .enumerate()
@@ -3536,6 +4386,86 @@ fn infer_member_sequence(
                     .is_some_and(|node| matches!(node.form(), SyntaxForm::Expression))
             })
             .collect::<Vec<_>>();
+        let mut actual_arguments = Vec::with_capacity(arguments.len());
+        for argument in &arguments {
+            let Some(actual) = infer_expression(
+                tree,
+                *argument,
+                facts,
+                environment,
+                None,
+                context,
+                diagnostics,
+            )?
+            else {
+                return Ok(None);
+            };
+            actual_arguments.push(actual);
+        }
+        let explicit_method_arguments = children
+            .get(dot.saturating_add(2)..open)
+            .unwrap_or_default()
+            .iter()
+            .find_map(|child| {
+                tree.node(*child)
+                    .is_some_and(|node| matches!(node.form(), SyntaxForm::TypeArgumentList))
+                    .then_some(*child)
+            })
+            .map(|list| closed_type_arguments(tree, list, context))
+            .transpose()?;
+        let builtin = builtin_method_signature(&receiver, &member)?;
+        let inherent_source = builtin.is_none().then(|| {
+            context
+                .inherent_method_sources
+                .get(&(receiver.clone(), member.clone()))
+                .cloned()
+        });
+        let inherent = builtin.or_else(|| {
+            context
+                .methods
+                .get(&(receiver.clone(), member.clone()))
+                .cloned()
+        });
+        let mut generic = None;
+        let signature = if let Some(inherent) = inherent {
+            Some(inherent)
+        } else if let Some(resolution) = resolve_generic_inherent_method(
+            &receiver,
+            &member,
+            explicit_method_arguments.as_deref(),
+            &actual_arguments,
+            expected,
+            context,
+            member_node,
+            diagnostics,
+        )? {
+            let callable = resolution.callable.clone();
+            generic = Some(resolution);
+            Some(callable)
+        } else {
+            let resolution = resolve_trait_method(
+                &receiver,
+                &member,
+                None,
+                None,
+                explicit_method_arguments.as_deref(),
+                Some(&actual_arguments),
+                expected,
+                context,
+                member_node,
+                diagnostics,
+            )?;
+            if let Some((_, retained)) = &resolution {
+                generic = retained.clone();
+            }
+            resolution.map(|(callable, _)| callable)
+        };
+        let Some(signature) = signature else {
+            return Ok(None);
+        };
+        if let Some(source) = inherent_source.flatten() {
+            record_effect_call(context, EffectNode::Source(source));
+        }
         if arguments.len() != signature.parameters.len() {
             diagnostics.push(body_diagnostic(
                 "call-arity",
@@ -3548,17 +4478,12 @@ fn infer_member_sequence(
                 ],
             )?);
         }
-        for (argument, expected) in arguments.iter().zip(&signature.parameters) {
-            if let Some(actual) = infer_expression(
-                tree,
-                *argument,
-                facts,
-                environment,
-                Some(expected),
-                context,
-                diagnostics,
-            )? && &actual != expected
-            {
+        for ((argument, actual), expected) in arguments
+            .iter()
+            .zip(&actual_arguments)
+            .zip(&signature.parameters)
+        {
+            if actual != expected {
                 diagnostics.push(body_diagnostic(
                     "call-argument-type",
                     DiagnosticCategory::Type,
@@ -3574,6 +4499,15 @@ fn infer_member_sequence(
                 )?);
             }
         }
+        if let Some(resolution) = generic {
+            retain_generic_instantiation(
+                &resolution.signature,
+                resolution.concrete_arguments,
+                member_node,
+                context,
+                diagnostics,
+            )?;
+        }
         return Ok(Some(signature.result.clone()));
     }
 
@@ -3584,12 +4518,17 @@ fn infer_member_sequence(
             _ => None,
         }
     } else {
-        context
+        let closed = context
             .structs
             .values()
             .find(|shape| shape.descriptor == receiver)
             .and_then(|shape| shape.fields.get(&member))
-            .map(|field| field.ty.clone())
+            .map(|field| field.ty.clone());
+        if closed.is_some() {
+            closed
+        } else {
+            generic_field_type(&receiver, &member, context)?
+        }
     };
     if let Some(field) = field {
         return Ok(Some(field));
@@ -3607,6 +4546,170 @@ fn infer_member_sequence(
     Ok(None)
 }
 
+fn generic_field_type(
+    receiver: &TypeDescriptor,
+    member: &str,
+    context: &BodyContext,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    let Some(path) = receiver.declared_path() else {
+        return Ok(None);
+    };
+    let arguments = receiver.immediate_members();
+    let Some(shape) = context
+        .generic_structs
+        .values()
+        .find(|shape| &shape.path == path && shape.required.len() == arguments.len())
+    else {
+        return Ok(None);
+    };
+    let Some(field) = shape.fields.get(member) else {
+        return Ok(None);
+    };
+    let substitution = ExactTypeSubstitution::explicit(&shape.required, &arguments)
+        .map_err(|_| AnalysisError::Invariant)?;
+    substitution
+        .apply(&field.ty)
+        .map(Some)
+        .map_err(|_| AnalysisError::Invariant)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn instantiate_generic_method(
+    signature: &GenericCallableSignature,
+    receiver: &TypeDescriptor,
+    trait_arguments: Option<&[TypeDescriptor]>,
+    explicit_method_arguments: Option<&[TypeDescriptor]>,
+    actual_arguments: &[TypeDescriptor],
+    expected_result: Option<&TypeDescriptor>,
+) -> Result<GenericMethodResolution, TypeInferenceFailure> {
+    let receiver_template = signature
+        .receiver
+        .as_ref()
+        .ok_or(TypeInferenceFailure::Conflict)?;
+    let mut constraints = vec![(
+        receiver_template.clone(),
+        TypeExpression::closed(receiver, u64::MAX).map_err(|_| TypeInferenceFailure::Conflict)?,
+    )];
+    if let Some(arguments) = trait_arguments {
+        let reference = signature
+            .trait_reference
+            .as_ref()
+            .ok_or(TypeInferenceFailure::Conflict)?;
+        if arguments.len() != reference.arguments().len() {
+            return Err(TypeInferenceFailure::Arity);
+        }
+        for (template, argument) in reference.arguments().iter().zip(arguments) {
+            constraints.push((
+                template.clone(),
+                TypeExpression::closed(argument, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+            ));
+        }
+    }
+    let method_required = signature
+        .required
+        .get(signature.implementation_parameter_count..)
+        .ok_or(TypeInferenceFailure::Arity)?;
+    if let Some(arguments) = explicit_method_arguments {
+        if arguments.len() != method_required.len() {
+            return Err(TypeInferenceFailure::Arity);
+        }
+        for (parameter, argument) in method_required.iter().zip(arguments) {
+            constraints.push((
+                TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+                TypeExpression::closed(argument, u64::MAX)
+                    .map_err(|_| TypeInferenceFailure::Conflict)?,
+            ));
+        }
+    }
+    if actual_arguments.len() != signature.parameters.len() {
+        return Err(TypeInferenceFailure::Arity);
+    }
+    for (template, argument) in signature.parameters.iter().zip(actual_arguments) {
+        constraints.push((
+            template.clone(),
+            TypeExpression::closed(argument, u64::MAX)
+                .map_err(|_| TypeInferenceFailure::Conflict)?,
+        ));
+    }
+    if let Some(expected) = expected_result {
+        constraints.push((
+            signature.result.clone(),
+            TypeExpression::closed(expected, u64::MAX)
+                .map_err(|_| TypeInferenceFailure::Conflict)?,
+        ));
+    }
+    let substitution = ExactTypeSubstitution::infer(&signature.required, &constraints)?;
+    let concrete_arguments = signature
+        .required
+        .iter()
+        .map(|parameter| {
+            TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                .map_err(|_| TypeInferenceFailure::Conflict)
+                .and_then(|expression| substitution.apply(&expression))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let parameters = signature
+        .parameters
+        .iter()
+        .map(|parameter| substitution.apply(parameter))
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = substitution.apply(&signature.result)?;
+    Ok(GenericMethodResolution {
+        signature: signature.clone(),
+        concrete_arguments,
+        callable: CallableSignature { parameters, result },
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_generic_inherent_method(
+    receiver: &TypeDescriptor,
+    member: &str,
+    explicit_method_arguments: Option<&[TypeDescriptor]>,
+    actual_arguments: &[TypeDescriptor],
+    expected_result: Option<&TypeDescriptor>,
+    context: &BodyContext,
+    source: &gantry_frontend::SyntaxNode,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<GenericMethodResolution>, AnalysisError> {
+    let mut candidates = context
+        .generic_methods
+        .iter()
+        .filter(|signature| signature.kind == TemplateKind::InherentMethod)
+        .filter(|signature| signature.method_name.as_deref() == Some(member))
+        .filter_map(|signature| {
+            instantiate_generic_method(
+                signature,
+                receiver,
+                None,
+                explicit_method_arguments,
+                actual_arguments,
+                expected_result,
+            )
+            .ok()
+        })
+        .collect::<Vec<_>>();
+    match candidates.len() {
+        0 => Ok(None),
+        1 => Ok(candidates.pop()),
+        _ => {
+            diagnostics.push(body_diagnostic(
+                GenericAnalysisCode::ConflictingTypeInference.wire_name(),
+                DiagnosticCategory::Type,
+                "more than one generic inherent method has an exact substitution",
+                source.span().clone(),
+                [
+                    ("member", member.to_owned()),
+                    ("receiver", receiver.canonical_string()),
+                ],
+            )?);
+            Ok(None)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn resolve_trait_method(
     receiver: &TypeDescriptor,
@@ -3619,7 +4722,7 @@ fn resolve_trait_method(
     context: &BodyContext,
     source: &gantry_frontend::SyntaxNode,
     diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<Option<CallableSignature>, AnalysisError> {
+) -> Result<Option<(CallableSignature, Option<GenericMethodResolution>)>, AnalysisError> {
     let visible_traits = context.current_visible_traits.borrow().clone();
     let declaring_traits = context
         .trait_contracts
@@ -3706,6 +4809,31 @@ fn resolve_trait_method(
                 continue;
             }
         };
+        if context.parametric_validation.get()
+            && context
+                .current_declared_obligations
+                .borrow()
+                .iter()
+                .any(|obligation| {
+                    obligation.trait_path == *contract.path()
+                        && obligation.trait_arguments == trait_arguments
+                        && obligation.receiver == *receiver
+                })
+        {
+            candidates.push((
+                instantiate_declared_trait_method(
+                    receiver,
+                    contract,
+                    method,
+                    &trait_arguments,
+                    &method_arguments,
+                )?,
+                None,
+                None,
+                *method.effects(),
+            ));
+            continue;
+        }
         let mut active = BTreeSet::new();
         let proof = prove_trait_obligation(
             contract.path(),
@@ -3728,7 +4856,38 @@ fn resolve_trait_method(
                     &trait_arguments,
                     Some(&method_arguments),
                 )? {
-                    candidates.push(signature);
+                    let retained = context
+                        .generic_methods
+                        .iter()
+                        .find(|candidate| {
+                            candidate.kind == TemplateKind::TraitMethod
+                                && candidate.method_name.as_deref() == Some(member)
+                                && candidate.implementation.as_ref() == Some(selected.identity())
+                        })
+                        .map(|candidate| {
+                            instantiate_generic_method(
+                                candidate,
+                                receiver,
+                                Some(&trait_arguments),
+                                Some(&method_arguments),
+                                actual_arguments.unwrap_or_default(),
+                                expected_result,
+                            )
+                            .map_err(|_| AnalysisError::Invariant)
+                        })
+                        .transpose()?;
+                    let effect_target = if retained.is_none() {
+                        Some(EffectNode::Source(
+                            context
+                                .method_sources
+                                .get(&(selected.identity().clone(), Arc::from(member)))
+                                .cloned()
+                                .ok_or(AnalysisError::Invariant)?,
+                        ))
+                    } else {
+                        None
+                    };
+                    candidates.push((signature, retained, effect_target, EffectSet::default()));
                 }
             }
             ObligationResult::Cyclic => {
@@ -3777,7 +4936,15 @@ fn resolve_trait_method(
             )?);
             Ok(None)
         }
-        1 => Ok(candidates.pop()),
+        1 => {
+            let (signature, retained, effect_target, direct_effects) =
+                candidates.pop().ok_or(AnalysisError::Invariant)?;
+            record_direct_effects(context, direct_effects);
+            if let Some(effect_target) = effect_target {
+                record_effect_call(context, effect_target);
+            }
+            Ok(Some((signature, retained)))
+        }
         _ => {
             diagnostics.push(body_diagnostic(
                 GenericAnalysisCode::AmbiguousTraitMethod.wire_name(),
@@ -4144,17 +5311,34 @@ fn instantiate_trait_method(
     if resolved_trait_arguments != trait_arguments {
         return Ok(None);
     }
+    let Some(method_arguments) =
+        method_arguments.or_else(|| (method.parameter_count() == 0).then_some([].as_slice()))
+    else {
+        return Ok(None);
+    };
+    instantiate_declared_trait_method(
+        receiver,
+        contract,
+        method,
+        trait_arguments,
+        method_arguments,
+    )
+    .map(Some)
+}
+
+fn instantiate_declared_trait_method(
+    receiver: &TypeDescriptor,
+    contract: &TraitContract,
+    method: &TraitMethodContract,
+    trait_arguments: &[TypeDescriptor],
+    method_arguments: &[TypeDescriptor],
+) -> Result<CallableSignature, AnalysisError> {
     let mut required = (0..contract.parameter_count())
         .map(|ordinal| TypeParameterKey {
             binder_depth: 0,
             ordinal,
         })
         .collect::<Vec<_>>();
-    let Some(method_arguments) =
-        method_arguments.or_else(|| (method.parameter_count() == 0).then_some([].as_slice()))
-    else {
-        return Ok(None);
-    };
     let method_depth = u64::from(contract.parameter_count() > 0);
     required.extend(
         (0..method.parameter_count()).map(|ordinal| TypeParameterKey {
@@ -4175,7 +5359,7 @@ fn instantiate_trait_method(
         .map(|parameter| instantiate_trait_type(parameter, receiver, &substitution))
         .collect::<Result<Vec<_>, _>>()?;
     let result = instantiate_trait_type(method.result(), receiver, &substitution)?;
-    Ok(Some(CallableSignature { parameters, result }))
+    Ok(CallableSignature { parameters, result })
 }
 
 fn instantiate_trait_type(
@@ -4338,6 +5522,9 @@ fn infer_call_sequence(
         }
         return Ok(None);
     };
+    if let Some(source) = context.callable_sources.get(&target).cloned() {
+        record_effect_call(context, EffectNode::Source(source));
+    }
     let close = children
         .iter()
         .enumerate()
@@ -4520,7 +5707,7 @@ fn infer_qualified_trait_call(
         };
         actual_arguments.push(actual);
     }
-    let Some(signature) = resolve_trait_method(
+    let Some((signature, retained)) = resolve_trait_method(
         &receiver,
         method,
         Some(trait_path),
@@ -4535,6 +5722,15 @@ fn infer_qualified_trait_call(
     else {
         return Ok(None);
     };
+    if let Some(resolution) = retained {
+        retain_generic_instantiation(
+            &resolution.signature,
+            resolution.concrete_arguments,
+            method_node,
+            context,
+            diagnostics,
+        )?;
+    }
     if value_arguments.len() != signature.parameters.len() {
         diagnostics.push(body_diagnostic(
             "call-arity",
@@ -4656,11 +5852,22 @@ fn infer_generic_call(
                 .filter_map(|child| tree.node(*child))
                 .filter(|node| matches!(node.form(), SyntaxForm::ValueType))
                 .map(|node| {
-                    context
+                    let expression = context
                         .generic_types
                         .get(node.span())
-                        .and_then(|expression| expression.to_descriptor(u64::MAX).ok())
-                        .ok_or(TypeInferenceFailure::Incomplete)
+                        .ok_or(TypeInferenceFailure::Incomplete)?;
+                    if expression.is_closed() {
+                        expression
+                            .to_descriptor(u64::MAX)
+                            .map_err(|_| TypeInferenceFailure::Incomplete)
+                    } else {
+                        context
+                            .current_type_substitution
+                            .borrow()
+                            .as_ref()
+                            .ok_or(TypeInferenceFailure::Incomplete)?
+                            .apply(expression)
+                    }
                 })
                 .collect::<Result<Vec<_>, _>>()
         })
@@ -4716,10 +5923,171 @@ fn infer_generic_call(
             )?);
         }
     }
+    let concrete_arguments = signature
+        .required
+        .iter()
+        .map(|parameter| {
+            let expression =
+                TypeExpression::parameter(parameter.binder_depth, parameter.ordinal, u64::MAX)
+                    .map_err(|_| AnalysisError::Invariant)?;
+            substitution
+                .apply(&expression)
+                .map_err(|_| AnalysisError::Invariant)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    retain_generic_instantiation(signature, concrete_arguments, path, context, diagnostics)?;
     substitution
         .apply(&signature.result)
         .map(Some)
         .map_err(|_| AnalysisError::Invariant)
+}
+
+fn retain_generic_instantiation(
+    signature: &GenericCallableSignature,
+    concrete_arguments: Vec<TypeDescriptor>,
+    call_site: &gantry_frontend::SyntaxNode,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if context.parametric_validation.get() {
+        record_effect_call(context, EffectNode::Template(signature.template.clone()));
+        return Ok(());
+    }
+    let key = (signature.template.clone(), concrete_arguments.clone());
+    record_effect_call(context, EffectNode::Concrete(key.clone()));
+    if context.generic_instantiations.borrow().contains_key(&key) {
+        return Ok(());
+    }
+    let witness = if let Some((_, witness)) = context.current_instantiation.borrow().clone() {
+        if witness
+            .iter()
+            .any(|ancestor| ancestor.0 == key.0 && ancestor.1 != key.1)
+        {
+            let mut cycle = witness;
+            cycle.push(key);
+            diagnostics.push(body_diagnostic(
+                GenericAnalysisCode::PolymorphicRecursion.wire_name(),
+                DiagnosticCategory::Type,
+                "a generic callable recursively changes its own type arguments",
+                call_site.span().clone(),
+                [("instantiation_witness", instantiation_witness(&cycle))],
+            )?);
+            return Ok(());
+        }
+        let mut nested = witness;
+        nested.push(key.clone());
+        nested
+    } else {
+        vec![key.clone()]
+    };
+    if let Some(counters) = context.generic_analysis_counters.borrow_mut().as_mut() {
+        counters
+            .charge_generic_instantiation()
+            .map_err(|error| AnalysisError::ResourceLimit {
+                error,
+                diagnostics: Vec::new(),
+            })?;
+    }
+    let substitution = ExactTypeSubstitution::explicit(&signature.required, &concrete_arguments)
+        .map_err(|_| AnalysisError::Invariant)?;
+    let concrete = match signature.kind {
+        TemplateKind::FreeWorkflow => {
+            CanonicalCallableIdentity::free(&signature.path, &concrete_arguments)
+        }
+        TemplateKind::InherentMethod => {
+            let receiver = substitution
+                .apply(
+                    signature
+                        .receiver
+                        .as_ref()
+                        .ok_or(AnalysisError::Invariant)?,
+                )
+                .map_err(|_| AnalysisError::Invariant)?;
+            CanonicalCallableIdentity::inherent(
+                &receiver,
+                signature
+                    .method_name
+                    .as_deref()
+                    .ok_or(AnalysisError::Invariant)?,
+                concrete_arguments
+                    .get(signature.implementation_parameter_count..)
+                    .ok_or(AnalysisError::Invariant)?,
+            )
+            .map_err(|_| AnalysisError::Invariant)?
+        }
+        TemplateKind::TraitMethod => {
+            let receiver = substitution
+                .apply(
+                    signature
+                        .receiver
+                        .as_ref()
+                        .ok_or(AnalysisError::Invariant)?,
+                )
+                .map_err(|_| AnalysisError::Invariant)?;
+            let trait_reference = signature
+                .trait_reference
+                .as_ref()
+                .ok_or(AnalysisError::Invariant)?;
+            let trait_arguments = trait_reference
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    substitution
+                        .apply(argument)
+                        .map_err(|_| AnalysisError::Invariant)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            CanonicalCallableIdentity::trait_method(
+                &receiver,
+                trait_reference.path(),
+                &trait_arguments,
+                signature
+                    .method_name
+                    .as_deref()
+                    .ok_or(AnalysisError::Invariant)?,
+                concrete_arguments
+                    .get(signature.implementation_parameter_count..)
+                    .ok_or(AnalysisError::Invariant)?,
+            )
+            .map_err(|_| AnalysisError::Invariant)?
+        }
+        TemplateKind::DeclaredType => return Err(AnalysisError::Invariant),
+    };
+    let instantiation = ConcreteInstantiation::new(
+        signature.kind,
+        signature.template.clone(),
+        concrete_arguments,
+        ConcreteIdentity::Callable(concrete),
+    )
+    .map_err(|_| AnalysisError::Invariant)?;
+    context
+        .generic_instantiations
+        .borrow_mut()
+        .insert(key.clone(), instantiation);
+    context
+        .generic_instantiation_witnesses
+        .borrow_mut()
+        .insert(key, witness);
+    Ok(())
+}
+
+fn instantiation_witness(witness: &[InstantiationKey]) -> String {
+    witness
+        .iter()
+        .map(|(template, arguments)| {
+            let mut value = template.as_str().to_owned();
+            value.push_str(" => [");
+            for (index, argument) in arguments.iter().enumerate() {
+                if index > 0 {
+                    value.push(',');
+                }
+                value.push_str(&argument.canonical_string());
+            }
+            value.push(']');
+            value
+        })
+        .collect::<Vec<_>>()
+        .join(" -> ")
 }
 
 fn direct_binary_operator(
