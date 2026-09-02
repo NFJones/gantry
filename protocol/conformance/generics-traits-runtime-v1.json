@@ -142,8 +142,8 @@
   ],
   "advertises_profiles": [],
   "exclusions": [
-    "Concurrent scheduling and task transfer remain owned by GNT-GEN-CON-001.",
-    "Durable retention and fresh-process reconstruction remain owned by GNT-GEN-DUR-001.",
+    "Concurrent scheduling and task transfer are covered by the separate GNT-GEN-CON-001 evidence slice.",
+    "Durable retention and fresh-process reconstruction are covered by the separate GNT-GEN-DUR-001 evidence slice.",
     "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
   ]
 }

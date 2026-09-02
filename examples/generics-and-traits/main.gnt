@@ -1,0 +1,53 @@
+struct Report {
+    summary: String,
+}
+
+struct Envelope<T> {
+    value: T,
+    source: String,
+}
+
+enum Outcome<T, E> {
+    Ready(T),
+    Failed(E),
+}
+
+trait Summarize {
+    pure fn summarize(self) -> String;
+}
+
+impl Summarize for Report {
+    pure fn summarize(self) -> String {
+        self.summary
+    }
+}
+
+impl<T> Summarize for Envelope<T>
+where
+    T: Summarize,
+{
+    pure fn summarize(self) -> String {
+        "envelope"
+    }
+}
+
+pure fn preserve<T>(value: T) -> T {
+    value
+}
+
+pure fn wrap<T>(value: T, source: String) -> Envelope<T> {
+    Envelope::<T> { value, source }
+}
+
+pure fn main() -> String {
+    let report: Report = Report { summary: "ready" };
+    let inferred: Report = preserve(report);
+    let envelope: Envelope<Report> = wrap::<Report>(inferred, "guide");
+    let outcome: Outcome<Envelope<Report>, String> =
+        Outcome::<Envelope<Report>, String>::Ready(envelope);
+
+    match outcome {
+        Outcome::<Envelope<Report>, String>::Ready(value) => value.summarize(),
+        Outcome::<Envelope<Report>, String>::Failed(error) => error,
+    }
+}

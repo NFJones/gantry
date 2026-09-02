@@ -48,6 +48,7 @@ const EXIT_SUCCESS: u8 = 0;
 const EXIT_SOURCE_INVALID: u8 = 1;
 const EXIT_OPERATIONAL_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 64;
+const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]|run) [PACKAGE_ROOT]\n\nGeneric declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Every package activity uses twelve finite frontend-policy fields; see docs/frontend-resource-policy.md and docs/generics-and-traits.md.";
 
 /// Starts the Gantry command-line application.
 fn main() -> ExitCode {
@@ -59,11 +60,10 @@ fn main() -> ExitCode {
 
 fn run(arguments: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
     match arguments {
-        [] => write_line(
-            stdout,
-            "gantry: agent-control language for Mezzanine",
-            stderr,
-        ),
+        [] => write_line(stdout, HELP, stderr),
+        [command] if command == "help" || command == "--help" || command == "-h" => {
+            write_line(stdout, HELP, stderr)
+        }
         [command] if command == "check" => check_command(std::path::Path::new("."), stdout, stderr),
         [command, package_root] if command == "check" => {
             check_command(std::path::Path::new(package_root), stdout, stderr)
@@ -676,6 +676,18 @@ mod tests {
         assert!(
             String::from_utf8_lossy(&stderr).contains("usage: gantry (check|analyze [--json]|run)")
         );
+
+        stdout.clear();
+        stderr.clear();
+        assert_eq!(
+            run(&[OsString::from("--help")], &mut stdout, &mut stderr),
+            EXIT_SUCCESS
+        );
+        let help = String::from_utf8_lossy(&stdout);
+        assert!(help.contains("Generic declarations and static traits"));
+        assert!(help.contains("twelve finite frontend-policy fields"));
+        assert!(help.contains("docs/generics-and-traits.md"));
+        assert!(stderr.is_empty());
     }
 
     #[cfg(feature = "analyzer")]

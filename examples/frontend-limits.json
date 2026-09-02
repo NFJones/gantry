@@ -1,0 +1,14 @@
+{
+  "maximum_package_files": 4096,
+  "maximum_source_file_bytes": 16777216,
+  "maximum_package_source_bytes": 268435456,
+  "maximum_source_tokens": 4194304,
+  "maximum_diagnostics_per_activity": 4096,
+  "maximum_package_source_manifest_bytes": 268435456,
+  "maximum_canonical_ir_bytes": 268435456,
+  "maximum_source_map_bytes": 268435456,
+  "maximum_generated_schema_bytes": 268435456,
+  "maximum_constructed_type_depth": 256,
+  "maximum_generic_instantiations_per_activity": 65536,
+  "maximum_trait_resolution_steps_per_activity": 1000000
+}

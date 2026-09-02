@@ -2,8 +2,9 @@
 
 This document describes the implemented nondurable evaluator boundary for
 parametric values, closed generic applications, and statically selected trait
-methods. `SPEC.md` remains normative. The complete authoring guide and amended
-publication remain later adoption work.
+methods. `SPEC.md` remains normative. The complete source-author guide is
+[`generics-and-traits.md`](generics-and-traits.md); the amended publication
+remains later adoption work.
 
 ## Closed executable handoff
 

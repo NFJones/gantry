@@ -47,9 +47,30 @@ workflows, pattern routing, loops, sessions, and structured parallel work.
 
 ## Example
 
-This complete package researches a topic through a harness action, asks a
-research agent to draft a brief, and lets an editor revise it when a model
-judgment calls for revision:
+Generic workflows and statically selected traits remain concrete at runtime:
+
+```rust
+struct Envelope<T> { value: T }
+trait Label { pure fn label(self) -> String; }
+impl<T> Label for Envelope<T> {
+    pure fn label(self) -> String { "envelope" }
+}
+pure fn preserve<T>(value: T) -> T { value }
+pure fn main() -> String {
+    let value: Envelope<String> =
+        preserve::<Envelope<String>>(Envelope::<String> { value: "ready" });
+    value.label()
+}
+```
+
+The analyzer infers the complete `Envelope<String>` application and lowers
+the trait call to one selected concrete workflow. See the
+[`generics-and-traits` guide](docs/generics-and-traits.md) for inference,
+traits, limits, diagnostics, concurrency, and durable recovery.
+
+The following complete package researches a topic through a harness action,
+asks a research agent to draft a brief, and lets an editor revise it when a
+model judgment calls for revision:
 
 ```rust
 struct Brief {
@@ -97,9 +118,10 @@ concurrent-evaluator, durable-runtime, and embedding profiles describe which
 parts of the contract an implementation or integration provides. This lets a
 deployment make precise capability claims without changing source meaning.
 
-This revision advertises the frontend and analyzer profiles when analysis is
-compiled. Evaluator, concurrent-evaluator, durable-runtime, and embedding
-claims remain gated by their later conformance closeouts.
+Global profile advertisement remains withheld while the amended language
+adoption gate is incomplete. The profile-specific evidence documents record
+which implementation layers are already verified without turning those staged
+results into a release claim.
 
 ## Getting started
 
@@ -144,6 +166,8 @@ Run `just help` to list all development commands.
   focused authoring examples.
 - [`docs/`](docs/README.md) indexes language, user, and contributor
   documentation.
+- [`docs/generics-and-traits.md`](docs/generics-and-traits.md) is the source
+  author guide for parametric declarations and static trait selection.
 - [`AGENTS.md`](AGENTS.md) describes repository workflow and contribution
   requirements.
 

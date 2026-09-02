@@ -35,7 +35,7 @@
   ],
   "advertises_profiles": [],
   "exclusions": [
-    "Embedding-profile API and integration closeout remain owned by GNT-GEN-API-001.",
+    "Embedding-profile closeout remains separate from this durable-runtime evidence slice.",
     "Formal durable and concurrent refinement amendments remain owned by GNT-GEN-PROOF-002.",
     "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
   ]

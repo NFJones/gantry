@@ -4,6 +4,10 @@ Every public package activity receives one explicit `FrontendLimits` value.
 The policy has no portable implicit defaults: embedders must supply all twelve
 positive integers, each no greater than `2^63 - 1`.
 
+[`examples/frontend-limits.json`](../examples/frontend-limits.json) records a
+machine-checked complete policy using the reference CLI values. It is a sample
+embedding configuration, not a language default.
+
 | Field | Applies to | Unit and charging boundary |
 | --- | --- | --- |
 | `maximum_package_files` | validate, analyze, start, candidate-source resume | selected source files, before admission |

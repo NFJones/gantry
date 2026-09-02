@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.invalid/protocol/generics-traits-authoring/v1/schema.json",
+  "title": "Gantry generics and traits authoring corpus v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "gantry.generics-traits-authoring-v1" },
+    "guide": { "const": "docs/generics-and-traits.md" },
+    "complete_package": { "const": "examples/generics-and-traits/main.gnt" },
+    "invalid_packages": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "code": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "primary_start": { "type": "integer", "minimum": 0 },
+          "primary_end": { "type": "integer", "minimum": 1 },
+          "required_fields": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+          }
+        },
+        "required": ["path", "code", "primary_start", "primary_end", "required_fields"]
+      }
+    },
+    "frontend_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "const": "examples/frontend-limits.json" },
+        "fields": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^maximum_[a-z_]+$" }
+        }
+      },
+      "required": ["path", "fields"]
+    },
+    "section14_excerpts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["section14-excerpt-050", "section14-excerpt-051"] }
+    }
+  },
+  "required": [
+    "format",
+    "guide",
+    "complete_package",
+    "invalid_packages",
+    "frontend_policy",
+    "section14_excerpts"
+  ]
+}

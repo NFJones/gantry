@@ -1,0 +1,53 @@
+{
+  "format": "gantry.generics-traits-authoring-v1",
+  "guide": "docs/generics-and-traits.md",
+  "complete_package": "examples/generics-and-traits/main.gnt",
+  "invalid_packages": [
+    {
+      "path": "examples/generics-and-traits-invalid/cyclic-obligation/main.gnt",
+      "code": "cyclic-trait-obligation",
+      "primary_start": 476,
+      "primary_end": 481,
+      "required_fields": ["obligation", "obligation_chain"]
+    },
+    {
+      "path": "examples/generics-and-traits-invalid/duplicate-parameter/main.gnt",
+      "code": "duplicate-type-parameter",
+      "primary_start": 15,
+      "primary_end": 16,
+      "required_fields": ["parameter", "related"]
+    },
+    {
+      "path": "examples/generics-and-traits-invalid/incomplete-inference/main.gnt",
+      "code": "incomplete-type-inference",
+      "primary_start": 62,
+      "primary_end": 74,
+      "required_fields": []
+    },
+    {
+      "path": "examples/generics-and-traits-invalid/polymorphic-recursion/main.gnt",
+      "code": "polymorphic-recursion",
+      "primary_start": 19,
+      "primary_end": 23,
+      "required_fields": ["instantiation_witness"]
+    }
+  ],
+  "frontend_policy": {
+    "path": "examples/frontend-limits.json",
+    "fields": [
+      "maximum_canonical_ir_bytes",
+      "maximum_constructed_type_depth",
+      "maximum_diagnostics_per_activity",
+      "maximum_generated_schema_bytes",
+      "maximum_generic_instantiations_per_activity",
+      "maximum_package_files",
+      "maximum_package_source_bytes",
+      "maximum_package_source_manifest_bytes",
+      "maximum_source_file_bytes",
+      "maximum_source_map_bytes",
+      "maximum_source_tokens",
+      "maximum_trait_resolution_steps_per_activity"
+    ]
+  },
+  "section14_excerpts": ["section14-excerpt-050", "section14-excerpt-051"]
+}

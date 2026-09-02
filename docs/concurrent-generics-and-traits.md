@@ -3,8 +3,9 @@
 This document describes the implemented nondurable concurrent-evaluator
 boundary for closed generic applications and statically selected trait
 methods. `SPEC.md` remains normative. Durable reconstruction is documented in
-[`durable-generics-and-traits.md`](durable-generics-and-traits.md); the complete
-authoring guide and replacement publication remain later adoption work.
+[`durable-generics-and-traits.md`](durable-generics-and-traits.md), and the
+complete source-author guide is [`generics-and-traits.md`](generics-and-traits.md).
+The replacement publication remains later adoption work.
 
 ## Closed task boundaries
 

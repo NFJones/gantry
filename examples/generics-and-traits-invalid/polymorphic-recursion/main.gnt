@@ -1,0 +1,7 @@
+fn grow<T>() {
+    grow::<List<T>>()
+}
+
+fn main() {
+    grow::<String>()
+}

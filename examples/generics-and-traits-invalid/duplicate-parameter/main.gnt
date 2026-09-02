@@ -1,0 +1,5 @@
+struct Pair<T, T> {
+    value: T,
+}
+
+fn main() {}

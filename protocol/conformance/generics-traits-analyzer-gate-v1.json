@@ -106,7 +106,7 @@
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "7b09e119b1b55fe566b6f772101f69c168f9e2aef075ef9ea534fd49df14e203"
+      "sha256": "30cb7da7b5a3aa07d56f9250be7aadbf958ffdb430ad987ffe584c2f860166c5"
     },
     {
       "path": "crates/gantry/src/validate.rs",
@@ -134,7 +134,7 @@
     },
     {
       "path": "protocol/conformance/generics-traits-frontend-v1.json",
-      "sha256": "a04314ac128e3c6c748633142e435bc21e8744bf392f5a64c71ae9771515878d"
+      "sha256": "584357bd48b7d1b5ad226b5780a4906cb75d89b3b0782b76a7c8145fb1a79fcf"
     },
     {
       "path": "protocol/conformance/generics-traits-ir-v1.json",

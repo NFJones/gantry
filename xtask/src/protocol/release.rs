@@ -428,7 +428,18 @@ fn source_ownership(root: &Path) -> Result<BTreeMap<&'static str, Vec<String>>, 
     for path in [
         "SPEC.md",
         "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
+        "crates/gantry-conformance/tests/generics_authoring.rs",
+        "docs/frontend-resource-policy.md",
+        "docs/generics-and-traits.md",
+        "examples/frontend-limits.json",
+        "examples/generics-and-traits/main.gnt",
+        "examples/generics-and-traits-invalid/cyclic-obligation/main.gnt",
+        "examples/generics-and-traits-invalid/duplicate-parameter/main.gnt",
+        "examples/generics-and-traits-invalid/incomplete-inference/main.gnt",
+        "examples/generics-and-traits-invalid/polymorphic-recursion/main.gnt",
+        "protocol/goldens/generics-traits-authoring-v1.json",
         "protocol/requirements/section14-v1.json",
+        "protocol/schemas/generics-traits-authoring-v1.schema.json",
         "protocol/goldens/source-substrate-vectors-v1.json",
         "protocol/goldens/unicode-version-vectors-v1.json",
         "protocol/schemas/source-substrate-v1.schema.json",
@@ -449,7 +460,11 @@ fn source_ownership(root: &Path) -> Result<BTreeMap<&'static str, Vec<String>>, 
         }
     }
     for path in files(root, "crates/gantry-conformance/tests")? {
-        if path != "crates/gantry-conformance/tests/frontend_parser_evidence.rs" {
+        if !matches!(
+            path.as_str(),
+            "crates/gantry-conformance/tests/frontend_parser_evidence.rs"
+                | "crates/gantry-conformance/tests/generics_authoring.rs"
+        ) {
             add("gantry.conformance", &path);
         }
     }

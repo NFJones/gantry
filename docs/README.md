@@ -30,6 +30,10 @@ rules, stable failures, and reference CLI values are documented in
 The syntax-only boundary for parametric declarations and static traits is
 documented in [`frontend-generics-and-traits.md`](frontend-generics-and-traits.md).
 
+The complete source-author guide, executable package, diagnostic examples,
+resource-policy summary, and deliberate feature exclusions are documented in
+[`generics-and-traits.md`](generics-and-traits.md).
+
 The implemented analyzer boundary for generic binders, exact local inference,
 regular recursion, sealed structural capabilities, and generic-analysis limits
 is documented in

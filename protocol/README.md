@@ -105,6 +105,14 @@ source-free/candidate comparison, and pre-mutation corruption rejection. It
 does not advertise a global profile while the broader language-adoption gate
 remains blocked.
 
+The amended authoring corpus includes `docs/generics-and-traits.md`, the
+complete executable package under `examples/generics-and-traits/`, the focused
+diagnostic packages under `examples/generics-and-traits-invalid/`, and the
+twelve-field policy sample in `examples/frontend-limits.json`. The
+replacement `gantry.authoring` artifact definition owns these sources;
+conformance executes or analyzes each package and verifies the documented
+diagnostic spans and chain fields.
+
 Diagnostic fixtures deliberately separate machine contracts from presentation:
 `goldens/diagnostic-machine-v1.json` freezes structured fields and spans, while
 `goldens/diagnostic-presentation-v1.json` freezes terminal text and its explicit

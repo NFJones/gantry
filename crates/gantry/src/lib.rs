@@ -3,6 +3,11 @@
 //! The facade is the supported Rust API boundary. Feature flags describe which
 //! implementation layers are compiled, while profile advertisement includes
 //! only layers whose conformance gates have closed.
+//!
+//! Generic and trait analysis is available through [`AnalyzePackageResult`].
+//! Source authors can use the repository's `docs/generics-and-traits.md` guide;
+//! runtime and durable APIs consume only analyzer-produced closed descriptors
+//! and direct callable identities.
 
 pub mod diagnostic;
 #[cfg(feature = "durable")]

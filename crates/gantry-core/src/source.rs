@@ -409,6 +409,31 @@ impl SourceLimits {
 /// Syntax-only validation enforces the embedded source and constructed-type
 /// limits. Semantic analysis additionally consumes the generic-instantiation
 /// and trait-resolution budgets and enforces the artifact limits.
+/// Every counter starts from zero for each public package activity; the values
+/// are integration policy rather than package or durable-execution identity.
+///
+/// ```
+/// use gantry_core::source::FrontendLimits;
+///
+/// let limits = FrontendLimits::new(
+///     4_096,       // package files
+///     16_777_216,  // bytes in one source file
+///     268_435_456, // cumulative source bytes
+///     4_194_304,   // nontrivia tokens
+///     4_096,       // retained diagnostics
+///     268_435_456, // package-source-manifest bytes
+///     268_435_456, // canonical-IR bytes
+///     268_435_456, // source-map bytes
+///     268_435_456, // generated-schema bytes
+///     256,         // constructed type depth
+///     65_536,      // generic instantiations
+///     1_000_000,   // trait-resolution work units
+/// )?;
+/// assert_eq!(limits.maximum_constructed_type_depth(), 256);
+/// assert_eq!(limits.maximum_generic_instantiations_per_activity(), 65_536);
+/// assert_eq!(limits.maximum_trait_resolution_steps_per_activity(), 1_000_000);
+/// # Ok::<(), gantry_core::source::SourceLimitConfigurationError>(())
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrontendLimits {
     source: SourceLimits,

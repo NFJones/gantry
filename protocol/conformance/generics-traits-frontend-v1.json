@@ -25,8 +25,8 @@
     }
   ],
   "exclusions": [
-    "Name resolution, arity checking, inference, capability proofs, coherence, and trait selection remain analyzer work.",
-    "Generic instantiation and trait-resolution charge sites remain owned by analyzer issues.",
+    "Name resolution, arity checking, inference, capability proofs, coherence, and trait selection are covered by separate analyzer evidence.",
+    "Generic instantiation and trait-resolution charge sites are covered by separate analyzer evidence.",
     "No frontend, analyzer, publication, or release profile claim is enabled by this evidence slice."
   ],
   "profiles": []

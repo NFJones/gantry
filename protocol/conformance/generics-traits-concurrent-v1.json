@@ -142,7 +142,7 @@
   ],
   "advertises_profiles": [],
   "exclusions": [
-    "Durable retention and fresh-process reconstruction remain owned by GNT-GEN-DUR-001.",
+    "Durable retention and fresh-process reconstruction are covered by the separate GNT-GEN-DUR-001 evidence slice.",
     "Formal concurrent and durable refinement amendments remain owned by GNT-GEN-PROOF-002.",
     "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes."
   ]
