@@ -5,11 +5,53 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const MANIFEST_PATH: &str = "protocol/conformance/analyzer-gate-v1.json";
+const MANIFEST_PATH: &str = "protocol/conformance/generics-traits-analyzer-gate-v1.json";
+const PREREQUISITES: [&str; 6] = [
+    "GNT-GEN-AN-001",
+    "GNT-GEN-AN-002",
+    "GNT-GEN-AN-003",
+    "GNT-GEN-AN-004",
+    "GNT-GEN-API-001",
+    "GNT-GEN-PROOF-001",
+];
+const REQUIRED_ARTIFACTS: [&str; 33] = [
+    "crates/gantry-analysis/src/bodies.rs",
+    "crates/gantry-analysis/src/effects.rs",
+    "crates/gantry-analysis/src/generics.rs",
+    "crates/gantry-analysis/src/lowering.rs",
+    "crates/gantry-analysis/src/schemas.rs",
+    "crates/gantry-analysis/src/types.rs",
+    "crates/gantry-conformance/tests/analyzer_gate.rs",
+    "crates/gantry-conformance/tests/analyzer_lowering.rs",
+    "crates/gantry-conformance/tests/analyzer_types.rs",
+    "crates/gantry-conformance/tests/analyzer_validity_model.rs",
+    "crates/gantry-conformance/tests/external_facade_matrix.rs",
+    "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
+    "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
+    "crates/gantry-conformance/tests/ir_contracts.rs",
+    "crates/gantry-conformance/tests/requirements_ledger.rs",
+    "crates/gantry-conformance/tests/validate_package.rs",
+    "crates/gantry/src/lib.rs",
+    "crates/gantry/src/validate.rs",
+    "docs/analyzer-generics-and-traits.md",
+    "docs/analyzer-package-validity.md",
+    "protocol/catalogs/ir-contracts-v1.json",
+    "protocol/catalogs/profiles-v1.json",
+    "protocol/conformance/analyzer-validity-v1.json",
+    "protocol/conformance/generics-traits-frontend-v1.json",
+    "protocol/conformance/generics-traits-ir-v1.json",
+    "protocol/goldens/analyzer-validity-model-v1.json",
+    "protocol/requirements/generated/requirements-v1.json",
+    "protocol/requirements/reviewed-v1.json",
+    "protocol/requirements/section14-v1.json",
+    "protocol/schemas/canonical-ir-v1.schema.json",
+    "protocol/schemas/generated-schema-object-v1.schema.json",
+    "protocol/schemas/package-source-manifest-v1.schema.json",
+    "protocol/schemas/source-map-v1.schema.json",
+];
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -101,10 +143,12 @@ struct Section14Excerpt {
 #[derive(Debug, Deserialize)]
 struct ValidityManifest {
     specification_sha256: String,
+    issue: String,
     profile: String,
     argument: String,
     model: String,
     evidence_manifests: Vec<String>,
+    lemmas: Vec<serde_json::Value>,
 }
 
 #[test]
@@ -112,11 +156,11 @@ fn checked_in_analyzer_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
     assert!(gantry::advertised_profiles().is_empty());
-    assert!(gantry_conformance::evidence_revision_is_expected(
-        &manifest.specification.sha256,
-        gantry::PROFILE_SPECIFICATION_REVISION,
-    ));
-    assert!(validate_manifest(&root, &manifest).is_err());
+    assert_eq!(
+        manifest.specification.sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION
+    );
+    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
@@ -128,21 +172,28 @@ fn analyzer_profile_gate_rejects_stale_artifacts_and_overclaiming() {
     stale.artifacts[0].sha256 = "0".repeat(64);
     assert!(validate_manifest(&root, &stale).is_err());
 
-    let mut overclaim = manifest;
-    overclaim.claim.profiles.push("evaluator".to_owned());
+    let mut overclaim = manifest.clone();
+    overclaim
+        .claim
+        .advertises_profiles
+        .push("analyzer".to_owned());
     assert!(validate_manifest(&root, &overclaim).is_err());
+
+    let mut incomplete = manifest;
+    incomplete.prerequisites.pop();
+    assert!(validate_manifest(&root, &incomplete).is_err());
 }
 
 fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     if manifest.format != "gantry.analyzer-gate-evidence/v1"
-        || manifest.gate != "GNT-GATE-300"
+        || manifest.gate != "GNT-GEN-GATE-300"
         || manifest.status != "verified"
         || manifest.profile != "analyzer"
     {
         return Err("analyzer gate identity or status is invalid".to_owned());
     }
     if manifest.claim.profiles != ["analyzer", "frontend"]
-        || manifest.claim.advertises_profiles != ["analyzer", "frontend"]
+        || !manifest.claim.advertises_profiles.is_empty()
         || manifest.claim.excludes_profiles
             != [
                 "concurrent-evaluator",
@@ -150,13 +201,22 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
                 "embedding",
                 "evaluator",
             ]
-        || !gantry::advertised_profiles().contains(&ConformanceProfile::Analyzer)
-        || !gantry::advertised_profiles().contains(&ConformanceProfile::Frontend)
+        || gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().is_empty()
     {
         return Err("analyzer claim is invalid or overstates a later profile".to_owned());
     }
 
     validate_file_digest(root, &manifest.specification, "specification")?;
+    if manifest
+        .prerequisites
+        .iter()
+        .map(|prerequisite| prerequisite.issue.as_str())
+        .collect::<Vec<_>>()
+        != PREREQUISITES
+    {
+        return Err("analyzer amendment prerequisites are incomplete".to_owned());
+    }
     validate_sorted_unique(
         "prerequisite issues",
         manifest
@@ -175,6 +235,15 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
             .iter()
             .map(|artifact| artifact.path.as_str()),
     )?;
+    if manifest
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.path.as_str())
+        .collect::<Vec<_>>()
+        != REQUIRED_ARTIFACTS
+    {
+        return Err("analyzer amendment artifact set is incomplete".to_owned());
+    }
     for artifact in &manifest.artifacts {
         validate_file_digest(root, artifact, "artifact")?;
     }
@@ -252,10 +321,12 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     let validity: ValidityManifest =
         read_json(&root.join("protocol/conformance/analyzer-validity-v1.json"));
     if validity.specification_sha256 != manifest.specification.sha256
+        || validity.issue != "GNT-GEN-PROOF-001"
         || validity.profile != "analyzer"
         || !root.join(&validity.argument).is_file()
         || !root.join(&validity.model).is_file()
         || validity.evidence_manifests.len() != 6
+        || validity.lemmas.len() != 9
         || validity
             .evidence_manifests
             .iter()
@@ -263,7 +334,15 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     {
         return Err("analyzer validity evidence is incomplete".to_owned());
     }
-    if manifest.validation_commands.is_empty() || manifest.environment_gaps.len() != 1 {
+    validate_sorted_unique(
+        "validation commands",
+        manifest.validation_commands.iter().map(String::as_str),
+    )?;
+    if manifest.environment_gaps
+        != [
+            "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes; hosted macOS qualification is owned by GNT-GEN-REL-001 and is not claimed by this Linux evidence gate.",
+        ]
+    {
         return Err("validation commands or environment gaps are incomplete".to_owned());
     }
     Ok(())

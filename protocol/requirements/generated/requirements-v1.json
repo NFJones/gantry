@@ -92,8 +92,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#written_validity_argument_links_current_public_evidence_and_no_integration_graph",
+                "crates/gantry-conformance/tests/requirements_ledger.rs#generated_ledger_matches_the_exact_specification_revision"
+              ],
               "rationale": null
             },
             {
@@ -495,8 +498,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/requirements_ledger.rs#every_anchor_and_authoring_excerpt_is_independently_accounted_for"
+              ],
               "rationale": null
             },
             {
@@ -2118,8 +2123,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs",
+                "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -2452,8 +2461,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract",
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+              ],
               "rationale": null
             },
             {
@@ -2801,8 +2813,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns",
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay",
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs"
+              ],
               "rationale": null
             },
             {
@@ -2872,8 +2888,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic",
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -2943,8 +2962,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs",
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+              ],
               "rationale": null
             },
             {
@@ -3941,8 +3964,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -6399,8 +6425,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay",
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs"
+              ],
               "rationale": null
             },
             {
@@ -8953,8 +8983,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -9369,8 +9402,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9783,8 +9819,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -9854,8 +9894,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_no_shadowing_and_identifier_security_are_source_backed",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns"
+              ],
               "rationale": null
             },
             {
@@ -9925,8 +9968,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_symbols.rs#public_module_graph_symbols_and_resolution_are_canonical",
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
+              ],
               "rationale": null
             },
             {
@@ -10604,8 +10650,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/validate_package.rs#generic_analysis_policy_charges_are_public_and_failure_atomic",
+                "crates/gantry-conformance/tests/validate_package.rs#validate_and_analyze_enforce_constructed_type_depth_per_activity"
+              ],
               "rationale": null
             },
             {
@@ -12839,8 +12888,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_paths_types_signatures_and_effects_match_the_public_contract",
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_reject_open_runtime_and_noncanonical_inputs"
+              ],
               "rationale": null
             },
             {
@@ -12991,8 +13043,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures"
+              ],
               "rationale": null
             },
             {
@@ -13131,8 +13186,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_impl_targets_and_receivers_are_typed"
+              ],
               "rationale": null
             },
             {
@@ -13977,8 +14034,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+              ],
               "rationale": null
             },
             {
@@ -18166,8 +18226,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs",
+                "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -23169,8 +23233,11 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
               "rationale": null
             },
             {
@@ -23534,8 +23601,12 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic",
+                "crates/gantry-conformance/tests/analyzer_validity_model.rs#bounded_analyzer_validity_model_and_counterexamples_replay"
+              ],
               "rationale": null
             },
             {
@@ -23946,8 +24017,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_lexical_evidence.rs#lexical_requirement_vectors_cover_reviewed_clauses"
+              ],
               "rationale": null
             },
             {
@@ -24019,8 +24092,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24092,8 +24167,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24309,8 +24386,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {
@@ -24382,8 +24461,10 @@
           "profile_reviews": [
             {
               "profile": "analyzer",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/frontend_parser_evidence.rs#parser_requirement_vectors_cover_reviewed_grammar"
+              ],
               "rationale": null
             },
             {

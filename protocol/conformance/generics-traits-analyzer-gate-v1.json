@@ -1,0 +1,214 @@
+{
+  "format": "gantry.analyzer-gate-evidence/v1",
+  "gate": "GNT-GEN-GATE-300",
+  "status": "verified",
+  "specification": {
+    "path": "SPEC.md",
+    "sha256": "3dcf458626ec9f72884ce76633fd155622dc06b82d8c35319abf5a4188d38e44"
+  },
+  "profile": "analyzer",
+  "prerequisites": [
+    {
+      "issue": "GNT-GEN-AN-001",
+      "commit": "71e6834b841e1a87acd61d66c88a9da62ef95726",
+      "subject": "Implement generic type analysis."
+    },
+    {
+      "issue": "GNT-GEN-AN-002",
+      "commit": "baca937f1e51c2e4ac88bce7dfaaef8073930d39",
+      "subject": "Implement static trait resolution and coherence."
+    },
+    {
+      "issue": "GNT-GEN-AN-003",
+      "commit": "cc1cc69a54568fdc10bfd1a6e749bd6d49285e45",
+      "subject": "Implement generic body monomorphization and effects."
+    },
+    {
+      "issue": "GNT-GEN-AN-004",
+      "commit": "d0016d93e3338405e7eb5f99983e719fa48b6c39",
+      "subject": "Emit concrete schemas and closed executable artifacts."
+    },
+    {
+      "issue": "GNT-GEN-API-001",
+      "commit": "b5fffb5d7391911d319672a50e76c4bb45657986",
+      "subject": "Expose generic analysis through facade and CLI."
+    },
+    {
+      "issue": "GNT-GEN-PROOF-001",
+      "commit": "29253e9cc4eaf8d74690f7bb2d7bebe026472e02",
+      "subject": "Extend analyzer package-validity argument."
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "crates/gantry-analysis/src/bodies.rs",
+      "sha256": "146d56f1745f7e509365197bf69c541b7e92a81cfe405207839d89078a28910d"
+    },
+    {
+      "path": "crates/gantry-analysis/src/effects.rs",
+      "sha256": "4cd8bcd6b16c8b7497b54c93ced33c9a29271cbfcb398b674fceb65861bc5f17"
+    },
+    {
+      "path": "crates/gantry-analysis/src/generics.rs",
+      "sha256": "71bc8ac66415f36d6f921171685f879c46559db54333135331d29f0deb7b91ee"
+    },
+    {
+      "path": "crates/gantry-analysis/src/lowering.rs",
+      "sha256": "4296ceb93ab1b2f644688c68663a9f43e8d4aa1d439a0b44905041695c8eaf2e"
+    },
+    {
+      "path": "crates/gantry-analysis/src/schemas.rs",
+      "sha256": "20538afdb1e6d44022306809e406c2dc7cf77500068eb4ae73fe1ff447ae69bb"
+    },
+    {
+      "path": "crates/gantry-analysis/src/types.rs",
+      "sha256": "5ab46c8befc1117daa0ecc3b1b826387b184d3ec43b2d9446cf0c8d2d68314d3"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
+      "sha256": "f671a13b375823a745f6d0812040823094032211450c77146654cbd622c56604"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
+      "sha256": "1015892343f4f2b21fadbaba117fa0bde439ce50f05f66465752a58f083cda2a"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_types.rs",
+      "sha256": "3598b9661d50a39efe08b09e6f82ae5216a335d98f2e5c11ab217db59c6ede9f"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
+      "sha256": "e401102e7ce75f2b08604d0073de1e28ab1f8502122068decf5a026be2891d4d"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
+      "sha256": "5a402f5bcf1c13c43420264a45151ac90de16e28249dfb7f0ff4c83fc5add7b1"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
+      "sha256": "d5c9cbc5b0979e363fa465713af06e92578a697927910fe1c7121d489fd2d68d"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
+      "sha256": "7f780d4b6824b49d1514057af5e7c2b4bd9a93e732f232c893618b8b49bca117"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/ir_contracts.rs",
+      "sha256": "f2bf675134f31f0169059a936006b0ddbe4942a50cddbafcd4c88d0a852c2a6a"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/requirements_ledger.rs",
+      "sha256": "7aea4d069a22a45a91065a400f71b559505db881ce52dbb1be346c9bc7f6051a"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/validate_package.rs",
+      "sha256": "a418302978fcabe4924a74e6d3df6abcf2f9e5ac440a6c9412a6c5b164104189"
+    },
+    {
+      "path": "crates/gantry/src/lib.rs",
+      "sha256": "1f063cb0581c1d21de47d5b8f80eb3ce30e5f38b1510600a30b0c84e67321948"
+    },
+    {
+      "path": "crates/gantry/src/validate.rs",
+      "sha256": "144b7045a7b481806c3c7792f3642cbeb3cb13d76cac44456ce66afa4dfe2d32"
+    },
+    {
+      "path": "docs/analyzer-generics-and-traits.md",
+      "sha256": "02b00915098c7f56c1d0b75605e1ba3aa14ca1bc4db271157e7d7cbdcccd6344"
+    },
+    {
+      "path": "docs/analyzer-package-validity.md",
+      "sha256": "2e07ec0f3eb9da03cdae8e551c50e5ae7e4425ad98e5b1b55688ec9f9f9a6085"
+    },
+    {
+      "path": "protocol/catalogs/ir-contracts-v1.json",
+      "sha256": "b0ce3dfd68b57be80d3882a8ed58e37abb737129e714105de23dde152edca468"
+    },
+    {
+      "path": "protocol/catalogs/profiles-v1.json",
+      "sha256": "0c8728ef14df80eb2dc7d5218ea2a2fec7bd94ca1ae8a52cf474ce5521d19c3c"
+    },
+    {
+      "path": "protocol/conformance/analyzer-validity-v1.json",
+      "sha256": "3d5dfe5de8514636ba53bd1cf1479b7c4b7cdd41b5fa67d1e1756b88c05c12d3"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-frontend-v1.json",
+      "sha256": "a04314ac128e3c6c748633142e435bc21e8744bf392f5a64c71ae9771515878d"
+    },
+    {
+      "path": "protocol/conformance/generics-traits-ir-v1.json",
+      "sha256": "fa309f7223c3df394ecb24eba99bdb1caedd555b30a85efd5bc0b0624c76fd9e"
+    },
+    {
+      "path": "protocol/goldens/analyzer-validity-model-v1.json",
+      "sha256": "25d78122e545e9a091a07c48efb91b940111000cef9bd8a30d21205104ed0b99"
+    },
+    {
+      "path": "protocol/requirements/generated/requirements-v1.json",
+      "sha256": "d50fd3303d2efe33a2327966c853e74bdc0f23c293002fccb66e77dab675fbf7"
+    },
+    {
+      "path": "protocol/requirements/reviewed-v1.json",
+      "sha256": "3ea501dec37d381314526b3f4d0f7ac7355fb423b4ddacd0f3a85f8f4e70f944"
+    },
+    {
+      "path": "protocol/requirements/section14-v1.json",
+      "sha256": "ea04658a656203931db9e7f805b1b2c7f5ebd90fd113da227c692b3dc912e0e5"
+    },
+    {
+      "path": "protocol/schemas/canonical-ir-v1.schema.json",
+      "sha256": "2688463892cbf1423a90efd1542f2d96e5b3d81e10c89ad0998bb4e063436fea"
+    },
+    {
+      "path": "protocol/schemas/generated-schema-object-v1.schema.json",
+      "sha256": "aa65151e6a8fc4de6dab2360f2105f64fd01fc1fb0ed24a93660d5ab748986ab"
+    },
+    {
+      "path": "protocol/schemas/package-source-manifest-v1.schema.json",
+      "sha256": "5de05c973e4e8db791b8cc68c86912390f095c3cec2fdd5fd4f8e691736c48c0"
+    },
+    {
+      "path": "protocol/schemas/source-map-v1.schema.json",
+      "sha256": "109e2c94cc55bc10458734d042a85775f1c5de98cf6fe0fff5985095ab6ec1fa"
+    }
+  ],
+  "review_summary": {
+    "applicable_clause_count": 291,
+    "covered_count": 224,
+    "not_applicable_count": 67
+  },
+  "section14_excerpt_count": 51,
+  "claim": {
+    "profiles": ["analyzer", "frontend"],
+    "advertises_profiles": [],
+    "excludes_profiles": [
+      "concurrent-evaluator",
+      "durable-runtime",
+      "embedding",
+      "evaluator"
+    ]
+  },
+  "validation_commands": [
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just check",
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just clippy",
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 300s just fmt",
+    "RUSTUP_TOOLCHAIN=1.97.1 timeout 600s just test",
+    "RUSTUP_TOOLCHAIN=stable timeout 300s just check",
+    "RUSTUP_TOOLCHAIN=stable timeout 300s just clippy",
+    "RUSTUP_TOOLCHAIN=stable timeout 300s just fmt",
+    "RUSTUP_TOOLCHAIN=stable timeout 600s just test",
+    "cargo +1.97.1 run --locked -p xtask -- check generated",
+    "cargo +1.97.1 run --locked -p xtask -- check governance",
+    "cargo +1.97.1 run --locked -p xtask -- check workspace",
+    "cargo +1.97.1 test -p gantry-conformance --test analyzer_gate -- --nocapture",
+    "cargo +stable run --locked -p xtask -- check generated",
+    "cargo +stable run --locked -p xtask -- check governance",
+    "cargo +stable run --locked -p xtask -- check workspace",
+    "cargo +stable test -p gantry-conformance --test analyzer_gate -- --nocapture",
+    "git diff --check"
+  ],
+  "environment_gaps": [
+    "Global profile advertisement remains withheld until the complete generics-and-traits adoption gate closes; hosted macOS qualification is owned by GNT-GEN-REL-001 and is not claimed by this Linux evidence gate."
+  ]
+}
