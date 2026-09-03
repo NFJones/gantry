@@ -1,0 +1,70 @@
+{
+  "format": "gantry.tokio-executor-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-TOKIO-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3.3",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3.3-runtime-ownership",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3.6",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-7.4",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-15.1",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.9",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "caller-owned-runtime-progress",
+      "evidence": "crates/gantry-conformance/tests/tokio_executor.rs#caller_owned_runtime_matrix_keeps_runnable_work_making_progress"
+    },
+    {
+      "id": "multithread-overlap",
+      "evidence": "crates/gantry-conformance/tests/tokio_executor.rs#multithread_runtime_polls_owned_send_tasks_concurrently"
+    },
+    {
+      "id": "multithread-worker-migration",
+      "evidence": "crates/gantry-conformance/tests/tokio_executor.rs#multithread_runtime_preserves_owned_tasks_across_worker_migration"
+    },
+    {
+      "id": "runtime-shutdown-failures",
+      "evidence": "crates/gantry-conformance/tests/tokio_executor.rs#runtime_shutdown_reports_structured_task_and_service_failures"
+    },
+    {
+      "id": "stop-panic-stale-wake",
+      "evidence": "crates/gantry-conformance/tests/tokio_executor.rs#abort_drop_panic_and_stale_wakes_settle_once"
+    }
+  ],
+  "exclusions": [
+    "The adapter constructs no runtime; callers supply a Tokio Handle, so owned-runtime nesting and shutdown protocol are not applicable.",
+    "CLI runtime defaults and worker-count validation remain owned by GNT-ASYNC-CLI-001.",
+    "Gantry semantic task settlement and physical handle registries remain owned by driver and supervision issues.",
+    "Package blocking-work admission remains owned by GNT-ASYNC-BLOCK-001."
+  ]
+}
