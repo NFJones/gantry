@@ -21,7 +21,7 @@ use gantry_observe::SinkPlan;
 use gantry_runtime::{
     AcceptExecutionError, AdapterPoison, AdmissionKind, BoundaryFailure, CanonicalTranscriptV1,
     ExecutionHandle, InterpreterConfiguration, InterpreterLifecycle, LifecycleError,
-    OperationAdmission,
+    OperationAdmission, OwnedActivityError,
 };
 
 use crate::{
@@ -207,7 +207,7 @@ pub struct StartExecutionCoordinator<'a> {
     pub(crate) lifecycle: &'a InterpreterLifecycle,
     configuration: &'a InterpreterConfiguration,
     allocator: &'a FreshIdentityAllocator,
-    preflight: &'a dyn IntegrationPreflight,
+    preflight: Arc<dyn IntegrationPreflight>,
     preflight_poison: AdapterPoison,
 }
 
@@ -219,7 +219,7 @@ impl<'a> StartExecutionCoordinator<'a> {
         lifecycle: &'a InterpreterLifecycle,
         configuration: &'a InterpreterConfiguration,
         allocator: &'a FreshIdentityAllocator,
-        preflight: &'a dyn IntegrationPreflight,
+        preflight: Arc<dyn IntegrationPreflight>,
     ) -> Self {
         Self {
             package,
@@ -476,16 +476,15 @@ impl<'a> StartExecutionCoordinator<'a> {
             Arc::<[u8]>::from(payload.into_bytes()),
         )
         .map_err(envelope_failure)?;
-        let future = self
-            .lifecycle
-            .catch_adapter(&self.preflight_poison, || self.preflight.call(request))
-            .map_err(boundary_failure)?;
         let response = self
             .lifecycle
-            .contain_adapter_future(future, self.preflight_poison.clone())
+            .call_owned_preflight(
+                Arc::clone(&self.preflight),
+                self.preflight_poison.clone(),
+                request,
+            )
             .await
-            .map_err(boundary_failure)?
-            .map_err(host_failure)?;
+            .map_err(owned_activity_failure)?;
         if response.version() != EmbeddingVersion::V1 || response.operation() != operation {
             return Err(failure(
                 StartFailureCategory::IntegrationPreflight,
@@ -735,6 +734,21 @@ fn host_failure(error: HostError) -> StartExecutionFailure {
         category: StartFailureCategory::IntegrationPreflight,
         code: error.code,
         package_activity: None,
+    }
+}
+
+fn owned_activity_failure(error: OwnedActivityError) -> StartExecutionFailure {
+    match error {
+        OwnedActivityError::Admission(_) => failure(
+            StartFailureCategory::ImplementationResourceExhaustion,
+            "public-activity-capacity",
+        ),
+        OwnedActivityError::Executor(_) => failure(
+            StartFailureCategory::ImplementationResourceExhaustion,
+            "public-activity-submission-failure",
+        ),
+        OwnedActivityError::Host(error) => host_failure(error),
+        OwnedActivityError::Boundary(error) => boundary_failure(error),
     }
 }
 

@@ -218,13 +218,13 @@ fn syntax_and_analysis_rejections_cross_no_preflight_or_execution_boundary() {
         let allocator = FreshIdentityAllocator::default();
         let clock = FixedClock;
         let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
-        let preflight = RecordingPreflight::resolved(Arc::clone(&services));
+        let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
         let coordinator = StartExecutionCoordinator::new(
             &package,
             &lifecycle,
             &configuration,
             &allocator,
-            &preflight,
+            preflight.clone(),
         );
         let selection = selection();
 
@@ -248,13 +248,13 @@ fn constructed_type_depth_rejects_start_before_preflight_or_execution_identity()
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
     let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
-    let preflight = RecordingPreflight::resolved(Arc::clone(&services));
+    let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
     let coordinator = StartExecutionCoordinator::new(
         &package,
         &lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let selection = selection();
 
@@ -289,13 +289,13 @@ fn main(value: Input) -> Input { value }
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
     let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
-    let preflight = RecordingPreflight::resolved(Arc::clone(&services));
+    let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
     let coordinator = StartExecutionCoordinator::new(
         &package,
         &lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let selection = selection();
     let session_id = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0xf0; 32])
@@ -410,13 +410,16 @@ fn preflight_failure_allocates_no_root_or_execution_identity() {
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
     let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
-    let preflight = RecordingPreflight::failing(Arc::clone(&services), "mapping-provider-failure");
+    let preflight = Arc::new(RecordingPreflight::failing(
+        Arc::clone(&services),
+        "mapping-provider-failure",
+    ));
     let coordinator = StartExecutionCoordinator::new(
         &package,
         &lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let selection = selection();
 
@@ -448,13 +451,13 @@ fn malformed_mapping_revision_response_rejects_before_execution_identity() {
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
     let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
-    let preflight = RecordingPreflight::malformed_mapping(Arc::clone(&services));
+    let preflight = Arc::new(RecordingPreflight::malformed_mapping(Arc::clone(&services)));
     let coordinator = StartExecutionCoordinator::new(
         &package,
         &lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let selection = selection();
 

@@ -101,7 +101,7 @@ impl Interpreter {
             &self.lifecycle,
             &self.configuration,
             &self.allocator,
-            self.preflight.as_ref(),
+            Arc::clone(&self.preflight),
         )
         .start(request)
         .await

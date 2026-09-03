@@ -13,14 +13,20 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{
     CancellationReasonCategory, IdentityKind, InterpreterState, ShutdownCause,
 };
-use gantry_host::contracts::{CancellationSignal, DurationMicros, HostFuture};
+use gantry_host::contracts::{
+    CancellationSignal, DurationMicros, ExecutorAdapter, HostError, HostFuture, HostRequest,
+    HostResponse, IntegrationPreflight, OwnedTaskResult, SubmittedTask,
+};
 use gantry_host::event::SinkId;
 
 use crate::containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
     contain_integration_future,
 };
-use crate::{InterpreterConfiguration, MachineOutcome};
+use crate::{
+    AdmissionClass, AdmissionExhaustion, AdmissionRequest, AsyncAdmission,
+    InterpreterConfiguration, MachineOutcome,
+};
 
 static NEXT_INTERPRETER_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_WAITER_ID: AtomicU64 = AtomicU64::new(1);
@@ -478,9 +484,13 @@ impl InterpreterLifecycle {
                     graceful: configuration.graceful_shutdown_timeout(),
                     drain: configuration.post_cancellation_drain(),
                 },
+                executor: configuration.executor_arc(),
+                activity_admission: configuration.async_admission(),
+                activity_handles: Mutex::new(Vec::new()),
                 data: Mutex::new(LifecycleData {
                     state: LifecyclePhase::Running,
                     admitted_calls: 0,
+                    owned_activities: 0,
                     reserved_executions: BTreeSet::new(),
                     executions: BTreeMap::new(),
                     progress_waiters: Vec::new(),
@@ -530,6 +540,82 @@ impl InterpreterLifecycle {
     pub fn snapshot(&self) -> LifecycleSnapshot {
         let data = self.inner.lock();
         lifecycle_snapshot(&data)
+    }
+
+    /// Transfers one preflight operation to caller-independent owned activity state.
+    ///
+    /// The returned waiter may be dropped without cancelling the operation. A
+    /// pending operation retains its integration service, operational permit,
+    /// and executor handle until the owned task reaches its terminal boundary.
+    #[must_use]
+    pub fn call_owned_preflight(
+        &self,
+        service: Arc<dyn IntegrationPreflight>,
+        poison: AdapterPoison,
+        request: HostRequest,
+    ) -> OwnedPreflightWait {
+        let reservation = match self
+            .inner
+            .activity_admission
+            .try_reserve(AdmissionRequest::single(AdmissionClass::PublicActivity, 1))
+        {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                let state = Arc::new(Mutex::new(OwnedPreflightState::default()));
+                settle_owned_preflight(&state, Err(OwnedActivityError::Admission(error)));
+                return OwnedPreflightWait { state };
+            }
+        };
+        let state = Arc::new(Mutex::new(OwnedPreflightState {
+            result: None,
+            waiters: Vec::new(),
+            lease: Some(OwnedActivityLease {
+                _permit: reservation.transfer(),
+                _token: OwnedActivityToken::new(&self.inner),
+            }),
+        }));
+        let interpreter_id = self.inner.id;
+        let mut operation = Box::pin(async move {
+            let future = {
+                let _extent = AdapterExtent::enter(interpreter_id);
+                catch_integration(&poison, || service.call(request))
+                    .map_err(OwnedActivityError::Boundary)?
+            };
+            let response = AdapterFuture {
+                interpreter_id,
+                future: Some(contain_integration_future(future, poison)),
+            }
+            .await
+            .map_err(OwnedActivityError::Boundary)?
+            .map_err(OwnedActivityError::Host)?;
+            Ok(response)
+        });
+
+        let mut context = Context::from_waker(Waker::noop());
+        if let Poll::Ready(result) = operation.as_mut().poll(&mut context) {
+            settle_owned_preflight(&state, result);
+            return OwnedPreflightWait { state };
+        }
+
+        let task_state = Arc::clone(&state);
+        let task = Box::pin(async move {
+            let result = operation.await;
+            settle_owned_preflight(&task_state, result);
+            OwnedTaskResult::new()
+        });
+        match self.inner.executor.spawn(task) {
+            Ok(handle) => lock_activity_handles(&self.inner.activity_handles).push(handle),
+            Err(error) => {
+                settle_owned_preflight(&state, Err(OwnedActivityError::Executor(error)));
+            }
+        }
+        OwnedPreflightWait { state }
+    }
+
+    /// Returns submitted activity handles retained for later physical supervision.
+    #[must_use]
+    pub fn owned_activity_submitted_task_count(&self) -> usize {
+        lock_activity_handles(&self.inner.activity_handles).len()
     }
 
     /// Performs a snapshot-consistent in-process execution query.
@@ -933,6 +1019,107 @@ impl Drop for OperationAdmission {
     }
 }
 
+/// Failure while admitting or running one caller-independent preflight activity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OwnedActivityError {
+    /// The bounded public-activity class was saturated before invocation.
+    Admission(AdmissionExhaustion),
+    /// The executor could not accept the owned activity task.
+    Executor(HostError),
+    /// Integration code returned a structured host failure.
+    Host(HostError),
+    /// Integration code panicked while invoked, polled, cancelled, or destroyed.
+    Boundary(BoundaryFailure),
+}
+
+/// Caller-facing observation of one caller-independent preflight operation.
+///
+/// Dropping this waiter removes only the caller's observation. The owned
+/// activity retains its service, permit, and executor task until settlement.
+pub struct OwnedPreflightWait {
+    state: Arc<Mutex<OwnedPreflightState>>,
+}
+
+impl Future for OwnedPreflightWait {
+    type Output = Result<HostResponse, OwnedActivityError>;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut state = lock_owned_preflight(&self.state);
+        if let Some(result) = &state.result {
+            return Poll::Ready(result.clone());
+        }
+        register_waker(&mut state.waiters, context.waker());
+        Poll::Pending
+    }
+}
+
+#[derive(Default)]
+struct OwnedPreflightState {
+    result: Option<Result<HostResponse, OwnedActivityError>>,
+    waiters: Vec<Waker>,
+    lease: Option<OwnedActivityLease>,
+}
+
+fn settle_owned_preflight(
+    state: &Mutex<OwnedPreflightState>,
+    result: Result<HostResponse, OwnedActivityError>,
+) {
+    let (waiters, lease) = {
+        let mut state = lock_owned_preflight(state);
+        if state.result.is_some() {
+            return;
+        }
+        state.result = Some(result);
+        (std::mem::take(&mut state.waiters), state.lease.take())
+    };
+    drop(lease);
+    wake_all(waiters);
+}
+
+fn lock_owned_preflight(state: &Mutex<OwnedPreflightState>) -> MutexGuard<'_, OwnedPreflightState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_activity_handles(
+    handles: &Mutex<Vec<Box<dyn SubmittedTask>>>,
+) -> MutexGuard<'_, Vec<Box<dyn SubmittedTask>>> {
+    handles
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+struct OwnedActivityLease {
+    _permit: crate::AdmissionPermit,
+    _token: OwnedActivityToken,
+}
+
+struct OwnedActivityToken {
+    inner: Arc<LifecycleInner>,
+}
+
+impl OwnedActivityToken {
+    fn new(inner: &Arc<LifecycleInner>) -> Self {
+        let mut data = inner.lock();
+        data.owned_activities = data.owned_activities.saturating_add(1);
+        drop(data);
+        Self {
+            inner: Arc::clone(inner),
+        }
+    }
+}
+
+impl Drop for OwnedActivityToken {
+    fn drop(&mut self) {
+        let mut data = self.inner.lock();
+        data.owned_activities = data.owned_activities.saturating_sub(1);
+        let progress = std::mem::take(&mut data.progress_waiters);
+        drop(data);
+        wake_all(progress);
+    }
+}
+
 /// Rejection while transferring an admitted invocation into execution state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AcceptExecutionError {
@@ -1116,6 +1303,9 @@ impl ShutdownCoordinator {
         if data.admitted_calls != 0 {
             return Err(ShutdownCompletionError::AdmittedCallsPending);
         }
+        if data.owned_activities != 0 {
+            return Err(ShutdownCompletionError::OwnedActivitiesPending);
+        }
         if !pending_executions(&data).is_empty() {
             return Err(ShutdownCompletionError::ExecutionsPending);
         }
@@ -1176,6 +1366,8 @@ pub enum ShutdownCompletionError {
     NotShuttingDown,
     /// Previously admitted public invocations have not finished or transferred work.
     AdmittedCallsPending,
+    /// Caller-independent activities have not reached their terminal ownership state.
+    OwnedActivitiesPending,
     /// At least one cohort execution remains nonterminal.
     ExecutionsPending,
     /// Clean shutdown must settle or exhaust the final standard event.
@@ -1224,7 +1416,10 @@ impl Future for ShutdownProgress {
             return Poll::Ready(());
         };
         let mut data = inner.lock();
-        if data.admitted_calls == 0 && pending_executions(&data).is_empty() {
+        if data.admitted_calls == 0
+            && data.owned_activities == 0
+            && pending_executions(&data).is_empty()
+        {
             Poll::Ready(())
         } else {
             register_waker(&mut data.progress_waiters, context.waker());
@@ -1244,6 +1439,8 @@ pub struct LifecycleSnapshot {
     pub durations: Option<ShutdownDurations>,
     /// Number of admitted public invocations not yet completed or transferred.
     pub admitted_calls: u64,
+    /// Number of caller-independent activities not yet settled.
+    pub owned_activities: u64,
     /// Current shutdown cohort in execution-identity order.
     pub cohort: Arc<[ProtocolIdentity]>,
 }
@@ -1252,6 +1449,9 @@ struct LifecycleInner {
     id: u64,
     owners: AtomicUsize,
     default_durations: ShutdownDurations,
+    executor: Arc<dyn ExecutorAdapter>,
+    activity_admission: AsyncAdmission,
+    activity_handles: Mutex<Vec<Box<dyn SubmittedTask>>>,
     data: Mutex<LifecycleData>,
 }
 
@@ -1317,6 +1517,7 @@ impl LifecycleInner {
 struct LifecycleData {
     state: LifecyclePhase,
     admitted_calls: u64,
+    owned_activities: u64,
     reserved_executions: BTreeSet<ProtocolIdentity>,
     executions: BTreeMap<ProtocolIdentity, ExecutionRecord>,
     progress_waiters: Vec<Waker>,
@@ -1490,6 +1691,7 @@ fn lifecycle_snapshot(data: &LifecycleData) -> LifecycleSnapshot {
             cause: None,
             durations: None,
             admitted_calls: data.admitted_calls,
+            owned_activities: data.owned_activities,
             cohort: Arc::from([]),
         },
         LifecyclePhase::ShuttingDown(shutdown) => LifecycleSnapshot {
@@ -1497,6 +1699,7 @@ fn lifecycle_snapshot(data: &LifecycleData) -> LifecycleSnapshot {
             cause: Some(shutdown.cause),
             durations: Some(shutdown.durations),
             admitted_calls: data.admitted_calls,
+            owned_activities: data.owned_activities,
             cohort: Arc::from(shutdown.cohort.iter().copied().collect::<Vec<_>>()),
         },
         LifecyclePhase::Terminated(report) => LifecycleSnapshot {
@@ -1504,6 +1707,7 @@ fn lifecycle_snapshot(data: &LifecycleData) -> LifecycleSnapshot {
             cause: Some(report.cause),
             durations: Some(report.durations),
             admitted_calls: data.admitted_calls,
+            owned_activities: data.owned_activities,
             cohort: Arc::from(
                 report
                     .cohort

@@ -489,7 +489,7 @@ fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
     let journal_id = JournalId::new("durable-lifecycle-cancellation")
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let clock = FixedClock;
-    let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+    let preflight = Arc::new(ResolvedPreflight::new("agents-v1", "actions-v1"));
     let interpreter_lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
@@ -498,7 +498,7 @@ fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
         &interpreter_lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let durable =
         DurableStartExecutionCoordinator::new(start, &configuration, Arc::clone(&storage_adapter));
@@ -771,7 +771,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let journal_id = JournalId::new("durable-start-resume")
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let clock = FixedClock;
-    let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+    let preflight = Arc::new(ResolvedPreflight::new("agents-v1", "actions-v1"));
 
     let query = DurableLifecycleCoordinator::new(Arc::clone(&storage_adapter));
     let empty = block_on(query.query(DurableQueryExecutionRequest {
@@ -792,7 +792,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         &lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let durable =
         DurableStartExecutionCoordinator::new(start, &configuration, Arc::clone(&storage_adapter));
@@ -920,7 +920,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         &racing_lifecycle,
         &configuration,
         &racing_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let racing = DurableStartExecutionCoordinator::new(
         racing_start,
@@ -959,7 +959,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         &nonfresh_lifecycle,
         &configuration,
         &nonfresh_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let nonfresh = DurableStartExecutionCoordinator::new(
         nonfresh_start,
@@ -996,7 +996,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         &incompatible_lifecycle,
         &incompatible_configuration,
         &incompatible_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let incompatible = DurableStartExecutionCoordinator::new(
         incompatible_start,
@@ -1033,7 +1033,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         &resume_lifecycle,
         &configuration,
         &resume_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let resume = DurableStartExecutionCoordinator::new(
         resume_start,
@@ -1080,7 +1080,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         &limited_lifecycle,
         &limited_configuration,
         &limited_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let limited_resume = DurableStartExecutionCoordinator::new(
         limited_start,
@@ -1118,7 +1118,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         &candidate_lifecycle,
         &configuration,
         &candidate_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let candidate_resume = DurableStartExecutionCoordinator::new(
         candidate_start,
@@ -1157,13 +1157,13 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let revised_allocator = FreshIdentityAllocator::default();
     let revised_package =
         AnalyzePackageCoordinator::new(&revised_allocator, services.as_ref(), &clock);
-    let revised_preflight = ResolvedPreflight::new("agents-v2", "actions-v2");
+    let revised_preflight = Arc::new(ResolvedPreflight::new("agents-v2", "actions-v2"));
     let revised_start = StartExecutionCoordinator::new(
         &revised_package,
         &revised_lifecycle,
         &revised_configuration,
         &revised_allocator,
-        &revised_preflight,
+        revised_preflight.clone(),
     );
     let revised_resume = DurableStartExecutionCoordinator::new(
         revised_start,
@@ -1213,13 +1213,13 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let best_effort_allocator = FreshIdentityAllocator::default();
     let best_effort_package =
         AnalyzePackageCoordinator::new(&best_effort_allocator, services.as_ref(), &clock);
-    let best_effort_preflight = ResolvedPreflight::new("agents-v2", "actions-v2");
+    let best_effort_preflight = Arc::new(ResolvedPreflight::new("agents-v2", "actions-v2"));
     let best_effort_start = StartExecutionCoordinator::new(
         &best_effort_package,
         &best_effort_lifecycle,
         &best_effort_configuration,
         &best_effort_allocator,
-        &best_effort_preflight,
+        best_effort_preflight.clone(),
     );
     let best_effort_resume = DurableStartExecutionCoordinator::new(
         best_effort_start,
@@ -1262,13 +1262,13 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let yield_lifecycle = InterpreterLifecycle::new(&yield_configuration);
     let yield_allocator = FreshIdentityAllocator::default();
     let yield_package = AnalyzePackageCoordinator::new(&yield_allocator, services.as_ref(), &clock);
-    let yield_preflight = ResolvedPreflight::new("agents-v2", "actions-v2");
+    let yield_preflight = Arc::new(ResolvedPreflight::new("agents-v2", "actions-v2"));
     let yield_start = StartExecutionCoordinator::new(
         &yield_package,
         &yield_lifecycle,
         &yield_configuration,
         &yield_allocator,
-        &yield_preflight,
+        yield_preflight.clone(),
     );
     let yield_resume = DurableStartExecutionCoordinator::new(
         yield_start,
@@ -1326,7 +1326,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     let journal_id = JournalId::new("durable-generic-artifacts")
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let clock = FixedClock;
-    let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+    let preflight = Arc::new(ResolvedPreflight::new("agents-v1", "actions-v1"));
 
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
@@ -1336,7 +1336,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         &lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let durable =
         DurableStartExecutionCoordinator::new(start, &configuration, Arc::clone(&storage_adapter));
@@ -1530,7 +1530,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         &source_free_lifecycle,
         &configuration,
         &source_free_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let source_free_resume = DurableStartExecutionCoordinator::new(
         source_free_start,
@@ -1610,7 +1610,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         &candidate_lifecycle,
         &configuration,
         &candidate_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let candidate_resume = DurableStartExecutionCoordinator::new(
         candidate_start,
@@ -1695,7 +1695,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         &tamper_lifecycle,
         &configuration,
         &tamper_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let tamper_resume = DurableStartExecutionCoordinator::new(
         tamper_start,
@@ -1756,7 +1756,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         &malformed_lifecycle,
         &configuration,
         &malformed_allocator,
-        &preflight,
+        preflight.clone(),
     );
     let malformed_resume = DurableStartExecutionCoordinator::new(
         malformed_start,
@@ -1876,7 +1876,7 @@ fn start_owned_lifecycle(
     let journal_id = JournalId::new(journal_name)
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let clock = FixedClock;
-    let preflight = ResolvedPreflight::new("agents-v1", "actions-v1");
+    let preflight = Arc::new(ResolvedPreflight::new("agents-v1", "actions-v1"));
     let interpreter_lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
@@ -1885,7 +1885,7 @@ fn start_owned_lifecycle(
         &interpreter_lifecycle,
         &configuration,
         &allocator,
-        &preflight,
+        preflight.clone(),
     );
     let durable =
         DurableStartExecutionCoordinator::new(start, &configuration, Arc::clone(&storage));

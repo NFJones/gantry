@@ -1,0 +1,29 @@
+{
+  "format": "gantry.owned-activity-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-ACT-001",
+  "capabilities": [
+    {
+      "id": "caller-independent-ownership",
+      "evidence": "crates/gantry-conformance/tests/owned_activities.rs#dropped_waiter_retains_dependencies_and_must_settle_progress"
+    },
+    {
+      "id": "panic-and-reentry-containment",
+      "evidence": "crates/gantry-conformance/tests/owned_activities.rs#owned_activity_contains_panics_and_rejects_reentrant_callbacks"
+    },
+    {
+      "id": "public-activity-saturation",
+      "evidence": "crates/gantry-conformance/tests/owned_activities.rs#public_activity_saturation_is_pre_invocation_and_releases_once"
+    },
+    {
+      "id": "shutdown-quiescence",
+      "evidence": "crates/gantry-conformance/tests/owned_activities.rs#shutdown_waits_for_caller_independent_activity_settlement"
+    }
+  ],
+  "exclusions": [
+    "RuntimeSessionService establishment is independently owned by GNT-ASYNC-SESS-001.",
+    "Blocking queue cancellation and started-job retention remain owned by GNT-ASYNC-BLOCK-001.",
+    "Event-delivery worker ownership and barriers remain owned by GNT-ASYNC-REVENT-001 and GNT-ASYNC-OBS-001.",
+    "Common physical handle reaping and final registry release remain owned by GNT-ASYNC-SUP-001."
+  ]
+}

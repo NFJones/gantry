@@ -82,9 +82,10 @@ pub use lifecycle::{
     AcceptExecutionError, AdmissionKind, CancellationCausalIdentity, CancellationReason,
     CancellationReasonError, CancellationRecord, ExecutionHandle, ExecutionSnapshot,
     ExecutionTransitionError, ExecutionWait, FinalShutdownEventSettlement, InterpreterLifecycle,
-    LifecycleCode, LifecycleError, LifecycleSnapshot, OperationAdmission, RequiredDeliveryRecordV1,
-    RequiredEventDeliveryFailureV1, ShutdownAdmission, ShutdownCompletionError,
-    ShutdownCoordinator, ShutdownDurations, ShutdownProgress, ShutdownReport, ShutdownWait,
+    LifecycleCode, LifecycleError, LifecycleSnapshot, OperationAdmission, OwnedActivityError,
+    OwnedPreflightWait, RequiredDeliveryRecordV1, RequiredEventDeliveryFailureV1,
+    ShutdownAdmission, ShutdownCompletionError, ShutdownCoordinator, ShutdownDurations,
+    ShutdownProgress, ShutdownReport, ShutdownWait,
 };
 pub use machine::{
     Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
