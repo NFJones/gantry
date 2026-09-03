@@ -213,9 +213,10 @@ fn public_spawned_sessions_establish_once_before_child_use() {
 
     let services = Arc::new(Services);
     let configuration = configuration(Arc::clone(&services));
+    let lifecycle = gantry::runtime::InterpreterLifecycle::new(&configuration);
     let session_service = Arc::new(RecordingSessionService::default());
     let establisher = SessionEstablisher::new(
-        configuration.executor_arc(),
+        lifecycle.task_supervisor(),
         session_service.clone(),
         AdapterPoison::default(),
     );

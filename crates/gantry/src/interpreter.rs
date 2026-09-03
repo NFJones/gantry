@@ -71,7 +71,7 @@ impl Interpreter {
     ) -> Self {
         let lifecycle = InterpreterLifecycle::new(&configuration);
         let session_establisher = SessionEstablisher::new(
-            configuration.executor_arc(),
+            lifecycle.task_supervisor(),
             runtime_sessions,
             AdapterPoison::default(),
         );

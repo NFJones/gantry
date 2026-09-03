@@ -295,7 +295,7 @@ fn public_session_establishment_is_idempotent_and_precedes_hook_creation() {
         creations: AtomicUsize::new(0),
     };
     let establisher = SessionEstablisher::new(
-        configuration.executor_arc(),
+        lifecycle.task_supervisor(),
         session_service,
         AdapterPoison::default(),
     );
@@ -356,7 +356,7 @@ fn public_session_establishment_is_idempotent_and_precedes_hook_creation() {
         creations: AtomicUsize::new(0),
     };
     let failed_establisher = SessionEstablisher::new(
-        configuration.executor_arc(),
+        lifecycle.task_supervisor(),
         failed_service,
         AdapterPoison::default(),
     );
@@ -418,7 +418,7 @@ fn public_session_cancellation_after_establishment_prevents_hook_creation() {
         creations: AtomicUsize::new(0),
     };
     let establisher = SessionEstablisher::new(
-        configuration.executor_arc(),
+        lifecycle.task_supervisor(),
         session_service,
         AdapterPoison::default(),
     );

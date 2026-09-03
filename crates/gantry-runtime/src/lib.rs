@@ -24,6 +24,7 @@ mod outcome;
 #[cfg(feature = "durable")]
 mod recovery;
 mod session;
+mod supervision;
 #[cfg(feature = "concurrent")]
 mod task;
 
@@ -123,6 +124,11 @@ pub use session::{
 };
 #[cfg(feature = "durable")]
 pub use session::{LogicalSessionRegistryCheckpointV1, SessionRecoveryError};
+pub use supervision::{
+    AbnormalCompletionHandler, SupervisedCompletionWait, SupervisedTask, SupervisedTaskDomain,
+    SupervisedTaskSnapshot, SupervisionRegistration, SupervisionSignal, TaskSupervisor,
+    TaskSupervisorSnapshot,
+};
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use task::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV1,

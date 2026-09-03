@@ -400,6 +400,32 @@ pub struct AdmissionPermit {
 }
 
 impl AdmissionPermit {
+    pub(crate) fn matches(
+        &self,
+        admission: &AsyncAdmission,
+        resource: AdmissionResourceClass,
+    ) -> bool {
+        let Some(lease) = &self.lease else {
+            return false;
+        };
+        if !Arc::ptr_eq(&lease.admission.inner, &admission.inner) {
+            return false;
+        }
+        match resource {
+            AdmissionResourceClass::Ordinary(class) => {
+                lease.control_plane == 0
+                    && lease.ordinary[class.index()] == 1
+                    && AdmissionClass::ACQUISITION_ORDER
+                        .into_iter()
+                        .filter(|candidate| *candidate != class)
+                        .all(|candidate| lease.ordinary[candidate.index()] == 0)
+            }
+            AdmissionResourceClass::ControlPlaneTask => {
+                lease.control_plane == 1 && lease.ordinary.into_iter().all(|count| count == 0)
+            }
+        }
+    }
+
     /// Releases capacity after physical settlement or completed bounded rollback.
     pub fn release(mut self) {
         if let Some(lease) = self.lease.take() {

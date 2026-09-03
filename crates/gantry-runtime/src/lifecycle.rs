@@ -14,8 +14,8 @@ use gantry_core::portable::{
     CancellationReasonCategory, IdentityKind, InterpreterState, ShutdownCause,
 };
 use gantry_host::contracts::{
-    CancellationSignal, DurationMicros, ExecutorAdapter, HostError, HostFuture, HostRequest,
-    HostResponse, IntegrationPreflight, OwnedTaskResult, SubmittedTask,
+    CancellationSignal, DurationMicros, HostError, HostFuture, HostRequest, HostResponse,
+    IntegrationPreflight, OwnedTaskCompletion, OwnedTaskPanicOrigin, OwnedTaskResult,
 };
 use gantry_host::event::SinkId;
 
@@ -24,8 +24,8 @@ use crate::containment::{
     contain_integration_future,
 };
 use crate::{
-    AdmissionClass, AdmissionExhaustion, AdmissionRequest, AsyncAdmission,
-    InterpreterConfiguration, MachineOutcome,
+    AbnormalCompletionHandler, AdmissionClass, AdmissionExhaustion, InterpreterConfiguration,
+    MachineOutcome, SupervisedTaskDomain, TaskSupervisor,
 };
 
 static NEXT_INTERPRETER_ID: AtomicU64 = AtomicU64::new(1);
@@ -476,6 +476,10 @@ impl InterpreterLifecycle {
     /// Publishes a running lifecycle using the configuration's finite defaults.
     #[must_use]
     pub fn new(configuration: &InterpreterConfiguration) -> Self {
+        let supervisor = TaskSupervisor::new(
+            configuration.executor_arc(),
+            configuration.async_admission(),
+        );
         Self {
             inner: Arc::new(LifecycleInner {
                 id: NEXT_INTERPRETER_ID.fetch_add(1, Ordering::Relaxed),
@@ -484,9 +488,7 @@ impl InterpreterLifecycle {
                     graceful: configuration.graceful_shutdown_timeout(),
                     drain: configuration.post_cancellation_drain(),
                 },
-                executor: configuration.executor_arc(),
-                activity_admission: configuration.async_admission(),
-                activity_handles: Mutex::new(Vec::new()),
+                supervisor,
                 data: Mutex::new(LifecycleData {
                     state: LifecyclePhase::Running,
                     admitted_calls: 0,
@@ -542,6 +544,12 @@ impl InterpreterLifecycle {
         lifecycle_snapshot(&data)
     }
 
+    /// Returns the interpreter-wide physical task supervision owner.
+    #[must_use]
+    pub fn task_supervisor(&self) -> TaskSupervisor {
+        self.inner.supervisor.clone()
+    }
+
     /// Transfers one preflight operation to caller-independent owned activity state.
     ///
     /// The returned waiter may be dropped without cancelling the operation. A
@@ -556,8 +564,8 @@ impl InterpreterLifecycle {
     ) -> OwnedPreflightWait {
         let reservation = match self
             .inner
-            .activity_admission
-            .try_reserve(AdmissionRequest::single(AdmissionClass::PublicActivity, 1))
+            .supervisor
+            .try_reserve(AdmissionClass::PublicActivity)
         {
             Ok(reservation) => reservation,
             Err(error) => {
@@ -570,7 +578,6 @@ impl InterpreterLifecycle {
             result: None,
             waiters: Vec::new(),
             lease: Some(OwnedActivityLease {
-                _permit: reservation.transfer(),
                 _token: OwnedActivityToken::new(&self.inner),
             }),
         }));
@@ -597,14 +604,31 @@ impl InterpreterLifecycle {
             return OwnedPreflightWait { state };
         }
 
+        let abnormal_state = Arc::clone(&state);
+        let abnormal: AbnormalCompletionHandler = Arc::new(move |completion| {
+            settle_owned_preflight(
+                &abnormal_state,
+                Err(owned_activity_completion_failure(completion)),
+            );
+        });
+        let registration = self
+            .inner
+            .supervisor
+            .prepare(SupervisedTaskDomain::PublicActivity, Some(abnormal));
+        let signal = registration.signal();
         let task_state = Arc::clone(&state);
         let task = Box::pin(async move {
             let result = operation.await;
             settle_owned_preflight(&task_state, result);
+            signal.settle();
             OwnedTaskResult::new()
         });
-        match self.inner.executor.spawn(task) {
-            Ok(handle) => lock_activity_handles(&self.inner.activity_handles).push(handle),
+        match self
+            .inner
+            .supervisor
+            .submit(registration, task, reservation.transfer())
+        {
+            Ok(handle) => handle.relinquish(),
             Err(error) => {
                 settle_owned_preflight(&state, Err(OwnedActivityError::Executor(error)));
             }
@@ -615,7 +639,9 @@ impl InterpreterLifecycle {
     /// Returns submitted activity handles retained for later physical supervision.
     #[must_use]
     pub fn owned_activity_submitted_task_count(&self) -> usize {
-        lock_activity_handles(&self.inner.activity_handles).len()
+        self.inner
+            .supervisor
+            .active_count(SupervisedTaskDomain::PublicActivity)
     }
 
     /// Performs a snapshot-consistent in-process execution query.
@@ -1082,16 +1108,27 @@ fn lock_owned_preflight(state: &Mutex<OwnedPreflightState>) -> MutexGuard<'_, Ow
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn lock_activity_handles(
-    handles: &Mutex<Vec<Box<dyn SubmittedTask>>>,
-) -> MutexGuard<'_, Vec<Box<dyn SubmittedTask>>> {
-    handles
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+fn owned_activity_completion_failure(completion: OwnedTaskCompletion) -> OwnedActivityError {
+    match completion {
+        OwnedTaskCompletion::Panicked { origin, .. } => {
+            OwnedActivityError::Boundary(BoundaryFailure {
+                origin: match origin {
+                    OwnedTaskPanicOrigin::Integration => PanicOrigin::Integration,
+                    OwnedTaskPanicOrigin::GantryInvariant => PanicOrigin::GantryInvariant,
+                },
+            })
+        }
+        OwnedTaskCompletion::Failed(error) => OwnedActivityError::Executor(error),
+        OwnedTaskCompletion::Completed(_) | OwnedTaskCompletion::Stopped => {
+            OwnedActivityError::Executor(HostError {
+                code: Arc::from("executor-failure"),
+                protected_diagnostic: None,
+            })
+        }
+    }
 }
 
 struct OwnedActivityLease {
-    _permit: crate::AdmissionPermit,
     _token: OwnedActivityToken,
 }
 
@@ -1306,6 +1343,9 @@ impl ShutdownCoordinator {
         if data.owned_activities != 0 {
             return Err(ShutdownCompletionError::OwnedActivitiesPending);
         }
+        if !self.inner.supervisor.is_quiescent() {
+            return Err(ShutdownCompletionError::SupervisedTasksPending);
+        }
         if !pending_executions(&data).is_empty() {
             return Err(ShutdownCompletionError::ExecutionsPending);
         }
@@ -1368,6 +1408,8 @@ pub enum ShutdownCompletionError {
     AdmittedCallsPending,
     /// Caller-independent activities have not reached their terminal ownership state.
     OwnedActivitiesPending,
+    /// Executor-submitted tasks have not reached physical settlement.
+    SupervisedTasksPending,
     /// At least one cohort execution remains nonterminal.
     ExecutionsPending,
     /// Clean shutdown must settle or exhaust the final standard event.
@@ -1416,13 +1458,17 @@ impl Future for ShutdownProgress {
             return Poll::Ready(());
         };
         let mut data = inner.lock();
-        if data.admitted_calls == 0
+        let lifecycle_ready = data.admitted_calls == 0
             && data.owned_activities == 0
-            && pending_executions(&data).is_empty()
-        {
+            && pending_executions(&data).is_empty();
+        if !lifecycle_ready {
+            register_waker(&mut data.progress_waiters, context.waker());
+        }
+        drop(data);
+        let supervision_ready = inner.supervisor.poll_quiescence(context).is_ready();
+        if lifecycle_ready && supervision_ready {
             Poll::Ready(())
         } else {
-            register_waker(&mut data.progress_waiters, context.waker());
             Poll::Pending
         }
     }
@@ -1449,9 +1495,7 @@ struct LifecycleInner {
     id: u64,
     owners: AtomicUsize,
     default_durations: ShutdownDurations,
-    executor: Arc<dyn ExecutorAdapter>,
-    activity_admission: AsyncAdmission,
-    activity_handles: Mutex<Vec<Box<dyn SubmittedTask>>>,
+    supervisor: TaskSupervisor,
     data: Mutex<LifecycleData>,
 }
 
@@ -1510,6 +1554,7 @@ impl LifecycleInner {
         data.state = LifecyclePhase::Terminated(report);
         let waiters = take_all_waiters(&mut data);
         drop(data);
+        self.supervisor.abort_and_relinquish_all();
         wake_all(waiters);
     }
 }

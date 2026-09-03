@@ -9,14 +9,16 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Wake, Waker};
 
 use gantry::host::contracts::{
-    EmbeddingVersion, HostError, HostFuture, HostRequest, HostResponse, RuntimeSessionService,
+    EmbeddingVersion, ExecutorAdapter, HostError, HostFuture, HostRequest, HostResponse,
+    RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::identity::ProtocolIdentity;
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    AdapterPoison, CanonicalTranscriptV1, LogicalSessionRegistryV1, SessionCreationModeV1,
-    SessionEstablisher, SessionEstablishmentError,
+    AdapterPoison, AsyncAdmission, AsyncCapacityLimits, CanonicalTranscriptV1,
+    LogicalSessionRegistryV1, SessionCreationModeV1, SessionEstablisher, SessionEstablishmentError,
+    TaskSupervisor,
 };
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
@@ -143,8 +145,11 @@ fn concurrent_runtime_session_waiters_share_one_must_settle_success() {
     let (execution, session) = session_fixture(1, 2);
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let service = Arc::new(PendingSessionService::default());
-    let establisher =
-        SessionEstablisher::new(executor.clone(), service.clone(), AdapterPoison::default());
+    let establisher = SessionEstablisher::new(
+        supervisor(executor.clone()),
+        service.clone(),
+        AdapterPoison::default(),
+    );
     let first_owner = establisher.clone();
     let second_owner = establisher.clone();
     let mut first = Box::pin(first_owner.establish(execution, &session));
@@ -180,8 +185,11 @@ fn runtime_session_failure_is_fixed_and_fanned_out_once() {
     let (execution, session) = session_fixture(3, 4);
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let service = Arc::new(PendingSessionService::default());
-    let establisher =
-        SessionEstablisher::new(executor.clone(), service.clone(), AdapterPoison::default());
+    let establisher = SessionEstablisher::new(
+        supervisor(executor.clone()),
+        service.clone(),
+        AdapterPoison::default(),
+    );
     let first_owner = establisher.clone();
     let second_owner = establisher.clone();
     let mut first = Box::pin(first_owner.establish(execution, &session));
@@ -225,9 +233,17 @@ fn runtime_session_role_and_driver_future_are_send_owned() {
 
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let service = Arc::new(PendingSessionService::default());
-    let establisher = SessionEstablisher::new(executor, service, AdapterPoison::default());
+    let establisher =
+        SessionEstablisher::new(supervisor(executor), service, AdapterPoison::default());
     let (execution, session) = session_fixture(5, 6);
     assert_send(async move { establisher.establish(execution, &session).await });
+}
+
+fn supervisor(executor: Arc<DeterministicConcurrentExecutor>) -> TaskSupervisor {
+    let executor: Arc<dyn ExecutorAdapter> = executor;
+    let capacities = AsyncCapacityLimits::new(1, 1, 1, 1, 1, 1, 1, 1, 1)
+        .unwrap_or_else(|error| panic!("capacity fixture failed: {error}"));
+    TaskSupervisor::new(executor, AsyncAdmission::new(capacities))
 }
 
 fn session_fixture(

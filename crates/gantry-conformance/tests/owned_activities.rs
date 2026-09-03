@@ -210,7 +210,7 @@ fn dropped_waiter_retains_dependencies_and_must_settle_progress() {
     assert!(dropped.load(Ordering::Acquire));
     assert_eq!(lifecycle.snapshot().owned_activities, 0);
     assert_eq!(public_activity_in_use(&configuration), 0);
-    assert_eq!(lifecycle.owned_activity_submitted_task_count(), 1);
+    assert_eq!(lifecycle.owned_activity_submitted_task_count(), 0);
 }
 
 #[test]

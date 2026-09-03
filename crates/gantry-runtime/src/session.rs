@@ -12,15 +12,17 @@ use gantry_core::portable::IdentityKind;
 use gantry_core::strict_json::{JsonError, JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 use gantry_core::value::ValueLimits;
 use gantry_host::contracts::{
-    EmbeddingVersion, EnvelopeError, ExecutorAdapter, HostError, HostRequest, OwnedTaskResult,
-    RuntimeSessionService, SubmittedTask,
+    EmbeddingVersion, EnvelopeError, HostError, HostRequest, OwnedTaskCompletion,
+    OwnedTaskPanicOrigin, OwnedTaskResult, RuntimeSessionService,
 };
 use gantry_host::embedding::EmbeddingOperation;
 use gantry_ir::generated::{OperationSiteKind, TypeKind};
 use gantry_ir::{StructuralPosition, TypeDescriptor};
 
 use crate::{
-    AdapterPoison, BoundaryFailure, InterpolationInputV1, NamedInputV1, contain_integration_future,
+    AbnormalCompletionHandler, AdapterPoison, AdmissionClass, BoundaryFailure,
+    InterpolationInputV1, NamedInputV1, PanicOrigin, SupervisedTaskDomain, TaskSupervisor,
+    contain_integration_future,
 };
 
 #[cfg(feature = "durable")]
@@ -470,11 +472,10 @@ pub struct SessionEstablisher {
 }
 
 struct SessionEstablisherInner {
-    executor: Arc<dyn ExecutorAdapter>,
+    supervisor: TaskSupervisor,
     service: Arc<dyn RuntimeSessionService>,
     poison: AdapterPoison,
     entries: Arc<EstablishmentEntries>,
-    submitted: Mutex<Vec<Box<dyn SubmittedTask>>>,
 }
 
 struct EstablishmentEntries {
@@ -490,19 +491,18 @@ impl SessionEstablisher {
     /// Binds owned executor and runtime-session services without invoking them.
     #[must_use]
     pub fn new(
-        executor: Arc<dyn ExecutorAdapter>,
+        supervisor: TaskSupervisor,
         service: Arc<dyn RuntimeSessionService>,
         poison: AdapterPoison,
     ) -> Self {
         Self {
             inner: Arc::new(SessionEstablisherInner {
-                executor,
+                supervisor,
                 service,
                 poison,
                 entries: Arc::new(EstablishmentEntries {
                     states: Mutex::new(BTreeMap::new()),
                 }),
-                submitted: Mutex::new(Vec::new()),
             }),
         }
     }
@@ -549,10 +549,12 @@ impl SessionEstablisher {
         .await
     }
 
-    /// Returns the number of executor handles retained by this execution owner.
+    /// Returns the number of runtime-session tasks retained by shared supervision.
     #[must_use]
     pub fn submitted_task_count(&self) -> usize {
-        lock_session_state(&self.inner.submitted).len()
+        self.inner
+            .supervisor
+            .active_count(SupervisedTaskDomain::RuntimeSession)
     }
 
     fn start(&self, key: (ProtocolIdentity, ProtocolIdentity), request: HostRequest) {
@@ -568,20 +570,77 @@ impl SessionEstablisher {
             return;
         }
 
+        let reservation = match self
+            .inner
+            .supervisor
+            .try_reserve(AdmissionClass::InterpreterBackgroundTask)
+        {
+            Ok(reservation) => reservation,
+            Err(_) => {
+                settle_establishment(
+                    &self.inner.entries,
+                    key,
+                    Err(SessionEstablishmentError::Executor(executor_failure())),
+                );
+                return;
+            }
+        };
+        let abnormal_entries = Arc::clone(&self.inner.entries);
+        let abnormal: AbnormalCompletionHandler = Arc::new(move |completion| {
+            settle_establishment(
+                &abnormal_entries,
+                key,
+                Err(session_completion_failure(completion)),
+            );
+        });
+        let registration = self
+            .inner
+            .supervisor
+            .prepare(SupervisedTaskDomain::RuntimeSession, Some(abnormal));
+        let signal = registration.signal();
         let entries = Arc::clone(&self.inner.entries);
         let task = Box::pin(async move {
             let result = operation.await;
             settle_establishment(&entries, key, result);
+            signal.settle();
             OwnedTaskResult::new()
         });
-        match self.inner.executor.spawn(task) {
-            Ok(handle) => lock_session_state(&self.inner.submitted).push(handle),
+        match self
+            .inner
+            .supervisor
+            .submit(registration, task, reservation.transfer())
+        {
+            Ok(handle) => handle.relinquish(),
             Err(error) => settle_establishment(
                 &self.inner.entries,
                 key,
                 Err(SessionEstablishmentError::Executor(error)),
             ),
         }
+    }
+}
+
+fn session_completion_failure(completion: OwnedTaskCompletion) -> SessionEstablishmentError {
+    match completion {
+        OwnedTaskCompletion::Panicked { origin, .. } => {
+            SessionEstablishmentError::Boundary(BoundaryFailure {
+                origin: match origin {
+                    OwnedTaskPanicOrigin::Integration => PanicOrigin::Integration,
+                    OwnedTaskPanicOrigin::GantryInvariant => PanicOrigin::GantryInvariant,
+                },
+            })
+        }
+        OwnedTaskCompletion::Failed(error) => SessionEstablishmentError::Executor(error),
+        OwnedTaskCompletion::Completed(_) | OwnedTaskCompletion::Stopped => {
+            SessionEstablishmentError::Executor(executor_failure())
+        }
+    }
+}
+
+fn executor_failure() -> HostError {
+    HostError {
+        code: Arc::from("executor-failure"),
+        protected_diagnostic: None,
     }
 }
 

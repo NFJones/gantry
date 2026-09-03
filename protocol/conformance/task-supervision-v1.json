@@ -1,0 +1,80 @@
+{
+  "format": "gantry.task-supervision-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-SUP-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-006",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-SPAWN",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-TASK-SETTLE",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-7.17",
+      "clause": "clause-003",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-10.13",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-15.1-automatic-execution",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.9",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "abnormal-completion",
+      "evidence": "crates/gantry-conformance/tests/task_supervision.rs#abnormal_completion_before_semantic_settlement_is_classified_once"
+    },
+    {
+      "id": "abort-correlation",
+      "evidence": "crates/gantry-conformance/tests/task_supervision.rs#abort_results_remain_distinct_from_physical_completion"
+    },
+    {
+      "id": "bounded-handle-ownership",
+      "evidence": "crates/gantry-conformance/tests/task_supervision.rs#control_shares_are_bounded_and_unclean_relinquish_is_nonsemantic"
+    },
+    {
+      "id": "control-plane-progress",
+      "evidence": "crates/gantry-conformance/tests/task_supervision.rs#control_plane_capacity_remains_available_under_ordinary_saturation"
+    },
+    {
+      "id": "semantic-physical-settlement",
+      "evidence": "crates/gantry-conformance/tests/task_supervision.rs#semantic_settlement_retains_capacity_until_physical_reaping"
+    }
+  ],
+  "exclusions": [
+    "Source-visible task handles, joins, detach, and task-state transitions remain owned by coordinator and source-control issues.",
+    "Root and child task-driver construction and semantic failure mapping remain owned by GNT-ASYNC-DRIVER-001 and downstream issues.",
+    "Interpreter facade cloning and last-external-owner detection remain owned by GNT-ASYNC-LIFE-001; this issue supplies its nonblocking abort-and-relinquish surface.",
+    "Blocking-job and event-delivery semantic ownership remain owned by GNT-ASYNC-BLOCK-001, GNT-ASYNC-REVENT-001, and GNT-ASYNC-OBS-001."
+  ]
+}
