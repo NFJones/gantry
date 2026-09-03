@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::task::{Context, Poll, Waker};
 
@@ -442,6 +442,7 @@ impl ExecutionHandle {
 }
 
 /// One linearizable interpreter lifecycle owner.
+#[derive(Clone)]
 pub struct InterpreterLifecycle {
     inner: Arc<LifecycleInner>,
 }
@@ -452,23 +453,6 @@ impl std::fmt::Debug for InterpreterLifecycle {
             .debug_struct("InterpreterLifecycle")
             .field("snapshot", &self.snapshot())
             .finish()
-    }
-}
-
-impl Clone for InterpreterLifecycle {
-    fn clone(&self) -> Self {
-        self.inner.owners.fetch_add(1, Ordering::Relaxed);
-        Self {
-            inner: Arc::clone(&self.inner),
-        }
-    }
-}
-
-impl Drop for InterpreterLifecycle {
-    fn drop(&mut self) {
-        if self.inner.owners.fetch_sub(1, Ordering::AcqRel) == 1 {
-            self.inner.unclean_drop();
-        }
     }
 }
 
@@ -483,7 +467,6 @@ impl InterpreterLifecycle {
         Self {
             inner: Arc::new(LifecycleInner {
                 id: NEXT_INTERPRETER_ID.fetch_add(1, Ordering::Relaxed),
-                owners: AtomicUsize::new(1),
                 default_durations: ShutdownDurations {
                     graceful: configuration.graceful_shutdown_timeout(),
                     drain: configuration.post_cancellation_drain(),
@@ -548,6 +531,20 @@ impl InterpreterLifecycle {
     #[must_use]
     pub fn task_supervisor(&self) -> TaskSupervisor {
         self.inner.supervisor.clone()
+    }
+
+    /// Starts synchronous unclean cleanup for the last external facade owner.
+    ///
+    /// Internal lifecycle clones never invoke this transition. Once orderly or
+    /// poisoned shutdown has begun, dropping a facade does not replace it with
+    /// an unclean report.
+    pub fn begin_unclean_drop(&self) {
+        self.inner.unclean_drop(false);
+    }
+
+    /// Falls back to synchronous unclean cleanup when the owned shutdown task cannot run.
+    pub fn fail_owned_shutdown(&self) {
+        self.inner.unclean_drop(true);
     }
 
     /// Transfers one preflight operation to caller-independent owned activity state.
@@ -1343,7 +1340,7 @@ impl ShutdownCoordinator {
         if data.owned_activities != 0 {
             return Err(ShutdownCompletionError::OwnedActivitiesPending);
         }
-        if !self.inner.supervisor.is_quiescent() {
+        if !self.inner.supervisor.is_shutdown_quiescent() {
             return Err(ShutdownCompletionError::SupervisedTasksPending);
         }
         if !pending_executions(&data).is_empty() {
@@ -1465,7 +1462,10 @@ impl Future for ShutdownProgress {
             register_waker(&mut data.progress_waiters, context.waker());
         }
         drop(data);
-        let supervision_ready = inner.supervisor.poll_quiescence(context).is_ready();
+        let supervision_ready = inner
+            .supervisor
+            .poll_shutdown_quiescence(context)
+            .is_ready();
         if lifecycle_ready && supervision_ready {
             Poll::Ready(())
         } else {
@@ -1493,7 +1493,6 @@ pub struct LifecycleSnapshot {
 
 struct LifecycleInner {
     id: u64,
-    owners: AtomicUsize,
     default_durations: ShutdownDurations,
     supervisor: TaskSupervisor,
     data: Mutex<LifecycleData>,
@@ -1506,19 +1505,8 @@ impl LifecycleInner {
             .unwrap_or_else(|poison| poison.into_inner())
     }
 
-    fn unclean_drop(&self) {
+    fn unclean_drop(&self, failed_owned_shutdown: bool) {
         let mut data = self.lock();
-        if matches!(data.state, LifecyclePhase::Terminated(_)) {
-            return;
-        }
-        for execution in data.executions.values_mut() {
-            if execution.terminal.is_none() {
-                if execution.cancellation.is_none() {
-                    execution.cancellation = Some(CancellationReason::shutdown());
-                }
-                execution.cancellation_signal.cancel();
-            }
-        }
         let (cause, durations, cohort_ids) = match &data.state {
             LifecyclePhase::Running => (
                 ShutdownCause::Requested,
@@ -1530,11 +1518,22 @@ impl LifecycleInner {
                     })
                     .collect::<BTreeSet<_>>(),
             ),
-            LifecyclePhase::ShuttingDown(shutdown) => {
+            LifecyclePhase::ShuttingDown(shutdown) if shutdown.cause == ShutdownCause::Poisoned => {
                 (shutdown.cause, shutdown.durations, shutdown.cohort.clone())
             }
-            LifecyclePhase::Terminated(_) => unreachable!(),
+            LifecyclePhase::ShuttingDown(shutdown) if failed_owned_shutdown => {
+                (shutdown.cause, shutdown.durations, shutdown.cohort.clone())
+            }
+            LifecyclePhase::ShuttingDown(_) | LifecyclePhase::Terminated(_) => return,
         };
+        for execution in data.executions.values_mut() {
+            if execution.terminal.is_none() {
+                if execution.cancellation.is_none() {
+                    execution.cancellation = Some(CancellationReason::shutdown());
+                }
+                execution.cancellation_signal.cancel();
+            }
+        }
         let cohort = cohort_ids
             .iter()
             .filter_map(|identity| {

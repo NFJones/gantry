@@ -3,7 +3,9 @@
 //! The facade owns orchestration only. Source analysis, machine transitions,
 //! cancellation, waits, and shutdown remain in their existing subsystem owners.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{Context, Poll, Waker};
 
 use gantry_analysis::{DeclaredValueShape, DeclaredValueShapes};
 use gantry_core::identity::ProtocolIdentity;
@@ -15,20 +17,21 @@ use gantry_core::strict_json::{JsonLimits, JsonNode, JsonNodeId, StrictJsonDocum
 use gantry_core::value::{LogicalValue, OperationErrorValue, ValueLimits};
 use gantry_host::contracts::{
     CancellationToken, FreshIdentityAllocator, HookFactory, IntegrationPreflight,
-    RuntimeSessionService, UtcClock,
+    OwnedTaskCompletion, OwnedTaskFuture, OwnedTaskResult, RuntimeSessionService, UtcClock,
 };
 use gantry_ir::TypeDescriptor;
 use gantry_ir::generated::{OperationSiteKind, TypeKind};
 use gantry_runtime::{
-    AcceptedTranscriptResultV1, ActionOperationRequestV1, AdapterPoison, CancellationReason,
-    CancellationRecord, CapturedOperationRequestV1, ExecutionHandle, ExecutionSnapshot,
-    FinalShutdownEventSettlement, InterpolationInputV1, InterpreterConfiguration,
-    InterpreterLifecycle, LifecycleError, LogicalSessionRegistryV1, Machine, MachineBuildError,
-    MachineFailure, MachineLabel, MachineOutcome, MachineStep, ModelOperationRequestV1,
-    ModelSessionUseV1, NamedInputV1, OperationLifecycle, OperationLifecycleError,
-    OperationLifecycleFailureV1, OperationRequestHeaderV1, OperationRetryPolicyV1,
-    ProcessedHookOutcomeV1, RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1,
-    SessionEstablisher, SessionEstablishmentV1, ShutdownCompletionError, ShutdownReport,
+    AcceptedTranscriptResultV1, ActionOperationRequestV1, AdapterPoison, AdmissionExhaustion,
+    CancellationReason, CancellationRecord, CapturedOperationRequestV1, ExecutionHandle,
+    ExecutionSnapshot, FinalShutdownEventSettlement, InterpolationInputV1,
+    InterpreterConfiguration, InterpreterLifecycle, LifecycleError, LogicalSessionRegistryV1,
+    Machine, MachineBuildError, MachineFailure, MachineLabel, MachineOutcome, MachineStep,
+    ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationLifecycle,
+    OperationLifecycleError, OperationLifecycleFailureV1, OperationRequestHeaderV1,
+    OperationRetryPolicyV1, PhysicalCompletionHandler, ProcessedHookOutcomeV1,
+    RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1, SessionEstablisher,
+    SessionEstablishmentV1, ShutdownCompletionError, ShutdownReport, SupervisedTaskDomain,
     TaskContextV1, TaskHook, TaskHookError, TaskSessionContextV1, TranscriptResultKindV1,
     TranscriptTurnV1, TypedActionArgumentV1,
 };
@@ -40,6 +43,13 @@ use crate::{
 
 /// Supported nondurable interpreter facade over injected host integrations.
 pub struct Interpreter {
+    inner: Arc<InterpreterInner>,
+}
+
+struct InterpreterInner {
+    external_owners: AtomicUsize,
+    shutdown_started: AtomicBool,
+    shutdown: Arc<SharedShutdown>,
     configuration: InterpreterConfiguration,
     lifecycle: InterpreterLifecycle,
     allocator: FreshIdentityAllocator,
@@ -49,12 +59,29 @@ pub struct Interpreter {
     hook_factory: Arc<dyn HookFactory>,
 }
 
+impl Clone for Interpreter {
+    fn clone(&self) -> Self {
+        self.inner.external_owners.fetch_add(1, Ordering::Relaxed);
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
+impl Drop for Interpreter {
+    fn drop(&mut self) {
+        if self.inner.external_owners.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.inner.lifecycle.begin_unclean_drop();
+        }
+    }
+}
+
 impl std::fmt::Debug for Interpreter {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Interpreter")
-            .field("configuration", &self.configuration)
-            .field("lifecycle", &self.lifecycle)
+            .field("configuration", &self.inner.configuration)
+            .field("lifecycle", &self.inner.lifecycle)
             .finish_non_exhaustive()
     }
 }
@@ -76,13 +103,18 @@ impl Interpreter {
             AdapterPoison::default(),
         );
         Self {
-            configuration,
-            lifecycle,
-            allocator: FreshIdentityAllocator::default(),
-            clock,
-            preflight,
-            session_establisher,
-            hook_factory,
+            inner: Arc::new(InterpreterInner {
+                external_owners: AtomicUsize::new(1),
+                shutdown_started: AtomicBool::new(false),
+                shutdown: Arc::new(SharedShutdown::default()),
+                configuration,
+                lifecycle,
+                allocator: FreshIdentityAllocator::default(),
+                clock,
+                preflight,
+                session_establisher,
+                hook_factory,
+            }),
         }
     }
 
@@ -92,16 +124,16 @@ impl Interpreter {
         request: StartExecutionRequest<'_>,
     ) -> StartExecutionResult {
         let package = AnalyzePackageCoordinator::new(
-            &self.allocator,
-            self.configuration.identity_source(),
-            self.clock.as_ref(),
+            &self.inner.allocator,
+            self.inner.configuration.identity_source(),
+            self.inner.clock.as_ref(),
         );
         StartExecutionCoordinator::new(
             &package,
-            &self.lifecycle,
-            &self.configuration,
-            &self.allocator,
-            Arc::clone(&self.preflight),
+            &self.inner.lifecycle,
+            &self.inner.configuration,
+            &self.inner.allocator,
+            Arc::clone(&self.inner.preflight),
         )
         .start(request)
         .await
@@ -132,7 +164,7 @@ impl Interpreter {
                 decode_logical_value(
                     input.canonical_json.bytes(),
                     &input.ty,
-                    self.configuration.required().value_limits,
+                    self.inner.configuration.required().value_limits,
                     analysis.declared_value_shapes(),
                 )
                 .map(|value| vec![value])
@@ -146,7 +178,7 @@ impl Interpreter {
             &entry.path,
             arguments,
             accepted.execution_id,
-            self.configuration.machine_limits(),
+            self.inner.configuration.machine_limits(),
             initial_agent.clone(),
             initial_session,
         ) {
@@ -181,8 +213,8 @@ impl Interpreter {
         .into_host_request()
         .map_err(RunExecutionError::HookRequest)?;
         let mut hook = TaskHook::new(
-            &self.lifecycle,
-            self.hook_factory.as_ref(),
+            &self.inner.lifecycle,
+            self.inner.hook_factory.as_ref(),
             AdapterPoison::default(),
             create_request,
         )
@@ -198,7 +230,7 @@ impl Interpreter {
             accepted.root_session.transcript.clone(),
         )
         .map_err(RunExecutionError::Session)?;
-        let session_establisher = self.session_establisher.clone();
+        let session_establisher = self.inner.session_establisher.clone();
         let mut model_session_occurrence = 0_u64;
         let mut foreground_fixed = false;
         let mut terminal_fixed = false;
@@ -206,6 +238,7 @@ impl Interpreter {
         loop {
             if cancellation.is_cancelled() && machine.outcome().is_none() {
                 let reason = self
+                    .inner
                     .lifecycle
                     .query_execution(accepted.execution_id)
                     .ok()
@@ -224,7 +257,8 @@ impl Interpreter {
             match machine.step() {
                 MachineStep::Transition(MachineLabel::ForegroundCompletion(outcome)) => {
                     if !foreground_fixed {
-                        self.lifecycle
+                        self.inner
+                            .lifecycle
                             .complete_foreground(&accepted.handle, outcome)
                             .map_err(|_| RunExecutionError::LifecycleTransition)?;
                         foreground_fixed = true;
@@ -232,7 +266,8 @@ impl Interpreter {
                 }
                 MachineStep::Transition(MachineLabel::TerminalCompletion(outcome)) => {
                     if !terminal_fixed {
-                        self.lifecycle
+                        self.inner
+                            .lifecycle
                             .complete_terminal(&accepted.handle, outcome)
                             .map_err(|_| RunExecutionError::LifecycleTransition)?;
                         terminal_fixed = true;
@@ -292,7 +327,14 @@ impl Interpreter {
                         .map_err(|_| RunExecutionError::LifecycleTransition)?;
                 }
                 MachineStep::YieldRequired => {
-                    if self.configuration.executor().yield_now().await.is_err() {
+                    if self
+                        .inner
+                        .configuration
+                        .executor()
+                        .yield_now()
+                        .await
+                        .is_err()
+                    {
                         let failure = MachineFailure {
                             code: RuntimeCode::InternalInvariant,
                             workflow: entry.path.clone(),
@@ -347,6 +389,7 @@ impl Interpreter {
                 }
                 MachineStep::Complete(_) => {
                     return self
+                        .inner
                         .lifecycle
                         .query_execution(accepted.execution_id)
                         .map_err(RunExecutionError::Lifecycle)?
@@ -361,7 +404,7 @@ impl Interpreter {
         &self,
         execution_id: ProtocolIdentity,
     ) -> Result<Option<ExecutionSnapshot>, LifecycleError> {
-        self.lifecycle.query_execution(execution_id)
+        self.inner.lifecycle.query_execution(execution_id)
     }
 
     /// Waits independently for the foreground coordinate of one in-process handle.
@@ -370,6 +413,7 @@ impl Interpreter {
         handle: &ExecutionHandle,
     ) -> Result<Option<ExecutionSnapshot>, LifecycleError> {
         Ok(self
+            .inner
             .lifecycle
             .await_foreground(handle.execution_id())?
             .await)
@@ -380,7 +424,11 @@ impl Interpreter {
         &self,
         handle: &ExecutionHandle,
     ) -> Result<Option<ExecutionSnapshot>, LifecycleError> {
-        Ok(self.lifecycle.await_terminal(handle.execution_id())?.await)
+        Ok(self
+            .inner
+            .lifecycle
+            .await_terminal(handle.execution_id())?
+            .await)
     }
 
     /// Records the first effective cancellation reason and waits for terminal settlement.
@@ -389,30 +437,109 @@ impl Interpreter {
         execution_id: ProtocolIdentity,
         reason: CancellationReason,
     ) -> Result<CancellationRecord, LifecycleError> {
-        let record = self.lifecycle.cancel_execution(execution_id, reason)?;
+        let record = self
+            .inner
+            .lifecycle
+            .cancel_execution(execution_id, reason)?;
         if matches!(
             record,
             CancellationRecord::Accepted { .. } | CancellationRecord::Existing { .. }
         ) {
-            let _ = self.lifecycle.await_terminal(execution_id)?.await;
+            let _ = self.inner.lifecycle.await_terminal(execution_id)?.await;
         }
         Ok(record)
     }
 
-    /// Runs or joins the unique shutdown coordinator and returns its immutable report.
+    /// Starts or joins the caller-independent shutdown coordinator.
+    ///
+    /// Once this future is first polled, dropping it stops only this caller's
+    /// observation. The unique coordinator remains supervised until physical
+    /// completion, and every caller observes the same immutable result.
     pub async fn shutdown(&self) -> Result<Arc<ShutdownReport>, ShutdownError> {
-        let mut admission = self
-            .lifecycle
-            .begin_shutdown(None, None)
-            .map_err(ShutdownError::Lifecycle)?;
-        if let Some(coordinator) = admission.coordinator.take() {
-            let _ = coordinator.cancel_remaining();
-            coordinator.wait_for_quiescence().await;
-            coordinator
-                .complete(true, FinalShutdownEventSettlement::Settled)
-                .map_err(ShutdownError::Completion)?;
+        if self
+            .inner
+            .shutdown_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            self.start_owned_shutdown();
         }
-        Ok(admission.wait.await)
+        std::future::poll_fn(|context| self.inner.shutdown.poll(context)).await
+    }
+
+    fn start_owned_shutdown(&self) {
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve_control_plane() {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                self.inner.lifecycle.fail_owned_shutdown();
+                self.inner
+                    .shutdown
+                    .publish(Err(ShutdownError::Admission(error)));
+                return;
+            }
+        };
+        let mut admission = match self.inner.lifecycle.begin_shutdown(None, None) {
+            Ok(admission) => admission,
+            Err(error) => {
+                self.inner
+                    .shutdown
+                    .publish(Err(ShutdownError::Lifecycle(error)));
+                return;
+            }
+        };
+        let completion_state = Arc::clone(&self.inner.shutdown);
+        let completion_lifecycle = self.inner.lifecycle.clone();
+        let completion: PhysicalCompletionHandler = Arc::new(move |completion| {
+            if !matches!(completion, OwnedTaskCompletion::Completed(_)) {
+                completion_lifecycle.fail_owned_shutdown();
+            }
+            completion_state.publish_physical(completion);
+        });
+        let registration = supervisor.prepare_with_completion(
+            SupervisedTaskDomain::Shutdown,
+            None,
+            Some(completion),
+        );
+        let signal = registration.signal();
+        let shutdown_owner = Arc::clone(&self.inner);
+        let task: OwnedTaskFuture = if let Some(coordinator) = admission.coordinator.take() {
+            let mut progress = Box::pin(coordinator.wait_for_quiescence());
+            let mut context = Context::from_waker(Waker::noop());
+            if std::future::Future::poll(progress.as_mut(), &mut context).is_ready() {
+                let result = coordinator
+                    .complete(true, FinalShutdownEventSettlement::Settled)
+                    .map_err(ShutdownError::Completion);
+                self.inner.shutdown.publish(result);
+                return;
+            }
+            Box::pin(async move {
+                let _ = coordinator.cancel_remaining();
+                progress.await;
+                let result = coordinator
+                    .complete(true, FinalShutdownEventSettlement::Settled)
+                    .map_err(ShutdownError::Completion);
+                shutdown_owner.shutdown.stage(result);
+                signal.settle();
+                OwnedTaskResult::new()
+            })
+        } else {
+            Box::pin(async move {
+                let report = admission.wait.await;
+                shutdown_owner.shutdown.stage(Ok(report));
+                signal.settle();
+                OwnedTaskResult::new()
+            })
+        };
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => task.relinquish(),
+            Err(error) => {
+                self.inner.lifecycle.fail_owned_shutdown();
+                self.inner
+                    .shutdown
+                    .publish(Err(ShutdownError::Executor(error)));
+            }
+        }
     }
 
     async fn drive_action_operation(
@@ -458,8 +585,12 @@ impl Interpreter {
                 kind: metadata.kind,
                 expected_type: metadata.result_type.clone(),
                 expected_schema,
-                maximum_hook_output_bytes: self.configuration.required().maximum_hook_output_bytes,
-                value_limits: self.configuration.required().value_limits,
+                maximum_hook_output_bytes: self
+                    .inner
+                    .configuration
+                    .required()
+                    .maximum_hook_output_bytes,
+                value_limits: self.inner.configuration.required().value_limits,
                 workflow: occurrence.workflow.clone(),
                 site: occurrence.site.clone(),
             },
@@ -484,14 +615,14 @@ impl Interpreter {
             OperationLifecycle::new(captured).map_err(RunExecutionError::OperationLifecycle)?;
         let policy = OperationRetryPolicyV1::for_request(
             operation.captured(),
-            self.configuration.retry_defaults(),
+            self.inner.configuration.retry_defaults(),
             metadata.retry_limit,
         )
         .map_err(|_| RunExecutionError::RetryPolicy)?;
         operation
             .prepare(
-                &self.allocator,
-                self.configuration.identity_source(),
+                &self.inner.allocator,
+                self.inner.configuration.identity_source(),
                 0,
                 0,
                 &[],
@@ -508,14 +639,14 @@ impl Interpreter {
                 };
             }
             match operation
-                .process_outcome(policy, self.configuration.executor(), cancellation)
+                .process_outcome(policy, self.inner.configuration.executor(), cancellation)
                 .map_err(RunExecutionError::OperationLifecycle)?
             {
                 ProcessedHookOutcomeV1::Accepted(output) => {
                     let value = decode_logical_value(
                         output.canonical_json().bytes(),
                         &metadata.result_type,
-                        self.configuration.required().value_limits,
+                        self.inner.configuration.required().value_limits,
                         analysis.declared_value_shapes(),
                     )?;
                     if metadata.attempted {
@@ -529,13 +660,13 @@ impl Interpreter {
                 ProcessedHookOutcomeV1::Retry(_) => {
                     if operation
                         .prepare_after_retry_wait(
-                            self.configuration.executor(),
+                            self.inner.configuration.executor(),
                             &accepted
                                 .handle
                                 .cancellation_signal()
                                 .map_err(|_| RunExecutionError::LifecycleTransition)?,
-                            &self.allocator,
-                            self.configuration.identity_source(),
+                            &self.inner.allocator,
+                            self.inner.configuration.identity_source(),
                         )
                         .await
                         .map_err(RunExecutionError::OperationLifecycle)?
@@ -665,7 +796,8 @@ impl Interpreter {
         let rendered_prompt = match render_prompt(
             &metadata.template_segments,
             occurrence.inputs.iter().take(interpolation_count),
-            self.configuration
+            self.inner
+                .configuration
                 .required()
                 .value_limits
                 .maximum_string_scalars(),
@@ -703,8 +835,12 @@ impl Interpreter {
                 kind: metadata.kind,
                 expected_type: metadata.result_type.clone(),
                 expected_schema,
-                maximum_hook_output_bytes: self.configuration.required().maximum_hook_output_bytes,
-                value_limits: self.configuration.required().value_limits,
+                maximum_hook_output_bytes: self
+                    .inner
+                    .configuration
+                    .required()
+                    .maximum_hook_output_bytes,
+                value_limits: self.inner.configuration.required().value_limits,
                 workflow: occurrence.workflow.clone(),
                 site: occurrence.site.clone(),
             },
@@ -726,14 +862,14 @@ impl Interpreter {
             OperationLifecycle::new(captured).map_err(RunExecutionError::OperationLifecycle)?;
         let policy = OperationRetryPolicyV1::for_request(
             operation.captured(),
-            self.configuration.retry_defaults(),
+            self.inner.configuration.retry_defaults(),
             metadata.retry_limit,
         )
         .map_err(|_| RunExecutionError::RetryPolicy)?;
         operation
             .prepare(
-                &self.allocator,
-                self.configuration.identity_source(),
+                &self.inner.allocator,
+                self.inner.configuration.identity_source(),
                 0,
                 0,
                 &[],
@@ -764,14 +900,14 @@ impl Interpreter {
                 return Ok(());
             }
             match operation
-                .process_outcome(policy, self.configuration.executor(), cancellation)
+                .process_outcome(policy, self.inner.configuration.executor(), cancellation)
                 .map_err(RunExecutionError::OperationLifecycle)?
             {
                 ProcessedHookOutcomeV1::Accepted(output) => {
                     let value = decode_logical_value(
                         output.canonical_json().bytes(),
                         &metadata.result_type,
-                        self.configuration.required().value_limits,
+                        self.inner.configuration.required().value_limits,
                         analysis.declared_value_shapes(),
                     )?;
                     let turn = TranscriptTurnV1 {
@@ -795,7 +931,7 @@ impl Interpreter {
                             machine,
                             session,
                             &turn,
-                            self.configuration.required().value_limits,
+                            self.inner.configuration.required().value_limits,
                             value,
                         )
                     } else {
@@ -803,7 +939,7 @@ impl Interpreter {
                             machine,
                             session,
                             &turn,
-                            self.configuration.required().value_limits,
+                            self.inner.configuration.required().value_limits,
                             value,
                         )
                     };
@@ -826,13 +962,13 @@ impl Interpreter {
                 ProcessedHookOutcomeV1::Retry(_) => {
                     if operation
                         .prepare_after_retry_wait(
-                            self.configuration.executor(),
+                            self.inner.configuration.executor(),
                             &accepted
                                 .handle
                                 .cancellation_signal()
                                 .map_err(|_| RunExecutionError::LifecycleTransition)?,
-                            &self.allocator,
-                            self.configuration.identity_source(),
+                            &self.inner.allocator,
+                            self.inner.configuration.identity_source(),
                         )
                         .await
                         .map_err(RunExecutionError::OperationLifecycle)?
@@ -888,10 +1024,12 @@ impl Interpreter {
         failure: MachineFailure,
     ) -> Result<(), RunExecutionError> {
         let outcome = MachineOutcome::Failed(failure);
-        self.lifecycle
+        self.inner
+            .lifecycle
             .complete_foreground(&accepted.handle, outcome.clone())
             .map_err(|_| RunExecutionError::LifecycleTransition)?;
-        self.lifecycle
+        self.inner
+            .lifecycle
             .complete_terminal(&accepted.handle, outcome)
             .map_err(|_| RunExecutionError::LifecycleTransition)
     }
@@ -945,10 +1083,91 @@ pub enum RunExecutionError {
 /// Failure while coordinating interpreter shutdown.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShutdownError {
+    /// The isolated control-plane capacity was unavailable.
+    Admission(AdmissionExhaustion),
     /// Shutdown admission failed at the lifecycle boundary.
     Lifecycle(LifecycleError),
     /// The unique coordinator could not publish the report.
     Completion(ShutdownCompletionError),
+    /// The executor rejected the owned shutdown coordinator.
+    Executor(gantry_host::contracts::HostError),
+    /// The shutdown task stopped, panicked, or failed before normal completion.
+    Physical(OwnedTaskCompletion),
+}
+
+#[derive(Default)]
+struct SharedShutdown {
+    state: Mutex<SharedShutdownState>,
+}
+
+#[derive(Default)]
+struct SharedShutdownState {
+    staged: Option<Result<Arc<ShutdownReport>, ShutdownError>>,
+    published: Option<Result<Arc<ShutdownReport>, ShutdownError>>,
+    waiters: Vec<Waker>,
+}
+
+impl SharedShutdown {
+    fn stage(&self, result: Result<Arc<ShutdownReport>, ShutdownError>) {
+        let mut state = lock_shutdown(&self.state);
+        if state.staged.is_none() && state.published.is_none() {
+            state.staged = Some(result);
+        }
+    }
+
+    fn publish_physical(&self, completion: OwnedTaskCompletion) {
+        let result = {
+            let mut state = lock_shutdown(&self.state);
+            if state.published.is_some() {
+                return;
+            }
+            match completion {
+                OwnedTaskCompletion::Completed(_) => state.staged.take().unwrap_or_else(|| {
+                    Err(ShutdownError::Executor(gantry_host::contracts::HostError {
+                        code: Arc::from("executor-failure"),
+                        protected_diagnostic: None,
+                    }))
+                }),
+                other => Err(ShutdownError::Physical(other)),
+            }
+        };
+        self.publish(result);
+    }
+
+    fn publish(&self, result: Result<Arc<ShutdownReport>, ShutdownError>) {
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            if state.published.is_some() {
+                return;
+            }
+            state.published = Some(result);
+            std::mem::take(&mut state.waiters)
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn poll(&self, context: &mut Context<'_>) -> Poll<Result<Arc<ShutdownReport>, ShutdownError>> {
+        let mut state = lock_shutdown(&self.state);
+        if let Some(result) = &state.published {
+            return Poll::Ready(result.clone());
+        }
+        if !state
+            .waiters
+            .iter()
+            .any(|waiter| waiter.will_wake(context.waker()))
+        {
+            state.waiters.push(context.waker().clone());
+        }
+        Poll::Pending
+    }
+}
+
+fn lock_shutdown<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn build_failure(root: &gantry_ir::CanonicalPath, error: &MachineBuildError) -> MachineFailure {

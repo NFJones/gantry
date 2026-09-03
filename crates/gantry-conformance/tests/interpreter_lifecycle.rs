@@ -497,7 +497,7 @@ fn unclean_drop_signals_work_without_standard_event_claim() {
         .unwrap_or_else(|error| panic!("cancellation signal was unavailable: {error:?}"));
 
     assert!(!cancellation.is_cancelled());
-    drop(lifecycle);
+    lifecycle.begin_unclean_drop();
     assert!(cancellation.is_cancelled());
 }
 

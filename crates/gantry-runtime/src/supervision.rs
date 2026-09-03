@@ -86,6 +86,9 @@ impl SupervisedTaskDomain {
 /// Callback for physical completion that precedes semantic settlement.
 pub type AbnormalCompletionHandler = Arc<dyn Fn(OwnedTaskCompletion) + Send + Sync + 'static>;
 
+/// Callback invoked exactly once for any physically completed supervised task.
+pub type PhysicalCompletionHandler = Arc<dyn Fn(OwnedTaskCompletion) + Send + Sync + 'static>;
+
 /// Shared owner of submitted executor tasks.
 #[derive(Clone)]
 pub struct TaskSupervisor {
@@ -136,6 +139,17 @@ impl TaskSupervisor {
         domain: SupervisedTaskDomain,
         abnormal: Option<AbnormalCompletionHandler>,
     ) -> SupervisionRegistration {
+        self.prepare_with_completion(domain, abnormal, None)
+    }
+
+    /// Allocates supervision metadata with an optional physical-completion observer.
+    #[must_use]
+    pub fn prepare_with_completion(
+        &self,
+        domain: SupervisedTaskDomain,
+        abnormal: Option<AbnormalCompletionHandler>,
+        completion: Option<PhysicalCompletionHandler>,
+    ) -> SupervisionRegistration {
         let id = NEXT_SUPERVISED_TASK_ID.fetch_add(1, Ordering::Relaxed);
         let semantic = Arc::new(AtomicBool::new(false));
         SupervisionRegistration {
@@ -149,6 +163,7 @@ impl TaskSupervisor {
                 semantic,
             },
             abnormal,
+            completion,
         }
     }
 
@@ -177,7 +192,7 @@ impl TaskSupervisor {
         let observation = Arc::new(Mutex::new(SupervisedObservation::default()));
         let wake = Arc::new(ReaperWake {
             id: registration.id,
-            supervisor: Arc::downgrade(&self.inner),
+            supervisor: Arc::clone(&self.inner),
         });
         let entry = Arc::new(SupervisedEntry {
             id: registration.id,
@@ -188,6 +203,7 @@ impl TaskSupervisor {
             wake,
             permit: Mutex::new(Some(permit)),
             abnormal: Mutex::new(registration.abnormal),
+            completion: Mutex::new(registration.completion),
         });
         {
             let mut state = lock(&self.inner.state);
@@ -241,10 +257,27 @@ impl TaskSupervisor {
         state.active.is_empty() && state.finalizing == 0
     }
 
+    /// Returns whether only the shutdown coordinator itself remains active.
+    #[must_use]
+    pub fn is_shutdown_quiescent(&self) -> bool {
+        shutdown_quiescent(&lock(&self.inner.state))
+    }
+
     /// Polls registry quiescence and registers one wake without allocating a watcher task.
     pub fn poll_quiescence(&self, context: &mut Context<'_>) -> Poll<()> {
         let mut state = lock(&self.inner.state);
         if state.active.is_empty() && state.finalizing == 0 {
+            Poll::Ready(())
+        } else {
+            register_waker(&mut state.quiescence_waiters, context.waker());
+            Poll::Pending
+        }
+    }
+
+    /// Polls until all work other than the shutdown coordinator has settled.
+    pub fn poll_shutdown_quiescence(&self, context: &mut Context<'_>) -> Poll<()> {
+        let mut state = lock(&self.inner.state);
+        if shutdown_quiescent(&state) {
             Poll::Ready(())
         } else {
             register_waker(&mut state.quiescence_waiters, context.waker());
@@ -296,6 +329,9 @@ impl TaskSupervisor {
                 std::mem::take(&mut observation.waiters)
             };
             wake_all(waiters);
+            let permit = lock(&entry.permit).take();
+            drop(permit);
+            let _ = catch_unwind(AssertUnwindSafe(|| drop(entry)));
         }
         wake_all(take_quiescence_waiters(&self.inner));
     }
@@ -309,6 +345,7 @@ pub struct SupervisionRegistration {
     semantic: Arc<AtomicBool>,
     signal: SupervisionSignal,
     abnormal: Option<AbnormalCompletionHandler>,
+    completion: Option<PhysicalCompletionHandler>,
 }
 
 impl SupervisionRegistration {
@@ -551,6 +588,10 @@ impl SupervisorInner {
         if let Some(abnormal) = abnormal {
             let _ = catch_unwind(AssertUnwindSafe(|| abnormal(completion.clone())));
         }
+        if let Some(observer) = lock(&entry.completion).take() {
+            let observed = completion.clone();
+            let _ = catch_unwind(AssertUnwindSafe(|| observer(observed)));
+        }
         let observation_waiters = {
             let mut observation = lock(&entry.observation);
             if observation.completion.is_none() {
@@ -567,11 +608,11 @@ impl SupervisorInner {
         let permit = lock(&entry.permit).take();
         wake_all(observation_waiters);
         drop(permit);
-        drop(entry);
+        let _ = catch_unwind(AssertUnwindSafe(|| drop(entry)));
         let quiescence_waiters = {
             let mut state = lock(&this.state);
             state.finalizing = state.finalizing.saturating_sub(1);
-            if state.active.is_empty() && state.finalizing == 0 {
+            if shutdown_quiescent(&state) {
                 std::mem::take(&mut state.quiescence_waiters)
             } else {
                 Vec::new()
@@ -611,6 +652,7 @@ struct SupervisedEntry {
     wake: Arc<ReaperWake>,
     permit: Mutex<Option<AdmissionPermit>>,
     abnormal: Mutex<Option<AbnormalCompletionHandler>>,
+    completion: Mutex<Option<PhysicalCompletionHandler>>,
 }
 
 impl SupervisedEntry {
@@ -636,7 +678,7 @@ struct SupervisedObservation {
 
 struct ReaperWake {
     id: u64,
-    supervisor: Weak<SupervisorInner>,
+    supervisor: Arc<SupervisorInner>,
 }
 
 impl Wake for ReaperWake {
@@ -651,9 +693,7 @@ impl Wake for ReaperWake {
 
 impl ReaperWake {
     fn enqueue(&self) {
-        if let Some(supervisor) = self.supervisor.upgrade() {
-            SupervisorInner::enqueue(&supervisor, self.id);
-        }
+        SupervisorInner::enqueue(&self.supervisor, self.id);
     }
 }
 
@@ -707,6 +747,14 @@ fn abort_result_from_completion(completion: &OwnedTaskCompletion) -> OwnedTaskAb
 
 fn take_quiescence_waiters(inner: &SupervisorInner) -> Vec<Waker> {
     std::mem::take(&mut lock(&inner.state).quiescence_waiters)
+}
+
+fn shutdown_quiescent(state: &SupervisorState) -> bool {
+    state.finalizing == 0
+        && state
+            .active
+            .values()
+            .all(|entry| entry.domain == SupervisedTaskDomain::Shutdown)
 }
 
 fn register_waker(waiters: &mut Vec<Waker>, waker: &Waker) {

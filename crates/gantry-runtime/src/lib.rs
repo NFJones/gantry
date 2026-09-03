@@ -125,9 +125,9 @@ pub use session::{
 #[cfg(feature = "durable")]
 pub use session::{LogicalSessionRegistryCheckpointV1, SessionRecoveryError};
 pub use supervision::{
-    AbnormalCompletionHandler, SupervisedCompletionWait, SupervisedTask, SupervisedTaskDomain,
-    SupervisedTaskSnapshot, SupervisionRegistration, SupervisionSignal, TaskSupervisor,
-    TaskSupervisorSnapshot,
+    AbnormalCompletionHandler, PhysicalCompletionHandler, SupervisedCompletionWait, SupervisedTask,
+    SupervisedTaskDomain, SupervisedTaskSnapshot, SupervisionRegistration, SupervisionSignal,
+    TaskSupervisor, TaskSupervisorSnapshot,
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use task::{

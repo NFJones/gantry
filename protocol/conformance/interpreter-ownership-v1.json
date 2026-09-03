@@ -1,0 +1,79 @@
+{
+  "format": "gantry.interpreter-ownership-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-LIFE-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3.3",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3.3-runtime-ownership",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-006",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-10.13",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-15.1",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-automatic-execution",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.9",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "caller-independent-shutdown",
+      "evidence": "crates/gantry-conformance/tests/interpreter_ownership.rs#dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator"
+    },
+    {
+      "id": "concurrent-cloneable-facade",
+      "evidence": "crates/gantry-conformance/tests/interpreter_ownership.rs#public_facade_is_cloneable_send_sync_and_concurrently_callable"
+    },
+    {
+      "id": "last-external-owner-cleanup",
+      "evidence": "crates/gantry-conformance/tests/interpreter_ownership.rs#last_external_facade_runs_unclean_cleanup_with_internal_activity_references"
+    },
+    {
+      "id": "reentry-boundaries",
+      "evidence": "crates/gantry-conformance/tests/interpreter_lifecycle.rs#reentry_is_chain_local_and_pending_adapters_hold_no_lifecycle_lock"
+    },
+    {
+      "id": "shared-supervision",
+      "evidence": "crates/gantry-conformance/tests/task_supervision.rs#control_shares_are_bounded_and_unclean_relinquish_is_nonsemantic"
+    },
+    {
+      "id": "shutdown-service-retention",
+      "evidence": "crates/gantry-conformance/tests/interpreter_ownership.rs#owned_shutdown_retains_services_after_last_external_facade"
+    }
+  ],
+  "exclusions": [
+    "Automatic root submission and driver ownership remain owned by GNT-ASYNC-START-001 and GNT-ASYNC-DRIVER-001.",
+    "Per-execution task state and source-task ownership remain owned by GNT-ASYNC-COORD-001 and downstream source-concurrency issues.",
+    "Durable owner release and recovered task shutdown remain owned by durable root and recovery issues.",
+    "Final event-delivery shutdown barriers remain owned by GNT-ASYNC-REVENT-001 and GNT-ASYNC-OBS-001."
+  ]
+}
