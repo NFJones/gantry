@@ -8,7 +8,9 @@
 //! operation identity can be derived. Scheduling never instantiates a template
 //! or repeats analyzer-owned trait selection.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(feature = "concurrent")]
+use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
@@ -25,14 +27,18 @@ use gantry_ir::{
 
 use crate::machine::value_matches_type;
 use crate::{
-    LogicalSessionRegistryV1, Machine, MachineLabel, MachineOutcome, MachineStatus, MachineStep,
-    SessionCreationModeV1, SessionError, SessionEstablisher, SessionEstablishmentError,
+    LogicalSessionRegistryV1, MachineOutcome, SessionCreationModeV1, SessionError,
     SessionEstablishmentV1,
 };
+#[cfg(feature = "concurrent")]
+use crate::{
+    Machine, MachineLabel, MachineStatus, MachineStep, SessionEstablisher,
+    SessionEstablishmentError,
+};
 
-#[cfg(feature = "durable")]
+#[cfg(all(feature = "concurrent", feature = "durable"))]
 mod combined_checkpoint;
-#[cfg(feature = "durable")]
+#[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV1,
     RecoveredConcurrentDurableExecutionV1,
@@ -1622,6 +1628,7 @@ impl ConcurrentTaskStateV1 {
 }
 
 /// One scheduler-selected transition from a child instance of the shared machine.
+#[cfg(feature = "concurrent")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScheduledMachineStepV1 {
     /// Stable identity of the task that produced this step.
@@ -1631,6 +1638,7 @@ pub struct ScheduledMachineStepV1 {
 }
 
 /// Execution-scoped round-robin scheduler over the shared explicit-frame machine.
+#[cfg(feature = "concurrent")]
 #[derive(Debug)]
 pub struct ConcurrentSchedulerV1 {
     state: ConcurrentTaskStateV1,
@@ -1638,6 +1646,7 @@ pub struct ConcurrentSchedulerV1 {
     runnable: VecDeque<ProtocolIdentity>,
 }
 
+#[cfg(feature = "concurrent")]
 impl ConcurrentSchedulerV1 {
     /// Creates an idle scheduler around execution-scoped task state.
     #[must_use]
@@ -2050,7 +2059,7 @@ fn push_json_string(output: &mut String, value: &str) {
     output.push('"');
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "concurrent"))]
 mod tests {
     use std::sync::Arc;
 

@@ -53,7 +53,8 @@ pub use gantry_observe as observe;
 pub use gantry_runtime as runtime;
 #[cfg(feature = "evaluator")]
 pub use interpreter::{
-    Interpreter, RunExecutionError, ShutdownError, caller_cancellation_reason, root_task_identity,
+    Interpreter, RunExecutionError, ShutdownError, TaskDriver, caller_cancellation_reason,
+    root_task_identity,
 };
 pub use profile::{
     ConformanceProfile, PROFILE_CLAIMS_ENABLED, PROFILE_DEFINITIONS,

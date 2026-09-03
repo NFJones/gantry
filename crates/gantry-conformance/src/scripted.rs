@@ -56,6 +56,7 @@ impl ScriptedPreflight {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScriptedHook {
     outcomes: Result<VecDeque<Result<HookOutcomeV1, HostError>>, HostError>,
+    panic_on_creation: bool,
 }
 
 impl ScriptedHook {
@@ -64,6 +65,7 @@ impl ScriptedHook {
     pub fn created(outcomes: impl IntoIterator<Item = Result<HookOutcomeV1, HostError>>) -> Self {
         Self {
             outcomes: Ok(outcomes.into_iter().collect()),
+            panic_on_creation: false,
         }
     }
 
@@ -72,6 +74,16 @@ impl ScriptedHook {
     pub fn creation_failure(error: HostError) -> Self {
         Self {
             outcomes: Err(error),
+            panic_on_creation: false,
+        }
+    }
+
+    /// Scripts one contained panic during lazy task-hook construction.
+    #[must_use]
+    pub fn creation_panic() -> Self {
+        Self {
+            outcomes: Ok(VecDeque::new()),
+            panic_on_creation: true,
         }
     }
 }
@@ -192,6 +204,9 @@ impl HookFactory for ScriptedIntegration {
                     .ok_or_else(|| scripted_error("scripted-hook-exhausted"))
             });
         let calls = Arc::clone(&self.calls);
+        if step.as_ref().is_ok_and(|step| step.panic_on_creation) {
+            panic!("protected scripted hook-creation panic");
+        }
         Box::pin(async move {
             if request.operation() != EmbeddingOperation::CreateHook {
                 return Err(scripted_error("scripted-operation-mismatch"));

@@ -11,7 +11,6 @@
 mod admission;
 mod configuration;
 mod containment;
-#[cfg(feature = "concurrent")]
 mod coordinator;
 #[cfg(feature = "durable")]
 mod durable;
@@ -27,7 +26,6 @@ mod outcome;
 mod recovery;
 mod session;
 mod supervision;
-#[cfg(feature = "concurrent")]
 mod task;
 
 pub use admission::{
@@ -43,7 +41,6 @@ pub use containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
     contain_gantry_future, contain_integration_future, drop_integration,
 };
-#[cfg(feature = "concurrent")]
 pub use coordinator::{
     ExecutionCoordinator, ExecutionCoordinatorSnapshot, ForegroundCompletionWait,
     JoinSettlementWait, ShutdownQuiescenceWait, TaskSettlementWait, TerminalCompletionWait,
@@ -142,13 +139,13 @@ pub use task::{
     RecoveredConcurrentDurableExecutionV1,
 };
 #[cfg(feature = "concurrent")]
+pub use task::{ConcurrentSchedulerV1, ScheduledMachineStepV1};
 pub use task::{
-    ConcurrentSchedulerV1, ConcurrentShutdownCohortV1, ConcurrentTaskRecordV1,
-    ConcurrentTaskStateV1, ConcurrentTaskStatusV1, ConcurrentTerminalCategoryV1,
-    ConcurrentTerminalOutcomeV1, DetachedTaskFailureV1, DynamicTaskHandleIdentity,
-    ExecutionTaskRecordRefV1, JoinResolutionV1, JoinStartV1, RootTaskRecordV1,
-    ScheduledMachineStepV1, TaskAbortResultV1, TaskCaptureV1, TaskCreatedV1, TaskCreationRequestV1,
-    TaskCreationV1, TaskDriverOwnershipV1, TaskFailureV1, TaskJoinFailureV1,
+    ConcurrentShutdownCohortV1, ConcurrentTaskRecordV1, ConcurrentTaskStateV1,
+    ConcurrentTaskStatusV1, ConcurrentTerminalCategoryV1, ConcurrentTerminalOutcomeV1,
+    DetachedTaskFailureV1, DynamicTaskHandleIdentity, ExecutionTaskRecordRefV1, JoinResolutionV1,
+    JoinStartV1, RootTaskRecordV1, TaskAbortResultV1, TaskCaptureV1, TaskCreatedV1,
+    TaskCreationRequestV1, TaskCreationV1, TaskDriverOwnershipV1, TaskFailureV1, TaskJoinFailureV1,
     TaskJoinMemberFailureKindV1, TaskJoinMemberFailureV1, TaskOriginV1, TaskOwnershipChangedV1,
     TaskOwnershipMemberV1, TaskRecoveryStateV1, TaskStateError,
 };

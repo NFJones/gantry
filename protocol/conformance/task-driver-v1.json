@@ -1,0 +1,102 @@
+{
+  "format": "gantry.task-driver-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-DRIVER-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3.3-runtime-ownership",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3.6",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-STATE",
+      "clause": "clause-002",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-TASK-SETTLE",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-7.4",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-7.17",
+      "clause": "clause-003",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-15.2-runtime-sessions",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.7",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.9",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "abnormal-physical-completion",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#abnormal_physical_completion_settles_the_unpolled_driver_once"
+    },
+    {
+      "id": "cancellation-around-yield",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#cancellation_published_during_yield_wins_before_more_source_progress"
+    },
+    {
+      "id": "error-settlement",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#owned_driver_internal_error_settles_before_supervision_reports_success"
+    },
+    {
+      "id": "hook-and-session-ownership",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#driver_uses_coordinator_owned_sessions_and_one_serial_hook"
+    },
+    {
+      "id": "owned-send-static-driver",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#owned_driver_is_send_static_and_publishes_semantic_settlement_before_return"
+    },
+    {
+      "id": "panic-containment",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#hook_factory_panic_is_contained_as_hook_creation_failure"
+    },
+    {
+      "id": "semantic-before-physical",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#driver_yields_and_supervision_observes_physical_completion_after_semantic_settlement"
+    },
+    {
+      "id": "yield-failure",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#failed_yield_settles_the_same_task_with_executor_failure"
+    }
+  ],
+  "exclusions": [
+    "Automatic accepted-root admission, gated submission, and public start handoff remain owned by GNT-ASYNC-START-001.",
+    "Durable stage-commit-publish composition remains owned by GNT-ASYNC-DROOT-001 and GNT-ASYNC-DUR-001.",
+    "Native source-child creation and executable task-control lowering remain owned by GNT-ASYNC-SPAWN-001 and GNT-ASYNC-LOWER-001.",
+    "Public removal of caller-driven run_execution remains owned by GNT-ASYNC-API-001."
+  ]
+}

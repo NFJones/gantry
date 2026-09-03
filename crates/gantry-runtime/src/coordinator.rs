@@ -18,13 +18,14 @@ use std::task::{Context, Poll, Waker};
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::value::ValueLimits;
 use gantry_host::contracts::HostError;
-use gantry_ir::TaskControlSite;
+use gantry_ir::{StructuralPosition, TaskControlSite};
 
 use crate::{
     ConcurrentShutdownCohortV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
     ConcurrentTerminalOutcomeV1, DynamicTaskHandleIdentity, JoinResolutionV1, JoinStartV1,
-    LogicalSessionRegistryV1, LogicalSessionV1, MachineOutcome, TaskCreationRequestV1,
-    TaskCreationV1, TaskOwnershipChangedV1, TaskStateError,
+    LogicalSessionRegistryV1, LogicalSessionV1, MachineOutcome, SessionCreationModeV1,
+    SessionError, SessionEstablishmentV1, TaskCreationRequestV1, TaskCreationV1,
+    TaskOwnershipChangedV1, TaskStateError,
 };
 
 static NEXT_COORDINATOR_WAITER_ID: AtomicU64 = AtomicU64::new(1);
@@ -126,6 +127,57 @@ impl ExecutionCoordinator {
             Err(TryLockError::Poisoned(error)) => Some(snapshot_from(&error.into_inner())),
             Err(TryLockError::WouldBlock) => None,
         }
+    }
+
+    /// Returns one execution-wide logical-session record without retaining the guard.
+    #[must_use]
+    pub fn session(&self, session_id: ProtocolIdentity) -> Option<LogicalSessionV1> {
+        lock(&self.inner.state).sessions.get(session_id).cloned()
+    }
+
+    /// Creates one execution-wide non-root logical session at a linearization point.
+    pub fn create_session(
+        &self,
+        parent_id: ProtocolIdentity,
+        creator_task: ProtocolIdentity,
+        site: StructuralPosition,
+        occurrence: u64,
+        mode: SessionCreationModeV1,
+        establishment: SessionEstablishmentV1,
+    ) -> Result<LogicalSessionV1, SessionError> {
+        let mut state = lock(&self.inner.state);
+        let session = state
+            .sessions
+            .create(
+                parent_id,
+                creator_task,
+                site,
+                occurrence,
+                mode,
+                establishment,
+            )?
+            .clone();
+        state.publication = state.publication.wrapping_add(1);
+        Ok(session)
+    }
+
+    /// Applies one synchronous session update while holding the coordinator linearization lock.
+    ///
+    /// The callback must not await, invoke an integration, or reenter this coordinator.
+    pub fn with_session_mut<T>(
+        &self,
+        session_id: ProtocolIdentity,
+        update: impl FnOnce(&mut LogicalSessionV1) -> T,
+    ) -> Result<T, SessionError> {
+        let mut state = lock(&self.inner.state);
+        let result = update(
+            state
+                .sessions
+                .get_mut(session_id)
+                .ok_or(SessionError::UnknownParent)?,
+        );
+        state.publication = state.publication.wrapping_add(1);
+        Ok(result)
     }
 
     /// Records one child and its forked logical session at one linearization point.

@@ -43,6 +43,8 @@ pub struct DeterministicConcurrentExecutor {
     tasks: Mutex<Vec<Arc<Mutex<DeterministicTaskState>>>>,
     fail_next_spawn: AtomicBool,
     yields: AtomicU64,
+    next_yield_failure: Mutex<Option<HostError>>,
+    next_yield_cancellation: Mutex<Option<gantry::host::contracts::CancellationSignal>>,
 }
 
 impl std::fmt::Debug for DeterministicConcurrentExecutor {
@@ -58,6 +60,16 @@ impl DeterministicConcurrentExecutor {
     /// Makes the next submission fail with `executor-failure`.
     pub fn fail_next_spawn(&self) {
         self.fail_next_spawn.store(true, Ordering::Release);
+    }
+
+    /// Makes the next cooperative yield fail with the supplied executor error.
+    pub fn fail_next_yield(&self, error: HostError) {
+        *lock(&self.next_yield_failure) = Some(error);
+    }
+
+    /// Makes the next cooperative yield publish one Gantry cancellation signal.
+    pub fn cancel_on_next_yield(&self, signal: gantry::host::contracts::CancellationSignal) {
+        *lock(&self.next_yield_cancellation) = Some(signal);
     }
 
     /// Makes the next abort request for one running task fail immutably.
@@ -112,6 +124,12 @@ impl DeterministicConcurrentExecutor {
     #[must_use]
     pub fn wake_count(&self, task_id: u64) -> Option<u64> {
         self.task(task_id).map(|task| lock(&task).wakes)
+    }
+
+    /// Returns the number of cooperative executor yields requested by tasks.
+    #[must_use]
+    pub fn yields(&self) -> u64 {
+        self.yields.load(Ordering::Acquire)
     }
 
     /// Returns whether one unsettled task is currently eligible for polling.
@@ -233,7 +251,11 @@ impl ExecutorAdapter for DeterministicConcurrentExecutor {
 
     fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
         self.yields.fetch_add(1, Ordering::AcqRel);
-        Box::pin(async { Ok(()) })
+        if let Some(signal) = lock(&self.next_yield_cancellation).take() {
+            signal.cancel();
+        }
+        let result = lock(&self.next_yield_failure).take().map_or(Ok(()), Err);
+        Box::pin(async move { result })
     }
 
     fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
