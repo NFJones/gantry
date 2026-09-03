@@ -294,6 +294,47 @@ impl ConcurrentTaskStatusV1 {
     }
 }
 
+/// Whether one coordinator task is the execution root or a source-created child.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskOriginV1 {
+    /// The accepted execution root, which has no source-visible handle.
+    Root,
+    /// A source-created task with one linear lexical handle disposition.
+    Child,
+}
+
+/// Process-local ownership of one task's executor driver.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskDriverOwnershipV1 {
+    /// Logical task state exists, but no submitted driver is registered yet.
+    AwaitingSubmission,
+    /// The shared supervision domain owns the submitted driver capability.
+    Supervised,
+    /// No process-local driver remains to be supervised.
+    PhysicallySettled,
+}
+
+/// Whether one task belongs to the original process or a recovered projection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskRecoveryStateV1 {
+    /// The task was created by this process.
+    Original,
+    /// The task was reconstructed from authoritative durable state.
+    Recovered,
+}
+
+/// First-class coordinator state for the accepted execution root.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RootTaskRecordV1 {
+    task_id: ProtocolIdentity,
+    task_path: Arc<[Arc<str>]>,
+    status: ConcurrentTaskStatusV1,
+    pending_outcome: Option<MachineOutcome>,
+    settled_outcome: Option<MachineOutcome>,
+    driver_ownership: TaskDriverOwnershipV1,
+    recovery_state: TaskRecoveryStateV1,
+}
+
 /// One task whose detached failure contributes to execution-terminal state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DetachedTaskFailureV1 {
@@ -369,6 +410,9 @@ pub struct ConcurrentTaskRecordV1 {
     handle_state: TaskHandleState,
     handle_visible: bool,
     status: ConcurrentTaskStatusV1,
+    pending_outcome: Option<MachineOutcome>,
+    driver_ownership: TaskDriverOwnershipV1,
+    recovery_state: TaskRecoveryStateV1,
 }
 
 impl ConcurrentTaskRecordV1 {
@@ -469,6 +513,98 @@ impl ConcurrentTaskRecordV1 {
     }
 }
 
+/// Borrowed common projection of one root or child task record.
+#[derive(Clone, Copy, Debug)]
+pub enum ExecutionTaskRecordRefV1<'a> {
+    /// The accepted root task.
+    Root(&'a RootTaskRecordV1),
+    /// One source-created child task.
+    Child(&'a ConcurrentTaskRecordV1),
+}
+
+impl<'a> ExecutionTaskRecordRefV1<'a> {
+    /// Returns whether this is the root or a source-created child.
+    #[must_use]
+    pub const fn origin(self) -> TaskOriginV1 {
+        match self {
+            Self::Root(_) => TaskOriginV1::Root,
+            Self::Child(_) => TaskOriginV1::Child,
+        }
+    }
+
+    /// Returns the stable logical task identity.
+    #[must_use]
+    pub const fn task_id(self) -> ProtocolIdentity {
+        match self {
+            Self::Root(task) => task.task_id,
+            Self::Child(task) => task.task_id,
+        }
+    }
+
+    /// Returns the canonical task path; the root path is empty.
+    #[must_use]
+    pub fn task_path(self) -> &'a [Arc<str>] {
+        match self {
+            Self::Root(task) => &task.task_path,
+            Self::Child(task) => &task.task_path,
+        }
+    }
+
+    /// Returns the complete semantic task status.
+    #[must_use]
+    pub const fn status(self) -> &'a ConcurrentTaskStatusV1 {
+        match self {
+            Self::Root(task) => &task.status,
+            Self::Child(task) => &task.status,
+        }
+    }
+
+    /// Returns an outcome staged before semantic settlement publication.
+    #[must_use]
+    pub const fn pending_outcome(self) -> Option<&'a MachineOutcome> {
+        match self {
+            Self::Root(task) => task.pending_outcome.as_ref(),
+            Self::Child(task) => task.pending_outcome.as_ref(),
+        }
+    }
+
+    /// Returns the exact settled root outcome; child results remain in their status.
+    #[must_use]
+    pub const fn settled_outcome(self) -> Option<&'a MachineOutcome> {
+        match self {
+            Self::Root(task) => task.settled_outcome.as_ref(),
+            Self::Child(_) => None,
+        }
+    }
+
+    /// Returns the process-local driver ownership state.
+    #[must_use]
+    pub const fn driver_ownership(self) -> TaskDriverOwnershipV1 {
+        match self {
+            Self::Root(task) => task.driver_ownership,
+            Self::Child(task) => task.driver_ownership,
+        }
+    }
+
+    /// Returns whether the task is original or reconstructed.
+    #[must_use]
+    pub const fn recovery_state(self) -> TaskRecoveryStateV1 {
+        match self {
+            Self::Root(task) => task.recovery_state,
+            Self::Child(task) => task.recovery_state,
+        }
+    }
+
+    /// Returns a child source-handle disposition; roots have no such handle.
+    #[must_use]
+    pub const fn source_handle_state(self) -> Option<TaskHandleState> {
+        match self {
+            Self::Root(_) => None,
+            Self::Child(task) => Some(task.handle_state),
+        }
+    }
+}
+
 /// Result of recording one admitted task before executor submission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TaskCreationV1 {
@@ -542,6 +678,7 @@ pub struct ConcurrentShutdownCohortV1 {
 pub struct ConcurrentTaskStateV1 {
     execution_id: ProtocolIdentity,
     root_task_id: ProtocolIdentity,
+    root: RootTaskRecordV1,
     maximum_tasks: u64,
     created_tasks: u64,
     task_paths: BTreeMap<ProtocolIdentity, Arc<[Arc<str>]>>,
@@ -572,6 +709,15 @@ impl ConcurrentTaskStateV1 {
         Ok(Self {
             execution_id,
             root_task_id,
+            root: RootTaskRecordV1 {
+                task_id: root_task_id,
+                task_path: Arc::from([]),
+                status: ConcurrentTaskStatusV1::Running,
+                pending_outcome: None,
+                settled_outcome: None,
+                driver_ownership: TaskDriverOwnershipV1::Supervised,
+                recovery_state: TaskRecoveryStateV1::Original,
+            },
             maximum_tasks,
             created_tasks: 1,
             task_paths: BTreeMap::from([(root_task_id, Arc::from([]))]),
@@ -606,6 +752,29 @@ impl ConcurrentTaskStateV1 {
     #[must_use]
     pub const fn maximum_task_count(&self) -> u64 {
         self.maximum_tasks
+    }
+
+    /// Returns the number of first-class root and child task records.
+    #[must_use]
+    pub fn task_record_count(&self) -> usize {
+        self.tasks.len().saturating_add(1)
+    }
+
+    /// Returns one common root-or-child task record projection.
+    #[must_use]
+    pub fn task_record(&self, task_id: ProtocolIdentity) -> Option<ExecutionTaskRecordRefV1<'_>> {
+        if task_id == self.root_task_id {
+            return Some(ExecutionTaskRecordRefV1::Root(&self.root));
+        }
+        self.tasks
+            .get(&task_id)
+            .map(ExecutionTaskRecordRefV1::Child)
+    }
+
+    /// Returns the exact semantic outcome retained when the root settled.
+    #[must_use]
+    pub const fn root_settled_outcome(&self) -> Option<&MachineOutcome> {
+        self.root.settled_outcome.as_ref()
     }
 
     /// Returns one admitted child task.
@@ -677,6 +846,19 @@ impl ConcurrentTaskStateV1 {
         if self.terminal.is_some() {
             return Ok(Vec::new());
         }
+        let root_is_live = matches!(
+            self.root.status,
+            ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+        );
+        let has_live_child = self.tasks.values().any(|task| {
+            matches!(
+                task.status,
+                ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+            )
+        });
+        if !root_is_live && !has_live_child {
+            return Ok(Vec::new());
+        }
         let reason = reason.into();
         if reason.is_empty() {
             return Err(TaskStateError::InvalidCancellationReason);
@@ -686,7 +868,7 @@ impl ConcurrentTaskStateV1 {
             .get_or_insert_with(|| Arc::clone(&reason))
             .clone();
         let mut affected = Vec::new();
-        if !self.cancellation_reasons.contains_key(&self.root_task_id) {
+        if root_is_live && !self.cancellation_reasons.contains_key(&self.root_task_id) {
             self.cancellation_reasons
                 .insert(self.root_task_id, Arc::clone(&reason));
             affected.push(self.root_task_id);
@@ -712,8 +894,14 @@ impl ConcurrentTaskStateV1 {
         task_id: ProtocolIdentity,
         reason: impl Into<Arc<str>>,
     ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
-        if !self.task_paths.contains_key(&task_id) {
-            return Err(TaskStateError::UnknownTask);
+        let task = self
+            .task_record(task_id)
+            .ok_or(TaskStateError::UnknownTask)?;
+        if !matches!(
+            task.status(),
+            ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+        ) {
+            return Ok(Vec::new());
         }
         let reason = reason.into();
         if reason.is_empty() {
@@ -936,6 +1124,9 @@ impl ConcurrentTaskStateV1 {
             handle_state: TaskHandleState::Attached,
             handle_visible: false,
             status: ConcurrentTaskStatusV1::Submitting,
+            pending_outcome: None,
+            driver_ownership: TaskDriverOwnershipV1::AwaitingSubmission,
+            recovery_state: TaskRecoveryStateV1::Original,
         };
         self.created_tasks = next_count;
         self.task_paths.insert(task_id, Arc::from(task_path));
@@ -964,6 +1155,7 @@ impl ConcurrentTaskStateV1 {
         task_id: ProtocolIdentity,
         result: Result<(), HostError>,
     ) -> Result<(), TaskStateError> {
+        let submitted = result.is_ok();
         let task = self
             .tasks
             .get_mut(&task_id)
@@ -987,57 +1179,122 @@ impl ConcurrentTaskStateV1 {
                 protected_diagnostic: error.protected_diagnostic,
             }),
         };
+        task.driver_ownership = if submitted {
+            TaskDriverOwnershipV1::Supervised
+        } else {
+            TaskDriverOwnershipV1::PhysicallySettled
+        };
         task.handle_visible = true;
         Ok(())
     }
 
-    /// Settles one running child exactly once from the shared machine outcome.
-    pub fn settle(
+    /// Stages one task-local outcome without publishing semantic settlement.
+    pub fn stage_task_outcome(
         &mut self,
         task_id: ProtocolIdentity,
         outcome: MachineOutcome,
     ) -> Result<(), TaskStateError> {
-        let task = self
-            .tasks
-            .get_mut(&task_id)
+        let cancellation = self.cancellation_reasons.get(&task_id).cloned();
+        let record = self
+            .task_record(task_id)
             .ok_or(TaskStateError::UnknownTask)?;
-        if !matches!(task.status, ConcurrentTaskStatusV1::Running) {
+        if !matches!(record.status(), ConcurrentTaskStatusV1::Running)
+            || record.pending_outcome().is_some()
+        {
             return Err(TaskStateError::InvalidTransition);
         }
+        if let ExecutionTaskRecordRefV1::Child(task) = record
+            && let MachineOutcome::Succeeded(value) = &outcome
+            && !value_matches_type(value, &task.result_type)
+        {
+            return Err(TaskStateError::ResultType);
+        }
+        let outcome = cancellation.map_or(outcome, MachineOutcome::Cancelled);
+        if task_id == self.root_task_id {
+            self.root.pending_outcome = Some(outcome);
+        } else {
+            self.tasks
+                .get_mut(&task_id)
+                .ok_or(TaskStateError::UnknownTask)?
+                .pending_outcome = Some(outcome);
+        }
+        Ok(())
+    }
+
+    /// Publishes one previously staged task settlement exactly once.
+    pub fn settle_staged_task(&mut self, task_id: ProtocolIdentity) -> Result<(), TaskStateError> {
+        let outcome = if task_id == self.root_task_id {
+            self.root
+                .pending_outcome
+                .take()
+                .ok_or(TaskStateError::InvalidTransition)?
+        } else {
+            self.tasks
+                .get_mut(&task_id)
+                .ok_or(TaskStateError::UnknownTask)?
+                .pending_outcome
+                .take()
+                .ok_or(TaskStateError::InvalidTransition)?
+        };
         let outcome = self
             .cancellation_reasons
             .get(&task_id)
             .map_or(outcome, |reason| {
                 MachineOutcome::Cancelled(Arc::clone(reason))
             });
-        if let MachineOutcome::Succeeded(value) = &outcome
-            && !value_matches_type(value, &task.result_type)
-        {
-            return Err(TaskStateError::ResultType);
+        let status = task_status_from_outcome(outcome.clone());
+        if task_id == self.root_task_id {
+            self.root.status = status;
+            self.root.settled_outcome = Some(outcome);
+        } else {
+            self.tasks
+                .get_mut(&task_id)
+                .ok_or(TaskStateError::UnknownTask)?
+                .status = status;
         }
-        task.status = match outcome {
-            MachineOutcome::Succeeded(value) => ConcurrentTaskStatusV1::Succeeded(value),
-            MachineOutcome::Failed(failure) => ConcurrentTaskStatusV1::Failed(TaskFailureV1 {
-                category: match failure.code {
-                    crate::RuntimeCode::Operation(category) => category,
-                    crate::RuntimeCode::UnsupportedEffect
-                    | crate::RuntimeCode::InternalInvariant => {
-                        RuntimeErrorCategory::InternalInvariantFailure
-                    }
-                    crate::RuntimeCode::Deterministic(_)
-                    | crate::RuntimeCode::DeterministicTransitionBudget
-                    | crate::RuntimeCode::OperationBudget
-                    | crate::RuntimeCode::LoopIterationBudget
-                    | crate::RuntimeCode::LoopLimitExhausted => {
-                        RuntimeErrorCategory::DeterministicEvaluationFailure
-                    }
-                },
-                code: Arc::from(failure.code.wire_name()),
-                protected_diagnostic: None,
-            }),
-            MachineOutcome::Cancelled(reason) => ConcurrentTaskStatusV1::Cancelled(reason),
-        };
         Ok(())
+    }
+
+    /// Settles one running root or child exactly once from a machine outcome.
+    pub fn settle(
+        &mut self,
+        task_id: ProtocolIdentity,
+        outcome: MachineOutcome,
+    ) -> Result<(), TaskStateError> {
+        self.stage_task_outcome(task_id, outcome)?;
+        self.settle_staged_task(task_id)
+    }
+
+    /// Records physical driver completion separately from semantic settlement.
+    pub fn mark_driver_physically_settled(
+        &mut self,
+        task_id: ProtocolIdentity,
+    ) -> Result<bool, TaskStateError> {
+        let ownership = if task_id == self.root_task_id {
+            &mut self.root.driver_ownership
+        } else {
+            &mut self
+                .tasks
+                .get_mut(&task_id)
+                .ok_or(TaskStateError::UnknownTask)?
+                .driver_ownership
+        };
+        if *ownership == TaskDriverOwnershipV1::PhysicallySettled {
+            return Ok(false);
+        }
+        *ownership = TaskDriverOwnershipV1::PhysicallySettled;
+        Ok(true)
+    }
+
+    /// Returns whether every first-class task is semantically and physically settled.
+    #[must_use]
+    pub fn drivers_are_quiescent(&self) -> bool {
+        status_is_settled(&self.root.status)
+            && self.root.driver_ownership == TaskDriverOwnershipV1::PhysicallySettled
+            && self.tasks.values().all(|task| {
+                status_is_settled(&task.status)
+                    && task.driver_ownership == TaskDriverOwnershipV1::PhysicallySettled
+            })
     }
 
     /// Atomically consumes an analyzer-selected named join or joinall selection.
@@ -1343,6 +1600,7 @@ impl ConcurrentTaskStateV1 {
             self.submitting_by_parent.remove(&task.parent_task_id);
             task.handle_visible = true;
             task.status = ConcurrentTaskStatusV1::Cancelled(reason);
+            task.driver_ownership = TaskDriverOwnershipV1::PhysicallySettled;
         }
         Ok(kind)
     }
@@ -1693,8 +1951,12 @@ pub enum TaskStateError {
     InvalidCancellationReason,
     /// Cancellation prevents creation of more child work.
     TaskCancelled,
+    /// Logical-session state belongs to another accepted execution.
+    SessionExecutionMismatch,
     /// Foreground completion was already fixed.
     ForegroundAlreadyFixed,
+    /// Foreground completion requires semantic root settlement.
+    RootTaskPending,
     /// Foreground completion requires every attached descendant to settle.
     AttachedTasksPending,
     /// Terminal completion requires a fixed foreground outcome.
@@ -1705,6 +1967,27 @@ pub enum TaskStateError {
     TerminalAlreadyFixed,
     /// The requested status transition is not defined.
     InvalidTransition,
+}
+
+fn task_status_from_outcome(outcome: MachineOutcome) -> ConcurrentTaskStatusV1 {
+    match outcome {
+        MachineOutcome::Succeeded(value) => ConcurrentTaskStatusV1::Succeeded(value),
+        MachineOutcome::Failed(failure) => ConcurrentTaskStatusV1::Failed(TaskFailureV1 {
+            category: machine_failure_category(failure.code),
+            code: Arc::from(failure.code.wire_name()),
+            protected_diagnostic: None,
+        }),
+        MachineOutcome::Cancelled(reason) => ConcurrentTaskStatusV1::Cancelled(reason),
+    }
+}
+
+fn status_is_settled(status: &ConcurrentTaskStatusV1) -> bool {
+    matches!(
+        status,
+        ConcurrentTaskStatusV1::Succeeded(_)
+            | ConcurrentTaskStatusV1::Failed(_)
+            | ConcurrentTaskStatusV1::Cancelled(_)
+    )
 }
 
 fn machine_failure_category(code: crate::RuntimeCode) -> RuntimeErrorCategory {

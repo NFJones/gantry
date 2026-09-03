@@ -1,0 +1,60 @@
+{
+  "format": "gantry.execution-coordinator-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-COORD-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3-M-STATE",
+      "clause": "clause-002",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-006",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-TASK-SETTLE",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-15.1-automatic-execution",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "first-class-root",
+      "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#root_is_one_first_class_task_without_child_only_state"
+    },
+    {
+      "id": "join-notification-and-shared-sessions",
+      "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#join_waits_on_publication_and_sessions_share_the_same_coordinator_cut"
+    },
+    {
+      "id": "linearized-transition-races",
+      "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#settlement_and_cancellation_race_has_one_consistent_winner"
+    },
+    {
+      "id": "publication-after-state",
+      "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#task_settlement_and_completion_publish_before_waiter_notification"
+    },
+    {
+      "id": "semantic-physical-shutdown",
+      "evidence": "crates/gantry-conformance/tests/execution_coordinator.rs#shutdown_quiescence_wakes_when_semantic_settlement_follows_physical_completion"
+    }
+  ],
+  "exclusions": [
+    "Machine driver loops and executor submission remain owned by GNT-ASYNC-DRIVER-001 and GNT-ASYNC-START-001.",
+    "Concrete execution-wide budget storage remains owned by GNT-ASYNC-BUD-001.",
+    "Executable source task-control lowering and native child scheduling remain owned by GNT-ASYNC-LOWER-001 and GNT-ASYNC-SPAWN-001.",
+    "Durable stage-commit-publish and process recovery remain owned by GNT-ASYNC-DUR-001 and GNT-ASYNC-REC-001."
+  ]
+}

@@ -615,6 +615,15 @@ impl TaskStateCheckpointV1 {
         let mut state = ConcurrentTaskStateV1 {
             execution_id: self.execution_id,
             root_task_id: self.root_task_id,
+            root: super::RootTaskRecordV1 {
+                task_id: self.root_task_id,
+                task_path: Arc::from([]),
+                status: ConcurrentTaskStatusV1::Running,
+                pending_outcome: None,
+                settled_outcome: None,
+                driver_ownership: super::TaskDriverOwnershipV1::Supervised,
+                recovery_state: super::TaskRecoveryStateV1::Original,
+            },
             maximum_tasks: self.maximum_tasks,
             created_tasks: self.created_tasks,
             task_paths,
@@ -784,6 +793,13 @@ fn read_task(
         .ok_or(ConcurrentDurableCheckpointError::InvalidEncoding)?;
     let handle_visible = reader.boolean()?;
     let status = read_task_status(reader, limits)?;
+    let driver_ownership = match status {
+        ConcurrentTaskStatusV1::Submitting => super::TaskDriverOwnershipV1::AwaitingSubmission,
+        ConcurrentTaskStatusV1::Running => super::TaskDriverOwnershipV1::Supervised,
+        ConcurrentTaskStatusV1::Succeeded(_)
+        | ConcurrentTaskStatusV1::Failed(_)
+        | ConcurrentTaskStatusV1::Cancelled(_) => super::TaskDriverOwnershipV1::PhysicallySettled,
+    };
     Ok(ConcurrentTaskRecordV1 {
         task_id,
         parent_task_id,
@@ -804,6 +820,9 @@ fn read_task(
         handle_state,
         handle_visible,
         status,
+        pending_outcome: None,
+        driver_ownership,
+        recovery_state: super::TaskRecoveryStateV1::Original,
     })
 }
 
