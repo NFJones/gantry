@@ -8,6 +8,7 @@
 //! analyzer, unifier, trait solver, implementation lookup, or monomorphization
 //! fallback.
 
+mod admission;
 mod configuration;
 mod containment;
 #[cfg(feature = "durable")]
@@ -26,9 +27,14 @@ mod session;
 #[cfg(feature = "concurrent")]
 mod task;
 
+pub use admission::{
+    AdmissionBoundary, AdmissionClass, AdmissionExhaustion, AdmissionFailureCategory,
+    AdmissionPermit, AdmissionRequest, AdmissionReservation, AdmissionResourceClass,
+    AdmissionSnapshot, AsyncAdmission,
+};
 pub use configuration::{
-    ConfigurationError, ConfigurationErrorKind, InterpreterConfiguration, RequiredConfiguration,
-    RetryDefaults,
+    AsyncCapacityLimits, ConfigurationError, ConfigurationErrorKind, InterpreterConfiguration,
+    RequiredConfiguration, RetryDefaults,
 };
 pub use containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,

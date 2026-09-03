@@ -574,7 +574,13 @@ fn configuration(
         1_000,
     )
     .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
-    InterpreterConfiguration::new(executor, identities, required)
+    InterpreterConfiguration::new(
+        executor,
+        identities,
+        required,
+        gantry::runtime::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+    )
 }
 
 fn selection() -> ProtocolSelection {

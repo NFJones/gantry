@@ -1990,7 +1990,13 @@ fn test_configuration_with_policy(
         yield_quantum,
     )
     .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
-    InterpreterConfiguration::new(services.clone(), services, required)
+    InterpreterConfiguration::new(
+        services.clone(),
+        services,
+        required,
+        gantry::runtime::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+    )
 }
 
 fn best_effort_plan() -> SinkPlan {

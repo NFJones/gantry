@@ -380,7 +380,12 @@ fn run_command(
         1_000,
     )
     .unwrap_or_else(|_| unreachable!("fixed CLI evaluator limits are valid"));
-    let configuration = InterpreterConfiguration::new(executor, identity_source, required);
+    let async_capacities = gantry::runtime::AsyncCapacityLimits::new(
+        65_536, 65_536, 65_536, 65_536, 65_536, 65_536, 65_536, 65_536, 65_536,
+    )
+    .unwrap_or_else(|_| unreachable!("fixed CLI async capacities are valid"));
+    let configuration =
+        InterpreterConfiguration::new(executor, identity_source, required, async_capacities);
     let interpreter = Interpreter::new(
         configuration,
         Arc::new(services::SystemUtcClock),

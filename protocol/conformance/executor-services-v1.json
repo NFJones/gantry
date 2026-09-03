@@ -17,7 +17,7 @@
     }
   ],
   "exclusions": [
-    "Admission classes, permit ownership, and cleanup reserves remain owned by GNT-ASYNC-ADMIT-001.",
+    "Concrete start, resume, supervision, blocking-work, and event-delivery paths consume the admission owner in their downstream issues.",
     "Evaluator cancellation checkpoints and scheduler-yield composition remain owned by evaluator integration.",
     "Persistence and recovery of selected delays and timestamps remain owned by durable-runtime work.",
     "Tokio-specific stress, runtime shutdown, and adapter fault qualification remain owned by GNT-ASYNC-TOKIO-001."

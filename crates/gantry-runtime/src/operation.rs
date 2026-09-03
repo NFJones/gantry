@@ -1540,7 +1540,13 @@ mod tests {
             1,
         )
         .unwrap_or_else(|error| panic!("configuration failed: {error}"));
-        InterpreterConfiguration::new(services.clone(), services, required)
+        InterpreterConfiguration::new(
+            services.clone(),
+            services,
+            required,
+            crate::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+                .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+        )
     }
 
     fn block_on<F: std::future::Future>(future: F) -> F::Output {

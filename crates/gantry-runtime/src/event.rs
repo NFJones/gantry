@@ -2129,7 +2129,13 @@ mod tests {
             8,
         )
         .unwrap_or_else(|error| panic!("configuration failed: {error:?}"));
-        InterpreterConfiguration::new(services.clone(), services, required)
+        InterpreterConfiguration::new(
+            services.clone(),
+            services,
+            required,
+            crate::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+                .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+        )
     }
 
     fn sink_id(value: &str) -> SinkId {

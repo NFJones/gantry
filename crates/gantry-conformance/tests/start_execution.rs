@@ -525,7 +525,13 @@ fn configuration_with_type_depth(
         1_000,
     )
     .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
-    InterpreterConfiguration::new(services.clone(), services, required)
+    InterpreterConfiguration::new(
+        services.clone(),
+        services,
+        required,
+        gantry::runtime::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+    )
 }
 
 fn selection() -> ProtocolSelection {

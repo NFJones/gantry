@@ -1,0 +1,25 @@
+{
+  "format": "gantry.async-admission-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-ADMIT-001",
+  "capabilities": [
+    {
+      "id": "atomic-batch-and-boundary-failures",
+      "evidence": "crates/gantry-conformance/tests/async_admission.rs#public_admission_batches_are_atomic_nonblocking_and_boundary_typed"
+    },
+    {
+      "id": "configuration-capacities",
+      "evidence": "crates/gantry-conformance/tests/async_admission.rs#public_async_capacities_are_explicit_positive_operational_policy"
+    },
+    {
+      "id": "reserved-cleanup-progress",
+      "evidence": "crates/gantry-conformance/tests/async_admission.rs#public_cleanup_reserve_survives_ordinary_saturation"
+    }
+  ],
+  "exclusions": [
+    "Concrete start and resume acceptance handoffs consume these reservations in GNT-ASYNC-START-001 and GNT-ASYNC-RESUME-001.",
+    "Submitted-handle registration, physical-settlement observation, and final permit release are integrated by GNT-ASYNC-SUP-001.",
+    "Blocking queue execution, cancellation-before-start, and started-job retention remain owned by GNT-ASYNC-BLOCK-001.",
+    "Event-delivery worker ownership and barriers remain owned by GNT-ASYNC-REVENT-001 and GNT-ASYNC-OBS-001."
+  ]
+}

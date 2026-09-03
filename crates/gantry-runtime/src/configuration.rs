@@ -9,6 +9,7 @@ use gantry_core::value::ValueLimits;
 use gantry_host::contracts::{DurationMicros, ExecutorAdapter, IdentitySource};
 
 use crate::MachineLimits;
+use crate::admission::{AdmissionClass, AsyncAdmission};
 
 const MAXIMUM_LENGTH: u64 = 9_007_199_254_740_991;
 
@@ -199,11 +200,171 @@ impl RequiredConfiguration {
     }
 }
 
+/// Positive operational capacities excluded from durable execution identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AsyncCapacityLimits {
+    /// Root drivers across executions.
+    maximum_active_root_tasks: u64,
+    /// Source-created child drivers across executions.
+    maximum_active_source_child_tasks: u64,
+    /// Runnable drivers reconstructed by one or more resume activities.
+    maximum_resume_runnable_tasks: u64,
+    /// Admitted public-operation activities.
+    maximum_admitted_public_activities: u64,
+    /// Interpreter-owned background tasks.
+    maximum_interpreter_background_tasks: u64,
+    /// Blocking jobs retained in the bounded queue.
+    maximum_queued_blocking_jobs: u64,
+    /// Started blocking jobs retained to completion.
+    maximum_active_blocking_jobs: u64,
+    /// Active event-delivery activities.
+    maximum_active_event_deliveries: u64,
+    /// Cleanup and control-plane tasks unavailable to ordinary work.
+    reserved_control_plane_tasks: u64,
+}
+
+impl AsyncCapacityLimits {
+    /// Validates every required operational capacity.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        maximum_active_root_tasks: u64,
+        maximum_active_source_child_tasks: u64,
+        maximum_resume_runnable_tasks: u64,
+        maximum_admitted_public_activities: u64,
+        maximum_interpreter_background_tasks: u64,
+        maximum_queued_blocking_jobs: u64,
+        maximum_active_blocking_jobs: u64,
+        maximum_active_event_deliveries: u64,
+        reserved_control_plane_tasks: u64,
+    ) -> Result<Self, ConfigurationError> {
+        for (field, value) in [
+            (
+                ConfigurationField::MaximumActiveRootTasks,
+                maximum_active_root_tasks,
+            ),
+            (
+                ConfigurationField::MaximumActiveSourceChildTasks,
+                maximum_active_source_child_tasks,
+            ),
+            (
+                ConfigurationField::MaximumResumeRunnableTasks,
+                maximum_resume_runnable_tasks,
+            ),
+            (
+                ConfigurationField::MaximumAdmittedPublicActivities,
+                maximum_admitted_public_activities,
+            ),
+            (
+                ConfigurationField::MaximumInterpreterBackgroundTasks,
+                maximum_interpreter_background_tasks,
+            ),
+            (
+                ConfigurationField::MaximumQueuedBlockingJobs,
+                maximum_queued_blocking_jobs,
+            ),
+            (
+                ConfigurationField::MaximumActiveBlockingJobs,
+                maximum_active_blocking_jobs,
+            ),
+            (
+                ConfigurationField::MaximumActiveEventDeliveries,
+                maximum_active_event_deliveries,
+            ),
+            (
+                ConfigurationField::ReservedControlPlaneTasks,
+                reserved_control_plane_tasks,
+            ),
+        ] {
+            check(field, value, false, MAXIMUM_DIRECTIVE_INTEGER)?;
+        }
+        Ok(Self {
+            maximum_active_root_tasks,
+            maximum_active_source_child_tasks,
+            maximum_resume_runnable_tasks,
+            maximum_admitted_public_activities,
+            maximum_interpreter_background_tasks,
+            maximum_queued_blocking_jobs,
+            maximum_active_blocking_jobs,
+            maximum_active_event_deliveries,
+            reserved_control_plane_tasks,
+        })
+    }
+
+    /// Returns the root-driver capacity across executions.
+    #[must_use]
+    pub const fn maximum_active_root_tasks(self) -> u64 {
+        self.maximum_active_root_tasks
+    }
+
+    /// Returns the source-child-driver capacity across executions.
+    #[must_use]
+    pub const fn maximum_active_source_child_tasks(self) -> u64 {
+        self.maximum_active_source_child_tasks
+    }
+
+    /// Returns the reconstructed runnable-task capacity.
+    #[must_use]
+    pub const fn maximum_resume_runnable_tasks(self) -> u64 {
+        self.maximum_resume_runnable_tasks
+    }
+
+    /// Returns the admitted public-activity capacity.
+    #[must_use]
+    pub const fn maximum_admitted_public_activities(self) -> u64 {
+        self.maximum_admitted_public_activities
+    }
+
+    /// Returns the interpreter-background-task capacity.
+    #[must_use]
+    pub const fn maximum_interpreter_background_tasks(self) -> u64 {
+        self.maximum_interpreter_background_tasks
+    }
+
+    /// Returns the queued-blocking-job capacity.
+    #[must_use]
+    pub const fn maximum_queued_blocking_jobs(self) -> u64 {
+        self.maximum_queued_blocking_jobs
+    }
+
+    /// Returns the active-blocking-job capacity.
+    #[must_use]
+    pub const fn maximum_active_blocking_jobs(self) -> u64 {
+        self.maximum_active_blocking_jobs
+    }
+
+    /// Returns the active-event-delivery capacity.
+    #[must_use]
+    pub const fn maximum_active_event_deliveries(self) -> u64 {
+        self.maximum_active_event_deliveries
+    }
+
+    /// Returns the cleanup/control-plane reserve.
+    #[must_use]
+    pub const fn reserved_control_plane_tasks(self) -> u64 {
+        self.reserved_control_plane_tasks
+    }
+
+    pub(crate) const fn capacity(self, class: AdmissionClass) -> u64 {
+        match class {
+            AdmissionClass::RootTask => self.maximum_active_root_tasks,
+            AdmissionClass::SourceChildTask => self.maximum_active_source_child_tasks,
+            AdmissionClass::ResumeRunnableTask => self.maximum_resume_runnable_tasks,
+            AdmissionClass::PublicActivity => self.maximum_admitted_public_activities,
+            AdmissionClass::InterpreterBackgroundTask => self.maximum_interpreter_background_tasks,
+            AdmissionClass::QueuedBlockingJob => self.maximum_queued_blocking_jobs,
+            AdmissionClass::ActiveBlockingJob => self.maximum_active_blocking_jobs,
+            AdmissionClass::EventDelivery => self.maximum_active_event_deliveries,
+        }
+    }
+}
+
 /// Complete validated interpreter configuration with executor-neutral integrations.
 pub struct InterpreterConfiguration {
     executor: Arc<dyn ExecutorAdapter>,
     identity_source: Arc<dyn IdentitySource>,
     required: RequiredConfiguration,
+    async_capacities: AsyncCapacityLimits,
+    async_admission: AsyncAdmission,
     retry: RetryDefaults,
     graceful_shutdown_timeout: DurationMicros,
     post_cancellation_drain: DurationMicros,
@@ -216,6 +377,7 @@ impl fmt::Debug for InterpreterConfiguration {
         formatter
             .debug_struct("InterpreterConfiguration")
             .field("required", &self.required)
+            .field("async_capacities", &self.async_capacities)
             .field("retry", &self.retry)
             .field("graceful_shutdown_timeout", &self.graceful_shutdown_timeout)
             .field("post_cancellation_drain", &self.post_cancellation_drain)
@@ -238,11 +400,14 @@ impl InterpreterConfiguration {
         executor: Arc<dyn ExecutorAdapter>,
         identity_source: Arc<dyn IdentitySource>,
         required: RequiredConfiguration,
+        async_capacities: AsyncCapacityLimits,
     ) -> Self {
         Self {
             executor,
             identity_source,
             required,
+            async_capacities,
+            async_admission: AsyncAdmission::new(async_capacities),
             retry: RetryDefaults::default(),
             graceful_shutdown_timeout: duration(30_000_000),
             post_cancellation_drain: duration(5_000_000),
@@ -340,6 +505,18 @@ impl InterpreterConfiguration {
     #[must_use]
     pub const fn required(&self) -> RequiredConfiguration {
         self.required
+    }
+
+    /// Returns the operational capacity policy excluded from durable identity.
+    #[must_use]
+    pub const fn async_capacity_limits(&self) -> AsyncCapacityLimits {
+        self.async_capacities
+    }
+
+    /// Returns the shared nonblocking admission owner for operational work.
+    #[must_use]
+    pub fn async_admission(&self) -> AsyncAdmission {
+        self.async_admission.clone()
     }
 
     /// Returns effective retry defaults.
