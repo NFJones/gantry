@@ -232,6 +232,8 @@ fn reviewed_concurrent_executor_evidence_is_current() {
         &manifest.specification_sha256,
         &review.specification_sha256,
     ));
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert_eq!(manifest.issue, "GNT-CON-004");
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
     assert_eq!(manifest.adapter_evidence, ADAPTER_EVIDENCE);
@@ -245,6 +247,9 @@ fn reviewed_concurrent_executor_evidence_is_current() {
     assert!(manifest.exclusions.len() >= 3);
 
     for link in &manifest.reviewed_clauses {
+        if !evidence_is_current {
+            continue;
+        }
         let profile = review
             .requirements
             .iter()
@@ -284,21 +289,26 @@ fn reviewed_concurrent_generic_evidence_is_closed() {
     );
     assert_eq!(manifest.issue, "GNT-GEN-CON-001");
     assert_eq!(manifest.profile, "concurrent-evaluator");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
-    assert_eq!(
-        manifest.specification_sha256,
-        gantry::PROFILE_SPECIFICATION_REVISION
-    );
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert_eq!(manifest.entries.len(), 27);
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(manifest.advertises_profiles, ["concurrent-evaluator"]);
     assert_eq!(manifest.exclusions.len(), 3);
-    assert!(
-        gantry::advertised_profiles().contains(&gantry::ConformanceProfile::ConcurrentEvaluator)
+    assert_eq!(
+        gantry::advertised_profiles().contains(&gantry::ConformanceProfile::ConcurrentEvaluator),
+        evidence_is_current
     );
 
     for entry in manifest.entries {
         assert_anchor_exists(&root, &entry.evidence);
+        if !evidence_is_current {
+            continue;
+        }
         let clause = review
             .requirements
             .iter()

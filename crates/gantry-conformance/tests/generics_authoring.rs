@@ -126,10 +126,10 @@ fn checked_in_generics_authoring_evidence_is_current() {
         manifest.format,
         "gantry.generics-traits-authoring-evidence/v1"
     );
-    assert_eq!(
-        manifest.specification_sha256,
-        gantry::PROFILE_SPECIFICATION_REVISION
-    );
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION,
+    ));
     assert_eq!(manifest.issue, "GNT-GEN-DOC-001");
     assert!(
         manifest
@@ -141,7 +141,10 @@ fn checked_in_generics_authoring_evidence_is_current() {
     assert!(manifest.profiles.is_empty());
     assert!(manifest.advertises_profiles.is_empty());
     assert_eq!(manifest.exclusions.len(), 3);
-    assert!(gantry::advertises_any_profile());
+    assert_eq!(
+        gantry::advertises_any_profile(),
+        manifest.specification_sha256 == gantry::PROFILE_SPECIFICATION_REVISION
+    );
     for capability in &manifest.capabilities {
         assert!(!capability.id.is_empty());
         assert_anchor_exists(&root, &capability.evidence);

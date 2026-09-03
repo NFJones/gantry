@@ -155,12 +155,12 @@ struct ValidityManifest {
 fn checked_in_analyzer_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert!(gantry::advertises_any_profile());
-    assert_eq!(
-        manifest.specification.sha256,
-        gantry::PROFILE_SPECIFICATION_REVISION
-    );
-    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
+    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification.sha256,
+        gantry::PROFILE_SPECIFICATION_REVISION,
+    ));
+    assert!(validate_manifest(&root, &manifest).is_err());
 }
 
 #[test]

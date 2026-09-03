@@ -106,6 +106,8 @@ fn reviewed_concurrent_task_state_evidence_is_narrow_and_current() {
         &manifest.specification_sha256,
         &review.specification_sha256,
     ));
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(manifest.exclusions.len(), 5);
 
@@ -122,6 +124,9 @@ fn reviewed_concurrent_task_state_evidence_is_narrow_and_current() {
     }
 
     for ((requirement, clause_key, profile_name), evidence) in entries {
+        if !evidence_is_current {
+            continue;
+        }
         let profile = review
             .requirements
             .iter()

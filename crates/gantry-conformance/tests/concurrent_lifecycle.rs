@@ -118,6 +118,8 @@ fn checked_in_concurrent_lifecycle_evidence_is_narrow_and_current() {
         &manifest.specification_sha256,
         &review.specification_sha256,
     ));
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert!(
         manifest
             .capabilities
@@ -138,6 +140,9 @@ fn checked_in_concurrent_lifecycle_evidence_is_narrow_and_current() {
         ));
     }
     for link in manifest.reviewed_clauses {
+        if !evidence_is_current {
+            continue;
+        }
         let profile = review
             .requirements
             .iter()

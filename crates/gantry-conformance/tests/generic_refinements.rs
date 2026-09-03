@@ -130,10 +130,16 @@ fn validate_manifest(root: &Path, manifest: &ProofManifest) -> Result<(), String
         || manifest.issue != "GNT-GEN-PROOF-002"
         || manifest.profiles != PROFILES
         || manifest.static_prerequisite_requirements != STATIC_PREREQUISITES
-        || manifest.specification_sha256 != review.specification_sha256
-        || manifest.specification_sha256 != gantry::PROFILE_SPECIFICATION_REVISION
+        || !gantry_conformance::evidence_revision_is_expected(
+            &manifest.specification_sha256,
+            &review.specification_sha256,
+        )
     {
         return Err("generic refinement proof identity or revision is invalid".to_owned());
+    }
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    if !evidence_is_current && !gantry::advertised_profiles().is_empty() {
+        return Err("superseded generic refinement proof advertises current profiles".to_owned());
     }
     if manifest.assumptions.len() < 3
         || manifest.exclusions.len() < 3
@@ -240,26 +246,28 @@ fn validate_profile_argument(
             argument.profile
         ));
     }
-    for key in classified {
-        let (requirement, clause) = key
-            .split_once('#')
-            .ok_or_else(|| format!("invalid requirement key {key}"))?;
-        let profile = reviewed_profile(review, requirement, clause, &argument.profile)?;
-        if profile.state != "covered" || profile.evidence.is_empty() {
-            return Err(format!("uncovered reviewed requirement {key}"));
+    if manifest.specification_sha256 == review.specification_sha256 {
+        for key in classified {
+            let (requirement, clause) = key
+                .split_once('#')
+                .ok_or_else(|| format!("invalid requirement key {key}"))?;
+            let profile = reviewed_profile(review, requirement, clause, &argument.profile)?;
+            if profile.state != "covered" || profile.evidence.is_empty() {
+                return Err(format!("uncovered reviewed requirement {key}"));
+            }
         }
-    }
-    let proof = reviewed_profile(
-        review,
-        "GNT-3-D-PROPERTIES",
-        "clause-001",
-        &argument.profile,
-    )?;
-    if !proof.evidence.contains(&argument.model_evidence) {
-        return Err(format!(
-            "{} bounded model is not linked to the formal property",
-            argument.profile
-        ));
+        let proof = reviewed_profile(
+            review,
+            "GNT-3-D-PROPERTIES",
+            "clause-001",
+            &argument.profile,
+        )?;
+        if !proof.evidence.contains(&argument.model_evidence) {
+            return Err(format!(
+                "{} bounded model is not linked to the formal property",
+                argument.profile
+            ));
+        }
     }
     Ok(())
 }

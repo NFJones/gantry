@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 const CATALOG_PATH: &str = "protocol/catalogs/public-formats-v1.json";
 const GOLDEN_PATH: &str = "protocol/goldens/public-formats-v1.json";
 const NEGATIVE_PATH: &str = "protocol/goldens/public-formats-v1.negatives.json";
-const ADOPTION_PATH: &str = "protocol/conformance/generics-traits-adoption-v1.json";
+const ADOPTION_PATH: &str = "protocol/conformance/async-execution-adoption-v1.json";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

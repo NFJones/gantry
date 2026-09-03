@@ -34,10 +34,13 @@ impl ConformanceProfile {
 }
 
 /// SHA-256 of the exact specification revision owning these profiles.
-pub const PROFILE_SPECIFICATION_REVISION: &str = "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf";
+pub const PROFILE_SPECIFICATION_REVISION: &str = "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a";
+
+/// SHA-256 of the isolated superseded specification revision.
+pub const PROFILE_SUPERSEDED_SPECIFICATION_REVISION: &str = "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf";
 
 /// Whether this staged baseline may advertise conformance profiles.
-pub const PROFILE_CLAIMS_ENABLED: bool = true;
+pub const PROFILE_CLAIMS_ENABLED: bool = false;
 
 /// One profile and its direct prerequisite profiles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

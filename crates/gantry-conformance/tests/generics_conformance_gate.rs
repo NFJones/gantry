@@ -155,10 +155,19 @@ fn reviewed_generics_conformance_evidence_is_closed() {
     let review: RequirementReview = read_json(&root.join(REVIEW_PATH));
     let adoption: AdoptionGate = read_json(&root.join(ADOPTION_PATH));
 
-    assert_eq!(
-        validate_manifest(&root, &manifest, &review, &adoption),
-        Ok(())
-    );
+    if gantry::PROFILE_CLAIMS_ENABLED {
+        assert_eq!(
+            validate_manifest(&root, &manifest, &review, &adoption),
+            Ok(())
+        );
+    } else {
+        assert!(gantry::advertised_profiles().is_empty());
+        assert!(gantry_conformance::evidence_revision_is_expected(
+            &manifest.specification_sha256,
+            &review.specification_sha256,
+        ));
+        assert!(validate_manifest(&root, &manifest, &review, &adoption).is_err());
+    }
 }
 
 #[test]

@@ -157,12 +157,12 @@ struct Counterexample {
 fn checked_in_concurrent_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert!(gantry::advertised_profiles().contains(&ConformanceProfile::ConcurrentEvaluator));
+    assert!(gantry::advertised_profiles().is_empty());
     assert!(gantry_conformance::evidence_revision_is_expected(
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
+    assert!(validate_manifest(&root, &manifest).is_err());
 }
 
 #[test]

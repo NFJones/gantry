@@ -254,6 +254,7 @@ fn validate(catalog: &PortableCatalog) -> Result<(), String> {
                 | "durably-mutable"
                 | "identity-bound"
                 | "integration-owned"
+                | "operational-policy"
                 | "scheduling-only"
         ) {
             return Err(format!("unknown configuration class {}", field.class));
@@ -533,6 +534,7 @@ fn render_rust(catalog: &PortableCatalog) -> String {
             ("durably-mutable", "DurablyMutable"),
             ("identity-bound", "IdentityBound"),
             ("integration-owned", "IntegrationOwned"),
+            ("operational-policy", "OperationalPolicy"),
             ("scheduling-only", "SchedulingOnly"),
         ],
     );

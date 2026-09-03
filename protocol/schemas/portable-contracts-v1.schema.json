@@ -157,6 +157,7 @@
             "durably-mutable",
             "identity-bound",
             "integration-owned",
+            "operational-policy",
             "scheduling-only"
           ]
         },

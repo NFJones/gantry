@@ -2,7 +2,7 @@
 // Source: protocol/catalogs/embedding-contracts-v1.json. Do not edit manually.
 
 /// SHA-256 of the reviewed specification revision.
-pub const EMBEDDING_SPECIFICATION_REVISION: &str = "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf";
+pub const EMBEDDING_SPECIFICATION_REVISION: &str = "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a";
 
 /// Structured fields returned by successful semantic analysis.
 pub const ANALYSIS_RESULT_FIELDS: &[&str] = &[
@@ -74,6 +74,8 @@ pub enum EmbeddingOperation {
     SpawnTask,
     /// The `start-execution` value.
     StartExecution,
+    /// The `submit-blocking-work` value.
+    SubmitBlockingWork,
     /// The `utc-now` value.
     UtcNow,
     /// The `validate-package` value.
@@ -113,6 +115,7 @@ impl EmbeddingOperation {
             Self::Sleep => "sleep",
             Self::SpawnTask => "spawn-task",
             Self::StartExecution => "start-execution",
+            Self::SubmitBlockingWork => "submit-blocking-work",
             Self::UtcNow => "utc-now",
             Self::ValidatePackage => "validate-package",
             Self::YieldNow => "yield-now",
@@ -149,6 +152,7 @@ impl EmbeddingOperation {
             "sleep" => Some(Self::Sleep),
             "spawn-task" => Some(Self::SpawnTask),
             "start-execution" => Some(Self::StartExecution),
+            "submit-blocking-work" => Some(Self::SubmitBlockingWork),
             "utc-now" => Some(Self::UtcNow),
             "validate-package" => Some(Self::ValidatePackage),
             "yield-now" => Some(Self::YieldNow),
@@ -160,6 +164,8 @@ impl EmbeddingOperation {
 /// Closed `HostService` protocol vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HostService {
+    /// The `blocking` value.
+    Blocking,
     /// The `event` value.
     Event,
     /// The `executor` value.
@@ -174,6 +180,8 @@ pub enum HostService {
     Lifecycle,
     /// The `preflight` value.
     Preflight,
+    /// The `session` value.
+    Session,
 }
 
 impl HostService {
@@ -181,6 +189,7 @@ impl HostService {
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
+            Self::Blocking => "blocking",
             Self::Event => "event",
             Self::Executor => "executor",
             Self::Hook => "hook",
@@ -188,6 +197,7 @@ impl HostService {
             Self::Journal => "journal",
             Self::Lifecycle => "lifecycle",
             Self::Preflight => "preflight",
+            Self::Session => "session",
         }
     }
 
@@ -195,6 +205,7 @@ impl HostService {
     #[must_use]
     pub fn from_wire_name(value: &str) -> Option<Self> {
         match value {
+            "blocking" => Some(Self::Blocking),
             "event" => Some(Self::Event),
             "executor" => Some(Self::Executor),
             "hook" => Some(Self::Hook),
@@ -202,6 +213,7 @@ impl HostService {
             "journal" => Some(Self::Journal),
             "lifecycle" => Some(Self::Lifecycle),
             "preflight" => Some(Self::Preflight),
+            "session" => Some(Self::Session),
             _ => None,
         }
     }
@@ -210,6 +222,8 @@ impl HostService {
 /// Closed `IntegrationRole` protocol vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IntegrationRole {
+    /// The `blocking-work-service` value.
+    BlockingWorkService,
     /// The `event-sink` value.
     EventSink,
     /// The `executor-adapter` value.
@@ -226,6 +240,8 @@ pub enum IntegrationRole {
     JournalStorage,
     /// The `operation-hook` value.
     OperationHook,
+    /// The `runtime-session-service` value.
+    RuntimeSessionService,
 }
 
 impl IntegrationRole {
@@ -233,6 +249,7 @@ impl IntegrationRole {
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
+            Self::BlockingWorkService => "blocking-work-service",
             Self::EventSink => "event-sink",
             Self::ExecutorAdapter => "executor-adapter",
             Self::HookFactory => "hook-factory",
@@ -241,6 +258,7 @@ impl IntegrationRole {
             Self::Interpreter => "interpreter",
             Self::JournalStorage => "journal-storage",
             Self::OperationHook => "operation-hook",
+            Self::RuntimeSessionService => "runtime-session-service",
         }
     }
 
@@ -248,6 +266,7 @@ impl IntegrationRole {
     #[must_use]
     pub fn from_wire_name(value: &str) -> Option<Self> {
         match value {
+            "blocking-work-service" => Some(Self::BlockingWorkService),
             "event-sink" => Some(Self::EventSink),
             "executor-adapter" => Some(Self::ExecutorAdapter),
             "hook-factory" => Some(Self::HookFactory),
@@ -256,6 +275,7 @@ impl IntegrationRole {
             "interpreter" => Some(Self::Interpreter),
             "journal-storage" => Some(Self::JournalStorage),
             "operation-hook" => Some(Self::OperationHook),
+            "runtime-session-service" => Some(Self::RuntimeSessionService),
             _ => None,
         }
     }
@@ -266,6 +286,8 @@ impl IntegrationRole {
 pub enum OperationAsyncKind {
     /// The `borrowed-future` value.
     BorrowedFuture,
+    /// The `owned-blocking-job` value.
+    OwnedBlockingJob,
     /// The `owned-task-future` value.
     OwnedTaskFuture,
     /// The `synchronous` value.
@@ -278,6 +300,7 @@ impl OperationAsyncKind {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::BorrowedFuture => "borrowed-future",
+            Self::OwnedBlockingJob => "owned-blocking-job",
             Self::OwnedTaskFuture => "owned-task-future",
             Self::Synchronous => "synchronous",
         }
@@ -288,6 +311,7 @@ impl OperationAsyncKind {
     pub fn from_wire_name(value: &str) -> Option<Self> {
         match value {
             "borrowed-future" => Some(Self::BorrowedFuture),
+            "owned-blocking-job" => Some(Self::OwnedBlockingJob),
             "owned-task-future" => Some(Self::OwnedTaskFuture),
             "synchronous" => Some(Self::Synchronous),
             _ => None,
@@ -338,12 +362,14 @@ impl FailureOrigin {
 pub enum FailureBoundary {
     /// The `adapter-result` value.
     AdapterResult,
+    /// The `blocking-work-service` value.
+    BlockingWorkService,
     /// The `event-sink` value.
     EventSink,
     /// The `executor-clock-timer-or-sampler` value.
     ExecutorClockTimerOrSampler,
-    /// The `hook-factory-or-session-establishment` value.
-    HookFactoryOrSessionEstablishment,
+    /// The `hook-factory` value.
+    HookFactory,
     /// The `identity-source` value.
     IdentitySource,
     /// The `integration-preflight` value.
@@ -356,6 +382,8 @@ pub enum FailureBoundary {
     Process,
     /// The `public-operation-or-owned-task` value.
     PublicOperationOrOwnedTask,
+    /// The `runtime-session-service` value.
+    RuntimeSessionService,
 }
 
 impl FailureBoundary {
@@ -364,15 +392,17 @@ impl FailureBoundary {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::AdapterResult => "adapter-result",
+            Self::BlockingWorkService => "blocking-work-service",
             Self::EventSink => "event-sink",
             Self::ExecutorClockTimerOrSampler => "executor-clock-timer-or-sampler",
-            Self::HookFactoryOrSessionEstablishment => "hook-factory-or-session-establishment",
+            Self::HookFactory => "hook-factory",
             Self::IdentitySource => "identity-source",
             Self::IntegrationPreflight => "integration-preflight",
             Self::JournalStorage => "journal-storage",
             Self::OperationHook => "operation-hook",
             Self::Process => "process",
             Self::PublicOperationOrOwnedTask => "public-operation-or-owned-task",
+            Self::RuntimeSessionService => "runtime-session-service",
         }
     }
 
@@ -381,15 +411,17 @@ impl FailureBoundary {
     pub fn from_wire_name(value: &str) -> Option<Self> {
         match value {
             "adapter-result" => Some(Self::AdapterResult),
+            "blocking-work-service" => Some(Self::BlockingWorkService),
             "event-sink" => Some(Self::EventSink),
             "executor-clock-timer-or-sampler" => Some(Self::ExecutorClockTimerOrSampler),
-            "hook-factory-or-session-establishment" => Some(Self::HookFactoryOrSessionEstablishment),
+            "hook-factory" => Some(Self::HookFactory),
             "identity-source" => Some(Self::IdentitySource),
             "integration-preflight" => Some(Self::IntegrationPreflight),
             "journal-storage" => Some(Self::JournalStorage),
             "operation-hook" => Some(Self::OperationHook),
             "process" => Some(Self::Process),
             "public-operation-or-owned-task" => Some(Self::PublicOperationOrOwnedTask),
+            "runtime-session-service" => Some(Self::RuntimeSessionService),
             _ => None,
         }
     }
@@ -402,18 +434,22 @@ pub enum FailureMapping {
     DocumentedOperationErrorUnion,
     /// The `executor-failure` value.
     ExecutorFailure,
+    /// The `hook-creation-failure` value.
+    HookCreationFailure,
     /// The `hook-failure-or-unknown-action-outcome` value.
     HookFailureOrUnknownActionOutcome,
-    /// The `hook-or-session-runtime-failure` value.
-    HookOrSessionRuntimeFailure,
     /// The `integration-preflight-failure` value.
     IntegrationPreflightFailure,
     /// The `internal-or-internal-invariant-failure` value.
     InternalOrInternalInvariantFailure,
+    /// The `logical-session-setup-failure` value.
+    LogicalSessionSetupFailure,
     /// The `no-portable-in-process-result` value.
     NoPortableInProcessResult,
     /// The `phase-sensitive-identity-generation-failure` value.
     PhaseSensitiveIdentityGenerationFailure,
+    /// The `phase-sensitive-internal-failure` value.
+    PhaseSensitiveInternalFailure,
     /// The `phase-sensitive-journal-failure` value.
     PhaseSensitiveJournalFailure,
     /// The `terminal-failed-delivery-attempt` value.
@@ -427,12 +463,14 @@ impl FailureMapping {
         match self {
             Self::DocumentedOperationErrorUnion => "documented-operation-error-union",
             Self::ExecutorFailure => "executor-failure",
+            Self::HookCreationFailure => "hook-creation-failure",
             Self::HookFailureOrUnknownActionOutcome => "hook-failure-or-unknown-action-outcome",
-            Self::HookOrSessionRuntimeFailure => "hook-or-session-runtime-failure",
             Self::IntegrationPreflightFailure => "integration-preflight-failure",
             Self::InternalOrInternalInvariantFailure => "internal-or-internal-invariant-failure",
+            Self::LogicalSessionSetupFailure => "logical-session-setup-failure",
             Self::NoPortableInProcessResult => "no-portable-in-process-result",
             Self::PhaseSensitiveIdentityGenerationFailure => "phase-sensitive-identity-generation-failure",
+            Self::PhaseSensitiveInternalFailure => "phase-sensitive-internal-failure",
             Self::PhaseSensitiveJournalFailure => "phase-sensitive-journal-failure",
             Self::TerminalFailedDeliveryAttempt => "terminal-failed-delivery-attempt",
         }
@@ -444,12 +482,14 @@ impl FailureMapping {
         match value {
             "documented-operation-error-union" => Some(Self::DocumentedOperationErrorUnion),
             "executor-failure" => Some(Self::ExecutorFailure),
+            "hook-creation-failure" => Some(Self::HookCreationFailure),
             "hook-failure-or-unknown-action-outcome" => Some(Self::HookFailureOrUnknownActionOutcome),
-            "hook-or-session-runtime-failure" => Some(Self::HookOrSessionRuntimeFailure),
             "integration-preflight-failure" => Some(Self::IntegrationPreflightFailure),
             "internal-or-internal-invariant-failure" => Some(Self::InternalOrInternalInvariantFailure),
+            "logical-session-setup-failure" => Some(Self::LogicalSessionSetupFailure),
             "no-portable-in-process-result" => Some(Self::NoPortableInProcessResult),
             "phase-sensitive-identity-generation-failure" => Some(Self::PhaseSensitiveIdentityGenerationFailure),
+            "phase-sensitive-internal-failure" => Some(Self::PhaseSensitiveInternalFailure),
             "phase-sensitive-journal-failure" => Some(Self::PhaseSensitiveJournalFailure),
             "terminal-failed-delivery-attempt" => Some(Self::TerminalFailedDeliveryAttempt),
             _ => None,
@@ -564,7 +604,7 @@ pub struct EmbeddingOperationDefinition {
 
 /// All embedding operations in canonical wire-name order.
 pub const EMBEDDING_OPERATIONS: &[EmbeddingOperationDefinition] = &[
-    EmbeddingOperationDefinition { operation: EmbeddingOperation::AbortTask, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["concurrent-evaluator", "embedding"], request_fields: &["task_handle"], optional_request_fields: &[], result_variants: &["already-settled", "failed", "stopped"], error_categories: &["executor-failure"], acceptance: "adapter-call", idempotency: "idempotent", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
+    EmbeddingOperationDefinition { operation: EmbeddingOperation::AbortTask, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["task_handle"], optional_request_fields: &[], result_variants: &["already-settled", "failed", "stopped"], error_categories: &["executor-failure"], acceptance: "adapter-call", idempotency: "idempotent", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::AcquireJournalOwner, service: HostService::Journal, role: IntegrationRole::JournalStorage, applicable_profiles: &["durable-runtime", "embedding"], request_fields: &["journal_id", "operation_kind"], optional_request_fields: &[], result_variants: &["acquired", "failed"], error_categories: &["journal-failure", "ownership-acquisition"], acceptance: "fenced-owner-acquisition", idempotency: "linearizable-race", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::AnalyzePackage, service: HostService::Lifecycle, role: IntegrationRole::Interpreter, applicable_profiles: &["analyzer", "embedding"], request_fields: &["frontend_limits", "package_root", "protocol_selection"], optional_request_fields: &["event_delivery"], result_variants: &["operational-failure", "source-invalid", "source-valid"], error_categories: &["frontend-resource-limit", "implementation-resource-exhaustion", "internal", "lifecycle", "required-event-delivery"], acceptance: "public-operation-admission", idempotency: "semantically-repeatable", cancellation: "caller-stops-waiting", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::AwaitForeground, service: HostService::Lifecycle, role: IntegrationRole::Interpreter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["execution_handle"], optional_request_fields: &[], result_variants: &["run-failed-nondurably", "terminal"], error_categories: &["internal-invariant-failure", "journal-failure", "lifecycle"], acceptance: "waiter-registration", idempotency: "read-only", cancellation: "waiter-only", async_kind: OperationAsyncKind::BorrowedFuture },
@@ -575,9 +615,9 @@ pub const EMBEDDING_OPERATIONS: &[EmbeddingOperationDefinition] = &[
     EmbeddingOperationDefinition { operation: EmbeddingOperation::DeadlineRace, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["deadline", "future"], optional_request_fields: &["cancellation"], result_variants: &["completed", "failed", "timed-out"], error_categories: &["executor-failure"], acceptance: "completion-or-deadline", idempotency: "single-race", cancellation: "drop-loser", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::DeliverEvent, service: HostService::Event, role: IntegrationRole::EventSink, applicable_profiles: &["embedding"], request_fields: &["event_envelope", "protected_payload_bundle"], optional_request_fields: &[], result_variants: &["retriable", "success", "terminal"], error_categories: &["required-event-delivery-failure"], acceptance: "sink-result", idempotency: "at-least-once-aware", cancellation: "attempt-deadline", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::DispatchOperation, service: HostService::Hook, role: IntegrationRole::OperationHook, applicable_profiles: &["embedding", "evaluator"], request_fields: &["cancellation", "operation_request"], optional_request_fields: &[], result_variants: &["completed", "declined", "failed"], error_categories: &["cancelled", "policy-denied", "provider-failure", "timeout", "unknown-outcome"], acceptance: "host-outcome-returned", idempotency: "request-recovery-class", cancellation: "gantry-token", async_kind: OperationAsyncKind::BorrowedFuture },
-    EmbeddingOperationDefinition { operation: EmbeddingOperation::EstablishSession, service: HostService::Preflight, role: IntegrationRole::IntegrationPreflight, applicable_profiles: &["embedding", "evaluator"], request_fields: &["session_descriptor"], optional_request_fields: &[], result_variants: &["established", "failed"], error_categories: &["logical-session-setup"], acceptance: "session-context-established", idempotency: "execution-and-session-key", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
+    EmbeddingOperationDefinition { operation: EmbeddingOperation::EstablishSession, service: HostService::Session, role: IntegrationRole::RuntimeSessionService, applicable_profiles: &["embedding", "evaluator"], request_fields: &["session_descriptor"], optional_request_fields: &[], result_variants: &["established", "failed"], error_categories: &["logical-session-setup"], acceptance: "session-context-established", idempotency: "execution-and-session-key", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::FreshIdentity, service: HostService::Identity, role: IntegrationRole::IdentitySource, applicable_profiles: &["embedding"], request_fields: &["identity_kind"], optional_request_fields: &[], result_variants: &["failed", "material"], error_categories: &["identity-generation-failure"], acceptance: "material-returned", idempotency: "fresh-each-call", cancellation: "synchronous", async_kind: OperationAsyncKind::Synchronous },
-    EmbeddingOperationDefinition { operation: EmbeddingOperation::JoinTask, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["concurrent-evaluator", "embedding"], request_fields: &["task_handle"], optional_request_fields: &[], result_variants: &["failed", "settled"], error_categories: &["executor-failure"], acceptance: "executor-settlement", idempotency: "read-settlement", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
+    EmbeddingOperationDefinition { operation: EmbeddingOperation::JoinTask, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["task_handle"], optional_request_fields: &[], result_variants: &["failed", "settled"], error_categories: &["executor-failure"], acceptance: "executor-settlement", idempotency: "read-settlement", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::QueryExecution, service: HostService::Lifecycle, role: IntegrationRole::Interpreter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["query_target"], optional_request_fields: &["expected_execution_id"], result_variants: &["not-found", "snapshot"], error_categories: &["journal-failure", "lifecycle"], acceptance: "point-in-time-snapshot", idempotency: "read-only", cancellation: "caller-stops-waiting", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::ReadJournalPrefix, service: HostService::Journal, role: IntegrationRole::JournalStorage, applicable_profiles: &["durable-runtime", "embedding"], request_fields: &["journal_id"], optional_request_fields: &[], result_variants: &["failed", "full-prefix", "snapshot-prefix"], error_categories: &["journal-failure"], acceptance: "authoritative-prefix-read", idempotency: "read-only", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::ReleaseJournalOwner, service: HostService::Journal, role: IntegrationRole::JournalStorage, applicable_profiles: &["durable-runtime", "embedding"], request_fields: &["journal_id", "ownership_token"], optional_request_fields: &[], result_variants: &["failed", "released"], error_categories: &["journal-failure"], acceptance: "owner-token-invalidated", idempotency: "token-scoped", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
@@ -588,8 +628,9 @@ pub const EMBEDDING_OPERATIONS: &[EmbeddingOperationDefinition] = &[
     EmbeddingOperationDefinition { operation: EmbeddingOperation::SampleJitter, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["inclusive_maximum", "inclusive_minimum"], optional_request_fields: &[], result_variants: &["failed", "sampled"], error_categories: &["executor-failure"], acceptance: "sample-returned", idempotency: "fresh-each-call", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::Shutdown, service: HostService::Lifecycle, role: IntegrationRole::Interpreter, applicable_profiles: &["embedding"], request_fields: &[], optional_request_fields: &["drain_us", "graceful_us"], result_variants: &["non-orderly", "orderly"], error_categories: &["identity-generation-failure", "internal-invariant-failure", "journal-failure", "required-event-delivery-failure"], acceptance: "first-shutdown-admission", idempotency: "join-first-coordinator", cancellation: "shutdown-cohort", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::Sleep, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["duration_us"], optional_request_fields: &["cancellation"], result_variants: &["completed", "failed"], error_categories: &["executor-failure"], acceptance: "sleep-settled", idempotency: "one-shot", cancellation: "gantry-token", async_kind: OperationAsyncKind::BorrowedFuture },
-    EmbeddingOperationDefinition { operation: EmbeddingOperation::SpawnTask, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["concurrent-evaluator", "embedding"], request_fields: &["owned_task_future"], optional_request_fields: &[], result_variants: &["failed", "submitted"], error_categories: &["executor-failure"], acceptance: "executor-submission", idempotency: "one-shot", cancellation: "owned-task", async_kind: OperationAsyncKind::OwnedTaskFuture },
+    EmbeddingOperationDefinition { operation: EmbeddingOperation::SpawnTask, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["owned_task_future"], optional_request_fields: &[], result_variants: &["failed", "submitted"], error_categories: &["executor-failure"], acceptance: "executor-submission", idempotency: "one-shot", cancellation: "owned-task", async_kind: OperationAsyncKind::OwnedTaskFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::StartExecution, service: HostService::Lifecycle, role: IntegrationRole::Interpreter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["package_root", "protocol_selection"], optional_request_fields: &["entry_input", "journal_id", "root_session"], result_variants: &["accepted", "rejected"], error_categories: &["analysis", "entry-input-validation", "execution-start-persistence", "frontend-resource-limit", "implementation-resource-exhaustion", "initial-journal-ownership", "integration-preflight", "internal", "lifecycle", "required-event-delivery", "syntax"], acceptance: "successful-preflight-or-durable-start-commit", idempotency: "new-candidate", cancellation: "caller-stops-waiting", async_kind: OperationAsyncKind::BorrowedFuture },
+    EmbeddingOperationDefinition { operation: EmbeddingOperation::SubmitBlockingWork, service: HostService::Blocking, role: IntegrationRole::BlockingWorkService, applicable_profiles: &["analyzer", "concurrent-evaluator", "durable-runtime", "embedding", "evaluator", "frontend"], request_fields: &["owned_blocking_job"], optional_request_fields: &[], result_variants: &["failed", "submitted"], error_categories: &["implementation-resource-exhaustion", "internal"], acceptance: "bounded-queue-admission", idempotency: "one-shot", cancellation: "owned-job", async_kind: OperationAsyncKind::OwnedBlockingJob },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::UtcNow, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding"], request_fields: &[], optional_request_fields: &[], result_variants: &["failed", "timestamp"], error_categories: &["executor-failure"], acceptance: "timestamp-returned", idempotency: "fresh-each-call", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::ValidatePackage, service: HostService::Lifecycle, role: IntegrationRole::Interpreter, applicable_profiles: &["embedding", "frontend"], request_fields: &["frontend_limits", "package_root", "protocol_selection"], optional_request_fields: &["event_delivery"], result_variants: &["operational-failure", "syntax-invalid", "syntax-valid"], error_categories: &["frontend-resource-limit", "implementation-resource-exhaustion", "internal", "lifecycle", "required-event-delivery"], acceptance: "public-operation-admission", idempotency: "semantically-repeatable", cancellation: "caller-stops-waiting", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::YieldNow, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &[], optional_request_fields: &[], result_variants: &["completed", "failed"], error_categories: &["executor-failure"], acceptance: "scheduler-yield", idempotency: "one-shot", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
@@ -610,16 +651,18 @@ pub struct FailureBoundaryDefinition {
 
 /// Complete v1 boundary-failure matrix.
 pub const FAILURE_BOUNDARIES: &[FailureBoundaryDefinition] = &[
-    FailureBoundaryDefinition { origin: FailureOrigin::NormalAdapterError, boundary: FailureBoundary::AdapterResult, mapping: FailureMapping::DocumentedOperationErrorUnion, poison_scope: PoisonScope::None },
+    FailureBoundaryDefinition { origin: FailureOrigin::GantryInvariantPanic, boundary: FailureBoundary::PublicOperationOrOwnedTask, mapping: FailureMapping::InternalOrInternalInvariantFailure, poison_scope: PoisonScope::ExecutionOrInterpreter },
+    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::BlockingWorkService, mapping: FailureMapping::PhaseSensitiveInternalFailure, poison_scope: PoisonScope::AdapterInstance },
+    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::EventSink, mapping: FailureMapping::TerminalFailedDeliveryAttempt, poison_scope: PoisonScope::SinkInstance },
+    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::ExecutorClockTimerOrSampler, mapping: FailureMapping::ExecutorFailure, poison_scope: PoisonScope::AdapterInstance },
+    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::HookFactory, mapping: FailureMapping::HookCreationFailure, poison_scope: PoisonScope::AdapterInstance },
     FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::IdentitySource, mapping: FailureMapping::PhaseSensitiveIdentityGenerationFailure, poison_scope: PoisonScope::AdapterInstance },
     FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::IntegrationPreflight, mapping: FailureMapping::IntegrationPreflightFailure, poison_scope: PoisonScope::AdapterInstance },
-    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::HookFactoryOrSessionEstablishment, mapping: FailureMapping::HookOrSessionRuntimeFailure, poison_scope: PoisonScope::AdapterInstance },
-    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::OperationHook, mapping: FailureMapping::HookFailureOrUnknownActionOutcome, poison_scope: PoisonScope::HookInstance },
-    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::ExecutorClockTimerOrSampler, mapping: FailureMapping::ExecutorFailure, poison_scope: PoisonScope::AdapterInstance },
     FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::JournalStorage, mapping: FailureMapping::PhaseSensitiveJournalFailure, poison_scope: PoisonScope::AdapterInstance },
-    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::EventSink, mapping: FailureMapping::TerminalFailedDeliveryAttempt, poison_scope: PoisonScope::SinkInstance },
-    FailureBoundaryDefinition { origin: FailureOrigin::GantryInvariantPanic, boundary: FailureBoundary::PublicOperationOrOwnedTask, mapping: FailureMapping::InternalOrInternalInvariantFailure, poison_scope: PoisonScope::ExecutionOrInterpreter },
+    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::OperationHook, mapping: FailureMapping::HookFailureOrUnknownActionOutcome, poison_scope: PoisonScope::HookInstance },
+    FailureBoundaryDefinition { origin: FailureOrigin::IntegrationPanic, boundary: FailureBoundary::RuntimeSessionService, mapping: FailureMapping::LogicalSessionSetupFailure, poison_scope: PoisonScope::AdapterInstance },
     FailureBoundaryDefinition { origin: FailureOrigin::NonUnwindLoss, boundary: FailureBoundary::Process, mapping: FailureMapping::NoPortableInProcessResult, poison_scope: PoisonScope::Process },
+    FailureBoundaryDefinition { origin: FailureOrigin::NormalAdapterError, boundary: FailureBoundary::AdapterResult, mapping: FailureMapping::DocumentedOperationErrorUnion, poison_scope: PoisonScope::None },
 ];
 
 /// Rust auto-trait and future ownership requirements for one role.
@@ -637,6 +680,7 @@ pub struct TraitBoundDefinition {
 
 /// Complete v1 integration-role trait bounds.
 pub const TRAIT_BOUNDS: &[TraitBoundDefinition] = &[
+    TraitBoundDefinition { role: IntegrationRole::BlockingWorkService, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::EventSink, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::ExecutorAdapter, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::HookFactory, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
@@ -644,4 +688,5 @@ pub const TRAIT_BOUNDS: &[TraitBoundDefinition] = &[
     TraitBoundDefinition { role: IntegrationRole::IntegrationPreflight, send: false, sync: false, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::JournalStorage, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::OperationHook, send: true, sync: false, returned_future: ReturnedFutureKind::SendBorrowed },
+    TraitBoundDefinition { role: IntegrationRole::RuntimeSessionService, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
 ];

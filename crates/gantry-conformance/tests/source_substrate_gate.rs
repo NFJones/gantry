@@ -72,7 +72,7 @@ fn checked_in_source_substrate_gate_is_current_and_claims_no_profile() {
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
+    assert!(validate_manifest(&root, &manifest).is_err());
 }
 
 #[test]

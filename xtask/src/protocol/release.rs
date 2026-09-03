@@ -14,7 +14,7 @@ const INDEX_PATH: &str = "protocol/publication/index-v1.json";
 const REPORT_PATH: &str = "protocol/publication/verification-v1.json";
 const OUTPUT_DIRECTORY: &str = "protocol/publication/v1";
 const SPEC_PATH: &str = "SPEC.md";
-const ADOPTION_PATH: &str = "protocol/conformance/generics-traits-adoption-v1.json";
+const ADOPTION_PATH: &str = "protocol/conformance/async-execution-adoption-v1.json";
 
 const PROFILES: &[&str] = &[
     "analyzer",
@@ -45,6 +45,7 @@ struct AdoptionGate {
     amended_profiles: Vec<String>,
     advertises_profiles: Vec<String>,
     blocked_by: Vec<String>,
+    superseded_publication_revision: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -241,8 +242,8 @@ fn publication_ready(root: &Path) -> Result<bool, String> {
     let adoption: AdoptionGate = read_json(root, ADOPTION_PATH)?;
     let specification = read(root, SPEC_PATH)?;
     let current_revision = digest(&specification);
-    if adoption.format != "gantry.language-adoption/v1"
-        || adoption.gate != "GNT-GEN-GATE-000"
+    if adoption.format != "gantry.async-execution-adoption/v1"
+        || adoption.gate != "GNT-ASYNC-GATE-000"
         || adoption.specification_sha256 != current_revision
     {
         return Err(
@@ -254,12 +255,24 @@ fn publication_ready(root: &Path) -> Result<bool, String> {
             || !adoption.advertises_profiles.is_empty()
             || adoption.blocked_by.is_empty()
             || !adoption.blocked_by.windows(2).all(|pair| pair[0] < pair[1])
+            || adoption
+                .blocked_by
+                .iter()
+                .any(|issue| issue == &adoption.gate)
         {
             return Err(
                 "blocked language-adoption gate is incomplete or overclaims profiles".to_owned(),
             );
         }
-        if adoption.blocked_by == ["GNT-GEN-REL-001"] {
+        let index: Value = read_json(root, INDEX_PATH)?;
+        let revision = index
+            .get("publication_revision")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "superseded publication index has no revision".to_owned())?;
+        if revision != adoption.superseded_publication_revision {
+            return Err("blocked adoption found an unexpected publication revision".to_owned());
+        }
+        if adoption.blocked_by == ["GNT-ASYNC-REL-001"] {
             return Ok(true);
         }
         return Ok(false);

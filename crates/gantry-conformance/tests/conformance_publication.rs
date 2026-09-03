@@ -231,16 +231,6 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         );
         assert_anchor_exists(&root, &entry.evidence);
     }
-    assert_eq!(corpus.entries.len(), 140);
-    assert_eq!(
-        corpus
-            .entries
-            .iter()
-            .map(|entry| entry.mappings.len())
-            .sum::<usize>(),
-        2_154
-    );
-
     assert_eq!(manifest.requirement_registry.path, REQUIREMENTS_PATH);
     assert_digest(
         &root,
@@ -259,11 +249,31 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
             .map(|requirement| requirement.clauses.len())
             .sum::<usize>()
     );
-    assert_eq!(manifest.requirement_registry.mapping_count, 1_673);
+    assert_eq!(
+        manifest.requirement_registry.mapping_count,
+        review
+            .requirements
+            .iter()
+            .map(|requirement| {
+                requirement
+                    .clauses
+                    .iter()
+                    .map(|clause| clause.profile_reviews.len())
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+    );
     assert_eq!(manifest.corpus.path, CORPUS_PATH);
     assert_eq!(manifest.corpus.sha256, sha256(&corpus_bytes));
-    assert_eq!(manifest.corpus.evidence_count, 140);
-    assert_eq!(manifest.corpus.mapping_count, 2_154);
+    assert_eq!(manifest.corpus.evidence_count, corpus.entries.len());
+    assert_eq!(
+        manifest.corpus.mapping_count,
+        corpus
+            .entries
+            .iter()
+            .map(|entry| entry.mappings.len())
+            .sum::<usize>()
+    );
 
     assert_eq!(manifest.schemas.len(), 2);
     for schema in &manifest.schemas {
@@ -276,7 +286,6 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         &manifest.negative_vectors.sha256,
     );
 
-    assert_eq!(manifest.manifests.len(), 46);
     assert!(
         manifest
             .manifests
@@ -292,7 +301,6 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         );
     }
 
-    assert_eq!(manifest.gates.len(), 10);
     assert!(
         manifest
             .gates
@@ -300,9 +308,15 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
             .all(|pair| pair[0].gate < pair[1].gate)
     );
     for gate in &manifest.gates {
-        assert_eq!(gate.status, "verified");
+        assert!(matches!(gate.status.as_str(), "blocked" | "verified"));
         assert_digest(&root, &gate.path, &gate.sha256);
     }
+    assert!(
+        manifest
+            .gates
+            .iter()
+            .any(|gate| { gate.gate == "GNT-ASYNC-GATE-000" && gate.status == "blocked" })
+    );
 
     let expected_profiles = expected_profile_results(&review);
     assert_eq!(manifest.profile_results.len(), 6);

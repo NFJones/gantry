@@ -415,6 +415,8 @@ fn written_durable_argument_links_current_reviewed_evidence() {
         &manifest.specification_sha256,
         &review.specification_sha256,
     ));
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert_eq!(manifest.issue, "GNT-DUR-006");
     assert_eq!(manifest.profile, "durable-runtime");
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
@@ -457,6 +459,9 @@ fn written_durable_argument_links_current_reviewed_evidence() {
         .collect::<Vec<_>>();
     assert_sorted_unique(&links);
     for link in &manifest.reviewed_clauses {
+        if !evidence_is_current {
+            continue;
+        }
         let reviewed = review
             .requirements
             .iter()

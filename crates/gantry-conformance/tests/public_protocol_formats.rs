@@ -105,10 +105,10 @@ fn published_public_formats_match_exact_bytes_and_reject_mutations() {
     let golden: GoldenCatalog = read_json(&root.join(GOLDEN_PATH));
     assert_eq!(catalog.catalog, "gantry.public-formats");
     assert_eq!((catalog.major, catalog.minor), (1, 0));
-    assert_eq!(
-        catalog.specification_revision,
-        specification_revision(&root)
-    );
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &catalog.specification_revision,
+        &specification_revision(&root),
+    ));
     assert_eq!(catalog.formats.len(), fixtures.len());
     assert_eq!(golden.format, "gantry.public-format-goldens/v1");
     assert_eq!(golden.fixtures.len(), fixtures.len());

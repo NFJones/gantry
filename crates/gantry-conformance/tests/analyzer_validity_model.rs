@@ -329,7 +329,12 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
         read_json(&root.join("protocol/conformance/analyzer-validity-v1.json"));
     let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
     assert_eq!(manifest.format, "gantry.analyzer-validity-evidence/v1");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert_eq!(manifest.issue, "GNT-GEN-PROOF-001");
     assert_eq!(manifest.profile, "analyzer");
     assert_eq!(manifest.model_evidence, MODEL_EVIDENCE);
@@ -402,25 +407,27 @@ fn written_validity_argument_links_current_public_evidence_and_no_integration_gr
         );
     }
 
-    let proof = review
-        .requirements
-        .iter()
-        .find(|requirement| requirement.id == "GNT-3-D-PROPERTIES")
-        .and_then(|requirement| {
-            requirement
-                .clauses
-                .iter()
-                .find(|clause| clause.key == "clause-001")
-        })
-        .and_then(|clause| {
-            clause
-                .profile_reviews
-                .iter()
-                .find(|profile| profile.profile == "analyzer")
-        })
-        .unwrap_or_else(|| panic!("missing analyzer proof review"));
-    assert_eq!(proof.state, "covered");
-    assert_eq!(proof.evidence, [MODEL_EVIDENCE]);
+    if evidence_is_current {
+        let proof = review
+            .requirements
+            .iter()
+            .find(|requirement| requirement.id == "GNT-3-D-PROPERTIES")
+            .and_then(|requirement| {
+                requirement
+                    .clauses
+                    .iter()
+                    .find(|clause| clause.key == "clause-001")
+            })
+            .and_then(|clause| {
+                clause
+                    .profile_reviews
+                    .iter()
+                    .find(|profile| profile.profile == "analyzer")
+            })
+            .unwrap_or_else(|| panic!("missing analyzer proof review"));
+        assert_eq!(proof.state, "covered");
+        assert_eq!(proof.evidence, [MODEL_EVIDENCE]);
+    }
 
     let metadata = Command::new("cargo")
         .current_dir(&root)

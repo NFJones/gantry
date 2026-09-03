@@ -95,9 +95,13 @@ fn checked_in_generics_frontend_evidence_is_current_and_withdrawn() {
         manifest.format,
         "gantry.generics-traits-frontend-evidence/v1"
     );
-    assert_eq!(
-        manifest.specification_sha256,
-        requirements.specification_sha256
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &requirements.specification_sha256,
+    ));
+    assert!(
+        manifest.specification_sha256 == requirements.specification_sha256
+            || gantry::advertised_profiles().is_empty()
     );
     assert_eq!(manifest.issue, "GNT-GEN-FE-001");
     assert!(manifest.profiles.is_empty());

@@ -329,8 +329,10 @@ fn render_manifest(root: &Path, corpus: &[u8]) -> Result<Vec<u8>, String> {
                 .get("status")
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("gate {gate} has no status"))?;
-            let staged_adoption = format == "gantry.language-adoption/v1"
-                && gate == "GNT-GEN-GATE-000"
+            let staged_adoption = ((format == "gantry.language-adoption/v1"
+                && gate == "GNT-GEN-GATE-000")
+                || (format == "gantry.async-execution-adoption/v1"
+                    && gate == "GNT-ASYNC-GATE-000"))
                 && status == "blocked";
             if status != "verified" && !staged_adoption {
                 return Err(format!("gate {gate} is not verified"));

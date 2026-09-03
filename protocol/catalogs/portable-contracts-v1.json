@@ -2,7 +2,7 @@
   "catalog": "gantry.portable-contracts",
   "major": 1,
   "minor": 0,
-  "specification_revision": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
+  "specification_revision": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
   "maximum_directive_integer": "9223372036854775807",
   "identity_kinds": [
     {
@@ -1352,6 +1352,18 @@
       ]
     },
     {
+      "wire": "blocking_work_service",
+      "rust": "BlockingWorkService",
+      "class": "integration-owned",
+      "default": null,
+      "zero_allowed": null,
+      "maximum": null,
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ]
+    },
+    {
       "wire": "deterministic_transition_yield_quantum",
       "rust": "DeterministicTransitionYieldQuantum",
       "class": "scheduling-only",
@@ -1418,6 +1430,66 @@
       "zero_allowed": null,
       "maximum": null,
       "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_active_blocking_jobs",
+      "rust": "MaximumActiveBlockingJobs",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_active_event_deliveries",
+      "rust": "MaximumActiveEventDeliveries",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_active_root_tasks",
+      "rust": "MaximumActiveRootTasks",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_active_source_child_tasks",
+      "rust": "MaximumActiveSourceChildTasks",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_admitted_public_activities",
+      "rust": "MaximumAdmittedPublicActivities",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
         "GNT-15.7"
       ]
     },
@@ -1515,6 +1587,18 @@
       ]
     },
     {
+      "wire": "maximum_interpreter_background_tasks",
+      "rust": "MaximumInterpreterBackgroundTasks",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ]
+    },
+    {
       "wire": "maximum_list_items",
       "rust": "MaximumListItems",
       "class": "identity-bound",
@@ -1580,6 +1664,30 @@
       "zero_allowed": false,
       "maximum": "9223372036854775807",
       "requirements": [
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_queued_blocking_jobs",
+      "rust": "MaximumQueuedBlockingJobs",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "maximum_resume_runnable_tasks",
+      "rust": "MaximumResumeRunnableTasks",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
         "GNT-15.7"
       ]
     },
@@ -1732,6 +1840,18 @@
       "maximum": null,
       "requirements": [
         "GNT-11.10",
+        "GNT-15.7"
+      ]
+    },
+    {
+      "wire": "reserved_control_plane_tasks",
+      "rust": "ReservedControlPlaneTasks",
+      "class": "operational-policy",
+      "default": null,
+      "zero_allowed": false,
+      "maximum": "9223372036854775807",
+      "requirements": [
+        "GNT-15.4-owned-work",
         "GNT-15.7"
       ]
     },

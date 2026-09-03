@@ -2,7 +2,7 @@
 // Source: protocol/catalogs/portable-contracts-v1.json. Do not edit manually.
 
 /// SHA-256 of the exact reviewed `SPEC.md` revision.
-pub const PORTABLE_SPECIFICATION_REVISION: &str = "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf";
+pub const PORTABLE_SPECIFICATION_REVISION: &str = "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a";
 
 
 /// Closed `IdentityOrigin` portable vocabulary.
@@ -1841,6 +1841,8 @@ pub enum ConfigurationClass {
     IdentityBound,
     /// The `integration-owned` value.
     IntegrationOwned,
+    /// The `operational-policy` value.
+    OperationalPolicy,
     /// The `scheduling-only` value.
     SchedulingOnly,
 }
@@ -1854,6 +1856,7 @@ impl ConfigurationClass {
             Self::DurablyMutable => "durably-mutable",
             Self::IdentityBound => "identity-bound",
             Self::IntegrationOwned => "integration-owned",
+            Self::OperationalPolicy => "operational-policy",
             Self::SchedulingOnly => "scheduling-only",
         }
     }
@@ -1866,6 +1869,7 @@ impl ConfigurationClass {
             "durably-mutable" => Some(Self::DurablyMutable),
             "identity-bound" => Some(Self::IdentityBound),
             "integration-owned" => Some(Self::IntegrationOwned),
+            "operational-policy" => Some(Self::OperationalPolicy),
             "scheduling-only" => Some(Self::SchedulingOnly),
             _ => None,
         }
@@ -1879,6 +1883,8 @@ pub enum ConfigurationField {
     ActionRetryLimit,
     /// The `best_effort_event_sinks` value.
     BestEffortEventSinks,
+    /// The `blocking_work_service` value.
+    BlockingWorkService,
     /// The `deterministic_transition_yield_quantum` value.
     DeterministicTransitionYieldQuantum,
     /// The `event_delivery_attempt_timeout_us` value.
@@ -1891,6 +1897,16 @@ pub enum ConfigurationField {
     GracefulShutdownTimeoutUs,
     /// The `identity_source` value.
     IdentitySource,
+    /// The `maximum_active_blocking_jobs` value.
+    MaximumActiveBlockingJobs,
+    /// The `maximum_active_event_deliveries` value.
+    MaximumActiveEventDeliveries,
+    /// The `maximum_active_root_tasks` value.
+    MaximumActiveRootTasks,
+    /// The `maximum_active_source_child_tasks` value.
+    MaximumActiveSourceChildTasks,
+    /// The `maximum_admitted_public_activities` value.
+    MaximumAdmittedPublicActivities,
     /// The `maximum_canonical_ir_bytes` value.
     MaximumCanonicalIrBytes,
     /// The `maximum_constructed_type_depth` value.
@@ -1907,6 +1923,8 @@ pub enum ConfigurationField {
     MaximumGenericInstantiationsPerActivity,
     /// The `maximum_hook_output_bytes` value.
     MaximumHookOutputBytes,
+    /// The `maximum_interpreter_background_tasks` value.
+    MaximumInterpreterBackgroundTasks,
     /// The `maximum_list_items` value.
     MaximumListItems,
     /// The `maximum_loop_iterations_per_task` value.
@@ -1919,6 +1937,10 @@ pub enum ConfigurationField {
     MaximumPackageSourceBytes,
     /// The `maximum_package_source_manifest_bytes` value.
     MaximumPackageSourceManifestBytes,
+    /// The `maximum_queued_blocking_jobs` value.
+    MaximumQueuedBlockingJobs,
+    /// The `maximum_resume_runnable_tasks` value.
+    MaximumResumeRunnableTasks,
     /// The `maximum_source_file_bytes` value.
     MaximumSourceFileBytes,
     /// The `maximum_source_map_bytes` value.
@@ -1945,6 +1967,8 @@ pub enum ConfigurationField {
     PostCancellationDrainUs,
     /// The `required_event_sinks` value.
     RequiredEventSinks,
+    /// The `reserved_control_plane_tasks` value.
+    ReservedControlPlaneTasks,
     /// The `retry_backoff_cap_us` value.
     RetryBackoffCapUs,
     /// The `retry_backoff_initial_us` value.
@@ -1962,12 +1986,18 @@ impl ConfigurationField {
         match self {
             Self::ActionRetryLimit => "action_retry_limit",
             Self::BestEffortEventSinks => "best_effort_event_sinks",
+            Self::BlockingWorkService => "blocking_work_service",
             Self::DeterministicTransitionYieldQuantum => "deterministic_transition_yield_quantum",
             Self::EventDeliveryAttemptTimeoutUs => "event_delivery_attempt_timeout_us",
             Self::EventDeliveryRetryLimit => "event_delivery_retry_limit",
             Self::ExecutorAdapter => "executor_adapter",
             Self::GracefulShutdownTimeoutUs => "graceful_shutdown_timeout_us",
             Self::IdentitySource => "identity_source",
+            Self::MaximumActiveBlockingJobs => "maximum_active_blocking_jobs",
+            Self::MaximumActiveEventDeliveries => "maximum_active_event_deliveries",
+            Self::MaximumActiveRootTasks => "maximum_active_root_tasks",
+            Self::MaximumActiveSourceChildTasks => "maximum_active_source_child_tasks",
+            Self::MaximumAdmittedPublicActivities => "maximum_admitted_public_activities",
             Self::MaximumCanonicalIrBytes => "maximum_canonical_ir_bytes",
             Self::MaximumConstructedTypeDepth => "maximum_constructed_type_depth",
             Self::MaximumDeterministicTransitionsPerExecution => "maximum_deterministic_transitions_per_execution",
@@ -1976,12 +2006,15 @@ impl ConfigurationField {
             Self::MaximumGeneratedSchemaBytes => "maximum_generated_schema_bytes",
             Self::MaximumGenericInstantiationsPerActivity => "maximum_generic_instantiations_per_activity",
             Self::MaximumHookOutputBytes => "maximum_hook_output_bytes",
+            Self::MaximumInterpreterBackgroundTasks => "maximum_interpreter_background_tasks",
             Self::MaximumListItems => "maximum_list_items",
             Self::MaximumLoopIterationsPerTask => "maximum_loop_iterations_per_task",
             Self::MaximumOperationsPerExecution => "maximum_operations_per_execution",
             Self::MaximumPackageFiles => "maximum_package_files",
             Self::MaximumPackageSourceBytes => "maximum_package_source_bytes",
             Self::MaximumPackageSourceManifestBytes => "maximum_package_source_manifest_bytes",
+            Self::MaximumQueuedBlockingJobs => "maximum_queued_blocking_jobs",
+            Self::MaximumResumeRunnableTasks => "maximum_resume_runnable_tasks",
             Self::MaximumSourceFileBytes => "maximum_source_file_bytes",
             Self::MaximumSourceMapBytes => "maximum_source_map_bytes",
             Self::MaximumSourceTokens => "maximum_source_tokens",
@@ -1995,6 +2028,7 @@ impl ConfigurationField {
             Self::OperationTimeoutPolicy => "operation_timeout_policy",
             Self::PostCancellationDrainUs => "post_cancellation_drain_us",
             Self::RequiredEventSinks => "required_event_sinks",
+            Self::ReservedControlPlaneTasks => "reserved_control_plane_tasks",
             Self::RetryBackoffCapUs => "retry_backoff_cap_us",
             Self::RetryBackoffInitialUs => "retry_backoff_initial_us",
             Self::RetryJitter => "retry_jitter",
@@ -2008,12 +2042,18 @@ impl ConfigurationField {
         match value {
             "action_retry_limit" => Some(Self::ActionRetryLimit),
             "best_effort_event_sinks" => Some(Self::BestEffortEventSinks),
+            "blocking_work_service" => Some(Self::BlockingWorkService),
             "deterministic_transition_yield_quantum" => Some(Self::DeterministicTransitionYieldQuantum),
             "event_delivery_attempt_timeout_us" => Some(Self::EventDeliveryAttemptTimeoutUs),
             "event_delivery_retry_limit" => Some(Self::EventDeliveryRetryLimit),
             "executor_adapter" => Some(Self::ExecutorAdapter),
             "graceful_shutdown_timeout_us" => Some(Self::GracefulShutdownTimeoutUs),
             "identity_source" => Some(Self::IdentitySource),
+            "maximum_active_blocking_jobs" => Some(Self::MaximumActiveBlockingJobs),
+            "maximum_active_event_deliveries" => Some(Self::MaximumActiveEventDeliveries),
+            "maximum_active_root_tasks" => Some(Self::MaximumActiveRootTasks),
+            "maximum_active_source_child_tasks" => Some(Self::MaximumActiveSourceChildTasks),
+            "maximum_admitted_public_activities" => Some(Self::MaximumAdmittedPublicActivities),
             "maximum_canonical_ir_bytes" => Some(Self::MaximumCanonicalIrBytes),
             "maximum_constructed_type_depth" => Some(Self::MaximumConstructedTypeDepth),
             "maximum_deterministic_transitions_per_execution" => Some(Self::MaximumDeterministicTransitionsPerExecution),
@@ -2022,12 +2062,15 @@ impl ConfigurationField {
             "maximum_generated_schema_bytes" => Some(Self::MaximumGeneratedSchemaBytes),
             "maximum_generic_instantiations_per_activity" => Some(Self::MaximumGenericInstantiationsPerActivity),
             "maximum_hook_output_bytes" => Some(Self::MaximumHookOutputBytes),
+            "maximum_interpreter_background_tasks" => Some(Self::MaximumInterpreterBackgroundTasks),
             "maximum_list_items" => Some(Self::MaximumListItems),
             "maximum_loop_iterations_per_task" => Some(Self::MaximumLoopIterationsPerTask),
             "maximum_operations_per_execution" => Some(Self::MaximumOperationsPerExecution),
             "maximum_package_files" => Some(Self::MaximumPackageFiles),
             "maximum_package_source_bytes" => Some(Self::MaximumPackageSourceBytes),
             "maximum_package_source_manifest_bytes" => Some(Self::MaximumPackageSourceManifestBytes),
+            "maximum_queued_blocking_jobs" => Some(Self::MaximumQueuedBlockingJobs),
+            "maximum_resume_runnable_tasks" => Some(Self::MaximumResumeRunnableTasks),
             "maximum_source_file_bytes" => Some(Self::MaximumSourceFileBytes),
             "maximum_source_map_bytes" => Some(Self::MaximumSourceMapBytes),
             "maximum_source_tokens" => Some(Self::MaximumSourceTokens),
@@ -2041,6 +2084,7 @@ impl ConfigurationField {
             "operation_timeout_policy" => Some(Self::OperationTimeoutPolicy),
             "post_cancellation_drain_us" => Some(Self::PostCancellationDrainUs),
             "required_event_sinks" => Some(Self::RequiredEventSinks),
+            "reserved_control_plane_tasks" => Some(Self::ReservedControlPlaneTasks),
             "retry_backoff_cap_us" => Some(Self::RetryBackoffCapUs),
             "retry_backoff_initial_us" => Some(Self::RetryBackoffInitialUs),
             "retry_jitter" => Some(Self::RetryJitter),
@@ -2069,12 +2113,18 @@ pub struct ConfigurationFieldDefinition {
 pub const CONFIGURATION_FIELDS: &[ConfigurationFieldDefinition] = &[
     ConfigurationFieldDefinition { field: ConfigurationField::ActionRetryLimit, class: ConfigurationClass::IdentityBound, default: Some("0"), zero_allowed: Some(true), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::BestEffortEventSinks, class: ConfigurationClass::DurablyMutable, default: None, zero_allowed: None, maximum: None },
+    ConfigurationFieldDefinition { field: ConfigurationField::BlockingWorkService, class: ConfigurationClass::IntegrationOwned, default: None, zero_allowed: None, maximum: None },
     ConfigurationFieldDefinition { field: ConfigurationField::DeterministicTransitionYieldQuantum, class: ConfigurationClass::SchedulingOnly, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::EventDeliveryAttemptTimeoutUs, class: ConfigurationClass::IdentityBound, default: Some("30000000"), zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::EventDeliveryRetryLimit, class: ConfigurationClass::IdentityBound, default: Some("3"), zero_allowed: Some(true), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::ExecutorAdapter, class: ConfigurationClass::IntegrationOwned, default: None, zero_allowed: None, maximum: None },
     ConfigurationFieldDefinition { field: ConfigurationField::GracefulShutdownTimeoutUs, class: ConfigurationClass::DurablyMutable, default: Some("30000000"), zero_allowed: Some(true), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::IdentitySource, class: ConfigurationClass::IntegrationOwned, default: None, zero_allowed: None, maximum: None },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumActiveBlockingJobs, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumActiveEventDeliveries, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumActiveRootTasks, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumActiveSourceChildTasks, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumAdmittedPublicActivities, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumCanonicalIrBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumConstructedTypeDepth, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumDeterministicTransitionsPerExecution, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
@@ -2083,12 +2133,15 @@ pub const CONFIGURATION_FIELDS: &[ConfigurationFieldDefinition] = &[
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumGeneratedSchemaBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumGenericInstantiationsPerActivity, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumHookOutputBytes, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumInterpreterBackgroundTasks, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumListItems, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9007199254740991") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumLoopIterationsPerTask, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumOperationsPerExecution, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumPackageFiles, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumPackageSourceBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumPackageSourceManifestBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumQueuedBlockingJobs, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
+    ConfigurationFieldDefinition { field: ConfigurationField::MaximumResumeRunnableTasks, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumSourceFileBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumSourceMapBytes, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::MaximumSourceTokens, class: ConfigurationClass::ActivityPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
@@ -2102,6 +2155,7 @@ pub const CONFIGURATION_FIELDS: &[ConfigurationFieldDefinition] = &[
     ConfigurationFieldDefinition { field: ConfigurationField::OperationTimeoutPolicy, class: ConfigurationClass::IntegrationOwned, default: None, zero_allowed: None, maximum: None },
     ConfigurationFieldDefinition { field: ConfigurationField::PostCancellationDrainUs, class: ConfigurationClass::DurablyMutable, default: Some("5000000"), zero_allowed: Some(true), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::RequiredEventSinks, class: ConfigurationClass::IdentityBound, default: None, zero_allowed: None, maximum: None },
+    ConfigurationFieldDefinition { field: ConfigurationField::ReservedControlPlaneTasks, class: ConfigurationClass::OperationalPolicy, default: None, zero_allowed: Some(false), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::RetryBackoffCapUs, class: ConfigurationClass::IdentityBound, default: Some("2000000"), zero_allowed: Some(true), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::RetryBackoffInitialUs, class: ConfigurationClass::IdentityBound, default: Some("100000"), zero_allowed: Some(true), maximum: Some("9223372036854775807") },
     ConfigurationFieldDefinition { field: ConfigurationField::RetryJitter, class: ConfigurationClass::IdentityBound, default: Some("full"), zero_allowed: None, maximum: None },

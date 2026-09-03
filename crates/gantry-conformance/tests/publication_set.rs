@@ -17,6 +17,7 @@ const INDEX_SCHEMA_PATH: &str = "protocol/schemas/publication-index-v1.schema.js
 const NEGATIVES_PATH: &str = "protocol/goldens/publication-index-v1.negatives.json";
 const REPORT_PATH: &str = "protocol/publication/verification-v1.json";
 const REQUIREMENTS_PATH: &str = "protocol/requirements/generated/requirements-v1.json";
+const ADOPTION_PATH: &str = "protocol/conformance/async-execution-adoption-v1.json";
 
 const REQUIRED_ARTIFACTS: [&str; 7] = [
     "gantry.authoring",
@@ -140,9 +141,35 @@ struct NegativeCase {
     mutation: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AsyncAdoption {
+    format: String,
+    gate: String,
+    status: String,
+    specification_sha256: String,
+    amended_profiles: Vec<String>,
+    advertises_profiles: Vec<String>,
+    blocked_by: Vec<String>,
+    superseded_publication_revision: String,
+}
+
 #[test]
 fn active_publication_set_is_canonical_complete_and_self_contained() {
     let root = workspace_root();
+    let adoption: AsyncAdoption = read_json(&root.join(ADOPTION_PATH));
+    assert_eq!(adoption.format, "gantry.async-execution-adoption/v1");
+    assert_eq!(adoption.gate, "GNT-ASYNC-GATE-000");
+    assert_eq!(adoption.status, "blocked");
+    assert_eq!(
+        adoption.specification_sha256,
+        sha256(&read(&root.join("SPEC.md")))
+    );
+    assert_eq!(adoption.amended_profiles.len(), 6);
+    assert!(adoption.advertises_profiles.is_empty());
+    assert!(!adoption.blocked_by.is_empty());
+    assert!(!adoption.blocked_by.contains(&adoption.gate));
+    assert!(gantry::advertised_profiles().is_empty());
     let index_bytes = read(&root.join(INDEX_PATH));
     assert_canonical_and_schema_valid(&root, INDEX_SCHEMA_PATH, &index_bytes);
     let index: PublicationIndex = decode(&index_bytes, INDEX_PATH);
@@ -156,7 +183,7 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     );
     assert_eq!(
         index.publication_revision,
-        format!("gantry-v1-{}", sha256(&read(&root.join("SPEC.md"))))
+        adoption.superseded_publication_revision
     );
     assert_eq!(
         index
@@ -179,7 +206,10 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     let mut protocol_owners = BTreeMap::<String, String>::new();
     let mut uris = BTreeSet::new();
     let mut resolved = BTreeMap::<String, (String, Vec<u8>)>::new();
-    let specification_sha256 = sha256(&read(&root.join("SPEC.md")));
+    let specification_sha256 = index
+        .publication_revision
+        .strip_prefix("gantry-v1-")
+        .unwrap_or_else(|| panic!("publication revision has no Gantry v1 prefix"));
     let publication_set_identity = sha256(&index_bytes);
     for artifact in &index.artifacts {
         assert!(
@@ -231,7 +261,8 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
         assert_eq!(artifact.sha256, sha256(&bytes));
         if artifact.id == "gantry.spec" {
             assert_eq!(artifact.media_type, "text/markdown");
-            assert_eq!(bytes, read(&root.join("SPEC.md")));
+            assert_eq!(sha256(&bytes), specification_sha256);
+            assert_ne!(bytes, read(&root.join("SPEC.md")));
         } else {
             assert_eq!(artifact.media_type, "application/json");
             assert_canonical_and_schema_valid(&root, ARTIFACT_SCHEMA_PATH, &bytes);
@@ -264,7 +295,9 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
                 let content = file.content.as_bytes();
                 assert_eq!(file.byte_length, content.len().to_string(), "{}", file.path);
                 assert_eq!(file.sha256, sha256(content), "{}", file.path);
-                assert_eq!(content, read(&root.join(&file.path)), "{}", file.path);
+                if gantry::PROFILE_CLAIMS_ENABLED {
+                    assert_eq!(content, read(&root.join(&file.path)), "{}", file.path);
+                }
             }
             assert!(
                 !bytes

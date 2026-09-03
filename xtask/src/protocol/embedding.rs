@@ -14,6 +14,7 @@ const GOLDEN_PATH: &str = "protocol/goldens/embedding-contracts-v1.canonical.jso
 const OUTPUT_PATH: &str = "crates/gantry-host/src/generated/embedding.rs";
 
 const SERVICES: &[&str] = &[
+    "blocking",
     "event",
     "executor",
     "hook",
@@ -21,8 +22,10 @@ const SERVICES: &[&str] = &[
     "journal",
     "lifecycle",
     "preflight",
+    "session",
 ];
 const ROLES: &[&str] = &[
+    "blocking-work-service",
     "event-sink",
     "executor-adapter",
     "hook-factory",
@@ -31,6 +34,7 @@ const ROLES: &[&str] = &[
     "interpreter",
     "journal-storage",
     "operation-hook",
+    "runtime-session-service",
 ];
 const PROFILES: &[&str] = &[
     "analyzer",
@@ -40,7 +44,12 @@ const PROFILES: &[&str] = &[
     "evaluator",
     "frontend",
 ];
-const ASYNC_KINDS: &[&str] = &["borrowed-future", "owned-task-future", "synchronous"];
+const ASYNC_KINDS: &[&str] = &[
+    "borrowed-future",
+    "owned-blocking-job",
+    "owned-task-future",
+    "synchronous",
+];
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

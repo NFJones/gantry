@@ -341,6 +341,8 @@ fn checked_in_durable_start_evidence_is_narrow_and_current() {
         &manifest.specification_sha256,
         &review.specification_sha256,
     ));
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert!(
         manifest
             .capabilities
@@ -362,6 +364,9 @@ fn checked_in_durable_start_evidence_is_narrow_and_current() {
     );
 
     for link in manifest.reviewed_clauses {
+        if !evidence_is_current {
+            continue;
+        }
         let profile = review
             .requirements
             .iter()
@@ -409,19 +414,26 @@ fn reviewed_durable_generic_evidence_is_closed() {
     );
     assert_eq!(manifest.issue, "GNT-GEN-DUR-001");
     assert_eq!(manifest.profile, "durable-runtime");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
-    assert_eq!(
-        manifest.specification_sha256,
-        gantry::PROFILE_SPECIFICATION_REVISION
-    );
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert_eq!(manifest.entries.len(), 28);
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(manifest.advertises_profiles, ["durable-runtime"]);
     assert_eq!(manifest.exclusions.len(), 3);
-    assert!(gantry::advertised_profiles().contains(&gantry::ConformanceProfile::DurableRuntime));
+    assert_eq!(
+        gantry::advertised_profiles().contains(&gantry::ConformanceProfile::DurableRuntime),
+        evidence_is_current
+    );
 
     for entry in &manifest.entries {
         assert_anchor_exists(&root, &entry.evidence);
+        if !evidence_is_current {
+            continue;
+        }
         let clause = review
             .requirements
             .iter()

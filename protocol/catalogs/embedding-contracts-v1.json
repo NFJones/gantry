@@ -72,7 +72,7 @@
   "catalog": "gantry.embedding-contracts",
   "major": 1,
   "minor": 0,
-  "specification_revision": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
+  "specification_revision": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
   "operations": [
     {
       "wire": "abort-task",
@@ -80,8 +80,8 @@
       "service": "executor",
       "role": "executor-adapter",
       "applicable_profiles": [
-        "concurrent-evaluator",
-        "embedding"
+        "embedding",
+        "evaluator"
       ],
       "request_fields": [
         "task_handle"
@@ -101,6 +101,7 @@
       "async_kind": "borrowed-future",
       "requirements": [
         "GNT-15.4",
+        "GNT-15.4-owned-work",
         "GNT-15.9-boundary-failure-containment"
       ]
     },
@@ -173,6 +174,7 @@
         "GNT-12.10",
         "GNT-12.11-generic-diagnostics",
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy",
         "GNT-3.15-generic-profiles",
         "GNT-4.17-frontend-resource-limits",
@@ -207,6 +209,7 @@
       "async_kind": "borrowed-future",
       "requirements": [
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy"
       ]
     },
@@ -238,6 +241,7 @@
       "async_kind": "borrowed-future",
       "requirements": [
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy"
       ]
     },
@@ -273,6 +277,7 @@
       "requirements": [
         "GNT-10.10",
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.3"
       ]
     },
@@ -440,8 +445,8 @@
     {
       "wire": "establish-session",
       "rust": "EstablishSession",
-      "service": "preflight",
-      "role": "integration-preflight",
+      "service": "session",
+      "role": "runtime-session-service",
       "applicable_profiles": [
         "embedding",
         "evaluator"
@@ -463,6 +468,7 @@
       "async_kind": "borrowed-future",
       "requirements": [
         "GNT-15.2",
+        "GNT-15.2-runtime-sessions",
         "GNT-15.9-boundary-failure-containment"
       ]
     },
@@ -500,8 +506,8 @@
       "service": "executor",
       "role": "executor-adapter",
       "applicable_profiles": [
-        "concurrent-evaluator",
-        "embedding"
+        "embedding",
+        "evaluator"
       ],
       "request_fields": [
         "task_handle"
@@ -520,6 +526,7 @@
       "async_kind": "borrowed-future",
       "requirements": [
         "GNT-15.4",
+        "GNT-15.4-owned-work",
         "GNT-15.9-boundary-failure-containment"
       ]
     },
@@ -552,6 +559,7 @@
       "async_kind": "borrowed-future",
       "requirements": [
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy"
       ]
     },
@@ -755,6 +763,7 @@
         "GNT-11.10",
         "GNT-11.11-generic-artifact-recovery",
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy",
         "GNT-4.17-generic-analysis-limits",
         "GNT-7.17"
@@ -821,6 +830,7 @@
       "requirements": [
         "GNT-10.12",
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy"
       ]
     },
@@ -861,8 +871,8 @@
       "service": "executor",
       "role": "executor-adapter",
       "applicable_profiles": [
-        "concurrent-evaluator",
-        "embedding"
+        "embedding",
+        "evaluator"
       ],
       "request_fields": [
         "owned_task_future"
@@ -881,6 +891,7 @@
       "async_kind": "owned-task-future",
       "requirements": [
         "GNT-15.4",
+        "GNT-15.4-owned-work",
         "GNT-15.9-boundary-failure-containment"
       ]
     },
@@ -926,10 +937,46 @@
       "requirements": [
         "GNT-11.10",
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy",
         "GNT-3.15-generic-profiles",
         "GNT-4.17-generic-analysis-limits",
         "GNT-7.17"
+      ]
+    },
+    {
+      "wire": "submit-blocking-work",
+      "rust": "SubmitBlockingWork",
+      "service": "blocking",
+      "role": "blocking-work-service",
+      "applicable_profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "embedding",
+        "evaluator",
+        "frontend"
+      ],
+      "request_fields": [
+        "owned_blocking_job"
+      ],
+      "optional_request_fields": [],
+      "result_variants": [
+        "failed",
+        "submitted"
+      ],
+      "error_categories": [
+        "implementation-resource-exhaustion",
+        "internal"
+      ],
+      "acceptance": "bounded-queue-admission",
+      "idempotency": "one-shot",
+      "cancellation": "owned-job",
+      "async_kind": "owned-blocking-job",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.7",
+        "GNT-15.9-boundary-failure-containment"
       ]
     },
     {
@@ -995,6 +1042,7 @@
       "requirements": [
         "GNT-12.9",
         "GNT-15.1",
+        "GNT-15.1-automatic-execution",
         "GNT-15.1-concurrency-and-reentrancy",
         "GNT-3.15-generic-profiles",
         "GNT-4.17-frontend-resource-limits",
@@ -1031,10 +1079,47 @@
   ],
   "failure_matrix": [
     {
-      "origin": "normal-adapter-error",
-      "boundary": "adapter-result",
-      "mapping": "documented-operation-error-union",
-      "poison_scope": "none",
+      "origin": "gantry-invariant-panic",
+      "boundary": "public-operation-or-owned-task",
+      "mapping": "internal-or-internal-invariant-failure",
+      "poison_scope": "execution-or-interpreter",
+      "requirements": [
+        "GNT-15.9-boundary-failure-containment"
+      ]
+    },
+    {
+      "origin": "integration-panic",
+      "boundary": "blocking-work-service",
+      "mapping": "phase-sensitive-internal-failure",
+      "poison_scope": "adapter-instance",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.9-boundary-failure-containment"
+      ]
+    },
+    {
+      "origin": "integration-panic",
+      "boundary": "event-sink",
+      "mapping": "terminal-failed-delivery-attempt",
+      "poison_scope": "sink-instance",
+      "requirements": [
+        "GNT-15.9-boundary-failure-containment"
+      ]
+    },
+    {
+      "origin": "integration-panic",
+      "boundary": "executor-clock-timer-or-sampler",
+      "mapping": "executor-failure",
+      "poison_scope": "adapter-instance",
+      "requirements": [
+        "GNT-15.9-boundary-failure-containment"
+      ]
+    },
+    {
+      "origin": "integration-panic",
+      "boundary": "hook-factory",
+      "mapping": "hook-creation-failure",
+      "poison_scope": "adapter-instance",
       "requirements": [
         "GNT-15.9-boundary-failure-containment"
       ]
@@ -1059,8 +1144,8 @@
     },
     {
       "origin": "integration-panic",
-      "boundary": "hook-factory-or-session-establishment",
-      "mapping": "hook-or-session-runtime-failure",
+      "boundary": "journal-storage",
+      "mapping": "phase-sensitive-journal-failure",
       "poison_scope": "adapter-instance",
       "requirements": [
         "GNT-15.9-boundary-failure-containment"
@@ -1077,37 +1162,11 @@
     },
     {
       "origin": "integration-panic",
-      "boundary": "executor-clock-timer-or-sampler",
-      "mapping": "executor-failure",
+      "boundary": "runtime-session-service",
+      "mapping": "logical-session-setup-failure",
       "poison_scope": "adapter-instance",
       "requirements": [
-        "GNT-15.9-boundary-failure-containment"
-      ]
-    },
-    {
-      "origin": "integration-panic",
-      "boundary": "journal-storage",
-      "mapping": "phase-sensitive-journal-failure",
-      "poison_scope": "adapter-instance",
-      "requirements": [
-        "GNT-15.9-boundary-failure-containment"
-      ]
-    },
-    {
-      "origin": "integration-panic",
-      "boundary": "event-sink",
-      "mapping": "terminal-failed-delivery-attempt",
-      "poison_scope": "sink-instance",
-      "requirements": [
-        "GNT-15.9-boundary-failure-containment"
-      ]
-    },
-    {
-      "origin": "gantry-invariant-panic",
-      "boundary": "public-operation-or-owned-task",
-      "mapping": "internal-or-internal-invariant-failure",
-      "poison_scope": "execution-or-interpreter",
-      "requirements": [
+        "GNT-15.2-runtime-sessions",
         "GNT-15.9-boundary-failure-containment"
       ]
     },
@@ -1119,9 +1178,28 @@
       "requirements": [
         "GNT-15.9-boundary-failure-containment"
       ]
+    },
+    {
+      "origin": "normal-adapter-error",
+      "boundary": "adapter-result",
+      "mapping": "documented-operation-error-union",
+      "poison_scope": "none",
+      "requirements": [
+        "GNT-15.9-boundary-failure-containment"
+      ]
     }
   ],
   "trait_bounds": [
+    {
+      "role": "blocking-work-service",
+      "send": true,
+      "sync": true,
+      "returned_future": "send-borrowed",
+      "requirements": [
+        "GNT-15.4-owned-work",
+        "GNT-15.9"
+      ]
+    },
     {
       "role": "event-sink",
       "send": true,
@@ -1182,6 +1260,16 @@
       "sync": false,
       "returned_future": "send-borrowed",
       "requirements": [
+        "GNT-15.9"
+      ]
+    },
+    {
+      "role": "runtime-session-service",
+      "send": true,
+      "sync": true,
+      "returned_future": "send-borrowed",
+      "requirements": [
+        "GNT-15.2-runtime-sessions",
         "GNT-15.9"
       ]
     }

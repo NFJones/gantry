@@ -99,19 +99,26 @@ fn reviewed_generic_runtime_evidence_is_closed() {
     );
     assert_eq!(manifest.issue, "GNT-GEN-RUN-001");
     assert_eq!(manifest.profile, "evaluator");
-    assert_eq!(manifest.specification_sha256, review.specification_sha256);
-    assert_eq!(
-        manifest.specification_sha256,
-        gantry::PROFILE_SPECIFICATION_REVISION
-    );
+    let evidence_is_current = manifest.specification_sha256 == review.specification_sha256;
+    assert!(gantry_conformance::evidence_revision_is_expected(
+        &manifest.specification_sha256,
+        &review.specification_sha256,
+    ));
+    assert!(evidence_is_current || gantry::advertised_profiles().is_empty());
     assert_eq!(manifest.entries.len(), 27);
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(manifest.advertises_profiles, ["evaluator"]);
     assert_eq!(manifest.exclusions.len(), 3);
-    assert!(gantry::advertised_profiles().contains(&gantry::ConformanceProfile::Evaluator));
+    assert_eq!(
+        gantry::advertised_profiles().contains(&gantry::ConformanceProfile::Evaluator),
+        evidence_is_current
+    );
 
     for entry in manifest.entries {
         assert_anchor_exists(&root, &entry.evidence);
+        if !evidence_is_current {
+            continue;
+        }
         let clause = review
             .requirements
             .iter()

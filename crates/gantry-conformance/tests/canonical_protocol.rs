@@ -5,7 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gantry::PROFILE_DEFINITIONS;
 use gantry::host::contracts::{EmbeddingVersion, EnvelopeError, HostRequest};
 use gantry::host::embedding::{
     EMBEDDING_OPERATIONS, EMBEDDING_SPECIFICATION_REVISION, EmbeddingOperation, FAILURE_BOUNDARIES,
@@ -16,6 +15,7 @@ use gantry::portable::{
     CONFIGURATION_FIELDS, EVENT_KINDS, IDENTITY_KINDS, IdentityKind, MAXIMUM_DIRECTIVE_INTEGER,
     PORTABLE_SPECIFICATION_REVISION, PORTABLE_VOCABULARIES, PROTOCOL_FAMILY_DEFINITIONS,
 };
+use gantry::{PROFILE_DEFINITIONS, PROFILE_SUPERSEDED_SPECIFICATION_REVISION};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -27,6 +27,7 @@ struct ProfileCatalog {
     major: u64,
     minor: u64,
     specification_revision: String,
+    superseded_specification_revision: String,
     profiles: Vec<ProfileInput>,
 }
 
@@ -97,8 +98,12 @@ fn canonical_profile_catalog_matches_the_public_binding() {
         catalog.specification_revision,
         gantry::PROFILE_SPECIFICATION_REVISION
     );
-    assert!(catalog.claims_enabled);
-    assert!(gantry::advertises_any_profile());
+    assert_eq!(
+        catalog.superseded_specification_revision,
+        PROFILE_SUPERSEDED_SPECIFICATION_REVISION
+    );
+    assert!(!catalog.claims_enabled);
+    assert!(gantry::advertised_profiles().is_empty());
 
     let public = PROFILE_DEFINITIONS
         .iter()

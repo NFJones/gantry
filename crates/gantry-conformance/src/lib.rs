@@ -12,14 +12,17 @@ pub mod journal;
 pub mod scripted;
 pub mod services;
 
-/// Returns whether narrow evidence is valid for the current specification.
+/// Returns whether narrow evidence is valid for the current staged language state.
 ///
-/// Publication evidence and profile advertisement are independent gates: a
-/// current evidence record remains valid while release qualification keeps
-/// profile advertisement disabled.
+/// Before adoption closes, evidence may remain authenticated to the one isolated
+/// superseded revision, but it cannot support a current profile claim. After
+/// adoption closes, only evidence for the current specification is accepted.
 #[must_use]
 pub fn evidence_revision_is_expected(evidence: &str, current: &str) -> bool {
-    evidence == current && current == gantry::PROFILE_SPECIFICATION_REVISION
+    current == gantry::PROFILE_SPECIFICATION_REVISION
+        && (evidence == current
+            || (!gantry::PROFILE_CLAIMS_ENABLED
+                && evidence == gantry::PROFILE_SUPERSEDED_SPECIFICATION_REVISION))
 }
 
 /// Evidence classes understood by profile and release gates.

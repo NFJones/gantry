@@ -83,17 +83,20 @@
         "rust": { "$ref": "#/$defs/rustName" },
         "service": {
           "enum": [
+            "blocking",
             "event",
             "executor",
             "hook",
             "identity",
             "journal",
             "lifecycle",
-            "preflight"
+            "preflight",
+            "session"
           ]
         },
         "role": {
           "enum": [
+            "blocking-work-service",
             "event-sink",
             "executor-adapter",
             "hook-factory",
@@ -101,7 +104,8 @@
             "integration-preflight",
             "interpreter",
             "journal-storage",
-            "operation-hook"
+            "operation-hook",
+            "runtime-session-service"
           ]
         },
         "applicable_profiles": {
@@ -132,7 +136,12 @@
         "idempotency": { "$ref": "#/$defs/wireName" },
         "cancellation": { "$ref": "#/$defs/wireName" },
         "async_kind": {
-          "enum": ["borrowed-future", "owned-task-future", "synchronous"]
+          "enum": [
+            "borrowed-future",
+            "owned-blocking-job",
+            "owned-task-future",
+            "synchronous"
+          ]
         },
         "requirements": { "$ref": "#/$defs/requirements" }
       },
@@ -177,13 +186,15 @@
       "properties": {
         "role": {
           "enum": [
+            "blocking-work-service",
             "event-sink",
             "executor-adapter",
             "hook-factory",
             "identity-source",
             "integration-preflight",
             "journal-storage",
-            "operation-hook"
+            "operation-hook",
+            "runtime-session-service"
           ]
         },
         "send": { "type": "boolean" },
