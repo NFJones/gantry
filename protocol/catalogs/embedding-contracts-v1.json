@@ -1238,10 +1238,11 @@
     },
     {
       "role": "integration-preflight",
-      "send": false,
-      "sync": false,
+      "send": true,
+      "sync": true,
       "returned_future": "send-borrowed",
       "requirements": [
+        "GNT-15.1-automatic-execution",
         "GNT-15.9"
       ]
     },

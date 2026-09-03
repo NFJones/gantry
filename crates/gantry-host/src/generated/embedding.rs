@@ -685,7 +685,7 @@ pub const TRAIT_BOUNDS: &[TraitBoundDefinition] = &[
     TraitBoundDefinition { role: IntegrationRole::ExecutorAdapter, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::HookFactory, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::IdentitySource, send: true, sync: true, returned_future: ReturnedFutureKind::Synchronous },
-    TraitBoundDefinition { role: IntegrationRole::IntegrationPreflight, send: false, sync: false, returned_future: ReturnedFutureKind::SendBorrowed },
+    TraitBoundDefinition { role: IntegrationRole::IntegrationPreflight, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::JournalStorage, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::OperationHook, send: true, sync: false, returned_future: ReturnedFutureKind::SendBorrowed },
     TraitBoundDefinition { role: IntegrationRole::RuntimeSessionService, send: true, sync: true, returned_future: ReturnedFutureKind::SendBorrowed },

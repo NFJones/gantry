@@ -397,6 +397,15 @@ fn embedding_catalog_matches_its_golden_schema_and_public_binding() {
         catalog["trait_bounds"].as_array().map(Vec::len),
         Some(TRAIT_BOUNDS.len())
     );
+    for role in ["integration-preflight", "runtime-session-service"] {
+        let bound = TRAIT_BOUNDS
+            .iter()
+            .find(|bound| bound.role.wire_name() == role)
+            .unwrap_or_else(|| panic!("missing {role} trait bounds"));
+        assert!(bound.send, "{role} must be Send");
+        assert!(bound.sync, "{role} must be Sync");
+        assert_eq!(bound.returned_future.wire_name(), "send-borrowed");
+    }
 }
 
 #[test]
