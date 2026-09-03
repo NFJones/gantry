@@ -237,7 +237,7 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
 }
 
 fn validate_prerequisites(root: &Path, prerequisites: &[Prerequisite]) -> Result<(), String> {
-    const EXPECTED: [(&str, &str, &str); 3] = [
+    const EXPECTED: [(&str, &str, &str); 4] = [
         (
             "GNT-ASYNC-SPEC-001",
             "b076f1adf2b0128a579a3743e36588de2862e8c8",
@@ -252,6 +252,11 @@ fn validate_prerequisites(root: &Path, prerequisites: &[Prerequisite]) -> Result
             "GNT-ASYNC-CONTRACT-001",
             "ef45c97154093183acf880feba47fe9b98607e97",
             "Correct preflight trait contract.",
+        ),
+        (
+            "GNT-ASYNC-CONTRACT-001",
+            "58c88d66ca7926515edaf0892bcf39fdc6d897b3",
+            "Correct executor completion contract.",
         ),
     ];
     if prerequisites

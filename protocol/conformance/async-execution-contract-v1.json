@@ -28,6 +28,11 @@
       "issue": "GNT-ASYNC-CONTRACT-001",
       "commit": "ef45c97154093183acf880feba47fe9b98607e97",
       "subject": "Correct preflight trait contract."
+    },
+    {
+      "issue": "GNT-ASYNC-CONTRACT-001",
+      "commit": "58c88d66ca7926515edaf0892bcf39fdc6d897b3",
+      "subject": "Correct executor completion contract."
     }
   ],
   "contract_artifacts": [
@@ -41,11 +46,11 @@
     },
     {
       "path": "crates/gantry-host/src/generated/embedding.rs",
-      "sha256": "5e17cac56915c4434e4f4ebbf238ecd3190bf94043e883cd6bf20ce3040628af"
+      "sha256": "4c635a914ead03e70306ab8e5ba4aced4c8e363d087649787ab127783b85cf74"
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
-      "sha256": "1d30d21284f7a0c4734a2416a7bba48a247d0b6454770768bdfca1fed80354c4"
+      "sha256": "80a2afd0ee4f6b4e8e599cc9e3cfe2332518bfcd5c606dde4db6ecfd27b46232"
     },
     {
       "path": "protocol/catalogs/portable-contracts-v1.json",
