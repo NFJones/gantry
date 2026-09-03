@@ -13,16 +13,19 @@ use gantry_core::portable::{
     CancellationReasonCategory, ExecutionObservationState, JournalOwnerStatus,
 };
 use gantry_host::contracts::DurationMicros;
+use gantry_host::event::ProtectedPayload;
 use gantry_host::journal::{
     JournalError, JournalId, JournalOwnershipToken, JournalPrefixV1, JournalStorage,
     ReadJournalPrefixV1, ReleaseJournalOwnerV1,
 };
+use gantry_observe::SinkPlan;
 use gantry_runtime::{
     CancellationReason, DurableCommitCoordinatorV1, DurableCommitCutV1, DurableCommitError,
-    DurableEvidenceError, DurableTransitionSink, ExecutionHandle, ExecutionTransitionError,
-    FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleError, MachineOutcome,
-    RecoveredDurableStateV1, RequiredEventDeliveryFailureV1, ShutdownCompletionError,
-    ShutdownReport, recover_authoritative_prefix_with_retained_program,
+    DurableEventCommitCoordinatorV1, DurableEventCommitError, DurableEventOccurrenceV1,
+    DurableEventPlanV1, DurableEvidenceError, DurableOperationEvidenceV1, DurableTransitionSink,
+    ExecutionHandle, ExecutionTransitionError, FinalShutdownEventSettlement, InterpreterLifecycle,
+    LifecycleError, MachineOutcome, RecoveredDurableStateV1, RequiredEventDeliveryFailureV1,
+    ShutdownCompletionError, ShutdownReport, recover_authoritative_prefix_with_retained_program,
 };
 
 static NEXT_DURABLE_WAITER_ID: AtomicU64 = AtomicU64::new(0);
@@ -61,6 +64,20 @@ pub struct DurableExecutionObservation {
     pub latest_sequence: u64,
     /// Latest storage-assigned evidence identity represented by the projection.
     pub latest_evidence_id: ProtocolIdentity,
+}
+
+impl DurableExecutionObservation {
+    /// Returns the latest authoritative semantic cut represented by this observation.
+    #[must_use]
+    pub const fn latest_cut(&self) -> DurableCommitCutV1 {
+        if self.terminal.is_some() {
+            DurableCommitCutV1::TerminalCompletion
+        } else if self.foreground.is_some() {
+            DurableCommitCutV1::ForegroundCompletion
+        } else {
+            DurableCommitCutV1::Checkpoint
+        }
+    }
 }
 
 /// Operational durable-query failure that does not fabricate execution state.
@@ -125,6 +142,8 @@ pub enum DurableRunFailure {
     Commit(DurableCommitError),
     /// Committed state could not be published into the in-process lifecycle owner.
     Lifecycle(ExecutionTransitionError),
+    /// A safely contained interpreter invariant prevented further durable progress.
+    Internal,
 }
 
 /// Result of opening an accepted fenced execution for durable lifecycle control.
@@ -202,6 +221,7 @@ pub struct DurableExecutionWait<'a> {
 /// One accepted, fenced durable execution and its serial authoritative state.
 pub struct DurableOwnedExecution {
     storage: Arc<dyn JournalStorage>,
+    event_plan: SinkPlan,
     journal_id: JournalId,
     ownership_token: JournalOwnershipToken,
     handle: ExecutionHandle,
@@ -257,6 +277,46 @@ impl DurableLifecycleCoordinator {
             storage,
             shutdown: Mutex::new(DurableShutdownState::default()),
         }
+    }
+
+    pub(crate) fn own_committed_start(
+        &self,
+        journal_id: JournalId,
+        ownership_token: JournalOwnershipToken,
+        handle: ExecutionHandle,
+        recovered: RecoveredDurableStateV1,
+        event_plan: SinkPlan,
+    ) -> Result<Arc<DurableOwnedExecution>, DurableOwnedExecutionOpenError> {
+        let execution_id = recovered
+            .execution_start()
+            .map(|start| start.execution_id())
+            .ok_or(DurableOwnedExecutionOpenError::NotFound)?;
+        if handle.execution_id() != execution_id {
+            return Err(DurableOwnedExecutionOpenError::NotFound);
+        }
+        restore_lifecycle(&handle, &recovered)
+            .map_err(DurableOwnedExecutionOpenError::Lifecycle)?;
+        let owner = DurableJournalOwnerState::Held;
+        let observation =
+            observation_from_recovered(&journal_id, &handle, &recovered, Some(owner.clone()), None);
+        Ok(Arc::new(DurableOwnedExecution {
+            storage: Arc::clone(&self.storage),
+            event_plan,
+            journal_id,
+            ownership_token,
+            handle,
+            state: Mutex::new(DurableOwnedExecutionState {
+                recovered: Some(recovered),
+                owner,
+                run_failure: None,
+                completed_cancellation: None,
+                operation_in_flight: false,
+                generation: 0,
+                operation_waiters: Vec::new(),
+                observation_waiters: Vec::new(),
+                last_observation: observation,
+            }),
+        }))
     }
 
     /// Runs or joins the unique sequential-durable shutdown coordinator.
@@ -420,6 +480,7 @@ impl DurableLifecycleCoordinator {
             observation_from_recovered(&journal_id, &handle, &recovered, Some(owner.clone()), None);
         Ok(Arc::new(DurableOwnedExecution {
             storage: Arc::clone(&self.storage),
+            event_plan: SinkPlan::default(),
             journal_id,
             ownership_token,
             handle,
@@ -513,6 +574,194 @@ impl DurableOwnedExecution {
     #[must_use]
     pub fn observation(&self) -> DurableExecutionObservation {
         lock_state(&self.state).last_observation.clone()
+    }
+
+    pub(crate) fn begin_driver(&self) -> Option<RecoveredDurableStateV1> {
+        let mut state = lock_state(&self.state);
+        if state.operation_in_flight || state.run_failure.is_some() {
+            return None;
+        }
+        state.operation_in_flight = true;
+        state.recovered.take()
+    }
+
+    pub(crate) async fn commit_driver_cut(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        cut: DurableCommitCutV1,
+        operation: Option<DurableOperationEvidenceV1>,
+    ) -> Result<(), DurableRunFailure> {
+        let execution_start = recovered
+            .execution_start()
+            .unwrap_or_else(|| unreachable!("owned durable state retains sequence one"));
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableCommitCoordinatorV1::new(
+            &sink,
+            execution_start.execution_id(),
+            execution_start.task_id(),
+            Some((recovered.latest_evidence_id(), recovered.latest_sequence())),
+        )
+        .map_err(DurableRunFailure::Commit)?;
+        let commit = commits
+            .commit_cut(cut, operation, recovered.machine(), recovered.sessions())
+            .await
+            .map_err(DurableRunFailure::Commit)?;
+        recovered
+            .record_semantic_commit(&commit)
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))
+    }
+
+    pub(crate) async fn commit_driver_event(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        event: gantry_core::event::EventEnvelope,
+        protected_payloads: &[ProtectedPayload],
+    ) -> Result<(), DurableRunFailure> {
+        let cause = recovered.latest_evidence_id();
+        let plan = DurableEventPlanV1::from_sink_plan(&self.event_plan)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let occurrence = DurableEventOccurrenceV1::new(cause, event, plan)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableEventCommitCoordinatorV1::from_recovered(
+            &sink,
+            (cause, recovered.latest_sequence()),
+            recovered.events(),
+        )
+        .map_err(map_event_commit_failure)?;
+        commits
+            .commit_occurrence(&occurrence, protected_payloads)
+            .await
+            .map_err(map_event_commit_failure)?;
+        let prefix = self
+            .storage
+            .read_prefix(ReadJournalPrefixV1 {
+                journal_id: self.journal_id.clone(),
+            })
+            .await
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Journal(error)))?;
+        let (_, refreshed) = recover_authoritative_prefix_with_retained_program(&prefix)
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
+        *recovered = refreshed;
+        Ok(())
+    }
+
+    pub(crate) fn publish_driver_progress(
+        &self,
+        recovered: &RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        let outcome = recovered.machine().outcome().cloned();
+        if recovered.latest_cut() == DurableCommitCutV1::ForegroundCompletion
+            && let Some(outcome) = outcome.clone()
+        {
+            self.handle
+                .publish_committed_foreground(outcome)
+                .map_err(DurableRunFailure::Lifecycle)?;
+        }
+        if recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion
+            && let Some(outcome) = outcome
+        {
+            let snapshot = self
+                .handle
+                .snapshot()
+                .map_err(DurableRunFailure::Lifecycle)?;
+            if snapshot.foreground.is_none() {
+                self.handle
+                    .publish_committed_foreground(outcome.clone())
+                    .map_err(DurableRunFailure::Lifecycle)?;
+            }
+            self.handle
+                .publish_committed_terminal(outcome)
+                .map_err(DurableRunFailure::Lifecycle)?;
+        }
+        self.update_driver_observation(recovered, None);
+        Ok(())
+    }
+
+    pub(crate) fn finish_driver(&self, recovered: RecoveredDurableStateV1) {
+        let mut state = lock_state(&self.state);
+        state.last_observation = observation_from_recovered(
+            &self.journal_id,
+            &self.handle,
+            &recovered,
+            Some(state.owner.clone()),
+            None,
+        );
+        state.recovered = Some(recovered);
+        state.operation_in_flight = false;
+        state.generation = state.generation.wrapping_add(1);
+        let operation_waiters = std::mem::take(&mut state.operation_waiters);
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in operation_waiters.into_iter().chain(observation_waiters) {
+            waiter.wake();
+        }
+    }
+
+    pub(crate) fn fail_driver(
+        &self,
+        recovered: RecoveredDurableStateV1,
+        failure: DurableRunFailure,
+    ) {
+        let _ = self.handle.publish_run_failed_nondurably();
+        let mut state = lock_state(&self.state);
+        state.last_observation = observation_from_recovered(
+            &self.journal_id,
+            &self.handle,
+            &recovered,
+            Some(state.owner.clone()),
+            Some(failure.clone()),
+        );
+        state.recovered = Some(recovered);
+        state.run_failure = Some(failure);
+        state.operation_in_flight = false;
+        state.generation = state.generation.wrapping_add(1);
+        let operation_waiters = std::mem::take(&mut state.operation_waiters);
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in operation_waiters.into_iter().chain(observation_waiters) {
+            waiter.wake();
+        }
+    }
+
+    fn update_driver_observation(
+        &self,
+        recovered: &RecoveredDurableStateV1,
+        failure: Option<DurableRunFailure>,
+    ) {
+        let mut state = lock_state(&self.state);
+        state.last_observation = observation_from_recovered(
+            &self.journal_id,
+            &self.handle,
+            recovered,
+            Some(state.owner.clone()),
+            failure,
+        );
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in observation_waiters {
+            waiter.wake();
+        }
     }
 
     /// Registers an independent durable foreground waiter.
@@ -1072,6 +1321,19 @@ fn register_durable_waiter(
             waiter_id,
             waker: waker.clone(),
         });
+    }
+}
+
+fn map_event_commit_failure(error: DurableEventCommitError) -> DurableRunFailure {
+    match error {
+        DurableEventCommitError::Journal(error)
+        | DurableEventCommitError::StreamTerminated(error) => {
+            DurableRunFailure::Commit(DurableCommitError::Journal(error))
+        }
+        DurableEventCommitError::InvalidState
+        | DurableEventCommitError::DuplicateOccurrence
+        | DurableEventCommitError::Evidence(_)
+        | DurableEventCommitError::InvalidReceipt => DurableRunFailure::Internal,
     }
 }
 

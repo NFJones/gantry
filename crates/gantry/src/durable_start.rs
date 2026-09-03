@@ -27,8 +27,8 @@ use crate::interpreter::{decode_logical_value, root_task_identity};
 use crate::start::{PreparedExecutionStart, decode_mapping_revisions, require_resolved};
 use crate::{
     AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
-    MappingRevisions, StartExecutionAccepted, StartExecutionCoordinator, StartExecutionFailure,
-    StartExecutionRequest,
+    DurableLifecycleCoordinator, DurableOwnedExecution, MappingRevisions, StartExecutionAccepted,
+    StartExecutionCoordinator, StartExecutionFailure, StartExecutionRequest,
 };
 
 /// Durable new-execution request retaining the embedder-supplied journal target.
@@ -43,6 +43,8 @@ pub struct DurableStartExecutionRequest<'a> {
 pub struct DurableStartExecutionAccepted {
     /// Existing accepted execution state used by the sole evaluator path.
     pub start: StartExecutionAccepted,
+    /// Execution-owned durable state used for observation and journal-first progress.
+    pub owned: Arc<DurableOwnedExecution>,
     /// Stable journal target retained for query, resume, and release.
     pub journal_id: JournalId,
     /// Current fenced ownership token.
@@ -395,10 +397,29 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 .await;
         }
         let evidence_id = entry.evidence_id;
+        let recovered = RecoveredDurableStateV1::from_committed_start(
+            execution_start,
+            evidence_id,
+            entry.sequence,
+        )
+        .unwrap_or_else(|_| unreachable!("validated sequence one reconstructs its own state"));
         match prepared.accept_reserved_state() {
             Ok(start) => {
+                let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&self.storage));
+                let owned = lifecycle
+                    .own_committed_start(
+                        journal_id.clone(),
+                        ownership.token.clone(),
+                        start.handle.clone(),
+                        recovered,
+                        required_sinks.clone(),
+                    )
+                    .unwrap_or_else(|_| {
+                        unreachable!("committed start and accepted handle have one identity")
+                    });
                 DurableStartExecutionResult::Accepted(Box::new(DurableStartExecutionAccepted {
                     start,
+                    owned,
                     journal_id,
                     ownership_token: ownership.token,
                     execution_start_evidence_id: evidence_id,

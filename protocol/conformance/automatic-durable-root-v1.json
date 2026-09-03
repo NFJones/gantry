@@ -1,0 +1,80 @@
+{
+  "format": "gantry.automatic-durable-root-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-DROOT-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-006",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-TASK-SETTLE",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-D-COMMIT-ORDER",
+      "clause": "clause-001",
+      "profiles": ["durable-runtime"]
+    },
+    {
+      "requirement": "GNT-7.17",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-002",
+      "profiles": ["durable-runtime"]
+    },
+    {
+      "requirement": "GNT-15.1-automatic-execution",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-concurrency-and-reentrancy",
+      "clause": "clause-007",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-concurrency-and-reentrancy",
+      "clause": "clause-009",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "automatic-durable-progress",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#accepted_durable_root_runs_on_the_executor_and_commits_before_observation"
+    },
+    {
+      "id": "commit-failure-prefix",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_commit_failure_reports_run_failure_and_preserves_sequence_one"
+    },
+    {
+      "id": "journal-first-operation-and-events",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_operation_cuts_commit_before_dispatch_and_source_consumption"
+    },
+    {
+      "id": "post-acceptance-submission-failure",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_submission_failure_commits_terminal_root_failure_after_acceptance"
+    },
+    {
+      "id": "session-state-recovery",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_lexical_session_state_commits_before_source_progress"
+    }
+  ],
+  "exclusions": [
+    "Delivery retries, public barriers, and shutdown delivery orchestration remain owned by GNT-ASYNC-REVENT-001.",
+    "Multi-machine coherent durable cuts remain owned by GNT-ASYNC-DUR-001.",
+    "Recovered runnable-set admission and task-graph reconstruction remain owned by GNT-ASYNC-RESUME-001 and GNT-ASYNC-REC-001.",
+    "Root cancellation and shutdown control remain owned by GNT-ASYNC-ROOTCTL-001."
+  ]
+}

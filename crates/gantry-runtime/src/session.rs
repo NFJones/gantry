@@ -221,7 +221,7 @@ pub struct LogicalSessionV1 {
 }
 
 /// One execution-scoped logical-session registry.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LogicalSessionRegistryV1 {
     execution_id: ProtocolIdentity,
     sessions: BTreeMap<ProtocolIdentity, LogicalSessionV1>,

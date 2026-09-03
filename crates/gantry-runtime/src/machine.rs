@@ -831,6 +831,14 @@ impl Machine {
         Ok(MachineLabel::OperationResult { operation })
     }
 
+    /// Fixes executor rejection of an already accepted root as a runtime failure.
+    pub fn fail_root_submission(&mut self) -> MachineLabel {
+        match self.fail_current(RuntimeCode::RootSubmissionFailure) {
+            MachineStep::Transition(label) => label,
+            _ => unreachable!("root submission failure emits one transition"),
+        }
+    }
+
     /// Fails the exact pending logical operation with one portable runtime category.
     pub fn fail_operation(
         &mut self,

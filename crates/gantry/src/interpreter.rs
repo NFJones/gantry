@@ -40,10 +40,27 @@ use gantry_runtime::{
     TaskStateError, TranscriptResultKindV1, TranscriptTurnV1, TypedActionArgumentV1,
 };
 
+#[cfg(feature = "durable")]
+use gantry_host::journal::JournalStorage;
+#[cfg(feature = "durable")]
+use gantry_observe::EventCompleter;
+#[cfg(feature = "durable")]
+use gantry_runtime::{
+    DurableCommitCutV1, DurableOperationEvidenceV1, ExecutionEventDraftV1,
+    OperationResultEventKindV1, machine_lifecycle_event, operation_completion_event,
+    operation_dispatch_event, operation_result_event,
+};
+
 use crate::start::PreparedExecutionStart;
 use crate::{
     AnalyzePackageCoordinator, AnalyzePackageResult, StartExecutionAccepted,
     StartExecutionCoordinator, StartExecutionFailure, StartExecutionRequest, StartExecutionResult,
+};
+
+#[cfg(feature = "durable")]
+use crate::{
+    DurableRunFailure, DurableStartExecutionCoordinator, DurableStartExecutionFailure,
+    DurableStartExecutionRequest, DurableStartExecutionResult,
 };
 
 /// Supported nondurable interpreter facade over injected host integrations.
@@ -99,6 +116,21 @@ impl PreparedRootDriver {
             accepted.entry_input.as_ref(),
             &accepted.root_session,
             false,
+        )
+    }
+
+    #[cfg(feature = "durable")]
+    fn new_for_durable_accepted(
+        inner: &InterpreterInner,
+        accepted: &StartExecutionAccepted,
+    ) -> Result<Self, RunExecutionError> {
+        Self::new(
+            inner,
+            accepted.execution_id,
+            &accepted.package_activity,
+            accepted.entry_input.as_ref(),
+            &accepted.root_session,
+            true,
         )
     }
 
@@ -404,6 +436,1479 @@ impl Interpreter {
             }
         }
         StartExecutionResult::Accepted(Box::new(accepted))
+    }
+
+    /// Commits durable acceptance, publishes owned state, and submits the root automatically.
+    #[cfg(feature = "durable")]
+    pub async fn start_durable_execution(
+        &self,
+        storage: Arc<dyn JournalStorage>,
+        request: DurableStartExecutionRequest<'_>,
+    ) -> DurableStartExecutionResult {
+        let journal_id = request.journal_id.clone();
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve(AdmissionClass::RootTask) {
+            Ok(reservation) => reservation,
+            Err(_) => {
+                return DurableStartExecutionResult::Rejected(DurableStartExecutionFailure {
+                    journal_id,
+                    failure: StartExecutionFailure {
+                        category: StartFailureCategory::ImplementationResourceExhaustion,
+                        code: Arc::from("root-task-capacity"),
+                        package_activity: None,
+                    },
+                    release_error: None,
+                });
+            }
+        };
+        let package = AnalyzePackageCoordinator::new(
+            &self.inner.allocator,
+            self.inner.configuration.identity_source(),
+            self.inner.clock.as_ref(),
+        );
+        let start = StartExecutionCoordinator::new(
+            &package,
+            &self.inner.lifecycle,
+            &self.inner.configuration,
+            &self.inner.allocator,
+            Arc::clone(&self.inner.preflight),
+        );
+        let durable = DurableStartExecutionCoordinator::new(
+            start,
+            &self.inner.configuration,
+            Arc::clone(&storage),
+        );
+        let mut accepted = match durable.start(request).await {
+            DurableStartExecutionResult::Accepted(accepted) => accepted,
+            rejected => return rejected,
+        };
+        accepted.start.mark_automatic_driver();
+        let prepared = PreparedRootDriver::new_for_durable_accepted(&self.inner, &accepted.start)
+            .unwrap_or_else(|_| unreachable!("committed start retained validated root state"));
+        let task_id = prepared.task_id;
+        let task_coordinator = prepared.coordinator.clone();
+        let completion_coordinator = task_coordinator.clone();
+        let completion: PhysicalCompletionHandler = Arc::new(move |_| {
+            let _ = completion_coordinator.mark_driver_physically_settled(task_id);
+        });
+        let registration =
+            supervisor.prepare_with_completion(SupervisedTaskDomain::Root, None, Some(completion));
+        let signal = registration.signal();
+        let gate = Arc::new(RootStartGate::default());
+        let owner = Arc::clone(&accepted.owned);
+        let driver_owner = Arc::clone(&owner);
+        let driver_inner = Arc::clone(&self.inner);
+        let driver_accepted = accepted.start.clone();
+        let driver_gate = Arc::clone(&gate);
+        let task: OwnedTaskFuture = Box::pin(async move {
+            if driver_gate.wait().await {
+                let interpreter = Interpreter {
+                    inner: driver_inner,
+                    external_owner: false,
+                };
+                interpreter
+                    .drive_durable_execution(driver_accepted, prepared, driver_owner)
+                    .await;
+            }
+            let _ = signal.settle();
+            OwnedTaskResult::new()
+        });
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => {
+                if task_coordinator.resolve_root_submission().is_ok() {
+                    task.relinquish();
+                    gate.release();
+                } else {
+                    gate.cancel();
+                    task.relinquish();
+                    if let Some(recovered) = owner.begin_driver() {
+                        owner.fail_driver(recovered, DurableRunFailure::Internal);
+                    }
+                }
+            }
+            Err(_) => {
+                self.start_owned_durable_submission_failure(
+                    task_coordinator,
+                    owner,
+                    accepted.start.package_activity.activity_id,
+                    task_id,
+                );
+            }
+        }
+        DurableStartExecutionResult::Accepted(accepted)
+    }
+
+    #[cfg(feature = "durable")]
+    fn start_owned_durable_submission_failure(
+        &self,
+        coordinator: ExecutionCoordinator,
+        owner: Arc<crate::DurableOwnedExecution>,
+        activity_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+    ) {
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve_control_plane() {
+            Ok(reservation) => reservation,
+            Err(_) => {
+                if let Some(recovered) = owner.begin_driver() {
+                    owner.fail_driver(recovered, DurableRunFailure::Internal);
+                }
+                return;
+            }
+        };
+        let registration = supervisor.prepare(SupervisedTaskDomain::ControlPlane, None);
+        let signal = registration.signal();
+        let inner = Arc::clone(&self.inner);
+        let fallback_owner = Arc::clone(&owner);
+        let task: OwnedTaskFuture = Box::pin(async move {
+            let interpreter = Interpreter {
+                inner,
+                external_owner: false,
+            };
+            interpreter
+                .settle_durable_submission_failure(coordinator, owner, activity_id, task_id)
+                .await;
+            let _ = signal.settle();
+            OwnedTaskResult::new()
+        });
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => task.relinquish(),
+            Err(_) => {
+                if let Some(recovered) = fallback_owner.begin_driver() {
+                    fallback_owner.fail_driver(recovered, DurableRunFailure::Internal);
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "durable")]
+    async fn settle_durable_submission_failure(
+        &self,
+        coordinator: ExecutionCoordinator,
+        owner: Arc<crate::DurableOwnedExecution>,
+        activity_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+    ) {
+        let Some(mut recovered) = owner.begin_driver() else {
+            return;
+        };
+        let mut last_committed = recovered.clone();
+        let mut task_event_sequence = 0_u64;
+        let _ = recovered.machine_mut().fail_root_submission();
+        loop {
+            match recovered.machine_mut().step() {
+                MachineStep::Transition(MachineLabel::Failure(_)) => {}
+                MachineStep::Transition(MachineLabel::TaskSettled(outcome)) => {
+                    if let Err(failure) = owner
+                        .commit_driver_cut(&mut recovered, DurableCommitCutV1::TaskSettlement, None)
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    last_committed = recovered.clone();
+                    let event = machine_lifecycle_event(
+                        &MachineLabel::TaskSettled(outcome.clone()),
+                        owner.execution_id(),
+                        task_id,
+                    )
+                    .unwrap_or_else(|| unreachable!("task settlement has one event draft"));
+                    if let Err(failure) = self
+                        .commit_durable_event(
+                            &owner,
+                            &mut recovered,
+                            activity_id,
+                            task_id,
+                            &mut task_event_sequence,
+                            event,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    if coordinator.fail_root_submission(outcome).is_err() {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    }
+                }
+                MachineStep::Transition(MachineLabel::ForegroundCompletion(outcome)) => {
+                    if let Err(failure) = owner
+                        .commit_driver_cut(
+                            &mut recovered,
+                            DurableCommitCutV1::ForegroundCompletion,
+                            None,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    last_committed = recovered.clone();
+                    let event = machine_lifecycle_event(
+                        &MachineLabel::ForegroundCompletion(outcome.clone()),
+                        owner.execution_id(),
+                        task_id,
+                    )
+                    .unwrap_or_else(|| unreachable!("foreground completion has one event draft"));
+                    if let Err(failure) = self
+                        .commit_durable_event(
+                            &owner,
+                            &mut recovered,
+                            activity_id,
+                            task_id,
+                            &mut task_event_sequence,
+                            event,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    match coordinator.complete_foreground() {
+                        Ok(coordinated) if coordinated == outcome => {}
+                        _ => {
+                            owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                            return;
+                        }
+                    }
+                    if let Err(failure) = owner.publish_driver_progress(&recovered) {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                }
+                MachineStep::Transition(MachineLabel::TerminalCompletion(outcome)) => {
+                    if let Err(failure) = owner
+                        .commit_driver_cut(
+                            &mut recovered,
+                            DurableCommitCutV1::TerminalCompletion,
+                            None,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    last_committed = recovered.clone();
+                    let event = machine_lifecycle_event(
+                        &MachineLabel::TerminalCompletion(outcome),
+                        owner.execution_id(),
+                        task_id,
+                    )
+                    .unwrap_or_else(|| unreachable!("terminal completion has one event draft"));
+                    if let Err(failure) = self
+                        .commit_durable_event(
+                            &owner,
+                            &mut recovered,
+                            activity_id,
+                            task_id,
+                            &mut task_event_sequence,
+                            event,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    if coordinator.complete_terminal().is_err() {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    }
+                    if let Err(failure) = owner.publish_driver_progress(&recovered) {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                }
+                MachineStep::Complete(_) => {
+                    owner.finish_driver(recovered);
+                    return;
+                }
+                _ => {
+                    owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                    return;
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "durable")]
+    async fn drive_durable_execution(
+        &self,
+        accepted: StartExecutionAccepted,
+        prepared: PreparedRootDriver,
+        owner: Arc<crate::DurableOwnedExecution>,
+    ) {
+        let Some(mut recovered) = owner.begin_driver() else {
+            return;
+        };
+        let PreparedRootDriver {
+            machine: _,
+            coordinator,
+            task_id,
+            workflow: _,
+            create_request,
+        } = prepared;
+        let analysis = accepted
+            .package_activity
+            .analysis
+            .as_ref()
+            .unwrap_or_else(|| unreachable!("committed durable start retains analysis"));
+        let cancellation = accepted
+            .handle
+            .cancellation_signal()
+            .unwrap_or_else(|_| unreachable!("accepted durable start retains cancellation"));
+        let mut hook = TaskHook::new(
+            &self.inner.lifecycle,
+            self.inner.hook_factory.as_ref(),
+            AdapterPoison::default(),
+            create_request,
+        )
+        .unwrap_or_else(|_| unreachable!("committed durable start retains hook context"));
+        let mut last_committed = recovered.clone();
+        let mut model_session_occurrence = 0_u64;
+        let mut task_event_sequence = 0_u64;
+        loop {
+            match recovered.machine_mut().step() {
+                MachineStep::Transition(MachineLabel::TaskSettled(outcome)) => {
+                    if let Err(failure) = owner
+                        .commit_driver_cut(&mut recovered, DurableCommitCutV1::TaskSettlement, None)
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    last_committed = recovered.clone();
+                    let event = machine_lifecycle_event(
+                        &MachineLabel::TaskSettled(outcome.clone()),
+                        accepted.execution_id,
+                        task_id,
+                    )
+                    .unwrap_or_else(|| unreachable!("task settlement has one event draft"));
+                    if let Err(failure) = self
+                        .commit_durable_event(
+                            &owner,
+                            &mut recovered,
+                            accepted.package_activity.activity_id,
+                            task_id,
+                            &mut task_event_sequence,
+                            event,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    if coordinator.settle_task(task_id, outcome).is_err() {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    }
+                }
+                MachineStep::Transition(MachineLabel::ForegroundCompletion(outcome)) => {
+                    if let Err(failure) = owner
+                        .commit_driver_cut(
+                            &mut recovered,
+                            DurableCommitCutV1::ForegroundCompletion,
+                            None,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    last_committed = recovered.clone();
+                    let event = machine_lifecycle_event(
+                        &MachineLabel::ForegroundCompletion(outcome.clone()),
+                        accepted.execution_id,
+                        task_id,
+                    )
+                    .unwrap_or_else(|| unreachable!("foreground completion has one event draft"));
+                    if let Err(failure) = self
+                        .commit_durable_event(
+                            &owner,
+                            &mut recovered,
+                            accepted.package_activity.activity_id,
+                            task_id,
+                            &mut task_event_sequence,
+                            event,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    match coordinator.complete_foreground() {
+                        Ok(coordinated) if coordinated == outcome => {}
+                        _ => {
+                            owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                            return;
+                        }
+                    }
+                    if let Err(failure) = owner.publish_driver_progress(&recovered) {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                }
+                MachineStep::Transition(MachineLabel::TerminalCompletion(outcome)) => {
+                    if let Err(failure) = owner
+                        .commit_driver_cut(
+                            &mut recovered,
+                            DurableCommitCutV1::TerminalCompletion,
+                            None,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    last_committed = recovered.clone();
+                    let event = machine_lifecycle_event(
+                        &MachineLabel::TerminalCompletion(outcome),
+                        accepted.execution_id,
+                        task_id,
+                    )
+                    .unwrap_or_else(|| unreachable!("terminal completion has one event draft"));
+                    if let Err(failure) = self
+                        .commit_durable_event(
+                            &owner,
+                            &mut recovered,
+                            accepted.package_activity.activity_id,
+                            task_id,
+                            &mut task_event_sequence,
+                            event,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    if coordinator.complete_terminal().is_err() {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    }
+                    if let Err(failure) = owner.publish_driver_progress(&recovered) {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                }
+                MachineStep::Transition(_) => {}
+                MachineStep::YieldRequired => {
+                    if self
+                        .inner
+                        .configuration
+                        .executor()
+                        .yield_now()
+                        .await
+                        .is_err()
+                        || !recovered.machine_mut().resume_after_yield()
+                    {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    }
+                }
+                MachineStep::Complete(_) => {
+                    owner.finish_driver(recovered);
+                    return;
+                }
+                MachineStep::WaitingSessionScope(scope) => {
+                    if let Err(failure) = self
+                        .drive_durable_session_scope(
+                            accepted.execution_id,
+                            task_id,
+                            &mut recovered,
+                            &scope,
+                            &owner,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                }
+                MachineStep::WaitingOperation(operation) => {
+                    let result = if operation
+                        .metadata
+                        .as_ref()
+                        .is_some_and(|metadata| metadata.kind == OperationSiteKind::Action)
+                    {
+                        self.drive_durable_action_operation(
+                            &accepted,
+                            analysis,
+                            &mut recovered,
+                            &mut hook,
+                            &cancellation,
+                            &operation,
+                            &owner,
+                            &mut task_event_sequence,
+                            &mut last_committed,
+                        )
+                        .await
+                    } else {
+                        let result = self
+                            .drive_durable_model_operation(
+                                &accepted,
+                                analysis,
+                                &mut recovered,
+                                &mut hook,
+                                &cancellation,
+                                &operation,
+                                &owner,
+                                model_session_occurrence,
+                                &mut task_event_sequence,
+                                &mut last_committed,
+                            )
+                            .await;
+                        model_session_occurrence = model_session_occurrence.saturating_add(1);
+                        result
+                    };
+                    if let Err(failure) = result {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "durable")]
+    #[allow(clippy::too_many_arguments)]
+    async fn commit_durable_event(
+        &self,
+        owner: &crate::DurableOwnedExecution,
+        recovered: &mut gantry_runtime::RecoveredDurableStateV1,
+        activity_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_sequence: &mut u64,
+        event: ExecutionEventDraftV1,
+        last_committed: &mut gantry_runtime::RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        let protected_payloads = Arc::clone(&event.protected_payloads);
+        let draft = event
+            .draft
+            .with_execution_id(recovered.machine().execution_id())
+            .and_then(|draft| draft.with_task(task_id, *task_sequence))
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let event = EventCompleter::new(
+            &self.inner.allocator,
+            self.inner.configuration.identity_source(),
+            self.inner.clock.as_ref(),
+        )
+        .complete(activity_id, draft)
+        .await
+        .map_err(|_| DurableRunFailure::Internal)?;
+        owner
+            .commit_driver_event(recovered, event, &protected_payloads)
+            .await?;
+        *task_sequence = task_sequence
+            .checked_add(1)
+            .ok_or(DurableRunFailure::Internal)?;
+        *last_committed = recovered.clone();
+        Ok(())
+    }
+
+    #[cfg(feature = "durable")]
+    async fn drive_durable_session_scope(
+        &self,
+        execution_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        recovered: &mut gantry_runtime::RecoveredDurableStateV1,
+        scope: &gantry_runtime::SessionScopeOccurrence,
+        owner: &crate::DurableOwnedExecution,
+        last_committed: &mut gantry_runtime::RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        let parent = recovered
+            .sessions()
+            .and_then(|sessions| sessions.get(scope.parent_session_id))
+            .cloned()
+            .ok_or(DurableRunFailure::Internal)?;
+        if self
+            .inner
+            .session_establisher
+            .establish(execution_id, &parent)
+            .await
+            .is_err()
+        {
+            recovered
+                .machine_mut()
+                .fail_session_scope(
+                    scope,
+                    RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
+                )
+                .map_err(|_| DurableRunFailure::Internal)?;
+            return Ok(());
+        }
+        let mut staged = recovered.clone();
+        let child = staged
+            .sessions_mut()
+            .ok_or(DurableRunFailure::Internal)?
+            .create(
+                scope.parent_session_id,
+                task_id,
+                scope.site.clone(),
+                scope.occurrence,
+                scope.mode,
+                SessionEstablishmentV1::Separate,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?
+            .clone();
+        owner
+            .commit_driver_cut(&mut staged, DurableCommitCutV1::Checkpoint, None)
+            .await?;
+        *recovered = staged;
+        *last_committed = recovered.clone();
+        if self
+            .inner
+            .session_establisher
+            .establish(execution_id, &child)
+            .await
+            .is_err()
+        {
+            let mut staged = recovered.clone();
+            staged
+                .machine_mut()
+                .fail_session_scope(
+                    scope,
+                    RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
+                )
+                .map_err(|_| DurableRunFailure::Internal)?;
+            owner
+                .commit_driver_cut(&mut staged, DurableCommitCutV1::Checkpoint, None)
+                .await?;
+            *recovered = staged;
+            *last_committed = recovered.clone();
+            return Ok(());
+        }
+        let mut staged = recovered.clone();
+        staged
+            .machine_mut()
+            .complete_session_scope(scope, child.id)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        owner
+            .commit_driver_cut(&mut staged, DurableCommitCutV1::Checkpoint, None)
+            .await?;
+        *recovered = staged;
+        *last_committed = recovered.clone();
+        Ok(())
+    }
+
+    #[cfg(feature = "durable")]
+    #[allow(clippy::too_many_arguments)]
+    async fn drive_durable_action_operation(
+        &self,
+        accepted: &StartExecutionAccepted,
+        analysis: &gantry_analysis::TypedPackage,
+        recovered: &mut gantry_runtime::RecoveredDurableStateV1,
+        hook: &mut TaskHook<'_>,
+        cancellation: &dyn CancellationToken,
+        occurrence: &gantry_runtime::OperationOccurrence,
+        owner: &crate::DurableOwnedExecution,
+        task_event_sequence: &mut u64,
+        last_committed: &mut gantry_runtime::RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        let metadata = occurrence
+            .metadata
+            .as_ref()
+            .ok_or(DurableRunFailure::Internal)?;
+        let action = metadata
+            .action
+            .as_ref()
+            .ok_or(DurableRunFailure::Internal)?;
+        if metadata.kind != OperationSiteKind::Action
+            || action.parameters.len() != occurrence.inputs.len()
+        {
+            return Err(DurableRunFailure::Internal);
+        }
+        let expected_schema = analysis
+            .schemas()
+            .and_then(|schemas| {
+                schemas
+                    .entries()
+                    .iter()
+                    .find(|(ty, _)| ty == &metadata.result_type)
+                    .map(|(_, schema)| Arc::clone(schema))
+            })
+            .ok_or(DurableRunFailure::Internal)?;
+        let mapping_revision = accepted
+            .mapping_revisions
+            .action
+            .clone()
+            .ok_or(DurableRunFailure::Internal)?;
+        let captured = CapturedOperationRequestV1::Action {
+            header: OperationRequestHeaderV1 {
+                execution_id: accepted.execution_id,
+                task_id: root_task_identity(accepted.execution_id),
+                operation_id: occurrence.identity,
+                kind: metadata.kind,
+                expected_type: metadata.result_type.clone(),
+                expected_schema,
+                maximum_hook_output_bytes: self
+                    .inner
+                    .configuration
+                    .required()
+                    .maximum_hook_output_bytes,
+                value_limits: self.inner.configuration.required().value_limits,
+                workflow: occurrence.workflow.clone(),
+                site: occurrence.site.clone(),
+            },
+            body: ActionOperationRequestV1 {
+                path: action.path.clone(),
+                signature: action.signature.clone(),
+                recovery: action.recovery,
+                mapping_revision,
+                arguments: action
+                    .parameters
+                    .iter()
+                    .zip(occurrence.inputs.iter())
+                    .map(|(parameter, value)| TypedActionArgumentV1 {
+                        name: Arc::from(parameter.name()),
+                        ty: parameter.ty().clone(),
+                        value: value.canonical_json(),
+                    })
+                    .collect(),
+            },
+        };
+        let mut operation =
+            OperationLifecycle::new(captured).map_err(|_| DurableRunFailure::Internal)?;
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            self.inner.configuration.retry_defaults(),
+            metadata.retry_limit,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        operation
+            .prepare(
+                &self.inner.allocator,
+                self.inner.configuration.identity_source(),
+                0,
+                0,
+                &[],
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let mut retries_left = None;
+        loop {
+            let (prepared, validation_attempt, recovery_dispatch) =
+                operation
+                    .prepared_dispatch()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let dispatch_id = prepared.dispatch_id;
+            let request_bytes: Arc<[u8]> = Arc::from(prepared.request.canonical_bytes());
+            let action_recovery = Some(action.recovery);
+            let dispatch_event = operation_dispatch_event(
+                operation.captured(),
+                prepared,
+                validation_attempt,
+                recovery_dispatch,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            owner
+                .commit_driver_cut(
+                    recovered,
+                    DurableCommitCutV1::OperationPrepared,
+                    Some(DurableOperationEvidenceV1 {
+                        operation_id: occurrence.identity,
+                        dispatch_id: Some(dispatch_id),
+                        validation_attempt,
+                        recovery_dispatch,
+                        retry_delay_us: None,
+                        retries_left,
+                        action_recovery,
+                        request_bytes: Some(Arc::clone(&request_bytes)),
+                        outcome: None,
+                        retry_errors: Arc::from([]),
+                        result_type: None,
+                        result_bytes: None,
+                    }),
+                )
+                .await?;
+            *last_committed = recovered.clone();
+            self.commit_durable_event(
+                owner,
+                recovered,
+                accepted.package_activity.activity_id,
+                root_task_identity(accepted.execution_id),
+                task_event_sequence,
+                dispatch_event,
+                last_committed,
+            )
+            .await?;
+            if operation.dispatch(hook, cancellation).await.is_err() {
+                recovered
+                    .machine_mut()
+                    .fail_operation(occurrence.identity, RuntimeErrorCategory::HookFailure)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                return Ok(());
+            }
+            let (_, outcome, validation_attempt, recovery_dispatch) =
+                operation
+                    .outcome_context()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let outcome = outcome.clone();
+            let completion_event = operation_completion_event(
+                operation.captured(),
+                dispatch_id,
+                validation_attempt,
+                recovery_dispatch,
+                &outcome,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            owner
+                .commit_driver_cut(
+                    recovered,
+                    DurableCommitCutV1::OperationOutcome,
+                    Some(DurableOperationEvidenceV1 {
+                        operation_id: occurrence.identity,
+                        dispatch_id: Some(dispatch_id),
+                        validation_attempt,
+                        recovery_dispatch,
+                        retry_delay_us: None,
+                        retries_left,
+                        action_recovery,
+                        request_bytes: Some(Arc::clone(&request_bytes)),
+                        outcome: Some(outcome.clone()),
+                        retry_errors: Arc::from([]),
+                        result_type: None,
+                        result_bytes: None,
+                    }),
+                )
+                .await?;
+            *last_committed = recovered.clone();
+            self.commit_durable_event(
+                owner,
+                recovered,
+                accepted.package_activity.activity_id,
+                root_task_identity(accepted.execution_id),
+                task_event_sequence,
+                completion_event,
+                last_committed,
+            )
+            .await?;
+            match operation
+                .process_outcome(policy, self.inner.configuration.executor(), cancellation)
+                .map_err(|_| DurableRunFailure::Internal)?
+            {
+                ProcessedHookOutcomeV1::Accepted(output) => {
+                    let result_bytes: Arc<[u8]> = Arc::from(output.canonical_json().bytes());
+                    let value = decode_logical_value(
+                        &result_bytes,
+                        &metadata.result_type,
+                        self.inner.configuration.required().value_limits,
+                        analysis.declared_value_shapes(),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let (result_kind, result_value) = match metadata.result_type.kind() {
+                        TypeKind::Unit => (OperationResultEventKindV1::Unit, None),
+                        TypeKind::Decision => (OperationResultEventKindV1::Decision, Some(&value)),
+                        _ => (OperationResultEventKindV1::Value, Some(&value)),
+                    };
+                    let result_event = operation_result_event(
+                        occurrence.identity,
+                        &metadata.result_type,
+                        result_kind,
+                        result_value,
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let mut staged = recovered.clone();
+                    if metadata.attempted {
+                        operation.accept_attempt(staged.machine_mut(), value)
+                    } else {
+                        operation.accept(staged.machine_mut(), value)
+                    }
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    owner
+                        .commit_driver_cut(
+                            &mut staged,
+                            DurableCommitCutV1::OperationResult,
+                            Some(DurableOperationEvidenceV1 {
+                                operation_id: occurrence.identity,
+                                dispatch_id: None,
+                                validation_attempt,
+                                recovery_dispatch,
+                                retry_delay_us: None,
+                                retries_left,
+                                action_recovery,
+                                request_bytes: None,
+                                outcome: None,
+                                retry_errors: Arc::from([]),
+                                result_type: Some(metadata.result_type.clone()),
+                                result_bytes: Some(result_bytes),
+                            }),
+                        )
+                        .await?;
+                    *recovered = staged;
+                    *last_committed = recovered.clone();
+                    self.commit_durable_event(
+                        owner,
+                        recovered,
+                        accepted.package_activity.activity_id,
+                        root_task_identity(accepted.execution_id),
+                        task_event_sequence,
+                        result_event,
+                        last_committed,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                ProcessedHookOutcomeV1::Retry(wait) => {
+                    retries_left = Some(wait.retries_left);
+                    owner
+                        .commit_driver_cut(
+                            recovered,
+                            DurableCommitCutV1::RetryWaiting,
+                            Some(DurableOperationEvidenceV1 {
+                                operation_id: occurrence.identity,
+                                dispatch_id: Some(dispatch_id),
+                                validation_attempt,
+                                recovery_dispatch,
+                                retry_delay_us: Some(wait.delay.get()),
+                                retries_left,
+                                action_recovery,
+                                request_bytes: Some(request_bytes),
+                                outcome: Some(outcome),
+                                retry_errors: Arc::clone(&wait.errors),
+                                result_type: None,
+                                result_bytes: None,
+                            }),
+                        )
+                        .await?;
+                    *last_committed = recovered.clone();
+                    if operation
+                        .prepare_after_retry_wait(
+                            self.inner.configuration.executor(),
+                            &accepted
+                                .handle
+                                .cancellation_signal()
+                                .map_err(|_| DurableRunFailure::Internal)?,
+                            &self.inner.allocator,
+                            self.inner.configuration.identity_source(),
+                        )
+                        .await
+                        .map_err(|_| DurableRunFailure::Internal)?
+                        .is_none()
+                    {
+                        Self::settle_retry_terminal(
+                            recovered.machine_mut(),
+                            occurrence,
+                            &operation,
+                        )
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                        return Ok(());
+                    }
+                }
+                ProcessedHookOutcomeV1::Failed(failure) => {
+                    if metadata.attempted
+                        && matches!(
+                            operation.lifecycle_failure(),
+                            Some(OperationLifecycleFailureV1::Operation(_))
+                        )
+                    {
+                        operation
+                            .accept_attempt_failure(recovered.machine_mut())
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    } else {
+                        recovered
+                            .machine_mut()
+                            .fail_operation(occurrence.identity, failure.runtime_category())
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    }
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "durable")]
+    #[allow(clippy::too_many_arguments)]
+    async fn drive_durable_model_operation(
+        &self,
+        accepted: &StartExecutionAccepted,
+        analysis: &gantry_analysis::TypedPackage,
+        recovered: &mut gantry_runtime::RecoveredDurableStateV1,
+        hook: &mut TaskHook<'_>,
+        cancellation: &dyn CancellationToken,
+        occurrence: &gantry_runtime::OperationOccurrence,
+        owner: &crate::DurableOwnedExecution,
+        session_occurrence: u64,
+        task_event_sequence: &mut u64,
+        last_committed: &mut gantry_runtime::RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        let metadata = occurrence
+            .metadata
+            .as_ref()
+            .ok_or(DurableRunFailure::Internal)?;
+        let interpolation_count = metadata.interpolation_types.len();
+        if !matches!(
+            metadata.kind,
+            OperationSiteKind::Prompt | OperationSiteKind::Decide
+        ) || metadata.named_input_names.len() != metadata.named_input_types.len()
+            || occurrence.inputs.len()
+                != interpolation_count.saturating_add(metadata.named_input_types.len())
+        {
+            return Err(DurableRunFailure::Internal);
+        }
+        let expected_schema = analysis
+            .schemas()
+            .and_then(|schemas| {
+                schemas
+                    .entries()
+                    .iter()
+                    .find(|(ty, _)| ty == &metadata.result_type)
+                    .map(|(_, schema)| Arc::clone(schema))
+            })
+            .ok_or(DurableRunFailure::Internal)?;
+        let selected_agent = occurrence
+            .active_agent
+            .clone()
+            .ok_or(DurableRunFailure::Internal)?;
+        let mapping_revision = accepted
+            .mapping_revisions
+            .agent
+            .clone()
+            .ok_or(DurableRunFailure::Internal)?;
+        let parent_session_id = occurrence
+            .active_session
+            .ok_or(DurableRunFailure::Internal)?;
+        let task_id = root_task_identity(accepted.execution_id);
+        let active_session_id = if let Some(mode) = metadata.session_mode.as_deref() {
+            let mode = match mode {
+                "fork" => SessionCreationModeV1::Fork,
+                "new" => SessionCreationModeV1::New,
+                _ => return Err(DurableRunFailure::Internal),
+            };
+            let mut staged = recovered.clone();
+            let session_id = staged
+                .sessions_mut()
+                .ok_or(DurableRunFailure::Internal)?
+                .create(
+                    parent_session_id,
+                    task_id,
+                    occurrence.site.clone(),
+                    session_occurrence,
+                    mode,
+                    SessionEstablishmentV1::OperationRequest,
+                )
+                .map_err(|_| DurableRunFailure::Internal)?
+                .id;
+            owner
+                .commit_driver_cut(&mut staged, DurableCommitCutV1::Checkpoint, None)
+                .await?;
+            *recovered = staged;
+            *last_committed = recovered.clone();
+            session_id
+        } else {
+            parent_session_id
+        };
+        let session = recovered
+            .sessions()
+            .and_then(|sessions| sessions.get(active_session_id))
+            .cloned()
+            .ok_or(DurableRunFailure::Internal)?;
+        let interpolation_inputs = metadata
+            .interpolation_types
+            .iter()
+            .zip(occurrence.inputs.iter().take(interpolation_count))
+            .enumerate()
+            .map(|(position, (ty, value))| {
+                Ok(InterpolationInputV1 {
+                    position: u64::try_from(position).map_err(|_| DurableRunFailure::Internal)?,
+                    ty: ty.clone(),
+                    value: value.canonical_json(),
+                })
+            })
+            .collect::<Result<Vec<_>, DurableRunFailure>>()?;
+        let named_inputs = metadata
+            .named_input_names
+            .iter()
+            .zip(&metadata.named_input_types)
+            .zip(occurrence.inputs.iter().skip(interpolation_count))
+            .map(|((name, ty), value)| NamedInputV1 {
+                name: Arc::clone(name),
+                ty: ty.clone(),
+                value: value.canonical_json(),
+            })
+            .collect::<Vec<_>>();
+        let rendered_prompt = match render_prompt(
+            &metadata.template_segments,
+            occurrence.inputs.iter().take(interpolation_count),
+            self.inner
+                .configuration
+                .required()
+                .value_limits
+                .maximum_string_scalars(),
+        ) {
+            Ok(prompt) => prompt,
+            Err(RenderPromptError::Limit) => {
+                recovered
+                    .machine_mut()
+                    .fail_operation_with_code(
+                        occurrence.identity,
+                        RuntimeCode::Deterministic(DeterministicEvaluationCode::StringSizeLimit),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                return Ok(());
+            }
+            Err(RenderPromptError::Shape) => return Err(DurableRunFailure::Internal),
+        };
+        let session_use = if let Some(mode) = metadata.session_mode.as_ref() {
+            ModelSessionUseV1::Create {
+                mode: Arc::clone(mode),
+                session_id: session.id,
+                parent_session_id,
+                root_session_id: session.root,
+                provenance: Arc::from("operation-request"),
+            }
+        } else {
+            ModelSessionUseV1::Inline
+        };
+        let captured = CapturedOperationRequestV1::Model {
+            header: OperationRequestHeaderV1 {
+                execution_id: accepted.execution_id,
+                task_id,
+                operation_id: occurrence.identity,
+                kind: metadata.kind,
+                expected_type: metadata.result_type.clone(),
+                expected_schema,
+                maximum_hook_output_bytes: self
+                    .inner
+                    .configuration
+                    .required()
+                    .maximum_hook_output_bytes,
+                value_limits: self.inner.configuration.required().value_limits,
+                workflow: occurrence.workflow.clone(),
+                site: occurrence.site.clone(),
+            },
+            body: Box::new(ModelOperationRequestV1 {
+                selected_agent: Arc::clone(&selected_agent),
+                mapping_revision,
+                template_segments: metadata.template_segments.clone(),
+                rendered_prompt: Arc::clone(&rendered_prompt),
+                interpolation_inputs: interpolation_inputs.clone(),
+                named_inputs: named_inputs.clone(),
+                transcript: session.transcript.clone(),
+                active_session_id: session.id,
+                parent_session_id: session.parent,
+                root_session_id: session.root,
+                session_use,
+            }),
+        };
+        let mut operation =
+            OperationLifecycle::new(captured).map_err(|_| DurableRunFailure::Internal)?;
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            self.inner.configuration.retry_defaults(),
+            metadata.retry_limit,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        operation
+            .prepare(
+                &self.inner.allocator,
+                self.inner.configuration.identity_source(),
+                0,
+                0,
+                &[],
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let mut retries_left = None;
+        loop {
+            let (prepared, validation_attempt, recovery_dispatch) =
+                operation
+                    .prepared_dispatch()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let dispatch_id = prepared.dispatch_id;
+            let request_bytes: Arc<[u8]> = Arc::from(prepared.request.canonical_bytes());
+            let dispatch_event = operation_dispatch_event(
+                operation.captured(),
+                prepared,
+                validation_attempt,
+                recovery_dispatch,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            owner
+                .commit_driver_cut(
+                    recovered,
+                    DurableCommitCutV1::OperationPrepared,
+                    Some(DurableOperationEvidenceV1 {
+                        operation_id: occurrence.identity,
+                        dispatch_id: Some(dispatch_id),
+                        validation_attempt,
+                        recovery_dispatch,
+                        retry_delay_us: None,
+                        retries_left,
+                        action_recovery: None,
+                        request_bytes: Some(Arc::clone(&request_bytes)),
+                        outcome: None,
+                        retry_errors: Arc::from([]),
+                        result_type: None,
+                        result_bytes: None,
+                    }),
+                )
+                .await?;
+            *last_committed = recovered.clone();
+            self.commit_durable_event(
+                owner,
+                recovered,
+                accepted.package_activity.activity_id,
+                root_task_identity(accepted.execution_id),
+                task_event_sequence,
+                dispatch_event,
+                last_committed,
+            )
+            .await?;
+            if let Err(error) = operation
+                .dispatch_model(
+                    hook,
+                    cancellation,
+                    &self.inner.session_establisher,
+                    accepted.execution_id,
+                    &session,
+                )
+                .await
+            {
+                let category = match error {
+                    OperationLifecycleError::Cancelled => RuntimeErrorCategory::Cancellation,
+                    OperationLifecycleError::Session(_) => {
+                        RuntimeErrorCategory::LogicalSessionSetup
+                    }
+                    OperationLifecycleError::Hook(_) if hook.is_ready() => {
+                        RuntimeErrorCategory::HookFailure
+                    }
+                    OperationLifecycleError::Hook(_) => RuntimeErrorCategory::HookCreation,
+                    _ => return Err(DurableRunFailure::Internal),
+                };
+                recovered
+                    .machine_mut()
+                    .fail_operation(occurrence.identity, category)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                return Ok(());
+            }
+            let (_, outcome, validation_attempt, recovery_dispatch) =
+                operation
+                    .outcome_context()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let outcome = outcome.clone();
+            let completion_event = operation_completion_event(
+                operation.captured(),
+                dispatch_id,
+                validation_attempt,
+                recovery_dispatch,
+                &outcome,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            owner
+                .commit_driver_cut(
+                    recovered,
+                    DurableCommitCutV1::OperationOutcome,
+                    Some(DurableOperationEvidenceV1 {
+                        operation_id: occurrence.identity,
+                        dispatch_id: Some(dispatch_id),
+                        validation_attempt,
+                        recovery_dispatch,
+                        retry_delay_us: None,
+                        retries_left,
+                        action_recovery: None,
+                        request_bytes: Some(Arc::clone(&request_bytes)),
+                        outcome: Some(outcome.clone()),
+                        retry_errors: Arc::from([]),
+                        result_type: None,
+                        result_bytes: None,
+                    }),
+                )
+                .await?;
+            *last_committed = recovered.clone();
+            self.commit_durable_event(
+                owner,
+                recovered,
+                accepted.package_activity.activity_id,
+                root_task_identity(accepted.execution_id),
+                task_event_sequence,
+                completion_event,
+                last_committed,
+            )
+            .await?;
+            match operation
+                .process_outcome(policy, self.inner.configuration.executor(), cancellation)
+                .map_err(|_| DurableRunFailure::Internal)?
+            {
+                ProcessedHookOutcomeV1::Accepted(output) => {
+                    let result_bytes: Arc<[u8]> = Arc::from(output.canonical_json().bytes());
+                    let value = decode_logical_value(
+                        &result_bytes,
+                        &metadata.result_type,
+                        self.inner.configuration.required().value_limits,
+                        analysis.declared_value_shapes(),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let turn = TranscriptTurnV1 {
+                        operation_kind: metadata.kind,
+                        template_representation: metadata.template_segments.clone(),
+                        rendered_prompt: Arc::clone(&rendered_prompt),
+                        interpolation_inputs: interpolation_inputs.clone(),
+                        using_inputs: named_inputs.clone(),
+                        selected_agent: Arc::clone(&selected_agent),
+                        accepted_result: AcceptedTranscriptResultV1 {
+                            kind: transcript_result_kind(&metadata.result_type),
+                            ty: metadata.result_type.clone(),
+                            value: value.canonical_json(),
+                        },
+                    };
+                    let (result_kind, result_value) = match metadata.result_type.kind() {
+                        TypeKind::Unit => (OperationResultEventKindV1::Unit, None),
+                        TypeKind::Decision => (OperationResultEventKindV1::Decision, Some(&value)),
+                        _ => (OperationResultEventKindV1::Value, Some(&value)),
+                    };
+                    let result_event = operation_result_event(
+                        occurrence.identity,
+                        &metadata.result_type,
+                        result_kind,
+                        result_value,
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let mut staged = recovered.clone();
+                    let accepted_result = {
+                        let (machine, sessions) = staged.state_mut();
+                        let session = sessions
+                            .and_then(|sessions| sessions.get_mut(active_session_id))
+                            .ok_or(DurableRunFailure::Internal)?;
+                        if metadata.attempted {
+                            operation.accept_model_attempt(
+                                machine,
+                                session,
+                                &turn,
+                                self.inner.configuration.required().value_limits,
+                                value,
+                            )
+                        } else {
+                            operation.accept_model(
+                                machine,
+                                session,
+                                &turn,
+                                self.inner.configuration.required().value_limits,
+                                value,
+                            )
+                        }
+                    };
+                    match accepted_result {
+                        Ok(_) => {}
+                        Err(OperationLifecycleError::Transcript(
+                            gantry_runtime::TranscriptError::Limit,
+                        )) => {
+                            staged
+                                .machine_mut()
+                                .fail_operation(
+                                    occurrence.identity,
+                                    RuntimeErrorCategory::LogicalSessionTranscriptLimit,
+                                )
+                                .map_err(|_| DurableRunFailure::Internal)?;
+                            *recovered = staged;
+                            return Ok(());
+                        }
+                        Err(_) => return Err(DurableRunFailure::Internal),
+                    }
+                    owner
+                        .commit_driver_cut(
+                            &mut staged,
+                            DurableCommitCutV1::OperationResult,
+                            Some(DurableOperationEvidenceV1 {
+                                operation_id: occurrence.identity,
+                                dispatch_id: None,
+                                validation_attempt,
+                                recovery_dispatch,
+                                retry_delay_us: None,
+                                retries_left,
+                                action_recovery: None,
+                                request_bytes: None,
+                                outcome: None,
+                                retry_errors: Arc::from([]),
+                                result_type: Some(metadata.result_type.clone()),
+                                result_bytes: Some(result_bytes),
+                            }),
+                        )
+                        .await?;
+                    *recovered = staged;
+                    *last_committed = recovered.clone();
+                    self.commit_durable_event(
+                        owner,
+                        recovered,
+                        accepted.package_activity.activity_id,
+                        root_task_identity(accepted.execution_id),
+                        task_event_sequence,
+                        result_event,
+                        last_committed,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                ProcessedHookOutcomeV1::Retry(wait) => {
+                    retries_left = Some(wait.retries_left);
+                    owner
+                        .commit_driver_cut(
+                            recovered,
+                            DurableCommitCutV1::RetryWaiting,
+                            Some(DurableOperationEvidenceV1 {
+                                operation_id: occurrence.identity,
+                                dispatch_id: Some(dispatch_id),
+                                validation_attempt,
+                                recovery_dispatch,
+                                retry_delay_us: Some(wait.delay.get()),
+                                retries_left,
+                                action_recovery: None,
+                                request_bytes: Some(request_bytes),
+                                outcome: Some(outcome),
+                                retry_errors: Arc::clone(&wait.errors),
+                                result_type: None,
+                                result_bytes: None,
+                            }),
+                        )
+                        .await?;
+                    *last_committed = recovered.clone();
+                    if operation
+                        .prepare_after_retry_wait(
+                            self.inner.configuration.executor(),
+                            &accepted
+                                .handle
+                                .cancellation_signal()
+                                .map_err(|_| DurableRunFailure::Internal)?,
+                            &self.inner.allocator,
+                            self.inner.configuration.identity_source(),
+                        )
+                        .await
+                        .map_err(|_| DurableRunFailure::Internal)?
+                        .is_none()
+                    {
+                        Self::settle_retry_terminal(
+                            recovered.machine_mut(),
+                            occurrence,
+                            &operation,
+                        )
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                        return Ok(());
+                    }
+                }
+                ProcessedHookOutcomeV1::Failed(failure) => {
+                    if metadata.attempted
+                        && matches!(
+                            operation.lifecycle_failure(),
+                            Some(OperationLifecycleFailureV1::Operation(_))
+                        )
+                    {
+                        operation
+                            .accept_attempt_failure(recovered.machine_mut())
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    } else {
+                        recovered
+                            .machine_mut()
+                            .fail_operation(occurrence.identity, failure.runtime_category())
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    }
+                    return Ok(());
+                }
+            }
+        }
     }
 
     /// Constructs one owned asynchronous driver for an accepted execution.

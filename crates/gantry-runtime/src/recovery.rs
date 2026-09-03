@@ -405,7 +405,7 @@ pub enum DurableOperationRecoveryV1 {
 }
 
 /// Result of projecting one authoritative journal prefix into the existing machine.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RecoveredDurableStateV1 {
     machine: Machine,
     sessions: Option<LogicalSessionRegistryV1>,
@@ -420,6 +420,40 @@ pub struct RecoveredDurableStateV1 {
 }
 
 impl RecoveredDurableStateV1 {
+    /// Constructs the authoritative in-process projection immediately after sequence one commits.
+    pub fn from_committed_start(
+        execution_start: DurableExecutionStartV1,
+        evidence_id: ProtocolIdentity,
+        sequence: u64,
+    ) -> Result<Self, DurableEvidenceError> {
+        if sequence != 1 || evidence_id.kind() != IdentityKind::Evidence {
+            return Err(DurableEvidenceError::InvalidCausalOrder);
+        }
+        let program = Arc::new(execution_start.program()?);
+        let machine =
+            Machine::recover_from_checkpoint(program, execution_start.state().checkpoint().clone())
+                .map_err(DurableEvidenceError::Checkpoint)?;
+        let sessions = execution_start
+            .state()
+            .sessions()
+            .cloned()
+            .map(LogicalSessionRegistryV1::recover_from_checkpoint)
+            .transpose()
+            .map_err(DurableEvidenceError::Session)?;
+        Ok(Self {
+            machine,
+            sessions,
+            execution_start: Some(execution_start),
+            execution_state: None,
+            cancellation_reason: None,
+            events: RecoveredDurableEventsV1::default(),
+            latest_sequence: sequence,
+            latest_evidence_id: evidence_id,
+            latest_cut: DurableCommitCutV1::Checkpoint,
+            operation_recovery: DurableOperationRecoveryV1::None,
+        })
+    }
+
     /// Returns the latest authoritative logical sequence represented by recovery.
     #[must_use]
     pub const fn latest_sequence(&self) -> u64 {
