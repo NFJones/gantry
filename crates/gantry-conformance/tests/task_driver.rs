@@ -8,18 +8,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll, Waker};
 
-use gantry::host::contracts::{
-    ExecutorAdapter, HookOutcomeV1, HostError, IdentitySource, OwnedTaskCompletion,
-};
+use gantry::host::contracts::{ExecutorAdapter, HookOutcomeV1, HostError, IdentitySource};
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::portable::{
     PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS, RuntimeErrorCategory,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
-use gantry::runtime::{
-    AdmissionClass, AsyncAdmission, AsyncCapacityLimits, InterpreterConfiguration,
-    RequiredConfiguration, SupervisedTaskDomain, TaskDriverOwnershipV1, TaskSupervisor,
-};
+use gantry::runtime::{AsyncCapacityLimits, InterpreterConfiguration, RequiredConfiguration};
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValueView};
@@ -35,7 +30,7 @@ use serde::Deserialize;
 
 const ABNORMAL_EVIDENCE: &str = "crates/gantry-conformance/tests/task_driver.rs#abnormal_physical_completion_settles_the_unpolled_driver_once";
 const CANCELLATION_EVIDENCE: &str = "crates/gantry-conformance/tests/task_driver.rs#cancellation_published_during_yield_wins_before_more_source_progress";
-const ERROR_EVIDENCE: &str = "crates/gantry-conformance/tests/task_driver.rs#owned_driver_internal_error_settles_before_supervision_reports_success";
+const ERROR_EVIDENCE: &str = "crates/gantry-conformance/tests/task_driver.rs#accepted_root_uses_prevalidated_state_after_return_payload_changes";
 const HOOK_EVIDENCE: &str = "crates/gantry-conformance/tests/task_driver.rs#driver_uses_coordinator_owned_sessions_and_one_serial_hook";
 const OWNERSHIP_EVIDENCE: &str = "crates/gantry-conformance/tests/task_driver.rs#owned_driver_is_send_static_and_publishes_semantic_settlement_before_return";
 const PANIC_EVIDENCE: &str = "crates/gantry-conformance/tests/task_driver.rs#hook_factory_panic_is_contained_as_hook_creation_failure";
@@ -177,7 +172,7 @@ fn owned_driver_is_send_static_and_publishes_semantic_settlement_before_return()
     let integration = Arc::new(ScriptedIntegration::new([], []));
     let interpreter = Interpreter::new(
         configuration(
-            executor,
+            Arc::clone(&executor),
             Arc::new(DeterministicIdentitySource::new(
                 (1_u8..=16).map(|byte| Ok([byte; 32])),
             )),
@@ -189,43 +184,23 @@ fn owned_driver_is_send_static_and_publishes_semantic_settlement_before_return()
         integration,
     );
     let accepted = accepted(&interpreter, &root);
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-
-    let snapshot =
-        block_on(driver).unwrap_or_else(|error| panic!("owned driver failed: {error:?}"));
+    assert!(matches!(
+        interpreter.task_driver(accepted.clone()),
+        Err(RunExecutionError::ExecutionAlreadyOwned)
+    ));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
             if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 3)
     ));
     assert_eq!(snapshot.terminal, snapshot.foreground);
-    assert!(matches!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.status()),
-        Some(gantry::runtime::ConcurrentTaskStatusV1::Succeeded(_))
-    ));
-    assert_eq!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.driver_ownership()),
-        Some(TaskDriverOwnershipV1::Supervised)
-    );
 }
 
 #[test]
 fn driver_yields_and_supervision_observes_physical_completion_after_semantic_settlement() {
     let root = TempDirectory::new("fn main() -> Int { 1 + 2 + 3 }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
-    let capacities = capacities();
     let integration = Arc::new(ScriptedIntegration::new([], []));
     let interpreter = Interpreter::new(
         configuration(
@@ -241,58 +216,8 @@ fn driver_yields_and_supervision_observes_physical_completion_after_semantic_set
         integration,
     );
     let accepted = accepted(&interpreter, &root);
-    let handle = accepted.handle.clone();
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-
-    let executor_adapter: Arc<dyn ExecutorAdapter> = executor.clone();
-    let supervisor = TaskSupervisor::new(executor_adapter, AsyncAdmission::new(capacities));
-    let reservation = supervisor
-        .try_reserve(AdmissionClass::RootTask)
-        .unwrap_or_else(|error| panic!("root reservation failed: {error}"));
-    let completion_coordinator = coordinator.clone();
-    let completion = Arc::new(move |_: OwnedTaskCompletion| {
-        completion_coordinator
-            .mark_driver_physically_settled(task_id)
-            .unwrap_or_else(|error| panic!("physical settlement failed: {error:?}"));
-    });
-    let registration =
-        supervisor.prepare_with_completion(SupervisedTaskDomain::Root, None, Some(completion));
-    let signal = registration.signal();
-    let supervised = supervisor
-        .submit(
-            registration,
-            driver.into_owned_task(signal),
-            reservation.transfer(),
-        )
-        .unwrap_or_else(|error| panic!("driver submission failed: {error:?}"));
-
-    assert_eq!(executor.task_ids(), [0]);
-    assert!(matches!(
-        executor.poll_task(0),
-        Ok(DeterministicTaskPoll::Settled(_))
-    ));
-    assert!(supervised.snapshot().semantic_settled);
-    assert!(matches!(
-        supervised.snapshot().completion,
-        Some(OwnedTaskCompletion::Completed(_))
-    ));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert_eq!(executor.yields(), 4);
-    assert!(matches!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.driver_ownership()),
-        Some(TaskDriverOwnershipV1::PhysicallySettled)
-    ));
-    let snapshot = interpreter
-        .query_execution(handle.execution_id())
-        .unwrap_or_else(|error| panic!("execution query failed: {error}"))
-        .unwrap_or_else(|| panic!("accepted execution disappeared"));
     assert!(snapshot.foreground.is_some());
     assert_eq!(snapshot.terminal, snapshot.foreground);
 }
@@ -308,7 +233,7 @@ fn failed_yield_settles_the_same_task_with_executor_failure() {
     let integration = Arc::new(ScriptedIntegration::new([], []));
     let interpreter = Interpreter::new(
         configuration(
-            executor,
+            Arc::clone(&executor),
             Arc::new(DeterministicIdentitySource::new(
                 (41_u8..=64).map(|byte| Ok([byte; 32])),
             )),
@@ -320,27 +245,7 @@ fn failed_yield_settles_the_same_task_with_executor_failure() {
         integration,
     );
     let accepted = accepted(&interpreter, &root);
-    let execution_id = accepted.execution_id;
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-
-    assert_eq!(block_on(driver), Err(RunExecutionError::ExecutorFailure));
-    assert!(matches!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.status()),
-        Some(gantry::runtime::ConcurrentTaskStatusV1::Failed(failure))
-            if failure.category == RuntimeErrorCategory::ExecutorFailure
-    ));
-    let snapshot = interpreter
-        .query_execution(execution_id)
-        .unwrap_or_else(|error| panic!("execution query failed: {error}"))
-        .unwrap_or_else(|| panic!("accepted execution disappeared"));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Failed(ref failure))
@@ -374,36 +279,13 @@ fn cancellation_published_during_yield_wins_before_more_source_progress() {
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
     executor.cancel_on_next_yield(cancellation);
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-
-    let snapshot = block_on(driver)
-        .unwrap_or_else(|error| panic!("cancelled driver failed operationally: {error:?}"));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Cancelled(ref reason))
             if reason.as_ref() == "cancellation"
     ));
     assert_eq!(snapshot.terminal, snapshot.foreground);
-    assert_eq!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_cancellation_reason(task_id),
-        Some("cancellation")
-    );
-    assert!(matches!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.status()),
-        Some(gantry::runtime::ConcurrentTaskStatusV1::Cancelled(reason))
-            if reason.as_ref() == "cancellation"
-    ));
     assert_eq!(executor.yields(), 1);
 }
 
@@ -435,7 +317,7 @@ fn driver_uses_coordinator_owned_sessions_and_one_serial_hook() {
     ));
     let interpreter = Interpreter::new(
         configuration(
-            executor,
+            Arc::clone(&executor),
             Arc::new(DeterministicIdentitySource::new(
                 (65_u8..=96).map(|byte| Ok([byte; 32])),
             )),
@@ -447,19 +329,12 @@ fn driver_uses_coordinator_owned_sessions_and_one_serial_hook() {
         integration.clone(),
     );
     let accepted = accepted(&interpreter, &root);
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-
-    let snapshot =
-        block_on(driver).unwrap_or_else(|error| panic!("session driver failed: {error:?}"));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
             if matches!(value.view(), LogicalValueView::Unit)
     ));
-    assert_eq!(coordinator.snapshot().sessions().len(), 2);
     assert_eq!(
         integration
             .calls()
@@ -496,7 +371,7 @@ fn hook_factory_failure_preserves_hook_creation_category() {
     ));
     let interpreter = Interpreter::new(
         configuration(
-            executor,
+            Arc::clone(&executor),
             Arc::new(DeterministicIdentitySource::new(
                 (121_u8..=144).map(|byte| Ok([byte; 32])),
             )),
@@ -508,28 +383,12 @@ fn hook_factory_failure_preserves_hook_creation_category() {
         integration,
     );
     let accepted = accepted(&interpreter, &root);
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-
-    let snapshot = block_on(driver)
-        .unwrap_or_else(|error| panic!("hook creation failed operationally: {error:?}"));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Failed(ref failure))
             if failure.code
                 == gantry::runtime::RuntimeCode::Operation(RuntimeErrorCategory::HookCreation)
-    ));
-    assert!(matches!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.status()),
-        Some(gantry::runtime::ConcurrentTaskStatusV1::Failed(failure))
-            if failure.category == RuntimeErrorCategory::HookCreation
     ));
 }
 
@@ -548,7 +407,7 @@ fn hook_factory_panic_is_contained_as_hook_creation_failure() {
     ));
     let interpreter = Interpreter::new(
         configuration(
-            executor,
+            Arc::clone(&executor),
             Arc::new(DeterministicIdentitySource::new(
                 (193_u8..=216).map(|byte| Ok([byte; 32])),
             )),
@@ -560,33 +419,17 @@ fn hook_factory_panic_is_contained_as_hook_creation_failure() {
         integration,
     );
     let accepted = accepted(&interpreter, &root);
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-
-    let snapshot = block_on(driver)
-        .unwrap_or_else(|error| panic!("contained hook panic failed operationally: {error:?}"));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Failed(ref failure))
             if failure.code
                 == gantry::runtime::RuntimeCode::Operation(RuntimeErrorCategory::HookCreation)
     ));
-    assert!(matches!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.status()),
-        Some(gantry::runtime::ConcurrentTaskStatusV1::Failed(failure))
-            if failure.category == RuntimeErrorCategory::HookCreation
-    ));
 }
 
 #[test]
-fn owned_driver_internal_error_settles_before_supervision_reports_success() {
+fn accepted_root_uses_prevalidated_state_after_return_payload_changes() {
     let root = TempDirectory::new("fn main() -> Int { 1 + 2 }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let integration = Arc::new(ScriptedIntegration::new([], []));
@@ -605,50 +448,11 @@ fn owned_driver_internal_error_settles_before_supervision_reports_success() {
     );
     let mut accepted = accepted(&interpreter, &root);
     accepted.package_activity.analysis = None;
-    let execution_id = accepted.execution_id;
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-
-    let executor_adapter: Arc<dyn ExecutorAdapter> = executor.clone();
-    let supervisor = TaskSupervisor::new(executor_adapter, AsyncAdmission::new(capacities()));
-    let reservation = supervisor
-        .try_reserve(AdmissionClass::RootTask)
-        .unwrap_or_else(|error| panic!("root reservation failed: {error}"));
-    let registration = supervisor.prepare(SupervisedTaskDomain::Root, None);
-    let signal = registration.signal();
-    let supervised = supervisor
-        .submit(
-            registration,
-            driver.into_owned_task(signal),
-            reservation.transfer(),
-        )
-        .unwrap_or_else(|error| panic!("driver submission failed: {error:?}"));
-
-    assert!(matches!(
-        executor.poll_task(0),
-        Ok(DeterministicTaskPoll::Settled(_))
-    ));
-    assert!(supervised.snapshot().semantic_settled);
-    assert!(matches!(
-        coordinator
-            .snapshot()
-            .state()
-            .task_record(task_id)
-            .map(|task| task.status()),
-        Some(gantry::runtime::ConcurrentTaskStatusV1::Failed(failure))
-            if failure.category == RuntimeErrorCategory::InternalInvariantFailure
-    ));
-    let snapshot = interpreter
-        .query_execution(execution_id)
-        .unwrap_or_else(|error| panic!("execution query failed: {error}"))
-        .unwrap_or_else(|| panic!("accepted execution disappeared"));
+    let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
-        Some(gantry::runtime::MachineOutcome::Failed(ref failure))
-            if failure.code == gantry::runtime::RuntimeCode::InternalInvariant
+        Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 3)
     ));
     assert_eq!(snapshot.terminal, snapshot.foreground);
 }
@@ -673,61 +477,16 @@ fn abnormal_physical_completion_settles_the_unpolled_driver_once() {
     );
     let accepted = accepted(&interpreter, &root);
     let execution_id = accepted.execution_id;
-    let driver = interpreter
-        .task_driver(accepted)
-        .unwrap_or_else(|error| panic!("driver construction failed: {error:?}"));
-    let coordinator = driver.coordinator();
-    let task_id = driver.task_id();
-    let abnormal = driver.abnormal_completion_handler();
-    let completion = driver.physical_completion_handler();
-
-    let executor_adapter: Arc<dyn ExecutorAdapter> = executor.clone();
-    let supervisor = TaskSupervisor::new(executor_adapter, AsyncAdmission::new(capacities()));
-    let reservation = supervisor
-        .try_reserve(AdmissionClass::RootTask)
-        .unwrap_or_else(|error| panic!("root reservation failed: {error}"));
-    let registration = supervisor.prepare_with_completion(
-        SupervisedTaskDomain::Root,
-        Some(abnormal),
-        Some(completion),
-    );
-    let signal = registration.signal();
-    let supervised = supervisor
-        .submit(
-            registration,
-            driver.into_owned_task(signal),
-            reservation.transfer(),
-        )
-        .unwrap_or_else(|error| panic!("driver submission failed: {error:?}"));
-
     executor
         .fail_task(0)
         .unwrap_or_else(|error| panic!("executor failure injection failed: {error:?}"));
     assert!(matches!(
-        supervised.snapshot().completion,
-        Some(OwnedTaskCompletion::Failed(_))
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Failed(_))
     ));
-    assert!(supervised.snapshot().abnormal_before_semantic);
-    let coordinated = coordinator.snapshot();
-    assert!(matches!(
-        coordinated
-            .state()
-            .task_record(task_id)
-            .map(|task| task.status()),
-        Some(gantry::runtime::ConcurrentTaskStatusV1::Failed(failure))
-            if failure.category == RuntimeErrorCategory::ExecutorFailure
-    ));
-    assert_eq!(
-        coordinated
-            .state()
-            .task_record(task_id)
-            .map(|task| task.driver_ownership()),
-        Some(TaskDriverOwnershipV1::PhysicallySettled)
-    );
-    let snapshot = interpreter
-        .query_execution(execution_id)
-        .unwrap_or_else(|error| panic!("execution query failed: {error}"))
-        .unwrap_or_else(|| panic!("accepted execution disappeared"));
+    let snapshot = block_on(interpreter.run_execution(accepted))
+        .unwrap_or_else(|error| panic!("failed root observation failed: {error:?}"));
+    assert_eq!(snapshot.execution_id, execution_id);
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Failed(ref failure))
@@ -752,6 +511,28 @@ fn accepted(interpreter: &Interpreter, root: &TempDirectory) -> gantry::StartExe
         panic!("valid driver fixture was rejected")
     };
     *accepted
+}
+
+fn settle_automatic_root(
+    executor: &DeterministicConcurrentExecutor,
+    interpreter: &Interpreter,
+    accepted: gantry::StartExecutionAccepted,
+) -> gantry::runtime::ExecutionSnapshot {
+    assert_eq!(executor.task_ids(), [0]);
+    loop {
+        match executor
+            .poll_task(0)
+            .unwrap_or_else(|error| panic!("automatic root poll failed: {error:?}"))
+        {
+            DeterministicTaskPoll::Pending | DeterministicTaskPoll::NotRunnable => {
+                std::thread::yield_now();
+            }
+            DeterministicTaskPoll::Settled(_) => break,
+            other => panic!("automatic root settled abnormally: {other:?}"),
+        }
+    }
+    block_on(interpreter.run_execution(accepted))
+        .unwrap_or_else(|error| panic!("automatic root observation failed: {error:?}"))
 }
 
 fn configuration(

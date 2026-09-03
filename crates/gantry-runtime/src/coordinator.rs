@@ -119,6 +119,46 @@ impl ExecutionCoordinator {
         snapshot_from(&lock(&self.inner.state))
     }
 
+    /// Publishes successful root submission and supervision registration.
+    pub fn resolve_root_submission(&self) -> Result<(), TaskStateError> {
+        let mut state = lock(&self.inner.state);
+        state.tasks.resolve_root_submission()?;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(())
+    }
+
+    /// Settles an accepted root after exceptional executor submission failure.
+    pub fn fail_root_submission(&self, outcome: MachineOutcome) -> Result<(), TaskStateError> {
+        let (task_waiters, shutdown_waiters) = {
+            let mut state = lock(&self.inner.state);
+            let task_id = state.tasks.root_task_id();
+            state.tasks.fail_root_submission(outcome, true)?;
+            state.publication = state.publication.wrapping_add(1);
+            let task_waiters = state.task_waiters.remove(&task_id).unwrap_or_default();
+            let shutdown_waiters = take_shutdown_waiters_if_quiescent(&mut state);
+            (task_waiters, shutdown_waiters)
+        };
+        wake_all(task_waiters);
+        wake_all(shutdown_waiters);
+        Ok(())
+    }
+
+    /// Settles a submitting root whose registered driver could not become runnable.
+    pub fn fail_root_registration(&self, outcome: MachineOutcome) -> Result<(), TaskStateError> {
+        let (task_waiters, shutdown_waiters) = {
+            let mut state = lock(&self.inner.state);
+            let task_id = state.tasks.root_task_id();
+            state.tasks.fail_root_submission(outcome, false)?;
+            state.publication = state.publication.wrapping_add(1);
+            let task_waiters = state.task_waiters.remove(&task_id).unwrap_or_default();
+            let shutdown_waiters = take_shutdown_waiters_if_quiescent(&mut state);
+            (task_waiters, shutdown_waiters)
+        };
+        wake_all(task_waiters);
+        wake_all(shutdown_waiters);
+        Ok(())
+    }
+
     /// Attempts a snapshot without blocking, for lock-order instrumentation.
     #[must_use]
     pub fn try_snapshot(&self) -> Option<ExecutionCoordinatorSnapshot> {

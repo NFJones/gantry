@@ -42,6 +42,7 @@ pub enum DeterministicTaskPoll {
 pub struct DeterministicConcurrentExecutor {
     tasks: Mutex<Vec<Arc<Mutex<DeterministicTaskState>>>>,
     fail_next_spawn: AtomicBool,
+    poll_next_spawn_immediately: AtomicBool,
     yields: AtomicU64,
     next_yield_failure: Mutex<Option<HostError>>,
     next_yield_cancellation: Mutex<Option<gantry::host::contracts::CancellationSignal>>,
@@ -60,6 +61,15 @@ impl DeterministicConcurrentExecutor {
     /// Makes the next submission fail with `executor-failure`.
     pub fn fail_next_spawn(&self) {
         self.fail_next_spawn.store(true, Ordering::Release);
+    }
+
+    /// Polls the next submitted task once before returning its handle.
+    ///
+    /// This models executors that may start a future synchronously during
+    /// submission and is used to verify Gantry's closed start gates.
+    pub fn poll_next_spawn_immediately(&self) {
+        self.poll_next_spawn_immediately
+            .store(true, Ordering::Release);
     }
 
     /// Makes the next cooperative yield fail with the supplied executor error.
@@ -231,6 +241,7 @@ impl ExecutorAdapter for DeterministicConcurrentExecutor {
             let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
             return Err(executor_failure());
         }
+        let task_id = u64::try_from(lock(&self.tasks).len()).map_err(|_| executor_failure())?;
         let state = Arc::new(Mutex::new(DeterministicTaskState {
             future: Some(task),
             settlement: DeterministicSettlement::Running,
@@ -242,6 +253,12 @@ impl ExecutorAdapter for DeterministicConcurrentExecutor {
             waiters: Vec::new(),
         }));
         lock(&self.tasks).push(Arc::clone(&state));
+        if self
+            .poll_next_spawn_immediately
+            .swap(false, Ordering::AcqRel)
+        {
+            let _ = self.poll_task(task_id)?;
+        }
         Ok(Box::new(DeterministicSubmittedTask { state }))
     }
 

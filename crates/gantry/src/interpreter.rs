@@ -14,6 +14,7 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{
     CancellationReasonCategory, DeterministicEvaluationCode, IdentityKind, RuntimeErrorCategory,
+    StartFailureCategory,
 };
 use gantry_core::strict_json::{JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 use gantry_core::value::{LogicalValue, OperationErrorValue, ValueLimits};
@@ -25,23 +26,24 @@ use gantry_ir::TypeDescriptor;
 use gantry_ir::generated::{OperationSiteKind, TypeKind};
 use gantry_runtime::{
     AbnormalCompletionHandler, AcceptedTranscriptResultV1, ActionOperationRequestV1, AdapterPoison,
-    AdmissionExhaustion, CancellationReason, CancellationRecord, CapturedOperationRequestV1,
-    ConcurrentTaskStateV1, ExecutionCoordinator, ExecutionHandle, ExecutionSnapshot,
-    FinalShutdownEventSettlement, InterpolationInputV1, InterpreterConfiguration,
-    InterpreterLifecycle, LifecycleError, LogicalSessionRegistryV1, Machine, MachineBuildError,
-    MachineFailure, MachineLabel, MachineOutcome, MachineStep, ModelOperationRequestV1,
-    ModelSessionUseV1, NamedInputV1, OperationLifecycle, OperationLifecycleError,
-    OperationLifecycleFailureV1, OperationRequestHeaderV1, OperationRetryPolicyV1,
-    PhysicalCompletionHandler, ProcessedHookOutcomeV1, RootSessionProvenanceV1, RuntimeCode,
-    SessionCreationModeV1, SessionEstablisher, SessionEstablishmentV1, ShutdownCompletionError,
-    ShutdownReport, SupervisedTaskDomain, SupervisionSignal, TaskContextV1, TaskHook,
-    TaskHookError, TaskSessionContextV1, TaskStateError, TranscriptResultKindV1, TranscriptTurnV1,
-    TypedActionArgumentV1,
+    AdmissionClass, AdmissionExhaustion, CancellationReason, CancellationRecord,
+    CapturedOperationRequestV1, ConcurrentTaskStateV1, ExecutionCoordinator, ExecutionHandle,
+    ExecutionSnapshot, FinalShutdownEventSettlement, InterpolationInputV1,
+    InterpreterConfiguration, InterpreterLifecycle, LifecycleError, LogicalSessionRegistryV1,
+    Machine, MachineBuildError, MachineFailure, MachineLabel, MachineOutcome, MachineStep,
+    ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationLifecycle,
+    OperationLifecycleError, OperationLifecycleFailureV1, OperationRequestHeaderV1,
+    OperationRetryPolicyV1, PhysicalCompletionHandler, ProcessedHookOutcomeV1,
+    RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1, SessionEstablisher,
+    SessionEstablishmentV1, ShutdownCompletionError, ShutdownReport, SupervisedTaskDomain,
+    SupervisionSignal, TaskContextV1, TaskHook, TaskHookError, TaskSessionContextV1,
+    TaskStateError, TranscriptResultKindV1, TranscriptTurnV1, TypedActionArgumentV1,
 };
 
+use crate::start::PreparedExecutionStart;
 use crate::{
-    AnalyzePackageCoordinator, StartExecutionAccepted, StartExecutionCoordinator,
-    StartExecutionRequest, StartExecutionResult,
+    AnalyzePackageCoordinator, AnalyzePackageResult, StartExecutionAccepted,
+    StartExecutionCoordinator, StartExecutionFailure, StartExecutionRequest, StartExecutionResult,
 };
 
 /// Supported nondurable interpreter facade over injected host integrations.
@@ -61,6 +63,194 @@ struct InterpreterInner {
     preflight: Arc<dyn IntegrationPreflight>,
     session_establisher: SessionEstablisher,
     hook_factory: Arc<dyn HookFactory>,
+}
+
+struct PreparedRootDriver {
+    machine: Machine,
+    coordinator: ExecutionCoordinator,
+    task_id: ProtocolIdentity,
+    workflow: gantry_ir::CanonicalPath,
+    create_request: gantry_host::contracts::HostRequest,
+}
+
+impl PreparedRootDriver {
+    fn new_for_prepared(
+        inner: &InterpreterInner,
+        prepared: &PreparedExecutionStart,
+    ) -> Result<Self, RunExecutionError> {
+        Self::new(
+            inner,
+            prepared.execution_id,
+            &prepared.package_activity,
+            prepared.entry_input.as_ref(),
+            &prepared.root_session,
+            true,
+        )
+    }
+
+    fn new_for_accepted(
+        inner: &InterpreterInner,
+        accepted: &StartExecutionAccepted,
+    ) -> Result<Self, RunExecutionError> {
+        Self::new(
+            inner,
+            accepted.execution_id,
+            &accepted.package_activity,
+            accepted.entry_input.as_ref(),
+            &accepted.root_session,
+            false,
+        )
+    }
+
+    fn new(
+        inner: &InterpreterInner,
+        execution_id: ProtocolIdentity,
+        package_activity: &AnalyzePackageResult,
+        entry_input: Option<&crate::ValidatedEntryInput>,
+        root_session: &crate::RootSessionState,
+        submitting: bool,
+    ) -> Result<Self, RunExecutionError> {
+        let analysis = package_activity
+            .analysis
+            .as_ref()
+            .ok_or(RunExecutionError::MissingAnalysis)?;
+        let entry = analysis
+            .entry()
+            .cloned()
+            .ok_or(RunExecutionError::MissingEntry)?;
+        let program = analysis
+            .executable_program()
+            .cloned()
+            .ok_or(RunExecutionError::MissingExecutableProgram)?;
+        let arguments = entry_input
+            .map(|input| {
+                decode_logical_value(
+                    input.canonical_json.bytes(),
+                    &input.ty,
+                    inner.configuration.required().value_limits,
+                    analysis.declared_value_shapes(),
+                )
+                .map(|value| vec![value])
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let initial_agent = analysis.structure().default_agent().map(Arc::from);
+        let machine = Machine::new_with_context(
+            Arc::new(program),
+            &entry.path,
+            arguments,
+            execution_id,
+            inner.configuration.machine_limits(),
+            initial_agent.clone(),
+            Some(root_session.id),
+        )
+        .map_err(RunExecutionError::MachineBuild)?;
+        let task_id = root_task_identity(execution_id);
+        let root_mode = match root_session.provenance {
+            crate::RootSessionProvenance::EmbedderSupplied => SessionCreationModeV1::EmbedderRoot,
+            crate::RootSessionProvenance::GantryCreated => SessionCreationModeV1::GantryRoot,
+        };
+        let sessions = LogicalSessionRegistryV1::new(
+            execution_id,
+            root_session.id,
+            root_mode,
+            root_session.transcript.clone(),
+        )
+        .map_err(RunExecutionError::Session)?;
+        let tasks = if submitting {
+            ConcurrentTaskStateV1::with_submitting_root(
+                execution_id,
+                task_id,
+                inner.configuration.maximum_tasks_per_execution(),
+            )
+        } else {
+            ConcurrentTaskStateV1::new(
+                execution_id,
+                task_id,
+                inner.configuration.maximum_tasks_per_execution(),
+            )
+        }
+        .map_err(RunExecutionError::TaskState)?;
+        let coordinator =
+            ExecutionCoordinator::new(tasks, sessions).map_err(RunExecutionError::TaskState)?;
+        let create_request = TaskContextV1 {
+            execution_id,
+            task_id,
+            inherited_agent: initial_agent,
+            session: TaskSessionContextV1::Root {
+                root_session_id: root_session.id,
+                provenance: match root_session.provenance {
+                    crate::RootSessionProvenance::EmbedderSupplied => {
+                        RootSessionProvenanceV1::EmbedderSupplied
+                    }
+                    crate::RootSessionProvenance::GantryCreated => {
+                        RootSessionProvenanceV1::GantryCreated
+                    }
+                },
+            },
+        }
+        .into_host_request()
+        .map_err(RunExecutionError::HookRequest)?;
+        Ok(Self {
+            machine,
+            coordinator,
+            task_id,
+            workflow: entry.path,
+            create_request,
+        })
+    }
+}
+
+#[derive(Default)]
+struct RootStartGate {
+    state: std::sync::atomic::AtomicU8,
+    waiters: Mutex<Vec<Waker>>,
+}
+
+impl RootStartGate {
+    async fn wait(&self) -> bool {
+        std::future::poll_fn(|context| {
+            let state = self.state.load(Ordering::Acquire);
+            if state != 0 {
+                return Poll::Ready(state == 1);
+            }
+            let mut waiters = lock_shutdown(&self.waiters);
+            let state = self.state.load(Ordering::Acquire);
+            if state != 0 {
+                return Poll::Ready(state == 1);
+            }
+            if !waiters
+                .iter()
+                .any(|waiter| waiter.will_wake(context.waker()))
+            {
+                waiters.push(context.waker().clone());
+            }
+            Poll::Pending
+        })
+        .await
+    }
+
+    fn release(&self) {
+        self.finish(1);
+    }
+
+    fn cancel(&self) {
+        self.finish(2);
+    }
+
+    fn finish(&self, state: u8) {
+        if self
+            .state
+            .compare_exchange(0, state, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        let waiters = std::mem::take(&mut *lock_shutdown(&self.waiters));
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
 }
 
 impl Clone for Interpreter {
@@ -124,7 +314,7 @@ impl Interpreter {
         }
     }
 
-    /// Runs ordered nondurable preflight and returns the exact accepted/rejected start union.
+    /// Runs preflight, publishes accepted state, and submits the root to the configured executor.
     pub async fn start_execution(
         &self,
         request: StartExecutionRequest<'_>,
@@ -134,15 +324,86 @@ impl Interpreter {
             self.inner.configuration.identity_source(),
             self.inner.clock.as_ref(),
         );
-        StartExecutionCoordinator::new(
+        let coordinator = StartExecutionCoordinator::new(
             &package,
             &self.inner.lifecycle,
             &self.inner.configuration,
             &self.inner.allocator,
             Arc::clone(&self.inner.preflight),
-        )
-        .start(request)
-        .await
+        );
+        let prepared = match coordinator.prepare(request).await {
+            Ok(prepared) => prepared,
+            Err(failure) => return StartExecutionResult::Rejected(failure),
+        };
+        let root = match PreparedRootDriver::new_for_prepared(&self.inner, &prepared) {
+            Ok(root) => root,
+            Err(error) => {
+                return StartExecutionResult::Rejected(prepared_start_failure(
+                    prepared,
+                    StartFailureCategory::Internal,
+                    preparation_error_code(&error),
+                ));
+            }
+        };
+        let workflow = root.workflow.clone();
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve(AdmissionClass::RootTask) {
+            Ok(reservation) => reservation,
+            Err(_) => {
+                return StartExecutionResult::Rejected(prepared_start_failure(
+                    prepared,
+                    StartFailureCategory::ImplementationResourceExhaustion,
+                    "root-task-capacity",
+                ));
+            }
+        };
+        let mut accepted = match prepared.accept_state() {
+            Ok(accepted) => accepted,
+            Err(failure) => return StartExecutionResult::Rejected(failure),
+        };
+        accepted.mark_automatic_driver();
+        let driver = TaskDriver::from_prepared(Arc::clone(&self.inner), accepted.clone(), root);
+        let task_coordinator = driver.coordinator();
+        let abnormal = driver.abnormal_completion_handler();
+        let completion = driver.physical_completion_handler();
+        let registration = supervisor.prepare_with_completion(
+            SupervisedTaskDomain::Root,
+            Some(abnormal),
+            Some(completion),
+        );
+        let signal = registration.signal();
+        let gate = Arc::new(RootStartGate::default());
+        let task = driver.into_gated_owned_task(signal, Arc::clone(&gate));
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => {
+                if task_coordinator.resolve_root_submission().is_ok() {
+                    task.relinquish();
+                    gate.release();
+                } else {
+                    let outcome = root_start_failure(&workflow, RuntimeCode::InternalInvariant);
+                    let _ = settle_root_start_failure(
+                        &self.inner.lifecycle,
+                        &accepted,
+                        &task_coordinator,
+                        outcome,
+                        false,
+                    );
+                    gate.cancel();
+                    task.relinquish();
+                }
+            }
+            Err(_) => {
+                let outcome = root_start_failure(&workflow, RuntimeCode::RootSubmissionFailure);
+                let _ = settle_root_start_failure(
+                    &self.inner.lifecycle,
+                    &accepted,
+                    &task_coordinator,
+                    outcome,
+                    true,
+                );
+            }
+        }
+        StartExecutionResult::Accepted(Box::new(accepted))
     }
 
     /// Constructs one owned asynchronous driver for an accepted execution.
@@ -150,90 +411,50 @@ impl Interpreter {
         &self,
         accepted: StartExecutionAccepted,
     ) -> Result<TaskDriver, RunExecutionError> {
+        if accepted.has_automatic_driver() {
+            return Err(RunExecutionError::ExecutionAlreadyOwned);
+        }
         TaskDriver::new(Arc::clone(&self.inner), accepted)
     }
 
-    /// Compatibility delegate for one accepted sequential execution.
+    /// Compatibility delegate that observes automatically owned execution to terminal settlement.
     pub async fn run_execution(
         &self,
         accepted: StartExecutionAccepted,
     ) -> Result<ExecutionSnapshot, RunExecutionError> {
+        if accepted.has_automatic_driver() {
+            return self
+                .inner
+                .lifecycle
+                .await_terminal(accepted.execution_id)
+                .map_err(RunExecutionError::Lifecycle)?
+                .await
+                .ok_or(RunExecutionError::ExecutionNotFound);
+        }
         self.task_driver(accepted)?.await
     }
 
     async fn drive_execution(
         &self,
         accepted: StartExecutionAccepted,
-        coordinator: ExecutionCoordinator,
+        prepared: PreparedRootDriver,
     ) -> Result<ExecutionSnapshot, RunExecutionError> {
         let analysis = accepted
             .package_activity
             .analysis
             .as_ref()
             .ok_or(RunExecutionError::MissingAnalysis)?;
-        let entry = analysis
-            .entry()
-            .cloned()
-            .ok_or(RunExecutionError::MissingEntry)?;
-        let program = analysis
-            .executable_program()
-            .cloned()
-            .ok_or(RunExecutionError::MissingExecutableProgram)?;
-        let arguments = accepted
-            .entry_input
-            .as_ref()
-            .map(|input| {
-                decode_logical_value(
-                    input.canonical_json.bytes(),
-                    &input.ty,
-                    self.inner.configuration.required().value_limits,
-                    analysis.declared_value_shapes(),
-                )
-                .map(|value| vec![value])
-            })
-            .transpose()?
-            .unwrap_or_default();
-        let initial_agent = analysis.structure().default_agent().map(Arc::from);
-        let initial_session = Some(accepted.root_session.id);
-        let mut machine = match Machine::new_with_context(
-            Arc::new(program),
-            &entry.path,
-            arguments,
-            accepted.execution_id,
-            self.inner.configuration.machine_limits(),
-            initial_agent.clone(),
-            initial_session,
-        ) {
-            Ok(machine) => machine,
-            Err(error) => {
-                let failure = build_failure(&entry.path, &error);
-                self.fix_failed_execution(&accepted, failure.clone())?;
-                return Err(RunExecutionError::MachineBuild(error));
-            }
-        };
+        let PreparedRootDriver {
+            mut machine,
+            coordinator,
+            task_id,
+            workflow,
+            create_request,
+        } = prepared;
         let cancellation = accepted
             .handle
             .cancellation_signal()
             .map_err(|_| RunExecutionError::LifecycleTransition)?;
-        let task_id = root_task_identity(accepted.execution_id);
-        let create_request = TaskContextV1 {
-            execution_id: accepted.execution_id,
-            task_id,
-            inherited_agent: initial_agent,
-            session: TaskSessionContextV1::Root {
-                root_session_id: accepted.root_session.id,
-                provenance: match accepted.root_session.provenance {
-                    crate::RootSessionProvenance::EmbedderSupplied => {
-                        RootSessionProvenanceV1::EmbedderSupplied
-                    }
-                    crate::RootSessionProvenance::GantryCreated => {
-                        RootSessionProvenanceV1::GantryCreated
-                    }
-                },
-            },
-        }
-        .into_host_request()
-        .map_err(RunExecutionError::HookRequest)?;
         let mut hook = TaskHook::new(
             &self.inner.lifecycle,
             self.inner.hook_factory.as_ref(),
@@ -366,7 +587,7 @@ impl Interpreter {
                     {
                         let failure = MachineFailure {
                             code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
-                            workflow: entry.path.clone(),
+                            workflow: workflow.clone(),
                             site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
                                 .map_err(|_| RunExecutionError::LifecycleTransition)?,
                         };
@@ -1225,41 +1446,20 @@ impl TaskDriver {
         inner: Arc<InterpreterInner>,
         accepted: StartExecutionAccepted,
     ) -> Result<Self, RunExecutionError> {
-        let task_id = root_task_identity(accepted.execution_id);
-        let root_mode = match accepted.root_session.provenance {
-            crate::RootSessionProvenance::EmbedderSupplied => SessionCreationModeV1::EmbedderRoot,
-            crate::RootSessionProvenance::GantryCreated => SessionCreationModeV1::GantryRoot,
-        };
-        let sessions = LogicalSessionRegistryV1::new(
-            accepted.execution_id,
-            accepted.root_session.id,
-            root_mode,
-            accepted.root_session.transcript.clone(),
-        )
-        .map_err(RunExecutionError::Session)?;
-        let tasks = ConcurrentTaskStateV1::new(
-            accepted.execution_id,
-            task_id,
-            inner.configuration.maximum_tasks_per_execution(),
-        )
-        .map_err(RunExecutionError::TaskState)?;
-        let coordinator =
-            ExecutionCoordinator::new(tasks, sessions).map_err(RunExecutionError::TaskState)?;
-        let future_coordinator = coordinator.clone();
+        let prepared = PreparedRootDriver::new_for_accepted(&inner, &accepted)?;
+        Ok(Self::from_prepared(inner, accepted, prepared))
+    }
+
+    fn from_prepared(
+        inner: Arc<InterpreterInner>,
+        accepted: StartExecutionAccepted,
+        prepared: PreparedRootDriver,
+    ) -> Self {
+        let task_id = prepared.task_id;
+        let coordinator = prepared.coordinator.clone();
         let failure_coordinator = coordinator.clone();
         let handle = accepted.handle.clone();
-        let workflow = accepted
-            .package_activity
-            .analysis
-            .as_ref()
-            .and_then(|analysis| analysis.entry())
-            .map_or_else(
-                || {
-                    gantry_ir::CanonicalPath::new("crate::main")
-                        .unwrap_or_else(|_| unreachable!("fallback root path is canonical"))
-                },
-                |entry| entry.path.clone(),
-            );
+        let workflow = prepared.workflow.clone();
         let failure_context = TaskDriverFailureContext {
             inner: Arc::clone(&inner),
             coordinator: coordinator.clone(),
@@ -1272,9 +1472,7 @@ impl TaskDriver {
                 inner,
                 external_owner: false,
             };
-            let result = interpreter
-                .drive_execution(accepted, future_coordinator)
-                .await;
+            let result = interpreter.drive_execution(accepted, prepared).await;
             if let Err(error) = result {
                 interpreter.settle_unhandled_driver_failure(
                     &failure_coordinator,
@@ -1287,12 +1485,12 @@ impl TaskDriver {
                 result
             }
         });
-        Ok(Self {
+        Self {
             task_id,
             coordinator,
             failure_context,
             future,
-        })
+        }
     }
 
     /// Returns the stable logical task identity owned by this driver.
@@ -1333,6 +1531,20 @@ impl TaskDriver {
             OwnedTaskResult::new()
         })
     }
+
+    fn into_gated_owned_task(
+        self,
+        signal: SupervisionSignal,
+        gate: Arc<RootStartGate>,
+    ) -> OwnedTaskFuture {
+        Box::pin(async move {
+            if gate.wait().await {
+                let _ = self.await;
+            }
+            let _ = signal.settle();
+            OwnedTaskResult::new()
+        })
+    }
 }
 
 impl Future for TaskDriver {
@@ -1346,6 +1558,8 @@ impl Future for TaskDriver {
 /// Failure while driving an already accepted nondurable execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RunExecutionError {
+    /// The accepted root is already owned by the interpreter's executor submission.
+    ExecutionAlreadyOwned,
     /// Accepted package state unexpectedly omitted analysis.
     MissingAnalysis,
     /// Accepted package state unexpectedly omitted its entry inventory.
@@ -1480,22 +1694,75 @@ fn lock_shutdown<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn build_failure(root: &gantry_ir::CanonicalPath, error: &MachineBuildError) -> MachineFailure {
-    let code = match error {
-        MachineBuildError::UnsupportedEffect(_) => RuntimeCode::UnsupportedEffect,
-        MachineBuildError::MissingRoot
-        | MachineBuildError::ArgumentCount
-        | MachineBuildError::ArgumentType
-        | MachineBuildError::InvalidExecutionIdentity
-        | MachineBuildError::InvalidSessionIdentity
-        | MachineBuildError::Value(_) => RuntimeCode::InternalInvariant,
-    };
-    MachineFailure {
+fn preparation_error_code(error: &RunExecutionError) -> &'static str {
+    match error {
+        RunExecutionError::MissingAnalysis => "missing-analysis",
+        RunExecutionError::MissingEntry => "missing-entry",
+        RunExecutionError::MissingExecutableProgram => "missing-executable-program",
+        RunExecutionError::InvalidEntryValue => "invalid-entry-value",
+        RunExecutionError::MachineBuild(MachineBuildError::UnsupportedEffect(_)) => {
+            "unsupported-profile-effect"
+        }
+        RunExecutionError::MachineBuild(_) => "root-machine-construction",
+        RunExecutionError::Session(_) => "root-session-state",
+        RunExecutionError::TaskState(_) => "root-task-state",
+        RunExecutionError::HookRequest(_) => "root-hook-request",
+        _ => "root-preparation-invariant",
+    }
+}
+
+fn prepared_start_failure(
+    prepared: PreparedExecutionStart,
+    category: StartFailureCategory,
+    code: impl Into<Arc<str>>,
+) -> StartExecutionFailure {
+    StartExecutionFailure {
+        category,
+        code: code.into(),
+        package_activity: Some(Box::new(prepared.package_activity)),
+    }
+}
+
+fn root_start_failure(workflow: &gantry_ir::CanonicalPath, code: RuntimeCode) -> MachineOutcome {
+    MachineOutcome::Failed(MachineFailure {
         code,
-        workflow: root.clone(),
+        workflow: workflow.clone(),
         site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
             .unwrap_or_else(|_| unreachable!("constant position is valid")),
+    })
+}
+
+fn settle_root_start_failure(
+    lifecycle: &InterpreterLifecycle,
+    accepted: &StartExecutionAccepted,
+    coordinator: &ExecutionCoordinator,
+    outcome: MachineOutcome,
+    physically_settled: bool,
+) -> Result<(), RunExecutionError> {
+    if physically_settled {
+        coordinator
+            .fail_root_submission(outcome.clone())
+            .map_err(RunExecutionError::TaskState)?;
+    } else {
+        coordinator
+            .fail_root_registration(outcome.clone())
+            .map_err(RunExecutionError::TaskState)?;
     }
+    let foreground = coordinator
+        .complete_foreground()
+        .map_err(RunExecutionError::TaskState)?;
+    if foreground != outcome {
+        return Err(RunExecutionError::LifecycleTransition);
+    }
+    coordinator
+        .complete_terminal()
+        .map_err(RunExecutionError::TaskState)?;
+    lifecycle
+        .complete_foreground(&accepted.handle, outcome.clone())
+        .map_err(|_| RunExecutionError::LifecycleTransition)?;
+    lifecycle
+        .complete_terminal(&accepted.handle, outcome)
+        .map_err(|_| RunExecutionError::LifecycleTransition)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

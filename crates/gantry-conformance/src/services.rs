@@ -10,6 +10,8 @@ use gantry::host::contracts::{
 use gantry::portable::IdentityKind;
 use gantry::timestamp::UtcTimestamp;
 
+use crate::concurrent_executor::{DeterministicConcurrentExecutor, DeterministicTaskPoll};
+
 /// Scripted thread-safe identity source for adapter contract tests.
 #[derive(Debug, Default)]
 pub struct DeterministicIdentitySource {
@@ -86,6 +88,7 @@ pub struct DeterministicExecutor {
     jitter_responses: Mutex<VecDeque<Result<u64, HostError>>>,
     sleeps: Mutex<Vec<DurationMicros>>,
     yields: Mutex<usize>,
+    tasks: Arc<DeterministicConcurrentExecutor>,
 }
 
 impl DeterministicExecutor {
@@ -100,6 +103,7 @@ impl DeterministicExecutor {
             jitter_responses: Mutex::new(jitter_responses.into_iter().collect()),
             sleeps: Mutex::new(Vec::new()),
             yields: Mutex::new(0),
+            tasks: Arc::new(DeterministicConcurrentExecutor::default()),
         }
     }
 
@@ -117,6 +121,17 @@ impl DeterministicExecutor {
     pub fn yields(&self) -> usize {
         self.yields.lock().map_or(0, |count| *count)
     }
+
+    /// Returns submitted owned-task identities in deterministic creation order.
+    #[must_use]
+    pub fn task_ids(&self) -> Vec<u64> {
+        self.tasks.task_ids()
+    }
+
+    /// Polls one submitted owned task through the deterministic task engine.
+    pub fn poll_task(&self, task_id: u64) -> Result<DeterministicTaskPoll, HostError> {
+        self.tasks.poll_task(task_id)
+    }
 }
 
 impl ExecutorAdapter for DeterministicExecutor {
@@ -124,7 +139,18 @@ impl ExecutorAdapter for DeterministicExecutor {
         &self,
         task: gantry::host::contracts::OwnedTaskFuture,
     ) -> Result<Box<dyn gantry::host::contracts::SubmittedTask>, HostError> {
-        gantry::host::contracts::reject_task_submission(task)
+        let task_id = u64::try_from(self.tasks.task_ids().len())
+            .map_err(|_| scripted_failure("executor-task-limit"))?;
+        let submitted = self.tasks.spawn(task)?;
+        let tasks = Arc::clone(&self.tasks);
+        std::thread::spawn(move || {
+            while let Ok(DeterministicTaskPoll::Pending | DeterministicTaskPoll::NotRunnable) =
+                tasks.poll_task(task_id)
+            {
+                std::thread::yield_now();
+            }
+        });
+        Ok(submitted)
     }
 
     fn sleep<'a>(&'a self, duration: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {

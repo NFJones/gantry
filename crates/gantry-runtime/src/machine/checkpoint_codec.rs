@@ -492,6 +492,7 @@ fn write_runtime_code(writer: &mut Writer, code: RuntimeCode) {
         RuntimeCode::LoopLimitExhausted => writer.u8(5),
         RuntimeCode::UnsupportedEffect => writer.u8(6),
         RuntimeCode::InternalInvariant => writer.u8(7),
+        RuntimeCode::RootSubmissionFailure => writer.u8(8),
     }
 }
 
@@ -509,6 +510,7 @@ fn read_runtime_code(reader: &mut Reader<'_>) -> Result<RuntimeCode, MachineReco
         5 => Ok(RuntimeCode::LoopLimitExhausted),
         6 => Ok(RuntimeCode::UnsupportedEffect),
         7 => Ok(RuntimeCode::InternalInvariant),
+        8 => Ok(RuntimeCode::RootSubmissionFailure),
         _ => Err(MachineRecoveryError::InvalidEncoding),
     }
 }

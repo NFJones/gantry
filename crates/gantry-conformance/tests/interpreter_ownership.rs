@@ -312,19 +312,24 @@ fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
 
     let mut first_waiter = Box::pin(interpreter.shutdown());
     assert!(poll_once(first_waiter.as_mut()).is_pending());
-    assert_eq!(executor.task_ids(), [0]);
+    assert_eq!(executor.task_ids(), [0, 1]);
     drop(first_waiter);
     assert!(!cancellation.is_cancelled());
 
-    assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
     assert!(cancellation.is_cancelled());
+    assert!(executor.is_runnable(0));
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
     let execution = block_on(observer.run_execution(*accepted))
         .unwrap_or_else(|error| panic!("cancelled execution did not drain: {error:?}"));
     assert!(execution.foreground.is_some());
     assert_eq!(execution.terminal, execution.foreground);
-    assert!(executor.is_runnable(0));
+    assert!(executor.is_runnable(1));
     assert!(matches!(
-        executor.poll_task(0),
+        executor.poll_task(1),
         Ok(DeterministicTaskPoll::Settled(_))
     ));
 
@@ -367,7 +372,11 @@ fn owned_shutdown_retains_services_after_last_external_facade() {
     let mut shutdown = Box::pin(interpreter.shutdown());
     assert!(poll_once(shutdown.as_mut()).is_pending());
     drop(shutdown);
-    assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+    assert_eq!(executor.task_ids(), [0, 1]);
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
     block_on(driver.run_execution(*accepted))
         .unwrap_or_else(|error| panic!("retention fixture did not drain: {error:?}"));
 
@@ -375,7 +384,7 @@ fn owned_shutdown_retains_services_after_last_external_facade() {
     drop(driver);
     drop(interpreter);
     assert!(weak.upgrade().is_some());
-    let shutdown_poll = executor.poll_task(0);
+    let shutdown_poll = executor.poll_task(1);
     assert!(
         matches!(shutdown_poll, Ok(DeterministicTaskPoll::Settled(_))),
         "shutdown task did not settle normally: {shutdown_poll:?}"

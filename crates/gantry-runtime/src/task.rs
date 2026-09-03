@@ -703,6 +703,37 @@ impl ConcurrentTaskStateV1 {
         root_task_id: ProtocolIdentity,
         maximum_tasks: u64,
     ) -> Result<Self, TaskStateError> {
+        Self::with_root_submission_state(
+            execution_id,
+            root_task_id,
+            maximum_tasks,
+            ConcurrentTaskStatusV1::Running,
+            TaskDriverOwnershipV1::Supervised,
+        )
+    }
+
+    /// Creates accepted root state before executor submission is resolved.
+    pub fn with_submitting_root(
+        execution_id: ProtocolIdentity,
+        root_task_id: ProtocolIdentity,
+        maximum_tasks: u64,
+    ) -> Result<Self, TaskStateError> {
+        Self::with_root_submission_state(
+            execution_id,
+            root_task_id,
+            maximum_tasks,
+            ConcurrentTaskStatusV1::Submitting,
+            TaskDriverOwnershipV1::AwaitingSubmission,
+        )
+    }
+
+    fn with_root_submission_state(
+        execution_id: ProtocolIdentity,
+        root_task_id: ProtocolIdentity,
+        maximum_tasks: u64,
+        status: ConcurrentTaskStatusV1,
+        driver_ownership: TaskDriverOwnershipV1,
+    ) -> Result<Self, TaskStateError> {
         if execution_id.kind() != IdentityKind::Execution {
             return Err(TaskStateError::InvalidExecutionIdentity);
         }
@@ -718,10 +749,10 @@ impl ConcurrentTaskStateV1 {
             root: RootTaskRecordV1 {
                 task_id: root_task_id,
                 task_path: Arc::from([]),
-                status: ConcurrentTaskStatusV1::Running,
+                status,
                 pending_outcome: None,
                 settled_outcome: None,
-                driver_ownership: TaskDriverOwnershipV1::Supervised,
+                driver_ownership,
                 recovery_state: TaskRecoveryStateV1::Original,
             },
             maximum_tasks,
@@ -734,6 +765,40 @@ impl ConcurrentTaskStateV1 {
             foreground: None,
             terminal: None,
         })
+    }
+
+    /// Publishes successful root submission and supervision registration.
+    pub fn resolve_root_submission(&mut self) -> Result<(), TaskStateError> {
+        if !matches!(self.root.status, ConcurrentTaskStatusV1::Submitting)
+            || self.root.driver_ownership != TaskDriverOwnershipV1::AwaitingSubmission
+        {
+            return Err(TaskStateError::InvalidTransition);
+        }
+        self.root.status = ConcurrentTaskStatusV1::Running;
+        self.root.driver_ownership = TaskDriverOwnershipV1::Supervised;
+        Ok(())
+    }
+
+    /// Settles an accepted root whose executor submission failed.
+    pub fn fail_root_submission(
+        &mut self,
+        outcome: MachineOutcome,
+        physically_settled: bool,
+    ) -> Result<(), TaskStateError> {
+        if !matches!(self.root.status, ConcurrentTaskStatusV1::Submitting)
+            || self.root.driver_ownership != TaskDriverOwnershipV1::AwaitingSubmission
+            || !matches!(outcome, MachineOutcome::Failed(_))
+        {
+            return Err(TaskStateError::InvalidTransition);
+        }
+        self.root.status = task_status_from_outcome(outcome.clone());
+        self.root.settled_outcome = Some(outcome);
+        self.root.driver_ownership = if physically_settled {
+            TaskDriverOwnershipV1::PhysicallySettled
+        } else {
+            TaskDriverOwnershipV1::Supervised
+        };
+        Ok(())
     }
 
     /// Returns the cumulative count, including the root and settled children.
@@ -2002,6 +2067,7 @@ fn status_is_settled(status: &ConcurrentTaskStatusV1) -> bool {
 fn machine_failure_category(code: crate::RuntimeCode) -> RuntimeErrorCategory {
     match code {
         crate::RuntimeCode::Operation(category) => category,
+        crate::RuntimeCode::RootSubmissionFailure => RuntimeErrorCategory::ExecutorFailure,
         crate::RuntimeCode::UnsupportedEffect | crate::RuntimeCode::InternalInvariant => {
             RuntimeErrorCategory::InternalInvariantFailure
         }

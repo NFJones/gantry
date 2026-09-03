@@ -92,6 +92,8 @@ pub enum RuntimeCode {
     LoopLimitExhausted,
     /// The selected profile does not admit one analyzed effect.
     UnsupportedEffect,
+    /// The configured executor rejected an already accepted root task.
+    RootSubmissionFailure,
     /// The executable program violated an analyzer/runtime invariant.
     InternalInvariant,
 }
@@ -108,6 +110,7 @@ impl RuntimeCode {
             Self::LoopIterationBudget => "loop-iteration-budget",
             Self::LoopLimitExhausted => "loop-limit-exhausted",
             Self::UnsupportedEffect => "unsupported-effect",
+            Self::RootSubmissionFailure => "root-submission-failure",
             Self::InternalInvariant => "internal-invariant-failure",
         }
     }

@@ -1,0 +1,100 @@
+{
+  "format": "gantry.automatic-root-start-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-START-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3.3",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3.3-runtime-ownership",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3.6",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-006",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-M-TASK-SETTLE",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-7.17",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-7.17",
+      "clause": "clause-003",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-11.10",
+      "clause": "clause-002",
+      "profiles": ["durable-runtime"]
+    },
+    {
+      "requirement": "GNT-15.1-automatic-execution",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-concurrency-and-reentrancy",
+      "clause": "clause-007",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-concurrency-and-reentrancy",
+      "clause": "clause-009",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "automatic-root-progress",
+      "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#independently_accepted_roots_make_executor_owned_progress"
+    },
+    {
+      "id": "immediate-poll-gate",
+      "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#immediate_executor_poll_cannot_cross_the_accepted_root_gate"
+    },
+    {
+      "id": "post-acceptance-submission-failure",
+      "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#post_acceptance_submission_failure_returns_accepted_and_settles_the_root"
+    },
+    {
+      "id": "pre-acceptance-root-capacity",
+      "evidence": "crates/gantry-conformance/tests/automatic_root_start.rs#root_capacity_rejects_before_acceptance_and_releases_after_reaping"
+    },
+    {
+      "id": "prevalidated-root-state",
+      "evidence": "crates/gantry-conformance/tests/task_driver.rs#accepted_root_uses_prevalidated_state_after_return_payload_changes"
+    }
+  ],
+  "exclusions": [
+    "Durable root composition and journal commit ordering remain owned by GNT-ASYNC-DROOT-001.",
+    "Recovered runnable-set admission and rollback remain owned by GNT-ASYNC-RESUME-001.",
+    "Root cancellation and shutdown semantics remain owned by GNT-ASYNC-ROOTCTL-001.",
+    "Removal of the temporary task_driver and run_execution compatibility surfaces remains owned by GNT-ASYNC-API-001."
+  ]
+}

@@ -94,8 +94,8 @@ pub struct StartExecutionRequest<'a> {
     pub event_delivery: Option<&'a SinkPlan>,
 }
 
-/// Accepted nondurable execution state before `main` evaluation.
-#[derive(Debug)]
+/// Accepted nondurable execution state before or during internally owned `main` evaluation.
+#[derive(Clone, Debug)]
 pub struct StartExecutionAccepted {
     /// Fresh execution identity accepted only at the final boundary.
     pub execution_id: ProtocolIdentity,
@@ -109,6 +109,17 @@ pub struct StartExecutionAccepted {
     pub root_session: RootSessionState,
     /// Agent/action mapping revisions fixed by preflight for this run.
     pub mapping_revisions: MappingRevisions,
+    automatic_driver: bool,
+}
+
+impl StartExecutionAccepted {
+    pub(crate) fn mark_automatic_driver(&mut self) {
+        self.automatic_driver = true;
+    }
+
+    pub(crate) const fn has_automatic_driver(&self) -> bool {
+        self.automatic_driver
+    }
 }
 
 /// Structured rejection before any execution identity becomes accepted.
@@ -168,6 +179,7 @@ impl PreparedExecutionStart {
             entry_input: self.entry_input,
             root_session: self.root_session,
             mapping_revisions: self.mapping_revisions,
+            automatic_driver: false,
         })
     }
 
@@ -189,6 +201,7 @@ impl PreparedExecutionStart {
             entry_input: self.entry_input,
             root_session: self.root_session,
             mapping_revisions: self.mapping_revisions,
+            automatic_driver: false,
         })
     }
 
