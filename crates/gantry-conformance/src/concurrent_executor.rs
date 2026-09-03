@@ -10,11 +10,10 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::task::{Context, Poll, Wake, Waker};
 
 use gantry::host::contracts::{
-    ConcurrentExecutorAdapter, DurationMicros, EmbeddingVersion, ExecutorAdapter, HostError,
-    HostFuture, HostResponse, InclusiveJitterRange, OwnedTaskFuture, OwnedTaskResult,
+    DurationMicros, ExecutorAdapter, HostError, HostFuture, InclusiveJitterRange, OwnedTaskAbort,
+    OwnedTaskCompletion, OwnedTaskFuture, OwnedTaskPanic, OwnedTaskPanicOrigin, OwnedTaskResult,
     SubmittedTask,
 };
-use gantry::host::embedding::EmbeddingOperation;
 
 /// Result of one explicit deterministic task poll.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,6 +26,13 @@ pub enum DeterministicTaskPoll {
     Settled(OwnedTaskResult),
     /// A confirmed abort removed the task future.
     Stopped,
+    /// Task polling or destruction panicked at a classified boundary.
+    Panicked {
+        /// Boundary that originated the panic.
+        origin: OwnedTaskPanicOrigin,
+        /// Optional stable key for protected diagnostic bytes.
+        protected_diagnostic: Option<Arc<str>>,
+    },
     /// Task polling or destruction failed at the executor boundary.
     Failed(HostError),
 }
@@ -52,6 +58,39 @@ impl DeterministicConcurrentExecutor {
     /// Makes the next submission fail with `executor-failure`.
     pub fn fail_next_spawn(&self) {
         self.fail_next_spawn.store(true, Ordering::Release);
+    }
+
+    /// Makes the next abort request for one running task fail immutably.
+    pub fn fail_abort(&self, task_id: u64) -> Result<(), HostError> {
+        let task = self.task(task_id).ok_or_else(executor_failure)?;
+        let mut task = lock(&task);
+        if !matches!(task.settlement, DeterministicSettlement::Running)
+            || task.abort_result.is_some()
+        {
+            return Err(executor_failure());
+        }
+        task.fail_abort = true;
+        Ok(())
+    }
+
+    /// Settles one running task with an injected executor-internal failure.
+    pub fn fail_task(&self, task_id: u64) -> Result<(), HostError> {
+        let task = self.task(task_id).ok_or_else(executor_failure)?;
+        let (future, waiters) = {
+            let mut state = lock(&task);
+            if !matches!(state.settlement, DeterministicSettlement::Running) {
+                return Err(executor_failure());
+            }
+            state.runnable = false;
+            (state.future.take(), std::mem::take(&mut state.waiters))
+        };
+        let completion = match catch_unwind(AssertUnwindSafe(|| drop(future))) {
+            Ok(()) => OwnedTaskCompletion::Failed(executor_failure()),
+            Err(payload) => completion_from_panic(payload),
+        };
+        lock(&task).settlement = DeterministicSettlement::Settled(completion);
+        wake_all(waiters);
+        Ok(())
     }
 
     /// Returns all zero-based harness task identities in creation order.
@@ -90,13 +129,9 @@ impl DeterministicConcurrentExecutor {
         let mut future = Some({
             let mut state = lock(&task);
             match &state.settlement {
-                DeterministicSettlement::Completed(Ok(result)) => {
-                    return Ok(DeterministicTaskPoll::Settled(result.clone()));
+                DeterministicSettlement::Settled(completion) => {
+                    return Ok(poll_from_completion(completion));
                 }
-                DeterministicSettlement::Completed(Err(error)) => {
-                    return Ok(DeterministicTaskPoll::Failed(error.clone()));
-                }
-                DeterministicSettlement::Stopped => return Ok(DeterministicTaskPoll::Stopped),
                 DeterministicSettlement::Running if !state.runnable => {
                     return Ok(DeterministicTaskPoll::NotRunnable);
                 }
@@ -120,22 +155,24 @@ impl DeterministicConcurrentExecutor {
         }));
         let polled = match polled {
             Ok(Poll::Ready(result)) => {
-                if catch_unwind(AssertUnwindSafe(|| drop(future.take()))).is_err() {
-                    Err(())
-                } else {
-                    Ok(Poll::Ready(result))
+                match catch_unwind(AssertUnwindSafe(|| drop(future.take()))) {
+                    Ok(()) => Ok(Poll::Ready(result)),
+                    Err(payload) => Err(payload),
                 }
             }
             Ok(Poll::Pending) => Ok(Poll::Pending),
-            Err(_) => {
+            Err(payload) => {
                 let _ = catch_unwind(AssertUnwindSafe(|| drop(future.take())));
-                Err(())
+                Err(payload)
             }
         };
         let (poll, waiters) = {
             let mut state = lock(&task);
             if !matches!(state.settlement, DeterministicSettlement::Running) {
-                (poll_from_settlement(&state.settlement), Vec::new())
+                let DeterministicSettlement::Settled(completion) = &state.settlement else {
+                    unreachable!("checked above")
+                };
+                (poll_from_completion(completion), Vec::new())
             } else {
                 match polled {
                     Ok(Poll::Pending) => {
@@ -143,15 +180,18 @@ impl DeterministicConcurrentExecutor {
                         (DeterministicTaskPoll::Pending, Vec::new())
                     }
                     Ok(Poll::Ready(result)) => {
-                        state.settlement = DeterministicSettlement::Completed(Ok(result.clone()));
+                        state.settlement = DeterministicSettlement::Settled(
+                            OwnedTaskCompletion::Completed(result),
+                        );
                         let waiters = std::mem::take(&mut state.waiters);
                         (DeterministicTaskPoll::Settled(result), waiters)
                     }
-                    Err(_) => {
-                        let error = executor_failure();
-                        state.settlement = DeterministicSettlement::Completed(Err(error.clone()));
+                    Err(payload) => {
+                        let completion = completion_from_panic(payload);
+                        let poll = poll_from_completion(&completion);
+                        state.settlement = DeterministicSettlement::Settled(completion);
                         let waiters = std::mem::take(&mut state.waiters);
-                        (DeterministicTaskPoll::Failed(error), waiters)
+                        (poll, waiters)
                     }
                 }
             }
@@ -168,6 +208,25 @@ impl DeterministicConcurrentExecutor {
 }
 
 impl ExecutorAdapter for DeterministicConcurrentExecutor {
+    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
+        if self.fail_next_spawn.swap(false, Ordering::AcqRel) {
+            let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
+            return Err(executor_failure());
+        }
+        let state = Arc::new(Mutex::new(DeterministicTaskState {
+            future: Some(task),
+            settlement: DeterministicSettlement::Running,
+            abort_result: None,
+            fail_abort: false,
+            runnable: true,
+            polls: 0,
+            wakes: 0,
+            waiters: Vec::new(),
+        }));
+        lock(&self.tasks).push(Arc::clone(&state));
+        Ok(Box::new(DeterministicSubmittedTask { state }))
+    }
+
     fn sleep<'a>(&'a self, _duration: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
         Box::pin(async { Ok(()) })
     }
@@ -182,30 +241,12 @@ impl ExecutorAdapter for DeterministicConcurrentExecutor {
     }
 }
 
-impl ConcurrentExecutorAdapter for DeterministicConcurrentExecutor {
-    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
-        if self.fail_next_spawn.swap(false, Ordering::AcqRel) {
-            return Err(executor_failure());
-        }
-        let state = Arc::new(Mutex::new(DeterministicTaskState {
-            future: Some(task),
-            settlement: DeterministicSettlement::Running,
-            runnable: true,
-            polls: 0,
-            wakes: 0,
-            waiters: Vec::new(),
-        }));
-        lock(&self.tasks).push(Arc::clone(&state));
-        Ok(Box::new(DeterministicSubmittedTask { state }))
-    }
-}
-
 struct DeterministicSubmittedTask {
     state: Arc<Mutex<DeterministicTaskState>>,
 }
 
 impl SubmittedTask for DeterministicSubmittedTask {
-    fn join<'a>(&'a self) -> HostFuture<'a, Result<OwnedTaskResult, HostError>> {
+    fn completion<'a>(&'a self) -> HostFuture<'a, OwnedTaskCompletion> {
         Box::pin(std::future::poll_fn(move |context| {
             let mut state = lock(&self.state);
             match &state.settlement {
@@ -213,35 +254,55 @@ impl SubmittedTask for DeterministicSubmittedTask {
                     register_waker(&mut state.waiters, context.waker());
                     Poll::Pending
                 }
-                DeterministicSettlement::Completed(result) => Poll::Ready(result.clone()),
-                DeterministicSettlement::Stopped => Poll::Ready(Err(executor_failure())),
+                DeterministicSettlement::Settled(completion) => Poll::Ready(completion.clone()),
             }
         }))
     }
 
-    fn abort<'a>(&'a self) -> HostFuture<'a, Result<HostResponse, HostError>> {
+    fn abort<'a>(&'a self) -> HostFuture<'a, OwnedTaskAbort> {
         let (result, future, waiters) = {
             let mut state = lock(&self.state);
             match state.settlement {
                 DeterministicSettlement::Running => {
-                    state.settlement = DeterministicSettlement::Stopped;
+                    if let Some(result) = &state.abort_result {
+                        return Box::pin(std::future::ready(result.clone()));
+                    }
+                    if state.fail_abort {
+                        let result = OwnedTaskAbort::Failed(executor_failure());
+                        state.abort_result = Some(result.clone());
+                        return Box::pin(std::future::ready(result));
+                    }
                     state.runnable = false;
                     (
-                        "stopped",
+                        OwnedTaskAbort::Stopped,
                         state.future.take(),
                         std::mem::take(&mut state.waiters),
                     )
                 }
-                DeterministicSettlement::Completed(_) | DeterministicSettlement::Stopped => {
-                    ("already-settled", None, Vec::new())
+                DeterministicSettlement::Settled(_) => {
+                    (OwnedTaskAbort::AlreadySettled, None, Vec::new())
                 }
             }
         };
-        if catch_unwind(AssertUnwindSafe(|| drop(future))).is_err() {
-            return Box::pin(async { Err(executor_failure()) });
+        let (completion, result) = match catch_unwind(AssertUnwindSafe(|| drop(future))) {
+            Ok(()) if result == OwnedTaskAbort::Stopped => {
+                (Some(OwnedTaskCompletion::Stopped), result)
+            }
+            Ok(()) => (None, result),
+            Err(payload) => (
+                Some(completion_from_panic(payload)),
+                OwnedTaskAbort::Failed(executor_failure()),
+            ),
+        };
+        {
+            let mut state = lock(&self.state);
+            if let Some(completion) = completion {
+                state.settlement = DeterministicSettlement::Settled(completion);
+            }
+            state.abort_result = Some(result.clone());
         }
         wake_all(waiters);
-        Box::pin(async move { abort_response(result) })
+        Box::pin(std::future::ready(result))
     }
 }
 
@@ -252,11 +313,14 @@ impl Drop for DeterministicSubmittedTask {
             if !matches!(state.settlement, DeterministicSettlement::Running) {
                 return;
             }
-            state.settlement = DeterministicSettlement::Stopped;
             state.runnable = false;
             (state.future.take(), std::mem::take(&mut state.waiters))
         };
-        let _ = catch_unwind(AssertUnwindSafe(|| drop(future)));
+        let completion = match catch_unwind(AssertUnwindSafe(|| drop(future))) {
+            Ok(()) => OwnedTaskCompletion::Stopped,
+            Err(payload) => completion_from_panic(payload),
+        };
+        lock(&self.state).settlement = DeterministicSettlement::Settled(completion);
         wake_all(waiters);
     }
 }
@@ -264,6 +328,8 @@ impl Drop for DeterministicSubmittedTask {
 struct DeterministicTaskState {
     future: Option<OwnedTaskFuture>,
     settlement: DeterministicSettlement,
+    abort_result: Option<OwnedTaskAbort>,
+    fail_abort: bool,
     runnable: bool,
     polls: u64,
     wakes: u64,
@@ -272,8 +338,7 @@ struct DeterministicTaskState {
 
 enum DeterministicSettlement {
     Running,
-    Completed(Result<OwnedTaskResult, HostError>),
-    Stopped,
+    Settled(OwnedTaskCompletion),
 }
 
 struct DeterministicWake {
@@ -302,16 +367,31 @@ impl DeterministicWake {
     }
 }
 
-fn poll_from_settlement(settlement: &DeterministicSettlement) -> DeterministicTaskPoll {
-    match settlement {
-        DeterministicSettlement::Running => DeterministicTaskPoll::Pending,
-        DeterministicSettlement::Completed(Ok(result)) => {
-            DeterministicTaskPoll::Settled(result.clone())
-        }
-        DeterministicSettlement::Completed(Err(error)) => {
-            DeterministicTaskPoll::Failed(error.clone())
-        }
-        DeterministicSettlement::Stopped => DeterministicTaskPoll::Stopped,
+fn poll_from_completion(completion: &OwnedTaskCompletion) -> DeterministicTaskPoll {
+    match completion {
+        OwnedTaskCompletion::Completed(result) => DeterministicTaskPoll::Settled(*result),
+        OwnedTaskCompletion::Stopped => DeterministicTaskPoll::Stopped,
+        OwnedTaskCompletion::Panicked {
+            origin,
+            protected_diagnostic,
+        } => DeterministicTaskPoll::Panicked {
+            origin: *origin,
+            protected_diagnostic: protected_diagnostic.clone(),
+        },
+        OwnedTaskCompletion::Failed(error) => DeterministicTaskPoll::Failed(error.clone()),
+    }
+}
+
+fn completion_from_panic(payload: Box<dyn std::any::Any + Send>) -> OwnedTaskCompletion {
+    if let Some(panic) = payload.downcast_ref::<OwnedTaskPanic>() {
+        return OwnedTaskCompletion::Panicked {
+            origin: panic.origin(),
+            protected_diagnostic: panic.protected_diagnostic().cloned(),
+        };
+    }
+    OwnedTaskCompletion::Panicked {
+        origin: OwnedTaskPanicOrigin::GantryInvariant,
+        protected_diagnostic: None,
     }
 }
 
@@ -325,15 +405,6 @@ fn wake_all(waiters: Vec<Waker>) {
     for waiter in waiters {
         waiter.wake();
     }
-}
-
-fn abort_response(result: &str) -> Result<HostResponse, HostError> {
-    HostResponse::new(
-        EmbeddingVersion::V1,
-        EmbeddingOperation::AbortTask,
-        Arc::from(format!("{{\"result\":\"{result}\"}}").into_bytes()),
-    )
-    .map_err(|_| executor_failure())
 }
 
 fn executor_failure() -> HostError {

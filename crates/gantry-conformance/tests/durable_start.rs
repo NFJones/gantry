@@ -170,6 +170,13 @@ impl IdentitySource for Services {
 }
 
 impl ExecutorAdapter for Services {
+    fn spawn(
+        &self,
+        task: gantry::host::contracts::OwnedTaskFuture,
+    ) -> Result<Box<dyn gantry::host::contracts::SubmittedTask>, HostError> {
+        gantry::host::contracts::reject_task_submission(task)
+    }
+
     fn sleep<'a>(
         &'a self,
         _duration: gantry::host::contracts::DurationMicros,

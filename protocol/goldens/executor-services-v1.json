@@ -9,6 +9,17 @@
     "timed-out",
     "failed"
   ],
+  "task_abort_outcomes": [
+    "already-settled",
+    "failed",
+    "stopped"
+  ],
+  "task_completion_outcomes": [
+    "completed",
+    "failed",
+    "panicked",
+    "stopped"
+  ],
   "executor_failure_code": "executor-failure",
   "caller_owned_runtime_kinds": [
     "current-thread",

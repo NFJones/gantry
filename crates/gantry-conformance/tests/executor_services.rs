@@ -10,15 +10,20 @@ use std::task::{Context, Poll, Wake, Waker};
 
 use gantry::host::contracts::{
     CancellationSignal, DeadlineOutcome, DurationMicros, ExecutorAdapter, HostError, HostFuture,
-    InclusiveJitterRange, JitterSource, deadline_race,
+    InclusiveJitterRange, JitterSource, OwnedTaskAbort, OwnedTaskCompletion, OwnedTaskPanic,
+    OwnedTaskPanicOrigin, OwnedTaskResult, deadline_race,
 };
 use gantry_adapter_tokio::TokioExecutor;
+use gantry_conformance::concurrent_executor::{
+    DeterministicConcurrentExecutor, DeterministicTaskPoll,
+};
 use gantry_conformance::services::DeterministicExecutor;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 
 const CONTRACT_EVIDENCE: &str = "crates/gantry-conformance/tests/executor_services.rs#executor_contract_bounds_and_failures_are_exact";
 const ADAPTER_EVIDENCE: &str = "crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers";
+const TASK_EVIDENCE: &str = "crates/gantry-conformance/tests/executor_services.rs#deterministic_task_service_preserves_every_physical_outcome";
 
 #[derive(Debug, Deserialize)]
 struct EvidenceManifest {
@@ -42,6 +47,8 @@ struct ExecutorVectors {
     duration_maximum_micros: u64,
     inclusive_jitter_range: [u64; 2],
     deadline_outcomes: Vec<String>,
+    task_abort_outcomes: Vec<String>,
+    task_completion_outcomes: Vec<String>,
     executor_failure_code: String,
     caller_owned_runtime_kinds: Vec<String>,
 }
@@ -66,6 +73,13 @@ impl JitterSource for FixedJitter {
 struct FailingTimer;
 
 impl ExecutorAdapter for FailingTimer {
+    fn spawn(
+        &self,
+        task: gantry::host::contracts::OwnedTaskFuture,
+    ) -> Result<Box<dyn gantry::host::contracts::SubmittedTask>, HostError> {
+        gantry::host::contracts::reject_task_submission(task)
+    }
+
     fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
         Box::pin(async {
             Err(HostError {
@@ -104,6 +118,24 @@ impl Drop for PendingUntilDrop {
     }
 }
 
+struct PendingOwnedTask {
+    dropped: Arc<AtomicBool>,
+}
+
+impl Future for PendingOwnedTask {
+    type Output = OwnedTaskResult;
+
+    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Pending
+    }
+}
+
+impl Drop for PendingOwnedTask {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::Release);
+    }
+}
+
 #[derive(Debug, Default)]
 struct WakeCounter {
     wakes: AtomicUsize,
@@ -131,11 +163,8 @@ fn checked_in_executor_evidence_is_narrow_and_current() {
         read_json(&root.join("protocol/schemas/executor-services-v1.schema.json"));
 
     assert_eq!(manifest.format, "gantry.executor-services-evidence/v1");
-    assert!(gantry_conformance::evidence_revision_is_expected(
-        &manifest.specification_sha256,
-        &review.specification_sha256,
-    ));
-    assert_eq!(manifest.issue, "GNT-EMB-001");
+    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert_eq!(manifest.issue, "GNT-ASYNC-EXEC-001");
     assert!(
         manifest
             .capabilities
@@ -148,7 +177,7 @@ fn checked_in_executor_evidence_is_narrow_and_current() {
             .iter()
             .map(|entry| entry.evidence.as_str())
             .collect::<Vec<_>>(),
-        vec![CONTRACT_EVIDENCE, ADAPTER_EVIDENCE]
+        vec![CONTRACT_EVIDENCE, ADAPTER_EVIDENCE, TASK_EVIDENCE]
     );
     assert_eq!(manifest.exclusions.len(), 4);
 
@@ -159,6 +188,14 @@ fn checked_in_executor_evidence_is_narrow_and_current() {
     assert_eq!(
         vectors.deadline_outcomes,
         ["completed", "cancelled", "timed-out", "failed"]
+    );
+    assert_eq!(
+        vectors.task_abort_outcomes,
+        ["already-settled", "failed", "stopped"]
+    );
+    assert_eq!(
+        vectors.task_completion_outcomes,
+        ["completed", "failed", "panicked", "stopped"]
     );
     assert_eq!(vectors.executor_failure_code, "executor-failure");
     assert_eq!(
@@ -220,6 +257,113 @@ fn executor_contract_bounds_and_failures_are_exact() {
         Poll::Ready(())
     ));
     assert!(!cancellation.cancel());
+}
+
+#[test]
+fn deterministic_task_service_preserves_every_physical_outcome() {
+    let executor = DeterministicConcurrentExecutor::default();
+    let acknowledgement = OwnedTaskResult::new();
+
+    let completed = executor
+        .spawn(Box::pin(async move { acknowledgement }))
+        .unwrap_or_else(|error| panic!("completion submission failed: {error:?}"));
+    assert_eq!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(acknowledgement))
+    );
+    assert_eq!(
+        block_on(completed.completion()),
+        OwnedTaskCompletion::Completed(acknowledgement)
+    );
+    assert_eq!(
+        block_on(completed.completion()),
+        OwnedTaskCompletion::Completed(acknowledgement)
+    );
+    assert_eq!(block_on(completed.abort()), OwnedTaskAbort::AlreadySettled);
+
+    let stopped_drop = Arc::new(AtomicBool::new(false));
+    let stopped = executor
+        .spawn(Box::pin(PendingOwnedTask {
+            dropped: Arc::clone(&stopped_drop),
+        }))
+        .unwrap_or_else(|error| panic!("stop submission failed: {error:?}"));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert_eq!(block_on(stopped.abort()), OwnedTaskAbort::Stopped);
+    assert!(stopped_drop.load(Ordering::Acquire));
+    assert_eq!(block_on(stopped.completion()), OwnedTaskCompletion::Stopped);
+    assert_eq!(block_on(stopped.abort()), OwnedTaskAbort::AlreadySettled);
+
+    let integration_panic = executor
+        .spawn(Box::pin(async {
+            std::panic::resume_unwind(Box::new(OwnedTaskPanic::new(
+                OwnedTaskPanicOrigin::Integration,
+                Some(Arc::from("protected-panic")),
+            )))
+        }))
+        .unwrap_or_else(|error| panic!("panic submission failed: {error:?}"));
+    let expected_panic = OwnedTaskCompletion::Panicked {
+        origin: OwnedTaskPanicOrigin::Integration,
+        protected_diagnostic: Some(Arc::from("protected-panic")),
+    };
+    assert_eq!(
+        executor.poll_task(2),
+        Ok(DeterministicTaskPoll::Panicked {
+            origin: OwnedTaskPanicOrigin::Integration,
+            protected_diagnostic: Some(Arc::from("protected-panic")),
+        })
+    );
+    assert_eq!(block_on(integration_panic.completion()), expected_panic);
+
+    let failed_drop = Arc::new(AtomicBool::new(false));
+    let failed = executor
+        .spawn(Box::pin(PendingOwnedTask {
+            dropped: Arc::clone(&failed_drop),
+        }))
+        .unwrap_or_else(|error| panic!("failure submission failed: {error:?}"));
+    assert_eq!(executor.fail_task(3), Ok(()));
+    assert!(failed_drop.load(Ordering::Acquire));
+    assert!(matches!(
+        block_on(failed.completion()),
+        OwnedTaskCompletion::Failed(HostError { ref code, .. })
+            if code.as_ref() == "executor-failure"
+    ));
+
+    let abort_failed = executor
+        .spawn(Box::pin(std::future::pending::<OwnedTaskResult>()))
+        .unwrap_or_else(|error| panic!("abort-failure submission failed: {error:?}"));
+    assert_eq!(executor.fail_abort(4), Ok(()));
+    for result in [
+        block_on(abort_failed.abort()),
+        block_on(abort_failed.abort()),
+    ] {
+        assert!(matches!(
+            result,
+            OwnedTaskAbort::Failed(HostError { ref code, .. })
+                if code.as_ref() == "executor-failure"
+        ));
+    }
+    drop(abort_failed);
+
+    let rejected_drop = Arc::new(AtomicBool::new(false));
+    executor.fail_next_spawn();
+    assert!(
+        executor
+            .spawn(Box::pin(PendingOwnedTask {
+                dropped: Arc::clone(&rejected_drop),
+            }))
+            .is_err()
+    );
+    assert!(rejected_drop.load(Ordering::Acquire));
+
+    let final_drop = Arc::new(AtomicBool::new(false));
+    let final_handle = executor
+        .spawn(Box::pin(PendingOwnedTask {
+            dropped: Arc::clone(&final_drop),
+        }))
+        .unwrap_or_else(|error| panic!("final-handle submission failed: {error:?}"));
+    drop(final_handle);
+    assert!(final_drop.load(Ordering::Acquire));
+    assert_eq!(executor.poll_task(5), Ok(DeterministicTaskPoll::Stopped));
 }
 
 #[test]

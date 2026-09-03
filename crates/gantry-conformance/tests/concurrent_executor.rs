@@ -12,11 +12,12 @@ use std::time::Duration;
 use gantry::analysis::{AnalysisStatus, analyze_package_types};
 use gantry::frontend::validate_package_syntax;
 use gantry::host::contracts::{
-    ConcurrentExecutorAdapter, HostError, JitterSource, OwnedTaskResult,
+    ExecutorAdapter, HostError, JitterSource, OwnedTaskAbort, OwnedTaskCompletion,
+    OwnedTaskPanicOrigin, OwnedTaskResult,
 };
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::{CanonicalPath, InstructionKind, MachineProgram};
-use gantry::portable::{ExecutorAbortResultKind, IdentityKind};
+use gantry::portable::IdentityKind;
 use gantry::runtime::{Machine, MachineLimits, MachineOutcome, MachineStep};
 use gantry::source::SourceLimits;
 use gantry::value::DEFAULT_VALUE_LIMITS;
@@ -157,9 +158,8 @@ impl Future for ClosedGenericTask {
                 Poll::Pending
             }
             MachineStep::Complete(MachineOutcome::Succeeded(value)) => {
-                Poll::Ready(OwnedTaskResult {
-                    canonical_bytes: Arc::from(value.canonical_json().bytes()),
-                })
+                assert_eq!(value.canonical_json().bytes(), br#"[1,7,"counter"]"#);
+                Poll::Ready(OwnedTaskResult::new())
             }
             MachineStep::Complete(outcome) => panic!("generic task failed: {outcome:?}"),
             MachineStep::WaitingSessionScope(scope) => {
@@ -351,12 +351,15 @@ fn caller_owned_tokio_task_services_are_executor_neutral_and_terminal() {
             let completed = adapter
                 .spawn(Box::pin(async { task_result(b"completed") }))
                 .unwrap_or_else(|error| panic!("task submission failed: {error:?}"));
-            assert_eq!(completed.join().await, Ok(task_result(b"completed")));
-            assert_eq!(completed.join().await, Ok(task_result(b"completed")));
             assert_eq!(
-                abort_kind(completed.abort().await),
-                ExecutorAbortResultKind::AlreadySettled
+                completed.completion().await,
+                OwnedTaskCompletion::Completed(task_result(b"completed"))
             );
+            assert_eq!(
+                completed.completion().await,
+                OwnedTaskCompletion::Completed(task_result(b"completed"))
+            );
+            assert_eq!(completed.abort().await, OwnedTaskAbort::AlreadySettled);
 
             let polls = Arc::new(AtomicU64::new(0));
             let retained_waker = Arc::new(Mutex::new(None));
@@ -376,10 +379,7 @@ fn caller_owned_tokio_task_services_are_executor_neutral_and_terminal() {
                 first_poll.is_ok(),
                 "spawned task was not polled before deadline"
             );
-            assert_eq!(
-                abort_kind(pending.abort().await),
-                ExecutorAbortResultKind::Stopped
-            );
+            assert_eq!(pending.abort().await, OwnedTaskAbort::Stopped);
             let polls_after_abort = polls.load(Ordering::Acquire);
             retained_waker
                 .lock()
@@ -389,14 +389,8 @@ fn caller_owned_tokio_task_services_are_executor_neutral_and_terminal() {
                 .wake();
             tokio::task::yield_now().await;
             assert_eq!(polls.load(Ordering::Acquire), polls_after_abort);
-            assert_eq!(
-                abort_kind(pending.abort().await),
-                ExecutorAbortResultKind::AlreadySettled
-            );
-            assert!(matches!(
-                pending.join().await,
-                Err(HostError { ref code, .. }) if code.as_ref() == "executor-failure"
-            ));
+            assert_eq!(pending.abort().await, OwnedTaskAbort::AlreadySettled);
+            assert_eq!(pending.completion().await, OwnedTaskCompletion::Stopped);
         });
     }
 }
@@ -404,13 +398,11 @@ fn caller_owned_tokio_task_services_are_executor_neutral_and_terminal() {
 #[test]
 fn closed_generic_tasks_are_executor_neutral_across_schedules() {
     let (program, root) = closed_generic_program();
-    let expected = OwnedTaskResult {
-        canonical_bytes: Arc::from(&br#"[1,7,"counter"]"#[..]),
-    };
+    let expected = OwnedTaskResult::new();
 
     for pattern in [&[0, 1][..], &[1, 0], &[0, 0, 1], &[1, 1, 0]] {
         let results = replay_closed_generic_schedule(Arc::clone(&program), &root, pattern);
-        assert_eq!(results, [expected.clone(), expected.clone()]);
+        assert_eq!(results, [expected, expected]);
     }
 
     for runtime in [
@@ -435,17 +427,11 @@ fn closed_generic_tasks_are_executor_neutral_across_schedules() {
                 }))
                 .unwrap_or_else(|error| panic!("second generic submission failed: {error:?}"));
             [
-                first
-                    .join()
-                    .await
-                    .unwrap_or_else(|error| panic!("first generic join failed: {error:?}")),
-                second
-                    .join()
-                    .await
-                    .unwrap_or_else(|error| panic!("second generic join failed: {error:?}")),
+                completed_result(first.completion().await),
+                completed_result(second.completion().await),
             ]
         });
-        assert_eq!(results, [expected.clone(), expected.clone()]);
+        assert_eq!(results, [expected, expected]);
     }
 }
 
@@ -526,8 +512,14 @@ fn replay_fair_schedule(schedule: &[String]) {
     assert_eq!(executor.poll_count(1), Some(3));
     assert_eq!(executor.wake_count(0), Some(2));
     assert_eq!(executor.wake_count(1), Some(2));
-    assert_eq!(ready(first.join()), Ok(task_result(b"first")));
-    assert_eq!(ready(second.join()), Ok(task_result(b"second")));
+    assert_eq!(
+        ready(first.completion()),
+        OwnedTaskCompletion::Completed(task_result(b"first"))
+    );
+    assert_eq!(
+        ready(second.completion()),
+        OwnedTaskCompletion::Completed(task_result(b"second"))
+    );
 }
 
 fn replay_abort_late_wake() {
@@ -542,10 +534,7 @@ fn replay_abort_late_wake() {
         .unwrap_or_else(|error| panic!("late-wake submission failed: {error:?}"));
     assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
     assert!(!executor.is_runnable(0));
-    assert_eq!(
-        abort_kind(ready(handle.abort())),
-        ExecutorAbortResultKind::Stopped
-    );
+    assert_eq!(ready(handle.abort()), OwnedTaskAbort::Stopped);
     retained_waker
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -556,10 +545,7 @@ fn replay_abort_late_wake() {
     assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Stopped));
     assert_eq!(polls.load(Ordering::Acquire), 1);
     assert_eq!(executor.poll_count(0), Some(1));
-    assert_eq!(
-        abort_kind(ready(handle.abort())),
-        ExecutorAbortResultKind::AlreadySettled
-    );
+    assert_eq!(ready(handle.abort()), OwnedTaskAbort::AlreadySettled);
 }
 
 fn replay_sibling_failure() {
@@ -572,18 +558,26 @@ fn replay_sibling_failure() {
         .unwrap_or_else(|error| panic!("healthy sibling submission failed: {error:?}"));
     assert!(matches!(
         executor.poll_task(0),
-        Ok(DeterministicTaskPoll::Failed(HostError { ref code, .. }))
-            if code.as_ref() == "executor-failure"
+        Ok(DeterministicTaskPoll::Panicked {
+            origin: OwnedTaskPanicOrigin::GantryInvariant,
+            protected_diagnostic: None,
+        })
     ));
     assert_eq!(
         executor.poll_task(1),
         Ok(DeterministicTaskPoll::Settled(task_result(b"healthy")))
     );
-    assert!(matches!(
-        ready(failed.join()),
-        Err(HostError { ref code, .. }) if code.as_ref() == "executor-failure"
-    ));
-    assert_eq!(ready(healthy.join()), Ok(task_result(b"healthy")));
+    assert_eq!(
+        ready(failed.completion()),
+        OwnedTaskCompletion::Panicked {
+            origin: OwnedTaskPanicOrigin::GantryInvariant,
+            protected_diagnostic: None,
+        }
+    );
+    assert_eq!(
+        ready(healthy.completion()),
+        OwnedTaskCompletion::Completed(task_result(b"healthy"))
+    );
 }
 
 fn replay_submission_failure() {
@@ -682,8 +676,14 @@ fn replay_closed_generic_schedule(
     let results = results.map(|result| {
         result.unwrap_or_else(|| panic!("generic task did not settle within the schedule bound"))
     });
-    assert_eq!(ready(first.join()), Ok(results[0].clone()));
-    assert_eq!(ready(second.join()), Ok(results[1].clone()));
+    assert_eq!(
+        ready(first.completion()),
+        OwnedTaskCompletion::Completed(results[0])
+    );
+    assert_eq!(
+        ready(second.completion()),
+        OwnedTaskCompletion::Completed(results[1])
+    );
     results
 }
 
@@ -766,21 +766,10 @@ fn closed_generic_machine(
     .unwrap_or_else(|error| panic!("closed generic machine failed: {error:?}"))
 }
 
-fn abort_kind(
-    response: Result<gantry::host::contracts::HostResponse, HostError>,
-) -> ExecutorAbortResultKind {
-    match response {
-        Ok(response) if response.canonical_bytes() == b"{\"result\":\"stopped\"}" => {
-            ExecutorAbortResultKind::Stopped
-        }
-        Ok(response) if response.canonical_bytes() == b"{\"result\":\"already-settled\"}" => {
-            ExecutorAbortResultKind::AlreadySettled
-        }
-        Ok(response) => panic!(
-            "unexpected abort response: {:?}",
-            response.canonical_bytes()
-        ),
-        Err(_) => ExecutorAbortResultKind::Failed,
+fn completed_result(completion: OwnedTaskCompletion) -> OwnedTaskResult {
+    match completion {
+        OwnedTaskCompletion::Completed(result) => result,
+        other => panic!("task did not complete normally: {other:?}"),
     }
 }
 
@@ -793,10 +782,8 @@ fn ready<T>(mut future: gantry::host::contracts::HostFuture<'_, T>) -> T {
     }
 }
 
-fn task_result(bytes: &'static [u8]) -> OwnedTaskResult {
-    OwnedTaskResult {
-        canonical_bytes: Arc::from(bytes),
-    }
+fn task_result(_bytes: &'static [u8]) -> OwnedTaskResult {
+    OwnedTaskResult::new()
 }
 
 fn workspace_root() -> PathBuf {

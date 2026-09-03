@@ -1,7 +1,7 @@
 {
   "format": "gantry.executor-services-evidence/v1",
-  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
-  "issue": "GNT-EMB-001",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-EXEC-001",
   "capabilities": [
     {
       "id": "base-contracts",
@@ -10,12 +10,16 @@
     {
       "id": "caller-owned-tokio-adapter",
       "evidence": "crates/gantry-conformance/tests/executor_services.rs#caller_owned_tokio_runtimes_preserve_completion_first_and_drop_losers"
+    },
+    {
+      "id": "deterministic-task-service",
+      "evidence": "crates/gantry-conformance/tests/executor_services.rs#deterministic_task_service_preserves_every_physical_outcome"
     }
   ],
   "exclusions": [
-    "Concurrent task spawn, join, and abort remain owned by the concurrent-evaluator implementation.",
+    "Admission classes, permit ownership, and cleanup reserves remain owned by GNT-ASYNC-ADMIT-001.",
     "Evaluator cancellation checkpoints and scheduler-yield composition remain owned by evaluator integration.",
     "Persistence and recovery of selected delays and timestamps remain owned by durable-runtime work.",
-    "Provider timeouts and provider-specific cancellation remain integration-owned and are not supplied implicitly."
+    "Tokio-specific stress, runtime shutdown, and adapter fault qualification remain owned by GNT-ASYNC-TOKIO-001."
   ]
 }

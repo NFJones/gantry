@@ -971,6 +971,13 @@ mod tests {
     }
 
     impl ExecutorAdapter for Services {
+        fn spawn(
+            &self,
+            task: gantry_host::contracts::OwnedTaskFuture,
+        ) -> Result<Box<dyn gantry_host::contracts::SubmittedTask>, HostError> {
+            gantry_host::contracts::reject_task_submission(task)
+        }
+
         fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
             Box::pin(async { Ok(()) })
         }
@@ -999,6 +1006,13 @@ mod tests {
     }
 
     impl ExecutorAdapter for UniqueServices {
+        fn spawn(
+            &self,
+            task: gantry_host::contracts::OwnedTaskFuture,
+        ) -> Result<Box<dyn gantry_host::contracts::SubmittedTask>, HostError> {
+            gantry_host::contracts::reject_task_submission(task)
+        }
+
         fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
             Box::pin(async { Ok(()) })
         }

@@ -10,7 +10,7 @@ publish = false
 gantry = { workspace = true, features = ["concurrent", "durable"] }
 
 [dev-dependencies]
-gantry-adapter-tokio = { workspace = true, features = ["concurrent"] }
+gantry-adapter-tokio.workspace = true
 gantry-storage-sqlite.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

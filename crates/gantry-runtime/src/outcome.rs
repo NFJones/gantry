@@ -472,6 +472,13 @@ mod tests {
     struct Executor(u64);
 
     impl ExecutorAdapter for Executor {
+        fn spawn(
+            &self,
+            task: gantry_host::contracts::OwnedTaskFuture,
+        ) -> Result<Box<dyn gantry_host::contracts::SubmittedTask>, HostError> {
+            gantry_host::contracts::reject_task_submission(task)
+        }
+
         fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
             Box::pin(async { Ok(()) })
         }

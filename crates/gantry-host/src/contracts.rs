@@ -5,6 +5,7 @@
 //! layouts and trait method names do not define portable envelope bytes.
 
 use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -22,6 +23,10 @@ pub use crate::journal::JournalStorage;
 pub type HostFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// An owned task future that may be submitted to an executor adapter.
+///
+/// Normal return carries only an opaque transport acknowledgement. The
+/// executor wraps normal return, stop, panic, and executor failure in
+/// [`OwnedTaskCompletion`] for observation through [`SubmittedTask`].
 pub type OwnedTaskFuture = Pin<Box<dyn Future<Output = OwnedTaskResult> + Send + 'static>>;
 
 /// Exact protocol version carried by a public embedding envelope.
@@ -154,6 +159,78 @@ pub struct HostError {
     pub code: Arc<str>,
     /// Optional stable key for protected diagnostic bytes.
     pub protected_diagnostic: Option<Arc<str>>,
+}
+
+/// Origin retained when an executor-submitted Gantry future panics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OwnedTaskPanicOrigin {
+    /// The unwind originated while Gantry invoked integration-owned code.
+    Integration,
+    /// The unwind originated from a Gantry invariant violation.
+    GantryInvariant,
+}
+
+/// Typed panic payload used to preserve an owned task's boundary origin.
+///
+/// Task drivers catch integration unwinds at their owning boundary and may
+/// resume unwinding with this payload. An executor treats any other unwind as
+/// a Gantry invariant panic and never exposes the original panic payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedTaskPanic {
+    origin: OwnedTaskPanicOrigin,
+    protected_diagnostic: Option<Arc<str>>,
+}
+
+impl OwnedTaskPanic {
+    /// Constructs a classified panic with an optional protected diagnostic key.
+    #[must_use]
+    pub fn new(origin: OwnedTaskPanicOrigin, protected_diagnostic: Option<Arc<str>>) -> Self {
+        Self {
+            origin,
+            protected_diagnostic,
+        }
+    }
+
+    /// Returns the preserved panic boundary.
+    #[must_use]
+    pub const fn origin(&self) -> OwnedTaskPanicOrigin {
+        self.origin
+    }
+
+    /// Returns the protected diagnostic reference, when one was recorded.
+    #[must_use]
+    pub fn protected_diagnostic(&self) -> Option<&Arc<str>> {
+        self.protected_diagnostic.as_ref()
+    }
+}
+
+/// Immutable physical completion observed for one submitted task.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OwnedTaskCompletion {
+    /// The task future returned its opaque transport acknowledgement.
+    Completed(OwnedTaskResult),
+    /// The executor confirmed that the future will no longer be polled.
+    Stopped,
+    /// The future panicked with its preserved boundary origin.
+    Panicked {
+        /// Boundary that originated the panic.
+        origin: OwnedTaskPanicOrigin,
+        /// Optional stable key for protected diagnostic bytes.
+        protected_diagnostic: Option<Arc<str>>,
+    },
+    /// The executor failed independently of a task panic.
+    Failed(HostError),
+}
+
+/// Fixed result of one idempotent abort request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OwnedTaskAbort {
+    /// The executor confirmed that the future will no longer be polled.
+    Stopped,
+    /// Physical completion had already become immutable.
+    AlreadySettled,
+    /// The executor could not complete the abort request.
+    Failed(HostError),
 }
 
 /// Monotonic Gantry cancellation observation supplied to integrations.
@@ -373,10 +450,9 @@ impl std::error::Error for IdentityAllocationError {}
 
 /// Pre-execution mapping and logical-session resolution boundary.
 ///
-/// The specification does not impose `Send + Sync` on a separately owned
-/// preflight object. Its returned future is nevertheless `Send` for the
-/// lifetime of its borrow.
-pub trait IntegrationPreflight {
+/// The service is shared across admitted public activities and therefore is
+/// `Send + Sync`. Its returned future is `Send` for the lifetime of its borrow.
+pub trait IntegrationPreflight: Send + Sync {
     /// Performs one versioned preflight operation.
     fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>>;
 }
@@ -479,6 +555,13 @@ pub trait OperationHook: Send {
 
 /// Base executor-neutral runtime services used by every evaluator.
 pub trait ExecutorAdapter: Send + Sync {
+    /// Synchronously admits and submits one owned `Send + 'static` task future.
+    ///
+    /// Success transfers the future to the executor and returns its physical
+    /// supervision capability. Failure consumes and safely destroys the future
+    /// before returning a structured executor error.
+    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError>;
+
     /// Waits using a monotonic timer. Zero remains a timer wait, not a yield.
     fn sleep<'a>(&'a self, duration: DurationMicros) -> HostFuture<'a, Result<(), HostError>>;
 
@@ -487,6 +570,19 @@ pub trait ExecutorAdapter: Send + Sync {
 
     /// Samples uniformly from an inclusive whole-microsecond range.
     fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError>;
+}
+
+/// Rejects task submission for a narrow executor double that does not run tasks.
+///
+/// The supplied future is destroyed behind an unwind boundary before the
+/// structured executor failure is returned. Evaluator adapters must provide a
+/// real submission implementation instead of calling this helper.
+pub fn reject_task_submission(task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
+    let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
+    Err(HostError {
+        code: Arc::from("executor-failure"),
+        protected_diagnostic: None,
+    })
 }
 
 /// Completion-first result of racing work against cancellation and a deadline.
@@ -532,26 +628,36 @@ pub fn deadline_race<'a, T: Send + 'a>(
     }))
 }
 
-/// Concurrent task services added by the concurrent evaluator refinement.
-pub trait ConcurrentExecutorAdapter: ExecutorAdapter {
-    /// Submits an owned `Send + 'static` task future.
-    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError>;
-}
-
-/// Executor-owned task handle with executor-neutral join and abort operations.
+/// Executor-owned task handle with executor-neutral observation and abort operations.
+///
+/// Completion observation and an admitted abort are must-settle operations for
+/// Gantry's supervising owner. Dropping one observation future does not stop the
+/// submitted task or change its immutable physical completion.
 pub trait SubmittedTask: Send + Sync {
-    /// Waits for the submitted task to settle.
-    fn join<'a>(&'a self) -> HostFuture<'a, Result<OwnedTaskResult, HostError>>;
+    /// Observes the same immutable physical completion for every caller.
+    fn completion<'a>(&'a self) -> HostFuture<'a, OwnedTaskCompletion>;
 
-    /// Requests idempotent task abortion.
-    fn abort<'a>(&'a self) -> HostFuture<'a, Result<HostResponse, HostError>>;
+    /// Requests task abortion with one fixed result for concurrent callers.
+    ///
+    /// Calls begun after physical completion return `AlreadySettled`.
+    fn abort<'a>(&'a self) -> HostFuture<'a, OwnedTaskAbort>;
 }
 
-/// Settlement returned by an owned executor task.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Opaque acknowledgement returned by a normally completed owned task.
+///
+/// This value deliberately contains no source value, Gantry task status, or
+/// durable settlement state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct OwnedTaskResult {
-    /// Exact validated settlement bytes.
-    pub canonical_bytes: Arc<[u8]>,
+    private: (),
+}
+
+impl OwnedTaskResult {
+    /// Creates the opaque normal-completion acknowledgement.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { private: () }
+    }
 }
 
 fn validate_operation_version(
@@ -575,9 +681,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        CancellationToken, ConcurrentExecutorAdapter, EmbeddingVersion, EnvelopeError, EventSink,
-        ExecutorAdapter, HookFactory, HostRequest, IdentitySource, IntegrationPreflight,
-        JitterSource, JournalStorage, OperationHook, SubmittedTask, UtcClock,
+        CancellationToken, EmbeddingVersion, EnvelopeError, EventSink, ExecutorAdapter,
+        HookFactory, HostRequest, IdentitySource, IntegrationPreflight, JitterSource,
+        JournalStorage, OperationHook, OwnedTaskFuture, OwnedTaskResult, SubmittedTask, UtcClock,
     };
     use crate::embedding::EmbeddingOperation;
 
@@ -611,7 +717,6 @@ mod tests {
     #[test]
     fn integration_traits_have_the_required_auto_traits_and_are_object_safe() {
         assert_send_sync::<dyn CancellationToken>();
-        assert_send_sync::<dyn ConcurrentExecutorAdapter>();
         assert_send_sync::<dyn EventSink>();
         assert_send_sync::<dyn ExecutorAdapter>();
         assert_send_sync::<dyn HookFactory>();
@@ -622,7 +727,9 @@ mod tests {
         assert_send_sync::<dyn UtcClock>();
         assert_send::<dyn OperationHook>();
 
-        fn accepts_preflight(_: Option<&dyn IntegrationPreflight>) {}
-        accepts_preflight(None);
+        assert_send_sync::<dyn IntegrationPreflight>();
+
+        fn accepts_owned_task(_: OwnedTaskFuture) {}
+        accepts_owned_task(Box::pin(async { OwnedTaskResult::new() }));
     }
 }

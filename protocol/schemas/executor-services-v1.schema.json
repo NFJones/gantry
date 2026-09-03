@@ -30,6 +30,22 @@
         "enum": ["completed", "cancelled", "timed-out", "failed"]
       }
     },
+    "task_abort_outcomes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "enum": ["already-settled", "failed", "stopped"]
+      }
+    },
+    "task_completion_outcomes": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "enum": ["completed", "failed", "panicked", "stopped"]
+      }
+    },
     "executor_failure_code": { "const": "executor-failure" },
     "caller_owned_runtime_kinds": {
       "type": "array",
@@ -44,6 +60,8 @@
     "duration_maximum_micros",
     "inclusive_jitter_range",
     "deadline_outcomes",
+    "task_abort_outcomes",
+    "task_completion_outcomes",
     "executor_failure_code",
     "caller_owned_runtime_kinds"
   ]

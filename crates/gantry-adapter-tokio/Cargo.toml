@@ -10,10 +10,6 @@ homepage.workspace = true
 description = "Tokio executor adapter for Gantry embeddings"
 documentation = "https://docs.rs/gantry-adapter-tokio"
 
-[features]
-default = []
-concurrent = []
-
 [dependencies]
 gantry-host.workspace = true
 tokio = { workspace = true, features = ["rt", "time"] }

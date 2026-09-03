@@ -59,6 +59,13 @@ struct RequirementReview {
 struct FixedServices;
 
 impl ExecutorAdapter for FixedServices {
+    fn spawn(
+        &self,
+        task: gantry::host::contracts::OwnedTaskFuture,
+    ) -> Result<Box<dyn gantry::host::contracts::SubmittedTask>, HostError> {
+        gantry::host::contracts::reject_task_submission(task)
+    }
+
     fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
         Box::pin(async { Ok(()) })
     }

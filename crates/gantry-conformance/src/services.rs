@@ -120,6 +120,13 @@ impl DeterministicExecutor {
 }
 
 impl ExecutorAdapter for DeterministicExecutor {
+    fn spawn(
+        &self,
+        task: gantry::host::contracts::OwnedTaskFuture,
+    ) -> Result<Box<dyn gantry::host::contracts::SubmittedTask>, HostError> {
+        gantry::host::contracts::reject_task_submission(task)
+    }
+
     fn sleep<'a>(&'a self, duration: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
         Box::pin(async move {
             self.sleeps
