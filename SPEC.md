@@ -94,6 +94,19 @@ conforming Gantry v1 deployment or profile claim: those remain withdrawn until
 release qualification validates the required toolchain, platform, package,
 supply-chain, and fuzz matrices.
 
+The executor-backed execution amendment in this revision replaces the
+preceding pre-adoption execution and embedding draft in place. It changes
+normative embedding, lifecycle, journal, recovery, and configuration
+contracts without retaining the superseded manual-driving model. Until the
+corresponding generated protocol artifacts, requirement mappings, goldens,
+and publication index are regenerated and verified together, the checked-in
+publication set describes the preceding revision and MUST NOT be advertised
+as implementing this amended specification. Exact-version immutability in
+Section 15.8 applies to the complete executor-backed publication set and later
+sets, not to the superseded pre-async draft bytes. This staged repository
+state is suitable for contract development, not an embedding-interoperability
+or profile claim.
+
 The parametric-generics and static-traits amendment in this revision replaces
 the preceding pre-adoption draft language in place. It does not define a
 legacy parser, feature-selected grammar, parallel canonical encoding, protocol
@@ -715,9 +728,11 @@ activity throughout this specification:
   attempt before recovered interpretation begins and without changing the
   execution's durable terminal status. Both are embedding outcomes rather
   than failures of a running Gantry task.
-- A **runtime error** occurs after a new execution has a durable execution-
-  start record or after a resume begins advancing recovered state. Runtime
-  errors are task-local unless a rule explicitly makes one execution-wide.
+- A **runtime error** occurs after a new execution crosses its applicable
+  acceptance boundary—atomic in-process publication for a nondurable start or
+  committed execution-start evidence for a durable start—or after a resume
+  begins advancing recovered state. Runtime errors are task-local unless a
+  rule explicitly makes one execution-wide.
 - A **foreground outcome** is the completion of root `main`. A **terminal
   outcome** is known only after foreground and detached work have settled.
   Under the durable-runtime profile, Gantry must also commit the required
@@ -772,7 +787,7 @@ than one block.
 | Normative scope | Registered identifiers |
 | --- | --- |
 | Status, terminology, and normativity | `GNT-1.0`, `GNT-1.5`, `GNT-2.0`, `GNT-2.1` |
-| Implementation summary items | `GNT-3.0`, `GNT-3.1` through `GNT-3.15`, `GNT-3.15-liveness`, `GNT-3.15-generic-profiles` |
+| Implementation summary items | `GNT-3.0`, `GNT-3.1` through `GNT-3.15`, `GNT-3.3-runtime-ownership`, `GNT-3.15-liveness`, `GNT-3.15-generic-profiles` |
 | Formal kernel | Every named `GNT-3-F-*`, `GNT-3-T-*`, `GNT-3-M-*`, and `GNT-3-D-*` rule in Sections 3.1 through 3.6 |
 | Source organization | `GNT-4.0`, `GNT-4.1` through `GNT-4.17`, `GNT-4.17-frontend-resource-limits`, `GNT-4.17-generic-analysis-limits` |
 | Values and types | `GNT-5.0`, `GNT-5.1` through `GNT-5.20`, `GNT-5.13-automatic-storage`, `GNT-5.20-parametric-types` |
@@ -784,7 +799,7 @@ than one block.
 | Durable execution | `GNT-11.0`, `GNT-11.1` through `GNT-11.11`, `GNT-11.11-generic-artifact-recovery` |
 | Observability | `GNT-12.0`, `GNT-12.1` through `GNT-12.11`, `GNT-12.11-generic-diagnostics` |
 | Grammar | `GNT-13.0`, `GNT-13.1` through `GNT-13.9` |
-| Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10` |
+| Embedding | `GNT-15.0`, `GNT-15.1` through `GNT-15.10`, `GNT-15.1-automatic-execution`, `GNT-15.2-runtime-sessions`, `GNT-15.4-owned-work` |
 
 Adding a substantial obligation with different applicability or an
 independent compatibility lifecycle SHOULD add a descriptive child identifier
@@ -848,6 +863,24 @@ defined in Sections 3.1 through 3.6.
    embedder-supplied executor adapter; it neither creates nor owns an async
    executor. The adapter MUST be replaceable through library configuration,
    not through Gantry source syntax.
+
+<a id="GNT-3.3-runtime-ownership"></a>
+
+**3a. Executor and runtime ownership.** Every evaluator profile MUST execute
+each accepted or resumed root as an internally owned task submitted through
+the configured executor; the concurrent-evaluator profile uses the same
+capability for spawned children. The public caller observes execution through
+handles, awaits, queries, cancellation, and shutdown and MUST NOT be required
+or permitted to poll a `Machine` or otherwise drive accepted source work.
+Gantry owns the submitted Gantry future and its semantic lifecycle, while the
+embedding owns the executor that polls it. An adapter MAY offer an explicit
+owned-runtime convenience object, including a Tokio runtime host, only when
+the embedding constructs that object, its ownership and shutdown are visible
+in the public API, and no interpreter operation creates a hidden runtime.
+Such a helper is an implementation convenience within the ordinary embedding
+profile, not a distinct language or conformance profile. Executor kind,
+worker count, and physical schedule are operational policy and MUST NOT alter
+portable outcomes, identity, or durable compatibility.
 <a id="GNT-3.4"></a>
 
 4. The interpreter MUST control program flow, hook invocation, result
@@ -871,7 +904,9 @@ defined in Sections 3.1 through 3.6.
    cancellation tokens to integrations. The integration makes a best effort
    to stop provider work when those tokens are signalled. Gantry MUST control
    asynchronous Gantry task scheduling through the embedder-supplied executor
-   adapter so parallel blocks retain the semantics in Section 10.
+   adapter. This includes the root of every evaluator execution and, for the
+   concurrent profile, every spawned block; all retain the semantics in
+   Sections 3 and 10 independently of physical polling order.
    Interpreter-only work MUST remain cooperatively cancellable even when it
    executes no hook or spawned task. Gantry MUST observe cancellation before a
    hook dispatch, child-task submission, workflow-frame entry, and
@@ -1745,18 +1780,31 @@ The dynamic semantics is a small-step relation over
 control, value environment `ρ`, lexical handle environment `χ`, value store
 `μ`, optional active agent `a`, active session `s`, cancellation state, and
 status. A task status is `submitting`, `running`, `succeeded(v)`,
-`failed(error)`, or `cancelled`; only a newly admitted spawned task may be
-`submitting`, and the root begins as `running`.
+`failed(error)`, or `cancelled`. An accepted root or admitted child awaiting
+executor submission and supervision registration is `submitting`; it becomes
+`running` only after its submitted future is registered and its start gate is
+released. A rejected start or resume creates no root task. A recovered task
+reuses its durable logical status while any replacement process-local future
+remains gated until resume acceptance.
 `K(t)` is its stack of evaluation, workflow-return, dynamic-context, loop, and
 task-result frames, including suspended lexical environments. `H` maps each
 stable dynamic handle identity `η` to its child task, owner, result type, and
 ownership state. `S` maps
 session IDs to parent, root, creation mode, and canonical transcript. `Q`
-maps operation IDs to the lifecycle below. `B` contains the remaining
-execution and per-task budgets. `R` contains the active durable agent and
-action mapping revisions and every compatible mutable execution-policy
-revision that a later transition can observe. Values in `ρ` and `μ` are
-normalized deep values; no machine component contains a source-visible alias.
+maps operation IDs to the lifecycle below. `B` contains one shared execution
+budget owner and one task-local budget projection per task. The remaining
+deterministic-transition and logical-operation counts are execution-wide,
+linearizable counters shared by every root and child; workflow-call depth,
+loop-entry count, and consecutive-transition yield count remain task-local.
+Before a rule guarded by an execution-wide budget runs, Gantry reserves one
+unit. The reservation and semantic successor have one publication point; a
+failed reservation performs no part of the guarded rule. Under the durable
+profile, the reservation and successor belong to the same committed logical
+transition so recovery neither repeats nor loses the charge. `R` contains the
+active durable agent and action mapping revisions and every compatible mutable
+execution-policy revision that a later transition can observe. Values in `ρ`
+and `μ` are normalized deep values; no machine component contains a
+source-visible alias.
 The initial root task sets `a` to the package's resolved default agent when one
 is declared, or to no selection for an agentless package, and sets `s` to the
 resolved root session before entering `main`. A package with a model-operation
@@ -1977,6 +2025,11 @@ accepted execution state or execution identity, even when its result retains
 a caller-supplied journal identity. Once accepted, task and execution
 lifecycle changes occur only through the following existing labels and rules:
 
+- acceptance introduces the root in `submitting` without a child-only
+  `task-created` label or source-visible handle; successful executor
+  submission and supervision registration make it `running`, while
+  exceptional post-acceptance submission failure settles that same root as
+  `executor-failure`;
 - `task-created` introduces the one `submitting` child and attached handle
   defined by `M-Spawn`; submission resolution makes that child runnable or
   settles it as the specified failure without replacing its identity;
@@ -2093,19 +2146,37 @@ execution.
 
 <a id="GNT-3-M-SPAWN"></a>
 
-**[GNT-3-M-SPAWN] Task creation.** After cancellation and task-count checks,
-`spawn h:τ c` derives a stable child identity, copies the statically determined
-captures and mutability, forks the active session, creates `C(child)` in a
-`submitting` state with an empty lexical handle environment, derives a fresh
-stable dynamic handle identity `η` from the owner and spawn occurrence, and
-inserts `H(η)=attached(child,owner,τ)`. It then increments the cumulative
-execution task count and emits `task-created`. The parent remains suspended
-and `χ` is not extended until executor submission resolves. Submission success
-changes the child to runnable, extends the parent's current lexical environment
-with `χ(h)=η`, and releases the parent. Submission failure settles that same
-child as failed, then exposes the attached handle to and releases the parent;
-it never creates a replacement identity or handle. The child cannot be
-scheduled while `submitting`.
+**[GNT-3-M-SPAWN] Task creation.** For `spawn h:τ c`, Gantry first reads the
+parent's active session and checks cancellation and the cumulative task limit.
+If that session has not been established, Gantry checks cancellation before
+and after invoking the must-settle `RuntimeSessionService` operation and
+creates no child when establishment fails. At one coordinator linearization
+point after that wait, Gantry rechecks cancellation and the task limit, derives
+the stable child identity, copies the statically determined captures and
+mutability, forks the then-current committed active-session transcript,
+creates `C(child)` in a `submitting` state with an empty lexical handle
+environment, derives a fresh stable dynamic handle identity `η` from the owner
+and spawn occurrence, and inserts `H(η)=attached(child,owner,τ)`. The same
+transition increments the cumulative execution task count and emits
+`task-created`. A failed recheck creates no child, handle, session, or executor
+submission.
+
+The parent remains suspended and `χ` is not extended until nonblocking child
+admission and executor submission resolve. Under the durable profile, the
+complete task-created successor, including captures and forked-session state,
+is committed before submission. Gantry submits the child behind a closed gate.
+Submission success registers the supervision capability, changes the child to
+runnable, extends the parent's current lexical environment with `χ(h)=η`,
+releases the child gate, and then releases the parent. The child establishes
+its forked session after the gate opens and before hook creation or use of that
+session as another fork parent. Establishment failure settles the admitted
+child with `logical-session-setup` and does not undo task creation or hide its
+attached handle. Submission or operational child-admission failure settles
+that same child with `executor-failure` and code `task-submission-failure`,
+then exposes the attached handle to and releases the parent; it never creates
+a replacement identity or handle. A durable failure settlement is committed
+before handle visibility and parent continuation. The child cannot make a
+semantic transition while `submitting`.
 
 <a id="GNT-3-M-TASK-SETTLE"></a>
 
@@ -2114,10 +2185,10 @@ the root or a spawned block, uncaught failure, or a cancellation transition
 (durably committed when the durable-runtime profile is claimed) changes that
 task exactly once from a nonterminal state to `succeeded(v)`, `failed(error)`,
 or `cancelled` and emits `task-settled`. A submission failure may make the
-specific transition from `submitting` to `failed(error)`; every other
-settlement starts from `running`. The root is a Gantry task for this rule, so
-its settlement produces `task-completion` in addition to the later execution-
-level `foreground-completion` occurrence.
+specific transition from `submitting` to `failed(error)` for an accepted root
+or admitted child; every other settlement starts from `running`. The root is
+a Gantry task for this rule, so its settlement produces `task-completion` in
+addition to the later execution-level `foreground-completion` occurrence.
 
 For `E[join(h...)]` or `E[join-all(h...)]`, `M-Join-Start` resolves the static
 lexical-name vector through `χ`, verifies that every dynamic handle is attached
@@ -2204,7 +2275,8 @@ is permitted only when none of those records alone advances `recover(D)`.
 **[GNT-3-D-COMMIT-ORDER] Required semantic commit points.** The state produced
 by `M-Prepare` is committed before hook entry; `M-Outcome` before validation or
 failure conversion; `M-Validate` before source consumption or transcript use;
-`M-Spawn` before executor submission or handle visibility; join and detach
+execution-start before root submission; `M-Spawn` before child executor
+submission or handle visibility; join and detach
 ownership transitions before parent continuation; cancellation before tokens
 are signalled; task settlement before a join or terminal computation observes
 it; foreground completion before its result is returned; and terminal
@@ -2225,6 +2297,18 @@ actions. For a non-idempotent action it instead applies the exact unknown-
 outcome operation failure. Task creation, ownership transfer, session creation,
 budget decrement, foreground completion, and terminal completion are never
 reapplied when their label is already in the recovered prefix.
+
+Recovery reconstructs the complete unfinished logical task graph, suspension
+states, handle dispositions, shared budgets, sessions, cancellation, pending
+outcomes, and completion coordinates before replacement work may progress.
+After acquiring the new fencing token, it MAY physically submit a replacement
+future for an unfinished logical root or child, but it MUST reuse that task's
+identity and committed state and MUST NOT emit another task-created,
+ownership, settlement, foreground, or terminal transition. Every replacement
+future remains behind the all-or-nothing resume gate in Section 15.1 until it
+is registered. The superseded owner cannot publish progress after fencing.
+The guarantee is exactly-once logical transition application, not exactly-once
+physical executor submission.
 
 <a id="GNT-3-D-EQUIVALENCE"></a>
 
@@ -3731,10 +3815,12 @@ operation identity, failure categories, and propagation.
    Public asynchronous extension traits MUST use executor-independent boxed
    futures or equivalent stable abstractions. The executor adapter MUST provide
    the services required by Section 15.4: every evaluator provides sleep,
-   yield, and deadline racing, while task spawn, join, and abort are required
-   only for the concurrent-evaluator profile. Gantry MUST retain its own
-   cancellation semantics rather than treating executor abortion as
-   cooperative hook cancellation.
+   yield, deadline racing, owned task submission, completion observation, and
+   idempotent abort. The sequential evaluator uses the task capability for its
+   root; the concurrent evaluator additionally uses it for every spawned
+   child. Gantry MUST retain its own cancellation semantics rather than
+   treating executor abortion as cooperative hook cancellation or source task
+   settlement.
    “Task lifetime” in this interface means one in-process execution or resume
    run. Hook instances are integration resources and MUST NOT be serialized in
    the journal. After process restart and the session-resolution preflight in
@@ -4217,8 +4303,8 @@ collision remain journal failures because `JournalStorage` owns that boundary.
 17. Hook outcomes and Gantry failures are separate domains. A hook outcome is
    exactly `Completed(raw_output)`, `Declined(reason)`, or
     `Failed(category, message)` with a category from item 11.
-    Before a new execution is accepted and its execution ID is returned to the
-    embedder, structured start failures MUST use one of the following exact
+    Before a new execution crosses its applicable acceptance boundary,
+    structured start failures MUST use one of the following exact
     category values when applicable: `syntax`, `analysis`,
     `frontend-resource-limit`, `implementation-resource-exhaustion`,
     `lifecycle`, `internal`,
@@ -4227,8 +4313,11 @@ collision remain journal failures because `JournalStorage` owns that boundary.
     `required-event-delivery`. The last category applies to required delivery
     failure during pre-execution validation or analysis. Gantry MAY allocate
     a candidate execution ID while constructing the execution-start record,
-    but that ID is not an accepted execution handle until the record is
-    durable.
+    but that ID is not an accepted execution handle until the record is durable
+    for a durable start or accepted state is atomically published for a
+    nondurable start. Failure after that point follows the runtime taxonomy,
+    including `root-submission-failure`; it is not a start rejection merely
+    because the caller has not yet observed `StartResult`.
 
     Resume has a distinct pre-execution failure boundary even though the
     execution ID already exists. A resume-start failure MUST use one of the
@@ -4245,11 +4334,15 @@ collision remain journal failures because `JournalStorage` owns that boundary.
     Section 11. The embedder MAY correct the dependency or configuration and
     attempt resume again.
 
-    Once a new execution has committed execution-start evidence, or a
+    Once a new execution crosses its applicable acceptance boundary, or a
     resume invocation has completed compatibility and dependency preflight and
-    begins advancing recovered state, failures are runtime errors. Runtime
-    errors MUST expose a stable category and MAY expose a more specific stable
-    code plus structured details. The exact v1 runtime category values are
+    begins advancing recovered state, failures are runtime errors. Predictable
+    admission refusal before start or resume acceptance is
+    `implementation-resource-exhaustion`; an exceptional root or child
+    submission failure after acceptance is `executor-failure` with the exact
+    code specified by Sections 3 and 15. Runtime errors MUST expose a stable
+    category and MAY expose a more specific stable code plus structured
+    details. The exact v1 runtime category values are
     `logical-session-setup`, `hook-creation`, `hook-failure`,
     `identity-generation-failure`,
     `logical-session-transcript-limit`,
@@ -5215,10 +5308,13 @@ owner. It MUST NOT be described as a structured child after transfer.
     Embedders MUST complete shutdown before dropping the interpreter.
 <a id="GNT-10.13"></a>
 
-13. Because Rust destruction cannot await, dropping an interpreter without
-   shutdown MUST reject new work, signal cancellation, request abortion of
+13. Because Rust destruction cannot await, dropping the last external
+   interpreter-facade owner without shutdown MUST start this unclean-drop path
+   exactly once even when internal tasks still retain shared interpreter
+   state. It MUST reject new work, signal cancellation, request abortion of
     every remaining owned executor task, and relinquish its executor handles
-    without blocking. When configured, it SHOULD invoke the non-durable
+    without blocking. Dropping an earlier external clone or an internal
+    reference MUST NOT start this path. When configured, it SHOULD invoke the non-durable
     emergency diagnostic callback defined in Section 12; that callback is not
     a Gantry event and MUST NOT use `EventSink` delivery. The drop path cannot
     guarantee that integrations observed cancellation before handles were
@@ -5568,6 +5664,16 @@ major version change.
    result or failure rather than consume the handle again. Task identities and
    lifecycle records MUST therefore be keyed by the same logical task and
    canonical core-occurrence path used by dynamic operation identity.
+   Recovery MUST also restore whether each unfinished task is awaiting
+   submission, runnable, suspended on host or task work, or draining a pending
+   failure or cancellation. These are logical control states even though the
+   replacement executor future and its supervision capability are
+   process-local. After fencing, Gantry MAY submit replacement futures for the
+   reconstructed unfinished set under the atomic resume protocol in Section
+   15.1. It MUST reuse task, handle, operation, session, event, and evidence
+   identities and MUST NOT infer that a prior physical submission happened
+   exactly once. An indeterminate external dispatch remains governed by item
+   4 rather than by executor-submission evidence.
 <a id="GNT-11.8"></a>
 
 8. A detached task remains part of its originating execution and journal after
@@ -5652,7 +5758,12 @@ major version change.
     each applicable agent- or action-mapping revision from Section 7, the
     canonical signature of `main` defined in Section 4, and
     either a no-entry-input marker or the validated and normalized canonical
-    entry value with its type descriptor.
+    entry value with its type descriptor. It MUST also contain the root task's
+    stable identity, empty canonical task path, initial `submitting` status,
+    entry continuation, initial value and handle environments, initial shared
+    and task-local budgets, and unset foreground and terminal coordinates.
+    These fields make a crash after acceptance but before in-process root
+    submission reconstructible without inventing another root or execution.
     Resume MUST verify and reuse the existing execution-start record, restore
     its entry value, and MUST NOT commit a second execution-start record or
     accept replacement entry input. An agent- or action-mapping revision
@@ -7550,6 +7661,18 @@ caller. Omitting both result annotations instead means `Unit`: the hook must
 return JSON `null`, and the operation contributes only a model turn to its
 logical session. A Unit prompt does not perform or record an external action.
 
+An embedding starts either package with `StartExecution`; there is no second
+drive call. Once accepted state is published, `main` may begin or finish before
+the caller examines the accepted handle. Predictable root-capacity exhaustion
+rejects the start with `implementation-resource-exhaustion` before source runs.
+An exceptional submission failure after acceptance instead leaves the handle
+valid and settles the root as `executor-failure` with code
+`root-submission-failure`. `CancelExecution` is likewise an embedding
+operation, not Gantry source syntax: it stops only the caller's wait if that
+waiter is dropped, but an admitted cancellation continues through task drain
+and terminal settlement. Source `attempt` cannot catch executor failure or
+execution cancellation.
+
 An entry point may instead accept one typed strict-JSON value and return one
 typed value:
 
@@ -8697,10 +8820,12 @@ prescribed Rust method names. Their request and result envelopes belong to the
 MUST define the required and optional fields and stable discriminants for
 `ValidatePackage`, `AnalyzePackage`, `StartExecution`, `ResumeExecution`,
 `CancelExecution`, `AwaitForeground`, `AwaitTerminal`, `QueryExecution`, and
-`Shutdown`; the `IntegrationPreflight` operations `ResolveMappings`,
-`ResolveSessions`, and `EstablishSession`; `CreateHook` and
-`DispatchOperation`; the identity-source operation; journal ownership, read,
-commit, payload-resolution, and release operations; and `DeliverEvent`. The
+`Shutdown`; the `IntegrationPreflight` operations `ResolveMappings` and
+`ResolveSessions`; the `RuntimeSessionService` operation `EstablishSession`;
+`CreateHook` and `DispatchOperation`; owned-task submission, completion, and
+abort; blocking-work admission; the identity-source operation; journal
+ownership, read, commit, payload-resolution, and release operations; and
+`DeliverEvent`. The
 prose below defines their
 behavior. A publication that omits this artifact is a draft design and is not
 independently sufficient for an embedding-profile interoperability claim.
@@ -8713,17 +8838,18 @@ independently sufficient for an embedding-profile interoperability claim.
 
 An `Interpreter` accepts a package root, an explicitly selected
    `ProtocolSelection`, interpreter configuration (which includes the executor
-   adapter and identity source), a hook factory, an `IntegrationPreflight`
-   implementation, zero or more event sinks, and, for a durable embedding,
-   journal storage. The
+   adapter, blocking-work service, async resource policy, and identity source),
+   a hook factory, an `IntegrationPreflight` implementation, a
+   `RuntimeSessionService`, zero or more event sinks, and, for a durable
+   embedding, journal storage. The
    selection contains the exact specification-revision digest and published
    major and minor versions of the source-language, embedding, hook, journal,
    event, configuration, value, canonical-IR, source-map, and recovery-
    projection protocols. The
-   hook factory MAY also
-   implement `IntegrationPreflight`, but the interpreter MUST have an
-   explicit reference through which it can invoke the mapping, root-session,
-   and reusable-session operations in Section 15.2. Every evaluator embedding
+   hook factory MAY also implement `IntegrationPreflight` or
+   `RuntimeSessionService`, but the interpreter MUST receive each role through
+   an explicit interface with the thread-safety and ownership properties in
+   Sections 15.2 and 15.9. Every evaluator embedding
    MUST expose syntax-only validation, semantic analysis, execution, execution
    cancellation, and terminal asynchronous shutdown operations. A durable
    embedding MUST additionally expose resume. Dry-run, analysis, and new
@@ -8814,6 +8940,77 @@ the detailed start, resume, observation, and shutdown rules below:
   effective durations. Its result separately reports
   task and execution outcomes, journal-release failures, and event-delivery
   barrier or exhaustion status.
+
+<a id="GNT-15.1-automatic-execution"></a>
+
+**Automatic execution ownership.** A successful `StartExecution` or
+`ResumeExecution` transfers all continuing work to Gantry before the public
+operation can complete. The accepted handle is an observation and control
+capability; it is not a machine, future, continuation, or token that must be
+polled to make source progress. Dropping a start, resume, await,
+cancellation, query, or shutdown waiter stops only that caller's observation.
+It MUST NOT abandon accepted work, a required rollback, or an adapter
+operation whose contract requires settlement.
+
+The public `Interpreter` facade is cloneable. Each clone is an external
+owner; references retained only by Gantry tasks, registries, activities, or
+adapters are internal owners and MUST NOT keep the external-owner count
+nonzero. The last external owner starts the unclean-drop protocol in Section
+10 exactly once unless orderly shutdown has already begun. Cloning or dropping
+any earlier facade has no lifecycle effect.
+
+Every admitted public invocation MUST have an owner until it completes or
+atomically transfers its continuing work into an accepted execution. Before
+invoking an adapter operation declared **must-settle**, Gantry MUST transfer
+that operation and every dependency it borrows to an interpreter-owned
+activity, or establish an equivalent cancellation path that continues polling
+the operation to settlement. A future retained only on a cancellable caller
+stack is insufficient. `ResolveMappings`, `ResolveSessions`, journal owner
+acquisition and release, required event delivery, executor completion
+observation, and started non-abortable blocking jobs are must-settle at the
+boundaries that invoke them. Caller cancellation stops observation of an
+admitted activity; it does not release its adapters, source snapshot, journal
+owner, task permit, or delivery state before the activity reaches its defined
+terminal ownership state. Shutdown includes every such activity and MUST NOT
+release a shared service while one still depends on it.
+
+Before accepting a new execution, Gantry MUST complete every predictable
+fallible preparation step, including entry decoding, root-machine
+construction, executable-artifact validation, and root-task capacity
+reservation. Gantry MUST also reserve every in-memory registry entry needed to
+record the root's supervision capability, so registration cannot fail after
+acceptance. Nondurable acceptance atomically publishes the execution and its
+root in `submitting`. Durable acceptance is the successful execution-start
+commit; after that commit, Gantry MUST publish the corresponding in-process
+execution and root before allowing source progress. A crash between those
+steps leaves an accepted durable execution recoverable from its committed
+prefix, not a rejected start. Gantry then submits a closed-gate root future,
+registers the returned supervision capabilities, changes the root to
+`running`, and releases the gate. No root transition, hook creation, or
+session establishment may occur before in-process publication and
+registration. The executor may complete the root before caller code observes
+the accepted result. A post-acceptance submission failure follows the
+`root-submission-failure` rule above and is observed through the accepted
+handle.
+
+Resume retains its later all-or-nothing boundary. Every reconstructed
+runnable task MUST be reserved, submitted behind a closed gate, and
+registered before the execution and gates are published. Rejection closes
+all gates permanently, stops and observes submitted futures, removes
+provisional registrations, releases permits and journal ownership, and leaves
+the authoritative durable prefix unchanged. An implementation MAY use atomic
+batch admission instead, provided it has the same observable behavior and
+bounded rollback. Work for a terminal execution is limited to owned delivery
+recovery and creates no source task.
+
+Every accepted root and child has one Gantry semantic owner and one physical
+supervision owner until both semantic settlement and executor settlement are
+known. Public source joins observe only Gantry settlement. Executor completion
+is operational evidence used for supervision and permit release and cannot
+replace a source result, task status, or durable transition. No supported API
+may expose accepted machine-driving state or provide a compatibility path
+that restores caller-driven execution. This revision replaces that earlier
+draft API in place; v1 defines no legacy execution mode or migration shim.
 
 <a id="GNT-15.1-concurrency-and-reentrancy"></a>
 
@@ -8906,9 +9103,12 @@ entry while allowing normal multithreaded control and observation.
    resume after an uncertain storage response without presenting an
    uncommitted candidate execution as accepted. In a nondurable embedding, no
    journal target is accepted or required, resume is unavailable, and a
-   successful start returns an execution ID after preflight succeeds but before
-   `main` is evaluated. That ID is valid only for the lifetime of the
-   interpreter and MUST NOT be described as resumable. Execution accepts either
+   successful start accepts an execution after preflight and required root-task
+   admission succeed. The accepted root may begin and even settle after its
+   state is published but before caller code observes `StartResult`; no root
+   transition may precede that publication. The execution ID is valid only for
+   the lifetime of the interpreter and MUST NOT be described as resumable.
+   Execution accepts either
    no entry input or one raw byte sequence containing strict JSON as required
    by `main`; Gantry, rather than the embedder, performs the decoding, parsing,
    duplicate-member rejection, and schema validation defined in Section 4. It
@@ -8972,25 +9172,43 @@ entry while allowing normal multithreaded control and observation.
    `accepted(execution_id, handle)` or `rejected(start_failure)`. The rejected
    variant carries no execution ID. The `gantry.embedding` artifact MUST encode
    these envelope and variant discriminants explicitly. For a durable
-   execution, the acceptance boundary is the committed execution-start
-   evidence; for a nondurable execution, it is successful preflight. Syntax,
-   analysis, `frontend-resource-limit`,
+   execution, the acceptance boundary is the successful execution-start
+   commit; in-process publication follows before source progress. For a
+   nondurable execution, the boundary is atomic publication of accepted state
+   after successful preflight and root-task admission. Syntax, analysis,
+   `frontend-resource-limit`,
    `implementation-resource-exhaustion`, `lifecycle`, `internal`, entry-input,
    integration-preflight, initial journal-ownership, execution-start write,
    and required-event-delivery failures during pre-execution validation or
    analysis are start failures when applicable to the embedded profile.
-   Returning the execution ID establishes an accepted execution handle; only
-   the durable form is resumable. Acceptance does not by itself report that
-   `main` has completed. The API MUST let the embedder asynchronously await or
-   query the foreground outcome through that handle while detached work, when
-   any, continues toward terminal execution state.
+   The return value reports the already completed acceptance decision; it is
+   not the acceptance boundary and does not delay root progress. An exceptional
+   executor submission failure after acceptance MUST return `accepted`, settle
+   that same root with runtime category
+   `executor-failure` and code `root-submission-failure`, and derive foreground
+   and terminal coordinates from that settlement. It MUST NOT retroactively
+   reject the start or abandon accepted state. Only the durable form is
+   resumable. Acceptance does not by itself report that `main` has completed.
+   The API MUST let the embedder asynchronously await or query the foreground
+   outcome through that handle while detached work, when any, continues toward
+   terminal execution state.
    `ResumeExecution` MUST likewise return either
    `accepted(execution_id, handle)` or `rejected(resume_start_failure)`. It
    returns the existing execution ID rather than allocating another. A
    `frontend-resource-limit`, `implementation-resource-exhaustion`,
    `lifecycle`, `internal`, or other resume-start failure under Section 7
    leaves the execution's durable state unchanged and MUST permit a later
-   corrected resume attempt.
+   corrected resume attempt. Resume acceptance occurs only after exclusive
+   journal ownership, recovery validation, complete runnable-set admission,
+   gated submission, supervision registration, and atomic in-process handle
+   publication all succeed. Before that publication every submitted gate MUST
+   remain closed. A failure MUST permanently close those gates, stop and
+   observe each submitted future, remove provisional registrations, release
+   every permit exactly once, release journal ownership, and return a
+   resume-start failure without changing durable semantic state. Caller
+   cancellation stops waiting but MUST NOT abandon this rollback. A terminal
+   execution creates no driver; delivery-only recovery is an admitted,
+   interpreter-owned activity subject to the same ownership rules.
    Once recovered interpretation begins, resume returns the same execution
    handle and foreground-outcome categories as a new execution. If foreground
    completion is already durable, resume MUST expose that preserved outcome
@@ -9065,6 +9283,32 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    occur before `main` evaluation or recovered work. Successful preflight does
    not itself dispatch an operation.
 
+<a id="GNT-15.2-runtime-sessions"></a>
+
+**Runtime session service.** `EstablishSession` belongs to a separately owned
+`RuntimeSessionService`, not to `IntegrationPreflight`. The service MUST be
+`Send + Sync`; each returned future MUST be `Send` for the lifetime of its
+borrow; and Gantry MUST be able to invoke it from an owned `Send + 'static`
+root or child driver without retaining a non-thread-safe preflight object.
+`ResolveMappings` and `ResolveSessions` remain pre-acceptance operations on
+`IntegrationPreflight`. A single integration object MAY implement both roles,
+but the published interfaces, bounds, operation ownership, and failure
+classification remain distinct.
+
+Gantry MUST maintain one execution-wide in-flight-or-established state for
+each logical session ID. Concurrent requests for the same ID join the same
+must-settle establishment and observe the same result; they MUST NOT create
+parallel integration contexts. The service operation is idempotent by
+execution and logical-session ID and returns exactly `established` or a
+structured failure. Caller or task cancellation after invocation stops source
+consumption but does not abandon the must-settle establishment. A failure is
+published once as `logical-session-setup` for every dependent active task, and
+no dependent hook may be created first. A serialized proxy conforms only when
+its owner safely contains the underlying implementation, remains alive through
+settlement and shutdown, and exposes the required thread-safe command
+boundary; wrapping a non-`Send` object in an unsafe or movable container does
+not conform.
+
    For a `gantry-created` root session, `EstablishSession` MUST let Gantry
    request establishment of one fresh empty integration-side
    conversational context for the generated logical session ID before that
@@ -9073,10 +9317,11 @@ A `HookFactory` asynchronously creates an `OperationHook` for a supplied
    execution and root ID MUST resolve the same context rather than create a
    replacement. The interface MUST return structured success or failure and
    MUST be safe to retry for the same execution and root ID. Gantry invokes it
-   only after the execution-start record is durable; failure prevents hook
-   creation and is the `logical-session-setup` runtime error defined in
-   Section 7. An `embedder-supplied` root instead uses `ResolveSessions` as
-   required by Section 15.1.
+   only after accepted-state publication and, under the durable-runtime
+   profile, after the execution-start and root-session state are durable;
+   failure prevents hook creation and is the `logical-session-setup` runtime
+   error defined in Section 7. An `embedder-supplied` root instead uses
+   `ResolveSessions` as required by Section 15.1.
 
    `EstablishSession` MUST also establish every non-root
    logical session created outside an operation request, including lexical-
@@ -9141,9 +9386,13 @@ A cancellation token is cloneable, safe to observe from multiple threads,
 <a id="GNT-15.4"></a>
 
 Every evaluator embedding's executor adapter provides asynchronous sleep and
-   explicit scheduler-yield capabilities. An embedding claiming the
-   concurrent-evaluator profile MUST additionally provide task spawn, join,
-   and idempotent abort. Abort returns exactly `stopped`, `already-settled`, or
+   explicit scheduler-yield capabilities and an owned execution-task service.
+   The service synchronously admits an owned `Send + 'static` future or returns
+   a structured submission failure, and returns a supervision capability that
+   supports completion observation and idempotent abort. The sequential
+   evaluator uses it for every accepted or resumed root; the concurrent
+   evaluator additionally uses it for each admitted child. Abort returns
+   exactly `stopped`, `already-settled`, or
    `failed(error)`. `stopped` confirms that the task future will no longer be
    polled; `already-settled` preserves its existing settlement. After a
    successful stop, Gantry settles the task as `cancelled` only after the
@@ -9160,6 +9409,74 @@ Every evaluator embedding's executor adapter provides asynchronous sleep and
    Gantry MUST use these capabilities rather than constructing a hidden Tokio
    or other provider runtime. Executor handles and errors MUST be wrapped so no
    specific executor type appears in the language-facing API.
+
+<a id="GNT-15.4-owned-work"></a>
+
+**Owned work, supervision, and bounded admission.** The executor completion
+value is an opaque transport acknowledgement named `OwnedTaskResult` by the
+published embedding contract. It carries no source value or Gantry task
+status. Completion observation returns exactly
+`completed(OwnedTaskResult)`, `stopped`,
+`panicked(origin, protected_diagnostic_reference?)`, or
+`failed(executor_error)`. `origin` is exactly `integration` or
+`gantry-invariant` and preserves the boundary classification in Section 15.9;
+an executor-internal failure uses `failed`, not `panicked`. Observation is
+idempotent and every observer receives the same immutable terminal result.
+After any terminal result, abort returns `already-settled`; before terminal
+settlement, repeated abort returns the first fixed `stopped`,
+`already-settled`, or `failed(error)` result. A stale wake after terminal
+settlement is ignored and cannot create another poll or result. `stopped` is
+physical evidence only and permits cancelled semantic settlement only after
+the applicable Gantry cancellation transition; unexpected stopping is
+`executor-failure`.
+
+Gantry MUST register every submitted root, child, delivery worker, shutdown
+coordinator, and other interpreter-owned async task until physical settlement
+is observed exactly once. The completion path MUST have a bounded,
+non-recursive owner: a split control/completion capability, executor callback,
+or registered reaper is conforming, but spawning an unregistered watcher for
+each watcher is not. Dropping an observer MUST NOT stop the task. Releasing the
+final control capability MAY request stop only after the registry no longer
+requires observation. An execution-task admission permit is released at
+physical settlement or completed pre-acceptance rollback, never merely at
+semantic settlement.
+
+The embedding configuration MUST provide finite positive
+`maximum_active_root_tasks`, `maximum_active_source_child_tasks`,
+`maximum_resume_runnable_tasks`, `maximum_admitted_public_activities`,
+`maximum_interpreter_background_tasks`, `maximum_queued_blocking_jobs`,
+`maximum_active_blocking_jobs`, and `maximum_active_event_deliveries`
+capacities, plus a finite positive `reserved_control_plane_tasks` capacity.
+Admission is nonblocking at a semantic transition that cannot wait safely.
+Root capacity is reserved before start acceptance; child admission either
+succeeds immediately or settles that admitted child with `executor-failure`;
+and resume reserves its complete reconstructed runnable set before acceptance.
+The cumulative language limit `maximum_tasks_per_execution` is separate from
+all of these operational capacities and is never refunded.
+
+Ordinary work MUST NOT consume the control-plane reserve. Durable failure
+settlement, task reaping, cancellation, rollback, journal-owner release, and
+shutdown MUST retain a bounded progress path under ordinary saturation. The
+implementation MUST define one acyclic acquisition order, transfer each
+permit to exactly one owner, and reject overload as
+`implementation-resource-exhaustion` before acceptance or
+`executor-failure` afterward as required by the owning operation. It MUST NOT
+wait for child capacity while retaining the only capacity needed by that
+child.
+
+Package snapshot acquisition, parsing, analysis, and other blocking or
+CPU-heavy package work MUST use a separate bounded `BlockingWorkService` or an
+equivalent provider-owned worker. Queue admission is nonblocking. A queued job
+may be cancelled before start; a started job is retained to completion, its
+result is discarded when its caller no longer owns it, and shutdown retains
+its dependencies until it settles. Jobs receive owned immutable snapshots and
+MUST NOT capture borrowed provider, path, or source-buffer state. Results are
+independent of worker count. Executor-specific unbounded blocking helpers do
+not satisfy this contract by themselves, and dedicated serialized storage
+workers MUST NOT be moved onto the generic blocking pool. Queue or active-job
+capacity refusal is `implementation-resource-exhaustion`. Another blocking-work
+service failure during validation, analysis, start, or resume is operational
+category `internal`; no package judgment or accepted execution is fabricated.
 
    Executor-neutral runtime services MUST additionally provide the current UTC
    time for RFC 3339 event timestamps and uniform sampling of an integer from
@@ -9264,7 +9581,12 @@ Each event sink declares a stable identity, its required/best-effort class,
 Interpreter configuration MUST include the default model-output
    retry limit, the default action-output retry limit, their backoff policy,
    event-delivery retry and attempt-timeout defaults,
-   executor adapter, identity source, graceful-shutdown timeout,
+   executor adapter, blocking-work service, identity source,
+   `maximum_active_root_tasks`, `maximum_active_source_child_tasks`,
+   `maximum_resume_runnable_tasks`, `maximum_admitted_public_activities`,
+   `maximum_interpreter_background_tasks`, `maximum_queued_blocking_jobs`,
+   `maximum_active_blocking_jobs`, `maximum_active_event_deliveries`,
+   `reserved_control_plane_tasks`, graceful-shutdown timeout,
    post-cancellation drain duration, maximum package files, maximum source-file
    bytes, maximum package-source bytes, maximum source tokens, maximum
    diagnostics per activity, maximum package-source-manifest bytes, maximum
@@ -9301,6 +9623,14 @@ Interpreter configuration MUST include the default model-output
    `GNT-4.17-generic-analysis-limits`; like the other nine frontend fields,
    they have no implicit default and are excluded from durable execution
    identity.
+   The nine async-capacity fields use the exact admission, ownership,
+   transfer, and release rules in `GNT-15.4-owned-work`. Each is positive and
+   no greater than `2^63 - 1`. They, the blocking-work implementation, executor
+   implementation, worker counts, and queue topology are operational policy,
+   are excluded from durable execution identity, and MAY change on resume.
+   A changed policy MUST still admit the complete reconstructed runnable set
+   before resume acceptance; inability to do so is
+   `implementation-resource-exhaustion`, not permission for partial recovery.
    The deterministic-transition yield quantum counts transitions, MUST be no
    greater than `2^63 - 1`, and remains subject to the nonzero requirement in
    Section 3.
@@ -9379,14 +9709,18 @@ Sections 15.1 through 15.7 refer to these logical IDs; repository paths and
 transport URLs may change only through a new publication index that preserves
 their versioned identities.
 
-The amendment MUST be published atomically. One accepted set contains the
+The generics, traits, and executor-backed amendments MUST be published
+atomically as one in-place v1 replacement. One accepted set contains the
 amended `gantry.spec`, all twelve frontend-policy fields, stable generic
 diagnostics, generic analysis and closed executable schemas, concrete type and
-callable identity goldens, durable reconstruction fixtures, conformance
-evidence, and authoring fixtures. A set that mixes any pre-adoption artifact
-with amended semantics is incomplete and MUST be rejected. The repository and
-embedding API expose no compatibility parser, legacy artifact selector,
-parallel protocol family, or migration input for the superseded draft.
+callable identity goldens, the baseline owned-task and runtime-session
+contracts, all nine async-capacity fields, start/resume/cancellation/shutdown
+envelopes, executor settlement and blocking-work schemas, durable
+reconstruction fixtures, conformance evidence, and authoring fixtures. A set
+that mixes any pre-adoption or pre-async artifact with amended semantics is
+incomplete and MUST be rejected. The repository and embedding API expose no
+compatibility parser, legacy artifact selector, manual-driving facade,
+parallel protocol family, or migration input for either superseded draft.
 
 <a id="GNT-15.8-publication-integrity"></a>
 
@@ -9474,16 +9808,22 @@ satisfy these rules.
 <a id="GNT-15.9"></a>
 
 Integration-provided identity sources, hook factories, executor adapters,
-   journal stores, and event sinks MUST be
-   `Send + Sync` and safe for Gantry to access from its
+   integration-preflight services, runtime-session services, blocking-work
+   services, journal stores, and event sinks MUST be `Send + Sync` and safe for
+   Gantry to access from its
    multithreaded tasks. This is a baseline requirement of every Rust embedding-
    profile implementation, including one that embeds only the sequential
    evaluator profile; it is not a separate unnamed conformance profile. An
    individual `OperationHook` MUST be `Send` but need not be `Sync`, because
    Gantry owns it within one task and invokes it only serially. Futures returned
-   by these interfaces MUST be `Send` for the lifetime of their borrows. Gantry
-   MUST package all borrowed state into owned task state before submitting a
-   `Send + 'static` future to the executor.
+   by these thread-safe interfaces MUST be `Send` for the lifetime of their
+   borrows. Gantry MUST use the admitted-activity ownership rule in
+   `GNT-15.1-automatic-execution` so caller cancellation cannot abandon one of
+   the preflight service's must-settle operations or release its referent
+   prematurely. Gantry MAY own the service in the activity and create its
+   borrowed future within that owned async scope. Gantry MUST package every
+   value captured by an executor-submitted future into owned `Send + 'static`
+   task state.
 
 <a id="GNT-15.9-boundary-failure-containment"></a>
 
