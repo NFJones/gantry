@@ -136,8 +136,8 @@
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "4046",
-      "sha256": "e9451856b325523bc5664bb5000589aa83b4dae293d1d94ca3a50acea6ba6c52",
+      "byte_length": "4062",
+      "sha256": "1420875cfb8e04aeafe9a4ea55b459a4f898df90c70f00cf2ccf25a89fdf47ad",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -190,8 +190,8 @@
       "family": "recovery-projection",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "12115",
-      "sha256": "96894466d497b0a86fb2d4a25c68a9a3b2264ab3c62b98afd0ec19f4bfde3ea7",
+      "byte_length": "12147",
+      "sha256": "e9aa835269b9f2b2a0fdaa8b28726203db3dd4de9ed8371d5184ab2faf7dd748",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [

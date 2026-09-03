@@ -35,8 +35,10 @@ pub use canonical::{
 };
 pub use effects::{EFFECT_ORDER, EffectSet};
 pub use executable::{
-    AggregateKind, ExecutableAction, ExecutableOperation, Instruction, InstructionKind, LoopPhase,
-    MachineProgram, Parameter, ProgramError, Projection, Workflow,
+    AggregateKind, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
+    ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
+    InstructionKind, LoopPhase, MachineProgram, Parameter, ProgramError, Projection,
+    TaskBodyIdentity, TaskCompletion, TaskSuspension, Workflow,
 };
 pub use facts::{
     ActionEffectContributor, ActionInventory, CallEdge, EntryInventory, OperationSite,

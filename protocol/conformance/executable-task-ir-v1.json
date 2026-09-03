@@ -1,0 +1,41 @@
+{
+  "format": "gantry.executable-task-ir-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-IR-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3-M-SPAWN",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator"]
+    },
+    {
+      "requirement": "GNT-15.8",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "closed-spawned-body-identity",
+      "evidence": "crates/gantry-conformance/tests/executable_task_ir.rs#executable_task_bodies_are_closed_typed_and_handle_separated"
+    },
+    {
+      "id": "malformed-task-artifact-rejection",
+      "evidence": "crates/gantry-conformance/tests/executable_task_ir.rs#executable_task_body_validation_rejects_noncanonical_artifacts"
+    },
+    {
+      "id": "public-task-site-schema",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#closed_operation_and_task_sites_have_exact_bytes_and_fail_closed"
+    },
+    {
+      "id": "source-map-round-trip",
+      "evidence": "crates/gantry-conformance/tests/ir_contracts.rs#canonical_artifact_vectors_match_the_public_facade"
+    }
+  ],
+  "exclusions": [
+    "Analyzer lowering of source task-control constructs into executable bodies remains owned by GNT-ASYNC-LOWER-001.",
+    "Executor submission, source-task scheduling, join settlement, detachment, and cancellation remain owned by their downstream runtime issues.",
+    "Dynamic task paths and operation identity qualification remain owned by GNT-ASYNC-ID-001.",
+    "Concurrent durable task-graph reconstruction remains owned by GNT-ASYNC-REC-001."
+  ]
+}

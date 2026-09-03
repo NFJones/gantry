@@ -955,6 +955,13 @@ impl Machine {
                 return self.call(workflow, site, callee, arguments);
             }
             InstructionKind::Return => return self.return_value(workflow, site),
+            InstructionKind::Spawn { .. }
+            | InstructionKind::Join { .. }
+            | InstructionKind::JoinAll { .. }
+            | InstructionKind::Detach { .. }
+            | InstructionKind::TaskComplete => {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            }
             InstructionKind::Operation => {
                 return self.prepare_operation(workflow, instruction, 0);
             }
@@ -1931,6 +1938,11 @@ fn instruction_name(instruction: &InstructionKind) -> Arc<str> {
         InstructionKind::LeaveOccurrence => "occurrence-exit",
         InstructionKind::Call { .. } => "call",
         InstructionKind::Return => "return",
+        InstructionKind::Spawn { .. } => "spawn",
+        InstructionKind::Join { .. } => "join",
+        InstructionKind::JoinAll { .. } => "joinall",
+        InstructionKind::Detach { .. } => "detach",
+        InstructionKind::TaskComplete => "task-complete",
         InstructionKind::Operation
         | InstructionKind::OperationWithOperands { .. }
         | InstructionKind::OperationCall { .. } => "operation",

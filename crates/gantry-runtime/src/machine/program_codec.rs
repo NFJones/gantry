@@ -6,14 +6,16 @@ use gantry_core::value::{ValueLimits, ValuePathSegment};
 use gantry_ir::generated::{Effect, OperationSiteKind, RecoveryClass};
 use gantry_ir::{
     ActionParameter, AggregateKind, CanonicalCallableIdentity, CanonicalPath, CanonicalSignature,
-    Comparison, EffectSet, ExecutableAction, ExecutableOperation, Instruction, InstructionKind,
-    LoopPhase, MachineProgram, Parameter, Primitive, Projection, TypeDescriptor, Workflow,
+    Comparison, EffectSet, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
+    ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
+    InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, Projection, TaskBodyIdentity,
+    TypeDescriptor, Workflow,
 };
 
 use super::MachineRecoveryError;
 use super::checkpoint_codec::{Reader, Writer};
 
-const MAGIC: &[u8; 8] = b"GNTPRG01";
+const MAGIC: &[u8; 8] = b"GNTPRG02";
 
 fn codec_limits() -> ValueLimits {
     ValueLimits::new(u64::MAX, u64::MAX, u64::MAX, u64::MAX)
@@ -49,6 +51,10 @@ pub(crate) fn encode_machine_program(program: &MachineProgram) -> Vec<u8> {
             writer.string(&instruction.ty.canonical_string());
             write_instruction(&mut writer, &instruction.kind);
         }
+    }
+    writer.count(program.task_bodies().len());
+    for body in program.task_bodies() {
+        write_task_body(&mut writer, body);
     }
     writer.finish()
 }
@@ -102,10 +108,15 @@ pub(crate) fn decode_machine_program(bytes: &[u8]) -> Result<MachineProgram, Mac
             },
         ));
     }
+    let body_count = reader.count()?;
+    let mut task_bodies = Vec::with_capacity(body_count);
+    for _ in 0..body_count {
+        task_bodies.push(read_task_body(&mut reader)?);
+    }
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
-    let program = MachineProgram::with_callable_identities(callables)
+    let program = MachineProgram::with_task_bodies(callables, task_bodies)
         .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
     if encode_machine_program(&program) != bytes {
         return Err(MachineRecoveryError::InvalidEncoding);
@@ -228,6 +239,25 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
         }
         InstructionKind::ExitSession => writer.u8(23),
         InstructionKind::CancellationCheck => writer.u8(24),
+        InstructionKind::Spawn { handle, body } => {
+            writer.u8(26);
+            writer.string(handle.name());
+            writer.string(&handle.result_type().canonical_string());
+            write_task_body_identity(writer, body);
+        }
+        InstructionKind::Join { handles } => {
+            writer.u8(27);
+            writer.strings(handles);
+        }
+        InstructionKind::JoinAll { handles } => {
+            writer.u8(28);
+            writer.strings(handles);
+        }
+        InstructionKind::Detach { handle } => {
+            writer.u8(29);
+            writer.string(handle);
+        }
+        InstructionKind::TaskComplete => writer.u8(30),
     }
 }
 
@@ -299,8 +329,105 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<InstructionKind, MachineR
             }
             InstructionKind::BranchEnum { arms }
         }
+        26 => InstructionKind::Spawn {
+            handle: ExecutableTaskHandle::new(Arc::from(reader.string()?), ty(&reader.string()?)?)
+                .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
+            body: read_task_body_identity(reader)?,
+        },
+        27 => InstructionKind::Join {
+            handles: reader.strings()?,
+        },
+        28 => InstructionKind::JoinAll {
+            handles: reader.strings()?,
+        },
+        29 => InstructionKind::Detach {
+            handle: Arc::from(reader.string()?),
+        },
+        30 => InstructionKind::TaskComplete,
         _ => return Err(MachineRecoveryError::InvalidEncoding),
     })
+}
+
+fn write_task_body(writer: &mut Writer, body: &ExecutableTaskBody) {
+    write_task_body_identity(writer, body.identity());
+    writer.string(&body.result_type().canonical_string());
+    writer.count(body.captures().len());
+    for capture in body.captures() {
+        writer.string(capture.name());
+        writer.string(&capture.ty().canonical_string());
+        writer.boolean(capture.is_mutable());
+    }
+    let context = *body.context();
+    writer.boolean(context.inherits_agent());
+    writer.boolean(context.snapshots_active_session());
+    writer.boolean(context.forks_session());
+    writer.boolean(context.derives_task_path());
+    writer.boolean(context.derives_recovery_identity());
+    writer.count(body.instructions().len());
+    for instruction in body.instructions() {
+        writer.position(&instruction.site);
+        writer.string(&instruction.ty.canonical_string());
+        write_instruction(writer, &instruction.kind);
+    }
+}
+
+fn read_task_body(reader: &mut Reader<'_>) -> Result<ExecutableTaskBody, MachineRecoveryError> {
+    let identity = read_task_body_identity(reader)?;
+    let result_type = ty(&reader.string()?)?;
+    let capture_count = reader.count()?;
+    let mut captures = Vec::with_capacity(capture_count);
+    for _ in 0..capture_count {
+        captures.push(
+            ExecutableTaskCapture::new(
+                Arc::from(reader.string()?),
+                ty(&reader.string()?)?,
+                reader.boolean()?,
+            )
+            .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
+        );
+    }
+    if !reader.boolean()?
+        || !reader.boolean()?
+        || !reader.boolean()?
+        || !reader.boolean()?
+        || !reader.boolean()?
+    {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    let instruction_count = reader.count()?;
+    let mut instructions = Vec::with_capacity(instruction_count);
+    for _ in 0..instruction_count {
+        instructions.push(Instruction {
+            site: reader.position()?,
+            ty: ty(&reader.string()?)?,
+            kind: read_instruction(reader)?,
+        });
+    }
+    ExecutableTaskBody::new(
+        identity,
+        result_type,
+        captures,
+        ExecutableTaskContext::v1(),
+        instructions,
+    )
+    .map_err(|_| MachineRecoveryError::InvalidEncoding)
+}
+
+fn write_task_body_identity(writer: &mut Writer, identity: &TaskBodyIdentity) {
+    writer.string(identity.enclosing_callable().as_str());
+    writer.position(identity.spawn_site());
+}
+
+fn read_task_body_identity(
+    reader: &mut Reader<'_>,
+) -> Result<TaskBodyIdentity, MachineRecoveryError> {
+    let enclosing_callable =
+        CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
+            .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    Ok(TaskBodyIdentity::new(
+        enclosing_callable,
+        reader.position()?,
+    ))
 }
 
 fn write_aggregate(writer: &mut Writer, kind: &AggregateKind) {
@@ -633,8 +760,10 @@ mod tests {
 
     use gantry_core::value::LogicalValue;
     use gantry_ir::{
-        CanonicalCallableIdentity, CanonicalPath, EffectSet, Instruction, InstructionKind,
-        MachineProgram, Parameter, StructuralPosition, TypeDescriptor, Workflow,
+        CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody,
+        ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
+        InstructionKind, MachineProgram, Parameter, StructuralPosition, TaskBodyIdentity,
+        TypeDescriptor, Workflow,
     };
 
     use super::{decode_machine_program, encode_machine_program};
@@ -768,5 +897,104 @@ mod tests {
         assert_eq!(decoded, program);
         assert_eq!(decoded.callable_identities()[1], preserve_identity);
         assert_eq!(encode_machine_program(&decoded), encoded);
+    }
+
+    #[test]
+    fn executable_program_codec_preserves_task_control_bodies() {
+        let path = CanonicalPath::new("crate::work")
+            .unwrap_or_else(|error| panic!("path failed: {error}"));
+        let caller = CanonicalCallableIdentity::free(&path, &[TypeDescriptor::STRING]);
+        let spawn_site = StructuralPosition::new(vec![0])
+            .unwrap_or_else(|error| panic!("spawn site failed: {error}"));
+        let body_identity = TaskBodyIdentity::new(caller.clone(), spawn_site.clone());
+        let handle = ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::STRING)
+            .unwrap_or_else(|error| panic!("handle failed: {error:?}"));
+        let body = ExecutableTaskBody::new(
+            body_identity.clone(),
+            TypeDescriptor::STRING,
+            vec![
+                ExecutableTaskCapture::new(Arc::from("message"), TypeDescriptor::STRING, true)
+                    .unwrap_or_else(|error| panic!("capture failed: {error:?}")),
+            ],
+            ExecutableTaskContext::v1(),
+            vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0, 0])
+                        .unwrap_or_else(|error| panic!("body value site failed: {error}")),
+                    ty: TypeDescriptor::STRING,
+                    kind: InstructionKind::Load(Arc::from("message")),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![0, 1])
+                        .unwrap_or_else(|error| panic!("body return site failed: {error}")),
+                    ty: TypeDescriptor::STRING,
+                    kind: InstructionKind::TaskComplete,
+                },
+            ],
+        )
+        .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+        let instruction = |site: u64, ty, kind| Instruction {
+            site: StructuralPosition::new(vec![site])
+                .unwrap_or_else(|error| panic!("instruction site failed: {error}")),
+            ty,
+            kind,
+        };
+        let program = MachineProgram::with_task_bodies(
+            vec![(
+                caller,
+                Workflow {
+                    path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        instruction(
+                            0,
+                            TypeDescriptor::UNIT,
+                            InstructionKind::Spawn {
+                                handle,
+                                body: body_identity,
+                            },
+                        ),
+                        instruction(
+                            1,
+                            TypeDescriptor::STRING,
+                            InstructionKind::Join {
+                                handles: vec![Arc::from("child")],
+                            },
+                        ),
+                        instruction(
+                            2,
+                            TypeDescriptor::UNIT,
+                            InstructionKind::JoinAll {
+                                handles: Vec::new(),
+                            },
+                        ),
+                        instruction(
+                            3,
+                            TypeDescriptor::UNIT,
+                            InstructionKind::Detach {
+                                handle: Arc::from("child"),
+                            },
+                        ),
+                        instruction(4, TypeDescriptor::UNIT, InstructionKind::Return),
+                    ],
+                },
+            )],
+            vec![body],
+        )
+        .unwrap_or_else(|error| panic!("task-control program failed: {error:?}"));
+
+        let encoded = encode_machine_program(&program);
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("task-control decode failed: {error:?}"));
+        assert_eq!(decoded, program);
+        assert_eq!(encode_machine_program(&decoded), encoded);
+
+        let truncated = &encoded[..encoded.len() - 1];
+        assert_eq!(
+            decode_machine_program(truncated),
+            Err(MachineRecoveryError::InvalidEncoding)
+        );
     }
 }

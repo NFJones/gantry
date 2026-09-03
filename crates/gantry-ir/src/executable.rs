@@ -61,6 +61,290 @@ pub struct Parameter {
     pub mutable: bool,
 }
 
+/// Stable identity of one independently executable spawned block.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TaskBodyIdentity {
+    enclosing_callable: CanonicalCallableIdentity,
+    spawn_site: StructuralPosition,
+}
+
+impl TaskBodyIdentity {
+    /// Binds one canonical spawn site to its analyzer-selected closed callable.
+    #[must_use]
+    pub const fn new(
+        enclosing_callable: CanonicalCallableIdentity,
+        spawn_site: StructuralPosition,
+    ) -> Self {
+        Self {
+            enclosing_callable,
+            spawn_site,
+        }
+    }
+
+    /// Returns the closed callable containing this spawned block.
+    #[must_use]
+    pub const fn enclosing_callable(&self) -> &CanonicalCallableIdentity {
+        &self.enclosing_callable
+    }
+
+    /// Returns the canonical spawn site within the enclosing callable.
+    #[must_use]
+    pub const fn spawn_site(&self) -> &StructuralPosition {
+        &self.spawn_site
+    }
+}
+
+/// One analyzer-selected binding copied into a spawned task.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableTaskCapture {
+    name: Arc<str>,
+    ty: TypeDescriptor,
+    mutable: bool,
+}
+
+impl ExecutableTaskCapture {
+    /// Constructs one typed capture contract.
+    pub fn new(name: Arc<str>, ty: TypeDescriptor, mutable: bool) -> Result<Self, ProgramError> {
+        if name.is_empty() {
+            return Err(ProgramError::InvalidTaskCaptureName);
+        }
+        Ok(Self { name, ty, mutable })
+    }
+
+    /// Returns the exact captured binding name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the analyzer-proven closed binding type.
+    #[must_use]
+    pub const fn ty(&self) -> &TypeDescriptor {
+        &self.ty
+    }
+
+    /// Returns whether the child-local copied root may be replaced.
+    #[must_use]
+    pub const fn is_mutable(&self) -> bool {
+        self.mutable
+    }
+}
+
+/// One source task handle retained outside the logical value domain.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableTaskHandle {
+    name: Arc<str>,
+    result_type: TypeDescriptor,
+}
+
+impl ExecutableTaskHandle {
+    /// Constructs one typed lexical task-handle declaration.
+    pub fn new(name: Arc<str>, result_type: TypeDescriptor) -> Result<Self, ProgramError> {
+        if name.is_empty() {
+            return Err(ProgramError::InvalidTaskHandleName);
+        }
+        Ok(Self { name, result_type })
+    }
+
+    /// Returns the exact lexical source name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the declared child result type.
+    #[must_use]
+    pub const fn result_type(&self) -> &TypeDescriptor {
+        &self.result_type
+    }
+}
+
+/// Closed v1 context contract applied when a spawned task is materialized.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableTaskContext {
+    inherit_agent: bool,
+    snapshot_active_session: bool,
+    fork_session: bool,
+    derive_task_path: bool,
+    derive_recovery_identity: bool,
+}
+
+impl ExecutableTaskContext {
+    /// Returns the only v1 spawned-task context policy.
+    #[must_use]
+    pub const fn v1() -> Self {
+        Self {
+            inherit_agent: true,
+            snapshot_active_session: true,
+            fork_session: true,
+            derive_task_path: true,
+            derive_recovery_identity: true,
+        }
+    }
+
+    /// Returns whether the active agent is copied from the parent.
+    #[must_use]
+    pub const fn inherits_agent(self) -> bool {
+        self.inherit_agent
+    }
+
+    /// Returns whether the parent's active session is captured at spawn.
+    #[must_use]
+    pub const fn snapshots_active_session(self) -> bool {
+        self.snapshot_active_session
+    }
+
+    /// Returns whether the child receives a forked enclosing session.
+    #[must_use]
+    pub const fn forks_session(self) -> bool {
+        self.fork_session
+    }
+
+    /// Returns whether a canonical dynamic task path is derived at spawn.
+    #[must_use]
+    pub const fn derives_task_path(self) -> bool {
+        self.derive_task_path
+    }
+
+    /// Returns whether task recovery uses a stable derived identity.
+    #[must_use]
+    pub const fn derives_recovery_identity(self) -> bool {
+        self.derive_recovery_identity
+    }
+}
+
+/// One independently executable spawned block with its own return boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableTaskBody {
+    identity: TaskBodyIdentity,
+    result_type: TypeDescriptor,
+    captures: Vec<ExecutableTaskCapture>,
+    context: ExecutableTaskContext,
+    instructions: Vec<Instruction>,
+}
+
+impl ExecutableTaskBody {
+    /// Constructs one task body and validates its local canonical shape.
+    pub fn new(
+        identity: TaskBodyIdentity,
+        result_type: TypeDescriptor,
+        captures: Vec<ExecutableTaskCapture>,
+        context: ExecutableTaskContext,
+        instructions: Vec<Instruction>,
+    ) -> Result<Self, ProgramError> {
+        if captures
+            .iter()
+            .map(ExecutableTaskCapture::name)
+            .collect::<BTreeSet<_>>()
+            .len()
+            != captures.len()
+        {
+            return Err(ProgramError::InvalidTaskBody(identity));
+        }
+        if instructions.is_empty()
+            || instructions
+                .windows(2)
+                .any(|pair| pair[0].site >= pair[1].site)
+            || instructions.iter().any(|instruction| {
+                matches!(instruction.kind, InstructionKind::Return)
+                    || matches!(instruction.kind, InstructionKind::TaskComplete)
+                        && instruction.ty != result_type
+            })
+        {
+            return Err(ProgramError::InvalidTaskBody(identity));
+        }
+        Ok(Self {
+            identity,
+            result_type,
+            captures,
+            context,
+            instructions,
+        })
+    }
+
+    /// Returns the stable closed body identity.
+    #[must_use]
+    pub const fn identity(&self) -> &TaskBodyIdentity {
+        &self.identity
+    }
+
+    /// Returns the declared task result type.
+    #[must_use]
+    pub const fn result_type(&self) -> &TypeDescriptor {
+        &self.result_type
+    }
+
+    /// Returns captures in analyzer-selected deterministic order.
+    #[must_use]
+    pub fn captures(&self) -> &[ExecutableTaskCapture] {
+        &self.captures
+    }
+
+    /// Returns the v1 inherited-context contract.
+    #[must_use]
+    pub const fn context(&self) -> &ExecutableTaskContext {
+        &self.context
+    }
+
+    /// Returns task-local instructions in canonical structural order.
+    #[must_use]
+    pub fn instructions(&self) -> &[Instruction] {
+        &self.instructions
+    }
+}
+
+/// Task-control boundary at which one task must await coordinator work.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskSuspension {
+    /// Child creation and owned executor submission remain pending.
+    Spawn {
+        /// Lexical handle to publish after submission settles.
+        handle: ExecutableTaskHandle,
+        /// Independently executable child body.
+        body: TaskBodyIdentity,
+    },
+    /// Named all-settled task wait.
+    Join {
+        /// Handles consumed in source order.
+        handles: Vec<Arc<str>>,
+    },
+    /// Declaration-order all-settled task wait, including the empty case.
+    JoinAll {
+        /// Handles consumed in declaration order.
+        handles: Vec<Arc<str>>,
+    },
+    /// Background ownership transfer remains pending at the coordinator.
+    Detach {
+        /// Exact lexical handle consumed by the transfer.
+        handle: Arc<str>,
+    },
+}
+
+/// Coordinator result that allows suspended task control to continue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TaskCompletion {
+    /// Child submission settled and its attached handle is now visible.
+    Spawned {
+        /// Published lexical handle.
+        handle: ExecutableTaskHandle,
+    },
+    /// A named join settled in source order.
+    Joined {
+        /// Consumed lexical handle names.
+        handles: Vec<Arc<str>>,
+    },
+    /// A joinall settled in declaration order.
+    JoinedAll {
+        /// Consumed lexical handle names.
+        handles: Vec<Arc<str>>,
+    },
+    /// Ownership transferred to execution-owned background work.
+    Detached {
+        /// Consumed lexical handle name.
+        handle: Arc<str>,
+    },
+}
+
 /// Aggregate construction performed after every operand has completed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AggregateKind {
@@ -195,6 +479,30 @@ pub enum InstructionKind {
     },
     /// Return one completed value from the current workflow frame.
     Return,
+    /// Suspend while creating and submitting one independently executable child.
+    Spawn {
+        /// Lexical handle introduced after submission settles.
+        handle: ExecutableTaskHandle,
+        /// Closed independently executable body.
+        body: TaskBodyIdentity,
+    },
+    /// Consume named handles and suspend for all-settled results.
+    Join {
+        /// Exact source-order lexical handle names.
+        handles: Vec<Arc<str>>,
+    },
+    /// Consume all selected handles and suspend for declaration-order results.
+    JoinAll {
+        /// Exact declaration-order lexical handle names, possibly empty.
+        handles: Vec<Arc<str>>,
+    },
+    /// Transfer one attached handle to execution-owned background work.
+    Detach {
+        /// Exact lexical handle name.
+        handle: Arc<str>,
+    },
+    /// Complete the current spawned body rather than a workflow frame.
+    TaskComplete,
     /// Prepare one logical operation that has no evaluated input values.
     Operation,
     /// Prepare one logical operation after capturing its completed input values.
@@ -254,6 +562,8 @@ pub struct MachineProgram {
     callable_identities: Vec<CanonicalCallableIdentity>,
     callable_indexes: BTreeMap<CanonicalCallableIdentity, usize>,
     entry_indexes: BTreeMap<CanonicalPath, usize>,
+    task_bodies: Vec<ExecutableTaskBody>,
+    task_body_indexes: BTreeMap<TaskBodyIdentity, usize>,
 }
 
 impl MachineProgram {
@@ -275,11 +585,25 @@ impl MachineProgram {
     pub fn with_callable_identities(
         callables: Vec<(CanonicalCallableIdentity, Workflow)>,
     ) -> Result<Self, ProgramError> {
+        Self::with_task_bodies(callables, Vec::new())
+    }
+
+    /// Validates closed callables together with independently executable task bodies.
+    pub fn with_task_bodies(
+        callables: Vec<(CanonicalCallableIdentity, Workflow)>,
+        task_bodies: Vec<ExecutableTaskBody>,
+    ) -> Result<Self, ProgramError> {
         if callables.is_empty() {
             return Err(ProgramError::EmptyProgram);
         }
         if callables.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
             return Err(ProgramError::WorkflowOrder);
+        }
+        if task_bodies
+            .windows(2)
+            .any(|pair| pair[0].identity >= pair[1].identity)
+        {
+            return Err(ProgramError::TaskBodyOrder);
         }
         let callable_identities = callables
             .iter()
@@ -302,14 +626,60 @@ impl MachineProgram {
             })
             .map(|(index, workflow)| (workflow.path.clone(), index))
             .collect::<BTreeMap<_, _>>();
-        for workflow in &workflows {
-            validate_workflow(workflow, &workflows, &callable_indexes)?;
+        let task_body_indexes = task_bodies
+            .iter()
+            .enumerate()
+            .map(|(index, body)| (body.identity.clone(), index))
+            .collect::<BTreeMap<_, _>>();
+        for (identity, workflow) in callable_identities.iter().zip(&workflows) {
+            validate_workflow(
+                identity,
+                workflow,
+                &workflows,
+                &callable_indexes,
+                &task_bodies,
+                &task_body_indexes,
+            )?;
+        }
+        for body in &task_bodies {
+            validate_task_body(
+                body,
+                &workflows,
+                &callable_indexes,
+                &task_bodies,
+                &task_body_indexes,
+            )?;
+        }
+        let mut task_body_references = BTreeMap::<&TaskBodyIdentity, usize>::new();
+        for instruction in workflows
+            .iter()
+            .flat_map(|workflow| &workflow.instructions)
+            .chain(
+                task_bodies
+                    .iter()
+                    .flat_map(ExecutableTaskBody::instructions),
+            )
+        {
+            if let InstructionKind::Spawn { body, .. } = &instruction.kind {
+                *task_body_references.entry(body).or_default() += 1;
+            }
+        }
+        if task_bodies.iter().any(|body| {
+            task_body_references
+                .get(body.identity())
+                .copied()
+                .unwrap_or_default()
+                != 1
+        }) {
+            return Err(ProgramError::TaskBodyReference);
         }
         Ok(Self {
             workflows,
             callable_identities,
             callable_indexes,
             entry_indexes,
+            task_bodies,
+            task_body_indexes,
         })
     }
 
@@ -352,6 +722,20 @@ impl MachineProgram {
     #[must_use]
     pub fn callable_index(&self, identity: &CanonicalCallableIdentity) -> Option<usize> {
         self.callable_indexes.get(identity).copied()
+    }
+
+    /// Returns spawned task bodies in canonical identity order.
+    #[must_use]
+    pub fn task_bodies(&self) -> &[ExecutableTaskBody] {
+        &self.task_bodies
+    }
+
+    /// Resolves one independently executable spawned body.
+    #[must_use]
+    pub fn task_body(&self, identity: &TaskBodyIdentity) -> Option<&ExecutableTaskBody> {
+        self.task_body_indexes
+            .get(identity)
+            .and_then(|index| self.task_bodies.get(*index))
     }
 
     /// Returns the first reachable effect unsupported by the base sequential profile.
@@ -402,12 +786,27 @@ pub enum ProgramError {
     InvalidAggregate(CanonicalPath),
     /// A source loop limit is zero or attached to a condition phase.
     InvalidLoopLimit(CanonicalPath),
+    /// Spawned bodies are duplicated or not in canonical identity order.
+    TaskBodyOrder,
+    /// One spawned body has malformed local metadata or instructions.
+    InvalidTaskBody(TaskBodyIdentity),
+    /// One spawned body is orphaned or referenced by more than one spawn site.
+    TaskBodyReference,
+    /// A task-control instruction has invalid handles or body correspondence.
+    InvalidTaskControl(CanonicalPath),
+    /// One task capture name is empty.
+    InvalidTaskCaptureName,
+    /// One lexical task-handle name is empty.
+    InvalidTaskHandleName,
 }
 
 fn validate_workflow(
+    identity: &CanonicalCallableIdentity,
     workflow: &Workflow,
     workflows: &[Workflow],
     indexes: &BTreeMap<CanonicalCallableIdentity, usize>,
+    task_bodies: &[ExecutableTaskBody],
+    task_body_indexes: &BTreeMap<TaskBodyIdentity, usize>,
 ) -> Result<(), ProgramError> {
     if workflow.instructions.is_empty() {
         return Err(ProgramError::EmptyWorkflow(workflow.path.clone()));
@@ -428,79 +827,175 @@ fn validate_workflow(
         return Err(ProgramError::InstructionOrder(workflow.path.clone()));
     }
     let length = workflow.instructions.len();
+    if workflow
+        .instructions
+        .iter()
+        .any(|instruction| matches!(instruction.kind, InstructionKind::TaskComplete))
+    {
+        return Err(ProgramError::InvalidTaskControl(workflow.path.clone()));
+    }
     for instruction in &workflow.instructions {
-        match &instruction.kind {
-            InstructionKind::Jump(target)
-            | InstructionKind::Branch {
-                when_true: target, ..
-            }
-            | InstructionKind::BranchOption {
-                when_some: target, ..
-            } if *target >= length => {
-                return Err(ProgramError::InvalidTarget(workflow.path.clone()));
-            }
-            InstructionKind::Branch { when_false, .. } if *when_false >= length => {
-                return Err(ProgramError::InvalidTarget(workflow.path.clone()));
-            }
-            InstructionKind::BranchOption { when_none, .. } if *when_none >= length => {
-                return Err(ProgramError::InvalidTarget(workflow.path.clone()));
-            }
-            InstructionKind::BranchEnum { arms }
-                if arms.is_empty()
-                    || arms
-                        .iter()
-                        .any(|(variant, target)| variant.is_empty() || *target >= length)
-                    || !enum_arms_are_unique(arms) =>
-            {
-                return Err(ProgramError::InvalidTarget(workflow.path.clone()));
-            }
-            InstructionKind::Call { callee, arguments } => {
-                let Some(callee) = indexes.get(callee).and_then(|index| workflows.get(*index))
-                else {
-                    return Err(ProgramError::InvalidCall(workflow.path.clone()));
-                };
-                if *arguments != callee.parameters.len() {
-                    return Err(ProgramError::InvalidCall(workflow.path.clone()));
-                }
-            }
-            InstructionKind::Aggregate { kind, operands } => {
-                let valid = match kind {
-                    AggregateKind::List => true,
-                    AggregateKind::Tuple => *operands >= 2,
-                    AggregateKind::Struct { type_name, fields } => {
-                        !type_name.is_empty()
-                            && fields.len() == *operands
-                            && fields.iter().all(|field| !field.is_empty())
-                            && fields.windows(2).all(|pair| pair[0] != pair[1])
-                    }
-                    AggregateKind::Enum {
-                        type_name,
-                        variant,
-                        has_payload,
-                    } => {
-                        !type_name.is_empty()
-                            && !variant.is_empty()
-                            && *operands == usize::from(*has_payload)
-                    }
-                    AggregateKind::Some | AggregateKind::Ok | AggregateKind::Err => *operands == 1,
-                    AggregateKind::None => *operands == 0,
-                };
-                if !valid {
-                    return Err(ProgramError::InvalidAggregate(workflow.path.clone()));
-                }
-            }
-            InstructionKind::EnterLoop {
-                phase,
-                source_limit,
-            } if source_limit == &Some(0)
-                || matches!(phase, LoopPhase::Condition) && source_limit.is_some() =>
-            {
-                return Err(ProgramError::InvalidLoopLimit(workflow.path.clone()));
-            }
-            _ => {}
-        }
+        validate_instruction(
+            identity,
+            &workflow.path,
+            instruction,
+            length,
+            workflows,
+            indexes,
+            task_bodies,
+            task_body_indexes,
+        )?;
     }
     Ok(())
+}
+
+fn validate_task_body(
+    body: &ExecutableTaskBody,
+    workflows: &[Workflow],
+    indexes: &BTreeMap<CanonicalCallableIdentity, usize>,
+    task_bodies: &[ExecutableTaskBody],
+    task_body_indexes: &BTreeMap<TaskBodyIdentity, usize>,
+) -> Result<(), ProgramError> {
+    let Some(workflow) = indexes
+        .get(body.identity.enclosing_callable())
+        .and_then(|index| workflows.get(*index))
+    else {
+        return Err(ProgramError::InvalidTaskBody(body.identity.clone()));
+    };
+    let workflow = &workflow.path;
+    let length = body.instructions.len();
+    for instruction in &body.instructions {
+        if matches!(instruction.kind, InstructionKind::Return) {
+            return Err(ProgramError::InvalidTaskBody(body.identity.clone()));
+        }
+        validate_instruction(
+            body.identity.enclosing_callable(),
+            workflow,
+            instruction,
+            length,
+            workflows,
+            indexes,
+            task_bodies,
+            task_body_indexes,
+        )
+        .map_err(|_| ProgramError::InvalidTaskBody(body.identity.clone()))?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_instruction(
+    enclosing_callable: &CanonicalCallableIdentity,
+    workflow: &CanonicalPath,
+    instruction: &Instruction,
+    length: usize,
+    workflows: &[Workflow],
+    indexes: &BTreeMap<CanonicalCallableIdentity, usize>,
+    task_bodies: &[ExecutableTaskBody],
+    task_body_indexes: &BTreeMap<TaskBodyIdentity, usize>,
+) -> Result<(), ProgramError> {
+    match &instruction.kind {
+        InstructionKind::Jump(target)
+        | InstructionKind::Branch {
+            when_true: target, ..
+        }
+        | InstructionKind::BranchOption {
+            when_some: target, ..
+        } if *target >= length => {
+            return Err(ProgramError::InvalidTarget(workflow.clone()));
+        }
+        InstructionKind::Branch { when_false, .. } if *when_false >= length => {
+            return Err(ProgramError::InvalidTarget(workflow.clone()));
+        }
+        InstructionKind::BranchOption { when_none, .. } if *when_none >= length => {
+            return Err(ProgramError::InvalidTarget(workflow.clone()));
+        }
+        InstructionKind::BranchEnum { arms }
+            if arms.is_empty()
+                || arms
+                    .iter()
+                    .any(|(variant, target)| variant.is_empty() || *target >= length)
+                || !enum_arms_are_unique(arms) =>
+        {
+            return Err(ProgramError::InvalidTarget(workflow.clone()));
+        }
+        InstructionKind::Call { callee, arguments } => {
+            let Some(callee) = indexes.get(callee).and_then(|index| workflows.get(*index)) else {
+                return Err(ProgramError::InvalidCall(workflow.clone()));
+            };
+            if *arguments != callee.parameters.len() {
+                return Err(ProgramError::InvalidCall(workflow.clone()));
+            }
+        }
+        InstructionKind::Aggregate { kind, operands } => {
+            let valid = match kind {
+                AggregateKind::List => true,
+                AggregateKind::Tuple => *operands >= 2,
+                AggregateKind::Struct { type_name, fields } => {
+                    !type_name.is_empty()
+                        && fields.len() == *operands
+                        && fields.iter().all(|field| !field.is_empty())
+                        && fields.windows(2).all(|pair| pair[0] != pair[1])
+                }
+                AggregateKind::Enum {
+                    type_name,
+                    variant,
+                    has_payload,
+                } => {
+                    !type_name.is_empty()
+                        && !variant.is_empty()
+                        && *operands == usize::from(*has_payload)
+                }
+                AggregateKind::Some | AggregateKind::Ok | AggregateKind::Err => *operands == 1,
+                AggregateKind::None => *operands == 0,
+            };
+            if !valid {
+                return Err(ProgramError::InvalidAggregate(workflow.clone()));
+            }
+        }
+        InstructionKind::EnterLoop {
+            phase,
+            source_limit,
+        } if source_limit == &Some(0)
+            || matches!(phase, LoopPhase::Condition) && source_limit.is_some() =>
+        {
+            return Err(ProgramError::InvalidLoopLimit(workflow.clone()));
+        }
+        InstructionKind::Spawn { handle, body } => {
+            let Some(task_body) = task_body_indexes
+                .get(body)
+                .and_then(|index| task_bodies.get(*index))
+            else {
+                return Err(ProgramError::InvalidTaskBody(body.clone()));
+            };
+            if body.enclosing_callable() != enclosing_callable
+                || body.spawn_site() != &instruction.site
+                || handle.result_type() != task_body.result_type()
+                || instruction.ty != TypeDescriptor::UNIT
+            {
+                return Err(ProgramError::InvalidTaskControl(workflow.clone()));
+            }
+        }
+        InstructionKind::Join { handles } if !valid_handle_names(handles, false) => {
+            return Err(ProgramError::InvalidTaskControl(workflow.clone()));
+        }
+        InstructionKind::JoinAll { handles } if !valid_handle_names(handles, true) => {
+            return Err(ProgramError::InvalidTaskControl(workflow.clone()));
+        }
+        InstructionKind::Detach { handle }
+            if handle.is_empty() || instruction.ty != TypeDescriptor::UNIT =>
+        {
+            return Err(ProgramError::InvalidTaskControl(workflow.clone()));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn valid_handle_names(handles: &[Arc<str>], allow_empty: bool) -> bool {
+    (allow_empty || !handles.is_empty())
+        && handles.iter().all(|handle| !handle.is_empty())
+        && handles.iter().collect::<BTreeSet<_>>().len() == handles.len()
 }
 
 fn enum_arms_are_unique(arms: &[(Arc<str>, usize)]) -> bool {
