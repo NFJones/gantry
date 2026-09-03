@@ -10,8 +10,8 @@ use gantry::canonical_json::CanonicalJson;
 use gantry::host::contracts::{
     AgentMappingRevision, CancellationSignal, CancellationToken, DurationMicros, EmbeddingVersion,
     ExecutorAdapter, FreshIdentityAllocator, HookFactory, HookOutcomeV1, HostError, HostFuture,
-    HostRequest, HostResponse, IdentitySource, InclusiveJitterRange, IntegrationPreflight,
-    OperationHook,
+    HostRequest, HostResponse, IdentitySource, InclusiveJitterRange, OperationHook,
+    RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::identity::ProtocolIdentity;
@@ -68,13 +68,16 @@ impl ExecutorAdapter for Services {
     }
 }
 
-struct OrderedPreflight {
+struct OrderedSessionService {
     order: Arc<Mutex<Vec<&'static str>>>,
     fail: bool,
 }
 
-impl IntegrationPreflight for OrderedPreflight {
-    fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>> {
+impl RuntimeSessionService for OrderedSessionService {
+    fn establish<'a>(
+        &'a self,
+        request: HostRequest,
+    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
         assert_eq!(request.operation(), EmbeddingOperation::EstablishSession);
         if let Ok(mut order) = self.order.lock() {
             order.push("establish-session");
@@ -84,6 +87,29 @@ impl IntegrationPreflight for OrderedPreflight {
             if fail {
                 return Err(host_error("session-provider-failure"));
             }
+            HostResponse::new(
+                EmbeddingVersion::V1,
+                EmbeddingOperation::EstablishSession,
+                Arc::from(&b"{\"result\":\"established\"}"[..]),
+            )
+            .map_err(|_| host_error("response-invariant"))
+        })
+    }
+}
+
+struct CancellingSessionService {
+    cancellation: CancellationSignal,
+}
+
+impl RuntimeSessionService for CancellingSessionService {
+    fn establish<'a>(
+        &'a self,
+        request: HostRequest,
+    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        assert_eq!(request.operation(), EmbeddingOperation::EstablishSession);
+        let cancellation = self.cancellation.clone();
+        Box::pin(async move {
+            cancellation.cancel();
             HostResponse::new(
                 EmbeddingVersion::V1,
                 EmbeddingOperation::EstablishSession,
@@ -260,15 +286,19 @@ fn public_session_establishment_is_idempotent_and_precedes_hook_creation() {
         .get(root)
         .unwrap_or_else(|| panic!("root session was absent"));
     let order = Arc::new(Mutex::new(Vec::new()));
-    let preflight = OrderedPreflight {
+    let session_service = Arc::new(OrderedSessionService {
         order: Arc::clone(&order),
         fail: false,
-    };
+    });
     let factory = OrderedFactory {
         order: Arc::clone(&order),
         creations: AtomicUsize::new(0),
     };
-    let mut establisher = SessionEstablisher::new(&lifecycle, &preflight, AdapterPoison::default());
+    let establisher = SessionEstablisher::new(
+        configuration.executor_arc(),
+        session_service,
+        AdapterPoison::default(),
+    );
     let mut hook = TaskHook::new(
         &lifecycle,
         &factory,
@@ -290,7 +320,7 @@ fn public_session_establishment_is_idempotent_and_precedes_hook_creation() {
             block_on(hook.dispatch_model(
                 prepared.request,
                 &CancellationSignal::default(),
-                &mut establisher,
+                &establisher,
                 execution,
                 session,
             ))
@@ -317,16 +347,19 @@ fn public_session_establishment_is_idempotent_and_precedes_hook_creation() {
     );
 
     let failed_order = Arc::new(Mutex::new(Vec::new()));
-    let failed_preflight = OrderedPreflight {
+    let failed_service = Arc::new(OrderedSessionService {
         order: Arc::clone(&failed_order),
         fail: true,
-    };
+    });
     let failed_factory = OrderedFactory {
         order: Arc::clone(&failed_order),
         creations: AtomicUsize::new(0),
     };
-    let mut failed_establisher =
-        SessionEstablisher::new(&lifecycle, &failed_preflight, AdapterPoison::default());
+    let failed_establisher = SessionEstablisher::new(
+        configuration.executor_arc(),
+        failed_service,
+        AdapterPoison::default(),
+    );
     let mut failed_hook = TaskHook::new(
         &lifecycle,
         &failed_factory,
@@ -341,7 +374,7 @@ fn public_session_establishment_is_idempotent_and_precedes_hook_creation() {
         block_on(failed_hook.dispatch_model(
             prepared.request,
             &CancellationSignal::default(),
-            &mut failed_establisher,
+            &failed_establisher,
             execution,
             session,
         )),
@@ -356,6 +389,74 @@ fn public_session_establishment_is_idempotent_and_precedes_hook_creation() {
             .unwrap_or_default(),
         ["establish-session"]
     );
+}
+
+#[test]
+fn public_session_cancellation_after_establishment_prevents_hook_creation() {
+    let services = Arc::new(Services::default());
+    let configuration = configuration(Arc::clone(&services));
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let execution = fresh(IdentityKind::Execution, 10);
+    let root = fresh(IdentityKind::Session, 11);
+    let registry = LogicalSessionRegistryV1::new(
+        execution,
+        root,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+    let session = registry
+        .get(root)
+        .unwrap_or_else(|| panic!("root session was absent"));
+    let cancellation = CancellationSignal::default();
+    let session_service = Arc::new(CancellingSessionService {
+        cancellation: cancellation.clone(),
+    });
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let factory = OrderedFactory {
+        order,
+        creations: AtomicUsize::new(0),
+    };
+    let establisher = SessionEstablisher::new(
+        configuration.executor_arc(),
+        session_service,
+        AdapterPoison::default(),
+    );
+    let mut hook = TaskHook::new(
+        &lifecycle,
+        &factory,
+        AdapterPoison::default(),
+        task_context(execution, root),
+    )
+    .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
+    let captured = model_request(
+        execution,
+        derived(IdentityKind::Operation, b"cancelled-operation"),
+        session,
+    );
+    let prepared = captured
+        .prepare_dispatch(
+            &FreshIdentityAllocator::default(),
+            services.as_ref(),
+            0,
+            0,
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("model dispatch failed: {error:?}"));
+
+    assert_eq!(
+        block_on(hook.dispatch_model(
+            prepared.request,
+            &cancellation,
+            &establisher,
+            execution,
+            session,
+        )),
+        Err(TaskHookSessionError::Cancelled)
+    );
+    assert!(cancellation.is_cancelled());
+    assert_eq!(factory.creations.load(Ordering::Acquire), 0);
+    assert_eq!(establisher.submitted_task_count(), 0);
 }
 
 #[test]

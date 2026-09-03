@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gantry::host::contracts::{
     EmbeddingVersion, HookFactory, HostError, HostFuture, HostRequest, HostResponse,
     IdentitySource, InclusiveJitterRange, IntegrationPreflight, JitterSource, OperationHook,
-    UtcClock,
+    RuntimeSessionService, UtcClock,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::portable::IdentityKind;
@@ -62,7 +62,6 @@ impl IntegrationPreflight for CliIntegration {
                 }
             }
             EmbeddingOperation::ResolveSessions => b"{\"result\":\"resolved\"}",
-            EmbeddingOperation::EstablishSession => b"{\"result\":\"established\"}",
             _ => {
                 return Box::pin(async {
                     Err(integration_failure("unsupported-preflight-operation"))
@@ -72,6 +71,25 @@ impl IntegrationPreflight for CliIntegration {
         Box::pin(async move {
             HostResponse::new(EmbeddingVersion::V1, operation, Arc::from(response))
                 .map_err(|_| integration_failure("invalid-cli-response"))
+        })
+    }
+}
+
+impl RuntimeSessionService for CliIntegration {
+    fn establish<'a>(
+        &'a self,
+        request: HostRequest,
+    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        if request.operation() != EmbeddingOperation::EstablishSession {
+            return Box::pin(async { Err(integration_failure("unsupported-session-operation")) });
+        }
+        Box::pin(async move {
+            HostResponse::new(
+                EmbeddingVersion::V1,
+                EmbeddingOperation::EstablishSession,
+                Arc::from(&b"{\"result\":\"established\"}"[..]),
+            )
+            .map_err(|_| integration_failure("invalid-cli-response"))
         })
     }
 }

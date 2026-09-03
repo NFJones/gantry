@@ -1,7 +1,10 @@
 //! Canonical logical-session transcripts and establishment boundaries.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{Context, Poll, Waker};
 
 use gantry_core::canonical_json::CanonicalJson;
 use gantry_core::identity::ProtocolIdentity;
@@ -9,14 +12,15 @@ use gantry_core::portable::IdentityKind;
 use gantry_core::strict_json::{JsonError, JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 use gantry_core::value::ValueLimits;
 use gantry_host::contracts::{
-    EmbeddingVersion, EnvelopeError, HostError, HostRequest, IntegrationPreflight,
+    EmbeddingVersion, EnvelopeError, ExecutorAdapter, HostError, HostRequest, OwnedTaskResult,
+    RuntimeSessionService, SubmittedTask,
 };
 use gantry_host::embedding::EmbeddingOperation;
 use gantry_ir::generated::{OperationSiteKind, TypeKind};
 use gantry_ir::{StructuralPosition, TypeDescriptor};
 
 use crate::{
-    AdapterPoison, BoundaryFailure, InterpolationInputV1, InterpreterLifecycle, NamedInputV1,
+    AdapterPoison, BoundaryFailure, InterpolationInputV1, NamedInputV1, contain_integration_future,
 };
 
 #[cfg(feature = "durable")]
@@ -445,6 +449,8 @@ pub enum SessionError {
 pub enum SessionEstablishmentError {
     /// Session descriptor or envelope construction failed before integration invocation.
     InvalidRequest,
+    /// The executor could not accept the must-settle establishment owner.
+    Executor(HostError),
     /// Integration code returned a structured host failure.
     Host(HostError),
     /// Integration code panicked while invoked, polled, or destroyed.
@@ -453,33 +459,57 @@ pub enum SessionEstablishmentError {
     InvalidResponse,
 }
 
-/// Idempotent execution-scoped `EstablishSession` coordinator.
-pub struct SessionEstablisher<'a> {
-    lifecycle: &'a InterpreterLifecycle,
-    preflight: &'a dyn IntegrationPreflight,
-    poison: AdapterPoison,
-    established: BTreeSet<(ProtocolIdentity, ProtocolIdentity)>,
+/// Owned execution-scoped `EstablishSession` coordinator.
+///
+/// Clones share one in-flight-or-settled entry for each logical session. The
+/// first caller submits an owned task which retains the service and continues
+/// to settlement even when every source-facing waiter is dropped.
+#[derive(Clone)]
+pub struct SessionEstablisher {
+    inner: Arc<SessionEstablisherInner>,
 }
 
-impl<'a> SessionEstablisher<'a> {
-    /// Binds one integration preflight owner without invoking it.
+struct SessionEstablisherInner {
+    executor: Arc<dyn ExecutorAdapter>,
+    service: Arc<dyn RuntimeSessionService>,
+    poison: AdapterPoison,
+    entries: Arc<EstablishmentEntries>,
+    submitted: Mutex<Vec<Box<dyn SubmittedTask>>>,
+}
+
+struct EstablishmentEntries {
+    states: Mutex<BTreeMap<(ProtocolIdentity, ProtocolIdentity), EstablishmentState>>,
+}
+
+enum EstablishmentState {
+    InFlight(Vec<Waker>),
+    Settled(Result<(), SessionEstablishmentError>),
+}
+
+impl SessionEstablisher {
+    /// Binds owned executor and runtime-session services without invoking them.
     #[must_use]
     pub fn new(
-        lifecycle: &'a InterpreterLifecycle,
-        preflight: &'a dyn IntegrationPreflight,
+        executor: Arc<dyn ExecutorAdapter>,
+        service: Arc<dyn RuntimeSessionService>,
         poison: AdapterPoison,
     ) -> Self {
         Self {
-            lifecycle,
-            preflight,
-            poison,
-            established: BTreeSet::new(),
+            inner: Arc::new(SessionEstablisherInner {
+                executor,
+                service,
+                poison,
+                entries: Arc::new(EstablishmentEntries {
+                    states: Mutex::new(BTreeMap::new()),
+                }),
+                submitted: Mutex::new(Vec::new()),
+            }),
         }
     }
 
-    /// Establishes one separately created session at most once per in-process run.
+    /// Establishes one separately created session once per execution and shares its result.
     pub async fn establish(
-        &mut self,
+        &self,
         execution_id: ProtocolIdentity,
         session: &LogicalSessionV1,
     ) -> Result<(), SessionEstablishmentError> {
@@ -492,17 +522,78 @@ impl<'a> SessionEstablisher<'a> {
             return Ok(());
         }
         let key = (execution_id, session.id);
-        if self.established.contains(&key) {
-            return Ok(());
-        }
         let request = establish_request(execution_id, session)?;
-        let future = self
-            .lifecycle
-            .catch_adapter(&self.poison, || self.preflight.call(request))
+        let start = {
+            let mut entries = lock_session_state(&self.inner.entries.states);
+            if let std::collections::btree_map::Entry::Vacant(entry) = entries.entry(key) {
+                entry.insert(EstablishmentState::InFlight(Vec::new()));
+                true
+            } else {
+                false
+            }
+        };
+        if start {
+            self.start(key, request);
+        }
+        std::future::poll_fn(|context| {
+            let mut entries = lock_session_state(&self.inner.entries.states);
+            match entries.get_mut(&key) {
+                Some(EstablishmentState::Settled(result)) => Poll::Ready(result.clone()),
+                Some(EstablishmentState::InFlight(waiters)) => {
+                    register_session_waker(waiters, context.waker());
+                    Poll::Pending
+                }
+                None => Poll::Ready(Err(SessionEstablishmentError::InvalidRequest)),
+            }
+        })
+        .await
+    }
+
+    /// Returns the number of executor handles retained by this execution owner.
+    #[must_use]
+    pub fn submitted_task_count(&self) -> usize {
+        lock_session_state(&self.inner.submitted).len()
+    }
+
+    fn start(&self, key: (ProtocolIdentity, ProtocolIdentity), request: HostRequest) {
+        let mut operation = session_operation(
+            Arc::clone(&self.inner.service),
+            self.inner.poison.clone(),
+            request,
+        );
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        if let Poll::Ready(result) = operation.as_mut().poll(&mut context) {
+            settle_establishment(&self.inner.entries, key, result);
+            return;
+        }
+
+        let entries = Arc::clone(&self.inner.entries);
+        let task = Box::pin(async move {
+            let result = operation.await;
+            settle_establishment(&entries, key, result);
+            OwnedTaskResult::new()
+        });
+        match self.inner.executor.spawn(task) {
+            Ok(handle) => lock_session_state(&self.inner.submitted).push(handle),
+            Err(error) => settle_establishment(
+                &self.inner.entries,
+                key,
+                Err(SessionEstablishmentError::Executor(error)),
+            ),
+        }
+    }
+}
+
+fn session_operation(
+    service: Arc<dyn RuntimeSessionService>,
+    poison: AdapterPoison,
+    request: HostRequest,
+) -> Pin<Box<dyn Future<Output = Result<(), SessionEstablishmentError>> + Send + 'static>> {
+    Box::pin(async move {
+        let future = crate::catch_integration(&poison, || service.establish(request))
             .map_err(SessionEstablishmentError::Boundary)?;
-        let response = self
-            .lifecycle
-            .contain_adapter_future(future, self.poison.clone())
+        let response = contain_integration_future(future, poison)
             .await
             .map_err(SessionEstablishmentError::Boundary)?
             .map_err(SessionEstablishmentError::Host)?;
@@ -512,9 +603,39 @@ impl<'a> SessionEstablisher<'a> {
         {
             return Err(SessionEstablishmentError::InvalidResponse);
         }
-        self.established.insert(key);
         Ok(())
+    })
+}
+
+fn settle_establishment(
+    entries: &EstablishmentEntries,
+    key: (ProtocolIdentity, ProtocolIdentity),
+    result: Result<(), SessionEstablishmentError>,
+) {
+    let waiters = {
+        let mut entries = lock_session_state(&entries.states);
+        let waiters = match entries.remove(&key) {
+            Some(EstablishmentState::InFlight(waiters)) => waiters,
+            Some(EstablishmentState::Settled(_)) | None => return,
+        };
+        entries.insert(key, EstablishmentState::Settled(result));
+        waiters
+    };
+    for waiter in waiters {
+        waiter.wake();
     }
+}
+
+fn register_session_waker(waiters: &mut Vec<Waker>, waker: &Waker) {
+    if !waiters.iter().any(|candidate| candidate.will_wake(waker)) {
+        waiters.push(waker.clone());
+    }
+}
+
+fn lock_session_state<T>(state: &Mutex<T>) -> MutexGuard<'_, T> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn decode_transcript(

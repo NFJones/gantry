@@ -390,6 +390,7 @@ fn run_command(
         configuration,
         Arc::new(services::SystemUtcClock),
         integration.clone(),
+        integration.clone(),
         integration,
     );
     let selection = published_selection();

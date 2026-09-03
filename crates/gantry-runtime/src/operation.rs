@@ -58,6 +58,8 @@ pub enum TaskHookError {
 pub enum TaskHookSessionError {
     /// Required logical-session establishment failed before hook construction.
     Session(SessionEstablishmentError),
+    /// Task cancellation became effective before model-hook dispatch.
+    Cancelled,
     /// Hook construction or dispatch failed after session setup succeeded.
     Hook(TaskHookError),
 }
@@ -111,6 +113,8 @@ impl OperationLifecycleState {
 pub enum OperationLifecycleError {
     /// Immutable request validation or physical identity allocation failed.
     Request(HookRequestError),
+    /// Task cancellation became effective before model-hook dispatch.
+    Cancelled,
     /// Hook creation, invocation, response, or integration containment failed.
     Hook(TaskHookError),
     /// Required logical-session establishment failed before model dispatch.
@@ -401,7 +405,7 @@ impl OperationLifecycle {
         &mut self,
         hook: &mut TaskHook<'_>,
         cancellation: &dyn CancellationToken,
-        establisher: &mut SessionEstablisher<'_>,
+        establisher: &SessionEstablisher,
         execution_id: ProtocolIdentity,
         session: &LogicalSessionV1,
     ) -> Result<&HookOutcomeV1, OperationLifecycleError> {
@@ -446,6 +450,7 @@ impl OperationLifecycle {
                 };
                 Err(OperationLifecycleError::Hook(error))
             }
+            Err(TaskHookSessionError::Cancelled) => Err(OperationLifecycleError::Cancelled),
             Err(TaskHookSessionError::Session(error)) => {
                 self.state = OperationRuntimeState::Failed {
                     dispatch_id: Some(dispatch_id),
@@ -839,16 +844,22 @@ impl<'a> TaskHook<'a> {
         &mut self,
         request: HostRequest,
         cancellation: &dyn CancellationToken,
-        establisher: &mut SessionEstablisher<'_>,
+        establisher: &SessionEstablisher,
         execution_id: ProtocolIdentity,
         session: &LogicalSessionV1,
     ) -> Result<HookOutcomeV1, TaskHookSessionError> {
         require_request(&request, EmbeddingOperation::DispatchOperation)
             .map_err(TaskHookSessionError::Hook)?;
+        if cancellation.is_cancelled() {
+            return Err(TaskHookSessionError::Cancelled);
+        }
         establisher
             .establish(execution_id, session)
             .await
             .map_err(TaskHookSessionError::Session)?;
+        if cancellation.is_cancelled() {
+            return Err(TaskHookSessionError::Cancelled);
+        }
         self.dispatch(request, cancellation)
             .await
             .map_err(TaskHookSessionError::Hook)

@@ -1411,7 +1411,7 @@ impl ConcurrentSchedulerV1 {
     pub async fn establish_child_session(
         &self,
         sessions: &LogicalSessionRegistryV1,
-        establisher: &mut SessionEstablisher<'_>,
+        establisher: &SessionEstablisher,
         task_id: ProtocolIdentity,
     ) -> Result<(), SessionEstablishmentError> {
         let session_id = self

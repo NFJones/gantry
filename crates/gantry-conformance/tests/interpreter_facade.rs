@@ -61,7 +61,13 @@ fn public_interpreter_drives_and_observes_one_sequential_execution() {
     let clock = Arc::new(DeterministicUtcClock::new([timestamp(1), timestamp(2)]));
     let integration = Arc::new(ScriptedIntegration::new([], []));
     let configuration = configuration(executor, identities);
-    let interpreter = Interpreter::new(configuration, clock, integration.clone(), integration);
+    let interpreter = Interpreter::new(
+        configuration,
+        clock,
+        integration.clone(),
+        integration.clone(),
+        integration,
+    );
     let selection = selection();
 
     let started = block_on(interpreter.start_execution(StartExecutionRequest {
@@ -146,6 +152,7 @@ fn public_interpreter_drives_scripted_action_success_and_decline() {
         Arc::new(DeterministicUtcClock::new([timestamp(1), timestamp(2)])),
         successful_integration.clone(),
         successful_integration.clone(),
+        successful_integration.clone(),
     );
     let selection = selection();
     let StartExecutionResult::Accepted(accepted) =
@@ -200,6 +207,7 @@ fn public_interpreter_drives_scripted_action_success_and_decline() {
             )),
         ),
         Arc::new(DeterministicUtcClock::new([timestamp(3), timestamp(4)])),
+        declined_integration.clone(),
         declined_integration.clone(),
         declined_integration,
     );
@@ -256,6 +264,7 @@ fn public_interpreter_captures_and_completes_one_model_prompt() {
             )),
         ),
         Arc::new(DeterministicUtcClock::new([timestamp(5), timestamp(6)])),
+        integration.clone(),
         integration.clone(),
         integration.clone(),
     );
@@ -329,6 +338,7 @@ fn public_interpreter_reuses_one_lexical_fork_session() {
             )),
         ),
         Arc::new(DeterministicUtcClock::new([timestamp(11), timestamp(12)])),
+        integration.clone(),
         integration.clone(),
         integration.clone(),
     );
@@ -408,6 +418,7 @@ fn public_interpreter_normalizes_declared_result_output() {
         ),
         Arc::new(DeterministicUtcClock::new([timestamp(13), timestamp(14)])),
         integration.clone(),
+        integration.clone(),
         integration,
     );
     let selection = selection();
@@ -463,6 +474,7 @@ fn public_interpreter_decodes_one_sealed_decision() {
         ),
         Arc::new(DeterministicUtcClock::new([timestamp(7), timestamp(8)])),
         integration.clone(),
+        integration.clone(),
         integration,
     );
     let selection = selection();
@@ -516,6 +528,7 @@ fn public_interpreter_settles_retry_delay_executor_failure() {
             )),
         ),
         Arc::new(DeterministicUtcClock::new([timestamp(9), timestamp(10)])),
+        integration.clone(),
         integration.clone(),
         integration,
     );

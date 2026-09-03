@@ -1,0 +1,29 @@
+{
+  "format": "gantry.runtime-session-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-SESS-001",
+  "capabilities": [
+    {
+      "id": "cancellation-recheck",
+      "evidence": "crates/gantry-conformance/tests/logical_sessions.rs#public_session_cancellation_after_establishment_prevents_hook_creation"
+    },
+    {
+      "id": "concurrent-result-sharing",
+      "evidence": "crates/gantry-conformance/tests/runtime_sessions.rs#concurrent_runtime_session_waiters_share_one_must_settle_success"
+    },
+    {
+      "id": "failure-fan-out",
+      "evidence": "crates/gantry-conformance/tests/runtime_sessions.rs#runtime_session_failure_is_fixed_and_fanned_out_once"
+    },
+    {
+      "id": "owned-role-and-driver",
+      "evidence": "crates/gantry-conformance/tests/runtime_sessions.rs#runtime_session_role_and_driver_future_are_send_owned"
+    }
+  ],
+  "exclusions": [
+    "Pre-acceptance ResolveMappings and ResolveSessions ownership remains on IntegrationPreflight and GNT-ASYNC-ACT-001.",
+    "Source spawn sequencing and child-session failure publication remain owned by GNT-ASYNC-SPAWN-001.",
+    "Recovered execution reconstruction and reusable-session preflight remain owned by GNT-ASYNC-REC-001.",
+    "Submitted session-operation handles are retained here; common physical reaping and shutdown registry integration remain owned by GNT-ASYNC-SUP-001."
+  ]
+}

@@ -11,7 +11,7 @@ use std::task::{Context, Poll, Waker};
 use gantry::canonical_json::CanonicalJson;
 use gantry::host::contracts::{
     DurationMicros, EmbeddingVersion, ExecutorAdapter, HostError, HostFuture, HostRequest,
-    HostResponse, IdentitySource, InclusiveJitterRange, IntegrationPreflight,
+    HostResponse, IdentitySource, InclusiveJitterRange, RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::identity::ProtocolIdentity;
@@ -26,12 +26,12 @@ use gantry::portable::{
 use gantry::runtime::{
     AdapterPoison, CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1,
     ConcurrentTaskStatusV1, ConcurrentTerminalCategoryV1, ConcurrentTerminalOutcomeV1,
-    DetachedTaskFailureV1, InterpreterConfiguration, InterpreterLifecycle,
-    LogicalSessionRegistryV1, MachineOutcome, OperationEventDraftError, RequiredConfiguration,
-    SessionCreationModeV1, SessionEstablisher, TaskAbortResultV1, TaskCreationRequestV1,
-    TaskFailureV1, TaskStateError, concurrent_detach_event, concurrent_detached_failure_event,
-    concurrent_join_event, concurrent_spawn_event, concurrent_task_cancellation_event,
-    concurrent_terminal_event, machine_lifecycle_event,
+    DetachedTaskFailureV1, InterpreterConfiguration, LogicalSessionRegistryV1, MachineOutcome,
+    OperationEventDraftError, RequiredConfiguration, SessionCreationModeV1, SessionEstablisher,
+    TaskAbortResultV1, TaskCreationRequestV1, TaskFailureV1, TaskStateError,
+    concurrent_detach_event, concurrent_detached_failure_event, concurrent_join_event,
+    concurrent_spawn_event, concurrent_task_cancellation_event, concurrent_terminal_event,
+    machine_lifecycle_event,
 };
 use gantry::source::FrontendLimits;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -212,15 +212,19 @@ fn public_spawned_sessions_establish_once_before_child_use() {
     assert_eq!(child_session.transcript, CanonicalTranscriptV1::empty());
 
     let services = Arc::new(Services);
-    let lifecycle = InterpreterLifecycle::new(&configuration(services));
-    let preflight = RecordingPreflight::default();
-    let mut establisher = SessionEstablisher::new(&lifecycle, &preflight, AdapterPoison::default());
-    block_on(scheduler.establish_child_session(&sessions, &mut establisher, child.task_id))
+    let configuration = configuration(Arc::clone(&services));
+    let session_service = Arc::new(RecordingSessionService::default());
+    let establisher = SessionEstablisher::new(
+        configuration.executor_arc(),
+        session_service.clone(),
+        AdapterPoison::default(),
+    );
+    block_on(scheduler.establish_child_session(&sessions, &establisher, child.task_id))
         .unwrap_or_else(|error| panic!("child session establishment failed: {error:?}"));
-    block_on(scheduler.establish_child_session(&sessions, &mut establisher, child.task_id))
+    block_on(scheduler.establish_child_session(&sessions, &establisher, child.task_id))
         .unwrap_or_else(|error| panic!("idempotent establishment failed: {error:?}"));
-    assert_eq!(preflight.calls.load(Ordering::Acquire), 1);
-    let request = preflight
+    assert_eq!(session_service.calls.load(Ordering::Acquire), 1);
+    let request = session_service
         .requests
         .lock()
         .map(|requests| requests.first().cloned())
@@ -518,13 +522,16 @@ fn public_concurrent_events_are_canonical_typed_and_causal() {
 }
 
 #[derive(Default)]
-struct RecordingPreflight {
+struct RecordingSessionService {
     calls: AtomicUsize,
     requests: Mutex<Vec<Vec<u8>>>,
 }
 
-impl IntegrationPreflight for RecordingPreflight {
-    fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>> {
+impl RuntimeSessionService for RecordingSessionService {
+    fn establish<'a>(
+        &'a self,
+        request: HostRequest,
+    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
         assert_eq!(request.operation(), EmbeddingOperation::EstablishSession);
         self.calls.fetch_add(1, Ordering::AcqRel);
         if let Ok(mut requests) = self.requests.lock() {

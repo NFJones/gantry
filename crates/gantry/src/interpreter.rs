@@ -14,7 +14,8 @@ use gantry_core::portable::{
 use gantry_core::strict_json::{JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 use gantry_core::value::{LogicalValue, OperationErrorValue, ValueLimits};
 use gantry_host::contracts::{
-    CancellationToken, FreshIdentityAllocator, HookFactory, IntegrationPreflight, UtcClock,
+    CancellationToken, FreshIdentityAllocator, HookFactory, IntegrationPreflight,
+    RuntimeSessionService, UtcClock,
 };
 use gantry_ir::TypeDescriptor;
 use gantry_ir::generated::{OperationSiteKind, TypeKind};
@@ -44,6 +45,7 @@ pub struct Interpreter {
     allocator: FreshIdentityAllocator,
     clock: Arc<dyn UtcClock>,
     preflight: Arc<dyn IntegrationPreflight>,
+    session_establisher: SessionEstablisher,
     hook_factory: Arc<dyn HookFactory>,
 }
 
@@ -64,15 +66,22 @@ impl Interpreter {
         configuration: InterpreterConfiguration,
         clock: Arc<dyn UtcClock>,
         preflight: Arc<dyn IntegrationPreflight>,
+        runtime_sessions: Arc<dyn RuntimeSessionService>,
         hook_factory: Arc<dyn HookFactory>,
     ) -> Self {
         let lifecycle = InterpreterLifecycle::new(&configuration);
+        let session_establisher = SessionEstablisher::new(
+            configuration.executor_arc(),
+            runtime_sessions,
+            AdapterPoison::default(),
+        );
         Self {
             configuration,
             lifecycle,
             allocator: FreshIdentityAllocator::default(),
             clock,
             preflight,
+            session_establisher,
             hook_factory,
         }
     }
@@ -189,11 +198,7 @@ impl Interpreter {
             accepted.root_session.transcript.clone(),
         )
         .map_err(RunExecutionError::Session)?;
-        let mut session_establisher = SessionEstablisher::new(
-            &self.lifecycle,
-            self.preflight.as_ref(),
-            AdapterPoison::default(),
-        );
+        let session_establisher = self.session_establisher.clone();
         let mut model_session_occurrence = 0_u64;
         let mut foreground_fixed = false;
         let mut terminal_fixed = false;
@@ -252,6 +257,9 @@ impl Interpreter {
                             .map_err(|_| RunExecutionError::LifecycleTransition)?;
                         continue;
                     }
+                    if cancellation.is_cancelled() {
+                        continue;
+                    }
                     let child = sessions
                         .create(
                             scope.parent_session_id,
@@ -274,6 +282,9 @@ impl Interpreter {
                                 RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
                             )
                             .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                        continue;
+                    }
+                    if cancellation.is_cancelled() {
                         continue;
                     }
                     machine
@@ -326,7 +337,7 @@ impl Interpreter {
                                 &cancellation,
                                 &operation,
                                 &mut sessions,
-                                &mut session_establisher,
+                                &session_establisher,
                                 model_session_occurrence,
                             )
                             .await?;
@@ -565,7 +576,7 @@ impl Interpreter {
         cancellation: &dyn CancellationToken,
         occurrence: &gantry_runtime::OperationOccurrence,
         sessions: &mut LogicalSessionRegistryV1,
-        establisher: &mut SessionEstablisher<'_>,
+        establisher: &SessionEstablisher,
         session_occurrence: u64,
     ) -> Result<(), RunExecutionError> {
         let metadata = occurrence
@@ -740,6 +751,7 @@ impl Interpreter {
                 .await
             {
                 let category = match error {
+                    OperationLifecycleError::Cancelled => return Ok(()),
                     OperationLifecycleError::Session(_) => {
                         RuntimeErrorCategory::LogicalSessionSetup
                     }

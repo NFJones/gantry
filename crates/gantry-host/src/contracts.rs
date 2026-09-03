@@ -457,6 +457,18 @@ pub trait IntegrationPreflight: Send + Sync {
     fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>>;
 }
 
+/// Post-acceptance logical-session establishment boundary.
+///
+/// The service is independently owned from preflight, is safe to share across
+/// task drivers, and returns a `Send` future for the lifetime of its borrow.
+pub trait RuntimeSessionService: Send + Sync {
+    /// Establishes or resolves one versioned logical-session descriptor.
+    fn establish<'a>(
+        &'a self,
+        request: HostRequest,
+    ) -> HostFuture<'a, Result<HostResponse, HostError>>;
+}
+
 /// Opaque stable agent-mapping revision returned by integration preflight.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentMappingRevision(Arc<str>);
@@ -683,7 +695,8 @@ mod tests {
     use super::{
         CancellationToken, EmbeddingVersion, EnvelopeError, EventSink, ExecutorAdapter,
         HookFactory, HostRequest, IdentitySource, IntegrationPreflight, JitterSource,
-        JournalStorage, OperationHook, OwnedTaskFuture, OwnedTaskResult, SubmittedTask, UtcClock,
+        JournalStorage, OperationHook, OwnedTaskFuture, OwnedTaskResult, RuntimeSessionService,
+        SubmittedTask, UtcClock,
     };
     use crate::embedding::EmbeddingOperation;
 
@@ -728,6 +741,7 @@ mod tests {
         assert_send::<dyn OperationHook>();
 
         assert_send_sync::<dyn IntegrationPreflight>();
+        assert_send_sync::<dyn RuntimeSessionService>();
 
         fn accepts_owned_task(_: OwnedTaskFuture) {}
         accepts_owned_task(Box::pin(async { OwnedTaskResult::new() }));

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use gantry::host::contracts::{
     CancellationToken, EmbeddingVersion, HookFactory, HookOutcomeV1, HostError, HostFuture,
-    HostRequest, HostResponse, IntegrationPreflight, OperationHook,
+    HostRequest, HostResponse, IntegrationPreflight, OperationHook, RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
 
@@ -80,6 +80,7 @@ impl ScriptedHook {
 #[derive(Debug, Default)]
 pub struct ScriptedIntegration {
     preflight: Mutex<VecDeque<ScriptedPreflight>>,
+    sessions: Mutex<VecDeque<ScriptedPreflight>>,
     hooks: Mutex<VecDeque<ScriptedHook>>,
     calls: Arc<Mutex<Vec<ScriptedCall>>>,
 }
@@ -91,8 +92,12 @@ impl ScriptedIntegration {
         preflight: impl IntoIterator<Item = ScriptedPreflight>,
         hooks: impl IntoIterator<Item = ScriptedHook>,
     ) -> Self {
+        let (sessions, preflight) = preflight
+            .into_iter()
+            .partition(|step| step.operation == EmbeddingOperation::EstablishSession);
         Self {
-            preflight: Mutex::new(preflight.into_iter().collect()),
+            preflight: Mutex::new(preflight),
+            sessions: Mutex::new(sessions),
             hooks: Mutex::new(hooks.into_iter().collect()),
             calls: Arc::default(),
         }
@@ -133,6 +138,35 @@ impl IntegrationPreflight for ScriptedIntegration {
         Box::pin(async move {
             let step = step?;
             if step.operation != request.operation() {
+                return Err(scripted_error("scripted-operation-mismatch"));
+            }
+            let bytes = step.result?;
+            HostResponse::new(EmbeddingVersion::V1, request.operation(), bytes)
+                .map_err(|_| scripted_error("scripted-response-envelope"))
+        })
+    }
+}
+
+impl RuntimeSessionService for ScriptedIntegration {
+    fn establish<'a>(
+        &'a self,
+        request: HostRequest,
+    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        self.record(&request, None);
+        let step = self
+            .sessions
+            .lock()
+            .map_err(|_| scripted_error("scripted-session-state"))
+            .and_then(|mut steps| {
+                steps
+                    .pop_front()
+                    .ok_or_else(|| scripted_error("scripted-session-exhausted"))
+            });
+        Box::pin(async move {
+            let step = step?;
+            if request.operation() != EmbeddingOperation::EstablishSession
+                || step.operation != request.operation()
+            {
                 return Err(scripted_error("scripted-operation-mismatch"));
             }
             let bytes = step.result?;
