@@ -389,6 +389,23 @@ fn embedding_catalog_matches_its_golden_schema_and_public_binding() {
         assert_eq!(canonical["async_kind"], public.async_kind.wire_name());
     }
 
+    let completion = operations
+        .iter()
+        .find(|operation| operation["wire"] == "observe-task-completion")
+        .unwrap_or_else(|| panic!("missing physical task completion operation"));
+    assert_eq!(completion["rust"], "ObserveTaskCompletion");
+    assert_eq!(completion["acceptance"], "physical-completion");
+    assert_eq!(completion["idempotency"], "immutable-observation");
+    assert_eq!(
+        completion["result_variants"],
+        serde_json::json!(["completed", "failed", "panicked", "stopped"])
+    );
+    assert_eq!(
+        EmbeddingOperation::from_wire_name("observe-task-completion"),
+        Some(EmbeddingOperation::ObserveTaskCompletion)
+    );
+    assert_eq!(EmbeddingOperation::from_wire_name("join-task"), None);
+
     assert_eq!(
         catalog["failure_matrix"].as_array().map(Vec::len),
         Some(FAILURE_BOUNDARIES.len())

@@ -48,8 +48,8 @@ pub enum EmbeddingOperation {
     EstablishSession,
     /// The `fresh-identity` value.
     FreshIdentity,
-    /// The `join-task` value.
-    JoinTask,
+    /// The `observe-task-completion` value.
+    ObserveTaskCompletion,
     /// The `query-execution` value.
     QueryExecution,
     /// The `read-journal-prefix` value.
@@ -102,7 +102,7 @@ impl EmbeddingOperation {
             Self::DispatchOperation => "dispatch-operation",
             Self::EstablishSession => "establish-session",
             Self::FreshIdentity => "fresh-identity",
-            Self::JoinTask => "join-task",
+            Self::ObserveTaskCompletion => "observe-task-completion",
             Self::QueryExecution => "query-execution",
             Self::ReadJournalPrefix => "read-journal-prefix",
             Self::ReleaseJournalOwner => "release-journal-owner",
@@ -139,7 +139,7 @@ impl EmbeddingOperation {
             "dispatch-operation" => Some(Self::DispatchOperation),
             "establish-session" => Some(Self::EstablishSession),
             "fresh-identity" => Some(Self::FreshIdentity),
-            "join-task" => Some(Self::JoinTask),
+            "observe-task-completion" => Some(Self::ObserveTaskCompletion),
             "query-execution" => Some(Self::QueryExecution),
             "read-journal-prefix" => Some(Self::ReadJournalPrefix),
             "release-journal-owner" => Some(Self::ReleaseJournalOwner),
@@ -617,7 +617,7 @@ pub const EMBEDDING_OPERATIONS: &[EmbeddingOperationDefinition] = &[
     EmbeddingOperationDefinition { operation: EmbeddingOperation::DispatchOperation, service: HostService::Hook, role: IntegrationRole::OperationHook, applicable_profiles: &["embedding", "evaluator"], request_fields: &["cancellation", "operation_request"], optional_request_fields: &[], result_variants: &["completed", "declined", "failed"], error_categories: &["cancelled", "policy-denied", "provider-failure", "timeout", "unknown-outcome"], acceptance: "host-outcome-returned", idempotency: "request-recovery-class", cancellation: "gantry-token", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::EstablishSession, service: HostService::Session, role: IntegrationRole::RuntimeSessionService, applicable_profiles: &["embedding", "evaluator"], request_fields: &["session_descriptor"], optional_request_fields: &[], result_variants: &["established", "failed"], error_categories: &["logical-session-setup"], acceptance: "session-context-established", idempotency: "execution-and-session-key", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::FreshIdentity, service: HostService::Identity, role: IntegrationRole::IdentitySource, applicable_profiles: &["embedding"], request_fields: &["identity_kind"], optional_request_fields: &[], result_variants: &["failed", "material"], error_categories: &["identity-generation-failure"], acceptance: "material-returned", idempotency: "fresh-each-call", cancellation: "synchronous", async_kind: OperationAsyncKind::Synchronous },
-    EmbeddingOperationDefinition { operation: EmbeddingOperation::JoinTask, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["task_handle"], optional_request_fields: &[], result_variants: &["failed", "settled"], error_categories: &["executor-failure"], acceptance: "executor-settlement", idempotency: "read-settlement", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
+    EmbeddingOperationDefinition { operation: EmbeddingOperation::ObserveTaskCompletion, service: HostService::Executor, role: IntegrationRole::ExecutorAdapter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["task_handle"], optional_request_fields: &[], result_variants: &["completed", "failed", "panicked", "stopped"], error_categories: &["executor-failure"], acceptance: "physical-completion", idempotency: "immutable-observation", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::QueryExecution, service: HostService::Lifecycle, role: IntegrationRole::Interpreter, applicable_profiles: &["embedding", "evaluator"], request_fields: &["query_target"], optional_request_fields: &["expected_execution_id"], result_variants: &["not-found", "snapshot"], error_categories: &["journal-failure", "lifecycle"], acceptance: "point-in-time-snapshot", idempotency: "read-only", cancellation: "caller-stops-waiting", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::ReadJournalPrefix, service: HostService::Journal, role: IntegrationRole::JournalStorage, applicable_profiles: &["durable-runtime", "embedding"], request_fields: &["journal_id"], optional_request_fields: &[], result_variants: &["failed", "full-prefix", "snapshot-prefix"], error_categories: &["journal-failure"], acceptance: "authoritative-prefix-read", idempotency: "read-only", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },
     EmbeddingOperationDefinition { operation: EmbeddingOperation::ReleaseJournalOwner, service: HostService::Journal, role: IntegrationRole::JournalStorage, applicable_profiles: &["durable-runtime", "embedding"], request_fields: &["journal_id", "ownership_token"], optional_request_fields: &[], result_variants: &["failed", "released"], error_categories: &["journal-failure"], acceptance: "owner-token-invalidated", idempotency: "token-scoped", cancellation: "must-settle", async_kind: OperationAsyncKind::BorrowedFuture },

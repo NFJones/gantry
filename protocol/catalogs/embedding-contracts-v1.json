@@ -501,8 +501,8 @@
       ]
     },
     {
-      "wire": "join-task",
-      "rust": "JoinTask",
+      "wire": "observe-task-completion",
+      "rust": "ObserveTaskCompletion",
       "service": "executor",
       "role": "executor-adapter",
       "applicable_profiles": [
@@ -514,14 +514,16 @@
       ],
       "optional_request_fields": [],
       "result_variants": [
+        "completed",
         "failed",
-        "settled"
+        "panicked",
+        "stopped"
       ],
       "error_categories": [
         "executor-failure"
       ],
-      "acceptance": "executor-settlement",
-      "idempotency": "read-settlement",
+      "acceptance": "physical-completion",
+      "idempotency": "immutable-observation",
       "cancellation": "must-settle",
       "async_kind": "borrowed-future",
       "requirements": [
