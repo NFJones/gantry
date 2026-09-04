@@ -975,6 +975,17 @@ fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
         Ok(DeterministicTaskPoll::Pending),
         "root should be running with its operation-prepared commit in flight"
     );
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("pending-commit prefix failed: {error:?}"));
+    let (_, authoritative) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("pending-commit recovery failed: {error:?}"));
+    assert_eq!(
+        accepted.test_coordinator_budget(),
+        authoritative.machine().budget_checkpoint(),
+        "pending operation preparation published an uncommitted budget"
+    );
     let mut cancellation =
         Box::pin(interpreter.cancel_execution(execution_id, expected_reason.clone()));
     assert!(
