@@ -506,6 +506,12 @@ impl<'a> StartExecutionCoordinator<'a> {
         }
         Ok(response)
     }
+
+    pub(crate) fn fresh_activity_id(&self) -> Result<ProtocolIdentity, StartExecutionFailure> {
+        self.allocator
+            .allocate(self.configuration.identity_source(), IdentityKind::Activity)
+            .map_err(|error| identity_failure(error, "resume-activity-identity-source-failure"))
+    }
 }
 
 pub(crate) fn decode_mapping_revisions(

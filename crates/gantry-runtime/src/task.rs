@@ -712,6 +712,41 @@ impl ConcurrentTaskStateV1 {
         )
     }
 
+    /// Reconstructs the sequential root coordinates represented by one durable cut.
+    #[cfg(feature = "durable")]
+    pub fn from_sequential_recovery(
+        execution_id: ProtocolIdentity,
+        root_task_id: ProtocolIdentity,
+        maximum_tasks: u64,
+        cut: crate::DurableCommitCutV1,
+        outcome: Option<MachineOutcome>,
+    ) -> Result<Self, TaskStateError> {
+        let mut state = Self::with_submitting_root(execution_id, root_task_id, maximum_tasks)?;
+        state.resolve_root_submission()?;
+        if matches!(
+            cut,
+            crate::DurableCommitCutV1::TaskSettlement
+                | crate::DurableCommitCutV1::ForegroundCompletion
+                | crate::DurableCommitCutV1::TerminalCompletion
+        ) {
+            state.settle(
+                root_task_id,
+                outcome.clone().ok_or(TaskStateError::InvalidTransition)?,
+            )?;
+        }
+        if matches!(
+            cut,
+            crate::DurableCommitCutV1::ForegroundCompletion
+                | crate::DurableCommitCutV1::TerminalCompletion
+        ) {
+            state.complete_foreground(outcome.ok_or(TaskStateError::InvalidTransition)?)?;
+        }
+        if cut == crate::DurableCommitCutV1::TerminalCompletion {
+            state.complete_terminal()?;
+        }
+        Ok(state)
+    }
+
     /// Creates accepted root state before executor submission is resolved.
     pub fn with_submitting_root(
         execution_id: ProtocolIdentity,

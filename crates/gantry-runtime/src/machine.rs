@@ -620,6 +620,18 @@ impl Machine {
         self.execution
     }
 
+    /// Returns the active dynamic agent restored for the next operation.
+    #[must_use]
+    pub fn active_agent(&self) -> Option<&str> {
+        self.agent.as_deref()
+    }
+
+    /// Returns the active logical session restored for the next operation.
+    #[must_use]
+    pub const fn active_session(&self) -> Option<ProtocolIdentity> {
+        self.session
+    }
+
     /// Returns whether this machine owns execution foreground/terminal labels.
     #[cfg(feature = "concurrent")]
     #[must_use]

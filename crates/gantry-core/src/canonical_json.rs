@@ -18,7 +18,16 @@ pub struct CanonicalJson {
 impl CanonicalJson {
     /// Canonicalizes one admitted strict JSON tree without recursive host calls.
     pub fn from_document(document: &StrictJsonDocument) -> Result<Self, CanonicalJsonError> {
-        let bytes = encode_document(document)?;
+        let bytes = encode_node(document, document.root())?;
+        Ok(Self::from_encoded_bytes(bytes))
+    }
+
+    /// Canonicalizes one admitted strict JSON subtree without recursive host calls.
+    pub fn from_node(
+        document: &StrictJsonDocument,
+        root: JsonNodeId,
+    ) -> Result<Self, CanonicalJsonError> {
+        let bytes = encode_node(document, root)?;
         Ok(Self::from_encoded_bytes(bytes))
     }
 
@@ -62,9 +71,12 @@ enum EncodeTask {
     String(Arc<str>),
 }
 
-fn encode_document(document: &StrictJsonDocument) -> Result<Vec<u8>, CanonicalJsonError> {
+fn encode_node(
+    document: &StrictJsonDocument,
+    root: JsonNodeId,
+) -> Result<Vec<u8>, CanonicalJsonError> {
     let mut output = Vec::new();
-    let mut work = vec![EncodeTask::Node(document.root())];
+    let mut work = vec![EncodeTask::Node(root)];
     while let Some(task) = work.pop() {
         match task {
             EncodeTask::Byte(byte) => output.push(byte),

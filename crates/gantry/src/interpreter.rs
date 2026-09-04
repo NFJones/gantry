@@ -3,24 +3,28 @@
 //! The facade owns orchestration only. Source analysis, machine transitions,
 //! cancellation, waits, and shutdown remain in their existing subsystem owners.
 
+use std::collections::BTreeMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
 
 use gantry_analysis::{DeclaredValueShape, DeclaredValueShapes};
+use gantry_core::canonical_json::CanonicalJson;
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::portable::{
-    CancellationReasonCategory, DeterministicEvaluationCode, IdentityKind, RuntimeErrorCategory,
-    StartFailureCategory,
+    CancellationReasonCategory, DeterministicEvaluationCode, IdentityKind,
+    ResumeStartFailureCategory, RuntimeErrorCategory, StartFailureCategory,
 };
 use gantry_core::strict_json::{JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 use gantry_core::value::{LogicalValue, OperationErrorValue, ValueLimits};
 use gantry_host::contracts::{
-    CancellationToken, FreshIdentityAllocator, HookFactory, IntegrationPreflight,
-    OwnedTaskCompletion, OwnedTaskFuture, OwnedTaskResult, RuntimeSessionService, UtcClock,
+    CancellationSignal, CancellationToken, FreshIdentityAllocator, HookFactory,
+    IntegrationPreflight, OwnedTaskCompletion, OwnedTaskFuture, OwnedTaskResult,
+    RuntimeSessionService, UtcClock,
 };
 use gantry_ir::TypeDescriptor;
 use gantry_ir::generated::{OperationSiteKind, TypeKind};
@@ -47,8 +51,8 @@ use gantry_observe::EventCompleter;
 #[cfg(feature = "durable")]
 use gantry_runtime::{
     DurableCommitCutV1, DurableOperationEvidenceV1, ExecutionEventDraftV1,
-    OperationResultEventKindV1, machine_lifecycle_event, operation_completion_event,
-    operation_dispatch_event, operation_result_event,
+    OperationResultEventKindV1, SupervisedTask, machine_lifecycle_event,
+    operation_completion_event, operation_dispatch_event, operation_result_event,
 };
 
 use crate::start::PreparedExecutionStart;
@@ -58,7 +62,10 @@ use crate::{
 };
 
 #[cfg(feature = "durable")]
+use crate::durable_start::PreparedDurableResume;
+#[cfg(feature = "durable")]
 use crate::{
+    DurableResumeExecutionFailure, DurableResumeExecutionRequest, DurableResumeExecutionResult,
     DurableRunFailure, DurableStartExecutionCoordinator, DurableStartExecutionFailure,
     DurableStartExecutionRequest, DurableStartExecutionResult,
 };
@@ -80,6 +87,116 @@ struct InterpreterInner {
     preflight: Arc<dyn IntegrationPreflight>,
     session_establisher: SessionEstablisher,
     hook_factory: Arc<dyn HookFactory>,
+}
+
+#[cfg(feature = "durable")]
+struct OwnedDurableResumeRequest {
+    journal_id: gantry_host::journal::JournalId,
+    protocol_selection: gantry_core::protocol::ProtocolSelection,
+    candidate_package_root: Option<PathBuf>,
+    expected_execution_id: Option<ProtocolIdentity>,
+    event_delivery: Option<gantry_observe::SinkPlan>,
+}
+
+#[cfg(feature = "durable")]
+impl OwnedDurableResumeRequest {
+    fn borrowed(&self) -> DurableResumeExecutionRequest<'_> {
+        DurableResumeExecutionRequest {
+            journal_id: self.journal_id.clone(),
+            protocol_selection: &self.protocol_selection,
+            candidate_package_root: self.candidate_package_root.as_deref(),
+            expected_execution_id: self.expected_execution_id,
+            event_delivery: self.event_delivery.as_ref(),
+        }
+    }
+}
+
+#[cfg(feature = "durable")]
+struct RecoveredRootDriver {
+    coordinator: ExecutionCoordinator,
+    task_id: ProtocolIdentity,
+    create_request: gantry_host::contracts::HostRequest,
+    operations: DurableOperationContext,
+}
+
+#[cfg(feature = "durable")]
+struct DurableOperationContext {
+    execution_id: ProtocolIdentity,
+    activity_id: ProtocolIdentity,
+    mapping_revisions: crate::MappingRevisions,
+    declared_value_shapes: Option<DeclaredValueShapes>,
+    schemas: BTreeMap<TypeDescriptor, Arc<[u8]>>,
+}
+
+#[cfg(feature = "durable")]
+impl DurableOperationContext {
+    fn from_start(accepted: &StartExecutionAccepted) -> Self {
+        let analysis = accepted
+            .package_activity
+            .analysis
+            .as_ref()
+            .unwrap_or_else(|| unreachable!("accepted durable start retains analysis"));
+        let schemas = analysis
+            .schemas()
+            .map(|schemas| schemas.entries().iter().cloned().collect())
+            .unwrap_or_default();
+        Self {
+            execution_id: accepted.execution_id,
+            activity_id: accepted.package_activity.activity_id,
+            mapping_revisions: accepted.mapping_revisions.clone(),
+            declared_value_shapes: analysis.declared_value_shapes().cloned(),
+            schemas,
+        }
+    }
+
+    fn schema(&self, ty: &TypeDescriptor) -> Option<Arc<[u8]>> {
+        self.schemas.get(ty).cloned()
+    }
+}
+
+#[cfg(feature = "durable")]
+#[derive(Default)]
+struct SharedResume {
+    state: Mutex<SharedResumeState>,
+}
+
+#[cfg(feature = "durable")]
+#[derive(Default)]
+struct SharedResumeState {
+    published: Option<DurableResumeExecutionResult>,
+    waiters: Vec<Waker>,
+}
+
+#[cfg(feature = "durable")]
+impl SharedResume {
+    fn publish(&self, result: DurableResumeExecutionResult) {
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            if state.published.is_some() {
+                return;
+            }
+            state.published = Some(result);
+            std::mem::take(&mut state.waiters)
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn poll(&self, context: &mut Context<'_>) -> Poll<DurableResumeExecutionResult> {
+        let mut state = lock_shutdown(&self.state);
+        if let Some(result) = &state.published {
+            return Poll::Ready(result.clone());
+        }
+        if !state
+            .waiters
+            .iter()
+            .any(|waiter| waiter.will_wake(context.waker()))
+        {
+            state.waiters.push(context.waker().clone());
+        }
+        Poll::Pending
+    }
 }
 
 struct PreparedRootDriver {
@@ -538,6 +655,271 @@ impl Interpreter {
         DurableStartExecutionResult::Accepted(accepted)
     }
 
+    /// Reconstructs and atomically admits one existing durable execution.
+    #[cfg(feature = "durable")]
+    pub async fn resume_durable_execution(
+        &self,
+        storage: Arc<dyn JournalStorage>,
+        request: DurableResumeExecutionRequest<'_>,
+    ) -> DurableResumeExecutionResult {
+        let request = OwnedDurableResumeRequest {
+            journal_id: request.journal_id,
+            protocol_selection: request.protocol_selection.clone(),
+            candidate_package_root: request.candidate_package_root.map(PathBuf::from),
+            expected_execution_id: request.expected_execution_id,
+            event_delivery: request.event_delivery.cloned(),
+        };
+        let result = Arc::new(SharedResume::default());
+        self.start_owned_durable_resume(storage, request, Arc::clone(&result));
+        std::future::poll_fn(|context| result.poll(context)).await
+    }
+
+    #[cfg(feature = "durable")]
+    fn start_owned_durable_resume(
+        &self,
+        storage: Arc<dyn JournalStorage>,
+        request: OwnedDurableResumeRequest,
+        result: Arc<SharedResume>,
+    ) {
+        let journal_id = request.journal_id.clone();
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve(AdmissionClass::PublicActivity) {
+            Ok(reservation) => reservation,
+            Err(_) => {
+                result.publish(resume_failure(
+                    journal_id,
+                    ResumeStartFailureCategory::ImplementationResourceExhaustion,
+                    "resume-activity-capacity",
+                ));
+                return;
+            }
+        };
+        let abnormal_result = Arc::clone(&result);
+        let abnormal_journal = journal_id.clone();
+        let abnormal: AbnormalCompletionHandler = Arc::new(move |_| {
+            abnormal_result.publish(resume_failure(
+                abnormal_journal.clone(),
+                ResumeStartFailureCategory::Internal,
+                "resume-coordinator-failure",
+            ));
+        });
+        let registration = supervisor.prepare(SupervisedTaskDomain::PublicActivity, Some(abnormal));
+        let signal = registration.signal();
+        let inner = Arc::clone(&self.inner);
+        let task_result = Arc::clone(&result);
+        let task: OwnedTaskFuture = Box::pin(async move {
+            let interpreter = Interpreter {
+                inner,
+                external_owner: false,
+            };
+            let package = AnalyzePackageCoordinator::new(
+                &interpreter.inner.allocator,
+                interpreter.inner.configuration.identity_source(),
+                interpreter.inner.clock.as_ref(),
+            );
+            let start = StartExecutionCoordinator::new(
+                &package,
+                &interpreter.inner.lifecycle,
+                &interpreter.inner.configuration,
+                &interpreter.inner.allocator,
+                Arc::clone(&interpreter.inner.preflight),
+            );
+            let durable = DurableStartExecutionCoordinator::new(
+                start,
+                &interpreter.inner.configuration,
+                storage,
+            );
+            let resumed = durable
+                .resume_with_handoff(request.borrowed(), |prepared| {
+                    interpreter.handoff_prepared_resume(&durable, prepared)
+                })
+                .await;
+            task_result.publish(resumed);
+            let _ = signal.settle();
+            OwnedTaskResult::new()
+        });
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => task.relinquish(),
+            Err(_) => result.publish(resume_failure(
+                journal_id,
+                ResumeStartFailureCategory::Internal,
+                "resume-coordinator-submission-failure",
+            )),
+        }
+    }
+
+    #[cfg(feature = "durable")]
+    async fn handoff_prepared_resume(
+        &self,
+        durable: &DurableStartExecutionCoordinator<'_>,
+        mut prepared: PreparedDurableResume,
+    ) -> DurableResumeExecutionResult {
+        if prepared.recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion {
+            if let Err(failure) = durable.commit_prepared_resume_revision(&mut prepared).await {
+                return durable.reject_prepared_resume_with(prepared, failure).await;
+            }
+            let accepted = durable
+                .publish_prepared_resume(prepared)
+                .unwrap_or_else(|_| unreachable!("reserved resume identity remains publishable"));
+            return DurableResumeExecutionResult::Accepted(Box::new(accepted));
+        }
+
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve(AdmissionClass::ResumeRunnableTask) {
+            Ok(reservation) => reservation,
+            Err(_) => {
+                return durable
+                    .reject_prepared_resume(
+                        prepared,
+                        ResumeStartFailureCategory::ImplementationResourceExhaustion,
+                        "resume-runnable-task-capacity",
+                    )
+                    .await;
+            }
+        };
+        let driver = match self.recovered_root_driver(&prepared) {
+            Ok(driver) => driver,
+            Err(code) => {
+                return durable
+                    .reject_prepared_resume(
+                        prepared,
+                        ResumeStartFailureCategory::SourceOrConfigurationIncompatibility,
+                        code,
+                    )
+                    .await;
+            }
+        };
+        let task_id = driver.task_id;
+        let completion_coordinator = driver.coordinator.clone();
+        let completion: PhysicalCompletionHandler = Arc::new(move |_| {
+            let _ = completion_coordinator.mark_driver_physically_settled(task_id);
+        });
+        let registration = supervisor.prepare_with_completion(
+            SupervisedTaskDomain::Resume,
+            None,
+            Some(completion),
+        );
+        let signal = registration.signal();
+        let gate = Arc::new(RootStartGate::default());
+        let task_gate = Arc::clone(&gate);
+        let inner = Arc::clone(&self.inner);
+        let slot = Arc::new(Mutex::new(None));
+        let task_slot = Arc::clone(&slot);
+        let task: OwnedTaskFuture = Box::pin(async move {
+            if task_gate.wait().await {
+                let (driver, owner) = lock_shutdown(&task_slot)
+                    .take()
+                    .unwrap_or_else(|| unreachable!("released resume gate retains its driver"));
+                let interpreter = Interpreter {
+                    inner,
+                    external_owner: false,
+                };
+                interpreter
+                    .drive_recovered_durable_execution(driver, owner)
+                    .await;
+            }
+            let _ = signal.settle();
+            OwnedTaskResult::new()
+        });
+        let submitted = match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => task,
+            Err(_) => {
+                return durable
+                    .reject_prepared_resume(
+                        prepared,
+                        ResumeStartFailureCategory::Internal,
+                        "resume-task-submission-failure",
+                    )
+                    .await;
+            }
+        };
+        if let Err(failure) = durable.commit_prepared_resume_revision(&mut prepared).await {
+            rollback_submitted_resume(submitted, gate).await;
+            return durable.reject_prepared_resume_with(prepared, failure).await;
+        }
+        let accepted = durable
+            .publish_prepared_resume(prepared)
+            .unwrap_or_else(|_| unreachable!("reserved resume identity remains publishable"));
+        *lock_shutdown(&slot) = Some((driver, Arc::clone(&accepted.owned)));
+        submitted.relinquish();
+        gate.release();
+        DurableResumeExecutionResult::Accepted(Box::new(accepted))
+    }
+
+    #[cfg(feature = "durable")]
+    fn recovered_root_driver(
+        &self,
+        prepared: &PreparedDurableResume,
+    ) -> Result<RecoveredRootDriver, &'static str> {
+        let sessions = prepared
+            .recovered
+            .sessions()
+            .cloned()
+            .ok_or("missing-logical-sessions")?;
+        let (root_session_id, provenance) = {
+            let root = sessions
+                .sessions()
+                .find(|session| session.parent.is_none())
+                .ok_or("missing-root-session")?;
+            let provenance = match root.mode {
+                SessionCreationModeV1::EmbedderRoot => RootSessionProvenanceV1::EmbedderSupplied,
+                SessionCreationModeV1::GantryRoot => RootSessionProvenanceV1::GantryCreated,
+                SessionCreationModeV1::New | SessionCreationModeV1::Fork => {
+                    return Err("invalid-root-session");
+                }
+            };
+            (root.id, provenance)
+        };
+        let task_id = root_task_identity(prepared.execution_id);
+        let tasks = ConcurrentTaskStateV1::from_sequential_recovery(
+            prepared.execution_id,
+            task_id,
+            self.inner.configuration.maximum_tasks_per_execution(),
+            prepared.recovered.latest_cut(),
+            prepared.recovered.machine().outcome().cloned(),
+        )
+        .map_err(|_| "invalid-recovered-task-state")?;
+        let coordinator = ExecutionCoordinator::new(tasks, sessions)
+            .map_err(|_| "invalid-recovered-task-state")?;
+        let create_request = TaskContextV1 {
+            execution_id: prepared.execution_id,
+            task_id,
+            inherited_agent: prepared.recovered.machine().active_agent().map(Arc::from),
+            session: TaskSessionContextV1::Root {
+                root_session_id,
+                provenance,
+            },
+        }
+        .into_host_request()
+        .map_err(|_| "invalid-recovered-hook-context")?;
+        let declared_value_shapes = prepared
+            .candidate_package_activity
+            .as_ref()
+            .and_then(|activity| activity.analysis.as_ref())
+            .and_then(|analysis| analysis.declared_value_shapes())
+            .cloned();
+        let schemas = decode_retained_schemas(
+            prepared.retained_artifacts.generated_schemas(),
+            self.inner
+                .configuration
+                .required()
+                .frontend_limits
+                .maximum_constructed_type_depth(),
+        )?;
+        Ok(RecoveredRootDriver {
+            coordinator,
+            task_id,
+            create_request,
+            operations: DurableOperationContext {
+                execution_id: prepared.execution_id,
+                activity_id: prepared.activity_id,
+                mapping_revisions: prepared.mapping_revisions.clone(),
+                declared_value_shapes,
+                schemas,
+            },
+        })
+    }
+
     #[cfg(feature = "durable")]
     fn start_owned_durable_submission_failure(
         &self,
@@ -741,9 +1123,7 @@ impl Interpreter {
         prepared: PreparedRootDriver,
         owner: Arc<crate::DurableOwnedExecution>,
     ) {
-        let Some(mut recovered) = owner.begin_driver() else {
-            return;
-        };
+        let operations = DurableOperationContext::from_start(&accepted);
         let PreparedRootDriver {
             machine: _,
             coordinator,
@@ -751,15 +1131,37 @@ impl Interpreter {
             workflow: _,
             create_request,
         } = prepared;
-        let analysis = accepted
-            .package_activity
-            .analysis
-            .as_ref()
-            .unwrap_or_else(|| unreachable!("committed durable start retains analysis"));
-        let cancellation = accepted
-            .handle
+        self.drive_recovered_durable_execution(
+            RecoveredRootDriver {
+                coordinator,
+                task_id,
+                create_request,
+                operations,
+            },
+            owner,
+        )
+        .await;
+    }
+
+    #[cfg(feature = "durable")]
+    async fn drive_recovered_durable_execution(
+        &self,
+        driver: RecoveredRootDriver,
+        owner: Arc<crate::DurableOwnedExecution>,
+    ) {
+        let Some(mut recovered) = owner.begin_driver() else {
+            return;
+        };
+        let RecoveredRootDriver {
+            coordinator,
+            task_id,
+            create_request,
+            operations,
+        } = driver;
+        let cancellation = owner
+            .execution_handle()
             .cancellation_signal()
-            .unwrap_or_else(|_| unreachable!("accepted durable start retains cancellation"));
+            .unwrap_or_else(|_| unreachable!("accepted durable execution retains cancellation"));
         let mut hook = TaskHook::new(
             &self.inner.lifecycle,
             self.inner.hook_factory.as_ref(),
@@ -783,7 +1185,7 @@ impl Interpreter {
                     last_committed = recovered.clone();
                     let event = machine_lifecycle_event(
                         &MachineLabel::TaskSettled(outcome.clone()),
-                        accepted.execution_id,
+                        operations.execution_id,
                         task_id,
                     )
                     .unwrap_or_else(|| unreachable!("task settlement has one event draft"));
@@ -791,7 +1193,7 @@ impl Interpreter {
                         .commit_durable_event(
                             &owner,
                             &mut recovered,
-                            accepted.package_activity.activity_id,
+                            operations.activity_id,
                             task_id,
                             &mut task_event_sequence,
                             event,
@@ -822,7 +1224,7 @@ impl Interpreter {
                     last_committed = recovered.clone();
                     let event = machine_lifecycle_event(
                         &MachineLabel::ForegroundCompletion(outcome.clone()),
-                        accepted.execution_id,
+                        operations.execution_id,
                         task_id,
                     )
                     .unwrap_or_else(|| unreachable!("foreground completion has one event draft"));
@@ -830,7 +1232,7 @@ impl Interpreter {
                         .commit_durable_event(
                             &owner,
                             &mut recovered,
-                            accepted.package_activity.activity_id,
+                            operations.activity_id,
                             task_id,
                             &mut task_event_sequence,
                             event,
@@ -868,7 +1270,7 @@ impl Interpreter {
                     last_committed = recovered.clone();
                     let event = machine_lifecycle_event(
                         &MachineLabel::TerminalCompletion(outcome),
-                        accepted.execution_id,
+                        operations.execution_id,
                         task_id,
                     )
                     .unwrap_or_else(|| unreachable!("terminal completion has one event draft"));
@@ -876,7 +1278,7 @@ impl Interpreter {
                         .commit_durable_event(
                             &owner,
                             &mut recovered,
-                            accepted.package_activity.activity_id,
+                            operations.activity_id,
                             task_id,
                             &mut task_event_sequence,
                             event,
@@ -918,7 +1320,7 @@ impl Interpreter {
                 MachineStep::WaitingSessionScope(scope) => {
                     if let Err(failure) = self
                         .drive_durable_session_scope(
-                            accepted.execution_id,
+                            operations.execution_id,
                             task_id,
                             &mut recovered,
                             &scope,
@@ -938,8 +1340,7 @@ impl Interpreter {
                         .is_some_and(|metadata| metadata.kind == OperationSiteKind::Action)
                     {
                         self.drive_durable_action_operation(
-                            &accepted,
-                            analysis,
+                            &operations,
                             &mut recovered,
                             &mut hook,
                             &cancellation,
@@ -952,8 +1353,7 @@ impl Interpreter {
                     } else {
                         let result = self
                             .drive_durable_model_operation(
-                                &accepted,
-                                analysis,
+                                &operations,
                                 &mut recovered,
                                 &mut hook,
                                 &cancellation,
@@ -1101,11 +1501,10 @@ impl Interpreter {
     #[allow(clippy::too_many_arguments)]
     async fn drive_durable_action_operation(
         &self,
-        accepted: &StartExecutionAccepted,
-        analysis: &gantry_analysis::TypedPackage,
+        context: &DurableOperationContext,
         recovered: &mut gantry_runtime::RecoveredDurableStateV1,
         hook: &mut TaskHook<'_>,
-        cancellation: &dyn CancellationToken,
+        cancellation: &CancellationSignal,
         occurrence: &gantry_runtime::OperationOccurrence,
         owner: &crate::DurableOwnedExecution,
         task_event_sequence: &mut u64,
@@ -1124,25 +1523,18 @@ impl Interpreter {
         {
             return Err(DurableRunFailure::Internal);
         }
-        let expected_schema = analysis
-            .schemas()
-            .and_then(|schemas| {
-                schemas
-                    .entries()
-                    .iter()
-                    .find(|(ty, _)| ty == &metadata.result_type)
-                    .map(|(_, schema)| Arc::clone(schema))
-            })
+        let expected_schema = context
+            .schema(&metadata.result_type)
             .ok_or(DurableRunFailure::Internal)?;
-        let mapping_revision = accepted
+        let mapping_revision = context
             .mapping_revisions
             .action
             .clone()
             .ok_or(DurableRunFailure::Internal)?;
         let captured = CapturedOperationRequestV1::Action {
             header: OperationRequestHeaderV1 {
-                execution_id: accepted.execution_id,
-                task_id: root_task_identity(accepted.execution_id),
+                execution_id: context.execution_id,
+                task_id: root_task_identity(context.execution_id),
                 operation_id: occurrence.identity,
                 kind: metadata.kind,
                 expected_type: metadata.result_type.clone(),
@@ -1230,8 +1622,8 @@ impl Interpreter {
             self.commit_durable_event(
                 owner,
                 recovered,
-                accepted.package_activity.activity_id,
-                root_task_identity(accepted.execution_id),
+                context.activity_id,
+                root_task_identity(context.execution_id),
                 task_event_sequence,
                 dispatch_event,
                 last_committed,
@@ -1281,8 +1673,8 @@ impl Interpreter {
             self.commit_durable_event(
                 owner,
                 recovered,
-                accepted.package_activity.activity_id,
-                root_task_identity(accepted.execution_id),
+                context.activity_id,
+                root_task_identity(context.execution_id),
                 task_event_sequence,
                 completion_event,
                 last_committed,
@@ -1298,7 +1690,7 @@ impl Interpreter {
                         &result_bytes,
                         &metadata.result_type,
                         self.inner.configuration.required().value_limits,
-                        analysis.declared_value_shapes(),
+                        context.declared_value_shapes.as_ref(),
                     )
                     .map_err(|_| DurableRunFailure::Internal)?;
                     let (result_kind, result_value) = match metadata.result_type.kind() {
@@ -1345,8 +1737,8 @@ impl Interpreter {
                     self.commit_durable_event(
                         owner,
                         recovered,
-                        accepted.package_activity.activity_id,
-                        root_task_identity(accepted.execution_id),
+                        context.activity_id,
+                        root_task_identity(context.execution_id),
                         task_event_sequence,
                         result_event,
                         last_committed,
@@ -1380,10 +1772,7 @@ impl Interpreter {
                     if operation
                         .prepare_after_retry_wait(
                             self.inner.configuration.executor(),
-                            &accepted
-                                .handle
-                                .cancellation_signal()
-                                .map_err(|_| DurableRunFailure::Internal)?,
+                            cancellation,
                             &self.inner.allocator,
                             self.inner.configuration.identity_source(),
                         )
@@ -1426,11 +1815,10 @@ impl Interpreter {
     #[allow(clippy::too_many_arguments)]
     async fn drive_durable_model_operation(
         &self,
-        accepted: &StartExecutionAccepted,
-        analysis: &gantry_analysis::TypedPackage,
+        context: &DurableOperationContext,
         recovered: &mut gantry_runtime::RecoveredDurableStateV1,
         hook: &mut TaskHook<'_>,
-        cancellation: &dyn CancellationToken,
+        cancellation: &CancellationSignal,
         occurrence: &gantry_runtime::OperationOccurrence,
         owner: &crate::DurableOwnedExecution,
         session_occurrence: u64,
@@ -1451,21 +1839,14 @@ impl Interpreter {
         {
             return Err(DurableRunFailure::Internal);
         }
-        let expected_schema = analysis
-            .schemas()
-            .and_then(|schemas| {
-                schemas
-                    .entries()
-                    .iter()
-                    .find(|(ty, _)| ty == &metadata.result_type)
-                    .map(|(_, schema)| Arc::clone(schema))
-            })
+        let expected_schema = context
+            .schema(&metadata.result_type)
             .ok_or(DurableRunFailure::Internal)?;
         let selected_agent = occurrence
             .active_agent
             .clone()
             .ok_or(DurableRunFailure::Internal)?;
-        let mapping_revision = accepted
+        let mapping_revision = context
             .mapping_revisions
             .agent
             .clone()
@@ -1473,7 +1854,7 @@ impl Interpreter {
         let parent_session_id = occurrence
             .active_session
             .ok_or(DurableRunFailure::Internal)?;
-        let task_id = root_task_identity(accepted.execution_id);
+        let task_id = root_task_identity(context.execution_id);
         let active_session_id = if let Some(mode) = metadata.session_mode.as_deref() {
             let mode = match mode {
                 "fork" => SessionCreationModeV1::Fork,
@@ -1567,7 +1948,7 @@ impl Interpreter {
         };
         let captured = CapturedOperationRequestV1::Model {
             header: OperationRequestHeaderV1 {
-                execution_id: accepted.execution_id,
+                execution_id: context.execution_id,
                 task_id,
                 operation_id: occurrence.identity,
                 kind: metadata.kind,
@@ -1652,8 +2033,8 @@ impl Interpreter {
             self.commit_durable_event(
                 owner,
                 recovered,
-                accepted.package_activity.activity_id,
-                root_task_identity(accepted.execution_id),
+                context.activity_id,
+                root_task_identity(context.execution_id),
                 task_event_sequence,
                 dispatch_event,
                 last_committed,
@@ -1664,7 +2045,7 @@ impl Interpreter {
                     hook,
                     cancellation,
                     &self.inner.session_establisher,
-                    accepted.execution_id,
+                    context.execution_id,
                     &session,
                 )
                 .await
@@ -1723,8 +2104,8 @@ impl Interpreter {
             self.commit_durable_event(
                 owner,
                 recovered,
-                accepted.package_activity.activity_id,
-                root_task_identity(accepted.execution_id),
+                context.activity_id,
+                root_task_identity(context.execution_id),
                 task_event_sequence,
                 completion_event,
                 last_committed,
@@ -1740,7 +2121,7 @@ impl Interpreter {
                         &result_bytes,
                         &metadata.result_type,
                         self.inner.configuration.required().value_limits,
-                        analysis.declared_value_shapes(),
+                        context.declared_value_shapes.as_ref(),
                     )
                     .map_err(|_| DurableRunFailure::Internal)?;
                     let turn = TranscriptTurnV1 {
@@ -1834,8 +2215,8 @@ impl Interpreter {
                     self.commit_durable_event(
                         owner,
                         recovered,
-                        accepted.package_activity.activity_id,
-                        root_task_identity(accepted.execution_id),
+                        context.activity_id,
+                        root_task_identity(context.execution_id),
                         task_event_sequence,
                         result_event,
                         last_committed,
@@ -1869,10 +2250,7 @@ impl Interpreter {
                     if operation
                         .prepare_after_retry_wait(
                             self.inner.configuration.executor(),
-                            &accepted
-                                .handle
-                                .cancellation_signal()
-                                .map_err(|_| DurableRunFailure::Internal)?,
+                            cancellation,
                             &self.inner.allocator,
                             self.inner.configuration.identity_source(),
                         )
@@ -3058,6 +3436,71 @@ impl Future for TaskDriver {
     fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         self.future.as_mut().poll(context)
     }
+}
+
+#[cfg(feature = "durable")]
+async fn rollback_submitted_resume(task: SupervisedTask, gate: Arc<RootStartGate>) {
+    gate.cancel();
+    let _ = task.request_abort();
+    let _ = task.completion().await;
+}
+
+#[cfg(feature = "durable")]
+fn resume_failure(
+    journal_id: gantry_host::journal::JournalId,
+    category: ResumeStartFailureCategory,
+    code: &'static str,
+) -> DurableResumeExecutionResult {
+    DurableResumeExecutionResult::Rejected(DurableResumeExecutionFailure {
+        journal_id,
+        category,
+        code: Arc::from(code),
+        candidate_package_activity: None,
+        release_error: None,
+    })
+}
+
+#[cfg(feature = "durable")]
+fn decode_retained_schemas(
+    bytes: &[u8],
+    maximum_constructed_type_depth: u64,
+) -> Result<BTreeMap<TypeDescriptor, Arc<[u8]>>, &'static str> {
+    let length = u64::try_from(bytes.len()).map_err(|_| "invalid-retained-schemas")?;
+    let document = StrictJsonDocument::decode(
+        bytes,
+        JsonLimits {
+            maximum_bytes: length,
+            maximum_nesting_depth: length.max(1),
+            maximum_nodes: length.max(1),
+            maximum_string_scalars: length.max(1),
+            maximum_list_items: length.max(1),
+        },
+    )
+    .map_err(|_| "invalid-retained-schemas")?;
+    let canonical =
+        CanonicalJson::from_document(&document).map_err(|_| "invalid-retained-schemas")?;
+    if canonical.bytes() != bytes {
+        return Err("invalid-retained-schemas");
+    }
+    let JsonNode::Object(entries) = document
+        .node(document.root())
+        .ok_or("invalid-retained-schemas")?
+    else {
+        return Err("invalid-retained-schemas");
+    };
+    entries
+        .iter()
+        .map(|(descriptor, schema)| {
+            let descriptor = TypeDescriptor::from_canonical_string_with_depth_limit(
+                descriptor,
+                maximum_constructed_type_depth,
+            )
+            .map_err(|_| "invalid-retained-schemas")?;
+            let schema = CanonicalJson::from_node(&document, *schema)
+                .map_err(|_| "invalid-retained-schemas")?;
+            Ok((descriptor, Arc::from(schema.bytes())))
+        })
+        .collect()
 }
 
 /// Failure while driving an already accepted nondurable execution.

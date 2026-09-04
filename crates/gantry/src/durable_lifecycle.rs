@@ -564,6 +564,10 @@ impl DurableOwnedExecution {
         self.handle.execution_id()
     }
 
+    pub(crate) fn execution_handle(&self) -> ExecutionHandle {
+        self.handle.clone()
+    }
+
     /// Returns the stable journal target controlled by this owner.
     #[must_use]
     pub fn journal_id(&self) -> &JournalId {

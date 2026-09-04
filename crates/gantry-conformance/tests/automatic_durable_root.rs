@@ -31,7 +31,8 @@ use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValueView};
 use gantry::{
-    DurableStartExecutionRequest, DurableStartExecutionResult, Interpreter, StartExecutionRequest,
+    DurableResumeExecutionRequest, DurableResumeExecutionResult, DurableStartExecutionRequest,
+    DurableStartExecutionResult, Interpreter, StartExecutionRequest,
 };
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
@@ -116,6 +117,13 @@ impl Drop for TempDirectory {
 struct FailAfterStartStore {
     inner: InMemoryJournalStore,
     commits: AtomicU64,
+    releases: AtomicU64,
+}
+
+impl FailAfterStartStore {
+    fn release_count(&self) -> u64 {
+        self.releases.load(Ordering::Acquire)
+    }
 }
 
 impl JournalStorage for FailAfterStartStore {
@@ -155,6 +163,7 @@ impl JournalStorage for FailAfterStartStore {
         &'a self,
         request: ReleaseJournalOwnerV1,
     ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.releases.fetch_add(1, Ordering::AcqRel);
         self.inner.release_owner(request)
     }
 }
@@ -285,6 +294,595 @@ fn accepted_durable_root_runs_on_the_executor_and_commits_before_observation() {
     assert_eq!(
         recovered.latest_cut(),
         DurableCommitCutV1::TerminalCompletion
+    );
+}
+
+#[test]
+fn resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let initial = interpreter_with_integration(Arc::clone(&initial_executor), integration.clone());
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-resume")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("resume fixture start was rejected: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+    let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
+
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let resumed = interpreter_with_integration_and_identity_start(
+        Arc::clone(&resume_executor),
+        integration,
+        97,
+    );
+    let mut resume = pin!(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    assert!(
+        resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert_eq!(resume_executor.task_ids(), [0]);
+
+    resume_executor.poll_next_spawn_immediately();
+    assert!(matches!(
+        resume_executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert_eq!(resume_executor.task_ids(), [0, 1]);
+    assert_eq!(resume_executor.poll_count(1), Some(1));
+    assert_eq!(
+        block_on(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: journal_id.clone(),
+        }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}")),
+        prefix_before_resume
+    );
+
+    let accepted = match resume
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
+            panic!("atomic resume was rejected: {failure:?}")
+        }
+        Poll::Pending => panic!("completed resume coordinator did not publish acceptance"),
+    };
+    assert_eq!(accepted.execution_id, execution_id);
+    assert_eq!(accepted.recovered.latest_sequence(), 1);
+    settle_task(&resume_executor, 1);
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Succeeded(ref value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
+    ));
+    assert_eq!(
+        observation.latest_cut(),
+        DurableCommitCutV1::TerminalCompletion
+    );
+}
+
+#[test]
+fn resume_executor_rejection_rolls_back_and_releases_the_owner_once() {
+    let root = TempDirectory::new("fn main() -> Int { 7 }");
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let initial = interpreter_with_integration(Arc::clone(&initial_executor), integration.clone());
+    let storage = Arc::new(FailAfterStartStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-resume-rejection")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("resume rejection fixture start failed: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+    let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
+    assert_eq!(storage.release_count(), 1);
+
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let resumed = interpreter_with_integration_and_identity_start(
+        Arc::clone(&resume_executor),
+        integration,
+        97,
+    );
+    let mut resume = pin!(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    assert!(
+        resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert_eq!(resume_executor.task_ids(), [0]);
+    resume_executor.fail_next_spawn();
+    assert!(matches!(
+        resume_executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+
+    let rejected = match resume
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => failure,
+        Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
+            panic!("executor-rejected resume was accepted")
+        }
+        Poll::Pending => panic!("completed rejection was not published"),
+    };
+    assert_eq!(
+        rejected.category,
+        gantry::portable::ResumeStartFailureCategory::Internal
+    );
+    assert_eq!(rejected.code.as_ref(), "resume-task-submission-failure");
+    assert!(rejected.release_error.is_none());
+    assert_eq!(resume_executor.task_ids(), [0]);
+    assert_eq!(storage.release_count(), 2);
+    assert_eq!(
+        block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+            .unwrap_or_else(|error| panic!("journal read failed: {error:?}")),
+        prefix_before_resume
+    );
+}
+
+#[test]
+fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefix() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let initial_integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveMappings,
+            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let initial = interpreter_with_integration(Arc::clone(&initial_executor), initial_integration);
+    let storage = Arc::new(FailAfterStartStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-resume-commit-rollback")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("resume rollback fixture start failed: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+    let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
+
+    let resume_integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"action_mapping_revision":"actions-v2","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let resumed = interpreter_with_integration_and_identity_start(
+        Arc::clone(&resume_executor),
+        resume_integration,
+        97,
+    );
+    let mut resume = pin!(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    assert!(
+        resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    settle_task(&resume_executor, 0);
+
+    let rejected = match resume
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => failure,
+        Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
+            panic!("commit-failed resume was accepted")
+        }
+        Poll::Pending => panic!("completed rollback was not published"),
+    };
+    assert_eq!(
+        rejected.category,
+        gantry::portable::ResumeStartFailureCategory::JournalReadOrFormat
+    );
+    assert!(rejected.release_error.is_none());
+    assert_eq!(resume_executor.task_ids(), [0, 1]);
+    assert_eq!(
+        resume_executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Stopped)
+    );
+    assert_eq!(storage.release_count(), 2);
+    assert_eq!(
+        block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+            .unwrap_or_else(|error| panic!("journal read failed: {error:?}")),
+        prefix_before_resume
+    );
+}
+
+#[test]
+fn dropping_the_resume_waiter_does_not_abandon_accepted_work() {
+    let root = TempDirectory::new("fn main() -> Int { 51 }");
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let initial = interpreter_with_integration(Arc::clone(&initial_executor), integration.clone());
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-resume-dropped-waiter")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("dropped-waiter fixture start failed: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
+
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let resumed = interpreter_with_integration_and_identity_start(
+        Arc::clone(&resume_executor),
+        integration,
+        97,
+    );
+    let mut resume = Box::pin(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    assert!(
+        resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    drop(resume);
+    settle_task(&resume_executor, 0);
+    assert_eq!(resume_executor.task_ids(), [0, 1]);
+    settle_task(&resume_executor, 1);
+
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("dropped-waiter prefix did not recover: {error:?}"));
+    assert_eq!(
+        recovered.latest_cut(),
+        DurableCommitCutV1::TerminalCompletion
+    );
+    assert!(matches!(
+        recovered.machine().outcome(),
+        Some(MachineOutcome::Succeeded(value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 51)
+    ));
+}
+
+#[test]
+fn terminal_resume_accepts_without_submitting_a_root_driver() {
+    let root = TempDirectory::new("fn main() -> Int { 73 }");
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let initial = interpreter(Arc::clone(&initial_executor));
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-terminal-resume")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("terminal-resume fixture start failed: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+    settle_task(&initial_executor, 0);
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("terminal fixture owner release failed: {error:?}"));
+
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let resumed = interpreter_with_integration_and_identity_start(
+        Arc::clone(&resume_executor),
+        Arc::new(ScriptedIntegration::new(
+            [ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            )],
+            [],
+        )),
+        97,
+    );
+    let mut resume = pin!(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id,
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    assert!(
+        resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    settle_task(&resume_executor, 0);
+    let accepted = match resume
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
+            panic!("terminal resume was rejected: {failure:?}")
+        }
+        Poll::Pending => panic!("terminal resume acceptance was not published"),
+    };
+    assert_eq!(resume_executor.task_ids(), [0]);
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Succeeded(ref value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 73)
+    ));
+}
+
+#[test]
+fn resume_runnable_capacity_refusal_releases_owner_without_mutating_the_prefix() {
+    let root = TempDirectory::new("fn main() -> Int { 89 }");
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let initial = interpreter_with_integration(Arc::clone(&initial_executor), integration.clone());
+    let storage = Arc::new(FailAfterStartStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-resume-capacity")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("resume-capacity fixture start failed: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+    let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
+
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let (resumed, _capacity) =
+        interpreter_with_reserved_resume_capacity(Arc::clone(&resume_executor), integration, 97);
+    let mut resume = pin!(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    assert!(
+        resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    settle_task(&resume_executor, 0);
+    let rejected = match resume
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => failure,
+        Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
+            panic!("capacity-refused resume was accepted")
+        }
+        Poll::Pending => panic!("capacity refusal was not published"),
+    };
+    assert_eq!(
+        rejected.category,
+        gantry::portable::ResumeStartFailureCategory::ImplementationResourceExhaustion
+    );
+    assert_eq!(rejected.code.as_ref(), "resume-runnable-task-capacity");
+    assert!(rejected.release_error.is_none());
+    assert_eq!(resume_executor.task_ids(), [0]);
+    assert_eq!(storage.release_count(), 2);
+    assert_eq!(
+        block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+            .unwrap_or_else(|error| panic!("journal read failed: {error:?}")),
+        prefix_before_resume
     );
 }
 
@@ -671,9 +1269,29 @@ fn interpreter_with_integration(
     executor: Arc<DeterministicConcurrentExecutor>,
     integration: Arc<ScriptedIntegration>,
 ) -> Interpreter {
+    interpreter_with_integration_and_identity_start(executor, integration, 1)
+}
+
+fn interpreter_with_integration_and_identity_start(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    integration: Arc<ScriptedIntegration>,
+    identity_start: u8,
+) -> Interpreter {
+    interpreter_with_capacities(executor, integration, identity_start, 8, 8)
+}
+
+fn interpreter_with_capacities(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    integration: Arc<ScriptedIntegration>,
+    identity_start: u8,
+    resume_runnable_tasks: u64,
+    public_activities: u64,
+) -> Interpreter {
     let executor_adapter: Arc<dyn ExecutorAdapter> = executor;
     let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
-        (1_u8..=96).map(|byte| Ok([byte; 32])),
+        std::iter::successors(Some(identity_start), |byte| byte.checked_add(1))
+            .take(96)
+            .map(|byte| Ok([byte; 32])),
     ));
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
@@ -694,8 +1312,18 @@ fn interpreter_with_integration(
         executor_adapter,
         identities,
         required,
-        AsyncCapacityLimits::new(2, 8, 8, 8, 8, 8, 8, 8, 8)
-            .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+        AsyncCapacityLimits::new(
+            2,
+            8,
+            resume_runnable_tasks,
+            public_activities,
+            8,
+            8,
+            8,
+            8,
+            8,
+        )
+        .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
     );
     Interpreter::new(
         configuration,
@@ -704,6 +1332,56 @@ fn interpreter_with_integration(
         integration.clone(),
         integration,
     )
+}
+
+fn interpreter_with_reserved_resume_capacity(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    integration: Arc<ScriptedIntegration>,
+    identity_start: u8,
+) -> (Interpreter, gantry::runtime::AdmissionReservation) {
+    let executor_adapter: Arc<dyn ExecutorAdapter> = executor;
+    let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
+        std::iter::successors(Some(identity_start), |byte| byte.checked_add(1))
+            .take(96)
+            .map(|byte| Ok([byte; 32])),
+    ));
+    let required = RequiredConfiguration::new(
+        FrontendLimits::new(
+            32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+            256, 65_536, 1_000_000,
+        )
+        .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
+        1_048_576,
+        1_048_576,
+        DEFAULT_VALUE_LIMITS,
+        1_000_000,
+        100_000,
+        100_000,
+        1,
+    )
+    .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
+    let configuration = InterpreterConfiguration::new(
+        executor_adapter,
+        identities,
+        required,
+        AsyncCapacityLimits::new(2, 8, 1, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+    );
+    let reservation = configuration
+        .async_admission()
+        .try_reserve(gantry::runtime::AdmissionRequest::single(
+            gantry::runtime::AdmissionClass::ResumeRunnableTask,
+            1,
+        ))
+        .unwrap_or_else(|error| panic!("resume capacity reservation failed: {error}"));
+    let interpreter = Interpreter::new(
+        configuration,
+        Arc::new(DeterministicUtcClock::new((1_u32..=96).map(timestamp))),
+        integration.clone(),
+        integration.clone(),
+        integration,
+    );
+    (interpreter, reservation)
 }
 
 fn settle_task(executor: &DeterministicConcurrentExecutor, task_id: u64) {

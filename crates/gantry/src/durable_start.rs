@@ -1,5 +1,6 @@
 //! Durable sequence-one start coordination over the shared pre-execution path.
 
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ use gantry_host::journal::{
 use gantry_runtime::{
     AdmissionKind, DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV1,
     DurableExecutionStateV1, DurableLogicalEvidenceV1, ExecutionHandle, LogicalSessionRegistryV1,
-    Machine, RecoveredDurableStateV1, SessionCreationModeV1,
+    Machine, OperationAdmission, RecoveredDurableStateV1, SessionCreationModeV1,
     recover_authoritative_prefix_with_retained_program,
 };
 
@@ -161,12 +162,14 @@ impl DurableRetainedArtifacts {
 }
 
 /// Accepted recovered execution after compatibility and dependency preflight settled.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DurableResumeExecutionAccepted {
     /// Stable accepted execution identity recovered from sequence one.
     pub execution_id: ProtocolIdentity,
     /// In-process observation and cancellation handle accepted at the resume boundary.
     pub handle: ExecutionHandle,
+    /// Execution-owned durable state used for observation and journal-first progress.
+    pub owned: Arc<DurableOwnedExecution>,
     /// Existing machine, sessions, and operation-recovery projection.
     pub recovered: RecoveredDurableStateV1,
     /// Stable journal target retained by the accepted execution.
@@ -197,12 +200,28 @@ pub struct DurableResumeExecutionFailure {
 }
 
 /// Durable resume union whose accepted variant exists only after all pre-acceptance work settles.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum DurableResumeExecutionResult {
     /// Existing recovered interpretation was accepted into this interpreter lifecycle.
     Accepted(Box<DurableResumeExecutionAccepted>),
     /// Resume was rejected without mutating the authoritative journal prefix.
     Rejected(DurableResumeExecutionFailure),
+}
+
+/// Fully reconstructed resume state whose lifecycle identity is still unpublished.
+pub(crate) struct PreparedDurableResume {
+    pub(crate) admission: OperationAdmission,
+    pub(crate) execution_id: ProtocolIdentity,
+    pub(crate) activity_id: ProtocolIdentity,
+    pub(crate) recovered: RecoveredDurableStateV1,
+    pub(crate) journal_id: JournalId,
+    pub(crate) ownership_token: JournalOwnershipToken,
+    pub(crate) candidate_package_activity: Option<AnalyzePackageResult>,
+    pub(crate) source_comparison: DurableResumeSourceComparison,
+    pub(crate) retained_artifacts: DurableRetainedArtifacts,
+    pub(crate) mapping_revisions: MappingRevisions,
+    pub(crate) event_delivery: gantry_observe::SinkPlan,
+    pub(crate) pending_revision: Option<DurableExecutionStateV1>,
 }
 
 /// Durable composition of shared preflight, fenced storage, and lifecycle acceptance.
@@ -432,11 +451,25 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         }
     }
 
-    /// Acquires an existing journal, validates immutable compatibility, and accepts recovery.
+    /// Acquires an existing journal, validates compatibility, and accepts recovery directly.
     pub async fn resume(
         &self,
         request: DurableResumeExecutionRequest<'_>,
     ) -> DurableResumeExecutionResult {
+        self.resume_with_handoff(request, |prepared| self.accept_prepared_resume(prepared))
+            .await
+    }
+
+    /// Completes resume preflight while leaving lifecycle publication to one atomic handoff.
+    pub(crate) async fn resume_with_handoff<F, Fut>(
+        &self,
+        request: DurableResumeExecutionRequest<'_>,
+        handoff: F,
+    ) -> DurableResumeExecutionResult
+    where
+        F: FnOnce(PreparedDurableResume) -> Fut,
+        Fut: Future<Output = DurableResumeExecutionResult>,
+    {
         let journal_id = request.journal_id;
         let ownership = match self
             .storage
@@ -479,7 +512,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                     .await;
             }
         };
-        let (_, mut recovered) = match recover_authoritative_prefix_with_retained_program(&prefix) {
+        let (_, recovered) = match recover_authoritative_prefix_with_retained_program(&prefix) {
             Ok(recovered) => recovered,
             Err(DurableEvidenceError::Checkpoint(_)) => {
                 return self
@@ -757,7 +790,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             .action
             .as_ref()
             .map(|value| value.as_str());
-        if desired_mutable_policy.as_bytes() != active_mutable_policy
+        let pending_revision = if desired_mutable_policy.as_bytes() != active_mutable_policy
             || desired_agent_mapping != active_agent_mapping
             || desired_action_mapping != active_action_mapping
         {
@@ -782,45 +815,131 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                         .await;
                 }
             };
-            if let Err(failure) = self
-                .commit_resume_state(&journal_id, &ownership.token, &mut recovered, revision)
-                .await
-            {
+            Some(revision)
+        } else {
+            None
+        };
+        let activity_id = match self.start.fresh_activity_id() {
+            Ok(activity_id) => activity_id,
+            Err(failure) => {
                 return self
                     .reject_resume_and_release(
                         journal_id,
                         ownership.token,
-                        failure.with_optional_activity(candidate_package_activity),
-                    )
-                    .await;
-            }
-        }
-        let handle = match admission.accept_reserved_execution(metadata.execution_id) {
-            Ok(handle) => handle,
-            Err(_) => {
-                return self
-                    .reject_resume_and_release(
-                        journal_id,
-                        ownership.token,
-                        ResumeRejection::new(
-                            ResumeStartFailureCategory::Lifecycle,
-                            "execution-already-active",
-                        )
-                        .with_optional_activity(candidate_package_activity),
+                        resume_preflight_failure(failure)
+                            .with_optional_activity(candidate_package_activity),
                     )
                     .await;
             }
         };
-        DurableResumeExecutionResult::Accepted(Box::new(DurableResumeExecutionAccepted {
+        handoff(PreparedDurableResume {
+            admission,
             execution_id: metadata.execution_id,
-            handle,
+            activity_id,
             recovered,
             journal_id,
             ownership_token: ownership.token,
-            candidate_package_activity: candidate_package_activity.map(Box::new),
+            candidate_package_activity,
             source_comparison,
             retained_artifacts: metadata.retained_artifacts,
-        }))
+            mapping_revisions,
+            event_delivery,
+            pending_revision,
+        })
+        .await
+    }
+
+    pub(crate) async fn accept_prepared_resume(
+        &self,
+        mut prepared: PreparedDurableResume,
+    ) -> DurableResumeExecutionResult {
+        if let Err(failure) = self.commit_prepared_resume_revision(&mut prepared).await {
+            return self.reject_prepared_resume_with(prepared, failure).await;
+        }
+        match self.publish_prepared_resume(prepared) {
+            Ok(accepted) => DurableResumeExecutionResult::Accepted(Box::new(accepted)),
+            Err(prepared) => {
+                self.reject_prepared_resume(
+                    *prepared,
+                    ResumeStartFailureCategory::Lifecycle,
+                    "execution-already-active",
+                )
+                .await
+            }
+        }
+    }
+
+    pub(crate) async fn commit_prepared_resume_revision(
+        &self,
+        prepared: &mut PreparedDurableResume,
+    ) -> Result<(), ResumeRejection> {
+        let Some(revision) = prepared.pending_revision.take() else {
+            return Ok(());
+        };
+        self.commit_resume_state(
+            &prepared.journal_id,
+            &prepared.ownership_token,
+            &mut prepared.recovered,
+            revision,
+        )
+        .await
+    }
+
+    pub(crate) fn publish_prepared_resume(
+        &self,
+        mut prepared: PreparedDurableResume,
+    ) -> Result<DurableResumeExecutionAccepted, Box<PreparedDurableResume>> {
+        let handle = match prepared
+            .admission
+            .accept_reserved_execution(prepared.execution_id)
+        {
+            Ok(handle) => handle,
+            Err(_) => return Err(Box::new(prepared)),
+        };
+        let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&self.storage));
+        let owned = lifecycle
+            .own_committed_start(
+                prepared.journal_id.clone(),
+                prepared.ownership_token.clone(),
+                handle.clone(),
+                prepared.recovered.clone(),
+                prepared.event_delivery,
+            )
+            .unwrap_or_else(|_| unreachable!("validated recovery restores its lifecycle state"));
+        Ok(DurableResumeExecutionAccepted {
+            execution_id: prepared.execution_id,
+            handle,
+            owned,
+            recovered: prepared.recovered,
+            journal_id: prepared.journal_id,
+            ownership_token: prepared.ownership_token,
+            candidate_package_activity: prepared.candidate_package_activity.map(Box::new),
+            source_comparison: prepared.source_comparison,
+            retained_artifacts: prepared.retained_artifacts,
+        })
+    }
+
+    pub(crate) async fn reject_prepared_resume(
+        &self,
+        prepared: PreparedDurableResume,
+        category: ResumeStartFailureCategory,
+        code: &'static str,
+    ) -> DurableResumeExecutionResult {
+        self.reject_prepared_resume_with(prepared, ResumeRejection::new(category, code))
+            .await
+    }
+
+    pub(crate) async fn reject_prepared_resume_with(
+        &self,
+        prepared: PreparedDurableResume,
+        failure: ResumeRejection,
+    ) -> DurableResumeExecutionResult {
+        self.reject_resume_and_release(
+            prepared.journal_id,
+            prepared.ownership_token,
+            failure.with_optional_activity(prepared.candidate_package_activity),
+        )
+        .await
     }
 
     async fn resolve_resume_mappings(
@@ -1009,7 +1128,7 @@ struct ResumeMetadata {
 }
 
 #[derive(Debug)]
-struct ResumeRejection {
+pub(crate) struct ResumeRejection {
     category: ResumeStartFailureCategory,
     code: Arc<str>,
     candidate_package_activity: Option<Box<AnalyzePackageResult>>,
