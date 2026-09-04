@@ -621,6 +621,14 @@ impl DurableOwnedExecution {
         lock_state(&self.state).recovered.clone()
     }
 
+    /// Reads the committed budget frontier for journal-prefix conformance checks.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_committed_budget(&self) -> gantry_runtime::ExecutionBudgetSnapshot {
+        self.committed_budget.snapshot()
+    }
+
     pub(crate) fn begin_driver(&self) -> Option<RecoveredDurableStateV1> {
         let mut state = lock_state(&self.state);
         if state.operation_in_flight || state.run_failure.is_some() {

@@ -1919,6 +1919,11 @@ fn cancellation_commit_failures_retain_authoritative_machine_and_budget() {
             authoritative.machine().budget_checkpoint(),
             "commit {failed_commit}: uncommitted budget leaked"
         );
+        assert_eq!(
+            owned.test_committed_budget(),
+            authoritative.machine().budget_checkpoint(),
+            "commit {failed_commit}: budget observer differs from committed prefix"
+        );
     }
 }
 
