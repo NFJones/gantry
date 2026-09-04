@@ -22,7 +22,7 @@ use gantry::ir::{
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
     CanonicalTranscriptV1, DurableCommitCoordinatorV1, DurableCommitCutV1, DurableEvidenceError,
-    DurableLogicalEvidenceV2, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
+    DurableLogicalEvidenceV3, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
     DurableTransitionSink, InMemoryJournalStore, LogicalSessionRegistryV1, Machine, MachineLimits,
     MachineOutcome, MachineStep, SessionCreationModeV1, SessionEstablishmentV1,
     ValidationErrorCategoryV1, ValidationErrorV1, recover_authoritative_prefix,
@@ -205,7 +205,7 @@ fn public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions
         )
         .unwrap_or_else(|error| panic!("fork session failed: {error:?}"))
         .id;
-    let evidence = DurableLogicalEvidenceV2::new_with_sessions(
+    let evidence = DurableLogicalEvidenceV3::new_with_sessions(
         execution(),
         root_task(),
         DurableCommitCutV1::Checkpoint,
@@ -268,7 +268,7 @@ fn public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions
 
     let snapshot = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
         journal_id,
-        snapshot_version: 3,
+        snapshot_version: 5,
         frontier: 1,
         canonical_snapshot: Arc::from(evidence.canonical_body()),
         retained_evidence: std::collections::BTreeMap::from([(receipt.entries[0].evidence_id, 1)]),
@@ -495,7 +495,7 @@ fn public_recovery_rejects_corruption_invalid_causality_and_operation_order() {
         Err(DurableEvidenceError::InvalidOperationTransition)
     );
 
-    let checkpoint = DurableLogicalEvidenceV2::new(
+    let checkpoint = DurableLogicalEvidenceV3::new(
         execution(),
         root_task(),
         DurableCommitCutV1::Checkpoint,
@@ -529,7 +529,7 @@ fn public_recovery_rejects_corruption_invalid_causality_and_operation_order() {
             journal_id: journal_id(),
             sequence: 1,
             evidence_id: evidence_id(1),
-            kind: Arc::from("gantry.logical-evidence/v2"),
+            kind: Arc::from("gantry.logical-evidence/v3"),
             canonical_body: Arc::from(corrupt),
             references: Arc::from([]),
             protected_payloads: Arc::from([]),
@@ -548,7 +548,7 @@ fn public_non_operation_commit_cuts_recover_without_reapplying_fixed_state() {
 
     let mut cancelled = machine(Arc::clone(&program));
     assert!(cancelled.cancel("caller").is_some());
-    let cancellation = DurableLogicalEvidenceV2::new(
+    let cancellation = DurableLogicalEvidenceV3::new(
         execution(),
         root_task(),
         DurableCommitCutV1::Cancellation,
@@ -558,7 +558,7 @@ fn public_non_operation_commit_cuts_recover_without_reapplying_fixed_state() {
     .unwrap_or_else(|error| panic!("cancellation evidence failed: {error:?}"));
     let body = cancellation.canonical_body();
     assert_eq!(
-        DurableLogicalEvidenceV2::decode(&program, &body),
+        DurableLogicalEvidenceV3::decode(&program, &body),
         Ok(cancellation.clone())
     );
     let recovered = recover_authoritative_prefix(
@@ -589,7 +589,7 @@ fn public_non_operation_commit_cuts_recover_without_reapplying_fixed_state() {
     .enumerate()
     {
         let evidence =
-            DurableLogicalEvidenceV2::new(execution(), root_task(), cut, None, &terminal)
+            DurableLogicalEvidenceV3::new(execution(), root_task(), cut, None, &terminal)
                 .unwrap_or_else(|error| panic!("{cut:?} evidence failed: {error:?}"));
         let material = u8::try_from(index + 2)
             .unwrap_or_else(|_| panic!("commit-cut fixture material overflowed"));
@@ -666,8 +666,8 @@ fn operation_evidence(
     result_type: Option<TypeDescriptor>,
     result_bytes: Option<Arc<[u8]>>,
     retry_delay_us: Option<u64>,
-) -> DurableLogicalEvidenceV2 {
-    DurableLogicalEvidenceV2::new(
+) -> DurableLogicalEvidenceV3 {
+    DurableLogicalEvidenceV3::new(
         execution(),
         root_task(),
         cut,
@@ -703,14 +703,14 @@ fn full_prefix(evidence: Vec<JournalEvidenceEnvelopeV1>) -> JournalPrefixV1 {
 fn envelope(
     sequence: u64,
     material: u8,
-    evidence: &DurableLogicalEvidenceV2,
+    evidence: &DurableLogicalEvidenceV3,
     references: &[ProtocolIdentity],
 ) -> JournalEvidenceEnvelopeV1 {
     JournalEvidenceEnvelopeV1 {
         journal_id: journal_id(),
         sequence,
         evidence_id: evidence_id(material),
-        kind: Arc::from("gantry.logical-evidence/v2"),
+        kind: Arc::from("gantry.logical-evidence/v3"),
         canonical_body: Arc::from(evidence.canonical_body()),
         references: Arc::from(references),
         protected_payloads: Arc::from([]),

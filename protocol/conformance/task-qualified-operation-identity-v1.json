@@ -1,0 +1,25 @@
+{
+  "format": "gantry.task-qualified-operation-identity-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-ID-001",
+  "capabilities": [
+    {
+      "id": "checkpoint-version-and-rejection",
+      "evidence": "crates/gantry-conformance/tests/public_protocol_formats.rs#published_public_formats_match_exact_bytes_and_reject_mutations"
+    },
+    {
+      "id": "same-site-sibling-distinction",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#concurrent_operation_identities_include_the_dynamic_task_path"
+    },
+    {
+      "id": "scheduler-machine-coordinate-validation",
+      "evidence": "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path"
+    }
+  ],
+  "exclusions": [
+    "GNT-3-M-STATE clause-002 includes coordinator and durable state obligations beyond task-qualified operation identity and remains assigned to downstream issues.",
+    "GNT-3-M-SPAWN clause-001 source scheduling, gate release, session establishment, and handle publication remain owned by GNT-ASYNC-SPAWN-001.",
+    "GNT-11.7 complete task-graph reconstruction and resume-time executor resubmission remain owned by GNT-ASYNC-REC-001.",
+    "Closed generic spawned-body identity remains owned by GNT-ASYNC-IR-001 and GNT-ASYNC-LOWER-001."
+  ]
+}

@@ -24,12 +24,12 @@
       ]
     },
     {
-      "format": "combined-checkpoint/v2",
+      "format": "combined-checkpoint/v3",
       "family": "recovery-projection",
       "encoding": "canonical-binary",
-      "magic": "GNTCDP02",
-      "byte_length": "1086",
-      "sha256": "6ae72ef8c22634c8f25f1055376bafafdc7d99bbe767a6464dc908294e4912ff",
+      "magic": "GNTCDP03",
+      "byte_length": "1171",
+      "sha256": "60403f21a9f9048754be384590e5e01b2071d83c2d8e6ab455ac9eac1f44042f",
       "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -61,12 +61,12 @@
       ]
     },
     {
-      "format": "gantry.cancellation/v2",
+      "format": "gantry.cancellation/v3",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "4245",
-      "sha256": "6bc329dbd7bf838f2ac74618edd61b8f481de9491e1f86a9cecb82585d73646d",
+      "byte_length": "4585",
+      "sha256": "45e070a93ec2ebaf45f29430c6cff7666c92e467d5dbf5744f85d120fa46f3dc",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -79,12 +79,12 @@
       ]
     },
     {
-      "format": "gantry.concurrent-durable-evidence/v2",
+      "format": "gantry.concurrent-durable-evidence/v3",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "2431",
-      "sha256": "4cc692c3f6f4c211ba820588eb8447811f0d3da711d89f57be96c427a9a77723",
+      "byte_length": "2601",
+      "sha256": "039fc345153ee4c1ff0afa7feae04c6dcc73c08d11389dd32101ccea42a91605",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -151,12 +151,12 @@
       ]
     },
     {
-      "format": "gantry.execution-start/v2",
+      "format": "gantry.execution-start/v3",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "4542",
-      "sha256": "38994d15b9f2dcbfcacbdb0ac38aea62e336aafd0de21b8914c11f54a59be292",
+      "byte_length": "4882",
+      "sha256": "439a26541a97ebe4076d3ff99c6b3741f2c35ecb388bf45c1bee6527cc19b579",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -187,12 +187,12 @@
       ]
     },
     {
-      "format": "gantry.logical-evidence/v2",
+      "format": "gantry.logical-evidence/v3",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "1979",
-      "sha256": "c47392d9a44859760d2facf1568dee0ff19ea30d6eff283d635f3419126cf29b",
+      "byte_length": "2149",
+      "sha256": "4148c8bf0b77792dec48a63263483d7e627d55ac1e786881a4e9bf3d3957d943",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -205,12 +205,12 @@
       ]
     },
     {
-      "format": "gantry.recovery-snapshot/v2",
+      "format": "gantry.recovery-snapshot/v3",
       "family": "recovery-projection",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "13587",
-      "sha256": "2641ffa8780ba3d417ed22b41bcfc69426d9a09b42f89e44f8830fcd55b452c8",
+      "byte_length": "14607",
+      "sha256": "4cf2674be142682b946e83b050a6901056bf6d8edb6c9e65e921dc2ce58b9639",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -223,12 +223,12 @@
       ]
     },
     {
-      "format": "machine-checkpoint/v2",
+      "format": "machine-checkpoint/v3",
       "family": "recovery-projection",
       "encoding": "canonical-binary",
-      "magic": "GNTMCP02",
-      "byte_length": "396",
-      "sha256": "4e575d7800062a595dc2f65715dcf9f7c2b836bea68d947e8ef41ba8537322b7",
+      "magic": "GNTMCP03",
+      "byte_length": "481",
+      "sha256": "8d55b56c70b818024a94074d5d95b0cdfcbf553c5ed272139b742afb81855652",
       "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [

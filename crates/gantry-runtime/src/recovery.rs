@@ -6,12 +6,12 @@ mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use concurrent::{
-    ConcurrentDurableEvidenceV2, RecoveredConcurrentDurableStateV1,
+    ConcurrentDurableEvidenceV3, RecoveredConcurrentDurableStateV1,
     recover_concurrent_authoritative_prefix,
 };
 pub use execution_start::{
-    DurableCancellationEvidenceV2, DurableExecutionStartV2, DurableExecutionStateV1,
-    DurableRecoverySnapshotV2,
+    DurableCancellationEvidenceV3, DurableExecutionStartV3, DurableExecutionStateV1,
+    DurableRecoverySnapshotV3,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,14 +36,14 @@ use crate::{
     CancellationReason, DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
     DURABLE_EVENT_SETTLED_KIND_V1, DurableEventEvidenceError, DurableEventOccurrenceV1,
     DurableTransitionSink, ExecutionBudget, ExecutionBudgetSnapshot,
-    LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine, MachineCheckpointV2,
+    LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine, MachineCheckpointV3,
     MachineRecoveryError, MachineStatus, RecoveredDurableEventsV1, SessionRecoveryError,
     TransitionReceiptV1, TransitionSink, ValidationErrorCategoryV1, ValidationErrorV1,
 };
 
-/// Version-two evidence kind for complete concurrent-durable graph checkpoints.
+/// Version-three evidence kind for complete concurrent-durable graph checkpoints.
 #[cfg(all(feature = "concurrent", feature = "durable"))]
-pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V2: &str = "gantry.concurrent-durable-evidence/v2";
+pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V3: &str = "gantry.concurrent-durable-evidence/v3";
 
 /// Exact semantic boundary represented by one durable logical evidence body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -202,7 +202,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         sessions: Option<&LogicalSessionRegistryV1>,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         let session_checkpoint = sessions.map(LogicalSessionRegistryV1::checkpoint);
-        let evidence = DurableLogicalEvidenceV2::new_with_sessions(
+        let evidence = DurableLogicalEvidenceV3::new_with_sessions(
             self.execution_id,
             self.task_id,
             cut,
@@ -221,7 +221,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         machine: &Machine,
         sessions: Option<&LogicalSessionRegistryV1>,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
-        let evidence = DurableLogicalEvidenceV2::new_with_sessions(
+        let evidence = DurableLogicalEvidenceV3::new_with_sessions(
             self.execution_id,
             self.task_id,
             DurableCommitCutV1::Cancellation,
@@ -230,7 +230,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             sessions.map(LogicalSessionRegistryV1::checkpoint),
         )
         .map_err(DurableCommitError::Evidence)?;
-        let cancellation = DurableCancellationEvidenceV2::new(reason, evidence)
+        let cancellation = DurableCancellationEvidenceV3::new(reason, evidence)
             .map_err(DurableCommitError::Evidence)?;
         let local_number = self
             .next_local_id
@@ -258,7 +258,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
     async fn commit_evidence(
         &mut self,
         cut: DurableCommitCutV1,
-        evidence: DurableLogicalEvidenceV2,
+        evidence: DurableLogicalEvidenceV3,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         let local_number = self
             .next_local_id
@@ -408,7 +408,7 @@ pub enum DurableOperationRecoveryV1 {
 pub struct RecoveredDurableStateV1 {
     machine: Machine,
     sessions: Option<LogicalSessionRegistryV1>,
-    execution_start: Option<DurableExecutionStartV2>,
+    execution_start: Option<DurableExecutionStartV3>,
     execution_state: Option<DurableExecutionStateV1>,
     cancellation_reason: Option<CancellationReason>,
     events: RecoveredDurableEventsV1,
@@ -421,7 +421,7 @@ pub struct RecoveredDurableStateV1 {
 impl RecoveredDurableStateV1 {
     /// Constructs the authoritative in-process projection immediately after sequence one commits.
     pub fn from_committed_start(
-        execution_start: DurableExecutionStartV2,
+        execution_start: DurableExecutionStartV3,
         evidence_id: ProtocolIdentity,
         sequence: u64,
     ) -> Result<Self, DurableEvidenceError> {
@@ -490,7 +490,7 @@ impl RecoveredDurableStateV1 {
 
     /// Returns immutable sequence-one metadata when the prefix retained an execution start.
     #[must_use]
-    pub const fn execution_start(&self) -> Option<&DurableExecutionStartV2> {
+    pub const fn execution_start(&self) -> Option<&DurableExecutionStartV3> {
         self.execution_start.as_ref()
     }
 
@@ -619,11 +619,11 @@ pub fn recover_authoritative_prefix(
                     (*sequence == prefix.frontier).then_some(*identity)
                 })
                 .ok_or(DurableEvidenceError::InvalidCausalOrder)?;
-            let evidence = if prefix.snapshot_version == 3 {
-                DurableLogicalEvidenceV2::decode(&program, &prefix.canonical_snapshot)?
-            } else if prefix.snapshot_version == 4 {
+            let evidence = if prefix.snapshot_version == 5 {
+                DurableLogicalEvidenceV3::decode(&program, &prefix.canonical_snapshot)?
+            } else if prefix.snapshot_version == 6 {
                 let snapshot =
-                    DurableRecoverySnapshotV2::decode(&program, &prefix.canonical_snapshot)?;
+                    DurableRecoverySnapshotV3::decode(&program, &prefix.canonical_snapshot)?;
                 projection.execution_start = Some(snapshot.execution_start().clone());
                 projection.execution_state = snapshot.execution_state().cloned();
                 snapshot.state().clone()
@@ -655,13 +655,13 @@ pub fn recover_authoritative_prefix_with_retained_program(
                 .evidence
                 .first()
                 .ok_or(DurableEvidenceError::MissingRecoveryState)?;
-            if first.sequence != 1 || first.kind.as_ref() != "gantry.execution-start/v2" {
+            if first.sequence != 1 || first.kind.as_ref() != "gantry.execution-start/v3" {
                 return Err(DurableEvidenceError::InvalidExecutionStart);
             }
-            DurableExecutionStartV2::retained_program(&first.canonical_body)?
+            DurableExecutionStartV3::retained_program(&first.canonical_body)?
         }
-        JournalPrefixV1::Snapshot(prefix) if prefix.snapshot_version == 4 => {
-            DurableRecoverySnapshotV2::retained_program(&prefix.canonical_snapshot)?
+        JournalPrefixV1::Snapshot(prefix) if prefix.snapshot_version == 6 => {
+            DurableRecoverySnapshotV3::retained_program(&prefix.canonical_snapshot)?
         }
         JournalPrefixV1::Snapshot(_) => {
             return Err(DurableEvidenceError::MissingRecoveryState);
@@ -673,9 +673,9 @@ pub fn recover_authoritative_prefix_with_retained_program(
 
 #[derive(Default)]
 struct PrefixProjection {
-    latest: Option<(u64, ProtocolIdentity, DurableLogicalEvidenceV2)>,
+    latest: Option<(u64, ProtocolIdentity, DurableLogicalEvidenceV3)>,
     journal_tip: Option<(u64, ProtocolIdentity)>,
-    execution_start: Option<DurableExecutionStartV2>,
+    execution_start: Option<DurableExecutionStartV3>,
     execution_state: Option<DurableExecutionStateV1>,
     committed_cancellation: Option<CancellationReason>,
     events: RecoveredDurableEventsV1,
@@ -693,7 +693,7 @@ impl PrefixProjection {
         sequence: u64,
         evidence_id: ProtocolIdentity,
         retained: impl IntoIterator<Item = ProtocolIdentity>,
-        evidence: DurableLogicalEvidenceV2,
+        evidence: DurableLogicalEvidenceV3,
     ) -> Result<(), DurableEvidenceError> {
         self.record_operation_cut(&evidence, false)?;
         self.known.extend(retained);
@@ -710,14 +710,14 @@ impl PrefixProjection {
         program: &MachineProgram,
         envelope: &JournalEvidenceEnvelopeV1,
     ) -> Result<(), DurableEvidenceError> {
-        if self.latest.is_none() && envelope.kind.as_ref() == "gantry.execution-start/v2" {
+        if self.latest.is_none() && envelope.kind.as_ref() == "gantry.execution-start/v3" {
             if self.journal_tip.is_some()
                 || envelope.sequence != 1
                 || !envelope.references.is_empty()
             {
                 return Err(DurableEvidenceError::InvalidExecutionStart);
             }
-            let start = DurableExecutionStartV2::decode(program, &envelope.canonical_body)?;
+            let start = DurableExecutionStartV3::decode(program, &envelope.canonical_body)?;
             let evidence = start.state().clone();
             self.record_operation_cut(&evidence, true)?;
             self.record_tip(envelope)?;
@@ -748,7 +748,7 @@ impl PrefixProjection {
             self.record_tip(envelope)?;
             return Ok(());
         }
-        if envelope.kind.as_ref() == "gantry.cancellation/v2" {
+        if envelope.kind.as_ref() == "gantry.cancellation/v3" {
             let Some((_, _, previous)) = &self.latest else {
                 return Err(DurableEvidenceError::InvalidCausalOrder);
             };
@@ -757,7 +757,7 @@ impl PrefixProjection {
                 return Err(DurableEvidenceError::RepeatedCancellation);
             }
             let cancellation =
-                DurableCancellationEvidenceV2::decode(program, &envelope.canonical_body)?;
+                DurableCancellationEvidenceV3::decode(program, &envelope.canonical_body)?;
             let evidence = cancellation.state().clone();
             if evidence.execution_id() != previous.execution_id()
                 || evidence.task_id() != previous.task_id()
@@ -771,7 +771,7 @@ impl PrefixProjection {
             self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
             return Ok(());
         }
-        if envelope.kind.as_ref() != "gantry.logical-evidence/v2" {
+        if envelope.kind.as_ref() != "gantry.logical-evidence/v3" {
             if envelope.kind.as_ref() != "gantry.execution-state/v1" {
                 return Err(DurableEvidenceError::UnsupportedEvidenceKind);
             }
@@ -791,7 +791,7 @@ impl PrefixProjection {
         }
         if let Some((_, _, previous)) = &self.latest {
             self.require_predecessor(envelope)?;
-            let evidence = DurableLogicalEvidenceV2::decode(program, &envelope.canonical_body)?;
+            let evidence = DurableLogicalEvidenceV3::decode(program, &envelope.canonical_body)?;
             if evidence.execution_id != previous.execution_id
                 || evidence.task_id != previous.task_id
             {
@@ -806,7 +806,7 @@ impl PrefixProjection {
         if !envelope.references.is_empty() {
             return Err(DurableEvidenceError::InvalidCausalOrder);
         }
-        let evidence = DurableLogicalEvidenceV2::decode(program, &envelope.canonical_body)?;
+        let evidence = DurableLogicalEvidenceV3::decode(program, &envelope.canonical_body)?;
         self.record_operation_cut(&evidence, true)?;
         self.record_tip(envelope)?;
         self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
@@ -845,7 +845,7 @@ impl PrefixProjection {
 
     fn record_operation_cut(
         &mut self,
-        evidence: &DurableLogicalEvidenceV2,
+        evidence: &DurableLogicalEvidenceV3,
         enforce_history: bool,
     ) -> Result<(), DurableEvidenceError> {
         let Some(operation) = evidence.operation.as_ref() else {
@@ -964,7 +964,7 @@ pub(super) fn validate_budget_successor(
 }
 
 fn operation_recovery(
-    evidence: &DurableLogicalEvidenceV2,
+    evidence: &DurableLogicalEvidenceV3,
 ) -> Result<DurableOperationRecoveryV1, DurableEvidenceError> {
     let Some(operation) = evidence.operation.as_ref() else {
         return Ok(DurableOperationRecoveryV1::None);
@@ -1047,19 +1047,19 @@ fn operation_recovery(
     }
 }
 
-/// One canonical version-two logical evidence body plus its recovery state.
+/// One canonical version-three logical evidence body plus its recovery state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableLogicalEvidenceV2 {
+pub struct DurableLogicalEvidenceV3 {
     execution_id: ProtocolIdentity,
     task_id: ProtocolIdentity,
     cut: DurableCommitCutV1,
     operation: Option<DurableOperationEvidenceV1>,
     budget: ExecutionBudgetSnapshot,
-    checkpoint: MachineCheckpointV2,
+    checkpoint: MachineCheckpointV3,
     sessions: Option<LogicalSessionRegistryCheckpointV1>,
 }
 
-impl DurableLogicalEvidenceV2 {
+impl DurableLogicalEvidenceV3 {
     /// Captures one validated commit-cut record over complete machine state.
     pub fn new(
         execution_id: ProtocolIdentity,
@@ -1102,7 +1102,7 @@ impl DurableLogicalEvidenceV2 {
         cut: DurableCommitCutV1,
         operation: Option<DurableOperationEvidenceV1>,
         budget: ExecutionBudgetSnapshot,
-        checkpoint: MachineCheckpointV2,
+        checkpoint: MachineCheckpointV3,
         sessions: Option<LogicalSessionRegistryCheckpointV1>,
     ) -> Result<Self, DurableEvidenceError> {
         if execution_id.kind() != IdentityKind::Execution
@@ -1226,7 +1226,7 @@ impl DurableLogicalEvidenceV2 {
 
     /// Returns the complete same-machine recovery checkpoint.
     #[must_use]
-    pub const fn checkpoint(&self) -> &MachineCheckpointV2 {
+    pub const fn checkpoint(&self) -> &MachineCheckpointV3 {
         &self.checkpoint
     }
 
@@ -1247,7 +1247,7 @@ impl DurableLogicalEvidenceV2 {
         push_json_string(&mut output, self.cut.wire_name());
         output.push_str(",\"execution_id\":");
         push_json_string(&mut output, &self.execution_id.to_string());
-        output.push_str(",\"format\":\"gantry.logical-evidence/v2\",\"operation\":");
+        output.push_str(",\"format\":\"gantry.logical-evidence/v3\",\"operation\":");
         match &self.operation {
             Some(operation) => push_operation(&mut output, operation),
             None => output.push_str("null"),
@@ -1265,7 +1265,7 @@ impl DurableLogicalEvidenceV2 {
         output.into_bytes()
     }
 
-    /// Decodes one exact canonical version-two evidence body.
+    /// Decodes one exact canonical version-three evidence body.
     pub fn decode(program: &MachineProgram, body: &[u8]) -> Result<Self, DurableEvidenceError> {
         let maximum_bytes =
             u64::try_from(body.len()).map_err(|_| DurableEvidenceError::Encoding)?;
@@ -1294,7 +1294,7 @@ impl DurableLogicalEvidenceV2 {
                 "task_id",
             ],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.logical-evidence/v2" {
+        if string(&document, field(root, "format")?)? != "gantry.logical-evidence/v3" {
             return Err(DurableEvidenceError::Encoding);
         }
         let budget = ExecutionBudgetSnapshot::decode(&decode_hex(string(
@@ -1303,7 +1303,7 @@ impl DurableLogicalEvidenceV2 {
         )?)?)
         .map_err(DurableEvidenceError::Checkpoint)?;
         let checkpoint_bytes = decode_hex(string(&document, field(root, "checkpoint")?)?)?;
-        let checkpoint = MachineCheckpointV2::decode(program, &checkpoint_bytes)
+        let checkpoint = MachineCheckpointV3::decode(program, &checkpoint_bytes)
             .map_err(DurableEvidenceError::Checkpoint)?;
         let cut = DurableCommitCutV1::from_wire_name(string(&document, field(root, "cut")?)?)
             .ok_or(DurableEvidenceError::Encoding)?;
@@ -1357,7 +1357,7 @@ impl DurableLogicalEvidenceV2 {
     ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
         UnfinalizedEvidenceV1::new(
             batch_local_id,
-            "gantry.logical-evidence/v2",
+            "gantry.logical-evidence/v3",
             self.canonical_body(),
             references,
             Arc::from([]),
@@ -1811,9 +1811,9 @@ mod tests {
     };
 
     use super::{
-        DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV2,
-        DurableLogicalEvidenceV2, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
-        DurableRecoverySnapshotV2, recover_authoritative_prefix,
+        DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV3,
+        DurableLogicalEvidenceV3, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
+        DurableRecoverySnapshotV3, recover_authoritative_prefix,
         recover_authoritative_prefix_with_retained_program, validate_budget_successor,
     };
     use crate::{
@@ -1835,7 +1835,7 @@ mod tests {
         });
         let snapshot = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
             journal_id: journal_id(),
-            snapshot_version: 3,
+            snapshot_version: 5,
             frontier: 1,
             canonical_snapshot: Arc::from(evidence.canonical_body()),
             retained_evidence: BTreeMap::from([(first.evidence_id, 1)]),
@@ -1863,7 +1863,7 @@ mod tests {
         let mut machine = machine(Arc::clone(&program));
         assert!(matches!(machine.step(), MachineStep::Transition(_)));
         let state = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
-        let execution_start = DurableExecutionStartV2::new(
+        let execution_start = DurableExecutionStartV3::new(
             execution(),
             root_task(),
             &program,
@@ -1871,11 +1871,11 @@ mod tests {
             state.clone(),
         )
         .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
-        let snapshot = DurableRecoverySnapshotV2::new(execution_start, state)
+        let snapshot = DurableRecoverySnapshotV3::new(execution_start, state)
             .unwrap_or_else(|error| panic!("retained snapshot failed: {error:?}"));
         let prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
             journal_id: journal_id(),
-            snapshot_version: 4,
+            snapshot_version: 6,
             frontier: 1,
             canonical_snapshot: Arc::from(snapshot.canonical_body()),
             retained_evidence: BTreeMap::from([(evidence_id(1), 1)]),
@@ -1890,7 +1890,7 @@ mod tests {
         assert_eq!(
             recovered
                 .execution_start()
-                .map(DurableExecutionStartV2::metadata),
+                .map(DurableExecutionStartV3::metadata),
             Some(&b"{}"[..])
         );
         assert_eq!(recovered.latest_sequence(), 1);
@@ -1910,7 +1910,7 @@ mod tests {
             CanonicalTranscriptV1::empty(),
         )
         .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
-        let evidence = DurableLogicalEvidenceV2::new_with_sessions(
+        let evidence = DurableLogicalEvidenceV3::new_with_sessions(
             execution(),
             root_task(),
             DurableCommitCutV1::Checkpoint,
@@ -2128,7 +2128,7 @@ mod tests {
             journal_id: journal_id(),
             sequence: 1,
             evidence_id: evidence_id(1),
-            kind: Arc::from("gantry.logical-evidence/v2"),
+            kind: Arc::from("gantry.logical-evidence/v3"),
             canonical_body: Arc::from(corrupt),
             references: Arc::from([]),
             protected_payloads: Arc::from([]),
@@ -2220,7 +2220,7 @@ mod tests {
         let program = value_program();
         let mut machine = machine(Arc::clone(&program));
         let start_state = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
-        let continuous_start = DurableExecutionStartV2::new(
+        let continuous_start = DurableExecutionStartV3::new(
             execution(),
             root_task(),
             &program,
@@ -2231,10 +2231,10 @@ mod tests {
 
         assert!(matches!(machine.step(), MachineStep::Transition(_)));
         let frontier = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
-        DurableRecoverySnapshotV2::new(continuous_start, frontier.clone())
+        DurableRecoverySnapshotV3::new(continuous_start, frontier.clone())
             .unwrap_or_else(|error| panic!("continuous snapshot failed: {error:?}"));
 
-        let regressive_start = DurableExecutionStartV2::new(
+        let regressive_start = DurableExecutionStartV3::new(
             execution(),
             root_task(),
             &program,
@@ -2243,7 +2243,7 @@ mod tests {
         )
         .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
         assert_eq!(
-            DurableRecoverySnapshotV2::new(regressive_start, start_state).map(|_| ()),
+            DurableRecoverySnapshotV3::new(regressive_start, start_state).map(|_| ()),
             Err(DurableEvidenceError::InvalidExecutionBudget)
         );
     }
@@ -2268,7 +2268,7 @@ mod tests {
         let mut mismatched = first.clone();
         mismatched.budget = different_machine.budget_checkpoint();
         assert!(matches!(
-            DurableLogicalEvidenceV2::decode(&program, &mismatched.canonical_body()),
+            DurableLogicalEvidenceV3::decode(&program, &mismatched.canonical_body()),
             Err(DurableEvidenceError::Checkpoint(_))
         ));
 
@@ -2308,8 +2308,8 @@ mod tests {
         machine: &Machine,
         cut: DurableCommitCutV1,
         operation: Option<DurableOperationEvidenceV1>,
-    ) -> DurableLogicalEvidenceV2 {
-        DurableLogicalEvidenceV2::new(execution(), root_task(), cut, operation, machine)
+    ) -> DurableLogicalEvidenceV3 {
+        DurableLogicalEvidenceV3::new(execution(), root_task(), cut, operation, machine)
             .unwrap_or_else(|error| panic!("evidence construction failed: {error:?}"))
     }
 
@@ -2320,7 +2320,7 @@ mod tests {
         cut: DurableCommitCutV1,
         action_recovery: Option<RecoveryClass>,
         retry_delay_us: Option<u64>,
-    ) -> DurableLogicalEvidenceV2 {
+    ) -> DurableLogicalEvidenceV3 {
         let request_bytes =
             (cut != DurableCommitCutV1::OperationResult).then(|| Arc::from(&b"{}"[..]));
         let outcome = match cut {
@@ -2369,14 +2369,14 @@ mod tests {
     fn envelope(
         sequence: u64,
         evidence_material: u8,
-        evidence: &DurableLogicalEvidenceV2,
+        evidence: &DurableLogicalEvidenceV3,
         references: &[ProtocolIdentity],
     ) -> JournalEvidenceEnvelopeV1 {
         JournalEvidenceEnvelopeV1 {
             journal_id: journal_id(),
             sequence,
             evidence_id: evidence_id(evidence_material),
-            kind: Arc::from("gantry.logical-evidence/v2"),
+            kind: Arc::from("gantry.logical-evidence/v3"),
             canonical_body: Arc::from(evidence.canonical_body()),
             references: Arc::from(references),
             protected_payloads: Arc::from([]),

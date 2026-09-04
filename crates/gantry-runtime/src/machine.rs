@@ -286,6 +286,8 @@ pub enum MachineBuildError {
     ArgumentType,
     /// The identity is not an execution identity.
     InvalidExecutionIdentity,
+    /// The task identity or canonical task path does not match the execution.
+    InvalidTaskIdentity,
     /// The shared budget belongs to another execution or configured maxima.
     ExecutionBudgetMismatch,
     /// The initial logical-session identity is not a session identity.
@@ -342,6 +344,10 @@ pub enum MachineOutcome {
 pub struct OperationOccurrence {
     /// Derived stable operation identity.
     pub identity: ProtocolIdentity,
+    /// Stable identity of the task executing this operation.
+    pub task_id: ProtocolIdentity,
+    /// Canonical dynamic path of the task executing this operation.
+    pub task_path: Arc<[Arc<str>]>,
     /// Canonical containing workflow.
     pub workflow: CanonicalPath,
     /// Canonical static operation site.
@@ -487,8 +493,10 @@ struct PendingOperation {
 /// validated construction and recovery can create runnable machine state.
 #[cfg(feature = "durable")]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MachineCheckpointV2 {
+pub struct MachineCheckpointV3 {
     execution: ProtocolIdentity,
+    task_id: ProtocolIdentity,
+    task_path: Arc<[Arc<str>]>,
     execution_foreground: bool,
     limits: MachineLimits,
     frames: Vec<WorkflowFrame>,
@@ -511,11 +519,28 @@ pub struct MachineCheckpointV2 {
 }
 
 #[cfg(feature = "durable")]
-impl MachineCheckpointV2 {
+impl MachineCheckpointV3 {
     /// Returns the accepted execution identity represented by this checkpoint.
     #[must_use]
     pub const fn execution_id(&self) -> ProtocolIdentity {
         self.execution
+    }
+
+    /// Returns the stable task identity represented by this checkpoint.
+    #[must_use]
+    pub const fn task_id(&self) -> ProtocolIdentity {
+        self.task_id
+    }
+
+    /// Returns the canonical task path represented by this checkpoint.
+    #[must_use]
+    pub fn task_path(&self) -> &[Arc<str>] {
+        &self.task_path
+    }
+
+    /// Returns the machine limits represented by this checkpoint.
+    pub(crate) const fn machine_limits(&self) -> MachineLimits {
+        self.limits
     }
 
     /// Returns whether this checkpoint owns execution foreground/terminal labels.
@@ -563,13 +588,13 @@ impl MachineCheckpointV2 {
         self.remaining_loop_iterations
     }
 
-    /// Encodes this task-local checkpoint as the unique version-two binary representation.
+    /// Encodes this task-local checkpoint as the unique version-three binary representation.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         encode_machine_checkpoint(self)
     }
 
-    /// Decodes one exact version-two checkpoint against its immutable program.
+    /// Decodes one exact version-three checkpoint against its immutable program.
     pub fn decode(program: &MachineProgram, bytes: &[u8]) -> Result<Self, MachineRecoveryError> {
         decode_machine_checkpoint(program, bytes)
     }
@@ -594,6 +619,8 @@ pub enum MachineRecoveryError {
 pub struct Machine {
     program: Arc<MachineProgram>,
     execution: ProtocolIdentity,
+    task_id: ProtocolIdentity,
+    task_path: Arc<[Arc<str>]>,
     execution_foreground: bool,
     limits: MachineLimits,
     execution_budget: ExecutionBudget,
@@ -642,6 +669,8 @@ impl Machine {
             root,
             arguments,
             execution,
+            root_task_identity(execution),
+            Arc::from([]),
             limits,
             execution_budget,
             None,
@@ -667,6 +696,8 @@ impl Machine {
             root,
             arguments,
             execution,
+            root_task_identity(execution),
+            Arc::from([]),
             limits,
             execution_budget,
             initial_agent,
@@ -688,6 +719,8 @@ impl Machine {
         root: &CanonicalPath,
         arguments: Vec<LogicalValue>,
         execution: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_path: Arc<[Arc<str>]>,
         limits: MachineLimits,
         execution_budget: ExecutionBudget,
         initial_agent: Option<Arc<str>>,
@@ -698,6 +731,8 @@ impl Machine {
             root,
             arguments,
             execution,
+            task_id,
+            task_path,
             limits,
             execution_budget,
             initial_agent,
@@ -713,6 +748,8 @@ impl Machine {
         root: &CanonicalPath,
         arguments: Vec<LogicalValue>,
         execution: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_path: Arc<[Arc<str>]>,
         limits: MachineLimits,
         execution_budget: ExecutionBudget,
         initial_agent: Option<Arc<str>>,
@@ -723,6 +760,8 @@ impl Machine {
             root,
             arguments,
             execution,
+            task_id,
+            task_path,
             limits,
             execution_budget,
             initial_agent,
@@ -738,6 +777,8 @@ impl Machine {
         root: &CanonicalPath,
         arguments: Vec<LogicalValue>,
         execution: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_path: Arc<[Arc<str>]>,
         limits: MachineLimits,
         execution_budget: ExecutionBudget,
         initial_agent: Option<Arc<str>>,
@@ -747,6 +788,11 @@ impl Machine {
     ) -> Result<Self, MachineBuildError> {
         if execution.kind() != IdentityKind::Execution {
             return Err(MachineBuildError::InvalidExecutionIdentity);
+        }
+        if task_id != expected_task_identity(execution, &task_path)?
+            || execution_foreground != task_path.is_empty()
+        {
+            return Err(MachineBuildError::InvalidTaskIdentity);
         }
         if !execution_budget.matches(execution, limits) {
             return Err(MachineBuildError::ExecutionBudgetMismatch);
@@ -786,6 +832,8 @@ impl Machine {
         Ok(Self {
             program,
             execution,
+            task_id,
+            task_path,
             execution_foreground,
             limits,
             execution_budget,
@@ -831,6 +879,18 @@ impl Machine {
         self.execution
     }
 
+    /// Returns this machine's stable task identity.
+    #[must_use]
+    pub const fn task_id(&self) -> ProtocolIdentity {
+        self.task_id
+    }
+
+    /// Returns this machine's canonical task path; the root path is empty.
+    #[must_use]
+    pub fn task_path(&self) -> &[Arc<str>] {
+        &self.task_path
+    }
+
     /// Returns the active dynamic agent restored for the next operation.
     #[must_use]
     pub fn active_agent(&self) -> Option<&str> {
@@ -857,22 +917,16 @@ impl Machine {
         self.execution_budget.clone()
     }
 
-    /// Binds a pristine spawned machine to its scheduler-owned dynamic task path.
+    /// Validates this child machine against its scheduler-owned task coordinate.
     #[cfg(feature = "concurrent")]
-    pub(crate) fn bind_concurrent_task_path(&mut self, task_path: &[Arc<str>]) -> bool {
-        if self.execution_foreground
-            || task_path.is_empty()
-            || self.frames.len() != 1
-            || self.frames[0].pc != 0
-            || self.frames[0].occurrence_base != 0
-            || !self.occurrences.is_empty()
-            || self.status != MachineStatus::Running
-        {
-            return false;
-        }
-        self.occurrences.extend(task_path.iter().cloned());
-        self.frames[0].occurrence_base = self.occurrences.len();
-        true
+    pub(crate) fn has_concurrent_task_context(
+        &self,
+        task_id: ProtocolIdentity,
+        task_path: &[Arc<str>],
+    ) -> bool {
+        !self.execution_foreground
+            && self.task_id == task_id
+            && self.task_path.as_ref() == task_path
     }
 
     /// Returns the fixed foreground outcome, when terminal.
@@ -909,9 +963,11 @@ impl Machine {
     /// Captures complete typed state at one durable checkpoint boundary.
     #[cfg(feature = "durable")]
     #[must_use]
-    pub fn checkpoint(&self) -> MachineCheckpointV2 {
-        MachineCheckpointV2 {
+    pub fn checkpoint(&self) -> MachineCheckpointV3 {
+        MachineCheckpointV3 {
             execution: self.execution,
+            task_id: self.task_id,
+            task_path: Arc::clone(&self.task_path),
             execution_foreground: self.execution_foreground,
             limits: self.limits,
             frames: self.frames.clone(),
@@ -945,7 +1001,7 @@ impl Machine {
     #[cfg(feature = "durable")]
     pub fn recover_from_checkpoint(
         program: Arc<MachineProgram>,
-        checkpoint: MachineCheckpointV2,
+        checkpoint: MachineCheckpointV3,
         execution_budget: ExecutionBudget,
     ) -> Result<Self, MachineRecoveryError> {
         Self::recover_from_checkpoint_with_budget(program, checkpoint, execution_budget)
@@ -955,7 +1011,7 @@ impl Machine {
     #[cfg(feature = "durable")]
     pub fn recover_from_checkpoint_with_budget(
         program: Arc<MachineProgram>,
-        checkpoint: MachineCheckpointV2,
+        checkpoint: MachineCheckpointV3,
         execution_budget: ExecutionBudget,
     ) -> Result<Self, MachineRecoveryError> {
         validate_machine_checkpoint(&program, &checkpoint)?;
@@ -965,6 +1021,8 @@ impl Machine {
         Ok(Self {
             program,
             execution: checkpoint.execution,
+            task_id: checkpoint.task_id,
+            task_path: checkpoint.task_path,
             execution_foreground: checkpoint.execution_foreground,
             limits: checkpoint.limits,
             execution_budget,
@@ -1841,7 +1899,8 @@ impl Machine {
             return self.fail_at(code, workflow, instruction.site);
         }
         let operation_frame = self.next_occurrence("operation", &workflow, &instruction.site, None);
-        let mut path = self.occurrences.clone();
+        let mut path = self.task_path.to_vec();
+        path.extend(self.occurrences.iter().cloned());
         path.push(operation_frame);
         let key = operation_key(self.execution, &workflow, &instruction.site, &path);
         let identity = match ProtocolIdentity::derive(IdentityKind::Operation, &key) {
@@ -1853,6 +1912,8 @@ impl Machine {
         self.advance_pc();
         let occurrence = OperationOccurrence {
             identity,
+            task_id: self.task_id,
+            task_path: Arc::clone(&self.task_path),
             workflow,
             site: instruction.site,
             dynamic_path: Arc::from(path),
@@ -2150,9 +2211,14 @@ fn validate_execution_budget_snapshot(
 #[cfg(feature = "durable")]
 fn validate_machine_checkpoint(
     program: &MachineProgram,
-    checkpoint: &MachineCheckpointV2,
+    checkpoint: &MachineCheckpointV3,
 ) -> Result<(), MachineRecoveryError> {
     if checkpoint.execution.kind() != IdentityKind::Execution
+        || !matches!(
+            expected_task_identity(checkpoint.execution, &checkpoint.task_path),
+            Ok(expected) if expected == checkpoint.task_id
+        )
+        || checkpoint.execution_foreground != checkpoint.task_path.is_empty()
         || checkpoint.frames.is_empty()
         || checkpoint.limits.maximum_deterministic_transitions == 0
         || checkpoint.limits.maximum_operations == 0
@@ -2257,7 +2323,21 @@ fn validate_machine_checkpoint(
             } => (*operands, Some(operation)),
             _ => return false,
         };
+        let identity_matches = ProtocolIdentity::derive(
+            IdentityKind::Operation,
+            &operation_key(
+                checkpoint.execution,
+                &occurrence.workflow,
+                &occurrence.site,
+                &occurrence.dynamic_path,
+            ),
+        )
+        .is_ok_and(|expected| expected == occurrence.identity);
         occurrence.identity.kind() == IdentityKind::Operation
+            && identity_matches
+            && occurrence.task_id == checkpoint.task_id
+            && occurrence.task_path == checkpoint.task_path
+            && occurrence.dynamic_path.starts_with(&checkpoint.task_path)
             && occurrence
                 .active_session
                 .is_none_or(|session| session.kind() == IdentityKind::Session)
@@ -2780,6 +2860,41 @@ fn position_key(position: &StructuralPosition) -> String {
         .map(u64::to_string)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Derives the established stable root-task identity.
+#[must_use]
+pub fn root_task_identity(execution: ProtocolIdentity) -> ProtocolIdentity {
+    ProtocolIdentity::derive(
+        IdentityKind::Task,
+        format!("root-task:{execution}").as_bytes(),
+    )
+    .unwrap_or_else(|_| unreachable!("typed root task identity derivation is valid"))
+}
+
+fn expected_task_identity(
+    execution: ProtocolIdentity,
+    path: &[Arc<str>],
+) -> Result<ProtocolIdentity, MachineBuildError> {
+    if path.is_empty() {
+        return Ok(root_task_identity(execution));
+    }
+    ProtocolIdentity::derive(IdentityKind::Task, &task_identity_key(execution, path))
+        .map_err(|_| MachineBuildError::InvalidTaskIdentity)
+}
+
+pub(crate) fn task_identity_key(execution: ProtocolIdentity, path: &[Arc<str>]) -> Vec<u8> {
+    let mut output = String::from("{\"execution\":");
+    push_json_string(&mut output, &execution.to_string());
+    output.push_str(",\"path\":[");
+    for (index, frame) in path.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        push_json_string(&mut output, frame);
+    }
+    output.push_str("]}");
+    output.into_bytes()
 }
 
 fn operation_key(

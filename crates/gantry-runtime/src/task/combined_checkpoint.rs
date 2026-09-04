@@ -12,7 +12,7 @@ use crate::machine::checkpoint_codec::{Reader, Writer, read_outcome, write_outco
 use crate::machine::value_matches_type;
 use crate::{
     ExecutionBudget, ExecutionBudgetSnapshot, LogicalSessionRegistryCheckpointV1,
-    LogicalSessionRegistryV1, Machine, MachineCheckpointV2, MachineOutcome, MachineRecoveryError,
+    LogicalSessionRegistryV1, Machine, MachineCheckpointV3, MachineOutcome, MachineRecoveryError,
     MachineStatus, SessionCreationModeV1, SessionEstablishmentV1, SessionRecoveryError,
 };
 
@@ -21,7 +21,7 @@ use super::{
     DynamicTaskHandleIdentity, TaskCaptureV1, TaskFailureV1, task_identity_key, task_path_frame,
 };
 
-const MAGIC: &[u8; 8] = b"GNTCDP02";
+const MAGIC: &[u8; 8] = b"GNTCDP03";
 const MAX_CAPTURE_ATTEMPTS: usize = 8;
 
 /// One versioned commit-cut snapshot of the composed concurrent-durable runtime.
@@ -30,16 +30,16 @@ const MAX_CAPTURE_ATTEMPTS: usize = 8;
 /// foreground machine, scheduler task state, child machine checkpoints, and
 /// logical-session registry into one canonical recovery boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConcurrentDurableCheckpointV2 {
+pub struct ConcurrentDurableCheckpointV3 {
     execution_budget: ExecutionBudgetSnapshot,
-    foreground: MachineCheckpointV2,
+    foreground: MachineCheckpointV3,
     sessions: LogicalSessionRegistryCheckpointV1,
     state: TaskStateCheckpointV1,
-    machines: BTreeMap<ProtocolIdentity, MachineCheckpointV2>,
+    machines: BTreeMap<ProtocolIdentity, MachineCheckpointV3>,
     runnable: VecDeque<ProtocolIdentity>,
 }
 
-impl ConcurrentDurableCheckpointV2 {
+impl ConcurrentDurableCheckpointV3 {
     /// Captures one complete combined state after validating every correspondence.
     pub fn capture(
         foreground: &Machine,
@@ -188,7 +188,7 @@ impl ConcurrentDurableCheckpointV2 {
 
     /// Returns the exact foreground checkpoint composed into this graph cut.
     #[must_use]
-    pub const fn foreground_checkpoint(&self) -> &MachineCheckpointV2 {
+    pub const fn foreground_checkpoint(&self) -> &MachineCheckpointV3 {
         &self.foreground
     }
 
@@ -198,7 +198,7 @@ impl ConcurrentDurableCheckpointV2 {
         &self.sessions
     }
 
-    /// Encodes the unique version-two combined checkpoint.
+    /// Encodes the unique version-three combined checkpoint.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut writer = Writer::default();
@@ -236,7 +236,7 @@ impl ConcurrentDurableCheckpointV2 {
             return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
         }
         let execution_budget = ExecutionBudgetSnapshot::decode(reader.bytes()?)?;
-        let foreground = MachineCheckpointV2::decode(program, reader.bytes()?)?;
+        let foreground = MachineCheckpointV3::decode(program, reader.bytes()?)?;
         let sessions =
             LogicalSessionRegistryCheckpointV1::decode(reader.bytes()?, foreground.value_limits())?;
         let state = TaskStateCheckpointV1::decode(&mut reader, foreground.value_limits())?;
@@ -250,7 +250,7 @@ impl ConcurrentDurableCheckpointV2 {
                 return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
             }
             if reader.boolean()? {
-                let checkpoint = MachineCheckpointV2::decode(program, reader.bytes()?)?;
+                let checkpoint = MachineCheckpointV3::decode(program, reader.bytes()?)?;
                 if machines.insert(task.task_id, checkpoint).is_some() {
                     return Err(ConcurrentDurableCheckpointError::InvalidEncoding);
                 }
@@ -323,6 +323,8 @@ impl ConcurrentDurableCheckpointV2 {
             .recover(&sessions, self.foreground.value_limits())?;
         if !budget_matches_machine(&self.execution_budget, &self.foreground)
             || self.foreground.execution_id() != state.execution_id
+            || self.foreground.task_id() != state.root_task_id
+            || !self.foreground.task_path().is_empty()
             || !self.foreground.is_execution_foreground()
             || self.sessions.execution_id() != state.execution_id
         {
@@ -347,8 +349,13 @@ impl ConcurrentDurableCheckpointV2 {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
         }
         for (task_id, machine) in &self.machines {
+            let Some(task) = state.task(*task_id) else {
+                return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+            };
             if !budget_matches_machine(&self.execution_budget, machine)
                 || machine.execution_id() != state.execution_id
+                || machine.task_id() != *task_id
+                || machine.task_path() != task.task_path()
                 || machine.is_execution_foreground()
                 || state.task_cancellation_reason(*task_id) != machine.cancellation_reason()
             {
@@ -392,19 +399,11 @@ impl ConcurrentDurableCheckpointV2 {
     }
 }
 
-fn budget_matches_machine(budget: &ExecutionBudgetSnapshot, machine: &MachineCheckpointV2) -> bool {
-    let bytes = machine.canonical_bytes();
-    let mut reader = Reader::new(&bytes);
-    reader.raw(8).is_ok()
-        && read_identity(&mut reader, IdentityKind::Execution)
-            .is_ok_and(|execution| execution == budget.execution)
-        && reader.boolean().is_ok()
-        && reader
-            .u64()
-            .is_ok_and(|maximum| maximum == budget.maximum_transitions)
-        && reader
-            .u64()
-            .is_ok_and(|maximum| maximum == budget.maximum_operations)
+fn budget_matches_machine(budget: &ExecutionBudgetSnapshot, machine: &MachineCheckpointV3) -> bool {
+    let limits = machine.machine_limits();
+    machine.execution_id() == budget.execution
+        && limits.maximum_deterministic_transitions == budget.maximum_transitions
+        && limits.maximum_operations == budget.maximum_operations
 }
 
 /// Recovered ownership of all existing runtime components in one combined execution.
@@ -975,13 +974,14 @@ mod tests {
     };
 
     use super::{
-        ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV2, MAX_CAPTURE_ATTEMPTS,
+        ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3, MAX_CAPTURE_ATTEMPTS,
     };
+    use crate::machine::task_identity_key;
     use crate::{
         CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1,
         ConcurrentTaskStatusV1, ExecutionBudget, LogicalSessionRegistryV1, Machine, MachineLabel,
         MachineLimits, MachineOutcome, MachineStep, RuntimeCode, SessionCreationModeV1,
-        TaskCreationRequestV1, TaskStateError,
+        TaskCreationRequestV1, TaskStateError, root_task_identity,
     };
 
     #[test]
@@ -996,14 +996,14 @@ mod tests {
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
 
-        let checkpoint = ConcurrentDurableCheckpointV2::capture(
+        let checkpoint = ConcurrentDurableCheckpointV3::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
         )
         .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
         let bytes = checkpoint.canonical_bytes();
-        let decoded = ConcurrentDurableCheckpointV2::decode(&fixture.program, &bytes)
+        let decoded = ConcurrentDurableCheckpointV3::decode(&fixture.program, &bytes)
             .unwrap_or_else(|error| panic!("checkpoint decode failed: {error:?}"));
         assert_eq!(decoded.canonical_bytes(), bytes);
         assert_eq!(decoded.created_task_count(), 2);
@@ -1026,9 +1026,12 @@ mod tests {
         );
         assert!(recovered.sessions().get(created.base_session_id).is_some());
 
+        let task_path = Arc::from(task.task_path());
         let machine = child_machine(
             Arc::clone(&fixture.program),
             fixture.execution,
+            created.task_id,
+            task_path,
             created.base_session_id,
             recovered.foreground().execution_budget(),
         );
@@ -1050,7 +1053,7 @@ mod tests {
 
         let truncated = &bytes[..bytes.len().saturating_sub(1)];
         assert_eq!(
-            ConcurrentDurableCheckpointV2::decode(&fixture.program, truncated),
+            ConcurrentDurableCheckpointV3::decode(&fixture.program, truncated),
             Err(ConcurrentDurableCheckpointError::InvalidEncoding)
         );
     }
@@ -1066,6 +1069,14 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let task_path = Arc::from(
+            fixture
+                .scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task missing"))
+                .task_path(),
+        );
         fixture
             .scheduler
             .resolve_submission(
@@ -1073,6 +1084,8 @@ mod tests {
                 Ok(child_machine(
                     Arc::clone(&fixture.program),
                     fixture.execution,
+                    created.task_id,
+                    task_path,
                     created.base_session_id,
                     fixture.budget.clone(),
                 )),
@@ -1089,14 +1102,14 @@ mod tests {
             .unwrap_or_else(|error| panic!("cancellation failed: {error:?}"));
         assert!(fixture.foreground.cancel("shutdown").is_some());
 
-        let checkpoint = ConcurrentDurableCheckpointV2::capture(
+        let checkpoint = ConcurrentDurableCheckpointV3::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
         )
         .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
         let mut recovered =
-            ConcurrentDurableCheckpointV2::decode(&fixture.program, &checkpoint.canonical_bytes())
+            ConcurrentDurableCheckpointV3::decode(&fixture.program, &checkpoint.canonical_bytes())
                 .unwrap_or_else(|error| panic!("checkpoint decode failed: {error:?}"))
                 .recover(Arc::clone(&fixture.program))
                 .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
@@ -1144,7 +1157,7 @@ mod tests {
             Some(ConcurrentTaskStatusV1::Cancelled(reason)) if reason.as_ref() == "shutdown"
         ));
 
-        let settled = ConcurrentDurableCheckpointV2::capture(
+        let settled = ConcurrentDurableCheckpointV3::capture(
             recovered.foreground(),
             recovered.scheduler(),
             recovered.sessions(),
@@ -1180,6 +1193,14 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let task_path = Arc::from(
+            fixture
+                .scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task missing"))
+                .task_path(),
+        );
         fixture
             .scheduler
             .resolve_submission(
@@ -1187,12 +1208,14 @@ mod tests {
                 Ok(child_machine(
                     Arc::clone(&fixture.program),
                     fixture.execution,
+                    created.task_id,
+                    task_path,
                     created.base_session_id,
                     fixture.budget.clone(),
                 )),
             )
             .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
-        let checkpoint = ConcurrentDurableCheckpointV2::capture(
+        let checkpoint = ConcurrentDurableCheckpointV3::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1202,7 +1225,7 @@ mod tests {
         let mut duplicate_runnable = checkpoint.clone();
         duplicate_runnable.runnable.push_back(created.task_id);
         assert_eq!(
-            ConcurrentDurableCheckpointV2::decode(
+            ConcurrentDurableCheckpointV3::decode(
                 &fixture.program,
                 &duplicate_runnable.canonical_bytes(),
             ),
@@ -1215,7 +1238,7 @@ mod tests {
             .cancellation_reasons
             .insert(created.task_id, Arc::from("not-signalled"));
         assert_eq!(
-            ConcurrentDurableCheckpointV2::decode(
+            ConcurrentDurableCheckpointV3::decode(
                 &fixture.program,
                 &cancellation_mismatch.canonical_bytes(),
             ),
@@ -1227,7 +1250,7 @@ mod tests {
     fn combined_recovery_restores_one_shared_budget_owner() {
         let mut fixture = fixture();
         let created = running_child(&mut fixture, 0);
-        let recovered = ConcurrentDurableCheckpointV2::capture(
+        let recovered = ConcurrentDurableCheckpointV3::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1252,7 +1275,7 @@ mod tests {
     fn malformed_and_mixed_budget_projections_are_rejected() {
         let mut fixture = fixture();
         let _ = running_child(&mut fixture, 0);
-        let checkpoint = ConcurrentDurableCheckpointV2::capture(
+        let checkpoint = ConcurrentDurableCheckpointV3::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1263,7 +1286,7 @@ mod tests {
         malformed.execution_budget.remaining_transitions =
             malformed.execution_budget.maximum_transitions + 1;
         assert_eq!(
-            ConcurrentDurableCheckpointV2::decode(&fixture.program, &malformed.canonical_bytes(),),
+            ConcurrentDurableCheckpointV3::decode(&fixture.program, &malformed.canonical_bytes(),),
             Err(ConcurrentDurableCheckpointError::Machine(
                 crate::MachineRecoveryError::InvalidCheckpoint,
             ))
@@ -1273,7 +1296,7 @@ mod tests {
         mixed.execution_budget.maximum_transitions += 1;
         mixed.execution_budget.remaining_transitions += 1;
         assert_eq!(
-            ConcurrentDurableCheckpointV2::decode(&fixture.program, &mixed.canonical_bytes()),
+            ConcurrentDurableCheckpointV3::decode(&fixture.program, &mixed.canonical_bytes()),
             Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
         );
     }
@@ -1282,14 +1305,17 @@ mod tests {
     fn capture_retries_a_torn_budget_and_machine_interleaving() {
         let fixture = fixture();
         let before = fixture.budget.snapshot();
+        let (task_id, task_path) = standalone_child_coordinate(fixture.execution);
         let mut racer = child_machine(
             Arc::clone(&fixture.program),
             fixture.execution,
+            task_id,
+            task_path,
             fixture.root_session,
             fixture.budget.clone(),
         );
 
-        let checkpoint = ConcurrentDurableCheckpointV2::capture_with_interleaving(
+        let checkpoint = ConcurrentDurableCheckpointV3::capture_with_interleaving(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1311,11 +1337,14 @@ mod tests {
     #[test]
     fn capture_rejects_continuous_budget_and_machine_interleavings() {
         let fixture = fixture();
+        let (task_id, task_path) = standalone_child_coordinate(fixture.execution);
         let mut racers = (0..MAX_CAPTURE_ATTEMPTS)
             .map(|_| {
                 child_machine(
                     Arc::clone(&fixture.program),
                     fixture.execution,
+                    task_id,
+                    Arc::clone(&task_path),
                     fixture.root_session,
                     fixture.budget.clone(),
                 )
@@ -1323,7 +1352,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            ConcurrentDurableCheckpointV2::capture_with_interleaving(
+            ConcurrentDurableCheckpointV3::capture_with_interleaving(
                 &fixture.foreground,
                 &fixture.scheduler,
                 &fixture.sessions,
@@ -1342,7 +1371,7 @@ mod tests {
     fn post_recovery_final_unit_charges_the_shared_budget() {
         let mut fixture = fixture();
         let created = running_child(&mut fixture, 0);
-        let mut checkpoint = ConcurrentDurableCheckpointV2::capture(
+        let mut checkpoint = ConcurrentDurableCheckpointV3::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1397,8 +1426,7 @@ mod tests {
     fn fixture() -> Fixture {
         let program = program();
         let execution = fresh(IdentityKind::Execution, 1);
-        let root_task = ProtocolIdentity::derive(IdentityKind::Task, b"{\"root\":true}")
-            .unwrap_or_else(|error| panic!("root task identity failed: {error}"));
+        let root_task = root_task_identity(execution);
         let root_session = fresh(IdentityKind::Session, 2);
         let sessions = LogicalSessionRegistryV1::new(
             execution,
@@ -1443,6 +1471,14 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let task_path = Arc::from(
+            fixture
+                .scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task missing"))
+                .task_path(),
+        );
         fixture
             .scheduler
             .resolve_submission(
@@ -1450,6 +1486,8 @@ mod tests {
                 Ok(child_machine(
                     Arc::clone(&fixture.program),
                     fixture.execution,
+                    created.task_id,
+                    task_path,
                     created.base_session_id,
                     fixture.budget.clone(),
                 )),
@@ -1488,6 +1526,8 @@ mod tests {
     fn child_machine(
         program: Arc<MachineProgram>,
         execution: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_path: Arc<[Arc<str>]>,
         session: ProtocolIdentity,
         budget: ExecutionBudget,
     ) -> Machine {
@@ -1496,12 +1536,26 @@ mod tests {
             &path("crate::child"),
             Vec::new(),
             execution,
+            task_id,
+            task_path,
             machine_limits(),
             budget,
             None,
             Some(session),
         )
         .unwrap_or_else(|error| panic!("child machine failed: {error:?}"))
+    }
+
+    fn standalone_child_coordinate(
+        execution: ProtocolIdentity,
+    ) -> (ProtocolIdentity, Arc<[Arc<str>]>) {
+        let task_path = Arc::from([Arc::from("spawn:crate::main:0:0")]);
+        let task_id = ProtocolIdentity::derive(
+            IdentityKind::Task,
+            &task_identity_key(execution, &task_path),
+        )
+        .unwrap_or_else(|error| panic!("child task identity failed: {error}"));
+        (task_id, task_path)
     }
 
     fn program() -> Arc<MachineProgram> {

@@ -18,8 +18,8 @@ use gantry_host::journal::{
     JournalOwnershipToken, JournalStorage, ReadJournalPrefixV1, ReleaseJournalOwnerV1,
 };
 use gantry_runtime::{
-    AdmissionKind, DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV2,
-    DurableExecutionStateV1, DurableLogicalEvidenceV2, ExecutionHandle, LogicalSessionRegistryV1,
+    AdmissionKind, DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV3,
+    DurableExecutionStateV1, DurableLogicalEvidenceV3, ExecutionHandle, LogicalSessionRegistryV1,
     Machine, OperationAdmission, RecoveredDurableStateV1, SessionCreationModeV1,
     recover_authoritative_prefix_with_retained_program,
 };
@@ -1282,7 +1282,7 @@ impl ResumeRejection {
 }
 
 fn decode_resume_metadata(
-    execution_start: &DurableExecutionStartV2,
+    execution_start: &DurableExecutionStartV3,
 ) -> Result<ResumeMetadata, ResumeRejection> {
     let bytes = execution_start.metadata();
     let maximum_bytes = u64::try_from(bytes.len()).map_err(|_| invalid_resume_metadata())?;
@@ -1850,7 +1850,7 @@ fn build_execution_start(
     configuration: &gantry_runtime::InterpreterConfiguration,
     selection: &gantry_core::protocol::ProtocolSelection,
     required_sinks: &gantry_observe::SinkPlan,
-) -> Result<DurableExecutionStartV2, StartExecutionFailure> {
+) -> Result<DurableExecutionStartV3, StartExecutionFailure> {
     let analysis = prepared
         .package_activity
         .analysis
@@ -1900,7 +1900,7 @@ fn build_execution_start(
     )
     .map_err(|_| start_failure(StartFailureCategory::Internal, "session-state"))?;
     let task_id = root_task_identity(prepared.execution_id);
-    let state = DurableLogicalEvidenceV2::new_with_sessions(
+    let state = DurableLogicalEvidenceV3::new_with_sessions(
         prepared.execution_id,
         task_id,
         DurableCommitCutV1::Checkpoint,
@@ -1912,7 +1912,7 @@ fn build_execution_start(
         start_failure(StartFailureCategory::Internal, "execution-start-state")
     })?;
     let metadata = execution_start_metadata(prepared, configuration, selection, required_sinks)?;
-    DurableExecutionStartV2::new(prepared.execution_id, task_id, &program, metadata, state)
+    DurableExecutionStartV3::new(prepared.execution_id, task_id, &program, metadata, state)
         .map_err(|_| start_failure(StartFailureCategory::Internal, "execution-start-metadata"))
 }
 

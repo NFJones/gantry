@@ -14,29 +14,29 @@ use crate::machine::{decode_machine_program, encode_machine_program};
 use crate::{CancellationCausalIdentity, CancellationReason};
 
 use super::{
-    DurableCommitCutV1, DurableEvidenceError, DurableLogicalEvidenceV2, decode_hex, encode_hex,
+    DurableCommitCutV1, DurableEvidenceError, DurableLogicalEvidenceV3, decode_hex, encode_hex,
     field, is_canonical_json, object, push_json_string, require_exact_fields, string,
     validate_budget_successor,
 };
 
-/// Exact version-two sequence-one record binding metadata to recoverable state.
+/// Exact version-three sequence-one record binding metadata to recoverable state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableExecutionStartV2 {
+pub struct DurableExecutionStartV3 {
     execution_id: ProtocolIdentity,
     task_id: ProtocolIdentity,
     metadata: Arc<[u8]>,
     program: Arc<[u8]>,
-    state: DurableLogicalEvidenceV2,
+    state: DurableLogicalEvidenceV3,
 }
 
-impl DurableExecutionStartV2 {
+impl DurableExecutionStartV3 {
     /// Constructs one execution-start record over canonical immutable metadata and a checkpoint.
     pub fn new(
         execution_id: ProtocolIdentity,
         task_id: ProtocolIdentity,
         program: &MachineProgram,
         metadata: impl Into<Arc<[u8]>>,
-        state: DurableLogicalEvidenceV2,
+        state: DurableLogicalEvidenceV3,
     ) -> Result<Self, DurableEvidenceError> {
         let metadata = metadata.into();
         if execution_id.kind() != IdentityKind::Execution
@@ -82,16 +82,16 @@ impl DurableExecutionStartV2 {
 
     /// Returns the embedded same-machine checkpoint evidence.
     #[must_use]
-    pub const fn state(&self) -> &DurableLogicalEvidenceV2 {
+    pub const fn state(&self) -> &DurableLogicalEvidenceV3 {
         &self.state
     }
 
-    /// Encodes the unique version-two sequence-one body.
+    /// Encodes the unique version-three sequence-one body.
     #[must_use]
     pub fn canonical_body(&self) -> Vec<u8> {
         let mut output = String::from("{\"execution_id\":");
         push_json_string(&mut output, &self.execution_id.to_string());
-        output.push_str(",\"format\":\"gantry.execution-start/v2\",\"metadata\":");
+        output.push_str(",\"format\":\"gantry.execution-start/v3\",\"metadata\":");
         push_json_string(&mut output, &encode_hex(&self.metadata));
         output.push_str(",\"program\":");
         push_json_string(&mut output, &encode_hex(&self.program));
@@ -103,7 +103,7 @@ impl DurableExecutionStartV2 {
         output.into_bytes()
     }
 
-    /// Decodes one exact version-two sequence-one body against its immutable program.
+    /// Decodes one exact version-three sequence-one body against its immutable program.
     pub fn decode(program: &MachineProgram, body: &[u8]) -> Result<Self, DurableEvidenceError> {
         let maximum_bytes =
             u64::try_from(body.len()).map_err(|_| DurableEvidenceError::Encoding)?;
@@ -130,7 +130,7 @@ impl DurableExecutionStartV2 {
                 "task_id",
             ],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.execution-start/v2" {
+        if string(&document, field(root, "format")?)? != "gantry.execution-start/v3" {
             return Err(DurableEvidenceError::Encoding);
         }
         let execution_id = ProtocolIdentity::parse_kind(
@@ -152,7 +152,7 @@ impl DurableExecutionStartV2 {
             return Err(DurableEvidenceError::InvalidExecutionStart);
         }
         let state_bytes = decode_hex(string(&document, field(root, "state")?)?)?;
-        let state = DurableLogicalEvidenceV2::decode(program, &state_bytes)?;
+        let state = DurableLogicalEvidenceV3::decode(program, &state_bytes)?;
         let decoded = Self::new(execution_id, task_id, program, metadata, state)?;
         if decoded.canonical_body() != body {
             return Err(DurableEvidenceError::Encoding);
@@ -187,7 +187,7 @@ impl DurableExecutionStartV2 {
                 "task_id",
             ],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.execution-start/v2" {
+        if string(&document, field(root, "format")?)? != "gantry.execution-start/v3" {
             return Err(DurableEvidenceError::Encoding);
         }
         decode_machine_program(&decode_hex(string(&document, field(root, "program")?)?)?)
@@ -201,7 +201,7 @@ impl DurableExecutionStartV2 {
     ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
         UnfinalizedEvidenceV1::new(
             batch_local_id,
-            "gantry.execution-start/v2",
+            "gantry.execution-start/v3",
             self.canonical_body(),
             Arc::<[JournalEvidenceReferenceV1]>::from([]),
             Arc::from([]),
@@ -210,18 +210,18 @@ impl DurableExecutionStartV2 {
     }
 }
 
-/// Canonical version-two first-effective cancellation evidence.
+/// Canonical version-three first-effective cancellation evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableCancellationEvidenceV2 {
+pub struct DurableCancellationEvidenceV3 {
     reason: CancellationReason,
-    state: DurableLogicalEvidenceV2,
+    state: DurableLogicalEvidenceV3,
 }
 
-impl DurableCancellationEvidenceV2 {
+impl DurableCancellationEvidenceV3 {
     /// Constructs cancellation evidence over the complete state at the cancellation cut.
     pub fn new(
         reason: CancellationReason,
-        state: DurableLogicalEvidenceV2,
+        state: DurableLogicalEvidenceV3,
     ) -> Result<Self, DurableEvidenceError> {
         let causal_identity_valid = reason
             .causal_identity
@@ -245,7 +245,7 @@ impl DurableCancellationEvidenceV2 {
 
     /// Returns the complete logical state committed with cancellation.
     #[must_use]
-    pub const fn state(&self) -> &DurableLogicalEvidenceV2 {
+    pub const fn state(&self) -> &DurableLogicalEvidenceV3 {
         &self.state
     }
 
@@ -268,7 +268,7 @@ impl DurableCancellationEvidenceV2 {
         }
         output.push_str(",\"category\":");
         push_json_string(&mut output, self.reason.category.wire_name());
-        output.push_str(",\"format\":\"gantry.cancellation/v2\",\"message\":");
+        output.push_str(",\"format\":\"gantry.cancellation/v3\",\"message\":");
         super::push_optional_string(&mut output, self.reason.message.as_deref());
         output.push_str(",\"state\":");
         push_json_string(&mut output, &encode_hex(&self.state.canonical_body()));
@@ -284,7 +284,7 @@ impl DurableCancellationEvidenceV2 {
             root,
             &["causal_identity", "category", "format", "message", "state"],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.cancellation/v2" {
+        if string(&document, field(root, "format")?)? != "gantry.cancellation/v3" {
             return Err(DurableEvidenceError::Encoding);
         }
         let category = CancellationReasonCategory::from_wire_name(string(
@@ -324,7 +324,7 @@ impl DurableCancellationEvidenceV2 {
             u64::MAX,
         )
         .map_err(|_| DurableEvidenceError::Encoding)?;
-        let state = DurableLogicalEvidenceV2::decode(
+        let state = DurableLogicalEvidenceV3::decode(
             program,
             &decode_hex(string(&document, field(root, "state")?)?)?,
         )?;
@@ -343,7 +343,7 @@ impl DurableCancellationEvidenceV2 {
     ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
         UnfinalizedEvidenceV1::new(
             batch_local_id,
-            "gantry.cancellation/v2",
+            "gantry.cancellation/v3",
             self.canonical_body(),
             references,
             Arc::from([]),
@@ -483,28 +483,28 @@ impl DurableExecutionStateV1 {
     }
 }
 
-/// Version-two compacted recovery state retaining sequence-one identity and the latest checkpoint.
+/// Version-three compacted recovery state retaining sequence-one identity and the latest checkpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableRecoverySnapshotV2 {
-    execution_start: DurableExecutionStartV2,
+pub struct DurableRecoverySnapshotV3 {
+    execution_start: DurableExecutionStartV3,
     execution_state: Option<DurableExecutionStateV1>,
-    state: DurableLogicalEvidenceV2,
+    state: DurableLogicalEvidenceV3,
 }
 
-impl DurableRecoverySnapshotV2 {
+impl DurableRecoverySnapshotV3 {
     /// Constructs a compacted recovery snapshot over one execution's immutable start and state.
     pub fn new(
-        execution_start: DurableExecutionStartV2,
-        state: DurableLogicalEvidenceV2,
+        execution_start: DurableExecutionStartV3,
+        state: DurableLogicalEvidenceV3,
     ) -> Result<Self, DurableEvidenceError> {
         Self::new_with_execution_state(execution_start, None, state)
     }
 
     /// Constructs a compacted snapshot retaining the latest compatible execution state.
     pub fn new_with_execution_state(
-        execution_start: DurableExecutionStartV2,
+        execution_start: DurableExecutionStartV3,
         execution_state: Option<DurableExecutionStateV1>,
-        state: DurableLogicalEvidenceV2,
+        state: DurableLogicalEvidenceV3,
     ) -> Result<Self, DurableEvidenceError> {
         if state.execution_id() != execution_start.execution_id()
             || state.task_id() != execution_start.task_id()
@@ -524,7 +524,7 @@ impl DurableRecoverySnapshotV2 {
 
     /// Returns the retained immutable execution-start record.
     #[must_use]
-    pub const fn execution_start(&self) -> &DurableExecutionStartV2 {
+    pub const fn execution_start(&self) -> &DurableExecutionStartV3 {
         &self.execution_start
     }
 
@@ -536,7 +536,7 @@ impl DurableRecoverySnapshotV2 {
 
     /// Returns the latest logical state represented by the snapshot frontier.
     #[must_use]
-    pub const fn state(&self) -> &DurableLogicalEvidenceV2 {
+    pub const fn state(&self) -> &DurableLogicalEvidenceV3 {
         &self.state
     }
 
@@ -553,7 +553,7 @@ impl DurableRecoverySnapshotV2 {
             Some(state) => push_json_string(&mut output, &encode_hex(&state.canonical_body())),
             None => output.push_str("null"),
         }
-        output.push_str(",\"format\":\"gantry.recovery-snapshot/v2\",\"state\":");
+        output.push_str(",\"format\":\"gantry.recovery-snapshot/v3\",\"state\":");
         push_json_string(&mut output, &encode_hex(&self.state.canonical_body()));
         output.push('}');
         output.into_bytes()
@@ -567,10 +567,10 @@ impl DurableRecoverySnapshotV2 {
             root,
             &["execution_start", "execution_state", "format", "state"],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v2" {
+        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v3" {
             return Err(DurableEvidenceError::Encoding);
         }
-        let execution_start = DurableExecutionStartV2::decode(
+        let execution_start = DurableExecutionStartV3::decode(
             program,
             &decode_hex(string(&document, field(root, "execution_start")?)?)?,
         )?;
@@ -581,7 +581,7 @@ impl DurableRecoverySnapshotV2 {
             }
             _ => return Err(DurableEvidenceError::Encoding),
         };
-        let state = DurableLogicalEvidenceV2::decode(
+        let state = DurableLogicalEvidenceV3::decode(
             program,
             &decode_hex(string(&document, field(root, "state")?)?)?,
         )?;
@@ -600,10 +600,10 @@ impl DurableRecoverySnapshotV2 {
             root,
             &["execution_start", "execution_state", "format", "state"],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v2" {
+        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v3" {
             return Err(DurableEvidenceError::Encoding);
         }
-        DurableExecutionStartV2::retained_program(&decode_hex(string(
+        DurableExecutionStartV3::retained_program(&decode_hex(string(
             &document,
             field(root, "execution_start")?,
         )?)?)

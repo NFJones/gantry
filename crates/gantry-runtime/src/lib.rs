@@ -97,10 +97,10 @@ pub use machine::{
     ExecutionBudget, ExecutionBudgetSnapshot, ExecutionFailureProjection, Machine,
     MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome, MachineStatus,
     MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
-    SessionScopeCompletionError, SessionScopeOccurrence,
+    SessionScopeCompletionError, SessionScopeOccurrence, root_task_identity,
 };
 #[cfg(feature = "durable")]
-pub use machine::{MachineCheckpointV2, MachineRecoveryError};
+pub use machine::{MachineCheckpointV3, MachineRecoveryError};
 pub use operation::{
     OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
     OperationLifecycleState, TaskHook, TaskHookError, TaskHookSessionError,
@@ -112,15 +112,15 @@ pub use outcome::{
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use recovery::{
-    CONCURRENT_DURABLE_EVIDENCE_KIND_V2, ConcurrentDurableEvidenceV2,
+    CONCURRENT_DURABLE_EVIDENCE_KIND_V3, ConcurrentDurableEvidenceV3,
     RecoveredConcurrentDurableStateV1, recover_concurrent_authoritative_prefix,
 };
 #[cfg(feature = "durable")]
 pub use recovery::{
-    DurableCancellationEvidenceV2, DurableCommitCoordinatorV1, DurableCommitCutV1,
-    DurableCommitError, DurableEvidenceCommitV1, DurableEvidenceError, DurableExecutionStartV2,
-    DurableExecutionStateV1, DurableLogicalEvidenceV2, DurableOperationEvidenceV1,
-    DurableOperationRecoveryV1, DurableRecoverySnapshotV2, RecoveredDurableStateV1,
+    DurableCancellationEvidenceV3, DurableCommitCoordinatorV1, DurableCommitCutV1,
+    DurableCommitError, DurableEvidenceCommitV1, DurableEvidenceError, DurableExecutionStartV3,
+    DurableExecutionStateV1, DurableLogicalEvidenceV3, DurableOperationEvidenceV1,
+    DurableOperationRecoveryV1, DurableRecoverySnapshotV3, RecoveredDurableStateV1,
     recover_authoritative_prefix, recover_authoritative_prefix_with_retained_program,
 };
 pub use session::{
@@ -137,7 +137,7 @@ pub use supervision::{
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use task::{
-    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV2,
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3,
     RecoveredConcurrentDurableExecutionV1,
 };
 #[cfg(feature = "concurrent")]

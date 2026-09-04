@@ -25,6 +25,7 @@ use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView, ValueP
 use serde::Deserialize;
 
 const CREATION_EVIDENCE: &str = "crates/gantry-conformance/tests/concurrent_task_state.rs#public_task_creation_is_bounded_stable_and_snapshot_isolated";
+const IDENTITY_EVIDENCE: &str = "crates/gantry-conformance/tests/concurrent_task_state.rs#concurrent_operation_identities_include_the_dynamic_task_path";
 const SCHEDULER_EVIDENCE: &str = "crates/gantry-conformance/tests/concurrent_task_state.rs#public_submission_and_scheduler_preserve_one_shared_machine_path";
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -92,6 +93,55 @@ struct ProfileReview {
     profile: String,
     state: String,
     evidence: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IdentityEvidenceManifest {
+    format: String,
+    specification_sha256: String,
+    issue: String,
+    capabilities: Vec<IdentityCapability>,
+    exclusions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+struct IdentityCapability {
+    id: String,
+    evidence: String,
+}
+
+#[test]
+fn checked_in_task_qualified_operation_identity_evidence_is_narrow_and_current() {
+    let root = workspace_root();
+    let manifest: IdentityEvidenceManifest =
+        read_json(&root.join("protocol/conformance/task-qualified-operation-identity-v1.json"));
+    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
+
+    assert_eq!(
+        manifest.format,
+        "gantry.task-qualified-operation-identity-evidence/v1"
+    );
+    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert_eq!(manifest.issue, "GNT-ASYNC-ID-001");
+    assert!(
+        manifest
+            .capabilities
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+    );
+    assert_eq!(
+        manifest
+            .capabilities
+            .iter()
+            .map(|capability| capability.evidence.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "crates/gantry-conformance/tests/public_protocol_formats.rs#published_public_formats_match_exact_bytes_and_reject_mutations",
+            IDENTITY_EVIDENCE,
+            SCHEDULER_EVIDENCE,
+        ]
+    );
+    assert_eq!(manifest.exclusions.len(), 4);
 }
 
 #[test]
@@ -416,11 +466,20 @@ fn main() -> Envelope<String> { child() }
             DEFAULT_VALUE_LIMITS,
         )
         .unwrap_or_else(|error| panic!("generic operation child creation failed: {error:?}"));
+    let created_path: Arc<[Arc<str>]> = Arc::from(
+        scheduler
+            .state()
+            .task(created.task_id)
+            .unwrap_or_else(|| panic!("generic operation child missing"))
+            .task_path(),
+    );
     let child = Machine::new_concurrent_task_with_context(
         Arc::clone(&program),
         &path("crate::child"),
         Vec::new(),
         execution,
+        created.task_id,
+        created_path,
         machine_limits,
         execution_budget,
         Some(Arc::from("worker")),
@@ -775,6 +834,8 @@ fn concurrent_operation_identities_include_the_dynamic_task_path() {
                 execution,
                 root_session,
                 execution_budget.clone(),
+                first.task_id,
+                Arc::from(first_path.clone()),
             )),
         )
         .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
@@ -798,6 +859,8 @@ fn concurrent_operation_identities_include_the_dynamic_task_path() {
                 execution,
                 root_session,
                 execution_budget.clone(),
+                second.task_id,
+                Arc::from(second_path.clone()),
             )),
         )
         .unwrap_or_else(|error| panic!("second submission failed: {error:?}"));
@@ -821,6 +884,10 @@ fn concurrent_operation_identities_include_the_dynamic_task_path() {
         other => panic!("second child did not prepare an operation: {other:?}"),
     };
 
+    assert_eq!(first_operation.task_id, first.task_id);
+    assert_eq!(first_operation.task_path.as_ref(), first_path);
+    assert_eq!(second_operation.task_id, second.task_id);
+    assert_eq!(second_operation.task_path.as_ref(), second_path);
     assert!(first_operation.dynamic_path.starts_with(&first_path));
     assert!(second_operation.dynamic_path.starts_with(&second_path));
     assert_ne!(first_operation.identity, second_operation.identity);
@@ -851,6 +918,14 @@ fn public_submission_and_scheduler_preserve_one_shared_machine_path() {
                 execution,
                 root_session,
                 execution_budget.clone(),
+                first.task_id,
+                Arc::from(
+                    scheduler
+                        .state()
+                        .task(first.task_id)
+                        .unwrap_or_else(|| panic!("first task missing"))
+                        .task_path(),
+                ),
             )),
         )
         .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
@@ -935,6 +1010,8 @@ fn child_machine(
     execution: ProtocolIdentity,
     session: ProtocolIdentity,
     execution_budget: ExecutionBudget,
+    task_id: ProtocolIdentity,
+    task_path: Arc<[Arc<str>]>,
 ) -> Machine {
     let root = path("crate::child");
     let program = MachineProgram::new(vec![Workflow {
@@ -961,6 +1038,8 @@ fn child_machine(
         &root,
         Vec::new(),
         execution,
+        task_id,
+        task_path,
         child_machine_limits(),
         execution_budget,
         None,
@@ -973,6 +1052,8 @@ fn operation_child_machine(
     execution: ProtocolIdentity,
     session: ProtocolIdentity,
     execution_budget: ExecutionBudget,
+    task_id: ProtocolIdentity,
+    task_path: Arc<[Arc<str>]>,
 ) -> Machine {
     let root = path("crate::operation_child");
     let program = MachineProgram::new(vec![Workflow {
@@ -999,6 +1080,8 @@ fn operation_child_machine(
         &root,
         Vec::new(),
         execution,
+        task_id,
+        task_path,
         child_machine_limits(),
         execution_budget,
         None,

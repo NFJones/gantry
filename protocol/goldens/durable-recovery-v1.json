@@ -2,8 +2,8 @@
   "format": "gantry.durable-recovery-vectors/v1",
   "checkpoint_formats": [
     "execution-budget-checkpoint/v1",
-    "gantry.logical-evidence/v2",
-    "machine-checkpoint/v2",
+    "gantry.logical-evidence/v3",
+    "machine-checkpoint/v3",
     "session-checkpoint/v1"
   ],
   "commit_cuts": [

@@ -1922,7 +1922,7 @@ impl Interpreter {
         let captured = CapturedOperationRequestV1::Action {
             header: OperationRequestHeaderV1 {
                 execution_id: context.execution_id,
-                task_id: root_task_identity(context.execution_id),
+                task_id: occurrence.task_id,
                 operation_id: occurrence.identity,
                 kind: metadata.kind,
                 expected_type: metadata.result_type.clone(),
@@ -2270,7 +2270,7 @@ impl Interpreter {
         let parent_session_id = occurrence
             .active_session
             .ok_or(DurableRunFailure::Internal)?;
-        let task_id = root_task_identity(context.execution_id);
+        let task_id = occurrence.task_id;
         let active_session_id = if let Some(mode) = metadata.session_mode.as_deref() {
             let mode = match mode {
                 "fork" => SessionCreationModeV1::Fork,
@@ -3320,7 +3320,7 @@ impl Interpreter {
         let captured = CapturedOperationRequestV1::Action {
             header: OperationRequestHeaderV1 {
                 execution_id: accepted.execution_id,
-                task_id: root_task_identity(accepted.execution_id),
+                task_id: occurrence.task_id,
                 operation_id: occurrence.identity,
                 kind: metadata.kind,
                 expected_type: metadata.result_type.clone(),
@@ -3488,7 +3488,7 @@ impl Interpreter {
         let parent_session_id = occurrence
             .active_session
             .ok_or(RunExecutionError::MissingLogicalSession)?;
-        let task_id = root_task_identity(accepted.execution_id);
+        let task_id = occurrence.task_id;
         let active_session_id = if let Some(mode) = metadata.session_mode.as_deref() {
             let mode = match mode {
                 "fork" => SessionCreationModeV1::Fork,
@@ -4800,9 +4800,5 @@ pub fn caller_cancellation_reason(
 
 /// Derives the stable root-task identity for public hook composition.
 pub fn root_task_identity(execution_id: ProtocolIdentity) -> ProtocolIdentity {
-    ProtocolIdentity::derive(
-        IdentityKind::Task,
-        format!("root-task:{execution_id}").as_bytes(),
-    )
-    .unwrap_or_else(|_| unreachable!("typed root task identity derivation is valid"))
+    gantry_runtime::root_task_identity(execution_id)
 }

@@ -31,7 +31,7 @@ use gantry::runtime::{
     DurableEventPlanV1, DurableSinkObligationV1, DurableTransitionSink, ExecutionBudget,
     InMemoryJournalStore, JoinResolutionV1, JoinStartV1, LogicalSessionRegistryV1, Machine,
     MachineLimits, MachineOutcome, SessionCreationModeV1, TaskCreationRequestV1, TaskStateError,
-    recover_concurrent_authoritative_prefix,
+    recover_concurrent_authoritative_prefix, root_task_identity,
 };
 use gantry::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
 use gantry::timestamp::UtcTimestamp;
@@ -41,8 +41,7 @@ use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
     let program = program();
     let execution = fresh(IdentityKind::Execution, 1);
-    let root_task = ProtocolIdentity::derive(IdentityKind::Task, b"combined-root")
-        .unwrap_or_else(|error| panic!("root task identity failed: {error}"));
+    let root_task = root_task_identity(execution);
     let root_session = fresh(IdentityKind::Session, 2);
     let mut sessions = LogicalSessionRegistryV1::new(
         execution,
@@ -131,12 +130,21 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
             .is_some()
     );
 
+    let child_task_path = Arc::from(
+        scheduler
+            .state()
+            .task(child.task_id)
+            .unwrap_or_else(|| panic!("created child missing"))
+            .task_path(),
+    );
     scheduler
         .resolve_submission(
             child.task_id,
             Ok(child_machine(
                 Arc::clone(&program),
                 execution,
+                child.task_id,
+                child_task_path,
                 child.base_session_id,
                 execution_budget.clone(),
             )),
@@ -410,8 +418,7 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
 fn public_combined_join_ownership_and_settlement_recover_once() {
     let program = program();
     let execution = fresh(IdentityKind::Execution, 21);
-    let root_task = ProtocolIdentity::derive(IdentityKind::Task, b"combined-join-root")
-        .unwrap_or_else(|error| panic!("root task identity failed: {error}"));
+    let root_task = root_task_identity(execution);
     let root_session = fresh(IdentityKind::Session, 22);
     let mut sessions = LogicalSessionRegistryV1::new(
         execution,
@@ -481,12 +488,21 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
         &sessions,
     ))
     .unwrap_or_else(|error| panic!("creation commit failed: {error:?}"));
+    let child_task_path = Arc::from(
+        scheduler
+            .state()
+            .task(child.task_id)
+            .unwrap_or_else(|| panic!("created child missing"))
+            .task_path(),
+    );
     scheduler
         .resolve_submission(
             child.task_id,
             Ok(child_machine(
                 Arc::clone(&program),
                 execution,
+                child.task_id,
+                child_task_path,
                 child.base_session_id,
                 execution_budget.clone(),
             )),
@@ -662,6 +678,8 @@ fn workflow(name: &str) -> Workflow {
 fn child_machine(
     program: Arc<MachineProgram>,
     execution: ProtocolIdentity,
+    task_id: ProtocolIdentity,
+    task_path: Arc<[Arc<str>]>,
     session: ProtocolIdentity,
     execution_budget: ExecutionBudget,
 ) -> Machine {
@@ -670,6 +688,8 @@ fn child_machine(
         &path("crate::child"),
         Vec::new(),
         execution,
+        task_id,
+        task_path,
         machine_limits(),
         execution_budget,
         None,

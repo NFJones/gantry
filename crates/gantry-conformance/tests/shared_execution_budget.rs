@@ -16,8 +16,8 @@ use gantry::ir::{
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    CanonicalTranscriptV1, ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV2,
-    ConcurrentSchedulerV1, ConcurrentTaskStateV1, DurableCommitCutV1, DurableLogicalEvidenceV2,
+    CanonicalTranscriptV1, ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3,
+    ConcurrentSchedulerV1, ConcurrentTaskStateV1, DurableCommitCutV1, DurableLogicalEvidenceV3,
     ExecutionBudget, ExecutionBudgetSnapshot, ExecutionCoordinator, LogicalSessionRegistryV1,
     Machine, MachineLabel, MachineLimits, MachineOutcome, MachineStep, RuntimeCode,
     SessionCreationModeV1, TaskCreationRequestV1, TaskStateError, recover_authoritative_prefix,
@@ -147,7 +147,15 @@ fn root_and_child_share_one_deterministic_transition_limit() {
     let machine_limits = limits(1, 1, 1, 1, 8);
     let budget = ExecutionBudget::new(execution(), machine_limits);
     let mut root = root_machine(Arc::clone(&program), machine_limits, budget.clone());
-    let mut child = child_machine(program, machine_limits, budget.clone(), None);
+    let (task_id, task_path) = standalone_child_coordinate();
+    let mut child = child_machine(
+        program,
+        task_id,
+        task_path,
+        machine_limits,
+        budget.clone(),
+        None,
+    );
 
     assert!(matches!(
         root.step(),
@@ -169,7 +177,15 @@ fn root_and_child_share_one_logical_operation_limit() {
     let machine_limits = limits(1, 1, 1, 1, 8);
     let budget = ExecutionBudget::new(execution(), machine_limits);
     let mut root = root_machine(Arc::clone(&program), machine_limits, budget.clone());
-    let mut child = child_machine(program, machine_limits, budget.clone(), None);
+    let (task_id, task_path) = standalone_child_coordinate();
+    let mut child = child_machine(
+        program,
+        task_id,
+        task_path,
+        machine_limits,
+        budget.clone(),
+        None,
+    );
 
     assert!(matches!(
         root.step(),
@@ -210,7 +226,8 @@ fn loop_and_yield_limits_remain_task_local() {
     let machine_limits = limits(16, 1, 1, 1, 1);
     let budget = ExecutionBudget::new(execution(), machine_limits);
     let mut root = root_machine(Arc::clone(&program), machine_limits, budget.clone());
-    let mut child = child_machine(program, machine_limits, budget, None);
+    let (task_id, task_path) = standalone_child_coordinate();
+    let mut child = child_machine(program, task_id, task_path, machine_limits, budget, None);
 
     assert!(matches!(root.step(), MachineStep::Transition(_)));
     assert!(matches!(child.step(), MachineStep::Transition(_)));
@@ -252,12 +269,21 @@ fn coordinator_and_scheduler_retain_the_exact_execution_budget_owner() {
     let created = scheduler
         .create_child(&mut sessions, child_request(), DEFAULT_VALUE_LIMITS)
         .unwrap_or_else(|error| panic!("child creation failed: {error:?}"));
+    let task_path = Arc::from(
+        scheduler
+            .state()
+            .task(created.task_id)
+            .unwrap_or_else(|| panic!("created task missing"))
+            .task_path(),
+    );
     let independent = ExecutionBudget::new(execution(), machine_limits);
     assert_eq!(
         scheduler.resolve_submission(
             created.task_id,
             Ok(child_machine(
                 Arc::clone(&program),
+                created.task_id,
+                Arc::clone(&task_path),
                 machine_limits,
                 independent,
                 Some(created.base_session_id),
@@ -270,6 +296,8 @@ fn coordinator_and_scheduler_retain_the_exact_execution_budget_owner() {
             created.task_id,
             Ok(child_machine(
                 program,
+                created.task_id,
+                task_path,
                 machine_limits,
                 budget.clone(),
                 Some(created.base_session_id),
@@ -291,7 +319,7 @@ fn canonical_budget_and_task_checkpoints_preserve_continuation() {
     let budget_checkpoint = original.budget_checkpoint();
     let task_bytes = task_checkpoint.canonical_bytes();
     let budget_bytes = budget_checkpoint.canonical_bytes();
-    let decoded_task = gantry::runtime::MachineCheckpointV2::decode(&program, &task_bytes)
+    let decoded_task = gantry::runtime::MachineCheckpointV3::decode(&program, &task_bytes)
         .unwrap_or_else(|error| panic!("task checkpoint decode failed: {error:?}"));
     let decoded_budget = ExecutionBudgetSnapshot::decode(&budget_bytes)
         .unwrap_or_else(|error| panic!("budget checkpoint decode failed: {error:?}"));
@@ -313,7 +341,7 @@ fn full_and_compacted_prefixes_restore_the_same_budget_frontier() {
     let budget = ExecutionBudget::new(execution(), machine_limits);
     let mut machine = root_machine(Arc::clone(&program), machine_limits, budget);
     assert!(matches!(machine.step(), MachineStep::Transition(_)));
-    let evidence = DurableLogicalEvidenceV2::new(
+    let evidence = DurableLogicalEvidenceV3::new(
         execution(),
         root_task(),
         DurableCommitCutV1::Checkpoint,
@@ -326,7 +354,7 @@ fn full_and_compacted_prefixes_restore_the_same_budget_frontier() {
         journal_id: journal_id(),
         sequence: 1,
         evidence_id,
-        kind: Arc::from("gantry.logical-evidence/v2"),
+        kind: Arc::from("gantry.logical-evidence/v3"),
         canonical_body: Arc::from(evidence.canonical_body()),
         references: Arc::from([]),
         protected_payloads: Arc::from([]),
@@ -338,7 +366,7 @@ fn full_and_compacted_prefixes_restore_the_same_budget_frontier() {
     });
     let compacted = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
         journal_id: journal_id(),
-        snapshot_version: 3,
+        snapshot_version: 5,
         frontier: 1,
         canonical_snapshot: Arc::from(evidence.canonical_body()),
         retained_evidence: BTreeMap::from([(evidence_id, 1)]),
@@ -373,12 +401,22 @@ fn continuously_torn_combined_capture_is_rejected() {
     )
     .unwrap_or_else(|error| panic!("scheduler failed: {error:?}"));
     let sessions = sessions();
+    let (task_id, task_path) = standalone_child_coordinate();
     let mut racers = (0..8)
-        .map(|_| child_machine(Arc::clone(&program), machine_limits, budget.clone(), None))
+        .map(|_| {
+            child_machine(
+                Arc::clone(&program),
+                task_id,
+                Arc::clone(&task_path),
+                machine_limits,
+                budget.clone(),
+                None,
+            )
+        })
         .collect::<Vec<_>>();
 
     assert_eq!(
-        ConcurrentDurableCheckpointV2::capture_with_test_interleaving(
+        ConcurrentDurableCheckpointV3::capture_with_test_interleaving(
             &foreground,
             &scheduler,
             &sessions,
@@ -408,6 +446,8 @@ fn root_machine(
 
 fn child_machine(
     program: Arc<MachineProgram>,
+    task_id: ProtocolIdentity,
+    task_path: Arc<[Arc<str>]>,
     machine_limits: MachineLimits,
     budget: ExecutionBudget,
     session: Option<ProtocolIdentity>,
@@ -417,12 +457,23 @@ fn child_machine(
         &path("crate::main"),
         Vec::new(),
         execution(),
+        task_id,
+        task_path,
         machine_limits,
         budget,
         None,
         session,
     )
     .unwrap_or_else(|error| panic!("child machine failed: {error:?}"))
+}
+
+fn standalone_child_coordinate() -> (ProtocolIdentity, Arc<[Arc<str>]>) {
+    let execution = execution();
+    let task_path = Arc::from([Arc::from("spawn:crate::main:0:0")]);
+    let key = format!("{{\"execution\":\"{execution}\",\"path\":[\"spawn:crate::main:0:0\"]}}");
+    let task_id = ProtocolIdentity::derive(IdentityKind::Task, key.as_bytes())
+        .unwrap_or_else(|error| panic!("child task identity failed: {error}"));
+    (task_id, task_path)
 }
 
 fn single_instruction_program(kind: InstructionKind) -> Arc<MachineProgram> {

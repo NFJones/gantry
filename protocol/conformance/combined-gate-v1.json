@@ -176,7 +176,7 @@
   "composition": {
     "evaluator": "gantry-runtime::Machine",
     "checkpoint": "gantry-runtime::ConcurrentDurableCheckpointV1",
-    "journal_evidence": "gantry-runtime::ConcurrentDurableEvidenceV2",
+    "journal_evidence": "gantry-runtime::ConcurrentDurableEvidenceV3",
     "graph_recovery": "gantry-runtime::recover_concurrent_authoritative_prefix",
     "event_recovery": "gantry-runtime::RecoveredDurableEventsV1"
   },

@@ -85,6 +85,17 @@ fn execution() -> ProtocolIdentity {
         .unwrap_or_else(|error| panic!("invalid fixture identity: {error}"))
 }
 
+#[cfg(feature = "concurrent")]
+fn child_task_coordinate() -> (ProtocolIdentity, Arc<[Arc<str>]>) {
+    let task_path = Arc::from([Arc::from("spawn:crate::main:0:0")]);
+    let task_id = ProtocolIdentity::derive(
+        IdentityKind::Task,
+        &crate::machine::task_identity_key(execution(), &task_path),
+    )
+    .unwrap_or_else(|error| panic!("invalid child task identity: {error}"));
+    (task_id, task_path)
+}
+
 fn new_machine(
     program: Arc<MachineProgram>,
     root: &str,
@@ -129,6 +140,7 @@ fn machines_share_one_deterministic_transition_budget_without_partial_mutation()
     let program = program(vec![root]);
     let machine_limits = limits(1, 1, 1, 1, 8);
     let budget = ExecutionBudget::new(execution(), machine_limits);
+    let (child_task_id, child_task_path) = child_task_coordinate();
     let mut winner = Machine::new_with_budget(
         Arc::clone(&program),
         &path("crate::main"),
@@ -143,6 +155,8 @@ fn machines_share_one_deterministic_transition_budget_without_partial_mutation()
         &path("crate::main"),
         Vec::new(),
         execution(),
+        child_task_id,
+        child_task_path,
         machine_limits,
         budget,
         None,
@@ -181,6 +195,7 @@ fn machines_share_one_operation_budget_without_partial_mutation() {
     let program = program(vec![root]);
     let machine_limits = limits(1, 1, 1, 1, 8);
     let budget = ExecutionBudget::new(execution(), machine_limits);
+    let (child_task_id, child_task_path) = child_task_coordinate();
     let mut winner = Machine::new_with_budget(
         Arc::clone(&program),
         &path("crate::main"),
@@ -195,6 +210,8 @@ fn machines_share_one_operation_budget_without_partial_mutation() {
         &path("crate::main"),
         Vec::new(),
         execution(),
+        child_task_id,
+        Arc::clone(&child_task_path),
         machine_limits,
         budget.clone(),
         None,
@@ -206,6 +223,8 @@ fn machines_share_one_operation_budget_without_partial_mutation() {
         &path("crate::main"),
         Vec::new(),
         execution(),
+        child_task_id,
+        child_task_path,
         machine_limits,
         budget,
         None,
@@ -311,6 +330,7 @@ fn simultaneous_final_transition_unit_has_one_successor_and_one_unchanged_loser(
     let program = program(vec![root]);
     let machine_limits = limits(1, 1, 1, 1, 8);
     let budget = ExecutionBudget::new(execution(), machine_limits);
+    let (child_task_id, child_task_path) = child_task_coordinate();
     let machines = [true, false].map(|foreground| {
         if foreground {
             Machine::new_with_budget(
@@ -327,6 +347,8 @@ fn simultaneous_final_transition_unit_has_one_successor_and_one_unchanged_loser(
                 &path("crate::main"),
                 Vec::new(),
                 execution(),
+                child_task_id,
+                Arc::clone(&child_task_path),
                 machine_limits,
                 budget.clone(),
                 None,
@@ -458,11 +480,14 @@ fn shared_execution_budget_keeps_loop_and_yield_state_task_local() {
         budget.clone(),
     )
     .unwrap_or_else(|error| panic!("first construction failed: {error:?}"));
+    let (child_task_id, child_task_path) = child_task_coordinate();
     let mut second = Machine::new_concurrent_task_with_budget_and_context(
         program,
         &path("crate::main"),
         Vec::new(),
         execution(),
+        child_task_id,
+        child_task_path,
         machine_limits,
         budget,
         None,
@@ -536,14 +561,20 @@ fn durable_checkpoint_recovers_the_same_explicit_frame_machine() {
     assert_eq!(checkpoint.remaining_loop_iterations(), 1);
 
     let bytes = checkpoint.canonical_bytes();
-    let decoded = crate::MachineCheckpointV2::decode(&program, &bytes)
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
         .unwrap_or_else(|error| panic!("checkpoint decode failed: {error:?}"));
     assert_eq!(decoded, checkpoint);
     assert_eq!(decoded.canonical_bytes(), bytes);
+    let mut superseded = bytes.clone();
+    superseded[..8].copy_from_slice(b"GNTMCP02");
+    assert_eq!(
+        crate::MachineCheckpointV3::decode(&program, &superseded),
+        Err(crate::MachineRecoveryError::InvalidEncoding)
+    );
     let mut corrupted = bytes.clone();
     corrupted[0] ^= 1;
     assert_eq!(
-        crate::MachineCheckpointV2::decode(&program, &corrupted),
+        crate::MachineCheckpointV3::decode(&program, &corrupted),
         Err(crate::MachineRecoveryError::InvalidEncoding)
     );
 

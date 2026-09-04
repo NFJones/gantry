@@ -25,7 +25,7 @@ use gantry_ir::{
     CanonicalPath, OwnershipFact, StaticSiteId, StructuralPosition, TaskControlSite, TypeDescriptor,
 };
 
-use crate::machine::value_matches_type;
+use crate::machine::{task_identity_key, value_matches_type};
 #[cfg(feature = "concurrent")]
 use crate::{
     ExecutionBudget, ExecutionBudgetSnapshot, Machine, MachineLabel, MachineStatus, MachineStep,
@@ -40,7 +40,7 @@ use crate::{
 mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
-    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV2,
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3,
     RecoveredConcurrentDurableExecutionV1,
 };
 
@@ -1859,7 +1859,7 @@ impl ConcurrentSchedulerV1 {
         result: Result<Machine, HostError>,
     ) -> Result<(), TaskStateError> {
         match result {
-            Ok(mut machine) => {
+            Ok(machine) => {
                 let machine_budget = machine.execution_budget();
                 if machine.execution_id() != self.state.execution_id
                     || machine.is_execution_foreground()
@@ -1874,7 +1874,7 @@ impl ConcurrentSchedulerV1 {
                     .ok_or(TaskStateError::UnknownTask)?
                     .task_path()
                     .to_vec();
-                if !machine.bind_concurrent_task_path(&task_path) {
+                if !machine.has_concurrent_task_context(task_id, &task_path) {
                     return Err(TaskStateError::InvalidTaskMachine);
                 }
                 self.state.resolve_submission(task_id, Ok(()))?;
@@ -2143,38 +2143,6 @@ fn task_path_frame(workflow: &CanonicalPath, site: &StructuralPosition, occurren
     )
 }
 
-fn task_identity_key(execution: ProtocolIdentity, path: &[Arc<str>]) -> Vec<u8> {
-    let mut output = String::from("{\"execution\":");
-    push_json_string(&mut output, &execution.to_string());
-    output.push_str(",\"path\":[");
-    for (index, frame) in path.iter().enumerate() {
-        if index > 0 {
-            output.push(',');
-        }
-        push_json_string(&mut output, frame);
-    }
-    output.push_str("]}");
-    output.into_bytes()
-}
-
-fn push_json_string(output: &mut String, value: &str) {
-    output.push('"');
-    for scalar in value.chars() {
-        match scalar {
-            '"' => output.push_str("\\\""),
-            '\\' => output.push_str("\\\\"),
-            '\u{08}' => output.push_str("\\b"),
-            '\u{09}' => output.push_str("\\t"),
-            '\n' => output.push_str("\\n"),
-            '\u{0c}' => output.push_str("\\f"),
-            '\r' => output.push_str("\\r"),
-            value if value <= '\u{1f}' => output.push_str(&format!("\\u{:04x}", value as u32)),
-            value => output.push(value),
-        }
-    }
-    output.push('"');
-}
-
 #[cfg(all(test, feature = "concurrent"))]
 mod tests {
     use std::sync::Arc;
@@ -2353,10 +2321,23 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("first task creation failed: {error:?}"));
+        let first_task_path = Arc::from(
+            scheduler
+                .state()
+                .task(first.task_id)
+                .unwrap_or_else(|| panic!("first created task missing"))
+                .task_path(),
+        );
         scheduler
             .resolve_submission(
                 first.task_id,
-                Ok(child_machine(execution, root_session, budget.clone())),
+                Ok(child_machine(
+                    execution,
+                    first.task_id,
+                    first_task_path,
+                    root_session,
+                    budget.clone(),
+                )),
             )
             .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
         let second = scheduler
@@ -2366,10 +2347,23 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("second task creation failed: {error:?}"));
+        let second_task_path = Arc::from(
+            scheduler
+                .state()
+                .task(second.task_id)
+                .unwrap_or_else(|| panic!("second created task missing"))
+                .task_path(),
+        );
         scheduler
             .resolve_submission(
                 second.task_id,
-                Ok(child_machine(execution, root_session, budget.clone())),
+                Ok(child_machine(
+                    execution,
+                    second.task_id,
+                    second_task_path,
+                    root_session,
+                    budget.clone(),
+                )),
             )
             .unwrap_or_else(|error| panic!("second submission failed: {error:?}"));
 
@@ -2433,10 +2427,23 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let task_path = Arc::from(
+            scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task missing"))
+                .task_path(),
+        );
         scheduler
             .resolve_submission(
                 created.task_id,
-                Ok(failing_child_machine(execution, root_session, budget)),
+                Ok(failing_child_machine(
+                    execution,
+                    created.task_id,
+                    task_path,
+                    root_session,
+                    budget,
+                )),
             )
             .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
 
@@ -2489,11 +2496,24 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let task_path = Arc::from(
+            scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task missing"))
+                .task_path(),
+        );
 
         assert_eq!(
             scheduler.resolve_submission(
                 created.task_id,
-                Ok(child_machine(execution, root_session, independent_budget)),
+                Ok(child_machine(
+                    execution,
+                    created.task_id,
+                    task_path,
+                    root_session,
+                    independent_budget,
+                )),
             ),
             Err(TaskStateError::InvalidTaskMachine)
         );
@@ -2521,10 +2541,23 @@ mod tests {
                 DEFAULT_VALUE_LIMITS,
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let task_path = Arc::from(
+            scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task missing"))
+                .task_path(),
+        );
         scheduler
             .resolve_submission(
                 created.task_id,
-                Ok(child_machine(execution, root_session, budget.clone())),
+                Ok(child_machine(
+                    execution,
+                    created.task_id,
+                    task_path,
+                    root_session,
+                    budget.clone(),
+                )),
             )
             .unwrap_or_else(|error| panic!("shared child submission failed: {error:?}"));
         assert_eq!(scheduler.execution_budget(), budget.snapshot());
@@ -3154,6 +3187,8 @@ mod tests {
 
     fn child_machine(
         execution: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_path: Arc<[Arc<str>]>,
         session: ProtocolIdentity,
         budget: ExecutionBudget,
     ) -> Machine {
@@ -3185,6 +3220,8 @@ mod tests {
             &root,
             Vec::new(),
             execution,
+            task_id,
+            task_path,
             MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
                 .unwrap_or_else(|| unreachable!("positive child limits")),
             budget,
@@ -3196,6 +3233,8 @@ mod tests {
 
     fn failing_child_machine(
         execution: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_path: Arc<[Arc<str>]>,
         session: ProtocolIdentity,
         budget: ExecutionBudget,
     ) -> Machine {
@@ -3219,6 +3258,8 @@ mod tests {
             &root,
             Vec::new(),
             execution,
+            task_id,
+            task_path,
             MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
                 .unwrap_or_else(|| unreachable!("positive child limits")),
             budget,

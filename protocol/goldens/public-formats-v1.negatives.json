@@ -3,7 +3,7 @@
   "cases": [
     {
       "name": "binary-wrong-magic",
-      "target": "machine-checkpoint/v2",
+      "target": "machine-checkpoint/v3",
       "mutation": "corrupt-binary-magic"
     },
     {
@@ -13,7 +13,7 @@
     },
     {
       "name": "journal-wrong-format",
-      "target": "gantry.cancellation/v2",
+      "target": "gantry.cancellation/v3",
       "mutation": "wrong-format"
     },
     {

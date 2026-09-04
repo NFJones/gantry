@@ -14,13 +14,13 @@ use gantry_ir::{
 };
 
 use super::{
-    Binding, ExecutionBudgetSnapshot, MachineCheckpointV2, MachineFailure, MachineLabel,
+    Binding, ExecutionBudgetSnapshot, MachineCheckpointV3, MachineFailure, MachineLabel,
     MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, OperationOccurrence,
     PendingOperation, RuntimeCode, Scope, SessionCreationModeV1, SessionScopeOccurrence,
     WorkflowFrame, validate_execution_budget_snapshot, validate_machine_checkpoint,
 };
 
-const MACHINE_MAGIC: &[u8; 8] = b"GNTMCP02";
+const MACHINE_MAGIC: &[u8; 8] = b"GNTMCP03";
 const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
 
 pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
@@ -60,10 +60,12 @@ pub(super) fn decode_execution_budget_snapshot(
     Ok(snapshot)
 }
 
-pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV2) -> Vec<u8> {
+pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec<u8> {
     let mut writer = Writer::default();
     writer.raw(MACHINE_MAGIC);
     writer.identity(checkpoint.execution);
+    writer.identity(checkpoint.task_id);
+    writer.strings(&checkpoint.task_path);
     writer.boolean(checkpoint.execution_foreground);
     write_limits(&mut writer, checkpoint.limits);
     writer.count(checkpoint.frames.len());
@@ -113,12 +115,14 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV2) -> Vec
 pub(super) fn decode_machine_checkpoint(
     program: &MachineProgram,
     bytes: &[u8],
-) -> Result<MachineCheckpointV2, MachineRecoveryError> {
+) -> Result<MachineCheckpointV3, MachineRecoveryError> {
     let mut reader = Reader::new(bytes);
     if reader.raw(MACHINE_MAGIC.len())? != MACHINE_MAGIC {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
     let execution = reader.identity(Some(IdentityKind::Execution))?;
+    let task_id = reader.identity(Some(IdentityKind::Task))?;
+    let task_path = Arc::from(reader.strings()?);
     let execution_foreground = reader.boolean()?;
     let limits = read_limits(&mut reader)?;
     let frame_count = reader.count()?;
@@ -157,8 +161,10 @@ pub(super) fn decode_machine_checkpoint(
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
-    let checkpoint = MachineCheckpointV2 {
+    let checkpoint = MachineCheckpointV3 {
         execution,
+        task_id,
+        task_path,
         execution_foreground,
         limits,
         frames,
@@ -364,6 +370,8 @@ fn read_pending_operation(
 
 fn write_occurrence(writer: &mut Writer, occurrence: &OperationOccurrence) {
     writer.identity(occurrence.identity);
+    writer.identity(occurrence.task_id);
+    writer.strings(&occurrence.task_path);
     writer.string(occurrence.workflow.as_str());
     writer.position(&occurrence.site);
     writer.strings(&occurrence.dynamic_path);
@@ -384,6 +392,8 @@ fn read_occurrence(
     limits: ValueLimits,
 ) -> Result<OperationOccurrence, MachineRecoveryError> {
     let identity = reader.identity(Some(IdentityKind::Operation))?;
+    let task_id = reader.identity(Some(IdentityKind::Task))?;
+    let task_path = Arc::from(reader.strings()?);
     let workflow =
         CanonicalPath::new(&reader.string()?).map_err(|_| MachineRecoveryError::InvalidEncoding)?;
     let site = reader.position()?;
@@ -408,6 +418,8 @@ fn read_occurrence(
         });
     Ok(OperationOccurrence {
         identity,
+        task_id,
+        task_path,
         workflow,
         site,
         dynamic_path,
