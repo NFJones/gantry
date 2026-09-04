@@ -87,6 +87,14 @@ impl DurableStartExecutionAccepted {
     pub const fn test_execution_start_evidence_id(&self) -> ProtocolIdentity {
         self.execution_start_evidence_id
     }
+
+    /// Copies retained owner state for committed-prefix conformance assertions.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_retained_projection(&self) -> Option<RecoveredDurableStateV1> {
+        self.owned.test_retained_projection()
+    }
 }
 
 /// Durable start rejection retaining the journal identity and release outcome.

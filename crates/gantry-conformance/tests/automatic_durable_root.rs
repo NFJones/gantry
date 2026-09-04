@@ -3073,6 +3073,19 @@ fn durable_commit_failure_reports_run_failure_and_preserves_sequence_one() {
 
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let (_, authoritative) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("authoritative recovery failed: {error:?}"));
+    let retained = accepted
+        .test_retained_projection()
+        .unwrap_or_else(|| panic!("failed root lost its retained projection"));
+    assert_eq!(
+        retained.machine().checkpoint(),
+        authoritative.machine().checkpoint()
+    );
+    assert_eq!(
+        retained.machine().budget_checkpoint(),
+        authoritative.machine().budget_checkpoint()
+    );
     let JournalPrefixV1::Full(full) = prefix else {
         panic!("in-memory journal returned a compacted prefix")
     };
