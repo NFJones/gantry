@@ -219,6 +219,7 @@ impl EventSink for FixedSink {
 struct InstrumentedJournalStore {
     inner: InMemoryJournalStore,
     fail_commits: AtomicBool,
+    fail_commit_number: AtomicU64,
     commit_calls: AtomicU64,
     release_calls: AtomicU64,
     prefix_override: Mutex<Option<JournalPrefixV1>>,
@@ -272,8 +273,10 @@ impl JournalStorage for InstrumentedJournalStore {
         &'a self,
         request: JournalCommitRequestV1,
     ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
-        self.commit_calls.fetch_add(1, Ordering::AcqRel);
-        if self.fail_commits.load(Ordering::Acquire) {
+        let number = self.commit_calls.fetch_add(1, Ordering::AcqRel) + 1;
+        if self.fail_commits.load(Ordering::Acquire)
+            || self.fail_commit_number.load(Ordering::Acquire) == number
+        {
             Box::pin(async { Err(JournalError::new(JournalErrorCode::Internal)) })
         } else {
             self.inner.commit(request)
@@ -1873,6 +1876,49 @@ fn start_request<'a>(
         entry_input: None,
         root_session: None,
         event_delivery: None,
+    }
+}
+
+/// Every failed cancellation cut retains exactly the last committed machine.
+#[test]
+fn cancellation_commit_failures_retain_authoritative_machine_and_budget() {
+    for failed_commit in 2..=5 {
+        let storage = Arc::new(InstrumentedJournalStore::default());
+        let adapter: Arc<dyn JournalStorage> = storage.clone();
+        let (_interpreter, _lifecycle, owned, execution, _signal, journal) =
+            start_owned_lifecycle("cancellation-cut-failure", adapter);
+        storage
+            .fail_commit_number
+            .store(failed_commit, Ordering::Release);
+        let reason = CancellationReason::new(
+            CancellationReasonCategory::Caller,
+            Some(Arc::from("stop")),
+            None,
+            32,
+        )
+        .unwrap_or_else(|error| panic!("reason failed: {error:?}"));
+        let result = block_on(owned.cancel_execution(execution, reason));
+        assert!(
+            matches!(result, DurableCancelExecutionResult::Failed { .. }),
+            "commit {failed_commit}: {result:?}"
+        );
+        let prefix = read_prefix(storage.as_ref(), &journal);
+        let (_, authoritative) = recover_authoritative_prefix_with_retained_program(&prefix)
+            .unwrap_or_else(|error| panic!("prefix failed: {error:?}"));
+        let retained = owned
+            .test_retained_projection()
+            .unwrap_or_else(|| panic!("failed owner lost retained state"));
+        assert_eq!(retained.latest_sequence(), authoritative.latest_sequence());
+        assert_eq!(
+            retained.machine().checkpoint(),
+            authoritative.machine().checkpoint(),
+            "commit {failed_commit}: uncommitted machine state leaked"
+        );
+        assert_eq!(
+            retained.machine().budget_checkpoint(),
+            authoritative.machine().budget_checkpoint(),
+            "commit {failed_commit}: uncommitted budget leaked"
+        );
     }
 }
 

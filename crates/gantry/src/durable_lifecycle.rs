@@ -609,6 +609,14 @@ impl DurableOwnedExecution {
         lock_state(&self.state).last_observation.clone()
     }
 
+    /// Copies retained state for committed-prefix conformance assertions.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_retained_projection(&self) -> Option<RecoveredDurableStateV1> {
+        lock_state(&self.state).recovered.clone()
+    }
+
     pub(crate) fn begin_driver(&self) -> Option<RecoveredDurableStateV1> {
         let mut state = lock_state(&self.state);
         if state.operation_in_flight || state.run_failure.is_some() {
@@ -1645,6 +1653,7 @@ impl DurableOwnedExecution {
             );
         }
 
+        let mut last_committed = recovered.clone();
         loop {
             let step = recovered.machine_mut().step();
             let (cut, published) = match step {
@@ -1678,16 +1687,17 @@ impl DurableOwnedExecution {
             {
                 Ok(commit) => commit,
                 Err(error) => {
-                    return self.failed_cancellation(recovered, Some(effective_reason), error);
+                    return self.failed_cancellation(last_committed, Some(effective_reason), error);
                 }
             };
             if let Err(error) = recovered.record_semantic_commit(&commit) {
                 return self.failed_cancellation(
-                    recovered,
+                    last_committed,
                     Some(effective_reason),
                     DurableCommitError::Evidence(error),
                 );
             }
+            last_committed = recovered.clone();
             if let Some((terminal, outcome)) = published {
                 let published = if terminal {
                     self.handle.publish_committed_terminal(outcome)
