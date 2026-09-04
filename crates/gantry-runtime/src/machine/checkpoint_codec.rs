@@ -1,4 +1,4 @@
-//! Canonical binary codec for version-one machine checkpoints.
+//! Canonical binary codecs for task-local machine and execution-budget checkpoints.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
@@ -14,16 +14,55 @@ use gantry_ir::{
 };
 
 use super::{
-    Binding, MachineCheckpointV1, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
-    MachineRecoveryError, MachineStatus, OperationOccurrence, PendingOperation, RuntimeCode, Scope,
-    SessionCreationModeV1, SessionScopeOccurrence, WorkflowFrame, validate_machine_checkpoint,
+    Binding, ExecutionBudgetSnapshot, MachineCheckpointV2, MachineFailure, MachineLabel,
+    MachineLimits, MachineOutcome, MachineRecoveryError, MachineStatus, OperationOccurrence,
+    PendingOperation, RuntimeCode, Scope, SessionCreationModeV1, SessionScopeOccurrence,
+    WorkflowFrame, validate_execution_budget_snapshot, validate_machine_checkpoint,
 };
 
-const MAGIC: &[u8; 8] = b"GNTMCP01";
+const MACHINE_MAGIC: &[u8; 8] = b"GNTMCP02";
+const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
 
-pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV1) -> Vec<u8> {
+pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
     let mut writer = Writer::default();
-    writer.raw(MAGIC);
+    writer.raw(EXECUTION_BUDGET_MAGIC);
+    writer.identity(snapshot.execution);
+    writer.u64(snapshot.maximum_transitions);
+    writer.u64(snapshot.maximum_operations);
+    writer.u64(snapshot.remaining_transitions);
+    writer.u64(snapshot.remaining_operations);
+    writer.u64(snapshot.revision);
+    writer.finish()
+}
+
+pub(super) fn decode_execution_budget_snapshot(
+    bytes: &[u8],
+) -> Result<ExecutionBudgetSnapshot, MachineRecoveryError> {
+    let mut reader = Reader::new(bytes);
+    if reader.raw(EXECUTION_BUDGET_MAGIC.len())? != EXECUTION_BUDGET_MAGIC {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    let snapshot = ExecutionBudgetSnapshot {
+        execution: reader.identity(Some(IdentityKind::Execution))?,
+        maximum_transitions: reader.u64()?,
+        maximum_operations: reader.u64()?,
+        remaining_transitions: reader.u64()?,
+        remaining_operations: reader.u64()?,
+        revision: reader.u64()?,
+    };
+    if !reader.is_empty() {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    validate_execution_budget_snapshot(&snapshot)?;
+    if encode_execution_budget_snapshot(&snapshot) != bytes {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    Ok(snapshot)
+}
+
+pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV2) -> Vec<u8> {
+    let mut writer = Writer::default();
+    writer.raw(MACHINE_MAGIC);
     writer.identity(checkpoint.execution);
     writer.boolean(checkpoint.execution_foreground);
     write_limits(&mut writer, checkpoint.limits);
@@ -49,8 +88,6 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV1) -> Vec
     for session in &checkpoint.session_stack {
         writer.optional_identity(*session);
     }
-    writer.u64(checkpoint.remaining_transitions);
-    writer.u64(checkpoint.remaining_operations);
     writer.u64(checkpoint.remaining_loop_iterations);
     writer.u64(checkpoint.consecutive_transitions);
     write_pending_session(&mut writer, checkpoint.pending_session_scope.as_ref());
@@ -76,9 +113,9 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV1) -> Vec
 pub(super) fn decode_machine_checkpoint(
     program: &MachineProgram,
     bytes: &[u8],
-) -> Result<MachineCheckpointV1, MachineRecoveryError> {
+) -> Result<MachineCheckpointV2, MachineRecoveryError> {
     let mut reader = Reader::new(bytes);
-    if reader.raw(MAGIC.len())? != MAGIC {
+    if reader.raw(MACHINE_MAGIC.len())? != MACHINE_MAGIC {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
     let execution = reader.identity(Some(IdentityKind::Execution))?;
@@ -105,8 +142,6 @@ pub(super) fn decode_machine_checkpoint(
     for _ in 0..session_count {
         session_stack.push(reader.optional_identity(Some(IdentityKind::Session))?);
     }
-    let remaining_transitions = reader.u64()?;
-    let remaining_operations = reader.u64()?;
     let remaining_loop_iterations = reader.u64()?;
     let consecutive_transitions = reader.u64()?;
     let pending_session_scope = read_pending_session(&mut reader)?;
@@ -122,7 +157,7 @@ pub(super) fn decode_machine_checkpoint(
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
-    let checkpoint = MachineCheckpointV1 {
+    let checkpoint = MachineCheckpointV2 {
         execution,
         execution_foreground,
         limits,
@@ -135,8 +170,6 @@ pub(super) fn decode_machine_checkpoint(
         agent_stack,
         session,
         session_stack,
-        remaining_transitions,
-        remaining_operations,
         remaining_loop_iterations,
         consecutive_transitions,
         pending_session_scope,

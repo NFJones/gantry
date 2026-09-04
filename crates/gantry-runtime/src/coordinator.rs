@@ -22,10 +22,10 @@ use gantry_ir::{StructuralPosition, TaskControlSite};
 
 use crate::{
     ConcurrentShutdownCohortV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
-    ConcurrentTerminalOutcomeV1, DynamicTaskHandleIdentity, JoinResolutionV1, JoinStartV1,
-    LogicalSessionRegistryV1, LogicalSessionV1, MachineOutcome, SessionCreationModeV1,
-    SessionError, SessionEstablishmentV1, TaskCreationRequestV1, TaskCreationV1,
-    TaskOwnershipChangedV1, TaskStateError,
+    ConcurrentTerminalOutcomeV1, DynamicTaskHandleIdentity, ExecutionBudget,
+    ExecutionBudgetSnapshot, JoinResolutionV1, JoinStartV1, LogicalSessionRegistryV1,
+    LogicalSessionV1, MachineOutcome, SessionCreationModeV1, SessionError, SessionEstablishmentV1,
+    TaskCreationRequestV1, TaskCreationV1, TaskOwnershipChangedV1, TaskStateError,
 };
 
 static NEXT_COORDINATOR_WAITER_ID: AtomicU64 = AtomicU64::new(1);
@@ -45,6 +45,7 @@ struct CoordinatorInner {
 struct CoordinatorState {
     tasks: ConcurrentTaskStateV1,
     sessions: LogicalSessionRegistryV1,
+    execution_budget: Option<ExecutionBudget>,
     publication: u64,
     task_waiters: BTreeMap<ProtocolIdentity, Vec<RegisteredWaiter>>,
     foreground_waiters: Vec<RegisteredWaiter>,
@@ -63,6 +64,7 @@ struct RegisteredWaiter {
 pub struct ExecutionCoordinatorSnapshot {
     state: ConcurrentTaskStateV1,
     sessions: Vec<LogicalSessionV1>,
+    execution_budget: Option<ExecutionBudgetSnapshot>,
     publication: u64,
 }
 
@@ -79,6 +81,12 @@ impl ExecutionCoordinatorSnapshot {
         &self.sessions
     }
 
+    /// Returns the execution-budget projection when runtime ownership is attached.
+    #[must_use]
+    pub const fn execution_budget(&self) -> Option<ExecutionBudgetSnapshot> {
+        self.execution_budget
+    }
+
     /// Returns the monotonic publication generation captured with the state.
     #[must_use]
     pub const fn publication(&self) -> u64 {
@@ -92,6 +100,26 @@ impl ExecutionCoordinator {
         tasks: ConcurrentTaskStateV1,
         sessions: LogicalSessionRegistryV1,
     ) -> Result<Self, TaskStateError> {
+        Self::new_inner(tasks, sessions, None)
+    }
+
+    /// Creates one coordinator whose snapshots include a shared runtime budget.
+    pub fn new_with_budget(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: ExecutionBudget,
+    ) -> Result<Self, TaskStateError> {
+        if execution_budget.snapshot().execution != tasks.execution_id() {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        Self::new_inner(tasks, sessions, Some(execution_budget))
+    }
+
+    fn new_inner(
+        tasks: ConcurrentTaskStateV1,
+        sessions: LogicalSessionRegistryV1,
+        execution_budget: Option<ExecutionBudget>,
+    ) -> Result<Self, TaskStateError> {
         if sessions
             .sessions()
             .any(|session| session.execution_id != tasks.execution_id())
@@ -103,6 +131,7 @@ impl ExecutionCoordinator {
                 state: Mutex::new(CoordinatorState {
                     tasks,
                     sessions,
+                    execution_budget,
                     publication: 0,
                     task_waiters: BTreeMap::new(),
                     foreground_waiters: Vec::new(),
@@ -727,6 +756,10 @@ fn snapshot_from(state: &CoordinatorState) -> ExecutionCoordinatorSnapshot {
     ExecutionCoordinatorSnapshot {
         state: state.tasks.clone(),
         sessions: state.sessions.sessions().cloned().collect(),
+        execution_budget: state
+            .execution_budget
+            .as_ref()
+            .map(ExecutionBudget::snapshot),
         publication: state.publication,
     }
 }

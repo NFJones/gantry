@@ -12,12 +12,12 @@ use gantry_host::journal::{
 use gantry_ir::MachineProgram;
 
 use super::{
-    CONCURRENT_DURABLE_EVIDENCE_KIND_V1, DurableCommitCoordinatorV1, DurableCommitCutV1,
+    CONCURRENT_DURABLE_EVIDENCE_KIND_V2, DurableCommitCoordinatorV1, DurableCommitCutV1,
     DurableCommitError, DurableEvidenceCommitV1, DurableEvidenceError, decode_hex, field, object,
-    push_json_string, require_exact_fields, string,
+    push_json_string, require_exact_fields, string, validate_budget_successor,
 };
 use crate::{
-    ConcurrentDurableCheckpointV1, ConcurrentSchedulerV1, DURABLE_EVENT_DISPATCHED_KIND_V1,
+    ConcurrentDurableCheckpointV2, ConcurrentSchedulerV1, DURABLE_EVENT_DISPATCHED_KIND_V1,
     DURABLE_EVENT_OCCURRENCE_KIND_V1, DURABLE_EVENT_SETTLED_KIND_V1, DurableEventOccurrenceV1,
     LogicalSessionRegistryV1, Machine, RecoveredConcurrentDurableExecutionV1,
     RecoveredDurableEventsV1,
@@ -25,18 +25,18 @@ use crate::{
 
 /// One canonical authoritative evidence body for a complete concurrent task graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConcurrentDurableEvidenceV1 {
+pub struct ConcurrentDurableEvidenceV2 {
     cut: DurableCommitCutV1,
     task_id: ProtocolIdentity,
-    checkpoint: ConcurrentDurableCheckpointV1,
+    checkpoint: ConcurrentDurableCheckpointV2,
 }
 
-impl ConcurrentDurableEvidenceV1 {
+impl ConcurrentDurableEvidenceV2 {
     /// Constructs one validated post-transition graph checkpoint.
     pub fn new(
         cut: DurableCommitCutV1,
         task_id: ProtocolIdentity,
-        checkpoint: ConcurrentDurableCheckpointV1,
+        checkpoint: ConcurrentDurableCheckpointV2,
     ) -> Result<Self, DurableEvidenceError> {
         if task_id.kind() != IdentityKind::Task || !checkpoint.contains_task(task_id) {
             return Err(DurableEvidenceError::InvalidState);
@@ -99,11 +99,11 @@ impl ConcurrentDurableEvidenceV1 {
 
     /// Returns the complete composed graph checkpoint.
     #[must_use]
-    pub const fn checkpoint(&self) -> &ConcurrentDurableCheckpointV1 {
+    pub const fn checkpoint(&self) -> &ConcurrentDurableCheckpointV2 {
         &self.checkpoint
     }
 
-    /// Encodes the unique version-one canonical JSON evidence body.
+    /// Encodes the unique version-two canonical JSON evidence body.
     #[must_use]
     pub fn canonical_body(&self) -> Vec<u8> {
         let mut output = String::from("{\"checkpoint\":");
@@ -115,7 +115,7 @@ impl ConcurrentDurableEvidenceV1 {
         push_json_string(&mut output, self.cut.wire_name());
         output.push_str(",\"execution_id\":");
         push_json_string(&mut output, &self.execution_id().to_string());
-        output.push_str(",\"format\":\"gantry.concurrent-durable-evidence/v1\",\"task_id\":");
+        output.push_str(",\"format\":\"gantry.concurrent-durable-evidence/v2\",\"task_id\":");
         push_json_string(&mut output, &self.task_id.to_string());
         output.push('}');
         output.into_bytes()
@@ -141,7 +141,7 @@ impl ConcurrentDurableEvidenceV1 {
             root,
             &["checkpoint", "cut", "execution_id", "format", "task_id"],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.concurrent-durable-evidence/v1" {
+        if string(&document, field(root, "format")?)? != "gantry.concurrent-durable-evidence/v2" {
             return Err(DurableEvidenceError::Encoding);
         }
         let cut = DurableCommitCutV1::from_wire_name(string(&document, field(root, "cut")?)?)
@@ -157,7 +157,7 @@ impl ConcurrentDurableEvidenceV1 {
         )
         .map_err(|_| DurableEvidenceError::Encoding)?;
         let bytes = decode_hex(string(&document, field(root, "checkpoint")?)?)?;
-        let checkpoint = ConcurrentDurableCheckpointV1::decode(program, &bytes)
+        let checkpoint = ConcurrentDurableCheckpointV2::decode(program, &bytes)
             .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
         if checkpoint.execution_id() != execution_id {
             return Err(DurableEvidenceError::MixedExecution);
@@ -176,7 +176,7 @@ impl ConcurrentDurableEvidenceV1 {
     ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
         UnfinalizedEvidenceV1::new(
             batch_local_id,
-            CONCURRENT_DURABLE_EVIDENCE_KIND_V1,
+            CONCURRENT_DURABLE_EVIDENCE_KIND_V2,
             self.canonical_body(),
             references,
             Arc::from([]),
@@ -195,7 +195,7 @@ impl DurableCommitCoordinatorV1<'_> {
         scheduler: &ConcurrentSchedulerV1,
         sessions: &LogicalSessionRegistryV1,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
-        let checkpoint = ConcurrentDurableCheckpointV1::capture(foreground, scheduler, sessions)
+        let checkpoint = ConcurrentDurableCheckpointV2::capture(foreground, scheduler, sessions)
             .map_err(|error| {
                 DurableCommitError::Evidence(DurableEvidenceError::ConcurrentCheckpoint(error))
             })?;
@@ -204,7 +204,7 @@ impl DurableCommitCoordinatorV1<'_> {
         {
             return Err(DurableCommitError::InvalidState);
         }
-        let evidence = ConcurrentDurableEvidenceV1::new(cut, affected_task, checkpoint)
+        let evidence = ConcurrentDurableEvidenceV2::new(cut, affected_task, checkpoint)
             .map_err(DurableCommitError::Evidence)?;
         let local_number = self
             .next_local_id
@@ -280,7 +280,7 @@ pub fn recover_concurrent_authoritative_prefix(
     let JournalPrefixV1::Full(prefix) = prefix else {
         return Err(DurableEvidenceError::UnsupportedEvidenceKind);
     };
-    let mut latest_graph: Option<ConcurrentDurableEvidenceV1> = None;
+    let mut latest_graph: Option<ConcurrentDurableEvidenceV2> = None;
     let mut journal_tip: Option<(u64, ProtocolIdentity)> = None;
     let mut events = RecoveredDurableEventsV1::default();
     let mut known = BTreeSet::new();
@@ -294,8 +294,8 @@ pub fn recover_concurrent_authoritative_prefix(
             _ => return Err(DurableEvidenceError::InvalidCausalOrder),
         }
 
-        if envelope.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V1 {
-            let evidence = ConcurrentDurableEvidenceV1::decode(&program, &envelope.canonical_body)?;
+        if envelope.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V2 {
+            let evidence = ConcurrentDurableEvidenceV2::decode(&program, &envelope.canonical_body)?;
             if let Some(prior) = &latest_graph {
                 validate_transition(prior, &evidence)?;
             } else if evidence.cut != DurableCommitCutV1::Checkpoint {
@@ -347,14 +347,18 @@ pub fn recover_concurrent_authoritative_prefix(
 }
 
 fn validate_transition(
-    previous: &ConcurrentDurableEvidenceV1,
-    current: &ConcurrentDurableEvidenceV1,
+    previous: &ConcurrentDurableEvidenceV2,
+    current: &ConcurrentDurableEvidenceV2,
 ) -> Result<(), DurableEvidenceError> {
     if current.execution_id() != previous.execution_id()
         || current.checkpoint.root_task_id() != previous.checkpoint.root_task_id()
     {
         return Err(DurableEvidenceError::MixedExecution);
     }
+    validate_budget_successor(
+        &previous.checkpoint.execution_budget(),
+        &current.checkpoint.execution_budget(),
+    )?;
     let previous_tasks = previous
         .checkpoint
         .task_ids()
@@ -436,19 +440,23 @@ mod tests {
     use gantry_core::portable::{IdentityKind, TaskStatusKind};
     use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
     use gantry_host::journal::{
-        AcquireJournalOwnerV1, FullJournalPrefixV1, JournalId, JournalOwnerOperationV1,
-        JournalPrefixV1, JournalStorage, ReadJournalPrefixV1,
+        AcquireJournalOwnerV1, FullJournalPrefixV1, JournalEvidenceEnvelopeV1, JournalId,
+        JournalOwnerOperationV1, JournalPrefixV1, JournalStorage, ReadJournalPrefixV1,
     };
     use gantry_ir::{
         CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, Parameter,
         StructuralPosition, TypeDescriptor, Workflow,
     };
 
-    use super::{DurableCommitCoordinatorV1, DurableCommitCutV1, DurableEvidenceError};
+    use super::{
+        CONCURRENT_DURABLE_EVIDENCE_KIND_V2, ConcurrentDurableEvidenceV2,
+        DurableCommitCoordinatorV1, DurableCommitCutV1, DurableEvidenceError, validate_transition,
+    };
     use crate::{
-        CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1, DurableTransitionSink,
-        InMemoryJournalStore, LogicalSessionRegistryV1, Machine, MachineLimits,
-        SessionCreationModeV1, TaskCreationRequestV1, recover_concurrent_authoritative_prefix,
+        CanonicalTranscriptV1, ConcurrentDurableCheckpointV2, ConcurrentSchedulerV1,
+        ConcurrentTaskStateV1, DurableTransitionSink, InMemoryJournalStore,
+        LogicalSessionRegistryV1, Machine, MachineLimits, MachineStep, SessionCreationModeV1,
+        TaskCreationRequestV1, recover_concurrent_authoritative_prefix,
     };
 
     #[test]
@@ -465,7 +473,7 @@ mod tests {
             CanonicalTranscriptV1::empty(),
         )
         .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
-        let foreground = Machine::new_with_context(
+        let mut foreground = Machine::new_with_context(
             Arc::clone(&program),
             &path("crate::main"),
             Vec::new(),
@@ -477,7 +485,8 @@ mod tests {
         .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
         let state = ConcurrentTaskStateV1::new(execution, root_task, 8)
             .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
-        let mut scheduler = ConcurrentSchedulerV1::new(state);
+        let mut scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
 
         let storage: Arc<dyn JournalStorage> = Arc::new(InMemoryJournalStore::new());
         let journal_id = JournalId::new("combined-task-creation")
@@ -500,6 +509,9 @@ mod tests {
         ))
         .unwrap_or_else(|error| panic!("initial graph commit failed: {error:?}"));
         assert_eq!(initial.sequence, 1);
+
+        assert!(matches!(foreground.step(), MachineStep::Transition(_)));
+        let expected_budget = foreground.budget_checkpoint();
 
         let created = scheduler
             .create_child(
@@ -536,6 +548,10 @@ mod tests {
             .unwrap_or_else(|error| panic!("combined recovery failed: {error:?}"));
         assert_eq!(recovered.latest_sequence(), 2);
         assert_eq!(recovered.latest_cut(), DurableCommitCutV1::TaskCreation);
+        assert_eq!(
+            recovered.execution().foreground().budget_checkpoint(),
+            expected_budget
+        );
         let task = recovered
             .execution()
             .scheduler()
@@ -580,6 +596,102 @@ mod tests {
             recover_concurrent_authoritative_prefix(program, &repeated_prefix).map(|_| ()),
             Err(DurableEvidenceError::InvalidState)
         );
+    }
+
+    #[test]
+    fn consecutive_combined_evidence_rejects_changed_budget_maxima() {
+        let program = program();
+        let execution = fresh(IdentityKind::Execution, 11);
+        let root_task = ProtocolIdentity::derive(IdentityKind::Task, b"budget-root")
+            .unwrap_or_else(|error| panic!("root task identity failed: {error}"));
+        let root_session = fresh(IdentityKind::Session, 12);
+        let previous = checkpoint_evidence(
+            Arc::clone(&program),
+            execution,
+            root_task,
+            root_session,
+            machine_limits(),
+        );
+        let changed_limits = MachineLimits::new(64, 8, 4, 8, 16, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("machine limits failed"));
+        let current = checkpoint_evidence(
+            Arc::clone(&program),
+            execution,
+            root_task,
+            root_session,
+            changed_limits,
+        );
+        assert_eq!(
+            validate_transition(&previous, &current),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+
+        let first_id = ProtocolIdentity::from_storage_material([21; 32]);
+        let second_id = ProtocolIdentity::from_storage_material([22; 32]);
+        let journal_id = JournalId::new("combined-budget-continuity")
+            .unwrap_or_else(|error| panic!("journal id failed: {error:?}"));
+        let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+            journal_id: journal_id.clone(),
+            evidence: Arc::from([
+                JournalEvidenceEnvelopeV1 {
+                    journal_id: journal_id.clone(),
+                    sequence: 1,
+                    evidence_id: first_id,
+                    kind: Arc::from(CONCURRENT_DURABLE_EVIDENCE_KIND_V2),
+                    canonical_body: Arc::from(previous.canonical_body()),
+                    references: Arc::from([]),
+                    protected_payloads: Arc::from([]),
+                },
+                JournalEvidenceEnvelopeV1 {
+                    journal_id,
+                    sequence: 2,
+                    evidence_id: second_id,
+                    kind: Arc::from(CONCURRENT_DURABLE_EVIDENCE_KIND_V2),
+                    canonical_body: Arc::from(current.canonical_body()),
+                    references: Arc::from([first_id]),
+                    protected_payloads: Arc::from([]),
+                },
+            ]),
+            committed_through: 2,
+        });
+        assert_eq!(
+            recover_concurrent_authoritative_prefix(program, &prefix).map(|_| ()),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+    }
+
+    fn checkpoint_evidence(
+        program: Arc<MachineProgram>,
+        execution: ProtocolIdentity,
+        root_task: ProtocolIdentity,
+        root_session: ProtocolIdentity,
+        limits: MachineLimits,
+    ) -> ConcurrentDurableEvidenceV2 {
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+        let foreground = Machine::new_with_context(
+            Arc::clone(&program),
+            &path("crate::main"),
+            Vec::new(),
+            execution,
+            limits,
+            None,
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
+        let state = ConcurrentTaskStateV1::new(execution, root_task, 8)
+            .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+        let scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV2::capture(&foreground, &scheduler, &sessions)
+            .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
+        ConcurrentDurableEvidenceV2::new(DurableCommitCutV1::Checkpoint, root_task, checkpoint)
+            .unwrap_or_else(|error| panic!("combined evidence failed: {error:?}"))
     }
 
     fn program() -> Arc<MachineProgram> {

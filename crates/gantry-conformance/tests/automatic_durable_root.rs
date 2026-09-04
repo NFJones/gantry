@@ -32,7 +32,7 @@ use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
     AsyncCapacityLimits, CancellationRecord, DURABLE_EVENT_DISPATCHED_KIND_V1,
     DURABLE_EVENT_SETTLED_KIND_V1, DurableCommitCutV1, DurableEventDispatchedV1,
-    DurableEventOccurrenceV1, DurableEventSettledV1, DurableLogicalEvidenceV1,
+    DurableEventOccurrenceV1, DurableEventSettledV1, DurableLogicalEvidenceV2,
     InMemoryJournalStore, InterpreterConfiguration, MachineOutcome, RequiredConfiguration,
     RuntimeCode, recover_authoritative_prefix_with_retained_program,
 };
@@ -652,7 +652,7 @@ impl JournalStorage for CancellationCommitGateStore {
             .batch
             .evidence
             .iter()
-            .any(|evidence| evidence.kind.as_ref() == "gantry.cancellation/v1");
+            .any(|evidence| evidence.kind.as_ref() == "gantry.cancellation/v2");
         if !cancellation {
             return self.inner.commit(request);
         }
@@ -1014,7 +1014,7 @@ fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
     assert!(
         full.evidence
             .iter()
-            .any(|entry| entry.kind.as_ref() == "gantry.cancellation/v1")
+            .any(|entry| entry.kind.as_ref() == "gantry.cancellation/v2")
     );
 }
 
@@ -1286,15 +1286,15 @@ fn cancellation_progresses_a_pending_dispatch_and_retains_it_to_settlement() {
         .evidence
         .first()
         .and_then(|entry| {
-            gantry::runtime::DurableExecutionStartV1::retained_program(&entry.canonical_body).ok()
+            gantry::runtime::DurableExecutionStartV2::retained_program(&entry.canonical_body).ok()
         })
         .unwrap_or_else(|| panic!("pending-dispatch prefix omitted its retained program"));
     let cuts = full
         .evidence
         .iter()
-        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v1")
+        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v2")
         .map(|entry| {
-            DurableLogicalEvidenceV1::decode(&program, &entry.canonical_body)
+            DurableLogicalEvidenceV2::decode(&program, &entry.canonical_body)
                 .unwrap_or_else(|error| panic!("logical evidence did not decode: {error:?}"))
                 .cut()
         })
@@ -1395,7 +1395,7 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
     assert!(
         full.evidence
             .iter()
-            .any(|entry| entry.kind.as_ref() == "gantry.cancellation/v1")
+            .any(|entry| entry.kind.as_ref() == "gantry.cancellation/v2")
     );
 }
 
@@ -2444,9 +2444,9 @@ fn durable_operation_cuts_commit_before_dispatch_and_source_consumption() {
         .evidence
         .iter()
         .skip(1)
-        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v1")
+        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v2")
         .map(|entry| {
-            DurableLogicalEvidenceV1::decode(&program, &entry.canonical_body)
+            DurableLogicalEvidenceV2::decode(&program, &entry.canonical_body)
                 .unwrap_or_else(|error| panic!("operation evidence did not decode: {error:?}"))
                 .cut()
         })
@@ -2475,9 +2475,9 @@ fn durable_operation_cuts_commit_before_dispatch_and_source_consumption() {
     let causal_cuts = full
         .evidence
         .iter()
-        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v1")
+        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v2")
         .filter_map(|entry| {
-            let evidence = DurableLogicalEvidenceV1::decode(&program, &entry.canonical_body)
+            let evidence = DurableLogicalEvidenceV2::decode(&program, &entry.canonical_body)
                 .unwrap_or_else(|error| panic!("causal evidence did not decode: {error:?}"));
             matches!(
                 evidence.cut(),
@@ -2944,16 +2944,16 @@ fn durable_lexical_session_state_commits_before_source_progress() {
         .evidence
         .first()
         .and_then(|entry| {
-            gantry::runtime::DurableExecutionStartV1::retained_program(&entry.canonical_body).ok()
+            gantry::runtime::DurableExecutionStartV2::retained_program(&entry.canonical_body).ok()
         })
         .unwrap_or_else(|| panic!("session prefix omitted its retained program"));
     let session_counts = full
         .evidence
         .iter()
         .skip(1)
-        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v1")
+        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v2")
         .map(|entry| {
-            let evidence = DurableLogicalEvidenceV1::decode(&program, &entry.canonical_body)
+            let evidence = DurableLogicalEvidenceV2::decode(&program, &entry.canonical_body)
                 .unwrap_or_else(|error| panic!("session evidence did not decode: {error:?}"));
             (
                 entry.sequence,

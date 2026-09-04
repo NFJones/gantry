@@ -14,28 +14,29 @@ use crate::machine::{decode_machine_program, encode_machine_program};
 use crate::{CancellationCausalIdentity, CancellationReason};
 
 use super::{
-    DurableCommitCutV1, DurableEvidenceError, DurableLogicalEvidenceV1, decode_hex, encode_hex,
+    DurableCommitCutV1, DurableEvidenceError, DurableLogicalEvidenceV2, decode_hex, encode_hex,
     field, is_canonical_json, object, push_json_string, require_exact_fields, string,
+    validate_budget_successor,
 };
 
-/// Exact sequence-one record that binds immutable execution metadata to recoverable state.
+/// Exact version-two sequence-one record binding metadata to recoverable state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableExecutionStartV1 {
+pub struct DurableExecutionStartV2 {
     execution_id: ProtocolIdentity,
     task_id: ProtocolIdentity,
     metadata: Arc<[u8]>,
     program: Arc<[u8]>,
-    state: DurableLogicalEvidenceV1,
+    state: DurableLogicalEvidenceV2,
 }
 
-impl DurableExecutionStartV1 {
+impl DurableExecutionStartV2 {
     /// Constructs one execution-start record over canonical immutable metadata and a checkpoint.
     pub fn new(
         execution_id: ProtocolIdentity,
         task_id: ProtocolIdentity,
         program: &MachineProgram,
         metadata: impl Into<Arc<[u8]>>,
-        state: DurableLogicalEvidenceV1,
+        state: DurableLogicalEvidenceV2,
     ) -> Result<Self, DurableEvidenceError> {
         let metadata = metadata.into();
         if execution_id.kind() != IdentityKind::Execution
@@ -81,16 +82,16 @@ impl DurableExecutionStartV1 {
 
     /// Returns the embedded same-machine checkpoint evidence.
     #[must_use]
-    pub const fn state(&self) -> &DurableLogicalEvidenceV1 {
+    pub const fn state(&self) -> &DurableLogicalEvidenceV2 {
         &self.state
     }
 
-    /// Encodes the unique version-one sequence-one body.
+    /// Encodes the unique version-two sequence-one body.
     #[must_use]
     pub fn canonical_body(&self) -> Vec<u8> {
         let mut output = String::from("{\"execution_id\":");
         push_json_string(&mut output, &self.execution_id.to_string());
-        output.push_str(",\"format\":\"gantry.execution-start/v1\",\"metadata\":");
+        output.push_str(",\"format\":\"gantry.execution-start/v2\",\"metadata\":");
         push_json_string(&mut output, &encode_hex(&self.metadata));
         output.push_str(",\"program\":");
         push_json_string(&mut output, &encode_hex(&self.program));
@@ -102,7 +103,7 @@ impl DurableExecutionStartV1 {
         output.into_bytes()
     }
 
-    /// Decodes one exact version-one sequence-one body against its immutable program.
+    /// Decodes one exact version-two sequence-one body against its immutable program.
     pub fn decode(program: &MachineProgram, body: &[u8]) -> Result<Self, DurableEvidenceError> {
         let maximum_bytes =
             u64::try_from(body.len()).map_err(|_| DurableEvidenceError::Encoding)?;
@@ -129,7 +130,7 @@ impl DurableExecutionStartV1 {
                 "task_id",
             ],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.execution-start/v1" {
+        if string(&document, field(root, "format")?)? != "gantry.execution-start/v2" {
             return Err(DurableEvidenceError::Encoding);
         }
         let execution_id = ProtocolIdentity::parse_kind(
@@ -151,7 +152,7 @@ impl DurableExecutionStartV1 {
             return Err(DurableEvidenceError::InvalidExecutionStart);
         }
         let state_bytes = decode_hex(string(&document, field(root, "state")?)?)?;
-        let state = DurableLogicalEvidenceV1::decode(program, &state_bytes)?;
+        let state = DurableLogicalEvidenceV2::decode(program, &state_bytes)?;
         let decoded = Self::new(execution_id, task_id, program, metadata, state)?;
         if decoded.canonical_body() != body {
             return Err(DurableEvidenceError::Encoding);
@@ -186,7 +187,7 @@ impl DurableExecutionStartV1 {
                 "task_id",
             ],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.execution-start/v1" {
+        if string(&document, field(root, "format")?)? != "gantry.execution-start/v2" {
             return Err(DurableEvidenceError::Encoding);
         }
         decode_machine_program(&decode_hex(string(&document, field(root, "program")?)?)?)
@@ -200,7 +201,7 @@ impl DurableExecutionStartV1 {
     ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
         UnfinalizedEvidenceV1::new(
             batch_local_id,
-            "gantry.execution-start/v1",
+            "gantry.execution-start/v2",
             self.canonical_body(),
             Arc::<[JournalEvidenceReferenceV1]>::from([]),
             Arc::from([]),
@@ -209,18 +210,18 @@ impl DurableExecutionStartV1 {
     }
 }
 
-/// Canonical first-effective cancellation evidence committed before task signalling.
+/// Canonical version-two first-effective cancellation evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableCancellationEvidenceV1 {
+pub struct DurableCancellationEvidenceV2 {
     reason: CancellationReason,
-    state: DurableLogicalEvidenceV1,
+    state: DurableLogicalEvidenceV2,
 }
 
-impl DurableCancellationEvidenceV1 {
+impl DurableCancellationEvidenceV2 {
     /// Constructs cancellation evidence over the complete state at the cancellation cut.
     pub fn new(
         reason: CancellationReason,
-        state: DurableLogicalEvidenceV1,
+        state: DurableLogicalEvidenceV2,
     ) -> Result<Self, DurableEvidenceError> {
         let causal_identity_valid = reason
             .causal_identity
@@ -244,7 +245,7 @@ impl DurableCancellationEvidenceV1 {
 
     /// Returns the complete logical state committed with cancellation.
     #[must_use]
-    pub const fn state(&self) -> &DurableLogicalEvidenceV1 {
+    pub const fn state(&self) -> &DurableLogicalEvidenceV2 {
         &self.state
     }
 
@@ -267,7 +268,7 @@ impl DurableCancellationEvidenceV1 {
         }
         output.push_str(",\"category\":");
         push_json_string(&mut output, self.reason.category.wire_name());
-        output.push_str(",\"format\":\"gantry.cancellation/v1\",\"message\":");
+        output.push_str(",\"format\":\"gantry.cancellation/v2\",\"message\":");
         super::push_optional_string(&mut output, self.reason.message.as_deref());
         output.push_str(",\"state\":");
         push_json_string(&mut output, &encode_hex(&self.state.canonical_body()));
@@ -283,7 +284,7 @@ impl DurableCancellationEvidenceV1 {
             root,
             &["causal_identity", "category", "format", "message", "state"],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.cancellation/v1" {
+        if string(&document, field(root, "format")?)? != "gantry.cancellation/v2" {
             return Err(DurableEvidenceError::Encoding);
         }
         let category = CancellationReasonCategory::from_wire_name(string(
@@ -323,7 +324,7 @@ impl DurableCancellationEvidenceV1 {
             u64::MAX,
         )
         .map_err(|_| DurableEvidenceError::Encoding)?;
-        let state = DurableLogicalEvidenceV1::decode(
+        let state = DurableLogicalEvidenceV2::decode(
             program,
             &decode_hex(string(&document, field(root, "state")?)?)?,
         )?;
@@ -342,7 +343,7 @@ impl DurableCancellationEvidenceV1 {
     ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
         UnfinalizedEvidenceV1::new(
             batch_local_id,
-            "gantry.cancellation/v1",
+            "gantry.cancellation/v2",
             self.canonical_body(),
             references,
             Arc::from([]),
@@ -482,28 +483,28 @@ impl DurableExecutionStateV1 {
     }
 }
 
-/// Versioned compacted recovery state retaining sequence-one identity and the latest checkpoint.
+/// Version-two compacted recovery state retaining sequence-one identity and the latest checkpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableRecoverySnapshotV1 {
-    execution_start: DurableExecutionStartV1,
+pub struct DurableRecoverySnapshotV2 {
+    execution_start: DurableExecutionStartV2,
     execution_state: Option<DurableExecutionStateV1>,
-    state: DurableLogicalEvidenceV1,
+    state: DurableLogicalEvidenceV2,
 }
 
-impl DurableRecoverySnapshotV1 {
+impl DurableRecoverySnapshotV2 {
     /// Constructs a compacted recovery snapshot over one execution's immutable start and state.
     pub fn new(
-        execution_start: DurableExecutionStartV1,
-        state: DurableLogicalEvidenceV1,
+        execution_start: DurableExecutionStartV2,
+        state: DurableLogicalEvidenceV2,
     ) -> Result<Self, DurableEvidenceError> {
         Self::new_with_execution_state(execution_start, None, state)
     }
 
     /// Constructs a compacted snapshot retaining the latest compatible execution state.
     pub fn new_with_execution_state(
-        execution_start: DurableExecutionStartV1,
+        execution_start: DurableExecutionStartV2,
         execution_state: Option<DurableExecutionStateV1>,
-        state: DurableLogicalEvidenceV1,
+        state: DurableLogicalEvidenceV2,
     ) -> Result<Self, DurableEvidenceError> {
         if state.execution_id() != execution_start.execution_id()
             || state.task_id() != execution_start.task_id()
@@ -513,6 +514,7 @@ impl DurableRecoverySnapshotV1 {
         {
             return Err(DurableEvidenceError::MixedExecution);
         }
+        validate_budget_successor(&execution_start.state().budget(), &state.budget())?;
         Ok(Self {
             execution_start,
             execution_state,
@@ -522,7 +524,7 @@ impl DurableRecoverySnapshotV1 {
 
     /// Returns the retained immutable execution-start record.
     #[must_use]
-    pub const fn execution_start(&self) -> &DurableExecutionStartV1 {
+    pub const fn execution_start(&self) -> &DurableExecutionStartV2 {
         &self.execution_start
     }
 
@@ -534,7 +536,7 @@ impl DurableRecoverySnapshotV1 {
 
     /// Returns the latest logical state represented by the snapshot frontier.
     #[must_use]
-    pub const fn state(&self) -> &DurableLogicalEvidenceV1 {
+    pub const fn state(&self) -> &DurableLogicalEvidenceV2 {
         &self.state
     }
 
@@ -551,7 +553,7 @@ impl DurableRecoverySnapshotV1 {
             Some(state) => push_json_string(&mut output, &encode_hex(&state.canonical_body())),
             None => output.push_str("null"),
         }
-        output.push_str(",\"format\":\"gantry.recovery-snapshot/v1\",\"state\":");
+        output.push_str(",\"format\":\"gantry.recovery-snapshot/v2\",\"state\":");
         push_json_string(&mut output, &encode_hex(&self.state.canonical_body()));
         output.push('}');
         output.into_bytes()
@@ -565,10 +567,10 @@ impl DurableRecoverySnapshotV1 {
             root,
             &["execution_start", "execution_state", "format", "state"],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v1" {
+        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v2" {
             return Err(DurableEvidenceError::Encoding);
         }
-        let execution_start = DurableExecutionStartV1::decode(
+        let execution_start = DurableExecutionStartV2::decode(
             program,
             &decode_hex(string(&document, field(root, "execution_start")?)?)?,
         )?;
@@ -579,7 +581,7 @@ impl DurableRecoverySnapshotV1 {
             }
             _ => return Err(DurableEvidenceError::Encoding),
         };
-        let state = DurableLogicalEvidenceV1::decode(
+        let state = DurableLogicalEvidenceV2::decode(
             program,
             &decode_hex(string(&document, field(root, "state")?)?)?,
         )?;
@@ -598,10 +600,10 @@ impl DurableRecoverySnapshotV1 {
             root,
             &["execution_start", "execution_state", "format", "state"],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v1" {
+        if string(&document, field(root, "format")?)? != "gantry.recovery-snapshot/v2" {
             return Err(DurableEvidenceError::Encoding);
         }
-        DurableExecutionStartV1::retained_program(&decode_hex(string(
+        DurableExecutionStartV2::retained_program(&decode_hex(string(
             &document,
             field(root, "execution_start")?,
         )?)?)

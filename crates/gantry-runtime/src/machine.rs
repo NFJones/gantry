@@ -1,7 +1,7 @@
 //! Explicit-frame transition machine implementation.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::numeric::{GantryFloat, GantryInt};
@@ -21,7 +21,10 @@ use crate::session::SessionCreationModeV1;
 #[cfg(feature = "durable")]
 pub(crate) mod checkpoint_codec;
 #[cfg(feature = "durable")]
-use checkpoint_codec::{decode_machine_checkpoint, encode_machine_checkpoint};
+use checkpoint_codec::{
+    decode_execution_budget_snapshot, decode_machine_checkpoint, encode_execution_budget_snapshot,
+    encode_machine_checkpoint,
+};
 #[cfg(feature = "durable")]
 mod program_codec;
 #[cfg(feature = "durable")]
@@ -57,6 +60,9 @@ impl MachineLimits {
     ) -> Option<Self> {
         if maximum_deterministic_transitions == 0
             || maximum_operations == 0
+            || maximum_deterministic_transitions
+                .checked_add(maximum_operations)
+                .is_none()
             || maximum_loop_iterations == 0
             || maximum_workflow_call_depth == 0
             || deterministic_transition_yield_quantum == 0
@@ -72,6 +78,148 @@ impl MachineLimits {
                 value_limits,
             })
         }
+    }
+}
+
+/// Shared owner of counters limited across every task in one execution.
+#[derive(Clone, Debug)]
+pub struct ExecutionBudget {
+    inner: Arc<Mutex<ExecutionBudgetState>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ExecutionBudgetState {
+    execution: ProtocolIdentity,
+    maximum_transitions: u64,
+    maximum_operations: u64,
+    remaining_transitions: u64,
+    remaining_operations: u64,
+    revision: u64,
+}
+
+/// Immutable point-in-time projection of one execution's shared counters.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutionBudgetSnapshot {
+    /// Execution identity bound to these counters.
+    pub execution: ProtocolIdentity,
+    /// Configured maximum deterministic transitions.
+    pub maximum_transitions: u64,
+    /// Configured maximum logical operation preparations.
+    pub maximum_operations: u64,
+    /// Deterministic transitions still available.
+    pub remaining_transitions: u64,
+    /// Logical operation preparations still available.
+    pub remaining_operations: u64,
+    /// Monotonic successful-charge revision.
+    pub revision: u64,
+}
+
+impl ExecutionBudget {
+    /// Creates identity-bound execution counters from configured machine limits.
+    #[must_use]
+    pub fn new(execution: ProtocolIdentity, limits: MachineLimits) -> Self {
+        Self::from_snapshot(ExecutionBudgetSnapshot {
+            execution,
+            maximum_transitions: limits.maximum_deterministic_transitions,
+            maximum_operations: limits.maximum_operations,
+            remaining_transitions: limits.maximum_deterministic_transitions,
+            remaining_operations: limits.maximum_operations,
+            revision: 0,
+        })
+    }
+
+    fn from_snapshot(snapshot: ExecutionBudgetSnapshot) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(ExecutionBudgetState {
+                execution: snapshot.execution,
+                maximum_transitions: snapshot.maximum_transitions,
+                maximum_operations: snapshot.maximum_operations,
+                remaining_transitions: snapshot.remaining_transitions,
+                remaining_operations: snapshot.remaining_operations,
+                revision: snapshot.revision,
+            })),
+        }
+    }
+
+    /// Recovers one shared execution budget from a validated durable projection.
+    #[cfg(feature = "durable")]
+    pub fn recover_from_checkpoint(
+        checkpoint: ExecutionBudgetSnapshot,
+    ) -> Result<Self, MachineRecoveryError> {
+        validate_execution_budget_snapshot(&checkpoint)?;
+        Ok(Self::from_snapshot(checkpoint))
+    }
+
+    /// Captures all execution-wide counters at one linearization point.
+    #[must_use]
+    pub fn snapshot(&self) -> ExecutionBudgetSnapshot {
+        let state = self.lock();
+        ExecutionBudgetSnapshot {
+            execution: state.execution,
+            maximum_transitions: state.maximum_transitions,
+            maximum_operations: state.maximum_operations,
+            remaining_transitions: state.remaining_transitions,
+            remaining_operations: state.remaining_operations,
+            revision: state.revision,
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, ExecutionBudgetState> {
+        self.inner.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    fn matches(&self, execution: ProtocolIdentity, limits: MachineLimits) -> bool {
+        let state = self.lock();
+        state.execution == execution
+            && state.maximum_transitions == limits.maximum_deterministic_transitions
+            && state.maximum_operations == limits.maximum_operations
+    }
+
+    fn remaining(&self) -> (u64, u64) {
+        let state = self.lock();
+        (state.remaining_transitions, state.remaining_operations)
+    }
+
+    fn charge_transition(state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
+        let Some(remaining) = state.remaining_transitions.checked_sub(1) else {
+            return Err(RuntimeCode::DeterministicTransitionBudget);
+        };
+        let Some(revision) = state.revision.checked_add(1) else {
+            return Err(RuntimeCode::InternalInvariant);
+        };
+        state.remaining_transitions = remaining;
+        state.revision = revision;
+        Ok(())
+    }
+
+    fn charge_operation(state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
+        let Some(remaining) = state.remaining_operations.checked_sub(1) else {
+            return Err(RuntimeCode::OperationBudget);
+        };
+        let Some(revision) = state.revision.checked_add(1) else {
+            return Err(RuntimeCode::InternalInvariant);
+        };
+        state.remaining_operations = remaining;
+        state.revision = revision;
+        Ok(())
+    }
+
+    pub(crate) fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+#[cfg(feature = "durable")]
+impl ExecutionBudgetSnapshot {
+    /// Encodes this validated projection as its unique binary representation.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        encode_execution_budget_snapshot(self)
+    }
+
+    /// Decodes and validates one canonical execution-budget projection.
+    pub fn decode(bytes: &[u8]) -> Result<Self, MachineRecoveryError> {
+        decode_execution_budget_snapshot(bytes)
     }
 }
 
@@ -138,6 +286,8 @@ pub enum MachineBuildError {
     ArgumentType,
     /// The identity is not an execution identity.
     InvalidExecutionIdentity,
+    /// The shared budget belongs to another execution or configured maxima.
+    ExecutionBudgetMismatch,
     /// The initial logical-session identity is not a session identity.
     InvalidSessionIdentity,
     /// One initial argument violates the effective value limits.
@@ -337,7 +487,7 @@ struct PendingOperation {
 /// validated construction and recovery can create runnable machine state.
 #[cfg(feature = "durable")]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MachineCheckpointV1 {
+pub struct MachineCheckpointV2 {
     execution: ProtocolIdentity,
     execution_foreground: bool,
     limits: MachineLimits,
@@ -350,8 +500,6 @@ pub struct MachineCheckpointV1 {
     agent_stack: Vec<Option<Arc<str>>>,
     session: Option<ProtocolIdentity>,
     session_stack: Vec<Option<ProtocolIdentity>>,
-    remaining_transitions: u64,
-    remaining_operations: u64,
     remaining_loop_iterations: u64,
     consecutive_transitions: u64,
     pending_session_scope: Option<SessionScopeOccurrence>,
@@ -363,7 +511,7 @@ pub struct MachineCheckpointV1 {
 }
 
 #[cfg(feature = "durable")]
-impl MachineCheckpointV1 {
+impl MachineCheckpointV2 {
     /// Returns the accepted execution identity represented by this checkpoint.
     #[must_use]
     pub const fn execution_id(&self) -> ProtocolIdentity {
@@ -409,23 +557,19 @@ impl MachineCheckpointV1 {
         self.status
     }
 
-    /// Returns remaining deterministic, operation, and loop-entry budgets.
+    /// Returns the remaining task-local loop-entry budget.
     #[must_use]
-    pub const fn remaining_budgets(&self) -> (u64, u64, u64) {
-        (
-            self.remaining_transitions,
-            self.remaining_operations,
-            self.remaining_loop_iterations,
-        )
+    pub const fn remaining_loop_iterations(&self) -> u64 {
+        self.remaining_loop_iterations
     }
 
-    /// Encodes this checkpoint as the unique version-one binary representation.
+    /// Encodes this task-local checkpoint as the unique version-two binary representation.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         encode_machine_checkpoint(self)
     }
 
-    /// Decodes one exact version-one checkpoint against its immutable program.
+    /// Decodes one exact version-two checkpoint against its immutable program.
     pub fn decode(program: &MachineProgram, bytes: &[u8]) -> Result<Self, MachineRecoveryError> {
         decode_machine_checkpoint(program, bytes)
     }
@@ -441,6 +585,8 @@ pub enum MachineRecoveryError {
     InvalidCheckpoint,
     /// A checkpoint frame or operation no longer resolves in the supplied program.
     ProgramMismatch,
+    /// The supplied shared budget belongs to another execution or configured maxima.
+    ExecutionBudgetMismatch,
 }
 
 /// One task-neutral explicit-frame machine.
@@ -450,6 +596,7 @@ pub struct Machine {
     execution: ProtocolIdentity,
     execution_foreground: bool,
     limits: MachineLimits,
+    execution_budget: ExecutionBudget,
     frames: Vec<WorkflowFrame>,
     values: Vec<LogicalValue>,
     occurrences: Vec<Arc<str>>,
@@ -459,8 +606,6 @@ pub struct Machine {
     agent_stack: Vec<Option<Arc<str>>>,
     session: Option<ProtocolIdentity>,
     session_stack: Vec<Option<ProtocolIdentity>>,
-    remaining_transitions: u64,
-    remaining_operations: u64,
     remaining_loop_iterations: u64,
     consecutive_transitions: u64,
     pending_session_scope: Option<SessionScopeOccurrence>,
@@ -483,6 +628,29 @@ impl Machine {
         Self::new_with_context(program, root, arguments, execution, limits, None, None)
     }
 
+    /// Creates a root task using counters shared by its execution's machines.
+    pub fn new_with_budget(
+        program: Arc<MachineProgram>,
+        root: &CanonicalPath,
+        arguments: Vec<LogicalValue>,
+        execution: ProtocolIdentity,
+        limits: MachineLimits,
+        execution_budget: ExecutionBudget,
+    ) -> Result<Self, MachineBuildError> {
+        Self::new_task_context(
+            program,
+            root,
+            arguments,
+            execution,
+            limits,
+            execution_budget,
+            None,
+            None,
+            true,
+            true,
+        )
+    }
+
     /// Creates the root task with its preflight-resolved initial agent and session.
     pub fn new_with_context(
         program: Arc<MachineProgram>,
@@ -493,12 +661,14 @@ impl Machine {
         initial_agent: Option<Arc<str>>,
         initial_session: Option<ProtocolIdentity>,
     ) -> Result<Self, MachineBuildError> {
+        let execution_budget = ExecutionBudget::new(execution, limits);
         Self::new_task_context(
             program,
             root,
             arguments,
             execution,
             limits,
+            execution_budget,
             initial_agent,
             initial_session,
             true,
@@ -519,6 +689,32 @@ impl Machine {
         arguments: Vec<LogicalValue>,
         execution: ProtocolIdentity,
         limits: MachineLimits,
+        execution_budget: ExecutionBudget,
+        initial_agent: Option<Arc<str>>,
+        initial_session: Option<ProtocolIdentity>,
+    ) -> Result<Self, MachineBuildError> {
+        Self::new_concurrent_task_with_budget_and_context(
+            program,
+            root,
+            arguments,
+            execution,
+            limits,
+            execution_budget,
+            initial_agent,
+            initial_session,
+        )
+    }
+
+    /// Creates a spawned task using counters shared by its execution's machines.
+    #[cfg(feature = "concurrent")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_concurrent_task_with_budget_and_context(
+        program: Arc<MachineProgram>,
+        root: &CanonicalPath,
+        arguments: Vec<LogicalValue>,
+        execution: ProtocolIdentity,
+        limits: MachineLimits,
+        execution_budget: ExecutionBudget,
         initial_agent: Option<Arc<str>>,
         initial_session: Option<ProtocolIdentity>,
     ) -> Result<Self, MachineBuildError> {
@@ -528,6 +724,7 @@ impl Machine {
             arguments,
             execution,
             limits,
+            execution_budget,
             initial_agent,
             initial_session,
             false,
@@ -542,6 +739,7 @@ impl Machine {
         arguments: Vec<LogicalValue>,
         execution: ProtocolIdentity,
         limits: MachineLimits,
+        execution_budget: ExecutionBudget,
         initial_agent: Option<Arc<str>>,
         initial_session: Option<ProtocolIdentity>,
         execution_foreground: bool,
@@ -549,6 +747,9 @@ impl Machine {
     ) -> Result<Self, MachineBuildError> {
         if execution.kind() != IdentityKind::Execution {
             return Err(MachineBuildError::InvalidExecutionIdentity);
+        }
+        if !execution_budget.matches(execution, limits) {
+            return Err(MachineBuildError::ExecutionBudgetMismatch);
         }
         if initial_session.is_some_and(|session| session.kind() != IdentityKind::Session) {
             return Err(MachineBuildError::InvalidSessionIdentity);
@@ -587,6 +788,7 @@ impl Machine {
             execution,
             execution_foreground,
             limits,
+            execution_budget,
             frames: vec![WorkflowFrame {
                 workflow: root_index,
                 pc: 0,
@@ -606,8 +808,6 @@ impl Machine {
             agent_stack: Vec::new(),
             session: initial_session,
             session_stack: Vec::new(),
-            remaining_transitions: limits.maximum_deterministic_transitions,
-            remaining_operations: limits.maximum_operations,
             remaining_loop_iterations: limits.maximum_loop_iterations,
             consecutive_transitions: 0,
             pending_session_scope: None,
@@ -650,6 +850,13 @@ impl Machine {
         self.execution_foreground
     }
 
+    /// Returns a clone of this machine's execution-wide budget owner.
+    #[cfg(feature = "concurrent")]
+    #[must_use]
+    pub fn execution_budget(&self) -> ExecutionBudget {
+        self.execution_budget.clone()
+    }
+
     /// Binds a pristine spawned machine to its scheduler-owned dynamic task path.
     #[cfg(feature = "concurrent")]
     pub(crate) fn bind_concurrent_task_path(&mut self, task_path: &[Arc<str>]) -> bool {
@@ -674,12 +881,27 @@ impl Machine {
         self.outcome.as_ref()
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_instruction_state(&self) -> (usize, usize, bool) {
+        (
+            self.frames.last().map_or(usize::MAX, |frame| frame.pc),
+            self.values.len(),
+            self.pending_operation.is_some(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_fail_current(&mut self, code: RuntimeCode) -> MachineStep {
+        self.fail_current(code)
+    }
+
     /// Returns remaining deterministic, operation, and loop-entry budgets.
     #[must_use]
-    pub const fn remaining_budgets(&self) -> (u64, u64, u64) {
+    pub fn remaining_budgets(&self) -> (u64, u64, u64) {
+        let (remaining_transitions, remaining_operations) = self.execution_budget.remaining();
         (
-            self.remaining_transitions,
-            self.remaining_operations,
+            remaining_transitions,
+            remaining_operations,
             self.remaining_loop_iterations,
         )
     }
@@ -687,8 +909,8 @@ impl Machine {
     /// Captures complete typed state at one durable checkpoint boundary.
     #[cfg(feature = "durable")]
     #[must_use]
-    pub fn checkpoint(&self) -> MachineCheckpointV1 {
-        MachineCheckpointV1 {
+    pub fn checkpoint(&self) -> MachineCheckpointV2 {
+        MachineCheckpointV2 {
             execution: self.execution,
             execution_foreground: self.execution_foreground,
             limits: self.limits,
@@ -701,8 +923,6 @@ impl Machine {
             agent_stack: self.agent_stack.clone(),
             session: self.session,
             session_stack: self.session_stack.clone(),
-            remaining_transitions: self.remaining_transitions,
-            remaining_operations: self.remaining_operations,
             remaining_loop_iterations: self.remaining_loop_iterations,
             consecutive_transitions: self.consecutive_transitions,
             pending_session_scope: self.pending_session_scope.clone(),
@@ -714,18 +934,40 @@ impl Machine {
         }
     }
 
-    /// Reconstructs the same explicit-frame evaluator from validated typed state.
+    /// Captures the shared execution budget at one linearization point.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn budget_checkpoint(&self) -> ExecutionBudgetSnapshot {
+        self.execution_budget.snapshot()
+    }
+
+    /// Reconstructs the same evaluator using its separately recovered shared budget.
     #[cfg(feature = "durable")]
     pub fn recover_from_checkpoint(
         program: Arc<MachineProgram>,
-        checkpoint: MachineCheckpointV1,
+        checkpoint: MachineCheckpointV2,
+        execution_budget: ExecutionBudget,
+    ) -> Result<Self, MachineRecoveryError> {
+        Self::recover_from_checkpoint_with_budget(program, checkpoint, execution_budget)
+    }
+
+    /// Reconstructs task-local state after validating the shared budget identity and maxima.
+    #[cfg(feature = "durable")]
+    pub fn recover_from_checkpoint_with_budget(
+        program: Arc<MachineProgram>,
+        checkpoint: MachineCheckpointV2,
+        execution_budget: ExecutionBudget,
     ) -> Result<Self, MachineRecoveryError> {
         validate_machine_checkpoint(&program, &checkpoint)?;
+        if !execution_budget.matches(checkpoint.execution, checkpoint.limits) {
+            return Err(MachineRecoveryError::ExecutionBudgetMismatch);
+        }
         Ok(Self {
             program,
             execution: checkpoint.execution,
             execution_foreground: checkpoint.execution_foreground,
             limits: checkpoint.limits,
+            execution_budget,
             frames: checkpoint.frames,
             values: checkpoint.values,
             occurrences: checkpoint.occurrences,
@@ -735,8 +977,6 @@ impl Machine {
             agent_stack: checkpoint.agent_stack,
             session: checkpoint.session,
             session_stack: checkpoint.session_stack,
-            remaining_transitions: checkpoint.remaining_transitions,
-            remaining_operations: checkpoint.remaining_operations,
             remaining_loop_iterations: checkpoint.remaining_loop_iterations,
             consecutive_transitions: checkpoint.consecutive_transitions,
             pending_session_scope: checkpoint.pending_session_scope,
@@ -976,44 +1216,56 @@ impl Machine {
     }
 
     fn execute(&mut self, instruction: Instruction, workflow: CanonicalPath) -> MachineStep {
+        let execution_budget = self.execution_budget.clone();
+        let mut budget_state = execution_budget.lock();
         let site = instruction.site.clone();
         let kind_name = instruction_name(&instruction.kind);
         let result = match instruction.kind {
-            InstructionKind::Push(value) => self.push_value(value),
-            InstructionKind::Load(name) => self.load_binding(&name),
-            InstructionKind::Bind { name, ty, mutable } => self.bind_value(name, ty, mutable),
+            InstructionKind::Push(value) => self.push_value(value, &mut budget_state),
+            InstructionKind::Load(name) => self.load_binding(&name, &mut budget_state),
+            InstructionKind::Bind { name, ty, mutable } => {
+                self.bind_value(name, ty, mutable, &mut budget_state)
+            }
             InstructionKind::Assign {
                 name,
                 path,
                 target_type,
-            } => self.assign_value(&name, &path, &target_type),
-            InstructionKind::Pop => self.pop_value(),
+            } => self.assign_value(&name, &path, &target_type, &mut budget_state),
+            InstructionKind::Pop => self.pop_value(&mut budget_state),
             InstructionKind::Aggregate { kind, operands } => {
-                self.construct_aggregate(kind, operands)
+                self.construct_aggregate(kind, operands, &mut budget_state)
             }
-            InstructionKind::Project(projection) => self.project_value(projection),
-            InstructionKind::Primitive(primitive) => self.apply_primitive(primitive),
-            InstructionKind::EnterScope => self.enter_scope(),
-            InstructionKind::ExitScope => self.exit_scope(),
-            InstructionKind::Jump(target) => self.jump(target),
+            InstructionKind::Project(projection) => {
+                self.project_value(projection, &mut budget_state)
+            }
+            InstructionKind::Primitive(primitive) => {
+                self.apply_primitive(primitive, &mut budget_state)
+            }
+            InstructionKind::EnterScope => self.enter_scope(&mut budget_state),
+            InstructionKind::ExitScope => self.exit_scope(&mut budget_state),
+            InstructionKind::Jump(target) => self.jump(target, &mut budget_state),
             InstructionKind::Branch {
                 when_true,
                 when_false,
-            } => self.branch(&workflow, &site, when_true, when_false),
+            } => self.branch(&workflow, &site, when_true, when_false, &mut budget_state),
             InstructionKind::BranchOption {
                 when_some,
                 when_none,
-            } => self.branch_option(&workflow, &site, when_some, when_none),
-            InstructionKind::BranchEnum { arms } => self.branch_enum(&workflow, &site, &arms),
+            } => self.branch_option(&workflow, &site, when_some, when_none, &mut budget_state),
+            InstructionKind::BranchEnum { arms } => {
+                self.branch_enum(&workflow, &site, &arms, &mut budget_state)
+            }
             InstructionKind::EnterLoop {
                 phase,
                 source_limit,
-            } => self.enter_loop(&workflow, &site, phase, source_limit),
-            InstructionKind::LeaveOccurrence => self.leave_occurrence(),
+            } => self.enter_loop(&workflow, &site, phase, source_limit, &mut budget_state),
+            InstructionKind::LeaveOccurrence => self.leave_occurrence(&mut budget_state),
             InstructionKind::Call { callee, arguments } => {
-                return self.call(workflow, site, callee, arguments);
+                return self.call(workflow, site, callee, arguments, &mut budget_state);
             }
-            InstructionKind::Return => return self.return_value(workflow, site),
+            InstructionKind::Return => {
+                return self.return_value(workflow, site, &mut budget_state);
+            }
             InstructionKind::Spawn { .. }
             | InstructionKind::Join { .. }
             | InstructionKind::JoinAll { .. }
@@ -1022,20 +1274,20 @@ impl Machine {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
             }
             InstructionKind::Operation => {
-                return self.prepare_operation(workflow, instruction, 0);
+                return self.prepare_operation(workflow, instruction, 0, &mut budget_state);
             }
             InstructionKind::OperationWithOperands { operands } => {
-                return self.prepare_operation(workflow, instruction, operands);
+                return self.prepare_operation(workflow, instruction, operands, &mut budget_state);
             }
             InstructionKind::OperationCall { operands, .. } => {
-                return self.prepare_operation(workflow, instruction, operands);
+                return self.prepare_operation(workflow, instruction, operands, &mut budget_state);
             }
-            InstructionKind::EnterAgent(agent) => self.enter_agent(agent),
-            InstructionKind::ExitAgent => self.exit_agent(),
+            InstructionKind::EnterAgent(agent) => self.enter_agent(agent, &mut budget_state),
+            InstructionKind::ExitAgent => self.exit_agent(&mut budget_state),
             InstructionKind::EnterSession(mode) => {
-                return self.enter_session(workflow, site, &mode);
+                return self.enter_session(workflow, site, &mode, &mut budget_state);
             }
-            InstructionKind::ExitSession => self.exit_session(),
+            InstructionKind::ExitSession => self.exit_session(&mut budget_state),
             InstructionKind::CancellationCheck => unreachable!("checks are consumed by step"),
         };
         match result {
@@ -1044,22 +1296,30 @@ impl Machine {
         }
     }
 
-    fn push_value(&mut self, value: LogicalValue) -> Result<(), RuntimeCode> {
+    fn push_value(
+        &mut self,
+        value: LogicalValue,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
         value
             .validate(self.limits.value_limits)
             .map_err(map_value_error)?;
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.push(value);
         self.advance_pc();
         Ok(())
     }
 
-    fn load_binding(&mut self, name: &str) -> Result<(), RuntimeCode> {
+    fn load_binding(
+        &mut self,
+        name: &str,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
         let value = self
             .binding(name)
             .map(|binding| binding.value.clone())
             .ok_or(RuntimeCode::InternalInvariant)?;
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.push(value);
         self.advance_pc();
         Ok(())
@@ -1070,6 +1330,7 @@ impl Machine {
         name: Arc<str>,
         ty: TypeDescriptor,
         mutable: bool,
+        budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         if self.binding(&name).is_some() {
             return Err(RuntimeCode::InternalInvariant);
@@ -1082,7 +1343,7 @@ impl Machine {
         if !value_matches_type(&value, &ty) {
             return Err(RuntimeCode::InternalInvariant);
         }
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.pop();
         self.frames
             .last_mut()
@@ -1098,6 +1359,7 @@ impl Machine {
         name: &str,
         path: &[gantry_core::value::ValuePathSegment],
         target_type: &TypeDescriptor,
+        budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         let replacement = self.values.last().ok_or(RuntimeCode::InternalInvariant)?;
         let binding = self.binding(name).ok_or(RuntimeCode::InternalInvariant)?;
@@ -1114,7 +1376,7 @@ impl Machine {
         if !value_matches_type(&candidate, &binding.ty) {
             return Err(RuntimeCode::InternalInvariant);
         }
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.pop();
         self.binding_mut(name)
             .ok_or(RuntimeCode::InternalInvariant)?
@@ -1123,11 +1385,11 @@ impl Machine {
         Ok(())
     }
 
-    fn pop_value(&mut self) -> Result<(), RuntimeCode> {
+    fn pop_value(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
         if self.values.is_empty() {
             return Err(RuntimeCode::InternalInvariant);
         }
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.pop();
         self.advance_pc();
         Ok(())
@@ -1137,6 +1399,7 @@ impl Machine {
         &mut self,
         kind: AggregateKind,
         operands: usize,
+        budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         let values = self.peek_operands(operands)?.to_vec();
         let candidate = match kind {
@@ -1167,14 +1430,18 @@ impl Machine {
             AggregateKind::Err => LogicalValue::err(values[0].clone(), self.limits.value_limits),
         }
         .map_err(map_value_error)?;
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.truncate_operands(operands);
         self.values.push(candidate);
         self.advance_pc();
         Ok(())
     }
 
-    fn project_value(&mut self, projection: Projection) -> Result<(), RuntimeCode> {
+    fn project_value(
+        &mut self,
+        projection: Projection,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
         let source = self.values.last().ok_or(RuntimeCode::InternalInvariant)?;
         let projected = match projection {
             Projection::Member(index) => source.member(index).ok_or_else(|| {
@@ -1187,26 +1454,30 @@ impl Machine {
             Projection::Field(name) => source.field(&name).ok_or(RuntimeCode::InternalInvariant)?,
             Projection::Payload => source.payload().ok_or(RuntimeCode::InternalInvariant)?,
         };
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.pop();
         self.values.push(projected);
         self.advance_pc();
         Ok(())
     }
 
-    fn apply_primitive(&mut self, primitive: Primitive) -> Result<(), RuntimeCode> {
+    fn apply_primitive(
+        &mut self,
+        primitive: Primitive,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
         let arity = primitive.arity();
         let operands = self.peek_operands(arity)?;
         let result = evaluate_primitive(primitive, operands, self.limits.value_limits)?;
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.truncate_operands(arity);
         self.values.push(result);
         self.advance_pc();
         Ok(())
     }
 
-    fn enter_scope(&mut self) -> Result<(), RuntimeCode> {
-        self.charge_transition()?;
+    fn enter_scope(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
+        self.charge_transition(budget_state)?;
         self.frames
             .last_mut()
             .ok_or(RuntimeCode::InternalInvariant)?
@@ -1216,12 +1487,12 @@ impl Machine {
         Ok(())
     }
 
-    fn exit_scope(&mut self) -> Result<(), RuntimeCode> {
+    fn exit_scope(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
         let frame = self.frames.last().ok_or(RuntimeCode::InternalInvariant)?;
         if frame.scopes.len() <= 1 {
             return Err(RuntimeCode::InternalInvariant);
         }
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.frames
             .last_mut()
             .ok_or(RuntimeCode::InternalInvariant)?
@@ -1231,8 +1502,12 @@ impl Machine {
         Ok(())
     }
 
-    fn jump(&mut self, target: usize) -> Result<(), RuntimeCode> {
-        self.charge_transition()?;
+    fn jump(
+        &mut self,
+        target: usize,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
+        self.charge_transition(budget_state)?;
         self.frames
             .last_mut()
             .ok_or(RuntimeCode::InternalInvariant)?
@@ -1246,6 +1521,7 @@ impl Machine {
         site: &StructuralPosition,
         when_true: usize,
         when_false: usize,
+        budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         let condition = self
             .values
@@ -1259,7 +1535,7 @@ impl Machine {
             workflow.as_str(),
             position_key(site)
         ));
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.pop();
         self.occurrences.push(occurrence);
         self.frames
@@ -1275,6 +1551,7 @@ impl Machine {
         site: &StructuralPosition,
         when_some: usize,
         when_none: usize,
+        budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         let value = self
             .values
@@ -1296,7 +1573,7 @@ impl Machine {
             workflow.as_str(),
             position_key(site)
         ));
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.pop();
         if let Some(payload) = payload {
             self.values.push(payload);
@@ -1314,6 +1591,7 @@ impl Machine {
         workflow: &CanonicalPath,
         site: &StructuralPosition,
         arms: &[(Arc<str>, usize)],
+        budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         let value = self
             .values
@@ -1343,7 +1621,7 @@ impl Machine {
             workflow.as_str(),
             position_key(site)
         ));
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.values.pop();
         if let Some(payload) = payload {
             self.values.push(payload);
@@ -1362,6 +1640,7 @@ impl Machine {
         site: &StructuralPosition,
         phase: LoopPhase,
         source_limit: Option<u64>,
+        budget_state: &mut ExecutionBudgetState,
     ) -> Result<(), RuntimeCode> {
         let phase_name = match phase {
             LoopPhase::Condition => "condition",
@@ -1390,7 +1669,7 @@ impl Machine {
                 return Err(RuntimeCode::LoopIterationBudget);
             }
         }
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.counters
             .insert(key.clone(), occurrence.saturating_add(1));
         if matches!(phase, LoopPhase::Body) {
@@ -1412,7 +1691,10 @@ impl Machine {
         Ok(())
     }
 
-    fn leave_occurrence(&mut self) -> Result<(), RuntimeCode> {
+    fn leave_occurrence(
+        &mut self,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
         let base = self
             .frames
             .last()
@@ -1421,7 +1703,7 @@ impl Machine {
         if self.occurrences.len() <= base {
             return Err(RuntimeCode::InternalInvariant);
         }
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.occurrences.pop();
         self.advance_pc();
         Ok(())
@@ -1433,6 +1715,7 @@ impl Machine {
         site: StructuralPosition,
         callee: CanonicalCallableIdentity,
         arguments: usize,
+        budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
         if u64::try_from(self.frames.len()).map_or(true, |depth| {
             depth >= self.limits.maximum_workflow_call_depth
@@ -1462,7 +1745,7 @@ impl Machine {
         {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
-        if let Err(code) = self.charge_transition() {
+        if let Err(code) = self.charge_transition(budget_state) {
             return self.fail_at(code, workflow, site);
         }
         let occurrence = self.next_occurrence("call", &workflow, &site, None);
@@ -1494,7 +1777,12 @@ impl Machine {
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
 
-    fn return_value(&mut self, workflow: CanonicalPath, site: StructuralPosition) -> MachineStep {
+    fn return_value(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> MachineStep {
         let Some(value) = self.values.last().cloned() else {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         };
@@ -1514,7 +1802,7 @@ impl Machine {
             let outcome = MachineOutcome::Succeeded(value);
             return self.finish_outcome(outcome);
         }
-        if let Err(code) = self.charge_transition() {
+        if let Err(code) = self.charge_transition(budget_state) {
             return self.fail_at(code, workflow, site);
         }
         let frame = self
@@ -1537,10 +1825,8 @@ impl Machine {
         workflow: CanonicalPath,
         instruction: Instruction,
         operands: usize,
+        budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
-        if self.remaining_operations == 0 {
-            return self.fail_at(RuntimeCode::OperationBudget, workflow, instruction.site);
-        }
         let inputs = match self.peek_operands(operands) {
             Ok(inputs) => Arc::from(inputs.to_vec()),
             Err(_) => {
@@ -1551,6 +1837,9 @@ impl Machine {
             InstructionKind::OperationCall { operation, .. } => Some(Arc::new(operation.clone())),
             _ => None,
         };
+        if let Err(code) = ExecutionBudget::charge_operation(budget_state) {
+            return self.fail_at(code, workflow, instruction.site);
+        }
         let operation_frame = self.next_occurrence("operation", &workflow, &instruction.site, None);
         let mut path = self.occurrences.clone();
         path.push(operation_frame);
@@ -1561,7 +1850,6 @@ impl Machine {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, instruction.site);
             }
         };
-        self.remaining_operations -= 1;
         self.advance_pc();
         let occurrence = OperationOccurrence {
             identity,
@@ -1583,20 +1871,24 @@ impl Machine {
         MachineStep::Transition(MachineLabel::OperationPrepared(occurrence))
     }
 
-    fn enter_agent(&mut self, agent: Arc<str>) -> Result<(), RuntimeCode> {
-        self.charge_transition()?;
+    fn enter_agent(
+        &mut self,
+        agent: Arc<str>,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
+        self.charge_transition(budget_state)?;
         self.agent_stack.push(self.agent.replace(agent));
         self.advance_pc();
         Ok(())
     }
 
-    fn exit_agent(&mut self) -> Result<(), RuntimeCode> {
+    fn exit_agent(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
         let previous = self
             .agent_stack
             .last()
             .cloned()
             .ok_or(RuntimeCode::InternalInvariant)?;
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.agent_stack.pop();
         self.agent = previous;
         self.advance_pc();
@@ -1608,8 +1900,9 @@ impl Machine {
         workflow: CanonicalPath,
         site: StructuralPosition,
         mode: &str,
+        budget_state: &mut ExecutionBudgetState,
     ) -> MachineStep {
-        if let Err(code) = self.charge_transition() {
+        if let Err(code) = self.charge_transition(budget_state) {
             return self.fail_at(code, workflow, site);
         }
         if mode == "inline" {
@@ -1641,24 +1934,24 @@ impl Machine {
         MachineStep::WaitingSessionScope(pending)
     }
 
-    fn exit_session(&mut self) -> Result<(), RuntimeCode> {
+    fn exit_session(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
         let previous = self
             .session_stack
             .last()
             .cloned()
             .ok_or(RuntimeCode::InternalInvariant)?;
-        self.charge_transition()?;
+        self.charge_transition(budget_state)?;
         self.session_stack.pop();
         self.session = previous;
         self.advance_pc();
         Ok(())
     }
 
-    fn charge_transition(&mut self) -> Result<(), RuntimeCode> {
-        if self.remaining_transitions == 0 {
-            return Err(RuntimeCode::DeterministicTransitionBudget);
-        }
-        self.remaining_transitions -= 1;
+    fn charge_transition(
+        &mut self,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> Result<(), RuntimeCode> {
+        ExecutionBudget::charge_transition(budget_state)?;
         self.consecutive_transitions = self.consecutive_transitions.saturating_add(1);
         Ok(())
     }
@@ -1828,9 +2121,36 @@ impl Machine {
 }
 
 #[cfg(feature = "durable")]
+fn validate_execution_budget_snapshot(
+    snapshot: &ExecutionBudgetSnapshot,
+) -> Result<(), MachineRecoveryError> {
+    let consumed_transitions = snapshot
+        .maximum_transitions
+        .checked_sub(snapshot.remaining_transitions);
+    let consumed_operations = snapshot
+        .maximum_operations
+        .checked_sub(snapshot.remaining_operations);
+    let consumed = consumed_transitions
+        .zip(consumed_operations)
+        .and_then(|(transitions, operations)| transitions.checked_add(operations));
+    if snapshot.execution.kind() != IdentityKind::Execution
+        || snapshot.maximum_transitions == 0
+        || snapshot.maximum_operations == 0
+        || snapshot
+            .maximum_transitions
+            .checked_add(snapshot.maximum_operations)
+            .is_none()
+        || consumed != Some(snapshot.revision)
+    {
+        return Err(MachineRecoveryError::InvalidCheckpoint);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "durable")]
 fn validate_machine_checkpoint(
     program: &MachineProgram,
-    checkpoint: &MachineCheckpointV1,
+    checkpoint: &MachineCheckpointV2,
 ) -> Result<(), MachineRecoveryError> {
     if checkpoint.execution.kind() != IdentityKind::Execution
         || checkpoint.frames.is_empty()
@@ -1839,8 +2159,6 @@ fn validate_machine_checkpoint(
         || checkpoint.limits.maximum_loop_iterations == 0
         || checkpoint.limits.maximum_workflow_call_depth == 0
         || checkpoint.limits.deterministic_transition_yield_quantum == 0
-        || checkpoint.remaining_transitions > checkpoint.limits.maximum_deterministic_transitions
-        || checkpoint.remaining_operations > checkpoint.limits.maximum_operations
         || checkpoint.remaining_loop_iterations > checkpoint.limits.maximum_loop_iterations
         || checkpoint.consecutive_transitions
             > checkpoint.limits.deterministic_transition_yield_quantum

@@ -8,11 +8,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "format": { "const": "combined-checkpoint/v1" },
-        "magic": { "const": "GNTCDP01" },
+        "format": { "const": "combined-checkpoint/v2" },
+        "magic": { "const": "GNTCDP02" },
         "fixture_hex": {
           "type": "string",
-          "pattern": "^474e544344503031(?:[0-9a-f]{2})+$"
+          "pattern": "^474e544344503032(?:[0-9a-f]{2})+$"
         }
       },
       "required": ["format", "magic", "fixture_hex"]
@@ -21,11 +21,24 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "format": { "const": "machine-checkpoint/v1" },
-        "magic": { "const": "GNTMCP01" },
+        "format": { "const": "execution-budget-checkpoint/v1" },
+        "magic": { "const": "GNTBGT01" },
         "fixture_hex": {
           "type": "string",
-          "pattern": "^474e544d43503031(?:[0-9a-f]{2})+$"
+          "pattern": "^474e544247543031(?:[0-9a-f]{2})+$"
+        }
+      },
+      "required": ["format", "magic", "fixture_hex"]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "machine-checkpoint/v2" },
+        "magic": { "const": "GNTMCP02" },
+        "fixture_hex": {
+          "type": "string",
+          "pattern": "^474e544d43503032(?:[0-9a-f]{2})+$"
         }
       },
       "required": ["format", "magic", "fixture_hex"]

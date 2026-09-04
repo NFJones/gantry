@@ -28,9 +28,9 @@ use gantry::runtime::{
     CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
     ConcurrentTerminalCategoryV1, DurableCommitCoordinatorV1, DurableCommitCutV1,
     DurableEventBarrierV1, DurableEventCommitCoordinatorV1, DurableEventOccurrenceV1,
-    DurableEventPlanV1, DurableSinkObligationV1, DurableTransitionSink, InMemoryJournalStore,
-    JoinResolutionV1, JoinStartV1, LogicalSessionRegistryV1, Machine, MachineLimits,
-    MachineOutcome, SessionCreationModeV1, TaskCreationRequestV1, TaskStateError,
+    DurableEventPlanV1, DurableSinkObligationV1, DurableTransitionSink, ExecutionBudget,
+    InMemoryJournalStore, JoinResolutionV1, JoinStartV1, LogicalSessionRegistryV1, Machine,
+    MachineLimits, MachineOutcome, SessionCreationModeV1, TaskCreationRequestV1, TaskStateError,
     recover_concurrent_authoritative_prefix,
 };
 use gantry::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
@@ -61,9 +61,11 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
         Some(root_session),
     )
     .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
+    let execution_budget = foreground.execution_budget();
     let state = ConcurrentTaskStateV1::new(execution, root_task, 4)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
-    let mut scheduler = ConcurrentSchedulerV1::new(state);
+    let mut scheduler = ConcurrentSchedulerV1::new(state, execution_budget.clone())
+        .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
 
     let storage: Arc<dyn JournalStorage> = Arc::new(InMemoryJournalStore::new());
     let journal_id = JournalId::new("public-combined-crash-cuts")
@@ -136,6 +138,7 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
                 Arc::clone(&program),
                 execution,
                 child.base_session_id,
+                execution_budget.clone(),
             )),
         )
         .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
@@ -427,9 +430,11 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
         Some(root_session),
     )
     .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
+    let execution_budget = foreground.execution_budget();
     let state = ConcurrentTaskStateV1::new(execution, root_task, 2)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
-    let mut scheduler = ConcurrentSchedulerV1::new(state);
+    let mut scheduler = ConcurrentSchedulerV1::new(state, execution_budget.clone())
+        .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
 
     let storage: Arc<dyn JournalStorage> = Arc::new(InMemoryJournalStore::new());
     let journal_id = JournalId::new("public-combined-join")
@@ -483,6 +488,7 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
                 Arc::clone(&program),
                 execution,
                 child.base_session_id,
+                execution_budget.clone(),
             )),
         )
         .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
@@ -657,6 +663,7 @@ fn child_machine(
     program: Arc<MachineProgram>,
     execution: ProtocolIdentity,
     session: ProtocolIdentity,
+    execution_budget: ExecutionBudget,
 ) -> Machine {
     Machine::new_concurrent_task_with_context(
         program,
@@ -664,6 +671,7 @@ fn child_machine(
         Vec::new(),
         execution,
         machine_limits(),
+        execution_budget,
         None,
         Some(session),
     )

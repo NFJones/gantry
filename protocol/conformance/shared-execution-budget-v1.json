@@ -1,0 +1,43 @@
+{
+  "format": "gantry.shared-execution-budget-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-BUD-001",
+  "capabilities": [
+    {
+      "id": "canonical-recovery-continuity",
+      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#canonical_budget_and_task_checkpoints_preserve_continuation"
+    },
+    {
+      "id": "compacted-full-equivalence",
+      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#full_and_compacted_prefixes_restore_the_same_budget_frontier"
+    },
+    {
+      "id": "coordinator-scheduler-ownership",
+      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#coordinator_and_scheduler_retain_the_exact_execution_budget_owner"
+    },
+    {
+      "id": "shared-operation-limit",
+      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#root_and_child_share_one_logical_operation_limit"
+    },
+    {
+      "id": "shared-transition-limit",
+      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#root_and_child_share_one_deterministic_transition_limit"
+    },
+    {
+      "id": "task-local-limits",
+      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#loop_and_yield_limits_remain_task_local"
+    },
+    {
+      "id": "torn-capture-rejection",
+      "evidence": "crates/gantry-conformance/tests/shared_execution_budget.rs#continuously_torn_combined_capture_is_rejected"
+    }
+  ],
+  "exclusions": [
+    "GNT-3-M-STATE clause-002 contains machine-state obligations beyond the budget projection proved here and remains open for every profile.",
+    "GNT-3-M-SPAWN source creation, gating, session inheritance, handle ownership, and settlement semantics are not covered by this evidence.",
+    "GNT-15.4-owned-work physical executor ownership, admission permits, reaping, and control-plane progress are not execution-budget claims.",
+    "GNT-15.7 configuration defaults, validation, mutability, identity binding, and the complete embedding contract are not covered by this evidence.",
+    "GNT-ASYNC-DUR-001 stage, commit, and publish atomicity across crash cuts remains excluded from this checkpoint and recovery evidence.",
+    "GNT-ASYNC-REC-001 full process reconstruction, integration reattachment, and resume acceptance remain excluded from this recovery evidence."
+  ]
+}

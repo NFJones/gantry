@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
+use std::thread;
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::numeric::GantryInt;
@@ -12,8 +13,8 @@ use gantry_ir::{
 };
 
 use crate::{
-    Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError, MachineLabel,
-    MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
+    ExecutionBudget, Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError,
+    MachineLabel, MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
     OperationCompletionError, Parameter, Primitive, ProgramError, RuntimeCode, Workflow,
 };
 
@@ -111,6 +112,393 @@ fn drive(machine: &mut Machine) -> MachineOutcome {
     panic!("machine did not terminate within the fixture bound")
 }
 
+#[cfg(feature = "concurrent")]
+#[test]
+fn machines_share_one_deterministic_transition_budget_without_partial_mutation() {
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::Push(LogicalValue::unit()),
+        )],
+    );
+    let program = program(vec![root]);
+    let machine_limits = limits(1, 1, 1, 1, 8);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut winner = Machine::new_with_budget(
+        Arc::clone(&program),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+    )
+    .unwrap_or_else(|error| panic!("winner construction failed: {error:?}"));
+    let mut loser = Machine::new_concurrent_task_with_budget_and_context(
+        program,
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("loser construction failed: {error:?}"));
+
+    let loser_state = loser.test_instruction_state();
+    assert!(matches!(
+        winner.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    assert!(matches!(
+        loser.step(),
+        MachineStep::Transition(MachineLabel::Failure(ref failure))
+            if failure.code == RuntimeCode::DeterministicTransitionBudget
+    ));
+    assert_eq!(loser.test_instruction_state(), loser_state);
+    assert_eq!(loser.remaining_budgets(), (0, 1, 1));
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machines_share_one_operation_budget_without_partial_mutation() {
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::Operation,
+        )],
+    );
+    let program = program(vec![root]);
+    let machine_limits = limits(1, 1, 1, 1, 8);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut winner = Machine::new_with_budget(
+        Arc::clone(&program),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+    )
+    .unwrap_or_else(|error| panic!("winner construction failed: {error:?}"));
+    let mut loser = Machine::new_concurrent_task_with_budget_and_context(
+        Arc::clone(&program),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("loser construction failed: {error:?}"));
+    let mut expected = Machine::new_concurrent_task_with_budget_and_context(
+        program,
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("expected construction failed: {error:?}"));
+
+    let loser_state = loser.test_instruction_state();
+    assert!(matches!(
+        winner.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    assert!(matches!(
+        loser.step(),
+        MachineStep::Transition(MachineLabel::Failure(ref failure))
+            if failure.code == RuntimeCode::OperationBudget
+    ));
+    assert!(matches!(
+        expected.test_fail_current(RuntimeCode::OperationBudget),
+        MachineStep::Transition(MachineLabel::Failure(ref failure))
+            if failure.code == RuntimeCode::OperationBudget
+    ));
+    #[cfg(feature = "durable")]
+    assert_eq!(loser.checkpoint(), expected.checkpoint());
+    assert_eq!(loser.status(), MachineStatus::Failed);
+    assert_eq!(loser.test_instruction_state(), loser_state);
+    assert_eq!(loser.remaining_budgets(), (1, 0, 1));
+    assert!(matches!(
+        loser.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Failed(_)))
+    ));
+}
+
+#[test]
+fn machine_limits_reject_only_aggregate_budget_revision_overflow() {
+    assert!(MachineLimits::new(u64::MAX - 1, 1, 1, 1, 1, DEFAULT_VALUE_LIMITS,).is_some());
+    assert!(MachineLimits::new(u64::MAX, 1, 1, 1, 1, DEFAULT_VALUE_LIMITS,).is_none());
+    assert!(MachineLimits::new(1, u64::MAX, 1, 1, 1, DEFAULT_VALUE_LIMITS,).is_none());
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn recovered_boundary_budget_can_consume_its_final_configured_unit() {
+    let snapshot = crate::ExecutionBudgetSnapshot {
+        execution: execution(),
+        maximum_transitions: u64::MAX - 1,
+        maximum_operations: 1,
+        remaining_transitions: 0,
+        remaining_operations: 1,
+        revision: u64::MAX - 1,
+    };
+    let budget = ExecutionBudget::recover_from_checkpoint(snapshot)
+        .unwrap_or_else(|error| panic!("boundary budget recovery failed: {error:?}"));
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::Operation,
+        )],
+    );
+    let machine_limits = limits(u64::MAX - 1, 1, 1, 1, 1);
+    let mut machine = Machine::new_with_budget(
+        program(vec![root]),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+    )
+    .unwrap_or_else(|error| panic!("boundary machine construction failed: {error:?}"));
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::OperationPrepared(_))
+    ));
+    assert_eq!(
+        budget.snapshot(),
+        crate::ExecutionBudgetSnapshot {
+            remaining_operations: 0,
+            revision: u64::MAX,
+            ..snapshot
+        }
+    );
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn simultaneous_final_transition_unit_has_one_successor_and_one_unchanged_loser() {
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::Push(LogicalValue::unit()),
+        )],
+    );
+    let program = program(vec![root]);
+    let machine_limits = limits(1, 1, 1, 1, 8);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let machines = [true, false].map(|foreground| {
+        if foreground {
+            Machine::new_with_budget(
+                Arc::clone(&program),
+                &path("crate::main"),
+                Vec::new(),
+                execution(),
+                machine_limits,
+                budget.clone(),
+            )
+        } else {
+            Machine::new_concurrent_task_with_budget_and_context(
+                Arc::clone(&program),
+                &path("crate::main"),
+                Vec::new(),
+                execution(),
+                machine_limits,
+                budget.clone(),
+                None,
+                None,
+            )
+        }
+        .unwrap_or_else(|error| panic!("machine construction failed: {error:?}"))
+    });
+    let barrier = Arc::new(Barrier::new(2));
+    let results = machines.map(|mut machine| {
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            let before = machine.test_instruction_state();
+            barrier.wait();
+            let step = machine.step();
+            (before, machine.test_instruction_state(), step)
+        })
+    });
+    let results = results.map(|handle| {
+        handle
+            .join()
+            .unwrap_or_else(|_| panic!("budget contender panicked"))
+    });
+
+    assert_eq!(
+        results
+            .iter()
+            .filter(|(_, _, step)| matches!(
+                step,
+                MachineStep::Transition(MachineLabel::Deterministic { .. })
+            ))
+            .count(),
+        1
+    );
+    let loser = results
+        .iter()
+        .find(|(_, _, step)| {
+            matches!(
+                step,
+                MachineStep::Transition(MachineLabel::Failure(failure))
+                    if failure.code == RuntimeCode::DeterministicTransitionBudget
+            )
+        })
+        .unwrap_or_else(|| panic!("missing exhausted contender"));
+    assert_eq!(loser.0, loser.1);
+    let snapshot = budget.snapshot();
+    assert_eq!(snapshot.remaining_transitions, 0);
+    assert_eq!(snapshot.revision, 1);
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machine_attachment_validates_budget_execution_and_maxima() {
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::Push(LogicalValue::unit()),
+        )],
+    );
+    let program = program(vec![root]);
+    let machine_limits = limits(2, 1, 1, 1, 8);
+    let other_execution =
+        ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x43; 32])
+            .unwrap_or_else(|error| panic!("invalid fixture identity: {error}"));
+    let wrong_execution = ExecutionBudget::new(other_execution, machine_limits);
+    assert!(matches!(
+        Machine::new_with_budget(
+            Arc::clone(&program),
+            &path("crate::main"),
+            Vec::new(),
+            execution(),
+            machine_limits,
+            wrong_execution,
+        ),
+        Err(MachineBuildError::ExecutionBudgetMismatch)
+    ));
+
+    let wrong_maxima = ExecutionBudget::new(execution(), limits(3, 1, 1, 1, 8));
+    assert!(matches!(
+        Machine::new_with_budget(
+            program,
+            &path("crate::main"),
+            Vec::new(),
+            execution(),
+            machine_limits,
+            wrong_maxima,
+        ),
+        Err(MachineBuildError::ExecutionBudgetMismatch)
+    ));
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn shared_execution_budget_keeps_loop_and_yield_state_task_local() {
+    let looping = || {
+        workflow(
+            "crate::main",
+            Vec::new(),
+            TypeDescriptor::UNIT,
+            EffectSet::default(),
+            vec![
+                instruction(
+                    0,
+                    TypeDescriptor::UNIT,
+                    InstructionKind::EnterLoop {
+                        phase: LoopPhase::Body,
+                        source_limit: None,
+                    },
+                ),
+                instruction(1, TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence),
+                instruction(2, TypeDescriptor::UNIT, InstructionKind::Jump(0)),
+            ],
+        )
+    };
+    let program = program(vec![looping()]);
+    let machine_limits = limits(16, 1, 1, 1, 1);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut first = Machine::new_with_budget(
+        Arc::clone(&program),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+    )
+    .unwrap_or_else(|error| panic!("first construction failed: {error:?}"));
+    let mut second = Machine::new_concurrent_task_with_budget_and_context(
+        program,
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("second construction failed: {error:?}"));
+
+    assert!(matches!(
+        first.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    assert_eq!(first.status(), MachineStatus::YieldRequired);
+    assert_eq!(second.status(), MachineStatus::Running);
+    assert!(matches!(
+        second.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    assert_eq!(first.remaining_budgets().2, 0);
+    assert_eq!(second.remaining_budgets().2, 0);
+
+    assert!(first.resume_after_yield());
+    for _ in 0..2 {
+        assert!(matches!(
+            first.step(),
+            MachineStep::Transition(MachineLabel::Deterministic { .. })
+        ));
+        assert!(first.resume_after_yield());
+    }
+    assert!(matches!(
+        first.step(),
+        MachineStep::Transition(MachineLabel::Failure(ref failure))
+            if failure.code == RuntimeCode::LoopIterationBudget
+    ));
+    assert_eq!(second.status(), MachineStatus::YieldRequired);
+}
+
 #[cfg(feature = "durable")]
 #[test]
 fn durable_checkpoint_recovers_the_same_explicit_frame_machine() {
@@ -140,23 +528,28 @@ fn durable_checkpoint_recovers_the_same_explicit_frame_machine() {
         MachineStep::Transition(MachineLabel::Deterministic { .. })
     ));
     let checkpoint = original.checkpoint();
+    let budget_checkpoint = original.budget_checkpoint();
     assert_eq!(checkpoint.execution_id(), execution());
     assert_eq!(checkpoint.status(), MachineStatus::Running);
-    assert_eq!(checkpoint.remaining_budgets(), (7, 1, 1));
+    assert_eq!(budget_checkpoint.remaining_transitions, 7);
+    assert_eq!(budget_checkpoint.remaining_operations, 1);
+    assert_eq!(checkpoint.remaining_loop_iterations(), 1);
 
     let bytes = checkpoint.canonical_bytes();
-    let decoded = crate::MachineCheckpointV1::decode(&program, &bytes)
+    let decoded = crate::MachineCheckpointV2::decode(&program, &bytes)
         .unwrap_or_else(|error| panic!("checkpoint decode failed: {error:?}"));
     assert_eq!(decoded, checkpoint);
     assert_eq!(decoded.canonical_bytes(), bytes);
     let mut corrupted = bytes.clone();
     corrupted[0] ^= 1;
     assert_eq!(
-        crate::MachineCheckpointV1::decode(&program, &corrupted),
+        crate::MachineCheckpointV2::decode(&program, &corrupted),
         Err(crate::MachineRecoveryError::InvalidEncoding)
     );
 
-    let mut recovered = Machine::recover_from_checkpoint(program, decoded)
+    let recovered_budget = ExecutionBudget::recover_from_checkpoint(budget_checkpoint)
+        .unwrap_or_else(|error| panic!("budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, decoded, recovered_budget)
         .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
     assert_eq!(drive(&mut original), drive(&mut recovered));
     assert_eq!(

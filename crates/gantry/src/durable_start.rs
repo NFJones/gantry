@@ -18,8 +18,8 @@ use gantry_host::journal::{
     JournalOwnershipToken, JournalStorage, ReadJournalPrefixV1, ReleaseJournalOwnerV1,
 };
 use gantry_runtime::{
-    AdmissionKind, DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV1,
-    DurableExecutionStateV1, DurableLogicalEvidenceV1, ExecutionHandle, LogicalSessionRegistryV1,
+    AdmissionKind, DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV2,
+    DurableExecutionStateV1, DurableLogicalEvidenceV2, ExecutionHandle, LogicalSessionRegistryV1,
     Machine, OperationAdmission, RecoveredDurableStateV1, SessionCreationModeV1,
     recover_authoritative_prefix_with_retained_program,
 };
@@ -46,6 +46,8 @@ pub struct DurableStartExecutionRequest<'a> {
 pub struct DurableStartExecutionAccepted {
     pub(crate) start: StartExecutionAccepted,
     pub(crate) owned: Arc<DurableOwnedExecution>,
+    #[cfg(feature = "concurrent")]
+    pub(crate) execution_budget: gantry_runtime::ExecutionBudget,
     journal_id: JournalId,
     pub(crate) ownership_token: JournalOwnershipToken,
     pub(crate) execution_start_evidence_id: gantry_core::identity::ProtocolIdentity,
@@ -531,6 +533,8 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             Ok(start) => {
                 #[cfg(feature = "test-support")]
                 registration(DurableRegistrationEvent::Accepted(start.handle.clone()));
+                #[cfg(feature = "concurrent")]
+                let execution_budget = recovered.machine().execution_budget();
                 let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&self.storage));
                 let owned = lifecycle
                     .own_committed_start(
@@ -547,6 +551,8 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 DurableStartExecutionResult::Accepted(Box::new(DurableStartExecutionAccepted {
                     start,
                     owned,
+                    #[cfg(feature = "concurrent")]
+                    execution_budget,
                     journal_id,
                     ownership_token: ownership.token,
                     execution_start_evidence_id: evidence_id,
@@ -1276,7 +1282,7 @@ impl ResumeRejection {
 }
 
 fn decode_resume_metadata(
-    execution_start: &DurableExecutionStartV1,
+    execution_start: &DurableExecutionStartV2,
 ) -> Result<ResumeMetadata, ResumeRejection> {
     let bytes = execution_start.metadata();
     let maximum_bytes = u64::try_from(bytes.len()).map_err(|_| invalid_resume_metadata())?;
@@ -1844,7 +1850,7 @@ fn build_execution_start(
     configuration: &gantry_runtime::InterpreterConfiguration,
     selection: &gantry_core::protocol::ProtocolSelection,
     required_sinks: &gantry_observe::SinkPlan,
-) -> Result<DurableExecutionStartV1, StartExecutionFailure> {
+) -> Result<DurableExecutionStartV2, StartExecutionFailure> {
     let analysis = prepared
         .package_activity
         .analysis
@@ -1894,19 +1900,19 @@ fn build_execution_start(
     )
     .map_err(|_| start_failure(StartFailureCategory::Internal, "session-state"))?;
     let task_id = root_task_identity(prepared.execution_id);
-    let state = DurableLogicalEvidenceV1::new_with_sessions(
+    let state = DurableLogicalEvidenceV2::new_with_sessions(
         prepared.execution_id,
         task_id,
         DurableCommitCutV1::Checkpoint,
         None,
-        machine.checkpoint(),
+        &machine,
         Some(sessions.checkpoint()),
     )
     .map_err(|_: DurableEvidenceError| {
         start_failure(StartFailureCategory::Internal, "execution-start-state")
     })?;
     let metadata = execution_start_metadata(prepared, configuration, selection, required_sinks)?;
-    DurableExecutionStartV1::new(prepared.execution_id, task_id, &program, metadata, state)
+    DurableExecutionStartV2::new(prepared.execution_id, task_id, &program, metadata, state)
         .map_err(|_| start_failure(StartFailureCategory::Internal, "execution-start-metadata"))
 }
 

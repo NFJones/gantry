@@ -26,12 +26,12 @@ use gantry::portable::{
 use gantry::runtime::{
     AdapterPoison, CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1,
     ConcurrentTaskStatusV1, ConcurrentTerminalCategoryV1, ConcurrentTerminalOutcomeV1,
-    DetachedTaskFailureV1, InterpreterConfiguration, LogicalSessionRegistryV1, MachineOutcome,
-    OperationEventDraftError, RequiredConfiguration, SessionCreationModeV1, SessionEstablisher,
-    TaskAbortResultV1, TaskCreationRequestV1, TaskFailureV1, TaskStateError,
-    concurrent_detach_event, concurrent_detached_failure_event, concurrent_join_event,
-    concurrent_spawn_event, concurrent_task_cancellation_event, concurrent_terminal_event,
-    machine_lifecycle_event,
+    DetachedTaskFailureV1, ExecutionBudget, InterpreterConfiguration, LogicalSessionRegistryV1,
+    MachineLimits, MachineOutcome, OperationEventDraftError, RequiredConfiguration,
+    SessionCreationModeV1, SessionEstablisher, TaskAbortResultV1, TaskCreationRequestV1,
+    TaskFailureV1, TaskStateError, concurrent_detach_event, concurrent_detached_failure_event,
+    concurrent_join_event, concurrent_spawn_event, concurrent_task_cancellation_event,
+    concurrent_terminal_event, machine_lifecycle_event,
 };
 use gantry::source::FrontendLimits;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -197,7 +197,10 @@ fn public_spawned_sessions_establish_once_before_child_use() {
     let state = ConcurrentTaskStateV1::new(execution, root_task, 2)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
     let mut sessions = session_registry(execution, root_session);
-    let mut scheduler = ConcurrentSchedulerV1::new(state);
+    let limits = MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| unreachable!("positive scheduler limits"));
+    let mut scheduler = ConcurrentSchedulerV1::new(state, ExecutionBudget::new(execution, limits))
+        .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
     let child = scheduler
         .create_child(
             &mut sessions,

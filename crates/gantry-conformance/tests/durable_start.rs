@@ -35,7 +35,7 @@ use gantry::portable::{
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    CancellationReason, DurableExecutionStartV1, DurableRecoverySnapshotV1,
+    CancellationReason, DurableExecutionStartV2, DurableRecoverySnapshotV2,
     FinalShutdownEventSettlement, InMemoryJournalStore, InterpreterConfiguration,
     InterpreterLifecycle, MachineOutcome, MachineStep, RequiredConfiguration,
     recover_authoritative_prefix_with_retained_program,
@@ -566,11 +566,11 @@ fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
             .map(|evidence| evidence.kind.as_ref())
             .collect::<Vec<_>>(),
         [
-            "gantry.execution-start/v1",
-            "gantry.cancellation/v1",
-            "gantry.logical-evidence/v1",
-            "gantry.logical-evidence/v1",
-            "gantry.logical-evidence/v1",
+            "gantry.execution-start/v2",
+            "gantry.cancellation/v2",
+            "gantry.logical-evidence/v2",
+            "gantry.logical-evidence/v2",
+            "gantry.logical-evidence/v2",
         ]
     );
 
@@ -815,7 +815,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     assert_eq!(full.committed_through, 1);
     assert_eq!(full.evidence.len(), 1);
     assert_eq!(full.evidence[0].sequence, 1);
-    assert_eq!(full.evidence[0].kind.as_ref(), "gantry.execution-start/v1");
+    assert_eq!(full.evidence[0].kind.as_ref(), "gantry.execution-start/v2");
     assert_eq!(
         accepted.test_execution_start_evidence_id(),
         full.evidence[0].evidence_id
@@ -1465,10 +1465,10 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         panic!("generic start did not produce a full prefix");
     };
     let retained_program =
-        DurableExecutionStartV1::retained_program(&initial_full.evidence[0].canonical_body)
+        DurableExecutionStartV2::retained_program(&initial_full.evidence[0].canonical_body)
             .unwrap_or_else(|error| panic!("retained generic program failed: {error:?}"));
     assert_eq!(retained_program, expected_program);
-    let decoded_start = DurableExecutionStartV1::decode(
+    let decoded_start = DurableExecutionStartV2::decode(
         &retained_program,
         &initial_full.evidence[0].canonical_body,
     )
@@ -1479,17 +1479,26 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     assert_eq!(recovered_program.as_ref(), &expected_program);
     assert_eq!(recovered_state.latest_sequence(), 1);
     let compacted_state = decoded_start.state().clone();
-    let snapshot = DurableRecoverySnapshotV1::new(decoded_start, compacted_state)
+    let snapshot = DurableRecoverySnapshotV2::new(decoded_start, compacted_state)
         .unwrap_or_else(|error| panic!("generic recovery snapshot failed: {error:?}"));
     let compacted_prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
         journal_id: initial_full.journal_id.clone(),
-        snapshot_version: 2,
+        snapshot_version: 4,
         frontier: 1,
         canonical_snapshot: Arc::from(snapshot.canonical_body()),
         retained_evidence: BTreeMap::from([(initial_full.evidence[0].evidence_id, 1)]),
         suffix: Arc::from([]),
         committed_through: initial_full.committed_through,
     });
+    let mut stale_selector_prefix = compacted_prefix.clone();
+    let JournalPrefixV1::Snapshot(stale_selector) = &mut stale_selector_prefix else {
+        unreachable!("cloned compacted prefix changed form");
+    };
+    stale_selector.snapshot_version = 2;
+    assert_eq!(
+        recover_authoritative_prefix_with_retained_program(&stale_selector_prefix).map(|_| ()),
+        Err(gantry::runtime::DurableEvidenceError::MissingRecoveryState)
+    );
     let (compacted_program, compacted_state) =
         recover_authoritative_prefix_with_retained_program(&compacted_prefix)
             .unwrap_or_else(|error| panic!("compacted generic recovery failed: {error:?}"));
@@ -1677,7 +1686,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     );
     let tampered_metadata = serde_json::to_vec(&metadata)
         .unwrap_or_else(|error| panic!("tampered metadata failed to encode: {error}"));
-    let tampered_start = DurableExecutionStartV1::new(
+    let tampered_start = DurableExecutionStartV2::new(
         execution_start.execution_id(),
         execution_start.task_id(),
         &program,
@@ -1804,7 +1813,7 @@ fn recover_generic_snapshot_in_fresh_process(snapshot: &std::ffi::OsStr) {
     let prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
         journal_id: JournalId::new("durable-generic-artifacts")
             .unwrap_or_else(|error| panic!("fresh recovery journal identity failed: {error:?}")),
-        snapshot_version: 2,
+        snapshot_version: 4,
         frontier: 1,
         canonical_snapshot: Arc::from(
             fs::read(Path::new(snapshot))

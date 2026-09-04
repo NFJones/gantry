@@ -94,12 +94,13 @@ pub use lifecycle::{
     ShutdownReport, ShutdownWait,
 };
 pub use machine::{
-    ExecutionFailureProjection, Machine, MachineBuildError, MachineFailure, MachineLabel,
-    MachineLimits, MachineOutcome, MachineStatus, MachineStep, OperationCompletionError,
-    OperationOccurrence, RuntimeCode, SessionScopeCompletionError, SessionScopeOccurrence,
+    ExecutionBudget, ExecutionBudgetSnapshot, ExecutionFailureProjection, Machine,
+    MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome, MachineStatus,
+    MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
+    SessionScopeCompletionError, SessionScopeOccurrence,
 };
 #[cfg(feature = "durable")]
-pub use machine::{MachineCheckpointV1, MachineRecoveryError};
+pub use machine::{MachineCheckpointV2, MachineRecoveryError};
 pub use operation::{
     OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
     OperationLifecycleState, TaskHook, TaskHookError, TaskHookSessionError,
@@ -111,15 +112,15 @@ pub use outcome::{
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use recovery::{
-    CONCURRENT_DURABLE_EVIDENCE_KIND_V1, ConcurrentDurableEvidenceV1,
+    CONCURRENT_DURABLE_EVIDENCE_KIND_V2, ConcurrentDurableEvidenceV2,
     RecoveredConcurrentDurableStateV1, recover_concurrent_authoritative_prefix,
 };
 #[cfg(feature = "durable")]
 pub use recovery::{
-    DurableCancellationEvidenceV1, DurableCommitCoordinatorV1, DurableCommitCutV1,
-    DurableCommitError, DurableEvidenceCommitV1, DurableEvidenceError, DurableExecutionStartV1,
-    DurableExecutionStateV1, DurableLogicalEvidenceV1, DurableOperationEvidenceV1,
-    DurableOperationRecoveryV1, DurableRecoverySnapshotV1, RecoveredDurableStateV1,
+    DurableCancellationEvidenceV2, DurableCommitCoordinatorV1, DurableCommitCutV1,
+    DurableCommitError, DurableEvidenceCommitV1, DurableEvidenceError, DurableExecutionStartV2,
+    DurableExecutionStateV1, DurableLogicalEvidenceV2, DurableOperationEvidenceV1,
+    DurableOperationRecoveryV1, DurableRecoverySnapshotV2, RecoveredDurableStateV1,
     recover_authoritative_prefix, recover_authoritative_prefix_with_retained_program,
 };
 pub use session::{
@@ -136,7 +137,7 @@ pub use supervision::{
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use task::{
-    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV1,
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV2,
     RecoveredConcurrentDurableExecutionV1,
 };
 #[cfg(feature = "concurrent")]

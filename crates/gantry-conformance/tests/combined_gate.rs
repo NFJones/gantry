@@ -233,8 +233,8 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     }
 
     if manifest.composition.evaluator != "gantry-runtime::Machine"
-        || manifest.composition.checkpoint != "gantry-runtime::ConcurrentDurableCheckpointV1"
-        || manifest.composition.journal_evidence != "gantry-runtime::ConcurrentDurableEvidenceV1"
+        || manifest.composition.checkpoint != "gantry-runtime::ConcurrentDurableCheckpointV2"
+        || manifest.composition.journal_evidence != "gantry-runtime::ConcurrentDurableEvidenceV2"
         || manifest.composition.graph_recovery
             != "gantry-runtime::recover_concurrent_authoritative_prefix"
         || manifest.composition.event_recovery != "gantry-runtime::RecoveredDurableEventsV1"

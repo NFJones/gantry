@@ -6,12 +6,12 @@ mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use concurrent::{
-    ConcurrentDurableEvidenceV1, RecoveredConcurrentDurableStateV1,
+    ConcurrentDurableEvidenceV2, RecoveredConcurrentDurableStateV1,
     recover_concurrent_authoritative_prefix,
 };
 pub use execution_start::{
-    DurableCancellationEvidenceV1, DurableExecutionStartV1, DurableExecutionStateV1,
-    DurableRecoverySnapshotV1,
+    DurableCancellationEvidenceV2, DurableExecutionStartV2, DurableExecutionStateV1,
+    DurableRecoverySnapshotV2,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,15 +35,15 @@ use crate::ConcurrentDurableCheckpointError;
 use crate::{
     CancellationReason, DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
     DURABLE_EVENT_SETTLED_KIND_V1, DurableEventEvidenceError, DurableEventOccurrenceV1,
-    DurableTransitionSink, LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine,
-    MachineCheckpointV1, MachineRecoveryError, MachineStatus, RecoveredDurableEventsV1,
-    SessionRecoveryError, TransitionReceiptV1, TransitionSink, ValidationErrorCategoryV1,
-    ValidationErrorV1,
+    DurableTransitionSink, ExecutionBudget, ExecutionBudgetSnapshot,
+    LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine, MachineCheckpointV2,
+    MachineRecoveryError, MachineStatus, RecoveredDurableEventsV1, SessionRecoveryError,
+    TransitionReceiptV1, TransitionSink, ValidationErrorCategoryV1, ValidationErrorV1,
 };
 
-/// Version-one evidence kind for complete concurrent-durable graph checkpoints.
+/// Version-two evidence kind for complete concurrent-durable graph checkpoints.
 #[cfg(all(feature = "concurrent", feature = "durable"))]
-pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V1: &str = "gantry.concurrent-durable-evidence/v1";
+pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V2: &str = "gantry.concurrent-durable-evidence/v2";
 
 /// Exact semantic boundary represented by one durable logical evidence body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -201,14 +201,13 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         machine: &Machine,
         sessions: Option<&LogicalSessionRegistryV1>,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
-        let checkpoint = machine.checkpoint();
         let session_checkpoint = sessions.map(LogicalSessionRegistryV1::checkpoint);
-        let evidence = DurableLogicalEvidenceV1::new_with_sessions(
+        let evidence = DurableLogicalEvidenceV2::new_with_sessions(
             self.execution_id,
             self.task_id,
             cut,
             operation,
-            checkpoint,
+            machine,
             session_checkpoint,
         )
         .map_err(DurableCommitError::Evidence)?;
@@ -222,16 +221,16 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         machine: &Machine,
         sessions: Option<&LogicalSessionRegistryV1>,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
-        let evidence = DurableLogicalEvidenceV1::new_with_sessions(
+        let evidence = DurableLogicalEvidenceV2::new_with_sessions(
             self.execution_id,
             self.task_id,
             DurableCommitCutV1::Cancellation,
             None,
-            machine.checkpoint(),
+            machine,
             sessions.map(LogicalSessionRegistryV1::checkpoint),
         )
         .map_err(DurableCommitError::Evidence)?;
-        let cancellation = DurableCancellationEvidenceV1::new(reason, evidence)
+        let cancellation = DurableCancellationEvidenceV2::new(reason, evidence)
             .map_err(DurableCommitError::Evidence)?;
         let local_number = self
             .next_local_id
@@ -259,7 +258,7 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
     async fn commit_evidence(
         &mut self,
         cut: DurableCommitCutV1,
-        evidence: DurableLogicalEvidenceV1,
+        evidence: DurableLogicalEvidenceV2,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         let local_number = self
             .next_local_id
@@ -409,7 +408,7 @@ pub enum DurableOperationRecoveryV1 {
 pub struct RecoveredDurableStateV1 {
     machine: Machine,
     sessions: Option<LogicalSessionRegistryV1>,
-    execution_start: Option<DurableExecutionStartV1>,
+    execution_start: Option<DurableExecutionStartV2>,
     execution_state: Option<DurableExecutionStateV1>,
     cancellation_reason: Option<CancellationReason>,
     events: RecoveredDurableEventsV1,
@@ -422,7 +421,7 @@ pub struct RecoveredDurableStateV1 {
 impl RecoveredDurableStateV1 {
     /// Constructs the authoritative in-process projection immediately after sequence one commits.
     pub fn from_committed_start(
-        execution_start: DurableExecutionStartV1,
+        execution_start: DurableExecutionStartV2,
         evidence_id: ProtocolIdentity,
         sequence: u64,
     ) -> Result<Self, DurableEvidenceError> {
@@ -430,9 +429,14 @@ impl RecoveredDurableStateV1 {
             return Err(DurableEvidenceError::InvalidCausalOrder);
         }
         let program = Arc::new(execution_start.program()?);
-        let machine =
-            Machine::recover_from_checkpoint(program, execution_start.state().checkpoint().clone())
-                .map_err(DurableEvidenceError::Checkpoint)?;
+        let budget = ExecutionBudget::recover_from_checkpoint(execution_start.state().budget)
+            .map_err(DurableEvidenceError::Checkpoint)?;
+        let machine = Machine::recover_from_checkpoint(
+            program,
+            execution_start.state().checkpoint().clone(),
+            budget,
+        )
+        .map_err(DurableEvidenceError::Checkpoint)?;
         let sessions = execution_start
             .state()
             .sessions()
@@ -486,7 +490,7 @@ impl RecoveredDurableStateV1 {
 
     /// Returns immutable sequence-one metadata when the prefix retained an execution start.
     #[must_use]
-    pub const fn execution_start(&self) -> Option<&DurableExecutionStartV1> {
+    pub const fn execution_start(&self) -> Option<&DurableExecutionStartV2> {
         self.execution_start.as_ref()
     }
 
@@ -615,11 +619,11 @@ pub fn recover_authoritative_prefix(
                     (*sequence == prefix.frontier).then_some(*identity)
                 })
                 .ok_or(DurableEvidenceError::InvalidCausalOrder)?;
-            let evidence = if prefix.snapshot_version == 1 {
-                DurableLogicalEvidenceV1::decode(&program, &prefix.canonical_snapshot)?
-            } else if prefix.snapshot_version == 2 {
+            let evidence = if prefix.snapshot_version == 3 {
+                DurableLogicalEvidenceV2::decode(&program, &prefix.canonical_snapshot)?
+            } else if prefix.snapshot_version == 4 {
                 let snapshot =
-                    DurableRecoverySnapshotV1::decode(&program, &prefix.canonical_snapshot)?;
+                    DurableRecoverySnapshotV2::decode(&program, &prefix.canonical_snapshot)?;
                 projection.execution_start = Some(snapshot.execution_start().clone());
                 projection.execution_state = snapshot.execution_state().cloned();
                 snapshot.state().clone()
@@ -651,13 +655,13 @@ pub fn recover_authoritative_prefix_with_retained_program(
                 .evidence
                 .first()
                 .ok_or(DurableEvidenceError::MissingRecoveryState)?;
-            if first.sequence != 1 || first.kind.as_ref() != "gantry.execution-start/v1" {
+            if first.sequence != 1 || first.kind.as_ref() != "gantry.execution-start/v2" {
                 return Err(DurableEvidenceError::InvalidExecutionStart);
             }
-            DurableExecutionStartV1::retained_program(&first.canonical_body)?
+            DurableExecutionStartV2::retained_program(&first.canonical_body)?
         }
-        JournalPrefixV1::Snapshot(prefix) if prefix.snapshot_version == 2 => {
-            DurableRecoverySnapshotV1::retained_program(&prefix.canonical_snapshot)?
+        JournalPrefixV1::Snapshot(prefix) if prefix.snapshot_version == 4 => {
+            DurableRecoverySnapshotV2::retained_program(&prefix.canonical_snapshot)?
         }
         JournalPrefixV1::Snapshot(_) => {
             return Err(DurableEvidenceError::MissingRecoveryState);
@@ -669,9 +673,9 @@ pub fn recover_authoritative_prefix_with_retained_program(
 
 #[derive(Default)]
 struct PrefixProjection {
-    latest: Option<(u64, ProtocolIdentity, DurableLogicalEvidenceV1)>,
+    latest: Option<(u64, ProtocolIdentity, DurableLogicalEvidenceV2)>,
     journal_tip: Option<(u64, ProtocolIdentity)>,
-    execution_start: Option<DurableExecutionStartV1>,
+    execution_start: Option<DurableExecutionStartV2>,
     execution_state: Option<DurableExecutionStateV1>,
     committed_cancellation: Option<CancellationReason>,
     events: RecoveredDurableEventsV1,
@@ -689,7 +693,7 @@ impl PrefixProjection {
         sequence: u64,
         evidence_id: ProtocolIdentity,
         retained: impl IntoIterator<Item = ProtocolIdentity>,
-        evidence: DurableLogicalEvidenceV1,
+        evidence: DurableLogicalEvidenceV2,
     ) -> Result<(), DurableEvidenceError> {
         self.record_operation_cut(&evidence, false)?;
         self.known.extend(retained);
@@ -706,14 +710,14 @@ impl PrefixProjection {
         program: &MachineProgram,
         envelope: &JournalEvidenceEnvelopeV1,
     ) -> Result<(), DurableEvidenceError> {
-        if self.latest.is_none() && envelope.kind.as_ref() == "gantry.execution-start/v1" {
+        if self.latest.is_none() && envelope.kind.as_ref() == "gantry.execution-start/v2" {
             if self.journal_tip.is_some()
                 || envelope.sequence != 1
                 || !envelope.references.is_empty()
             {
                 return Err(DurableEvidenceError::InvalidExecutionStart);
             }
-            let start = DurableExecutionStartV1::decode(program, &envelope.canonical_body)?;
+            let start = DurableExecutionStartV2::decode(program, &envelope.canonical_body)?;
             let evidence = start.state().clone();
             self.record_operation_cut(&evidence, true)?;
             self.record_tip(envelope)?;
@@ -744,7 +748,7 @@ impl PrefixProjection {
             self.record_tip(envelope)?;
             return Ok(());
         }
-        if envelope.kind.as_ref() == "gantry.cancellation/v1" {
+        if envelope.kind.as_ref() == "gantry.cancellation/v2" {
             let Some((_, _, previous)) = &self.latest else {
                 return Err(DurableEvidenceError::InvalidCausalOrder);
             };
@@ -753,20 +757,21 @@ impl PrefixProjection {
                 return Err(DurableEvidenceError::RepeatedCancellation);
             }
             let cancellation =
-                DurableCancellationEvidenceV1::decode(program, &envelope.canonical_body)?;
+                DurableCancellationEvidenceV2::decode(program, &envelope.canonical_body)?;
             let evidence = cancellation.state().clone();
             if evidence.execution_id() != previous.execution_id()
                 || evidence.task_id() != previous.task_id()
             {
                 return Err(DurableEvidenceError::MixedExecution);
             }
+            validate_budget_successor(&previous.budget, &evidence.budget)?;
             self.record_operation_cut(&evidence, true)?;
             self.record_tip(envelope)?;
             self.committed_cancellation = Some(cancellation.reason().clone());
             self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
             return Ok(());
         }
-        if envelope.kind.as_ref() != "gantry.logical-evidence/v1" {
+        if envelope.kind.as_ref() != "gantry.logical-evidence/v2" {
             if envelope.kind.as_ref() != "gantry.execution-state/v1" {
                 return Err(DurableEvidenceError::UnsupportedEvidenceKind);
             }
@@ -786,12 +791,13 @@ impl PrefixProjection {
         }
         if let Some((_, _, previous)) = &self.latest {
             self.require_predecessor(envelope)?;
-            let evidence = DurableLogicalEvidenceV1::decode(program, &envelope.canonical_body)?;
+            let evidence = DurableLogicalEvidenceV2::decode(program, &envelope.canonical_body)?;
             if evidence.execution_id != previous.execution_id
                 || evidence.task_id != previous.task_id
             {
                 return Err(DurableEvidenceError::MixedExecution);
             }
+            validate_budget_successor(&previous.budget, &evidence.budget)?;
             self.record_operation_cut(&evidence, true)?;
             self.record_tip(envelope)?;
             self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
@@ -800,7 +806,7 @@ impl PrefixProjection {
         if !envelope.references.is_empty() {
             return Err(DurableEvidenceError::InvalidCausalOrder);
         }
-        let evidence = DurableLogicalEvidenceV1::decode(program, &envelope.canonical_body)?;
+        let evidence = DurableLogicalEvidenceV2::decode(program, &envelope.canonical_body)?;
         self.record_operation_cut(&evidence, true)?;
         self.record_tip(envelope)?;
         self.latest = Some((envelope.sequence, envelope.evidence_id, evidence));
@@ -839,7 +845,7 @@ impl PrefixProjection {
 
     fn record_operation_cut(
         &mut self,
-        evidence: &DurableLogicalEvidenceV1,
+        evidence: &DurableLogicalEvidenceV2,
         enforce_history: bool,
     ) -> Result<(), DurableEvidenceError> {
         let Some(operation) = evidence.operation.as_ref() else {
@@ -913,7 +919,9 @@ impl PrefixProjection {
             .map(LogicalSessionRegistryV1::recover_from_checkpoint)
             .transpose()
             .map_err(DurableEvidenceError::Session)?;
-        let machine = Machine::recover_from_checkpoint(program, evidence.checkpoint)
+        let budget = ExecutionBudget::recover_from_checkpoint(evidence.budget)
+            .map_err(DurableEvidenceError::Checkpoint)?;
+        let machine = Machine::recover_from_checkpoint(program, evidence.checkpoint, budget)
             .map_err(DurableEvidenceError::Checkpoint)?;
         Ok(RecoveredDurableStateV1 {
             machine,
@@ -930,8 +938,33 @@ impl PrefixProjection {
     }
 }
 
+pub(super) fn validate_budget_successor(
+    previous: &ExecutionBudgetSnapshot,
+    current: &ExecutionBudgetSnapshot,
+) -> Result<(), DurableEvidenceError> {
+    let transition_delta = previous
+        .remaining_transitions
+        .checked_sub(current.remaining_transitions);
+    let operation_delta = previous
+        .remaining_operations
+        .checked_sub(current.remaining_operations);
+    let consumed_delta = transition_delta
+        .zip(operation_delta)
+        .and_then(|(transitions, operations)| transitions.checked_add(operations));
+    let revision_delta = current.revision.checked_sub(previous.revision);
+    if current.execution != previous.execution
+        || current.maximum_transitions != previous.maximum_transitions
+        || current.maximum_operations != previous.maximum_operations
+        || revision_delta.is_none()
+        || revision_delta != consumed_delta
+    {
+        return Err(DurableEvidenceError::InvalidExecutionBudget);
+    }
+    Ok(())
+}
+
 fn operation_recovery(
-    evidence: &DurableLogicalEvidenceV1,
+    evidence: &DurableLogicalEvidenceV2,
 ) -> Result<DurableOperationRecoveryV1, DurableEvidenceError> {
     let Some(operation) = evidence.operation.as_ref() else {
         return Ok(DurableOperationRecoveryV1::None);
@@ -1014,41 +1047,68 @@ fn operation_recovery(
     }
 }
 
-/// One canonical version-one logical evidence body plus its recovery state.
+/// One canonical version-two logical evidence body plus its recovery state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DurableLogicalEvidenceV1 {
+pub struct DurableLogicalEvidenceV2 {
     execution_id: ProtocolIdentity,
     task_id: ProtocolIdentity,
     cut: DurableCommitCutV1,
     operation: Option<DurableOperationEvidenceV1>,
-    checkpoint: MachineCheckpointV1,
+    budget: ExecutionBudgetSnapshot,
+    checkpoint: MachineCheckpointV2,
     sessions: Option<LogicalSessionRegistryCheckpointV1>,
 }
 
-impl DurableLogicalEvidenceV1 {
-    /// Constructs one validated commit-cut record over complete machine state.
+impl DurableLogicalEvidenceV2 {
+    /// Captures one validated commit-cut record over complete machine state.
     pub fn new(
         execution_id: ProtocolIdentity,
         task_id: ProtocolIdentity,
         cut: DurableCommitCutV1,
         operation: Option<DurableOperationEvidenceV1>,
-        checkpoint: MachineCheckpointV1,
+        machine: &Machine,
     ) -> Result<Self, DurableEvidenceError> {
-        Self::new_with_sessions(execution_id, task_id, cut, operation, checkpoint, None)
+        Self::new_with_sessions(execution_id, task_id, cut, operation, machine, None)
     }
 
-    /// Constructs one commit-cut record with complete logical-session state.
+    /// Captures one commit-cut record with complete logical-session state.
     pub fn new_with_sessions(
         execution_id: ProtocolIdentity,
         task_id: ProtocolIdentity,
         cut: DurableCommitCutV1,
         operation: Option<DurableOperationEvidenceV1>,
-        checkpoint: MachineCheckpointV1,
+        machine: &Machine,
+        sessions: Option<LogicalSessionRegistryCheckpointV1>,
+    ) -> Result<Self, DurableEvidenceError> {
+        let checkpoint = machine.checkpoint();
+        let budget = machine.budget_checkpoint();
+        if machine.execution_id() != execution_id || budget.execution != execution_id {
+            return Err(DurableEvidenceError::InvalidExecutionBudget);
+        }
+        Self::from_parts(
+            execution_id,
+            task_id,
+            cut,
+            operation,
+            budget,
+            checkpoint,
+            sessions,
+        )
+    }
+
+    fn from_parts(
+        execution_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        cut: DurableCommitCutV1,
+        operation: Option<DurableOperationEvidenceV1>,
+        budget: ExecutionBudgetSnapshot,
+        checkpoint: MachineCheckpointV2,
         sessions: Option<LogicalSessionRegistryCheckpointV1>,
     ) -> Result<Self, DurableEvidenceError> {
         if execution_id.kind() != IdentityKind::Execution
             || task_id.kind() != IdentityKind::Task
             || checkpoint.execution_id() != execution_id
+            || budget.execution != execution_id
             || sessions
                 .as_ref()
                 .is_some_and(|sessions| sessions.execution_id() != execution_id)
@@ -1128,6 +1188,7 @@ impl DurableLogicalEvidenceV1 {
             task_id,
             cut,
             operation,
+            budget,
             checkpoint,
             sessions,
         })
@@ -1157,9 +1218,15 @@ impl DurableLogicalEvidenceV1 {
         self.operation.as_ref()
     }
 
+    /// Returns the canonical execution-wide budget projection captured with this cut.
+    #[must_use]
+    pub const fn budget(&self) -> ExecutionBudgetSnapshot {
+        self.budget
+    }
+
     /// Returns the complete same-machine recovery checkpoint.
     #[must_use]
-    pub const fn checkpoint(&self) -> &MachineCheckpointV1 {
+    pub const fn checkpoint(&self) -> &MachineCheckpointV2 {
         &self.checkpoint
     }
 
@@ -1172,13 +1239,15 @@ impl DurableLogicalEvidenceV1 {
     /// Returns the unique canonical JSON body stored in a journal envelope.
     #[must_use]
     pub fn canonical_body(&self) -> Vec<u8> {
-        let mut output = String::from("{\"checkpoint\":");
+        let mut output = String::from("{\"budget\":");
+        push_json_string(&mut output, &encode_hex(&self.budget.canonical_bytes()));
+        output.push_str(",\"checkpoint\":");
         push_json_string(&mut output, &encode_hex(&self.checkpoint.canonical_bytes()));
         output.push_str(",\"cut\":");
         push_json_string(&mut output, self.cut.wire_name());
         output.push_str(",\"execution_id\":");
         push_json_string(&mut output, &self.execution_id.to_string());
-        output.push_str(",\"format\":\"gantry.logical-evidence/v1\",\"operation\":");
+        output.push_str(",\"format\":\"gantry.logical-evidence/v2\",\"operation\":");
         match &self.operation {
             Some(operation) => push_operation(&mut output, operation),
             None => output.push_str("null"),
@@ -1196,7 +1265,7 @@ impl DurableLogicalEvidenceV1 {
         output.into_bytes()
     }
 
-    /// Decodes one exact canonical version-one evidence body.
+    /// Decodes one exact canonical version-two evidence body.
     pub fn decode(program: &MachineProgram, body: &[u8]) -> Result<Self, DurableEvidenceError> {
         let maximum_bytes =
             u64::try_from(body.len()).map_err(|_| DurableEvidenceError::Encoding)?;
@@ -1215,6 +1284,7 @@ impl DurableLogicalEvidenceV1 {
         require_exact_fields(
             root,
             &[
+                "budget",
                 "checkpoint",
                 "cut",
                 "execution_id",
@@ -1224,11 +1294,16 @@ impl DurableLogicalEvidenceV1 {
                 "task_id",
             ],
         )?;
-        if string(&document, field(root, "format")?)? != "gantry.logical-evidence/v1" {
+        if string(&document, field(root, "format")?)? != "gantry.logical-evidence/v2" {
             return Err(DurableEvidenceError::Encoding);
         }
+        let budget = ExecutionBudgetSnapshot::decode(&decode_hex(string(
+            &document,
+            field(root, "budget")?,
+        )?)?)
+        .map_err(DurableEvidenceError::Checkpoint)?;
         let checkpoint_bytes = decode_hex(string(&document, field(root, "checkpoint")?)?)?;
-        let checkpoint = MachineCheckpointV1::decode(program, &checkpoint_bytes)
+        let checkpoint = MachineCheckpointV2::decode(program, &checkpoint_bytes)
             .map_err(DurableEvidenceError::Checkpoint)?;
         let cut = DurableCommitCutV1::from_wire_name(string(&document, field(root, "cut")?)?)
             .ok_or(DurableEvidenceError::Encoding)?;
@@ -1251,8 +1326,23 @@ impl DurableLogicalEvidenceV1 {
                     .map_err(DurableEvidenceError::Session)
             })
             .transpose()?;
-        let evidence =
-            Self::new_with_sessions(execution_id, task_id, cut, operation, checkpoint, sessions)?;
+        let execution_budget = ExecutionBudget::recover_from_checkpoint(budget)
+            .map_err(DurableEvidenceError::Checkpoint)?;
+        Machine::recover_from_checkpoint(
+            Arc::new(program.clone()),
+            checkpoint.clone(),
+            execution_budget,
+        )
+        .map_err(DurableEvidenceError::Checkpoint)?;
+        let evidence = Self::from_parts(
+            execution_id,
+            task_id,
+            cut,
+            operation,
+            budget,
+            checkpoint,
+            sessions,
+        )?;
         if evidence.canonical_body() != body {
             return Err(DurableEvidenceError::Encoding);
         }
@@ -1267,7 +1357,7 @@ impl DurableLogicalEvidenceV1 {
     ) -> Result<UnfinalizedEvidenceV1, DurableEvidenceError> {
         UnfinalizedEvidenceV1::new(
             batch_local_id,
-            "gantry.logical-evidence/v1",
+            "gantry.logical-evidence/v2",
             self.canonical_body(),
             references,
             Arc::from([]),
@@ -1289,6 +1379,8 @@ pub enum DurableEvidenceError {
     InvalidExecutionStart,
     /// A mutable-policy or mapping execution-state revision is inconsistent.
     InvalidExecutionState,
+    /// An execution-budget projection is malformed or discontinuous.
+    InvalidExecutionBudget,
     /// Operation coordinates do not match the represented operation cut.
     InvalidOperation,
     /// The backend-neutral journal body contract rejected construction.
@@ -1719,10 +1811,10 @@ mod tests {
     };
 
     use super::{
-        DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV1,
-        DurableLogicalEvidenceV1, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
-        DurableRecoverySnapshotV1, recover_authoritative_prefix,
-        recover_authoritative_prefix_with_retained_program,
+        DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV2,
+        DurableLogicalEvidenceV2, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
+        DurableRecoverySnapshotV2, recover_authoritative_prefix,
+        recover_authoritative_prefix_with_retained_program, validate_budget_successor,
     };
     use crate::{
         CanonicalTranscriptV1, LogicalSessionRegistryV1, Machine, MachineLimits, MachineOutcome,
@@ -1743,7 +1835,7 @@ mod tests {
         });
         let snapshot = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
             journal_id: journal_id(),
-            snapshot_version: 1,
+            snapshot_version: 3,
             frontier: 1,
             canonical_snapshot: Arc::from(evidence.canonical_body()),
             retained_evidence: BTreeMap::from([(first.evidence_id, 1)]),
@@ -1771,7 +1863,7 @@ mod tests {
         let mut machine = machine(Arc::clone(&program));
         assert!(matches!(machine.step(), MachineStep::Transition(_)));
         let state = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
-        let execution_start = DurableExecutionStartV1::new(
+        let execution_start = DurableExecutionStartV2::new(
             execution(),
             root_task(),
             &program,
@@ -1779,11 +1871,11 @@ mod tests {
             state.clone(),
         )
         .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
-        let snapshot = DurableRecoverySnapshotV1::new(execution_start, state)
+        let snapshot = DurableRecoverySnapshotV2::new(execution_start, state)
             .unwrap_or_else(|error| panic!("retained snapshot failed: {error:?}"));
         let prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
             journal_id: journal_id(),
-            snapshot_version: 2,
+            snapshot_version: 4,
             frontier: 1,
             canonical_snapshot: Arc::from(snapshot.canonical_body()),
             retained_evidence: BTreeMap::from([(evidence_id(1), 1)]),
@@ -1798,7 +1890,7 @@ mod tests {
         assert_eq!(
             recovered
                 .execution_start()
-                .map(DurableExecutionStartV1::metadata),
+                .map(DurableExecutionStartV2::metadata),
             Some(&b"{}"[..])
         );
         assert_eq!(recovered.latest_sequence(), 1);
@@ -1818,12 +1910,12 @@ mod tests {
             CanonicalTranscriptV1::empty(),
         )
         .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
-        let evidence = DurableLogicalEvidenceV1::new_with_sessions(
+        let evidence = DurableLogicalEvidenceV2::new_with_sessions(
             execution(),
             root_task(),
             DurableCommitCutV1::Checkpoint,
             None,
-            machine.checkpoint(),
+            &machine,
             Some(sessions.checkpoint()),
         )
         .unwrap_or_else(|error| panic!("session evidence failed: {error:?}"));
@@ -2036,7 +2128,7 @@ mod tests {
             journal_id: journal_id(),
             sequence: 1,
             evidence_id: evidence_id(1),
-            kind: Arc::from("gantry.logical-evidence/v1"),
+            kind: Arc::from("gantry.logical-evidence/v2"),
             canonical_body: Arc::from(corrupt),
             references: Arc::from([]),
             protected_payloads: Arc::from([]),
@@ -2052,19 +2144,173 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn recovery_preserves_latest_budget_after_sequential_charges() {
+        let program = value_program();
+        let mut machine = machine(Arc::clone(&program));
+        let first = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
+        let first_envelope = envelope(1, 1, &first, &[]);
+
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let latest = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
+        assert!(latest.budget().revision > first.budget().revision);
+        let expected_budget = latest.budget();
+        let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+            journal_id: journal_id(),
+            evidence: Arc::from([
+                first_envelope.clone(),
+                envelope(2, 2, &latest, &[first_envelope.evidence_id]),
+            ]),
+            committed_through: 2,
+        });
+
+        let recovered = recover_authoritative_prefix(program, &prefix)
+            .unwrap_or_else(|error| panic!("sequential budget recovery failed: {error:?}"));
+        assert_eq!(recovered.machine().budget_checkpoint(), expected_budget);
+    }
+
+    #[test]
+    fn budget_successor_validation_covers_continuity_and_each_regression_class() {
+        let program = value_program();
+        let mut machine = machine(program);
+        let initial = machine.budget_checkpoint();
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let charged = machine.budget_checkpoint();
+
+        assert_eq!(validate_budget_successor(&initial, &charged), Ok(()));
+
+        let mut replenished = charged;
+        replenished.remaining_transitions += 1;
+        assert_eq!(
+            validate_budget_successor(&charged, &replenished),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+
+        let mut regressive_revision = charged;
+        regressive_revision.revision -= 1;
+        assert_eq!(
+            validate_budget_successor(&charged, &regressive_revision),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+
+        let mut changed_transition_maximum = charged;
+        changed_transition_maximum.maximum_transitions += 1;
+        assert_eq!(
+            validate_budget_successor(&charged, &changed_transition_maximum),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+
+        let mut changed_operation_maximum = charged;
+        changed_operation_maximum.maximum_operations += 1;
+        assert_eq!(
+            validate_budget_successor(&charged, &changed_operation_maximum),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+
+        let mut mismatched_delta = charged;
+        mismatched_delta.remaining_transitions -= 1;
+        assert_eq!(
+            validate_budget_successor(&charged, &mismatched_delta),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+    }
+
+    #[test]
+    fn compacted_snapshot_validates_start_to_frontier_budget_continuity() {
+        let program = value_program();
+        let mut machine = machine(Arc::clone(&program));
+        let start_state = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
+        let continuous_start = DurableExecutionStartV2::new(
+            execution(),
+            root_task(),
+            &program,
+            Arc::<[u8]>::from(&b"{}"[..]),
+            start_state.clone(),
+        )
+        .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
+
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+        let frontier = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
+        DurableRecoverySnapshotV2::new(continuous_start, frontier.clone())
+            .unwrap_or_else(|error| panic!("continuous snapshot failed: {error:?}"));
+
+        let regressive_start = DurableExecutionStartV2::new(
+            execution(),
+            root_task(),
+            &program,
+            Arc::<[u8]>::from(&b"{}"[..]),
+            frontier,
+        )
+        .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
+        assert_eq!(
+            DurableRecoverySnapshotV2::new(regressive_start, start_state).map(|_| ()),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+    }
+
+    #[test]
+    fn recovery_rejects_mismatched_and_regressive_budget_projections() {
+        let program = value_program();
+        let mut charged_machine = machine(Arc::clone(&program));
+        assert!(matches!(charged_machine.step(), MachineStep::Transition(_)));
+        let first = evidence(&charged_machine, DurableCommitCutV1::Checkpoint, None);
+
+        let different_limits = MachineLimits::new(32, 4, 4, 4, 16, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("machine limits failed"));
+        let different_machine = Machine::new(
+            Arc::clone(&program),
+            &path("crate::main"),
+            Vec::new(),
+            execution(),
+            different_limits,
+        )
+        .unwrap_or_else(|error| panic!("machine construction failed: {error:?}"));
+        let mut mismatched = first.clone();
+        mismatched.budget = different_machine.budget_checkpoint();
+        assert!(matches!(
+            DurableLogicalEvidenceV2::decode(&program, &mismatched.canonical_body()),
+            Err(DurableEvidenceError::Checkpoint(_))
+        ));
+
+        let changed_maxima = evidence(&different_machine, DurableCommitCutV1::Checkpoint, None);
+        let first_envelope = envelope(1, 1, &first, &[]);
+        let mixed_prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+            journal_id: journal_id(),
+            evidence: Arc::from([
+                first_envelope.clone(),
+                envelope(2, 2, &changed_maxima, &[first_envelope.evidence_id]),
+            ]),
+            committed_through: 2,
+        });
+        assert_eq!(
+            recover_authoritative_prefix(Arc::clone(&program), &mixed_prefix).map(|_| ()),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+
+        let pristine = machine(Arc::clone(&program));
+        let regressive = evidence(&pristine, DurableCommitCutV1::Checkpoint, None);
+        let first_envelope = envelope(1, 1, &first, &[]);
+        let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+            journal_id: journal_id(),
+            evidence: Arc::from([
+                first_envelope.clone(),
+                envelope(2, 2, &regressive, &[first_envelope.evidence_id]),
+            ]),
+            committed_through: 2,
+        });
+        assert_eq!(
+            recover_authoritative_prefix(program, &prefix).map(|_| ()),
+            Err(DurableEvidenceError::InvalidExecutionBudget)
+        );
+    }
+
     fn evidence(
         machine: &Machine,
         cut: DurableCommitCutV1,
         operation: Option<DurableOperationEvidenceV1>,
-    ) -> DurableLogicalEvidenceV1 {
-        DurableLogicalEvidenceV1::new(
-            execution(),
-            root_task(),
-            cut,
-            operation,
-            machine.checkpoint(),
-        )
-        .unwrap_or_else(|error| panic!("evidence construction failed: {error:?}"))
+    ) -> DurableLogicalEvidenceV2 {
+        DurableLogicalEvidenceV2::new(execution(), root_task(), cut, operation, machine)
+            .unwrap_or_else(|error| panic!("evidence construction failed: {error:?}"))
     }
 
     fn operation_evidence(
@@ -2074,7 +2320,7 @@ mod tests {
         cut: DurableCommitCutV1,
         action_recovery: Option<RecoveryClass>,
         retry_delay_us: Option<u64>,
-    ) -> DurableLogicalEvidenceV1 {
+    ) -> DurableLogicalEvidenceV2 {
         let request_bytes =
             (cut != DurableCommitCutV1::OperationResult).then(|| Arc::from(&b"{}"[..]));
         let outcome = match cut {
@@ -2123,14 +2369,14 @@ mod tests {
     fn envelope(
         sequence: u64,
         evidence_material: u8,
-        evidence: &DurableLogicalEvidenceV1,
+        evidence: &DurableLogicalEvidenceV2,
         references: &[ProtocolIdentity],
     ) -> JournalEvidenceEnvelopeV1 {
         JournalEvidenceEnvelopeV1 {
             journal_id: journal_id(),
             sequence,
             evidence_id: evidence_id(evidence_material),
-            kind: Arc::from("gantry.logical-evidence/v1"),
+            kind: Arc::from("gantry.logical-evidence/v2"),
             canonical_body: Arc::from(evidence.canonical_body()),
             references: Arc::from(references),
             protected_payloads: Arc::from([]),

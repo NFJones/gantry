@@ -15,12 +15,12 @@ use gantry::ir::{
 use gantry::portable::{CancellationReasonCategory, DeliveryOutcome, EventKind, IdentityKind};
 use gantry::runtime::{
     CancellationCausalIdentity, CancellationReason, CanonicalTranscriptV1,
-    ConcurrentDurableCheckpointV1, ConcurrentDurableEvidenceV1, ConcurrentSchedulerV1,
-    ConcurrentTaskStateV1, DurableCancellationEvidenceV1, DurableCommitCutV1,
+    ConcurrentDurableCheckpointV2, ConcurrentDurableEvidenceV2, ConcurrentSchedulerV1,
+    ConcurrentTaskStateV1, DurableCancellationEvidenceV2, DurableCommitCutV1,
     DurableEventDispatchedV1, DurableEventOccurrenceV1, DurableEventPlanV1, DurableEventSettledV1,
-    DurableExecutionStartV1, DurableExecutionStateV1, DurableLogicalEvidenceV1,
-    DurableRecoverySnapshotV1, LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1,
-    Machine, MachineCheckpointV1, MachineLimits, SessionCreationModeV1,
+    DurableExecutionStartV2, DurableExecutionStateV1, DurableLogicalEvidenceV2,
+    DurableRecoverySnapshotV2, ExecutionBudgetSnapshot, LogicalSessionRegistryCheckpointV1,
+    LogicalSessionRegistryV1, Machine, MachineCheckpointV2, MachineLimits, SessionCreationModeV1,
 };
 use gantry::schema::SchemaValidator;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -311,23 +311,25 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
     .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
     let state = ConcurrentTaskStateV1::new(execution, root_task, 4)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
-    let scheduler = ConcurrentSchedulerV1::new(state);
+    let scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+        .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
 
     let machine_checkpoint = foreground.checkpoint();
+    let budget_checkpoint = foreground.budget_checkpoint();
     let session_checkpoint = sessions.checkpoint();
     let combined_checkpoint =
-        ConcurrentDurableCheckpointV1::capture(&foreground, &scheduler, &sessions)
+        ConcurrentDurableCheckpointV2::capture(&foreground, &scheduler, &sessions)
             .unwrap_or_else(|error| panic!("combined checkpoint failed: {error:?}"));
-    let logical = DurableLogicalEvidenceV1::new_with_sessions(
+    let logical = DurableLogicalEvidenceV2::new_with_sessions(
         execution,
         root_task,
         DurableCommitCutV1::Checkpoint,
         None,
-        machine_checkpoint.clone(),
+        &foreground,
         Some(session_checkpoint.clone()),
     )
     .unwrap_or_else(|error| panic!("logical evidence failed: {error:?}"));
-    let execution_start = DurableExecutionStartV1::new(
+    let execution_start = DurableExecutionStartV2::new(
         execution,
         root_task,
         &program,
@@ -342,13 +344,13 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
         Some(Arc::from("actions-v1")),
     )
     .unwrap_or_else(|error| panic!("execution state failed: {error:?}"));
-    let recovery = DurableRecoverySnapshotV1::new_with_execution_state(
+    let recovery = DurableRecoverySnapshotV2::new_with_execution_state(
         execution_start.clone(),
         Some(execution_state.clone()),
         logical.clone(),
     )
     .unwrap_or_else(|error| panic!("recovery snapshot failed: {error:?}"));
-    let combined = ConcurrentDurableEvidenceV1::new(
+    let combined = ConcurrentDurableEvidenceV2::new(
         DurableCommitCutV1::Checkpoint,
         root_task,
         combined_checkpoint.clone(),
@@ -357,12 +359,12 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
 
     let mut cancelled_machine = machine(Arc::clone(&program), execution, root_session);
     assert!(cancelled_machine.cancel("caller-stop").is_some());
-    let cancelled_state = DurableLogicalEvidenceV1::new_with_sessions(
+    let cancelled_state = DurableLogicalEvidenceV2::new_with_sessions(
         execution,
         root_task,
         DurableCommitCutV1::Cancellation,
         None,
-        cancelled_machine.checkpoint(),
+        &cancelled_machine,
         Some(session_checkpoint.clone()),
     )
     .unwrap_or_else(|error| panic!("cancelled state failed: {error:?}"));
@@ -373,7 +375,7 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
         64,
     )
     .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
-    let cancellation = DurableCancellationEvidenceV1::new(reason, cancelled_state)
+    let cancellation = DurableCancellationEvidenceV2::new(reason, cancelled_state)
         .unwrap_or_else(|error| panic!("cancellation evidence failed: {error:?}"));
 
     let event = EventEnvelope::complete(
@@ -415,15 +417,19 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
             CanonicalTranscriptV1::empty().bytes().to_vec(),
         ),
         (
-            "combined-checkpoint/v1".to_owned(),
+            "combined-checkpoint/v2".to_owned(),
             combined_checkpoint.canonical_bytes(),
         ),
         (
-            "gantry.cancellation/v1".to_owned(),
+            "execution-budget-checkpoint/v1".to_owned(),
+            budget_checkpoint.canonical_bytes(),
+        ),
+        (
+            "gantry.cancellation/v2".to_owned(),
             cancellation.canonical_body(),
         ),
         (
-            "gantry.concurrent-durable-evidence/v1".to_owned(),
+            "gantry.concurrent-durable-evidence/v2".to_owned(),
             combined.canonical_body(),
         ),
         (
@@ -439,7 +445,7 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
             occurrence.canonical_body(),
         ),
         (
-            "gantry.execution-start/v1".to_owned(),
+            "gantry.execution-start/v2".to_owned(),
             execution_start.canonical_body(),
         ),
         (
@@ -447,15 +453,15 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
             execution_state.canonical_body(),
         ),
         (
-            "gantry.logical-evidence/v1".to_owned(),
+            "gantry.logical-evidence/v2".to_owned(),
             logical.canonical_body(),
         ),
         (
-            "gantry.recovery-snapshot/v1".to_owned(),
+            "gantry.recovery-snapshot/v2".to_owned(),
             recovery.canonical_body(),
         ),
         (
-            "machine-checkpoint/v1".to_owned(),
+            "machine-checkpoint/v2".to_owned(),
             machine_checkpoint.canonical_bytes(),
         ),
         (
@@ -471,14 +477,17 @@ fn assert_format_decodes(format: &str, bytes: &[u8]) {
         "canonical-transcript/v1" => {
             assert!(CanonicalTranscriptV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_ok())
         }
-        "combined-checkpoint/v1" => {
-            assert!(ConcurrentDurableCheckpointV1::decode(&context.program, bytes).is_ok())
+        "combined-checkpoint/v2" => {
+            assert!(ConcurrentDurableCheckpointV2::decode(&context.program, bytes).is_ok())
         }
-        "gantry.cancellation/v1" => {
-            assert!(DurableCancellationEvidenceV1::decode(&context.program, bytes).is_ok())
+        "execution-budget-checkpoint/v1" => {
+            assert!(ExecutionBudgetSnapshot::decode(bytes).is_ok())
         }
-        "gantry.concurrent-durable-evidence/v1" => {
-            assert!(ConcurrentDurableEvidenceV1::decode(&context.program, bytes).is_ok())
+        "gantry.cancellation/v2" => {
+            assert!(DurableCancellationEvidenceV2::decode(&context.program, bytes).is_ok())
+        }
+        "gantry.concurrent-durable-evidence/v2" => {
+            assert!(ConcurrentDurableEvidenceV2::decode(&context.program, bytes).is_ok())
         }
         "gantry.event-delivery-dispatched/v1" => {
             assert!(DurableEventDispatchedV1::decode(bytes).is_ok())
@@ -487,18 +496,18 @@ fn assert_format_decodes(format: &str, bytes: &[u8]) {
             assert!(DurableEventSettledV1::decode(bytes).is_ok())
         }
         "gantry.event-occurrence/v1" => assert!(DurableEventOccurrenceV1::decode(bytes).is_ok()),
-        "gantry.execution-start/v1" => {
-            assert!(DurableExecutionStartV1::decode(&context.program, bytes).is_ok())
+        "gantry.execution-start/v2" => {
+            assert!(DurableExecutionStartV2::decode(&context.program, bytes).is_ok())
         }
         "gantry.execution-state/v1" => assert!(DurableExecutionStateV1::decode(bytes).is_ok()),
-        "gantry.logical-evidence/v1" => {
-            assert!(DurableLogicalEvidenceV1::decode(&context.program, bytes).is_ok())
+        "gantry.logical-evidence/v2" => {
+            assert!(DurableLogicalEvidenceV2::decode(&context.program, bytes).is_ok())
         }
-        "gantry.recovery-snapshot/v1" => {
-            assert!(DurableRecoverySnapshotV1::decode(&context.program, bytes).is_ok())
+        "gantry.recovery-snapshot/v2" => {
+            assert!(DurableRecoverySnapshotV2::decode(&context.program, bytes).is_ok())
         }
-        "machine-checkpoint/v1" => {
-            assert!(MachineCheckpointV1::decode(&context.program, bytes).is_ok())
+        "machine-checkpoint/v2" => {
+            assert!(MachineCheckpointV2::decode(&context.program, bytes).is_ok())
         }
         "session-checkpoint/v1" => {
             assert!(LogicalSessionRegistryCheckpointV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_ok())
@@ -513,29 +522,30 @@ fn assert_format_rejects(format: &str, bytes: &[u8]) {
         "canonical-transcript/v1" => {
             CanonicalTranscriptV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_err()
         }
-        "combined-checkpoint/v1" => {
-            ConcurrentDurableCheckpointV1::decode(&context.program, bytes).is_err()
+        "combined-checkpoint/v2" => {
+            ConcurrentDurableCheckpointV2::decode(&context.program, bytes).is_err()
         }
-        "gantry.cancellation/v1" => {
-            DurableCancellationEvidenceV1::decode(&context.program, bytes).is_err()
+        "execution-budget-checkpoint/v1" => ExecutionBudgetSnapshot::decode(bytes).is_err(),
+        "gantry.cancellation/v2" => {
+            DurableCancellationEvidenceV2::decode(&context.program, bytes).is_err()
         }
-        "gantry.concurrent-durable-evidence/v1" => {
-            ConcurrentDurableEvidenceV1::decode(&context.program, bytes).is_err()
+        "gantry.concurrent-durable-evidence/v2" => {
+            ConcurrentDurableEvidenceV2::decode(&context.program, bytes).is_err()
         }
         "gantry.event-delivery-dispatched/v1" => DurableEventDispatchedV1::decode(bytes).is_err(),
         "gantry.event-delivery-settled/v1" => DurableEventSettledV1::decode(bytes).is_err(),
         "gantry.event-occurrence/v1" => DurableEventOccurrenceV1::decode(bytes).is_err(),
-        "gantry.execution-start/v1" => {
-            DurableExecutionStartV1::decode(&context.program, bytes).is_err()
+        "gantry.execution-start/v2" => {
+            DurableExecutionStartV2::decode(&context.program, bytes).is_err()
         }
         "gantry.execution-state/v1" => DurableExecutionStateV1::decode(bytes).is_err(),
-        "gantry.logical-evidence/v1" => {
-            DurableLogicalEvidenceV1::decode(&context.program, bytes).is_err()
+        "gantry.logical-evidence/v2" => {
+            DurableLogicalEvidenceV2::decode(&context.program, bytes).is_err()
         }
-        "gantry.recovery-snapshot/v1" => {
-            DurableRecoverySnapshotV1::decode(&context.program, bytes).is_err()
+        "gantry.recovery-snapshot/v2" => {
+            DurableRecoverySnapshotV2::decode(&context.program, bytes).is_err()
         }
-        "machine-checkpoint/v1" => MachineCheckpointV1::decode(&context.program, bytes).is_err(),
+        "machine-checkpoint/v2" => MachineCheckpointV2::decode(&context.program, bytes).is_err(),
         "session-checkpoint/v1" => {
             LogicalSessionRegistryCheckpointV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_err()
         }

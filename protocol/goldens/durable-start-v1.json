@@ -1,9 +1,9 @@
 {
   "format": "gantry.durable-start-vectors/v1",
   "evidence_formats": [
-    "gantry.execution-start/v1",
+    "gantry.execution-start/v2",
     "gantry.execution-state/v1",
-    "gantry.recovery-snapshot/v1"
+    "gantry.recovery-snapshot/v2"
   ],
   "resume_modes": [
     "candidate-source",

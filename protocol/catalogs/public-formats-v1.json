@@ -24,12 +24,12 @@
       ]
     },
     {
-      "format": "combined-checkpoint/v1",
+      "format": "combined-checkpoint/v2",
       "family": "recovery-projection",
       "encoding": "canonical-binary",
-      "magic": "GNTCDP01",
-      "byte_length": "964",
-      "sha256": "6f68684fa7a361dce2a03b18fbfe08c3036527463834e5bf9940feeca3f80fa1",
+      "magic": "GNTCDP02",
+      "byte_length": "1086",
+      "sha256": "6ae72ef8c22634c8f25f1055376bafafdc7d99bbe767a6464dc908294e4912ff",
       "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -42,12 +42,31 @@
       ]
     },
     {
-      "format": "gantry.cancellation/v1",
+      "format": "execution-budget-checkpoint/v1",
+      "family": "recovery-projection",
+      "encoding": "canonical-binary",
+      "magic": "GNTBGT01",
+      "byte_length": "130",
+      "sha256": "8aa6a16b1dff1e862a00d22f5cbd5270301f8a423020371444c64b9b8fbf6482",
+      "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
+      "golden": "protocol/goldens/public-formats-v1.json",
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime"
+      ],
+      "requirements": [
+        "GNT-11.2",
+        "GNT-11.8",
+        "GNT-15.8"
+      ]
+    },
+    {
+      "format": "gantry.cancellation/v2",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "3765",
-      "sha256": "cdbe63615159505fd440d70bf8235a448cecf80ddde476d0e54b65da1eb2b27e",
+      "byte_length": "4245",
+      "sha256": "6bc329dbd7bf838f2ac74618edd61b8f481de9491e1f86a9cecb82585d73646d",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -60,12 +79,12 @@
       ]
     },
     {
-      "format": "gantry.concurrent-durable-evidence/v1",
+      "format": "gantry.concurrent-durable-evidence/v2",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "2187",
-      "sha256": "59c8650464d6ffa49c9efc32fa47bf08c6340fbc4ffc9b40cf607d54361ec739",
+      "byte_length": "2431",
+      "sha256": "4cc692c3f6f4c211ba820588eb8447811f0d3da711d89f57be96c427a9a77723",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -132,12 +151,12 @@
       ]
     },
     {
-      "format": "gantry.execution-start/v1",
+      "format": "gantry.execution-start/v2",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "4062",
-      "sha256": "1420875cfb8e04aeafe9a4ea55b459a4f898df90c70f00cf2ccf25a89fdf47ad",
+      "byte_length": "4542",
+      "sha256": "38994d15b9f2dcbfcacbdb0ac38aea62e336aafd0de21b8914c11f54a59be292",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -168,12 +187,12 @@
       ]
     },
     {
-      "format": "gantry.logical-evidence/v1",
+      "format": "gantry.logical-evidence/v2",
       "family": "journal",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "1739",
-      "sha256": "8cf894d2a823949f15c25b6bc35393a59efa438a9e92bd4903f7b8e63201d02c",
+      "byte_length": "1979",
+      "sha256": "c47392d9a44859760d2facf1568dee0ff19ea30d6eff283d635f3419126cf29b",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -186,12 +205,12 @@
       ]
     },
     {
-      "format": "gantry.recovery-snapshot/v1",
+      "format": "gantry.recovery-snapshot/v2",
       "family": "recovery-projection",
       "encoding": "canonical-json",
       "magic": null,
-      "byte_length": "12147",
-      "sha256": "e9aa835269b9f2b2a0fdaa8b28726203db3dd4de9ed8371d5184ab2faf7dd748",
+      "byte_length": "13587",
+      "sha256": "2641ffa8780ba3d417ed22b41bcfc69426d9a09b42f89e44f8830fcd55b452c8",
       "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [
@@ -204,12 +223,12 @@
       ]
     },
     {
-      "format": "machine-checkpoint/v1",
+      "format": "machine-checkpoint/v2",
       "family": "recovery-projection",
       "encoding": "canonical-binary",
-      "magic": "GNTMCP01",
-      "byte_length": "412",
-      "sha256": "04cc872fa59990bc3e6efd4445431098d3072fd8dd7a5126185e0573a6bea15e",
+      "magic": "GNTMCP02",
+      "byte_length": "396",
+      "sha256": "4e575d7800062a595dc2f65715dcf9f7c2b836bea68d947e8ef41ba8537322b7",
       "schema": "protocol/schemas/public-checkpoint-formats-v1.schema.json",
       "golden": "protocol/goldens/public-formats-v1.json",
       "profiles": [

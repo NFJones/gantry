@@ -245,7 +245,7 @@ fn public_journal_first_occurrence_plan_and_payloads_precede_delivery() {
             .map(|envelope| envelope.kind.as_ref())
             .collect::<Vec<_>>(),
         [
-            "gantry.logical-evidence/v1",
+            "gantry.logical-evidence/v2",
             "gantry.event-occurrence/v1",
             "gantry.event-delivery-dispatched/v1",
             "gantry.event-delivery-settled/v1",
@@ -361,7 +361,7 @@ fn public_full_and_compacted_event_prefixes_project_equivalently() {
     };
     let compacted = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
         journal_id: fixture.journal_id.clone(),
-        snapshot_version: 1,
+        snapshot_version: 3,
         frontier: fixture.cause.sequence,
         canonical_snapshot: Arc::clone(&full_prefix.evidence[0].canonical_body),
         retained_evidence: BTreeMap::from([(fixture.cause.evidence_id, fixture.cause.sequence)]),

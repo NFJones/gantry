@@ -15,9 +15,10 @@ use gantry::ir::{
 use gantry::portable::{IdentityKind, RuntimeErrorCategory, TaskHandleState, TaskStatusKind};
 use gantry::runtime::{
     CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
-    Instruction, InstructionKind, LogicalSessionRegistryV1, Machine, MachineLabel, MachineLimits,
-    MachineOutcome, MachineProgram, MachineStep, OperationCompletionError, Parameter,
-    SessionCreationModeV1, TaskCaptureV1, TaskCreationRequestV1, TaskStateError, Workflow,
+    ExecutionBudget, Instruction, InstructionKind, LogicalSessionRegistryV1, Machine, MachineLabel,
+    MachineLimits, MachineOutcome, MachineProgram, MachineStep, OperationCompletionError,
+    Parameter, SessionCreationModeV1, TaskCaptureV1, TaskCreationRequestV1, TaskStateError,
+    Workflow,
 };
 use gantry::source::{SourceLimits, SourceSpan};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView, ValuePathSegment};
@@ -390,10 +391,14 @@ fn main() -> Envelope<String> { child() }
     let execution = fresh(IdentityKind::Execution, 11);
     let root_task = derived_task(b"{\"generic-operation-root\":true}");
     let root_session = fresh(IdentityKind::Session, 12);
+    let machine_limits = MachineLimits::new(1_000, 100, 100, 64, 100, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| unreachable!("positive generic operation limits"));
+    let execution_budget = ExecutionBudget::new(execution, machine_limits);
     let state = ConcurrentTaskStateV1::new(execution, root_task, 2)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
     let mut sessions = session_registry(execution, root_session);
-    let mut scheduler = ConcurrentSchedulerV1::new(state);
+    let mut scheduler = ConcurrentSchedulerV1::new(state, execution_budget.clone())
+        .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
     let created = scheduler
         .create_child(
             &mut sessions,
@@ -416,8 +421,8 @@ fn main() -> Envelope<String> { child() }
         &path("crate::child"),
         Vec::new(),
         execution,
-        MachineLimits::new(1_000, 100, 100, 64, 100, DEFAULT_VALUE_LIMITS)
-            .unwrap_or_else(|| unreachable!("positive generic operation limits")),
+        machine_limits,
+        execution_budget,
         Some(Arc::from("worker")),
         Some(created.base_session_id),
     )
@@ -744,10 +749,12 @@ fn concurrent_operation_identities_include_the_dynamic_task_path() {
     let execution = fresh(IdentityKind::Execution, 7);
     let root_task = derived_task(b"{\"operation-root\":true}");
     let root_session = fresh(IdentityKind::Session, 8);
+    let execution_budget = ExecutionBudget::new(execution, child_machine_limits());
     let state = ConcurrentTaskStateV1::new(execution, root_task, 3)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
     let mut sessions = session_registry(execution, root_session);
-    let mut scheduler = ConcurrentSchedulerV1::new(state);
+    let mut scheduler = ConcurrentSchedulerV1::new(state, execution_budget.clone())
+        .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
     let first = scheduler
         .create_child(
             &mut sessions,
@@ -764,7 +771,11 @@ fn concurrent_operation_identities_include_the_dynamic_task_path() {
     scheduler
         .resolve_submission(
             first.task_id,
-            Ok(operation_child_machine(execution, root_session)),
+            Ok(operation_child_machine(
+                execution,
+                root_session,
+                execution_budget.clone(),
+            )),
         )
         .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
     let second = scheduler
@@ -783,7 +794,11 @@ fn concurrent_operation_identities_include_the_dynamic_task_path() {
     scheduler
         .resolve_submission(
             second.task_id,
-            Ok(operation_child_machine(execution, root_session)),
+            Ok(operation_child_machine(
+                execution,
+                root_session,
+                execution_budget.clone(),
+            )),
         )
         .unwrap_or_else(|error| panic!("second submission failed: {error:?}"));
 
@@ -816,10 +831,12 @@ fn public_submission_and_scheduler_preserve_one_shared_machine_path() {
     let execution = fresh(IdentityKind::Execution, 3);
     let root_task = derived_task(b"{\"root\":true}");
     let root_session = fresh(IdentityKind::Session, 4);
+    let execution_budget = ExecutionBudget::new(execution, child_machine_limits());
     let state = ConcurrentTaskStateV1::new(execution, root_task, 3)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
     let mut sessions = session_registry(execution, root_session);
-    let mut scheduler = ConcurrentSchedulerV1::new(state);
+    let mut scheduler = ConcurrentSchedulerV1::new(state, execution_budget.clone())
+        .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
     let first = scheduler
         .create_child(
             &mut sessions,
@@ -828,7 +845,14 @@ fn public_submission_and_scheduler_preserve_one_shared_machine_path() {
         )
         .unwrap_or_else(|error| panic!("first task creation failed: {error:?}"));
     scheduler
-        .resolve_submission(first.task_id, Ok(child_machine(execution, root_session)))
+        .resolve_submission(
+            first.task_id,
+            Ok(child_machine(
+                execution,
+                root_session,
+                execution_budget.clone(),
+            )),
+        )
         .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
     let second = scheduler
         .create_child(
@@ -907,7 +931,11 @@ fn creation_request(
     }
 }
 
-fn child_machine(execution: ProtocolIdentity, session: ProtocolIdentity) -> Machine {
+fn child_machine(
+    execution: ProtocolIdentity,
+    session: ProtocolIdentity,
+    execution_budget: ExecutionBudget,
+) -> Machine {
     let root = path("crate::child");
     let program = MachineProgram::new(vec![Workflow {
         path: root.clone(),
@@ -933,15 +961,19 @@ fn child_machine(execution: ProtocolIdentity, session: ProtocolIdentity) -> Mach
         &root,
         Vec::new(),
         execution,
-        MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
-            .unwrap_or_else(|| unreachable!("positive child limits")),
+        child_machine_limits(),
+        execution_budget,
         None,
         Some(session),
     )
     .unwrap_or_else(|error| panic!("child machine failed: {error:?}"))
 }
 
-fn operation_child_machine(execution: ProtocolIdentity, session: ProtocolIdentity) -> Machine {
+fn operation_child_machine(
+    execution: ProtocolIdentity,
+    session: ProtocolIdentity,
+    execution_budget: ExecutionBudget,
+) -> Machine {
     let root = path("crate::operation_child");
     let program = MachineProgram::new(vec![Workflow {
         path: root.clone(),
@@ -967,12 +999,17 @@ fn operation_child_machine(execution: ProtocolIdentity, session: ProtocolIdentit
         &root,
         Vec::new(),
         execution,
-        MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
-            .unwrap_or_else(|| unreachable!("positive child limits")),
+        child_machine_limits(),
+        execution_budget,
         None,
         Some(session),
     )
     .unwrap_or_else(|error| panic!("operation child machine failed: {error:?}"))
+}
+
+fn child_machine_limits() -> MachineLimits {
+    MachineLimits::new(16, 2, 1, 4, 16, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| unreachable!("positive child limits"))
 }
 
 fn session_registry(

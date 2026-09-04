@@ -22,7 +22,7 @@ use gantry::ir::{
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
     CanonicalTranscriptV1, DurableCommitCoordinatorV1, DurableCommitCutV1, DurableEvidenceError,
-    DurableLogicalEvidenceV1, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
+    DurableLogicalEvidenceV2, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
     DurableTransitionSink, InMemoryJournalStore, LogicalSessionRegistryV1, Machine, MachineLimits,
     MachineOutcome, MachineStep, SessionCreationModeV1, SessionEstablishmentV1,
     ValidationErrorCategoryV1, ValidationErrorV1, recover_authoritative_prefix,
@@ -171,7 +171,7 @@ fn checked_in_durable_recovery_evidence_is_narrow_and_current() {
     }
 
     assert_eq!(vectors.format, "gantry.durable-recovery-vectors/v1");
-    assert_eq!(vectors.checkpoint_formats.len(), 3);
+    assert_eq!(vectors.checkpoint_formats.len(), 4);
     assert_eq!(vectors.commit_cuts.len(), 9);
     assert_eq!(vectors.operation_recovery.len(), 5);
     assert_eq!(vectors.prefix_forms, ["full-prefix", "snapshot-prefix"]);
@@ -205,12 +205,12 @@ fn public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions
         )
         .unwrap_or_else(|error| panic!("fork session failed: {error:?}"))
         .id;
-    let evidence = DurableLogicalEvidenceV1::new_with_sessions(
+    let evidence = DurableLogicalEvidenceV2::new_with_sessions(
         execution(),
         root_task(),
         DurableCommitCutV1::Checkpoint,
         None,
-        machine.checkpoint(),
+        &machine,
         Some(sessions.checkpoint()),
     )
     .unwrap_or_else(|error| panic!("logical evidence failed: {error:?}"));
@@ -268,13 +268,22 @@ fn public_committed_and_compacted_prefixes_restore_the_same_machine_and_sessions
 
     let snapshot = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
         journal_id,
-        snapshot_version: 1,
+        snapshot_version: 3,
         frontier: 1,
         canonical_snapshot: Arc::from(evidence.canonical_body()),
         retained_evidence: std::collections::BTreeMap::from([(receipt.entries[0].evidence_id, 1)]),
         suffix: Arc::from([]),
         committed_through: 1,
     });
+    let mut stale_selector_snapshot = snapshot.clone();
+    let JournalPrefixV1::Snapshot(stale_selector) = &mut stale_selector_snapshot else {
+        unreachable!("cloned compacted prefix changed form");
+    };
+    stale_selector.snapshot_version = 1;
+    assert_eq!(
+        recover_authoritative_prefix(Arc::clone(&program), &stale_selector_snapshot).map(|_| ()),
+        Err(DurableEvidenceError::Encoding)
+    );
     let compacted = recover_authoritative_prefix(program, &snapshot)
         .unwrap_or_else(|error| panic!("snapshot recovery failed: {error:?}"));
     assert_eq!(compacted.latest_sequence(), full_recovery.latest_sequence());
@@ -486,12 +495,12 @@ fn public_recovery_rejects_corruption_invalid_causality_and_operation_order() {
         Err(DurableEvidenceError::InvalidOperationTransition)
     );
 
-    let checkpoint = DurableLogicalEvidenceV1::new(
+    let checkpoint = DurableLogicalEvidenceV2::new(
         execution(),
         root_task(),
         DurableCommitCutV1::Checkpoint,
         None,
-        machine.checkpoint(),
+        &machine,
     )
     .unwrap_or_else(|error| panic!("checkpoint evidence failed: {error:?}"));
     let first = envelope(1, 1, &checkpoint, &[]);
@@ -520,7 +529,7 @@ fn public_recovery_rejects_corruption_invalid_causality_and_operation_order() {
             journal_id: journal_id(),
             sequence: 1,
             evidence_id: evidence_id(1),
-            kind: Arc::from("gantry.logical-evidence/v1"),
+            kind: Arc::from("gantry.logical-evidence/v2"),
             canonical_body: Arc::from(corrupt),
             references: Arc::from([]),
             protected_payloads: Arc::from([]),
@@ -539,17 +548,17 @@ fn public_non_operation_commit_cuts_recover_without_reapplying_fixed_state() {
 
     let mut cancelled = machine(Arc::clone(&program));
     assert!(cancelled.cancel("caller").is_some());
-    let cancellation = DurableLogicalEvidenceV1::new(
+    let cancellation = DurableLogicalEvidenceV2::new(
         execution(),
         root_task(),
         DurableCommitCutV1::Cancellation,
         None,
-        cancelled.checkpoint(),
+        &cancelled,
     )
     .unwrap_or_else(|error| panic!("cancellation evidence failed: {error:?}"));
     let body = cancellation.canonical_body();
     assert_eq!(
-        DurableLogicalEvidenceV1::decode(&program, &body),
+        DurableLogicalEvidenceV2::decode(&program, &body),
         Ok(cancellation.clone())
     );
     let recovered = recover_authoritative_prefix(
@@ -579,14 +588,9 @@ fn public_non_operation_commit_cuts_recover_without_reapplying_fixed_state() {
     .into_iter()
     .enumerate()
     {
-        let evidence = DurableLogicalEvidenceV1::new(
-            execution(),
-            root_task(),
-            cut,
-            None,
-            terminal.checkpoint(),
-        )
-        .unwrap_or_else(|error| panic!("{cut:?} evidence failed: {error:?}"));
+        let evidence =
+            DurableLogicalEvidenceV2::new(execution(), root_task(), cut, None, &terminal)
+                .unwrap_or_else(|error| panic!("{cut:?} evidence failed: {error:?}"));
         let material = u8::try_from(index + 2)
             .unwrap_or_else(|_| panic!("commit-cut fixture material overflowed"));
         let recovered = recover_authoritative_prefix(
@@ -662,8 +666,8 @@ fn operation_evidence(
     result_type: Option<TypeDescriptor>,
     result_bytes: Option<Arc<[u8]>>,
     retry_delay_us: Option<u64>,
-) -> DurableLogicalEvidenceV1 {
-    DurableLogicalEvidenceV1::new(
+) -> DurableLogicalEvidenceV2 {
+    DurableLogicalEvidenceV2::new(
         execution(),
         root_task(),
         cut,
@@ -681,7 +685,7 @@ fn operation_evidence(
             result_type,
             result_bytes,
         }),
-        machine.checkpoint(),
+        machine,
     )
     .unwrap_or_else(|error| panic!("operation evidence failed: {error:?}"))
 }
@@ -699,14 +703,14 @@ fn full_prefix(evidence: Vec<JournalEvidenceEnvelopeV1>) -> JournalPrefixV1 {
 fn envelope(
     sequence: u64,
     material: u8,
-    evidence: &DurableLogicalEvidenceV1,
+    evidence: &DurableLogicalEvidenceV2,
     references: &[ProtocolIdentity],
 ) -> JournalEvidenceEnvelopeV1 {
     JournalEvidenceEnvelopeV1 {
         journal_id: journal_id(),
         sequence,
         evidence_id: evidence_id(material),
-        kind: Arc::from("gantry.logical-evidence/v1"),
+        kind: Arc::from("gantry.logical-evidence/v2"),
         canonical_body: Arc::from(evidence.canonical_body()),
         references: Arc::from(references),
         protected_payloads: Arc::from([]),

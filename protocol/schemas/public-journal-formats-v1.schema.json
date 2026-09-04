@@ -106,15 +106,17 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "budget": { "$ref": "#/$defs/hex" },
         "checkpoint": { "$ref": "#/$defs/hex" },
         "cut": { "type": "string", "minLength": 1 },
         "execution_id": { "$ref": "#/$defs/execution_identity" },
-        "format": { "const": "gantry.logical-evidence/v1" },
+        "format": { "const": "gantry.logical-evidence/v2" },
         "operation": { "$ref": "#/$defs/operation" },
         "sessions": { "$ref": "#/$defs/nullable_hex" },
         "task_id": { "$ref": "#/$defs/task_identity" }
       },
       "required": [
+        "budget",
         "checkpoint",
         "cut",
         "execution_id",
@@ -131,7 +133,7 @@
         "checkpoint": { "$ref": "#/$defs/hex" },
         "cut": { "type": "string", "minLength": 1 },
         "execution_id": { "$ref": "#/$defs/execution_identity" },
-        "format": { "const": "gantry.concurrent-durable-evidence/v1" },
+        "format": { "const": "gantry.concurrent-durable-evidence/v2" },
         "task_id": { "$ref": "#/$defs/task_identity" }
       },
       "required": ["checkpoint", "cut", "execution_id", "format", "task_id"]
@@ -156,7 +158,7 @@
       "properties": {
         "causal_identity": { "$ref": "#/$defs/causal_identity" },
         "category": { "type": "string", "minLength": 1 },
-        "format": { "const": "gantry.cancellation/v1" },
+        "format": { "const": "gantry.cancellation/v2" },
         "message": { "$ref": "#/$defs/nullable_string" },
         "state": { "$ref": "#/$defs/hex" }
       },
@@ -167,7 +169,7 @@
       "additionalProperties": false,
       "properties": {
         "execution_id": { "$ref": "#/$defs/execution_identity" },
-        "format": { "const": "gantry.execution-start/v1" },
+        "format": { "const": "gantry.execution-start/v2" },
         "metadata": { "$ref": "#/$defs/hex" },
         "program": { "$ref": "#/$defs/hex" },
         "state": { "$ref": "#/$defs/hex" },
@@ -199,7 +201,7 @@
       "properties": {
         "execution_start": { "$ref": "#/$defs/hex" },
         "execution_state": { "$ref": "#/$defs/nullable_hex" },
-        "format": { "const": "gantry.recovery-snapshot/v1" },
+        "format": { "const": "gantry.recovery-snapshot/v2" },
         "state": { "$ref": "#/$defs/hex" }
       },
       "required": ["execution_start", "execution_state", "format", "state"]

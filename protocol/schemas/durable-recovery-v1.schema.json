@@ -8,8 +8,8 @@
     "format": { "const": "gantry.durable-recovery-vectors/v1" },
     "checkpoint_formats": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 4,
+      "maxItems": 4,
       "uniqueItems": true,
       "items": { "type": "string", "minLength": 1 }
     },

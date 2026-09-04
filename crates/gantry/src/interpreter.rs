@@ -412,10 +412,28 @@ impl PreparedRootDriver {
             prepared.entry_input.as_ref(),
             &prepared.root_session,
             true,
+            None,
         )
     }
 
-    #[cfg(feature = "durable")]
+    #[cfg(all(feature = "durable", feature = "concurrent"))]
+    fn new_for_durable_accepted(
+        inner: &InterpreterInner,
+        accepted: &StartExecutionAccepted,
+        execution_budget: gantry_runtime::ExecutionBudget,
+    ) -> Result<Self, RunExecutionError> {
+        Self::new(
+            inner,
+            accepted.execution_id,
+            &accepted.package_activity,
+            accepted.entry_input.as_ref(),
+            &accepted.root_session,
+            true,
+            Some(execution_budget),
+        )
+    }
+
+    #[cfg(all(feature = "durable", not(feature = "concurrent")))]
     fn new_for_durable_accepted(
         inner: &InterpreterInner,
         accepted: &StartExecutionAccepted,
@@ -427,6 +445,7 @@ impl PreparedRootDriver {
             accepted.entry_input.as_ref(),
             &accepted.root_session,
             true,
+            None,
         )
     }
 
@@ -437,6 +456,7 @@ impl PreparedRootDriver {
         entry_input: Option<&crate::ValidatedEntryInput>,
         root_session: &crate::RootSessionState,
         submitting: bool,
+        execution_budget: Option<gantry_runtime::ExecutionBudget>,
     ) -> Result<Self, RunExecutionError> {
         let analysis = package_activity
             .analysis
@@ -499,8 +519,18 @@ impl PreparedRootDriver {
             )
         }
         .map_err(RunExecutionError::TaskState)?;
-        let coordinator =
-            ExecutionCoordinator::new(tasks, sessions).map_err(RunExecutionError::TaskState)?;
+        #[cfg(feature = "concurrent")]
+        let coordinator = ExecutionCoordinator::new_with_budget(
+            tasks,
+            sessions,
+            execution_budget.unwrap_or_else(|| machine.execution_budget()),
+        )
+        .map_err(RunExecutionError::TaskState)?;
+        #[cfg(not(feature = "concurrent"))]
+        let coordinator = {
+            let _ = execution_budget;
+            ExecutionCoordinator::new(tasks, sessions).map_err(RunExecutionError::TaskState)?
+        };
         let create_request = TaskContextV1 {
             execution_id,
             task_id,
@@ -852,6 +882,14 @@ impl Interpreter {
             DurableStartExecutionResult::Accepted(accepted) => accepted,
             rejected => return rejected,
         };
+        #[cfg(feature = "concurrent")]
+        let prepared = PreparedRootDriver::new_for_durable_accepted(
+            &self.inner,
+            &accepted.start,
+            accepted.execution_budget.clone(),
+        )
+        .unwrap_or_else(|_| unreachable!("committed start retained validated root state"));
+        #[cfg(not(feature = "concurrent"))]
         let prepared = PreparedRootDriver::new_for_durable_accepted(&self.inner, &accepted.start)
             .unwrap_or_else(|_| unreachable!("committed start retained validated root state"));
         let task_id = prepared.task_id;
@@ -1160,6 +1198,14 @@ impl Interpreter {
             prepared.recovered.machine().outcome().cloned(),
         )
         .map_err(|_| "invalid-recovered-task-state")?;
+        #[cfg(feature = "concurrent")]
+        let coordinator = ExecutionCoordinator::new_with_budget(
+            tasks,
+            sessions,
+            prepared.recovered.machine().execution_budget(),
+        )
+        .map_err(|_| "invalid-recovered-task-state")?;
+        #[cfg(not(feature = "concurrent"))]
         let coordinator = ExecutionCoordinator::new(tasks, sessions)
             .map_err(|_| "invalid-recovered-task-state")?;
         let create_request = TaskContextV1 {

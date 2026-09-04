@@ -26,21 +26,21 @@ use gantry_ir::{
 };
 
 use crate::machine::value_matches_type;
+#[cfg(feature = "concurrent")]
+use crate::{
+    ExecutionBudget, ExecutionBudgetSnapshot, Machine, MachineLabel, MachineStatus, MachineStep,
+    SessionEstablisher, SessionEstablishmentError,
+};
 use crate::{
     LogicalSessionRegistryV1, MachineOutcome, SessionCreationModeV1, SessionError,
     SessionEstablishmentV1,
-};
-#[cfg(feature = "concurrent")]
-use crate::{
-    Machine, MachineLabel, MachineStatus, MachineStep, SessionEstablisher,
-    SessionEstablishmentError,
 };
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
-    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV1,
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV2,
     RecoveredConcurrentDurableExecutionV1,
 };
 
@@ -1742,26 +1742,39 @@ pub struct ScheduledMachineStepV1 {
 #[derive(Debug)]
 pub struct ConcurrentSchedulerV1 {
     state: ConcurrentTaskStateV1,
+    execution_budget: ExecutionBudget,
     machines: BTreeMap<ProtocolIdentity, Machine>,
     runnable: VecDeque<ProtocolIdentity>,
 }
 
 #[cfg(feature = "concurrent")]
 impl ConcurrentSchedulerV1 {
-    /// Creates an idle scheduler around execution-scoped task state.
-    #[must_use]
-    pub fn new(state: ConcurrentTaskStateV1) -> Self {
-        Self {
+    /// Creates an idle scheduler bound to an existing execution budget owner.
+    pub fn new(
+        state: ConcurrentTaskStateV1,
+        execution_budget: ExecutionBudget,
+    ) -> Result<Self, TaskStateError> {
+        if execution_budget.snapshot().execution != state.execution_id() {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        Ok(Self {
             state,
+            execution_budget,
             machines: BTreeMap::new(),
             runnable: VecDeque::new(),
-        }
+        })
     }
 
     /// Returns the scheduler-owned language task state.
     #[must_use]
     pub const fn state(&self) -> &ConcurrentTaskStateV1 {
         &self.state
+    }
+
+    /// Returns the retained execution-budget projection.
+    #[must_use]
+    pub fn execution_budget(&self) -> ExecutionBudgetSnapshot {
+        self.execution_budget.snapshot()
     }
 
     /// Records one child before an executor submission is attempted.
@@ -1847,9 +1860,11 @@ impl ConcurrentSchedulerV1 {
     ) -> Result<(), TaskStateError> {
         match result {
             Ok(mut machine) => {
+                let machine_budget = machine.execution_budget();
                 if machine.execution_id() != self.state.execution_id
                     || machine.is_execution_foreground()
                     || self.machines.contains_key(&task_id)
+                    || !self.execution_budget.same_owner(&machine_budget)
                 {
                     return Err(TaskStateError::InvalidTaskMachine);
                 }
@@ -2185,9 +2200,9 @@ mod tests {
         TaskCaptureV1, TaskCreationRequestV1, TaskJoinMemberFailureKindV1, TaskStateError,
     };
     use crate::{
-        CanonicalTranscriptV1, Instruction, InstructionKind, LogicalSessionRegistryV1, Machine,
-        MachineLabel, MachineLimits, MachineProgram, MachineStep, Parameter, SessionCreationModeV1,
-        Workflow,
+        CanonicalTranscriptV1, ExecutionBudget, ExecutionCoordinator, Instruction, InstructionKind,
+        LogicalSessionRegistryV1, Machine, MachineLabel, MachineLimits, MachineProgram,
+        MachineStep, Parameter, SessionCreationModeV1, Workflow,
     };
 
     #[test]
@@ -2324,7 +2339,13 @@ mod tests {
     fn scheduler_round_robins_shared_machine_tasks_and_settles_once() {
         let (state, mut sessions, root_task, root_session) = fixture(3);
         let execution = state.execution_id();
-        let mut scheduler = ConcurrentSchedulerV1::new(state);
+        let budget = ExecutionBudget::new(
+            execution,
+            MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("positive child limits")),
+        );
+        let mut scheduler = ConcurrentSchedulerV1::new(state, budget.clone())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
         let first = scheduler
             .create_child(
                 &mut sessions,
@@ -2333,7 +2354,10 @@ mod tests {
             )
             .unwrap_or_else(|error| panic!("first task creation failed: {error:?}"));
         scheduler
-            .resolve_submission(first.task_id, Ok(child_machine(execution, root_session)))
+            .resolve_submission(
+                first.task_id,
+                Ok(child_machine(execution, root_session, budget.clone())),
+            )
             .unwrap_or_else(|error| panic!("first submission failed: {error:?}"));
         let second = scheduler
             .create_child(
@@ -2343,7 +2367,10 @@ mod tests {
             )
             .unwrap_or_else(|error| panic!("second task creation failed: {error:?}"));
         scheduler
-            .resolve_submission(second.task_id, Ok(child_machine(execution, root_session)))
+            .resolve_submission(
+                second.task_id,
+                Ok(child_machine(execution, root_session, budget.clone())),
+            )
             .unwrap_or_else(|error| panic!("second submission failed: {error:?}"));
 
         let first_step = scheduler
@@ -2392,7 +2419,13 @@ mod tests {
     fn scheduler_preserves_failure_then_task_settlement_order() {
         let (state, mut sessions, root_task, root_session) = fixture(2);
         let execution = state.execution_id();
-        let mut scheduler = ConcurrentSchedulerV1::new(state);
+        let budget = ExecutionBudget::new(
+            execution,
+            MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| unreachable!("positive child limits")),
+        );
+        let mut scheduler = ConcurrentSchedulerV1::new(state, budget.clone())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
         let created = scheduler
             .create_child(
                 &mut sessions,
@@ -2403,7 +2436,7 @@ mod tests {
         scheduler
             .resolve_submission(
                 created.task_id,
-                Ok(failing_child_machine(execution, root_session)),
+                Ok(failing_child_machine(execution, root_session, budget)),
             )
             .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
 
@@ -2438,6 +2471,88 @@ mod tests {
                 .map(|task| task.status()),
             Some(ConcurrentTaskStatusV1::Failed(_))
         ));
+    }
+
+    #[test]
+    fn scheduler_rejects_an_independent_budget_owner_with_matching_values() {
+        let (state, mut sessions, root_task, root_session) = fixture(2);
+        let execution = state.execution_id();
+        let machine_limits = child_machine_limits();
+        let scheduler_budget = ExecutionBudget::new(execution, machine_limits);
+        let independent_budget = ExecutionBudget::new(execution, machine_limits);
+        let mut scheduler = ConcurrentSchedulerV1::new(state, scheduler_budget.clone())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
+        let created = scheduler
+            .create_child(
+                &mut sessions,
+                request(root_task, root_session, 0, Vec::new()),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+
+        assert_eq!(
+            scheduler.resolve_submission(
+                created.task_id,
+                Ok(child_machine(execution, root_session, independent_budget)),
+            ),
+            Err(TaskStateError::InvalidTaskMachine)
+        );
+        assert_eq!(scheduler.execution_budget(), scheduler_budget.snapshot());
+    }
+
+    #[test]
+    fn child_after_root_use_attaches_only_with_the_root_budget_owner() {
+        let (state, mut sessions, root_task, root_session) = fixture(2);
+        let execution = state.execution_id();
+        let budget = ExecutionBudget::new(execution, child_machine_limits());
+        let mut root = root_machine(execution, budget.clone());
+        assert!(matches!(
+            root.step(),
+            MachineStep::Transition(MachineLabel::Deterministic { .. })
+        ));
+        assert_eq!(budget.snapshot().revision, 1);
+
+        let mut scheduler = ConcurrentSchedulerV1::new(state, budget.clone())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
+        let created = scheduler
+            .create_child(
+                &mut sessions,
+                request(root_task, root_session, 0, Vec::new()),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        scheduler
+            .resolve_submission(
+                created.task_id,
+                Ok(child_machine(execution, root_session, budget.clone())),
+            )
+            .unwrap_or_else(|error| panic!("shared child submission failed: {error:?}"));
+        assert_eq!(scheduler.execution_budget(), budget.snapshot());
+    }
+
+    #[test]
+    fn coordinator_snapshot_projects_the_shared_budget_revision_and_counts() {
+        let (state, sessions, _, _) = fixture(2);
+        let execution = state.execution_id();
+        let budget = ExecutionBudget::new(execution, child_machine_limits());
+        let coordinator = ExecutionCoordinator::new_with_budget(state, sessions, budget.clone())
+            .unwrap_or_else(|error| panic!("coordinator construction failed: {error:?}"));
+        let mut root = root_machine(execution, budget.clone());
+        assert!(matches!(
+            root.step(),
+            MachineStep::Transition(MachineLabel::Deterministic { .. })
+        ));
+
+        let snapshot = coordinator
+            .snapshot()
+            .execution_budget()
+            .unwrap_or_else(|| panic!("coordinator budget projection missing"));
+        assert_eq!(snapshot.execution, execution);
+        assert_eq!(snapshot.maximum_transitions, 16);
+        assert_eq!(snapshot.maximum_operations, 1);
+        assert_eq!(snapshot.remaining_transitions, 15);
+        assert_eq!(snapshot.remaining_operations, 1);
+        assert_eq!(snapshot.revision, 1);
     }
 
     #[test]
@@ -2997,7 +3112,51 @@ mod tests {
         sessions.len()
     }
 
-    fn child_machine(execution: ProtocolIdentity, session: ProtocolIdentity) -> Machine {
+    fn child_machine_limits() -> MachineLimits {
+        MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| unreachable!("positive child limits"))
+    }
+
+    fn root_machine(execution: ProtocolIdentity, budget: ExecutionBudget) -> Machine {
+        let root = CanonicalPath::new("crate::root")
+            .unwrap_or_else(|error| panic!("root path failed: {error}"));
+        let program = MachineProgram::new(vec![Workflow {
+            path: root.clone(),
+            parameters: Vec::<Parameter>::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("root site failed: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Push(LogicalValue::unit()),
+                },
+                Instruction {
+                    site: StructuralPosition::new(vec![1])
+                        .unwrap_or_else(|error| panic!("root site failed: {error}")),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("root program failed: {error:?}"));
+        Machine::new_with_budget(
+            Arc::new(program),
+            &root,
+            Vec::new(),
+            execution,
+            child_machine_limits(),
+            budget,
+        )
+        .unwrap_or_else(|error| panic!("root machine failed: {error:?}"))
+    }
+
+    fn child_machine(
+        execution: ProtocolIdentity,
+        session: ProtocolIdentity,
+        budget: ExecutionBudget,
+    ) -> Machine {
         let root = CanonicalPath::new("crate::child")
             .unwrap_or_else(|error| panic!("child path failed: {error}"));
         let program = MachineProgram::new(vec![Workflow {
@@ -3028,13 +3187,18 @@ mod tests {
             execution,
             MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
                 .unwrap_or_else(|| unreachable!("positive child limits")),
+            budget,
             None,
             Some(session),
         )
         .unwrap_or_else(|error| panic!("child machine failed: {error:?}"))
     }
 
-    fn failing_child_machine(execution: ProtocolIdentity, session: ProtocolIdentity) -> Machine {
+    fn failing_child_machine(
+        execution: ProtocolIdentity,
+        session: ProtocolIdentity,
+        budget: ExecutionBudget,
+    ) -> Machine {
         let root = CanonicalPath::new("crate::failed_child")
             .unwrap_or_else(|error| panic!("child path failed: {error}"));
         let program = MachineProgram::new(vec![Workflow {
@@ -3057,6 +3221,7 @@ mod tests {
             execution,
             MachineLimits::new(16, 1, 1, 4, 16, DEFAULT_VALUE_LIMITS)
                 .unwrap_or_else(|| unreachable!("positive child limits")),
+            budget,
             None,
             Some(session),
         )
