@@ -51,10 +51,13 @@ pub use gantry_ir as ir;
 pub use gantry_observe as observe;
 #[cfg(feature = "evaluator")]
 pub use gantry_runtime as runtime;
+#[cfg(all(feature = "durable", feature = "test-support"))]
+#[doc(hidden)]
+pub use interpreter::DurableHandoffTestGate;
 #[cfg(feature = "evaluator")]
 pub use interpreter::{
-    Interpreter, RunExecutionError, ShutdownError, TaskDriver, caller_cancellation_reason,
-    root_task_identity,
+    CancelExecutionError, Interpreter, RunExecutionError, ShutdownError, TaskDriver,
+    caller_cancellation_reason, root_task_identity,
 };
 pub use profile::{
     ConformanceProfile, PROFILE_CLAIMS_ENABLED, PROFILE_DEFINITIONS,

@@ -73,6 +73,14 @@ pub enum DurableStartExecutionResult {
     Rejected(DurableStartExecutionFailure),
 }
 
+pub(crate) enum DurableRegistrationEvent {
+    Marked(ProtocolIdentity),
+    #[cfg(feature = "test-support")]
+    Accepted(ExecutionHandle),
+    Published(Arc<DurableOwnedExecution>),
+    Abandoned(ProtocolIdentity),
+}
+
 /// Existing durable execution request, with optional candidate source for compatibility auditing.
 pub struct DurableResumeExecutionRequest<'a> {
     /// Stable journal whose authoritative prefix is resumed.
@@ -251,6 +259,17 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         &self,
         request: DurableStartExecutionRequest<'_>,
     ) -> DurableStartExecutionResult {
+        self.start_with_registration(request, |_| {}).await
+    }
+
+    pub(crate) async fn start_with_registration<F>(
+        &self,
+        request: DurableStartExecutionRequest<'_>,
+        mut registration: F,
+    ) -> DurableStartExecutionResult
+    where
+        F: FnMut(DurableRegistrationEvent),
+    {
         let journal_id = request.journal_id;
         let selection = request.start.protocol_selection.clone();
         let required_sinks = request.start.event_delivery.cloned().unwrap_or_default();
@@ -416,14 +435,18 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 .await;
         }
         let evidence_id = entry.evidence_id;
+        let execution_id = execution_start.execution_id();
         let recovered = RecoveredDurableStateV1::from_committed_start(
             execution_start,
             evidence_id,
             entry.sequence,
         )
         .unwrap_or_else(|_| unreachable!("validated sequence one reconstructs its own state"));
+        registration(DurableRegistrationEvent::Marked(execution_id));
         match prepared.accept_reserved_state() {
             Ok(start) => {
+                #[cfg(feature = "test-support")]
+                registration(DurableRegistrationEvent::Accepted(start.handle.clone()));
                 let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&self.storage));
                 let owned = lifecycle
                     .own_committed_start(
@@ -436,6 +459,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                     .unwrap_or_else(|_| {
                         unreachable!("committed start and accepted handle have one identity")
                     });
+                registration(DurableRegistrationEvent::Published(Arc::clone(&owned)));
                 DurableStartExecutionResult::Accepted(Box::new(DurableStartExecutionAccepted {
                     start,
                     owned,
@@ -445,6 +469,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 }))
             }
             Err(failure) => {
+                registration(DurableRegistrationEvent::Abandoned(execution_id));
                 self.reject_and_release(journal_id, ownership.token, failure)
                     .await
             }

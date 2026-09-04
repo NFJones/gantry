@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-gantry = { workspace = true, features = ["concurrent", "durable"] }
+gantry = { workspace = true, features = ["concurrent", "durable", "test-support"] }
 
 [dev-dependencies]
 gantry-adapter-tokio.workspace = true

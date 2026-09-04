@@ -1287,6 +1287,15 @@ pub struct ShutdownCoordinator {
 }
 
 impl ShutdownCoordinator {
+    /// Returns a future that resolves after every previously admitted call has
+    /// either completed or transferred into accepted lifecycle state.
+    #[must_use]
+    pub fn wait_for_admission_handoffs(&self) -> ShutdownAdmissionProgress {
+        ShutdownAdmissionProgress {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+
     /// Returns a future that resolves after prior calls transfer or finish and the cohort settles.
     #[must_use]
     pub fn wait_for_quiescence(&self) -> ShutdownProgress {
@@ -1445,6 +1454,28 @@ impl Future for ShutdownWait {
 /// Future resolving when shutdown owns no pending public invocation or cohort execution.
 pub struct ShutdownProgress {
     inner: Weak<LifecycleInner>,
+}
+
+/// Future resolving when every admitted call has completed or transferred its work.
+pub struct ShutdownAdmissionProgress {
+    inner: Weak<LifecycleInner>,
+}
+
+impl Future for ShutdownAdmissionProgress {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let Some(inner) = self.inner.upgrade() else {
+            return Poll::Ready(());
+        };
+        let mut data = inner.lock();
+        if data.admitted_calls == 0 {
+            Poll::Ready(())
+        } else {
+            register_waker(&mut data.progress_waiters, context.waker());
+            Poll::Pending
+        }
+    }
 }
 
 impl Future for ShutdownProgress {

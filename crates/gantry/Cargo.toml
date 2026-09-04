@@ -17,6 +17,7 @@ analyzer = ["frontend", "dep:gantry-analysis", "dep:gantry-ir"]
 evaluator = ["analyzer", "dep:gantry-runtime"]
 concurrent = ["evaluator", "gantry-runtime/concurrent"]
 durable = ["evaluator", "gantry-runtime/durable"]
+test-support = ["durable"]
 
 [dependencies]
 gantry-analysis = { workspace = true, optional = true }

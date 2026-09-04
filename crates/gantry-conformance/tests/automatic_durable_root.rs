@@ -4,12 +4,14 @@ use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use gantry::host::contracts::{
-    ExecutorAdapter, HookOutcomeV1, HostFuture, IdentitySource, JournalStorage,
+    CancellationToken, ExecutorAdapter, HookFactory, HookOutcomeV1, HostError, HostFuture,
+    HostRequest, HostResponse, IdentitySource, IntegrationPreflight, JournalStorage, OperationHook,
+    RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::host::journal::{
@@ -23,16 +25,17 @@ use gantry::portable::{
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    AsyncCapacityLimits, DurableCommitCutV1, DurableEventOccurrenceV1, DurableLogicalEvidenceV1,
-    InMemoryJournalStore, InterpreterConfiguration, MachineOutcome, RequiredConfiguration,
-    recover_authoritative_prefix_with_retained_program,
+    AsyncCapacityLimits, CancellationRecord, DurableCommitCutV1, DurableEventOccurrenceV1,
+    DurableLogicalEvidenceV1, InMemoryJournalStore, InterpreterConfiguration, MachineOutcome,
+    RequiredConfiguration, recover_authoritative_prefix_with_retained_program,
 };
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValueView};
 use gantry::{
-    DurableResumeExecutionRequest, DurableResumeExecutionResult, DurableStartExecutionRequest,
-    DurableStartExecutionResult, Interpreter, StartExecutionRequest,
+    DurableHandoffTestGate, DurableResumeExecutionRequest, DurableResumeExecutionResult,
+    DurableStartExecutionRequest, DurableStartExecutionResult, Interpreter, StartExecutionRequest,
+    caller_cancellation_reason,
 };
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
@@ -168,6 +171,272 @@ impl JournalStorage for FailAfterStartStore {
     }
 }
 
+#[derive(Default)]
+struct GatedCancellationStore {
+    inner: InMemoryJournalStore,
+    commits: AtomicU64,
+    cancellation_commit_released: AtomicBool,
+    cancellation_commit_waker: Mutex<Option<Waker>>,
+}
+
+impl GatedCancellationStore {
+    fn release_cancellation_commit(&self) {
+        self.cancellation_commit_released
+            .store(true, Ordering::Release);
+        if let Some(waker) = self
+            .cancellation_commit_waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+}
+
+impl JournalStorage for GatedCancellationStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        if self.commits.fetch_add(1, Ordering::AcqRel) == 0 {
+            return self.inner.commit(request);
+        }
+        Box::pin(async move {
+            std::future::poll_fn(|context| {
+                if self.cancellation_commit_released.load(Ordering::Acquire) {
+                    return Poll::Ready(());
+                }
+                *self
+                    .cancellation_commit_waker
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                    Some(context.waker().clone());
+                Poll::Pending
+            })
+            .await;
+            self.inner.commit(request).await
+        })
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.inner.release_owner(request)
+    }
+}
+
+#[derive(Default)]
+struct CancellationCommitGateStore {
+    inner: InMemoryJournalStore,
+    commit_started: AtomicBool,
+    commit_released: AtomicBool,
+    commit_waker: Mutex<Option<Waker>>,
+}
+
+impl CancellationCommitGateStore {
+    fn commit_started(&self) -> bool {
+        self.commit_started.load(Ordering::Acquire)
+    }
+
+    fn release_commit(&self) {
+        self.commit_released.store(true, Ordering::Release);
+        if let Some(waker) = self
+            .commit_waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+}
+
+impl JournalStorage for CancellationCommitGateStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        let cancellation = request
+            .batch
+            .evidence
+            .iter()
+            .any(|evidence| evidence.kind.as_ref() == "gantry.cancellation/v1");
+        if !cancellation {
+            return self.inner.commit(request);
+        }
+        self.commit_started.store(true, Ordering::Release);
+        Box::pin(async move {
+            std::future::poll_fn(|context| {
+                if self.commit_released.load(Ordering::Acquire) {
+                    return Poll::Ready(());
+                }
+                *self
+                    .commit_waker
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                    Some(context.waker().clone());
+                Poll::Pending
+            })
+            .await;
+            self.inner.commit(request).await
+        })
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.inner.release_owner(request)
+    }
+}
+
+#[derive(Default)]
+struct PendingHookState {
+    dispatch_started: AtomicBool,
+    cancellation_observed: AtomicBool,
+    release: AtomicBool,
+    settled: AtomicBool,
+    polls: AtomicU64,
+    waker: Mutex<Option<Waker>>,
+}
+
+impl PendingHookState {
+    fn release(&self) {
+        self.release.store(true, Ordering::Release);
+        if let Some(waker) = self
+            .waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+}
+
+struct PendingHookIntegration {
+    scripted: ScriptedIntegration,
+    state: Arc<PendingHookState>,
+}
+
+impl PendingHookIntegration {
+    fn new(state: Arc<PendingHookState>) -> Self {
+        Self {
+            scripted: ScriptedIntegration::new(
+                [ScriptedPreflight::success(
+                    EmbeddingOperation::ResolveMappings,
+                    &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+                )],
+                [],
+            ),
+            state,
+        }
+    }
+}
+
+impl IntegrationPreflight for PendingHookIntegration {
+    fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        self.scripted.call(request)
+    }
+}
+
+impl RuntimeSessionService for PendingHookIntegration {
+    fn establish<'a>(
+        &'a self,
+        request: HostRequest,
+    ) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        self.scripted.establish(request)
+    }
+}
+
+impl HookFactory for PendingHookIntegration {
+    fn create_hook<'a>(
+        &'a self,
+        _request: HostRequest,
+    ) -> HostFuture<'a, Result<Box<dyn OperationHook>, HostError>> {
+        let state = Arc::clone(&self.state);
+        Box::pin(async move { Ok(Box::new(PendingHook { state }) as Box<dyn OperationHook>) })
+    }
+}
+
+struct PendingHook {
+    state: Arc<PendingHookState>,
+}
+
+impl OperationHook for PendingHook {
+    fn dispatch<'a>(
+        &'a mut self,
+        _request: HostRequest,
+        cancellation: &'a dyn CancellationToken,
+    ) -> HostFuture<'a, Result<HookOutcomeV1, HostError>> {
+        Box::pin(std::future::poll_fn(move |context| {
+            self.state.polls.fetch_add(1, Ordering::AcqRel);
+            self.state.dispatch_started.store(true, Ordering::Release);
+            if cancellation.is_cancelled() {
+                self.state
+                    .cancellation_observed
+                    .store(true, Ordering::Release);
+            }
+            if self.state.release.load(Ordering::Acquire)
+                && self.state.cancellation_observed.load(Ordering::Acquire)
+            {
+                self.state.settled.store(true, Ordering::Release);
+                return Poll::Ready(Ok(HookOutcomeV1::Completed(Arc::from(&br#""late""#[..]))));
+            }
+            *self
+                .state
+                .waker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(context.waker().clone());
+            Poll::Pending
+        }))
+    }
+}
+
 #[test]
 fn checked_in_automatic_durable_root_evidence_is_narrow_and_current() {
     let root = workspace_root();
@@ -295,6 +564,419 @@ fn accepted_durable_root_runs_on_the_executor_and_commits_before_observation() {
         recovered.latest_cut(),
         DurableCommitCutV1::TerminalCompletion
     );
+}
+
+#[test]
+fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveMappings,
+            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+        )],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&br#""done""#[..]),
+        ))])],
+    ));
+    let interpreter = interpreter_with_integration(Arc::clone(&executor), integration);
+    let storage = Arc::new(GatedCancellationStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-facade-cancellation")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("durable cancellation fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.start.execution_id;
+    let signal = accepted
+        .start
+        .handle
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+    let expected_reason = caller_cancellation_reason(Some(Arc::from("stop")), 32)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    assert_eq!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Pending),
+        "root should be running with its operation-prepared commit in flight"
+    );
+    let mut cancellation =
+        Box::pin(interpreter.cancel_execution(execution_id, expected_reason.clone()));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert!(
+        !signal.is_cancelled(),
+        "durable cancellation signalled before its journal commit"
+    );
+
+    storage.release_cancellation_commit();
+    settle_task(&executor, 0);
+    let record = match cancellation
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(Ok(record)) => record,
+        Poll::Ready(Err(error)) => panic!("facade cancellation failed: {error:?}"),
+        Poll::Pending => panic!("facade cancellation did not publish terminal state"),
+    };
+    assert!(matches!(
+        record,
+        CancellationRecord::Accepted { ref reason, .. } if reason == &expected_reason
+    ));
+    assert!(signal.is_cancelled());
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop"
+    ));
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    assert!(
+        full.evidence
+            .iter()
+            .any(|entry| entry.kind.as_ref() == "gantry.cancellation/v1")
+    );
+}
+
+#[test]
+fn cancellation_progresses_a_pending_dispatch_and_retains_it_to_settlement() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(PendingHookIntegration::new(Arc::clone(&hook_state)));
+    let interpreter = interpreter_with_integration(Arc::clone(&executor), integration);
+    let storage = Arc::new(CancellationCommitGateStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-pending-dispatch-cancellation")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("pending-dispatch fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.start.execution_id;
+    let signal = accepted
+        .start
+        .handle
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+    assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+    assert!(hook_state.dispatch_started.load(Ordering::Acquire));
+    assert!(!signal.is_cancelled());
+
+    let expected_reason = caller_cancellation_reason(Some(Arc::from("stop-pending")), 64)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation =
+        Box::pin(interpreter.cancel_execution(execution_id, expected_reason.clone()));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert!(
+        executor.is_runnable(0),
+        "queued driver control did not wake the pending dispatch"
+    );
+    assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+    assert!(storage.commit_started());
+    assert!(
+        !signal.is_cancelled(),
+        "semantic cancellation became visible before its journal commit"
+    );
+
+    storage.release_commit();
+    assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+    assert!(signal.is_cancelled());
+    assert!(hook_state.cancellation_observed.load(Ordering::Acquire));
+    assert!(!hook_state.settled.load(Ordering::Acquire));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending(),
+        "cancellation completed before the dispatched hook settled"
+    );
+
+    hook_state.release();
+    settle_task(&executor, 0);
+    assert!(hook_state.settled.load(Ordering::Acquire));
+    assert!(hook_state.polls.load(Ordering::Acquire) >= 3);
+    let record = match cancellation
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(Ok(record)) => record,
+        Poll::Ready(Err(error)) => panic!("pending-dispatch cancellation failed: {error:?}"),
+        Poll::Pending => panic!("pending-dispatch cancellation did not finish"),
+    };
+    assert!(matches!(
+        record,
+        CancellationRecord::Accepted { ref reason, .. } if reason == &expected_reason
+    ));
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop-pending"
+    ));
+
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = &prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    let program = full
+        .evidence
+        .first()
+        .and_then(|entry| {
+            gantry::runtime::DurableExecutionStartV1::retained_program(&entry.canonical_body).ok()
+        })
+        .unwrap_or_else(|| panic!("pending-dispatch prefix omitted its retained program"));
+    let cuts = full
+        .evidence
+        .iter()
+        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v1")
+        .map(|entry| {
+            DurableLogicalEvidenceV1::decode(&program, &entry.canonical_body)
+                .unwrap_or_else(|error| panic!("logical evidence did not decode: {error:?}"))
+                .cut()
+        })
+        .collect::<Vec<_>>();
+    assert!(cuts.contains(&DurableCommitCutV1::OperationPrepared));
+    assert!(!cuts.contains(&DurableCommitCutV1::OperationOutcome));
+    assert_eq!(cuts.last(), Some(&DurableCommitCutV1::TerminalCompletion));
+}
+
+#[test]
+fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveMappings,
+            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+        )],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&br#""done""#[..]),
+        ))])],
+    ));
+    let interpreter = interpreter_with_integration(Arc::clone(&executor), integration);
+    let storage = Arc::new(GatedCancellationStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-facade-shutdown")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("durable shutdown fixture was rejected: {failure:?}")
+        }
+    };
+    let signal = accepted
+        .start
+        .handle
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+    assert_eq!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Pending),
+        "root should be running with its operation-prepared commit in flight"
+    );
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(
+        shutdown
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert_eq!(executor.task_ids(), [0, 1]);
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(
+        !signal.is_cancelled(),
+        "shutdown signalled durable work before its cancellation commit"
+    );
+
+    storage.release_cancellation_commit();
+    settle_task(&executor, 0);
+    assert!(signal.is_cancelled());
+    settle_task(&executor, 1);
+    let report = match shutdown
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(Ok(report)) => report,
+        Poll::Ready(Err(error)) => panic!("facade shutdown failed: {error:?}"),
+        Poll::Pending => panic!("facade shutdown did not publish its report"),
+    };
+    assert!(report.orderly);
+    assert_eq!(report.cohort.len(), 1);
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
+    ));
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    assert!(
+        full.evidence
+            .iter()
+            .any(|entry| entry.kind.as_ref() == "gantry.cancellation/v1")
+    );
+}
+
+#[test]
+fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let interpreter = interpreter(Arc::clone(&executor));
+    let gate = Arc::new(DurableHandoffTestGate::default());
+    interpreter.install_durable_handoff_test_gate(Arc::clone(&gate));
+    let storage = Arc::new(GatedCancellationStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-shutdown-handoff")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+
+    std::thread::scope(|scope| {
+        let starting_interpreter = interpreter.clone();
+        let start = scope.spawn(move || {
+            block_on(starting_interpreter.start_durable_execution(
+                storage_adapter,
+                DurableStartExecutionRequest {
+                    journal_id: journal_id.clone(),
+                    start: StartExecutionRequest {
+                        package_root: &root.0,
+                        protocol_selection: &selection,
+                        required_peers: &[],
+                        entry_input: None,
+                        root_session: None,
+                        event_delivery: None,
+                    },
+                },
+            ))
+        });
+        let handle = gate.wait_until_accepted();
+        let signal = handle
+            .cancellation_signal()
+            .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+        let mut shutdown = Box::pin(interpreter.shutdown());
+        assert!(
+            shutdown
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+        assert_eq!(executor.task_ids(), [0]);
+        assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+        assert!(
+            !signal.is_cancelled(),
+            "shutdown directly signalled a durable token while its owner was unpublished"
+        );
+
+        gate.release();
+        let accepted = match start
+            .join()
+            .unwrap_or_else(|_| panic!("durable start thread panicked"))
+        {
+            DurableStartExecutionResult::Accepted(accepted) => accepted,
+            DurableStartExecutionResult::Rejected(failure) => {
+                panic!("durable handoff fixture was rejected: {failure:?}")
+            }
+        };
+        assert_eq!(executor.task_ids(), [0, 1]);
+        assert!(
+            executor.is_runnable(0),
+            "owner publication did not wake shutdown"
+        );
+        assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+        assert!(
+            !signal.is_cancelled(),
+            "shutdown signalled durable cancellation before its journal commit"
+        );
+
+        storage.release_cancellation_commit();
+        assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+        assert!(signal.is_cancelled());
+        settle_task(&executor, 1);
+        settle_task(&executor, 0);
+        let report = match shutdown
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            Poll::Ready(Ok(report)) => report,
+            Poll::Ready(Err(error)) => panic!("facade shutdown failed: {error:?}"),
+            Poll::Pending => panic!("facade shutdown did not publish its report"),
+        };
+        assert!(report.orderly);
+        assert_eq!(report.cohort.len(), 1);
+        let observation = block_on(accepted.owned.await_terminal());
+        assert!(matches!(
+            observation.terminal,
+            Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
+        ));
+    });
 }
 
 #[test]
@@ -1265,28 +1947,37 @@ fn interpreter(executor: Arc<DeterministicConcurrentExecutor>) -> Interpreter {
     interpreter_with_integration(executor, integration)
 }
 
-fn interpreter_with_integration(
+fn interpreter_with_integration<I>(
     executor: Arc<DeterministicConcurrentExecutor>,
-    integration: Arc<ScriptedIntegration>,
-) -> Interpreter {
+    integration: Arc<I>,
+) -> Interpreter
+where
+    I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
+{
     interpreter_with_integration_and_identity_start(executor, integration, 1)
 }
 
-fn interpreter_with_integration_and_identity_start(
+fn interpreter_with_integration_and_identity_start<I>(
     executor: Arc<DeterministicConcurrentExecutor>,
-    integration: Arc<ScriptedIntegration>,
+    integration: Arc<I>,
     identity_start: u8,
-) -> Interpreter {
+) -> Interpreter
+where
+    I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
+{
     interpreter_with_capacities(executor, integration, identity_start, 8, 8)
 }
 
-fn interpreter_with_capacities(
+fn interpreter_with_capacities<I>(
     executor: Arc<DeterministicConcurrentExecutor>,
-    integration: Arc<ScriptedIntegration>,
+    integration: Arc<I>,
     identity_start: u8,
     resume_runnable_tasks: u64,
     public_activities: u64,
-) -> Interpreter {
+) -> Interpreter
+where
+    I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
+{
     let executor_adapter: Arc<dyn ExecutorAdapter> = executor;
     let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
         std::iter::successors(Some(identity_start), |byte| byte.checked_add(1))

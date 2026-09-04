@@ -3,13 +3,17 @@
 //! The facade owns orchestration only. Source analysis, machine transitions,
 //! cancellation, waits, and shutdown remain in their existing subsystem owners.
 
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
+
+#[cfg(feature = "durable")]
+use std::collections::BTreeMap;
+#[cfg(all(feature = "durable", feature = "test-support"))]
+use std::sync::Condvar;
 
 use gantry_analysis::{DeclaredValueShape, DeclaredValueShapes};
 use gantry_core::canonical_json::CanonicalJson;
@@ -62,7 +66,7 @@ use crate::{
 };
 
 #[cfg(feature = "durable")]
-use crate::durable_start::PreparedDurableResume;
+use crate::durable_start::{DurableRegistrationEvent, PreparedDurableResume};
 #[cfg(feature = "durable")]
 use crate::{
     DurableResumeExecutionFailure, DurableResumeExecutionRequest, DurableResumeExecutionResult,
@@ -80,6 +84,10 @@ struct InterpreterInner {
     external_owners: AtomicUsize,
     shutdown_started: AtomicBool,
     shutdown: Arc<SharedShutdown>,
+    #[cfg(feature = "durable")]
+    durable_executions: DurableExecutionRegistry,
+    #[cfg(all(feature = "durable", feature = "test-support"))]
+    durable_handoff_test_gate: Mutex<Option<Arc<DurableHandoffTestGate>>>,
     configuration: InterpreterConfiguration,
     lifecycle: InterpreterLifecycle,
     allocator: FreshIdentityAllocator,
@@ -87,6 +95,142 @@ struct InterpreterInner {
     preflight: Arc<dyn IntegrationPreflight>,
     session_establisher: SessionEstablisher,
     hook_factory: Arc<dyn HookFactory>,
+}
+
+#[cfg(feature = "durable")]
+#[derive(Default)]
+struct DurableExecutionRegistry {
+    state: Mutex<DurableExecutionRegistryState>,
+}
+
+#[cfg(feature = "durable")]
+#[derive(Default)]
+struct DurableExecutionRegistryState {
+    executions: BTreeMap<ProtocolIdentity, DurableExecutionRegistration>,
+    waiters: BTreeMap<ProtocolIdentity, Vec<Waker>>,
+}
+
+#[cfg(feature = "durable")]
+enum DurableExecutionRegistration {
+    Pending,
+    Owned(Arc<crate::DurableOwnedExecution>),
+}
+
+/// Test-support gate that pauses a durable start after lifecycle acceptance
+/// and before its durable owner is published to the interpreter registry.
+#[cfg(all(feature = "durable", feature = "test-support"))]
+#[doc(hidden)]
+#[derive(Default)]
+pub struct DurableHandoffTestGate {
+    state: Mutex<DurableHandoffTestGateState>,
+    changed: Condvar,
+}
+
+#[cfg(all(feature = "durable", feature = "test-support"))]
+#[derive(Default)]
+struct DurableHandoffTestGateState {
+    accepted: Option<ExecutionHandle>,
+    released: bool,
+}
+
+#[cfg(all(feature = "durable", feature = "test-support"))]
+impl DurableHandoffTestGate {
+    /// Waits until lifecycle acceptance has completed and returns its handle.
+    #[must_use]
+    pub fn wait_until_accepted(&self) -> ExecutionHandle {
+        let mut state = lock_shutdown(&self.state);
+        while state.accepted.is_none() {
+            state = self
+                .changed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        state
+            .accepted
+            .clone()
+            .unwrap_or_else(|| unreachable!("accepted handoff gate retains its handle"))
+    }
+
+    /// Releases the paused durable owner publication.
+    pub fn release(&self) {
+        let mut state = lock_shutdown(&self.state);
+        state.released = true;
+        self.changed.notify_all();
+    }
+
+    fn pause(&self, handle: ExecutionHandle) {
+        let mut state = lock_shutdown(&self.state);
+        state.accepted = Some(handle);
+        self.changed.notify_all();
+        while !state.released {
+            state = self
+                .changed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+    }
+}
+
+#[cfg(feature = "durable")]
+impl DurableExecutionRegistry {
+    fn mark(&self, execution_id: ProtocolIdentity) {
+        let mut state = lock_shutdown(&self.state);
+        state
+            .executions
+            .entry(execution_id)
+            .or_insert(DurableExecutionRegistration::Pending);
+    }
+
+    fn publish(&self, owner: Arc<crate::DurableOwnedExecution>) {
+        let execution_id = owner.execution_id();
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            state
+                .executions
+                .insert(execution_id, DurableExecutionRegistration::Owned(owner));
+            state.waiters.remove(&execution_id).unwrap_or_default()
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn abandon(&self, execution_id: ProtocolIdentity) {
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            state.executions.remove(&execution_id);
+            state.waiters.remove(&execution_id).unwrap_or_default()
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    async fn owner(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Option<Arc<crate::DurableOwnedExecution>> {
+        std::future::poll_fn(|context| {
+            let mut state = lock_shutdown(&self.state);
+            match state.executions.get(&execution_id) {
+                Some(DurableExecutionRegistration::Owned(owner)) => {
+                    Poll::Ready(Some(Arc::clone(owner)))
+                }
+                Some(DurableExecutionRegistration::Pending) => {
+                    let waiters = state.waiters.entry(execution_id).or_default();
+                    if !waiters
+                        .iter()
+                        .any(|waiter| waiter.will_wake(context.waker()))
+                    {
+                        waiters.push(context.waker().clone());
+                    }
+                    Poll::Pending
+                }
+                None => Poll::Ready(None),
+            }
+        })
+        .await
+    }
 }
 
 #[cfg(feature = "durable")]
@@ -451,6 +595,10 @@ impl Interpreter {
                 external_owners: AtomicUsize::new(1),
                 shutdown_started: AtomicBool::new(false),
                 shutdown: Arc::new(SharedShutdown::default()),
+                #[cfg(feature = "durable")]
+                durable_executions: DurableExecutionRegistry::default(),
+                #[cfg(all(feature = "durable", feature = "test-support"))]
+                durable_handoff_test_gate: Mutex::new(None),
                 configuration,
                 lifecycle,
                 allocator: FreshIdentityAllocator::default(),
@@ -461,6 +609,14 @@ impl Interpreter {
             }),
             external_owner: true,
         }
+    }
+
+    /// Installs the one-shot durable acceptance handoff gate used by
+    /// deterministic conformance tests.
+    #[cfg(all(feature = "durable", feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn install_durable_handoff_test_gate(&self, gate: Arc<DurableHandoffTestGate>) {
+        *lock_shutdown(&self.inner.durable_handoff_test_gate) = Some(gate);
     }
 
     /// Runs preflight, publishes accepted state, and submits the root to the configured executor.
@@ -595,7 +751,22 @@ impl Interpreter {
             &self.inner.configuration,
             Arc::clone(&storage),
         );
-        let mut accepted = match durable.start(request).await {
+        let registry = &self.inner.durable_executions;
+        let mut accepted = match durable
+            .start_with_registration(request, |event| match event {
+                DurableRegistrationEvent::Marked(execution_id) => registry.mark(execution_id),
+                #[cfg(feature = "test-support")]
+                DurableRegistrationEvent::Accepted(handle) => {
+                    let gate = lock_shutdown(&self.inner.durable_handoff_test_gate).clone();
+                    if let Some(gate) = gate {
+                        gate.pause(handle);
+                    }
+                }
+                DurableRegistrationEvent::Published(owner) => registry.publish(owner),
+                DurableRegistrationEvent::Abandoned(execution_id) => registry.abandon(execution_id),
+            })
+            .await
+        {
             DurableStartExecutionResult::Accepted(accepted) => accepted,
             rejected => return rejected,
         };
@@ -758,9 +929,15 @@ impl Interpreter {
             if let Err(failure) = durable.commit_prepared_resume_revision(&mut prepared).await {
                 return durable.reject_prepared_resume_with(prepared, failure).await;
             }
-            let accepted = durable
-                .publish_prepared_resume(prepared)
-                .unwrap_or_else(|_| unreachable!("reserved resume identity remains publishable"));
+            self.mark_durable_execution(prepared.execution_id);
+            let accepted = match durable.publish_prepared_resume(prepared) {
+                Ok(accepted) => accepted,
+                Err(prepared) => {
+                    self.abandon_durable_execution(prepared.execution_id);
+                    unreachable!("reserved resume identity remains publishable")
+                }
+            };
+            self.register_durable_execution(Arc::clone(&accepted.owned));
             return DurableResumeExecutionResult::Accepted(Box::new(accepted));
         }
 
@@ -837,9 +1014,15 @@ impl Interpreter {
             rollback_submitted_resume(submitted, gate).await;
             return durable.reject_prepared_resume_with(prepared, failure).await;
         }
-        let accepted = durable
-            .publish_prepared_resume(prepared)
-            .unwrap_or_else(|_| unreachable!("reserved resume identity remains publishable"));
+        self.mark_durable_execution(prepared.execution_id);
+        let accepted = match durable.publish_prepared_resume(prepared) {
+            Ok(accepted) => accepted,
+            Err(prepared) => {
+                self.abandon_durable_execution(prepared.execution_id);
+                unreachable!("reserved resume identity remains publishable")
+            }
+        };
+        self.register_durable_execution(Arc::clone(&accepted.owned));
         *lock_shutdown(&slot) = Some((driver, Arc::clone(&accepted.owned)));
         submitted.relinquish();
         gate.release();
@@ -1173,6 +1356,16 @@ impl Interpreter {
         let mut model_session_occurrence = 0_u64;
         let mut task_event_sequence = 0_u64;
         loop {
+            if let Some(reason) = owner.take_driver_cancellation() {
+                if let Err(failure) = owner
+                    .commit_driver_cancellation(&mut recovered, reason)
+                    .await
+                {
+                    owner.fail_driver(last_committed, failure);
+                    return;
+                }
+                last_committed = recovered.clone();
+            }
             match recovered.machine_mut().step() {
                 MachineStep::Transition(MachineLabel::TaskSettled(outcome)) => {
                     if let Err(failure) = owner
@@ -1300,17 +1493,29 @@ impl Interpreter {
                 }
                 MachineStep::Transition(_) => {}
                 MachineStep::YieldRequired => {
-                    if self
-                        .inner
-                        .configuration
-                        .executor()
-                        .yield_now()
+                    match owner
+                        .poll_driver_future(
+                            &mut recovered,
+                            &mut last_committed,
+                            self.inner.configuration.executor().yield_now(),
+                        )
                         .await
-                        .is_err()
-                        || !recovered.machine_mut().resume_after_yield()
                     {
-                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
-                        return;
+                        Ok(crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(()))) => {
+                            if !recovered.machine_mut().resume_after_yield() {
+                                owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                                return;
+                            }
+                        }
+                        Ok(crate::durable_lifecycle::DurableDriverPoll::CancellationSettled) => {}
+                        Ok(crate::durable_lifecycle::DurableDriverPoll::Completed(Err(_))) => {
+                            owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                            return;
+                        }
+                        Err(failure) => {
+                            owner.fail_driver(last_committed, failure);
+                            return;
+                        }
                     }
                 }
                 MachineStep::Complete(_) => {
@@ -1427,21 +1632,28 @@ impl Interpreter {
             .and_then(|sessions| sessions.get(scope.parent_session_id))
             .cloned()
             .ok_or(DurableRunFailure::Internal)?;
-        if self
-            .inner
-            .session_establisher
-            .establish(execution_id, &parent)
-            .await
-            .is_err()
+        match owner
+            .poll_driver_future(
+                recovered,
+                last_committed,
+                self.inner
+                    .session_establisher
+                    .establish(execution_id, &parent),
+            )
+            .await?
         {
-            recovered
-                .machine_mut()
-                .fail_session_scope(
-                    scope,
-                    RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
-                )
-                .map_err(|_| DurableRunFailure::Internal)?;
-            return Ok(());
+            crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(_)) => {}
+            crate::durable_lifecycle::DurableDriverPoll::Completed(Err(_)) => {
+                recovered
+                    .machine_mut()
+                    .fail_session_scope(
+                        scope,
+                        RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                return Ok(());
+            }
+            crate::durable_lifecycle::DurableDriverPoll::CancellationSettled => return Ok(()),
         }
         let mut staged = recovered.clone();
         let child = staged
@@ -1462,27 +1674,34 @@ impl Interpreter {
             .await?;
         *recovered = staged;
         *last_committed = recovered.clone();
-        if self
-            .inner
-            .session_establisher
-            .establish(execution_id, &child)
-            .await
-            .is_err()
+        match owner
+            .poll_driver_future(
+                recovered,
+                last_committed,
+                self.inner
+                    .session_establisher
+                    .establish(execution_id, &child),
+            )
+            .await?
         {
-            let mut staged = recovered.clone();
-            staged
-                .machine_mut()
-                .fail_session_scope(
-                    scope,
-                    RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
-                )
-                .map_err(|_| DurableRunFailure::Internal)?;
-            owner
-                .commit_driver_cut(&mut staged, DurableCommitCutV1::Checkpoint, None)
-                .await?;
-            *recovered = staged;
-            *last_committed = recovered.clone();
-            return Ok(());
+            crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(_)) => {}
+            crate::durable_lifecycle::DurableDriverPoll::Completed(Err(_)) => {
+                let mut staged = recovered.clone();
+                staged
+                    .machine_mut()
+                    .fail_session_scope(
+                        scope,
+                        RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                owner
+                    .commit_driver_cut(&mut staged, DurableCommitCutV1::Checkpoint, None)
+                    .await?;
+                *recovered = staged;
+                *last_committed = recovered.clone();
+                return Ok(());
+            }
+            crate::durable_lifecycle::DurableDriverPoll::CancellationSettled => return Ok(()),
         }
         let mut staged = recovered.clone();
         staged
@@ -1629,12 +1848,23 @@ impl Interpreter {
                 last_committed,
             )
             .await?;
-            if operation.dispatch(hook, cancellation).await.is_err() {
-                recovered
-                    .machine_mut()
-                    .fail_operation(occurrence.identity, RuntimeErrorCategory::HookFailure)
-                    .map_err(|_| DurableRunFailure::Internal)?;
-                return Ok(());
+            match owner
+                .poll_driver_future(
+                    recovered,
+                    last_committed,
+                    operation.dispatch(hook, cancellation),
+                )
+                .await?
+            {
+                crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(_)) => {}
+                crate::durable_lifecycle::DurableDriverPoll::Completed(Err(_)) => {
+                    recovered
+                        .machine_mut()
+                        .fail_operation(occurrence.identity, RuntimeErrorCategory::HookFailure)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    return Ok(());
+                }
+                crate::durable_lifecycle::DurableDriverPoll::CancellationSettled => return Ok(()),
             }
             let (_, outcome, validation_attempt, recovery_dispatch) =
                 operation
@@ -1769,24 +1999,35 @@ impl Interpreter {
                         )
                         .await?;
                     *last_committed = recovered.clone();
-                    if operation
-                        .prepare_after_retry_wait(
-                            self.inner.configuration.executor(),
-                            cancellation,
-                            &self.inner.allocator,
-                            self.inner.configuration.identity_source(),
+                    match owner
+                        .poll_driver_future(
+                            recovered,
+                            last_committed,
+                            operation.prepare_after_retry_wait(
+                                self.inner.configuration.executor(),
+                                cancellation,
+                                &self.inner.allocator,
+                                self.inner.configuration.identity_source(),
+                            ),
                         )
-                        .await
-                        .map_err(|_| DurableRunFailure::Internal)?
-                        .is_none()
+                        .await?
                     {
-                        Self::settle_retry_terminal(
-                            recovered.machine_mut(),
-                            occurrence,
-                            &operation,
-                        )
-                        .map_err(|_| DurableRunFailure::Internal)?;
-                        return Ok(());
+                        crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(Some(_))) => {}
+                        crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(None)) => {
+                            Self::settle_retry_terminal(
+                                recovered.machine_mut(),
+                                occurrence,
+                                &operation,
+                            )
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                            return Ok(());
+                        }
+                        crate::durable_lifecycle::DurableDriverPoll::Completed(Err(_)) => {
+                            return Err(DurableRunFailure::Internal);
+                        }
+                        crate::durable_lifecycle::DurableDriverPoll::CancellationSettled => {
+                            return Ok(());
+                        }
                     }
                 }
                 ProcessedHookOutcomeV1::Failed(failure) => {
@@ -2040,32 +2281,40 @@ impl Interpreter {
                 last_committed,
             )
             .await?;
-            if let Err(error) = operation
-                .dispatch_model(
-                    hook,
-                    cancellation,
-                    &self.inner.session_establisher,
-                    context.execution_id,
-                    &session,
+            match owner
+                .poll_driver_future(
+                    recovered,
+                    last_committed,
+                    operation.dispatch_model(
+                        hook,
+                        cancellation,
+                        &self.inner.session_establisher,
+                        context.execution_id,
+                        &session,
+                    ),
                 )
-                .await
+                .await?
             {
-                let category = match error {
-                    OperationLifecycleError::Cancelled => RuntimeErrorCategory::Cancellation,
-                    OperationLifecycleError::Session(_) => {
-                        RuntimeErrorCategory::LogicalSessionSetup
-                    }
-                    OperationLifecycleError::Hook(_) if hook.is_ready() => {
-                        RuntimeErrorCategory::HookFailure
-                    }
-                    OperationLifecycleError::Hook(_) => RuntimeErrorCategory::HookCreation,
-                    _ => return Err(DurableRunFailure::Internal),
-                };
-                recovered
-                    .machine_mut()
-                    .fail_operation(occurrence.identity, category)
-                    .map_err(|_| DurableRunFailure::Internal)?;
-                return Ok(());
+                crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(_)) => {}
+                crate::durable_lifecycle::DurableDriverPoll::Completed(Err(error)) => {
+                    let category = match error {
+                        OperationLifecycleError::Cancelled => RuntimeErrorCategory::Cancellation,
+                        OperationLifecycleError::Session(_) => {
+                            RuntimeErrorCategory::LogicalSessionSetup
+                        }
+                        OperationLifecycleError::Hook(_) if hook.is_ready() => {
+                            RuntimeErrorCategory::HookFailure
+                        }
+                        OperationLifecycleError::Hook(_) => RuntimeErrorCategory::HookCreation,
+                        _ => return Err(DurableRunFailure::Internal),
+                    };
+                    recovered
+                        .machine_mut()
+                        .fail_operation(occurrence.identity, category)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    return Ok(());
+                }
+                crate::durable_lifecycle::DurableDriverPoll::CancellationSettled => return Ok(()),
             }
             let (_, outcome, validation_attempt, recovery_dispatch) =
                 operation
@@ -2247,24 +2496,35 @@ impl Interpreter {
                         )
                         .await?;
                     *last_committed = recovered.clone();
-                    if operation
-                        .prepare_after_retry_wait(
-                            self.inner.configuration.executor(),
-                            cancellation,
-                            &self.inner.allocator,
-                            self.inner.configuration.identity_source(),
+                    match owner
+                        .poll_driver_future(
+                            recovered,
+                            last_committed,
+                            operation.prepare_after_retry_wait(
+                                self.inner.configuration.executor(),
+                                cancellation,
+                                &self.inner.allocator,
+                                self.inner.configuration.identity_source(),
+                            ),
                         )
-                        .await
-                        .map_err(|_| DurableRunFailure::Internal)?
-                        .is_none()
+                        .await?
                     {
-                        Self::settle_retry_terminal(
-                            recovered.machine_mut(),
-                            occurrence,
-                            &operation,
-                        )
-                        .map_err(|_| DurableRunFailure::Internal)?;
-                        return Ok(());
+                        crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(Some(_))) => {}
+                        crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(None)) => {
+                            Self::settle_retry_terminal(
+                                recovered.machine_mut(),
+                                occurrence,
+                                &operation,
+                            )
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                            return Ok(());
+                        }
+                        crate::durable_lifecycle::DurableDriverPoll::Completed(Err(_)) => {
+                            return Err(DurableRunFailure::Internal);
+                        }
+                        crate::durable_lifecycle::DurableDriverPoll::CancellationSettled => {
+                            return Ok(());
+                        }
                     }
                 }
                 ProcessedHookOutcomeV1::Failed(failure) => {
@@ -2585,18 +2845,72 @@ impl Interpreter {
         &self,
         execution_id: ProtocolIdentity,
         reason: CancellationReason,
-    ) -> Result<CancellationRecord, LifecycleError> {
+    ) -> Result<CancellationRecord, CancelExecutionError> {
+        #[cfg(feature = "durable")]
+        if let Some(owner) = self.durable_execution(execution_id).await {
+            return match owner.cancel_execution(execution_id, reason).await {
+                crate::DurableCancelExecutionResult::Accepted {
+                    effective_reason, ..
+                } => Ok(CancellationRecord::Accepted {
+                    reason: effective_reason,
+                    signal: owner
+                        .execution_handle()
+                        .cancellation_signal()
+                        .map_err(CancelExecutionError::Transition)?,
+                }),
+                crate::DurableCancelExecutionResult::AlreadyTerminal(_) => owner
+                    .execution_handle()
+                    .snapshot()
+                    .map(CancellationRecord::AlreadyTerminal)
+                    .map_err(CancelExecutionError::Transition),
+                crate::DurableCancelExecutionResult::NotFound { .. } => {
+                    Ok(CancellationRecord::NotFound)
+                }
+                crate::DurableCancelExecutionResult::Failed { failure, .. } => {
+                    Err(CancelExecutionError::Durable(failure))
+                }
+            };
+        }
         let record = self
             .inner
             .lifecycle
-            .cancel_execution(execution_id, reason)?;
+            .cancel_execution(execution_id, reason)
+            .map_err(CancelExecutionError::Lifecycle)?;
         if matches!(
             record,
             CancellationRecord::Accepted { .. } | CancellationRecord::Existing { .. }
         ) {
-            let _ = self.inner.lifecycle.await_terminal(execution_id)?.await;
+            let _ = self
+                .inner
+                .lifecycle
+                .await_terminal(execution_id)
+                .map_err(CancelExecutionError::Lifecycle)?
+                .await;
         }
         Ok(record)
+    }
+
+    #[cfg(feature = "durable")]
+    fn mark_durable_execution(&self, execution_id: ProtocolIdentity) {
+        self.inner.durable_executions.mark(execution_id);
+    }
+
+    #[cfg(feature = "durable")]
+    fn register_durable_execution(&self, owner: Arc<crate::DurableOwnedExecution>) {
+        self.inner.durable_executions.publish(owner);
+    }
+
+    #[cfg(feature = "durable")]
+    fn abandon_durable_execution(&self, execution_id: ProtocolIdentity) {
+        self.inner.durable_executions.abandon(execution_id);
+    }
+
+    #[cfg(feature = "durable")]
+    async fn durable_execution(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Option<Arc<crate::DurableOwnedExecution>> {
+        self.inner.durable_executions.owner(execution_id).await
     }
 
     /// Starts or joins the caller-independent shutdown coordinator.
@@ -2663,10 +2977,35 @@ impl Interpreter {
                 return;
             }
             Box::pin(async move {
-                let _ = coordinator.cancel_remaining();
+                coordinator.wait_for_admission_handoffs().await;
+                let mut orderly = true;
+                for execution_id in coordinator.pending_executions().iter().copied() {
+                    #[cfg(feature = "durable")]
+                    let owner = shutdown_owner.durable_executions.owner(execution_id).await;
+                    let reason = CancellationReason::new(
+                        CancellationReasonCategory::Shutdown,
+                        None,
+                        None,
+                        0,
+                    )
+                    .unwrap_or_else(|_| unreachable!("empty shutdown reason is always bounded"));
+                    #[cfg(feature = "durable")]
+                    if let Some(owner) = owner {
+                        orderly &= matches!(
+                            owner.cancel_execution(execution_id, reason).await,
+                            crate::DurableCancelExecutionResult::Accepted { .. }
+                                | crate::DurableCancelExecutionResult::AlreadyTerminal(_)
+                        );
+                        continue;
+                    }
+                    orderly &= shutdown_owner
+                        .lifecycle
+                        .cancel_execution(execution_id, reason)
+                        .is_ok();
+                }
                 progress.await;
                 let result = coordinator
-                    .complete(true, FinalShutdownEventSettlement::Settled)
+                    .complete(orderly, FinalShutdownEventSettlement::Settled)
                     .map_err(ShutdownError::Completion);
                 shutdown_owner.shutdown.stage(result);
                 signal.settle();
@@ -3550,6 +3889,19 @@ pub enum RunExecutionError {
     Lifecycle(LifecycleError),
     /// Accepted execution state disappeared before observation.
     ExecutionNotFound,
+}
+
+/// Failure while coordinating one public execution-cancellation operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CancelExecutionError {
+    /// The public operation was rejected by the interpreter lifecycle.
+    Lifecycle(LifecycleError),
+    /// A committed durable transition could not be reflected in lifecycle state.
+    #[cfg(feature = "durable")]
+    Transition(gantry_runtime::ExecutionTransitionError),
+    /// Durable cancellation failed without fabricating terminal state.
+    #[cfg(feature = "durable")]
+    Durable(DurableRunFailure),
 }
 
 /// Failure while coordinating interpreter shutdown.

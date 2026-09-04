@@ -244,6 +244,9 @@ struct DurableOwnedExecutionState {
     run_failure: Option<DurableRunFailure>,
     completed_cancellation: Option<DurableCancelExecutionResult>,
     operation_in_flight: bool,
+    driver_active: bool,
+    driver_cancellation: Option<CancellationReason>,
+    driver_waker: Option<Waker>,
     generation: u64,
     operation_waiters: Vec<Waker>,
     observation_waiters: Vec<DurableRegisteredWaiter>,
@@ -253,6 +256,11 @@ struct DurableOwnedExecutionState {
 struct DurableRegisteredWaiter {
     waiter_id: u64,
     waker: Waker,
+}
+
+pub(crate) enum DurableDriverPoll<T> {
+    Completed(T),
+    CancellationSettled,
 }
 
 #[derive(Default)]
@@ -311,6 +319,9 @@ impl DurableLifecycleCoordinator {
                 run_failure: None,
                 completed_cancellation: None,
                 operation_in_flight: false,
+                driver_active: false,
+                driver_cancellation: None,
+                driver_waker: None,
                 generation: 0,
                 operation_waiters: Vec::new(),
                 observation_waiters: Vec::new(),
@@ -490,6 +501,9 @@ impl DurableLifecycleCoordinator {
                 run_failure: None,
                 completed_cancellation: None,
                 operation_in_flight: false,
+                driver_active: false,
+                driver_cancellation: None,
+                driver_waker: None,
                 generation: 0,
                 operation_waiters: Vec::new(),
                 observation_waiters: Vec::new(),
@@ -586,7 +600,107 @@ impl DurableOwnedExecution {
             return None;
         }
         state.operation_in_flight = true;
+        state.driver_active = true;
         state.recovered.take()
+    }
+
+    pub(crate) fn take_driver_cancellation(&self) -> Option<CancellationReason> {
+        let mut state = lock_state(&self.state);
+        state.driver_waker = None;
+        state.driver_cancellation.take()
+    }
+
+    pub(crate) async fn poll_driver_future<F>(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        last_committed: &mut RecoveredDurableStateV1,
+        future: F,
+    ) -> Result<DurableDriverPoll<F::Output>, DurableRunFailure>
+    where
+        F: Future,
+    {
+        let mut future = std::pin::pin!(future);
+        let first = poll_fn(|context| {
+            {
+                let mut state = lock_state(&self.state);
+                if let Some(reason) = state.driver_cancellation.take() {
+                    state.driver_waker = None;
+                    return Poll::Ready(Err(reason));
+                }
+                state.driver_waker = Some(context.waker().clone());
+            }
+            match future.as_mut().poll(context) {
+                Poll::Ready(output) => {
+                    lock_state(&self.state).driver_waker = None;
+                    Poll::Ready(Ok(output))
+                }
+                Poll::Pending => Poll::Pending,
+            }
+        })
+        .await;
+        match first {
+            Ok(output) => Ok(DurableDriverPoll::Completed(output)),
+            Err(reason) => {
+                if let Err(failure) = self.commit_driver_cancellation(recovered, reason).await {
+                    let _ = self.handle.publish_run_failed_nondurably();
+                    let _ = future.await;
+                    return Err(failure);
+                }
+                *last_committed = recovered.clone();
+                let _ = future.await;
+                Ok(DurableDriverPoll::CancellationSettled)
+            }
+        }
+    }
+
+    pub(crate) async fn commit_driver_cancellation(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        requested_reason: CancellationReason,
+    ) -> Result<CancellationReason, DurableRunFailure> {
+        let effective_reason = if let Some(reason) = recovered.cancellation_reason().cloned() {
+            reason
+        } else {
+            let execution_start = recovered
+                .execution_start()
+                .unwrap_or_else(|| unreachable!("owned durable state retains sequence one"));
+            let reason_text = requested_reason
+                .message
+                .clone()
+                .unwrap_or_else(|| Arc::from(requested_reason.category.wire_name()));
+            let mut staged_machine = recovered.machine().clone();
+            let _ = staged_machine.cancel(reason_text);
+            let sink = DurableTransitionSink::new(
+                Arc::clone(&self.storage),
+                self.journal_id.clone(),
+                self.ownership_token.clone(),
+            );
+            let mut commits = DurableCommitCoordinatorV1::new(
+                &sink,
+                execution_start.execution_id(),
+                execution_start.task_id(),
+                Some((recovered.latest_evidence_id(), recovered.latest_sequence())),
+            )
+            .map_err(DurableRunFailure::Commit)?;
+            let commit = commits
+                .commit_cancellation(
+                    requested_reason.clone(),
+                    &staged_machine,
+                    recovered.sessions(),
+                )
+                .await
+                .map_err(DurableRunFailure::Commit)?;
+            recovered
+                .record_cancellation_commit(requested_reason.clone(), &commit)
+                .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
+            *recovered.machine_mut() = staged_machine;
+            requested_reason
+        };
+        self.handle
+            .publish_committed_cancellation(effective_reason.clone())
+            .map_err(DurableRunFailure::Lifecycle)?;
+        self.update_driver_observation(recovered, None);
+        Ok(effective_reason)
     }
 
     pub(crate) async fn commit_driver_cut(
@@ -699,8 +813,17 @@ impl DurableOwnedExecution {
             Some(state.owner.clone()),
             None,
         );
+        if let Some(effective_reason) = recovered.cancellation_reason().cloned() {
+            state.completed_cancellation = Some(DurableCancelExecutionResult::Accepted {
+                effective_reason,
+                terminal: Box::new(state.last_observation.clone()),
+            });
+        }
         state.recovered = Some(recovered);
         state.operation_in_flight = false;
+        state.driver_active = false;
+        state.driver_cancellation = None;
+        state.driver_waker = None;
         state.generation = state.generation.wrapping_add(1);
         let operation_waiters = std::mem::take(&mut state.operation_waiters);
         let observation_waiters = state
@@ -731,6 +854,9 @@ impl DurableOwnedExecution {
         state.recovered = Some(recovered);
         state.run_failure = Some(failure);
         state.operation_in_flight = false;
+        state.driver_active = false;
+        state.driver_cancellation = None;
+        state.driver_waker = None;
         state.generation = state.generation.wrapping_add(1);
         let operation_waiters = std::mem::take(&mut state.operation_waiters);
         let observation_waiters = state
@@ -792,7 +918,7 @@ impl DurableOwnedExecution {
     pub async fn cancel_execution(
         &self,
         execution_id: ProtocolIdentity,
-        requested_reason: CancellationReason,
+        mut requested_reason: CancellationReason,
     ) -> DurableCancelExecutionResult {
         if execution_id != self.execution_id() {
             return DurableCancelExecutionResult::NotFound { execution_id };
@@ -810,9 +936,22 @@ impl DurableOwnedExecution {
                         observation: Box::new(state.last_observation.clone()),
                     };
                 }
-                if state.operation_in_flight {
+                if state.driver_active {
+                    if let Some(reason) = &state.driver_cancellation {
+                        requested_reason = reason.clone();
+                    } else {
+                        state.driver_cancellation = Some(requested_reason.clone());
+                    }
+                    if let Some(waker) = state.driver_waker.take() {
+                        waker.wake();
+                    }
+                    (None, state.generation)
+                } else if state.operation_in_flight {
                     (None, state.generation)
                 } else {
+                    if let Some(reason) = state.driver_cancellation.take() {
+                        requested_reason = reason;
+                    }
                     state.operation_in_flight = true;
                     (state.recovered.take(), state.generation)
                 }
