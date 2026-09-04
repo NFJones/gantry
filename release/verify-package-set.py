@@ -153,7 +153,7 @@ edition = "2024"
 
 [dependencies]
 gantry = {{ path = {json.dumps(str(package_roots['gantry']))}, default-features = false, features = ["concurrent", "durable"] }}
-gantry-adapter-tokio = {{ path = {json.dumps(str(package_roots['gantry-adapter-tokio']))}, features = ["concurrent"] }}
+gantry-adapter-tokio = {{ path = {json.dumps(str(package_roots['gantry-adapter-tokio']))} }}
 gantry-storage-sqlite = {{ path = {json.dumps(str(package_roots['gantry-storage-sqlite']))} }}
 
 [patch.crates-io]

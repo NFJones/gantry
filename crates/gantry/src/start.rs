@@ -1,10 +1,14 @@
 //! Public nondurable pre-execution coordination and acceptance.
 
+use std::fmt;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use gantry_analysis::{AnalysisStatus, TypedPackage};
 use gantry_core::canonical_json::CanonicalJson;
+use gantry_core::event::EventEnvelope;
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{IdentityKind, StartFailureCategory};
 use gantry_core::protocol::{ProtocolAdvertisement, ProtocolSelection};
@@ -17,7 +21,7 @@ use gantry_host::contracts::{
 };
 use gantry_host::embedding::EmbeddingOperation;
 use gantry_ir::TypeDescriptor;
-use gantry_observe::SinkPlan;
+use gantry_observe::{ActivityDeliveryResult, SinkPlan};
 use gantry_runtime::{
     AcceptExecutionError, AdapterPoison, AdmissionKind, BoundaryFailure, CanonicalTranscriptV1,
     ExecutionHandle, InterpreterConfiguration, InterpreterLifecycle, LifecycleError,
@@ -28,6 +32,16 @@ use crate::{
     AnalyzePackageCoordinator, AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageResult,
     AnalyzePackageStatus,
 };
+
+pub(crate) type OwnedEventDeliveryFuture = Pin<
+    Box<
+        dyn Future<Output = Result<Option<Vec<ActivityDeliveryResult>>, AnalyzePackageError>>
+            + Send
+            + 'static,
+    >,
+>;
+pub(crate) type OwnedEventDeliveryFactory =
+    Arc<dyn Fn(Vec<EventEnvelope>, SinkPlan) -> OwnedEventDeliveryFuture + Send + Sync>;
 
 /// One raw optional root-session specification supplied before acceptance.
 #[derive(Clone, Copy, Debug)]
@@ -95,7 +109,7 @@ pub struct StartExecutionRequest<'a> {
 }
 
 /// Accepted nondurable execution state before or during internally owned `main` evaluation.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct StartExecutionAccepted {
     /// Fresh execution identity accepted only at the final boundary.
     pub execution_id: ProtocolIdentity,
@@ -109,7 +123,25 @@ pub struct StartExecutionAccepted {
     pub root_session: RootSessionState,
     /// Agent/action mapping revisions fixed by preflight for this run.
     pub mapping_revisions: MappingRevisions,
+    /// Effective event delivery plan fixed for the accepted execution.
+    pub(crate) event_delivery: SinkPlan,
     automatic_driver: bool,
+}
+
+impl fmt::Debug for StartExecutionAccepted {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StartExecutionAccepted")
+            .field("execution_id", &self.execution_id)
+            .field("handle", &self.handle)
+            .field("package_activity", &self.package_activity)
+            .field("entry_input", &self.entry_input)
+            .field("root_session", &self.root_session)
+            .field("mapping_revisions", &self.mapping_revisions)
+            .field("event_delivery", &self.event_delivery.registrations().len())
+            .field("automatic_driver", &self.automatic_driver)
+            .finish()
+    }
 }
 
 impl StartExecutionAccepted {
@@ -150,6 +182,7 @@ pub(crate) struct PreparedExecutionStart {
     pub(crate) entry_input: Option<ValidatedEntryInput>,
     pub(crate) root_session: RootSessionState,
     pub(crate) mapping_revisions: MappingRevisions,
+    pub(crate) event_delivery: SinkPlan,
 }
 
 impl PreparedExecutionStart {
@@ -179,6 +212,7 @@ impl PreparedExecutionStart {
             entry_input: self.entry_input,
             root_session: self.root_session,
             mapping_revisions: self.mapping_revisions,
+            event_delivery: self.event_delivery,
             automatic_driver: false,
         })
     }
@@ -201,6 +235,7 @@ impl PreparedExecutionStart {
             entry_input: self.entry_input,
             root_session: self.root_session,
             mapping_revisions: self.mapping_revisions,
+            event_delivery: self.event_delivery,
             automatic_driver: false,
         })
     }
@@ -222,6 +257,7 @@ pub struct StartExecutionCoordinator<'a> {
     allocator: &'a FreshIdentityAllocator,
     preflight: Arc<dyn IntegrationPreflight>,
     preflight_poison: AdapterPoison,
+    owned_event_delivery: Option<OwnedEventDeliveryFactory>,
 }
 
 impl<'a> StartExecutionCoordinator<'a> {
@@ -241,7 +277,19 @@ impl<'a> StartExecutionCoordinator<'a> {
             allocator,
             preflight,
             preflight_poison: AdapterPoison::default(),
+            owned_event_delivery: None,
         }
+    }
+
+    /// Supplies an owner factory for caller-independent package-event delivery.
+    ///
+    /// The factory must retain every runtime, plan, allocator, and identity
+    /// dependency needed by the returned future.
+    #[must_use]
+    #[allow(dead_code)]
+    pub(crate) fn with_owned_event_delivery(mut self, factory: OwnedEventDeliveryFactory) -> Self {
+        self.owned_event_delivery = Some(factory);
+        self
     }
 
     /// Runs ordered nondurable preflight and accepts before any evaluation or hook creation.
@@ -261,6 +309,7 @@ impl<'a> StartExecutionCoordinator<'a> {
             Ok(admission) => admission,
             Err(error) => return Err(lifecycle_failure(error)),
         };
+        let event_delivery = request.event_delivery.cloned().unwrap_or_default();
 
         for peer in request.required_peers {
             if request.protocol_selection.require_peer(peer).is_err() {
@@ -331,11 +380,36 @@ impl<'a> StartExecutionCoordinator<'a> {
         } else {
             None
         };
-        match self
-            .package
-            .deliver_completed_events(&package_activity.events, request.event_delivery)
-            .await
-        {
+        let delivery = if event_delivery.registrations().is_empty() {
+            self.package
+                .deliver_completed_events(&package_activity.events, Some(&event_delivery))
+                .await
+        } else {
+            match &self.owned_event_delivery {
+                Some(factory) => match self
+                    .lifecycle
+                    .call_owned_event_delivery(factory(
+                        package_activity.events.clone(),
+                        event_delivery.clone(),
+                    ))
+                    .await
+                {
+                    Ok(delivery) => delivery,
+                    Err(error) => {
+                        return Err(with_package_activity(
+                            owned_event_delivery_failure(error),
+                            package_activity,
+                        ));
+                    }
+                },
+                None => {
+                    self.package
+                        .deliver_completed_events(&package_activity.events, Some(&event_delivery))
+                        .await
+                }
+            }
+        };
+        match delivery {
             Ok(deliveries) => package_activity.deliveries = deliveries,
             Err(error) => {
                 return Err(with_package_activity(
@@ -383,6 +457,7 @@ impl<'a> StartExecutionCoordinator<'a> {
             entry_input,
             root_session,
             mapping_revisions,
+            event_delivery,
         })
     }
 
@@ -765,6 +840,21 @@ fn owned_activity_failure(error: OwnedActivityError) -> StartExecutionFailure {
         OwnedActivityError::Executor(_) => failure(
             StartFailureCategory::ImplementationResourceExhaustion,
             "public-activity-submission-failure",
+        ),
+        OwnedActivityError::Host(error) => host_failure(error),
+        OwnedActivityError::Boundary(error) => boundary_failure(error),
+    }
+}
+
+fn owned_event_delivery_failure(error: OwnedActivityError) -> StartExecutionFailure {
+    match error {
+        OwnedActivityError::Admission(_) => failure(
+            StartFailureCategory::ImplementationResourceExhaustion,
+            "event-delivery-capacity",
+        ),
+        OwnedActivityError::Executor(_) => failure(
+            StartFailureCategory::ImplementationResourceExhaustion,
+            "event-delivery-submission-failure",
         ),
         OwnedActivityError::Host(error) => host_failure(error),
         OwnedActivityError::Boundary(error) => boundary_failure(error),

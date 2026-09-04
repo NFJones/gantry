@@ -633,6 +633,75 @@ impl InterpreterLifecycle {
         OwnedPreflightWait { state }
     }
 
+    /// Transfers one event-delivery operation to caller-independent owned activity state.
+    ///
+    /// The operation is first polled only after the executor accepts ownership.
+    /// Its future and output are then retained by a supervised event-delivery
+    /// task independently of the returned waiter.
+    pub fn call_owned_event_delivery<T, F>(
+        &self,
+        operation: F,
+    ) -> impl Future<Output = Result<T, OwnedActivityError>> + Send + 'static
+    where
+        T: Send + 'static,
+        F: Future<Output = T> + Send + 'static,
+    {
+        let reservation = match self
+            .inner
+            .supervisor
+            .try_reserve(AdmissionClass::EventDelivery)
+        {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                let state = Arc::new(Mutex::new(OwnedActivityState {
+                    settled: true,
+                    result: Some(Err(OwnedActivityError::Admission(error))),
+                    waiters: Vec::new(),
+                    lease: None,
+                }));
+                return OwnedActivityWait { state };
+            }
+        };
+        let state = Arc::new(Mutex::new(OwnedActivityState {
+            settled: false,
+            result: None,
+            waiters: Vec::new(),
+            lease: Some(OwnedActivityLease {
+                _token: OwnedActivityToken::new(&self.inner),
+            }),
+        }));
+        let abnormal_state = Arc::clone(&state);
+        let abnormal: AbnormalCompletionHandler = Arc::new(move |completion| {
+            settle_owned_activity(
+                &abnormal_state,
+                Err(owned_activity_completion_failure(completion)),
+            );
+        });
+        let registration = self
+            .inner
+            .supervisor
+            .prepare(SupervisedTaskDomain::EventDelivery, Some(abnormal));
+        let signal = registration.signal();
+        let task_state = Arc::clone(&state);
+        let task = Box::pin(async move {
+            let result = operation.await;
+            settle_owned_activity(&task_state, Ok(result));
+            signal.settle();
+            OwnedTaskResult::new()
+        });
+        match self
+            .inner
+            .supervisor
+            .submit(registration, task, reservation.transfer())
+        {
+            Ok(handle) => handle.relinquish(),
+            Err(error) => {
+                settle_owned_activity(&state, Err(OwnedActivityError::Executor(error)));
+            }
+        }
+        OwnedActivityWait { state }
+    }
+
     /// Returns submitted activity handles retained for later physical supervision.
     #[must_use]
     pub fn owned_activity_submitted_task_count(&self) -> usize {
@@ -756,13 +825,14 @@ impl InterpreterLifecycle {
                 .filter_map(|(identity, execution)| {
                     execution.terminal.is_none().then_some(*identity)
                 })
-                .collect();
+                .collect::<BTreeSet<_>>();
             data.state = LifecyclePhase::ShuttingDown(ShutdownState {
                 cause: ShutdownCause::Requested,
                 durations: ShutdownDurations {
                     graceful: graceful_override.unwrap_or(self.inner.default_durations.graceful),
                     drain: drain_override.unwrap_or(self.inner.default_durations.drain),
                 },
+                initial_cohort: cohort.clone(),
                 cohort,
                 coordinator_active: false,
             });
@@ -805,10 +875,11 @@ impl InterpreterLifecycle {
                 .filter_map(|(identity, execution)| {
                     execution.terminal.is_none().then_some(*identity)
                 })
-                .collect();
+                .collect::<BTreeSet<_>>();
             data.state = LifecyclePhase::ShuttingDown(ShutdownState {
                 cause: ShutdownCause::Poisoned,
                 durations: self.inner.default_durations,
+                initial_cohort: cohort.clone(),
                 cohort,
                 coordinator_active: false,
             });
@@ -1042,10 +1113,10 @@ impl Drop for OperationAdmission {
     }
 }
 
-/// Failure while admitting or running one caller-independent preflight activity.
+/// Failure while admitting or running one caller-independent lifecycle activity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OwnedActivityError {
-    /// The bounded public-activity class was saturated before invocation.
+    /// The selected bounded activity class was saturated before invocation.
     Admission(AdmissionExhaustion),
     /// The executor could not accept the owned activity task.
     Executor(HostError),
@@ -1100,6 +1171,55 @@ fn settle_owned_preflight(
 }
 
 fn lock_owned_preflight(state: &Mutex<OwnedPreflightState>) -> MutexGuard<'_, OwnedPreflightState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+struct OwnedActivityWait<T> {
+    state: Arc<Mutex<OwnedActivityState<T>>>,
+}
+
+impl<T> Future for OwnedActivityWait<T> {
+    type Output = Result<T, OwnedActivityError>;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut state = lock_owned_activity(&self.state);
+        if let Some(result) = state.result.take() {
+            return Poll::Ready(result);
+        }
+        register_waker(&mut state.waiters, context.waker());
+        Poll::Pending
+    }
+}
+
+struct OwnedActivityState<T> {
+    settled: bool,
+    result: Option<Result<T, OwnedActivityError>>,
+    waiters: Vec<Waker>,
+    lease: Option<OwnedActivityLease>,
+}
+
+fn settle_owned_activity<T>(
+    state: &Mutex<OwnedActivityState<T>>,
+    result: Result<T, OwnedActivityError>,
+) {
+    let (waiters, lease) = {
+        let mut state = lock_owned_activity(state);
+        if state.settled {
+            return;
+        }
+        state.settled = true;
+        state.result = Some(result);
+        (std::mem::take(&mut state.waiters), state.lease.take())
+    };
+    drop(lease);
+    wake_all(waiters);
+}
+
+fn lock_owned_activity<T>(
+    state: &Mutex<OwnedActivityState<T>>,
+) -> MutexGuard<'_, OwnedActivityState<T>> {
     state
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -1249,8 +1369,21 @@ pub enum FinalShutdownEventSettlement {
     Settled,
     /// Delivery reached a terminal required or best-effort exhaustion result.
     Exhausted,
+    /// Event construction or delivery infrastructure failed before sink exhaustion.
+    Failed(FinalShutdownEventFailure),
     /// Unclean synchronous destruction does not create a standard event.
     NotAttemptedUnclean,
+}
+
+/// Operational failure of the final shutdown event, distinct from sink exhaustion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FinalShutdownEventFailure {
+    /// Activity, event, or attempt identity allocation failed.
+    IdentityGeneration,
+    /// The clock or executor-neutral delivery runtime failed.
+    Executor,
+    /// Event construction or projection violated an internal contract.
+    Internal,
 }
 
 /// Immutable shutdown result returned to every caller.
@@ -1302,6 +1435,26 @@ impl ShutdownCoordinator {
         ShutdownProgress {
             inner: Arc::downgrade(&self.inner),
         }
+    }
+
+    /// Returns the immutable execution cohort fixed by shutdown linearization.
+    #[must_use]
+    pub fn initial_executions(&self) -> Arc<[ProtocolIdentity]> {
+        let data = self.inner.lock();
+        let LifecyclePhase::ShuttingDown(shutdown) = &data.state else {
+            return Arc::from([]);
+        };
+        Arc::from(shutdown.initial_cohort.iter().copied().collect::<Vec<_>>())
+    }
+
+    /// Returns every execution admitted into this shutdown cohort so far.
+    #[must_use]
+    pub fn cohort_executions(&self) -> Arc<[ProtocolIdentity]> {
+        let data = self.inner.lock();
+        let LifecyclePhase::ShuttingDown(shutdown) = &data.state else {
+            return Arc::from([]);
+        };
+        Arc::from(shutdown.cohort.iter().copied().collect::<Vec<_>>())
     }
 
     /// Signals shutdown cancellation to every remaining cohort execution.
@@ -1608,6 +1761,7 @@ enum LifecyclePhase {
 struct ShutdownState {
     cause: ShutdownCause,
     durations: ShutdownDurations,
+    initial_cohort: BTreeSet<ProtocolIdentity>,
     cohort: BTreeSet<ProtocolIdentity>,
     coordinator_active: bool,
 }

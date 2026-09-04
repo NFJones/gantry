@@ -55,10 +55,10 @@ impl Drop for TempDirectory {
 fn public_interpreter_drives_and_observes_one_sequential_execution() {
     let root = TempDirectory::new("fn main() -> Int { 1 + 2 }");
     let identities = Arc::new(DeterministicIdentitySource::new(
-        (1_u8..=8).map(|byte| Ok([byte; 32])),
+        (1_u8..=16).map(|byte| Ok([byte; 32])),
     ));
     let executor = Arc::new(DeterministicExecutor::new([], []));
-    let clock = Arc::new(DeterministicUtcClock::new([timestamp(1), timestamp(2)]));
+    let clock = execution_clock(1);
     let integration = Arc::new(ScriptedIntegration::new([], []));
     let configuration = configuration(executor, identities);
     let interpreter = Interpreter::new(
@@ -149,7 +149,7 @@ fn public_interpreter_drives_scripted_action_success_and_decline() {
                 (1_u8..=16).map(|byte| Ok([byte; 32])),
             )),
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(1), timestamp(2)])),
+        execution_clock(1),
         successful_integration.clone(),
         successful_integration.clone(),
         successful_integration.clone(),
@@ -206,7 +206,7 @@ fn public_interpreter_drives_scripted_action_success_and_decline() {
                 (17_u8..=32).map(|byte| Ok([byte; 32])),
             )),
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(3), timestamp(4)])),
+        execution_clock(3),
         declined_integration.clone(),
         declined_integration.clone(),
         declined_integration,
@@ -263,7 +263,7 @@ fn public_interpreter_captures_and_completes_one_model_prompt() {
                 (33_u8..=64).map(|byte| Ok([byte; 32])),
             )),
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(5), timestamp(6)])),
+        execution_clock(5),
         integration.clone(),
         integration.clone(),
         integration.clone(),
@@ -337,7 +337,7 @@ fn public_interpreter_reuses_one_lexical_fork_session() {
                 (121_u8..=152).map(|byte| Ok([byte; 32])),
             )),
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(11), timestamp(12)])),
+        execution_clock(11),
         integration.clone(),
         integration.clone(),
         integration.clone(),
@@ -416,7 +416,7 @@ fn public_interpreter_normalizes_declared_result_output() {
                 (153_u8..=184).map(|byte| Ok([byte; 32])),
             )),
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(13), timestamp(14)])),
+        execution_clock(13),
         integration.clone(),
         integration.clone(),
         integration,
@@ -472,7 +472,7 @@ fn public_interpreter_decodes_one_sealed_decision() {
                 (65_u8..=96).map(|byte| Ok([byte; 32])),
             )),
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(7), timestamp(8)])),
+        execution_clock(7),
         integration.clone(),
         integration.clone(),
         integration,
@@ -527,7 +527,7 @@ fn public_interpreter_settles_retry_delay_executor_failure() {
                 (97_u8..=120).map(|byte| Ok([byte; 32])),
             )),
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(9), timestamp(10)])),
+        execution_clock(9),
         integration.clone(),
         integration.clone(),
         integration,
@@ -620,6 +620,12 @@ fn timestamp(microseconds: u32) -> Result<UtcTimestamp, gantry::host::contracts:
             protected_diagnostic: None,
         }
     })
+}
+
+fn execution_clock(first_microsecond: u32) -> Arc<DeterministicUtcClock> {
+    Arc::new(DeterministicUtcClock::new(
+        (first_microsecond..first_microsecond + 6).map(timestamp),
+    ))
 }
 
 fn json_string_member<'a>(document: &'a str, name: &str) -> &'a str {

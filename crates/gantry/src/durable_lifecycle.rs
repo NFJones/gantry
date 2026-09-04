@@ -10,21 +10,26 @@ use std::task::{Context, Poll, Waker};
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{
-    CancellationReasonCategory, ExecutionObservationState, JournalOwnerStatus,
+    CancellationReasonCategory, DeliveryOutcome, ExecutionObservationState, IdentityKind,
+    JournalOwnerStatus, SinkClass,
 };
-use gantry_host::contracts::DurationMicros;
-use gantry_host::event::ProtectedPayload;
+use gantry_host::contracts::{DurationMicros, FreshIdentityAllocator, IdentitySource};
+use gantry_host::event::{
+    EventDeliveryRequest, EventDeliveryRuntime, ProtectedPayload, SinkDeliveryPolicy, SinkId,
+};
 use gantry_host::journal::{
-    JournalError, JournalId, JournalOwnershipToken, JournalPrefixV1, JournalStorage,
-    ReadJournalPrefixV1, ReleaseJournalOwnerV1,
+    JournalError, JournalId, JournalOwnershipToken, JournalPayloadKey, JournalPrefixV1,
+    JournalStorage, ReadJournalPrefixV1, ReleaseJournalOwnerV1, ResolveJournalPayloadV1,
 };
-use gantry_observe::SinkPlan;
+use gantry_observe::{SinkPlan, project_payloads};
 use gantry_runtime::{
     CancellationReason, DurableCommitCoordinatorV1, DurableCommitCutV1, DurableCommitError,
-    DurableEventCommitCoordinatorV1, DurableEventCommitError, DurableEventOccurrenceV1,
-    DurableEventPlanV1, DurableEvidenceError, DurableOperationEvidenceV1, DurableTransitionSink,
-    ExecutionHandle, ExecutionTransitionError, FinalShutdownEventSettlement, InterpreterLifecycle,
-    LifecycleError, MachineOutcome, RecoveredDurableStateV1, RequiredEventDeliveryFailureV1,
+    DurableDeliveryRecoveryV1, DurableEventBarrierV1, DurableEventCommitCoordinatorV1,
+    DurableEventCommitError, DurableEventDispatchedV1, DurableEventOccurrenceV1,
+    DurableEventPlanV1, DurableEventSettledV1, DurableEvidenceError, DurableOperationEvidenceV1,
+    DurableTransitionSink, ExecutionFailureProjection, ExecutionHandle, ExecutionTransitionError,
+    FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleError, MachineOutcome,
+    RecoveredDurableStateV1, RequiredDeliveryRecordV1, RequiredEventDeliveryFailureV1,
     ShutdownCompletionError, ShutdownReport, recover_authoritative_prefix_with_retained_program,
 };
 
@@ -256,6 +261,16 @@ struct DurableOwnedExecutionState {
 struct DurableRegisteredWaiter {
     waiter_id: u64,
     waker: Waker,
+}
+
+#[derive(Clone)]
+struct DurablePendingDelivery {
+    occurrence_evidence_id: ProtocolIdentity,
+    occurrence_sequence: u64,
+    event: gantry_core::event::EventEnvelope,
+    sink_id: SinkId,
+    policy: SinkDeliveryPolicy,
+    recovery: DurableDeliveryRecoveryV1,
 }
 
 pub(crate) enum DurableDriverPoll<T> {
@@ -738,9 +753,22 @@ impl DurableOwnedExecution {
         recovered: &mut RecoveredDurableStateV1,
         event: gantry_core::event::EventEnvelope,
         protected_payloads: &[ProtectedPayload],
-    ) -> Result<(), DurableRunFailure> {
+    ) -> Result<u64, DurableRunFailure> {
         let cause = recovered.latest_evidence_id();
-        let plan = DurableEventPlanV1::from_sink_plan(&self.event_plan)
+        let mut active_plan = self.event_plan.clone();
+        for prior in recovered.events().events().values() {
+            for (sink_id, delivery) in prior.deliveries() {
+                let Some(obligation) = prior.occurrence().plan().obligation(sink_id) else {
+                    return Err(DurableRunFailure::Internal);
+                };
+                if obligation.policy().class == SinkClass::Required
+                    && matches!(delivery, DurableDeliveryRecoveryV1::Terminal { .. })
+                {
+                    active_plan = active_plan.without_sink(sink_id);
+                }
+            }
+        }
+        let plan = DurableEventPlanV1::from_sink_plan(&active_plan)
             .map_err(|_| DurableRunFailure::Internal)?;
         let occurrence = DurableEventOccurrenceV1::new(cause, event, plan)
             .map_err(|_| DurableRunFailure::Internal)?;
@@ -769,13 +797,490 @@ impl DurableOwnedExecution {
         let (_, refreshed) = recover_authoritative_prefix_with_retained_program(&prefix)
             .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
         *recovered = refreshed;
+        recovered
+            .events()
+            .event_for_cause(cause)
+            .map(|event| event.occurrence_sequence())
+            .ok_or(DurableRunFailure::Internal)
+    }
+}
+
+impl DurableOwnedExecution {
+    /// Drains required event obligations through an inclusive occurrence frontier.
+    ///
+    /// The supplied recovery projection remains owned by the active driver. This
+    /// method neither publishes owner state nor changes driver admission state.
+    /// Required exhaustion is returned only after its terminal settlement is
+    /// authoritative so the driver can durably commit cancellation before
+    /// exposing that cancellation through the lifecycle handle.
+    pub async fn drain_driver_required_event_obligations_through(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        frontier: u64,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<DurableEventBarrierV1, DurableRunFailure> {
+        while let Some(delivery) = next_pending_delivery(recovered, Some(frontier), true)? {
+            self.drive_pending_delivery(recovered, delivery, allocator, identity_source, runtime)
+                .await?;
+        }
+        match recovered.events().required_barrier_through(frontier) {
+            DurableEventBarrierV1::Delivered | DurableEventBarrierV1::RequiredExhausted(_) => {
+                Ok(recovered.events().required_barrier_through(frontier))
+            }
+            DurableEventBarrierV1::Pending { .. } => Err(DurableRunFailure::Internal),
+        }
+    }
+
+    pub(crate) fn project_driver_required_delivery_failure(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        failure: RequiredEventDeliveryFailureV1,
+    ) -> Result<(), DurableRunFailure> {
+        let record = self
+            .handle
+            .record_required_delivery_failure(failure)
+            .map_err(DurableRunFailure::Lifecycle)?;
+        if matches!(record, RequiredDeliveryRecordV1::PostTerminal(_)) {
+            return Ok(());
+        }
+        let projection = match recovered.latest_cut() {
+            DurableCommitCutV1::TaskSettlement => ExecutionFailureProjection::AfterTaskSettlement,
+            DurableCommitCutV1::ForegroundCompletion => {
+                ExecutionFailureProjection::AfterForegroundCompletion
+            }
+            _ => ExecutionFailureProjection::Full,
+        };
+        let _ = recovered.machine_mut().fail_execution(
+            gantry_core::portable::RuntimeErrorCategory::RequiredEventDeliveryFailure,
+            projection,
+        );
         Ok(())
     }
 
+    pub(crate) fn reconcile_driver_required_delivery_failure(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        if recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion {
+            return Ok(());
+        }
+        if let DurableEventBarrierV1::RequiredExhausted(failure) =
+            recovered.events().required_barrier_through(u64::MAX)
+        {
+            self.project_driver_required_delivery_failure(recovered, failure)?;
+        }
+        Ok(())
+    }
+
+    /// Atomically finishes an active driver after every finite obligation settles.
+    ///
+    /// Terminal ownership is released before terminal lifecycle state is
+    /// published. The driver's recovered state, owner result, and durable
+    /// observation are then installed together and owner waiters are woken once.
+    pub async fn finish_driver_terminal(
+        &self,
+        mut recovered: RecoveredDurableStateV1,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<DurableExecutionObservation, DurableRunFailure> {
+        if recovered.latest_cut() != DurableCommitCutV1::TerminalCompletion {
+            self.fail_driver(recovered, DurableRunFailure::Internal);
+            return Err(DurableRunFailure::Internal);
+        }
+        if let Err(failure) = self
+            .drive_all_event_obligations(&mut recovered, allocator, identity_source, runtime)
+            .await
+        {
+            self.fail_driver(recovered, failure.clone());
+            return Err(failure);
+        }
+
+        let outcome = recovered
+            .machine()
+            .outcome()
+            .cloned()
+            .ok_or(DurableRunFailure::Internal);
+        let lifecycle = self.handle.snapshot().map_err(DurableRunFailure::Lifecycle);
+        let outcome = match outcome.and_then(|outcome| {
+            lifecycle.and_then(|snapshot| {
+                if snapshot.foreground.is_some() && snapshot.terminal.is_none() {
+                    Ok(outcome)
+                } else {
+                    Err(DurableRunFailure::Internal)
+                }
+            })
+        }) {
+            Ok(outcome) => outcome,
+            Err(failure) => {
+                self.fail_driver(recovered, failure.clone());
+                return Err(failure);
+            }
+        };
+
+        let owner = self.release_owner().await;
+        if let Err(failure) = self
+            .handle
+            .publish_committed_terminal(outcome)
+            .map_err(DurableRunFailure::Lifecycle)
+        {
+            self.fail_driver_with_owner(recovered, owner, failure.clone());
+            return Err(failure);
+        }
+        if let Err(failure) = self.project_required_delivery_failures(&recovered) {
+            self.fail_driver_with_owner(recovered, owner, failure.clone());
+            return Err(failure);
+        }
+
+        Ok(self.complete_driver(recovered, owner))
+    }
+
+    /// Serially settles every recovered finite event obligation.
+    ///
+    /// Current adapters are selected by stable sink identity, while projection,
+    /// timeout, retry, and class semantics come only from each occurrence's
+    /// frozen policy. A terminal execution releases its owner only after all
+    /// required and best-effort settlements are authoritative.
+    pub(crate) async fn drain_event_obligations(
+        &self,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<DurableExecutionObservation, DurableRunFailure> {
+        loop {
+            let (recovered, generation) = {
+                let mut state = lock_state(&self.state);
+                if let Some(failure) = &state.run_failure {
+                    return Err(failure.clone());
+                }
+                if state.owner != DurableJournalOwnerState::Held {
+                    return Ok(state.last_observation.clone());
+                }
+                if state.operation_in_flight {
+                    (None, state.generation)
+                } else {
+                    state.operation_in_flight = true;
+                    (state.recovered.take(), state.generation)
+                }
+            };
+            let Some(mut recovered) = recovered else {
+                self.wait_for_generation(generation).await;
+                continue;
+            };
+
+            let result = self
+                .drive_terminal_resume_event_obligations(
+                    &mut recovered,
+                    allocator,
+                    identity_source,
+                    runtime,
+                )
+                .await;
+            let mut state = lock_state(&self.state);
+            state.operation_in_flight = false;
+            state.generation = state.generation.wrapping_add(1);
+            let result = match result {
+                Ok(owner) => {
+                    state.owner = owner;
+                    state.last_observation = observation_from_recovered(
+                        &self.journal_id,
+                        &self.handle,
+                        &recovered,
+                        Some(state.owner.clone()),
+                        None,
+                    );
+                    Ok(state.last_observation.clone())
+                }
+                Err(failure) => {
+                    let _ = self.handle.publish_run_failed_nondurably();
+                    state.run_failure = Some(failure.clone());
+                    state.last_observation = observation_from_recovered(
+                        &self.journal_id,
+                        &self.handle,
+                        &recovered,
+                        Some(state.owner.clone()),
+                        Some(failure.clone()),
+                    );
+                    Err(failure)
+                }
+            };
+            state.recovered = Some(recovered);
+            let operation_waiters = std::mem::take(&mut state.operation_waiters);
+            let observation_waiters = state
+                .observation_waiters
+                .iter()
+                .map(|waiter| waiter.waker.clone())
+                .collect::<Vec<_>>();
+            drop(state);
+            for waiter in operation_waiters.into_iter().chain(observation_waiters) {
+                waiter.wake();
+            }
+            return result;
+        }
+    }
+
+    async fn drive_terminal_resume_event_obligations(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<DurableJournalOwnerState, DurableRunFailure> {
+        self.drive_all_event_obligations(recovered, allocator, identity_source, runtime)
+            .await?;
+        self.project_required_delivery_failures(recovered)?;
+
+        if recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion {
+            Ok(self.release_owner().await)
+        } else {
+            Ok(DurableJournalOwnerState::Held)
+        }
+    }
+
+    async fn drive_all_event_obligations(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<(), DurableRunFailure> {
+        while let Some(delivery) = next_pending_delivery(recovered, None, false)? {
+            self.drive_pending_delivery(recovered, delivery, allocator, identity_source, runtime)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn drive_pending_delivery(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        delivery: DurablePendingDelivery,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<(), DurableRunFailure> {
+        if let DurableDeliveryRecoveryV1::RetryDelay { delay_us, .. } = delivery.recovery {
+            runtime
+                .sleep(delay_us)
+                .await
+                .map_err(|_| DurableRunFailure::Internal)?;
+        }
+
+        let payloads = self.resolve_event_payloads(&delivery.event).await?;
+        let projected = project_payloads(&delivery.event, &payloads, &delivery.policy)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let retry_number = match delivery.recovery {
+            DurableDeliveryRecoveryV1::Pending { retry_number }
+            | DurableDeliveryRecoveryV1::Indeterminate { retry_number, .. }
+            | DurableDeliveryRecoveryV1::RetryDelay { retry_number, .. } => retry_number,
+            DurableDeliveryRecoveryV1::Success { .. }
+            | DurableDeliveryRecoveryV1::Terminal { .. } => {
+                return Err(DurableRunFailure::Internal);
+            }
+        };
+        if retry_number > delivery.policy.retry.retry_limit {
+            return Err(DurableRunFailure::Internal);
+        }
+        let attempt_id = allocator
+            .allocate(identity_source, IdentityKind::DeliveryAttempt)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let dispatched = DurableEventDispatchedV1::new(
+            delivery.event.event_id(),
+            delivery.sink_id.clone(),
+            attempt_id,
+            retry_number,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        let dispatch_commit = self
+            .commit_event_dispatched(recovered, delivery.occurrence_evidence_id, &dispatched)
+            .await?;
+
+        let outcome = match self.event_plan.registration(&delivery.sink_id) {
+            Some(registration) => runtime
+                .deliver_with_timeout(
+                    registration.sink(),
+                    EventDeliveryRequest {
+                        event: delivery.event.clone(),
+                        protected_payloads: projected,
+                        attempt_id,
+                        retry_number,
+                    },
+                    delivery.policy.attempt_timeout_us,
+                )
+                .await
+                .unwrap_or(DeliveryOutcome::Terminal),
+            None => DeliveryOutcome::Terminal,
+        };
+        let remaining_retries = delivery
+            .policy
+            .retry
+            .retry_limit
+            .saturating_sub(retry_number);
+        let (outcome, selected_delay_us) = if outcome == DeliveryOutcome::Retriable
+            && remaining_retries > 0
+        {
+            let next_retry = retry_number
+                .checked_add(1)
+                .ok_or(DurableRunFailure::Internal)?;
+            let delay =
+                gantry_observe::retry::select_delay(&delivery.policy.retry, next_retry, runtime)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+            (DeliveryOutcome::Retriable, Some(delay))
+        } else if outcome == DeliveryOutcome::Success {
+            (DeliveryOutcome::Success, None)
+        } else {
+            (DeliveryOutcome::Terminal, None)
+        };
+        let settled = DurableEventSettledV1::new(
+            delivery.event.event_id(),
+            delivery.sink_id,
+            attempt_id,
+            retry_number,
+            outcome,
+            remaining_retries,
+            selected_delay_us,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        self.commit_event_settled(
+            recovered,
+            delivery.occurrence_evidence_id,
+            dispatch_commit,
+            &settled,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn commit_event_dispatched(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        occurrence_evidence_id: ProtocolIdentity,
+        dispatched: &DurableEventDispatchedV1,
+    ) -> Result<ProtocolIdentity, DurableRunFailure> {
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableEventCommitCoordinatorV1::from_recovered(
+            &sink,
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
+            recovered.events(),
+        )
+        .map_err(map_event_commit_failure)?;
+        let commit = commits
+            .commit_dispatched(occurrence_evidence_id, dispatched)
+            .await
+            .map_err(map_event_commit_failure)?;
+        self.refresh_authoritative(recovered).await?;
+        Ok(commit.evidence_id)
+    }
+
+    async fn commit_event_settled(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+        occurrence_evidence_id: ProtocolIdentity,
+        dispatch_evidence_id: ProtocolIdentity,
+        settled: &DurableEventSettledV1,
+    ) -> Result<(), DurableRunFailure> {
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableEventCommitCoordinatorV1::from_recovered(
+            &sink,
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
+            recovered.events(),
+        )
+        .map_err(map_event_commit_failure)?;
+        commits
+            .commit_settled(occurrence_evidence_id, dispatch_evidence_id, settled)
+            .await
+            .map_err(map_event_commit_failure)?;
+        self.refresh_authoritative(recovered).await
+    }
+
+    async fn refresh_authoritative(
+        &self,
+        recovered: &mut RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        let prefix = self
+            .storage
+            .read_prefix(ReadJournalPrefixV1 {
+                journal_id: self.journal_id.clone(),
+            })
+            .await
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Journal(error)))?;
+        let (_, refreshed) = recover_authoritative_prefix_with_retained_program(&prefix)
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
+        *recovered = refreshed;
+        Ok(())
+    }
+
+    async fn resolve_event_payloads(
+        &self,
+        event: &gantry_core::event::EventEnvelope,
+    ) -> Result<Vec<ProtectedPayload>, DurableRunFailure> {
+        let mut payloads = Vec::with_capacity(event.protected_references().len());
+        for reference in event.protected_references() {
+            let key =
+                JournalPayloadKey::new(reference.key()).map_err(|_| DurableRunFailure::Internal)?;
+            let payload = self
+                .storage
+                .resolve_payload(ResolveJournalPayloadV1 {
+                    journal_id: self.journal_id.clone(),
+                    key,
+                })
+                .await
+                .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Journal(error)))?;
+            if payload.class != reference.class() {
+                return Err(DurableRunFailure::Internal);
+            }
+            payloads.push(ProtectedPayload {
+                reference: reference.clone(),
+                bytes: payload.bytes,
+            });
+        }
+        Ok(payloads)
+    }
+
+    fn project_required_delivery_failures(
+        &self,
+        recovered: &RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        for event in recovered.events().events().values() {
+            for (sink_id, delivery) in event.deliveries() {
+                let Some(obligation) = event.occurrence().plan().obligation(sink_id) else {
+                    return Err(DurableRunFailure::Internal);
+                };
+                if obligation.policy().class == SinkClass::Required
+                    && let DurableDeliveryRecoveryV1::Terminal { attempt_id } = delivery
+                {
+                    self.handle
+                        .record_required_delivery_failure(RequiredEventDeliveryFailureV1 {
+                            sink_id: sink_id.clone(),
+                            event_id: event.occurrence().event().event_id(),
+                            attempt_id: *attempt_id,
+                        })
+                        .map_err(DurableRunFailure::Lifecycle)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl DurableOwnedExecution {
     pub(crate) fn publish_driver_progress(
         &self,
         recovered: &RecoveredDurableStateV1,
     ) -> Result<(), DurableRunFailure> {
+        if recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion {
+            return Err(DurableRunFailure::Internal);
+        }
         let outcome = recovered.machine().outcome().cloned();
         if recovered.latest_cut() == DurableCommitCutV1::ForegroundCompletion
             && let Some(outcome) = outcome.clone()
@@ -784,28 +1289,17 @@ impl DurableOwnedExecution {
                 .publish_committed_foreground(outcome)
                 .map_err(DurableRunFailure::Lifecycle)?;
         }
-        if recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion
-            && let Some(outcome) = outcome
-        {
-            let snapshot = self
-                .handle
-                .snapshot()
-                .map_err(DurableRunFailure::Lifecycle)?;
-            if snapshot.foreground.is_none() {
-                self.handle
-                    .publish_committed_foreground(outcome.clone())
-                    .map_err(DurableRunFailure::Lifecycle)?;
-            }
-            self.handle
-                .publish_committed_terminal(outcome)
-                .map_err(DurableRunFailure::Lifecycle)?;
-        }
         self.update_driver_observation(recovered, None);
         Ok(())
     }
 
-    pub(crate) fn finish_driver(&self, recovered: RecoveredDurableStateV1) {
+    fn complete_driver(
+        &self,
+        recovered: RecoveredDurableStateV1,
+        owner: DurableJournalOwnerState,
+    ) -> DurableExecutionObservation {
         let mut state = lock_state(&self.state);
+        state.owner = owner;
         state.last_observation = observation_from_recovered(
             &self.journal_id,
             &self.handle,
@@ -820,6 +1314,44 @@ impl DurableOwnedExecution {
             });
         }
         state.recovered = Some(recovered);
+        state.run_failure = None;
+        state.operation_in_flight = false;
+        state.driver_active = false;
+        state.driver_cancellation = None;
+        state.driver_waker = None;
+        state.generation = state.generation.wrapping_add(1);
+        let observation = state.last_observation.clone();
+        let operation_waiters = std::mem::take(&mut state.operation_waiters);
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in operation_waiters.into_iter().chain(observation_waiters) {
+            waiter.wake();
+        }
+        observation
+    }
+
+    fn fail_driver_with_owner(
+        &self,
+        recovered: RecoveredDurableStateV1,
+        owner: DurableJournalOwnerState,
+        failure: DurableRunFailure,
+    ) {
+        let _ = self.handle.publish_run_failed_nondurably();
+        let mut state = lock_state(&self.state);
+        state.owner = owner;
+        state.last_observation = observation_from_recovered(
+            &self.journal_id,
+            &self.handle,
+            &recovered,
+            Some(state.owner.clone()),
+            Some(failure.clone()),
+        );
+        state.recovered = Some(recovered);
+        state.run_failure = Some(failure);
         state.operation_in_flight = false;
         state.driver_active = false;
         state.driver_cancellation = None;
@@ -936,6 +1468,17 @@ impl DurableOwnedExecution {
                         observation: Box::new(state.last_observation.clone()),
                     };
                 }
+                if state.owner != DurableJournalOwnerState::Held
+                    && state.recovered.as_ref().is_some_and(|recovered| {
+                        recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion
+                    })
+                {
+                    let result = DurableCancelExecutionResult::AlreadyTerminal(Box::new(
+                        state.last_observation.clone(),
+                    ));
+                    state.completed_cancellation = Some(result.clone());
+                    return result;
+                }
                 if state.driver_active {
                     if let Some(reason) = &state.driver_cancellation {
                         requested_reason = reason.clone();
@@ -1007,7 +1550,11 @@ impl DurableOwnedExecution {
         Option<DurableRunFailure>,
     ) {
         if recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion {
-            let owner = self.release_owner().await;
+            let owner = if event_obligations_settled(&recovered) {
+                self.release_owner().await
+            } else {
+                DurableJournalOwnerState::Held
+            };
             let observation = observation_from_recovered(
                 &self.journal_id,
                 &self.handle,
@@ -1170,7 +1717,11 @@ impl DurableOwnedExecution {
             }
         }
 
-        let owner = self.release_owner().await;
+        let owner = if event_obligations_settled(&recovered) {
+            self.release_owner().await
+        } else {
+            DurableJournalOwnerState::Held
+        };
         let observation = observation_from_recovered(
             &self.journal_id,
             &self.handle,
@@ -1242,6 +1793,13 @@ impl DurableOwnedExecution {
                 if state.owner != DurableJournalOwnerState::Held {
                     return state.last_observation.clone();
                 }
+                if state
+                    .recovered
+                    .as_ref()
+                    .is_some_and(|recovered| !event_obligations_settled(recovered))
+                {
+                    return state.last_observation.clone();
+                }
                 if state.operation_in_flight {
                     Some(state.generation)
                 } else {
@@ -1301,7 +1859,12 @@ impl Future for DurableExecutionWait<'_> {
         let mut state = lock_state(&self.execution.state);
         let observation = state.last_observation.clone();
         let ready = observation.run_failure.is_some()
-            || (self.terminal && observation.terminal.is_some())
+            || (self.terminal
+                && observation.terminal.is_some()
+                && state
+                    .recovered
+                    .as_ref()
+                    .is_some_and(required_event_obligations_settled))
             || (!self.terminal && observation.foreground.is_some());
         if ready {
             state
@@ -1465,6 +2028,71 @@ fn register_durable_waiter(
             waker: waker.clone(),
         });
     }
+}
+
+fn next_pending_delivery(
+    recovered: &RecoveredDurableStateV1,
+    frontier: Option<u64>,
+    required_only: bool,
+) -> Result<Option<DurablePendingDelivery>, DurableRunFailure> {
+    let mut pending: Option<DurablePendingDelivery> = None;
+    for event in recovered.events().events().values() {
+        if frontier.is_some_and(|frontier| event.occurrence_sequence() > frontier) {
+            continue;
+        }
+        for (sink_id, recovery) in event.deliveries() {
+            if matches!(
+                recovery,
+                DurableDeliveryRecoveryV1::Success { .. }
+                    | DurableDeliveryRecoveryV1::Terminal { .. }
+            ) {
+                continue;
+            }
+            let obligation = event
+                .occurrence()
+                .plan()
+                .obligation(sink_id)
+                .ok_or(DurableRunFailure::Internal)?;
+            if required_only && obligation.policy().class != SinkClass::Required {
+                continue;
+            }
+            let candidate = DurablePendingDelivery {
+                occurrence_evidence_id: event.occurrence_evidence_id(),
+                occurrence_sequence: event.occurrence_sequence(),
+                event: event.occurrence().event().clone(),
+                sink_id: sink_id.clone(),
+                policy: obligation.policy().clone(),
+                recovery: recovery.clone(),
+            };
+            let replace = pending.as_ref().is_none_or(|current| {
+                (candidate.occurrence_sequence, candidate.sink_id.as_str())
+                    < (current.occurrence_sequence, current.sink_id.as_str())
+            });
+            if replace {
+                pending = Some(candidate);
+            }
+        }
+    }
+    Ok(pending)
+}
+
+fn event_obligations_settled(recovered: &RecoveredDurableStateV1) -> bool {
+    recovered.events().events().values().all(|event| {
+        event.deliveries().values().all(|delivery| {
+            matches!(
+                delivery,
+                DurableDeliveryRecoveryV1::Success { .. }
+                    | DurableDeliveryRecoveryV1::Terminal { .. }
+            )
+        })
+    })
+}
+
+fn required_event_obligations_settled(recovered: &RecoveredDurableStateV1) -> bool {
+    !matches!(
+        recovered.events().required_barrier_through(u64::MAX),
+        DurableEventBarrierV1::Pending { .. }
+    )
 }
 
 fn map_event_commit_failure(error: DurableEventCommitError) -> DurableRunFailure {

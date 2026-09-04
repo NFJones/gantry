@@ -165,6 +165,17 @@ pub enum MachineStatus {
     Cancelled,
 }
 
+/// Already-durable completion coordinates preserved by an execution-wide failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecutionFailureProjection {
+    /// No task or execution completion coordinate is durable yet.
+    Full,
+    /// Task settlement is durable; only foreground and terminal coordinates remain.
+    AfterTaskSettlement,
+    /// Foreground completion is durable; only terminal completion remains.
+    AfterForegroundCompletion,
+}
+
 /// Fixed foreground result of the base sequential task.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MachineOutcome {
@@ -849,6 +860,31 @@ impl Machine {
             MachineStep::Transition(label) => label,
             _ => unreachable!("root submission failure emits one transition"),
         }
+    }
+
+    /// Fixes an execution-wide runtime failure while preserving completion cuts
+    /// that are already durable.
+    pub fn fail_execution(
+        &mut self,
+        category: gantry_core::portable::RuntimeErrorCategory,
+        projection: ExecutionFailureProjection,
+    ) -> MachineLabel {
+        self.pending_labels.clear();
+        let label = match self.fail_current(RuntimeCode::Operation(category)) {
+            MachineStep::Transition(label) => label,
+            _ => unreachable!("execution failure emits one transition"),
+        };
+        match projection {
+            ExecutionFailureProjection::Full => {}
+            ExecutionFailureProjection::AfterTaskSettlement => {
+                let _ = self.pending_labels.pop_front();
+            }
+            ExecutionFailureProjection::AfterForegroundCompletion => {
+                let _ = self.pending_labels.pop_front();
+                let _ = self.pending_labels.pop_front();
+            }
+        }
+        label
     }
 
     /// Fails the exact pending logical operation with one portable runtime category.

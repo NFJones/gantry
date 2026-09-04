@@ -86,16 +86,17 @@ pub use hook_request::{
 pub use lifecycle::{
     AcceptExecutionError, AdmissionKind, CancellationCausalIdentity, CancellationReason,
     CancellationReasonError, CancellationRecord, ExecutionHandle, ExecutionSnapshot,
-    ExecutionTransitionError, ExecutionWait, FinalShutdownEventSettlement, InterpreterLifecycle,
-    LifecycleCode, LifecycleError, LifecycleSnapshot, OperationAdmission, OwnedActivityError,
-    OwnedPreflightWait, RequiredDeliveryRecordV1, RequiredEventDeliveryFailureV1,
-    ShutdownAdmission, ShutdownCompletionError, ShutdownCoordinator, ShutdownDurations,
-    ShutdownProgress, ShutdownReport, ShutdownWait,
+    ExecutionTransitionError, ExecutionWait, FinalShutdownEventFailure,
+    FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleCode, LifecycleError,
+    LifecycleSnapshot, OperationAdmission, OwnedActivityError, OwnedPreflightWait,
+    RequiredDeliveryRecordV1, RequiredEventDeliveryFailureV1, ShutdownAdmission,
+    ShutdownCompletionError, ShutdownCoordinator, ShutdownDurations, ShutdownProgress,
+    ShutdownReport, ShutdownWait,
 };
 pub use machine::{
-    Machine, MachineBuildError, MachineFailure, MachineLabel, MachineLimits, MachineOutcome,
-    MachineStatus, MachineStep, OperationCompletionError, OperationOccurrence, RuntimeCode,
-    SessionScopeCompletionError, SessionScopeOccurrence,
+    ExecutionFailureProjection, Machine, MachineBuildError, MachineFailure, MachineLabel,
+    MachineLimits, MachineOutcome, MachineStatus, MachineStep, OperationCompletionError,
+    OperationOccurrence, RuntimeCode, SessionScopeCompletionError, SessionScopeOccurrence,
 };
 #[cfg(feature = "durable")]
 pub use machine::{MachineCheckpointV1, MachineRecoveryError};

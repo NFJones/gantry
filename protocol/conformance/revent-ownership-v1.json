@@ -1,0 +1,59 @@
+{
+  "format": "gantry.revent-ownership-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-REVENT-001",
+  "requirements": [
+    {
+      "requirement": "GNT-3-M-LIFECYCLES",
+      "clause": "clause-006",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-15.1-automatic-execution",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "durable-cancellation-drains-finite-delivery",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#facade_cancellation_drains_finite_events_before_releasing_durable_owner"
+    },
+    {
+      "id": "durable-dispatch-settlement-barrier",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_event_dispatch_and_settlement_precede_callback_and_terminal_observation"
+    },
+    {
+      "id": "nondurable-root-order-and-observer-independence",
+      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#nondurable_root_events_keep_semantic_order_after_start_and_await_observers_drop"
+    },
+    {
+      "id": "owned-preacceptance-delivery",
+      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#dropped_start_waiter_does_not_abandon_required_default_plan_delivery"
+    },
+    {
+      "id": "preterminal-required-exhaustion-precedence",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#preterminal_required_delivery_exhaustion_commits_runtime_failure_precedence"
+    },
+    {
+      "id": "required-failure-recovery-before-source-progress",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#resume_reconstructs_committed_required_delivery_failure_before_source_progress"
+    },
+    {
+      "id": "shutdown-final-event-settlement",
+      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#shutdown_emits_one_final_event_and_reports_its_actual_settlement"
+    },
+    {
+      "id": "terminal-delivery-only-resume",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner"
+    }
+  ],
+  "exclusions": [
+    "Cross-task event sequence races and causal ordering among independently scheduled source tasks remain owned by GNT-ASYNC-OBS-001."
+  ]
+}

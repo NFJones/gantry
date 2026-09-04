@@ -270,11 +270,14 @@ fn shutdown_races_transfer_admission_and_snapshot_first_durations() {
         .coordinator
         .take()
         .unwrap_or_else(|| panic!("first caller did not receive coordination authority"));
+    assert!(coordinator.initial_executions().is_empty());
 
     let execution_id = execution(1);
     let handle = start
         .accept_execution(execution_id)
         .unwrap_or_else(|error| panic!("admitted execution was not transferred: {error:?}"));
+    assert!(coordinator.initial_executions().is_empty());
+    assert_eq!(coordinator.cohort_executions().as_ref(), [execution_id]);
     assert_eq!(lifecycle.snapshot().admitted_calls, 0);
     assert_eq!(lifecycle.snapshot().cohort.as_ref(), [execution_id]);
     assert!(matches!(

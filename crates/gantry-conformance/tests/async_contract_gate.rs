@@ -18,6 +18,8 @@ const PROFILES: [&str; 6] = [
     "evaluator",
     "frontend",
 ];
+const ASSIGNMENT_MATRIX_SHA256: &str =
+    "d5f62a1af89feded6523b71efc615b9c7d295c9b5e8a099d2f26033c34fa33a4";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -109,7 +111,7 @@ struct ProfileReview {
 }
 
 #[test]
-fn verified_async_contract_gate_freezes_every_decision_and_planned_requirement() {
+fn verified_async_contract_gate_freezes_every_decision_and_requirement_assignment() {
     let root = workspace_root();
     let contract: ContractGate = read_json(&root.join(CONTRACT_PATH));
     assert_eq!(validate_contract(&root, &contract), Ok(()));
@@ -154,7 +156,21 @@ fn async_contract_gate_rejects_stale_incomplete_duplicate_or_overclaimed_records
     incomplete.requirement_assignments[0].profiles.pop();
     assert!(matches!(
         validate_contract(&root, &incomplete),
-        Err(message) if message.contains("planned requirement coverage differs")
+        Err(message) if message.contains("requirement assignment matrix differs")
+    ));
+
+    let mut unrelated_covered = contract.clone();
+    unrelated_covered.requirement_assignments.push(Assignment {
+        requirement: "GNT-12.6".to_owned(),
+        clause: "clause-001".to_owned(),
+        profiles: vec!["durable-runtime".to_owned()],
+        evidence_owners: unrelated_covered.requirement_assignments[0]
+            .evidence_owners
+            .clone(),
+    });
+    assert!(matches!(
+        validate_contract(&root, &unrelated_covered),
+        Err(message) if message.contains("requirement assignment matrix differs")
     ));
 
     let mut overclaimed = contract;
@@ -363,7 +379,7 @@ fn validate_assignments(
     downstream: &BTreeSet<String>,
 ) -> Result<(), String> {
     let mut reviewed = BTreeMap::<(String, String, String), String>::new();
-    let mut planned = BTreeSet::new();
+    let mut remaining_planned = BTreeSet::new();
     for requirement in &review.requirements {
         for clause in &requirement.clauses {
             for profile in &clause.profile_reviews {
@@ -374,13 +390,14 @@ fn validate_assignments(
                 );
                 reviewed.insert(key.clone(), profile.state.clone());
                 if profile.state == "planned" {
-                    planned.insert(key);
+                    remaining_planned.insert(key);
                 }
             }
         }
     }
 
     let mut assigned = BTreeSet::new();
+    let mut assignment_rows = Vec::new();
     let mut owners = BTreeSet::new();
     for assignment in assignments {
         if assignment.profiles.is_empty()
@@ -400,6 +417,13 @@ fn validate_assignments(
             owners.insert(owner.clone());
         }
         for profile in &assignment.profiles {
+            assignment_rows.push(format!(
+                "{}#{}#{}#{}\n",
+                assignment.requirement,
+                assignment.clause,
+                profile,
+                assignment.evidence_owners.join(",")
+            ));
             let key = (
                 assignment.requirement.clone(),
                 assignment.clause.clone(),
@@ -411,15 +435,22 @@ fn validate_assignments(
                     assignment.requirement, assignment.clause
                 ));
             }
-            if reviewed.get(&key).map(String::as_str) != Some("planned") {
+            if !matches!(
+                reviewed.get(&key).map(String::as_str),
+                Some("planned" | "covered")
+            ) {
                 return Err(format!(
-                    "assignment is not a planned review {}#{}#{profile}",
+                    "assignment is not a planned or covered review {}#{}#{profile}",
                     assignment.requirement, assignment.clause
                 ));
             }
         }
     }
-    if assigned != planned {
+    assignment_rows.sort();
+    if sha256(assignment_rows.concat().as_bytes()) != ASSIGNMENT_MATRIX_SHA256 {
+        return Err("requirement assignment matrix differs from the frozen contract".to_owned());
+    }
+    if !remaining_planned.is_subset(&assigned) {
         return Err("planned requirement coverage differs from the frozen matrix".to_owned());
     }
     if owners != *downstream {

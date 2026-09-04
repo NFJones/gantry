@@ -62,6 +62,15 @@ impl SinkPlan {
         &self.0
     }
 
+    /// Finds the currently configured adapter for one stable sink identity.
+    #[must_use]
+    pub fn registration(&self, sink_id: &SinkId) -> Option<&SinkRegistration> {
+        self.0
+            .binary_search_by(|registration| registration.id().as_str().cmp(sink_id.as_str()))
+            .ok()
+            .and_then(|index| self.0.get(index))
+    }
+
     /// Returns a frozen plan without one exhausted sink obligation.
     ///
     /// This is used only for consequence events created while terminating the

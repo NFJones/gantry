@@ -14,20 +14,27 @@ use gantry::host::contracts::{
     RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
+use gantry::host::event::{
+    EventDeliveryRequest, EventDeliveryRuntime, EventRetryPolicy, EventSink, RedactionCapabilities,
+    SinkDeliveryPolicy, SinkId,
+};
 use gantry::host::journal::{
     AcquireJournalOwnerV1, JournalCommitReceiptV1, JournalCommitRequestV1, JournalError,
     JournalErrorCode, JournalId, JournalOwnershipV1, JournalPrefixV1, ReadJournalPrefixV1,
     ReleaseJournalOwnerV1, ResolveJournalPayloadV1, ResolvedJournalPayloadV1,
 };
+use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
-    EventKind, ExecutionObservationState, PORTABLE_SPECIFICATION_REVISION,
-    PROTOCOL_FAMILY_DEFINITIONS,
+    DeliveryOutcome, EventKind, ExecutionObservationState, JitterMode,
+    PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS, RuntimeErrorCategory, SinkClass,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    AsyncCapacityLimits, CancellationRecord, DurableCommitCutV1, DurableEventOccurrenceV1,
-    DurableLogicalEvidenceV1, InMemoryJournalStore, InterpreterConfiguration, MachineOutcome,
-    RequiredConfiguration, recover_authoritative_prefix_with_retained_program,
+    AsyncCapacityLimits, CancellationRecord, DURABLE_EVENT_DISPATCHED_KIND_V1,
+    DURABLE_EVENT_SETTLED_KIND_V1, DurableCommitCutV1, DurableEventDispatchedV1,
+    DurableEventOccurrenceV1, DurableEventSettledV1, DurableLogicalEvidenceV1,
+    InMemoryJournalStore, InterpreterConfiguration, MachineOutcome, RequiredConfiguration,
+    RuntimeCode, recover_authoritative_prefix_with_retained_program,
 };
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
@@ -168,6 +175,354 @@ impl JournalStorage for FailAfterStartStore {
     ) -> HostFuture<'a, Result<(), JournalError>> {
         self.releases.fetch_add(1, Ordering::AcqRel);
         self.inner.release_owner(request)
+    }
+}
+
+struct ObservedJournalStore {
+    inner: InMemoryJournalStore,
+    committed: Mutex<Vec<(String, Vec<u8>)>>,
+    settled_commits: AtomicU64,
+    settlement_gate_ordinal: u64,
+    settlement_commit_started: AtomicBool,
+    settlement_commit_released: AtomicBool,
+    settlement_commit_waker: Mutex<Option<Waker>>,
+    post_commit_settlement_gate: bool,
+    post_commit_settlement_started: AtomicBool,
+    post_commit_settlement_released: AtomicBool,
+    post_commit_settlement_waker: Mutex<Option<Waker>>,
+    releases: AtomicU64,
+}
+
+impl ObservedJournalStore {
+    fn with_settlement_gate(settlement_gate_ordinal: u64) -> Self {
+        Self {
+            inner: InMemoryJournalStore::new(),
+            committed: Mutex::new(Vec::new()),
+            settled_commits: AtomicU64::new(0),
+            settlement_gate_ordinal,
+            settlement_commit_started: AtomicBool::new(false),
+            settlement_commit_released: AtomicBool::new(false),
+            settlement_commit_waker: Mutex::new(None),
+            post_commit_settlement_gate: false,
+            post_commit_settlement_started: AtomicBool::new(false),
+            post_commit_settlement_released: AtomicBool::new(false),
+            post_commit_settlement_waker: Mutex::new(None),
+            releases: AtomicU64::new(0),
+        }
+    }
+
+    fn with_post_commit_settlement_gate(settlement_gate_ordinal: u64) -> Self {
+        Self {
+            post_commit_settlement_gate: true,
+            ..Self::with_settlement_gate(settlement_gate_ordinal)
+        }
+    }
+
+    fn latest_committed(&self) -> Option<(String, Vec<u8>)> {
+        self.committed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .last()
+            .cloned()
+    }
+
+    fn settlement_commit_started(&self) -> bool {
+        self.settlement_commit_started.load(Ordering::Acquire)
+    }
+
+    fn release_settlement_commit(&self) {
+        self.settlement_commit_released
+            .store(true, Ordering::Release);
+        if let Some(waker) = self
+            .settlement_commit_waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+
+    fn post_commit_settlement_started(&self) -> bool {
+        self.post_commit_settlement_started.load(Ordering::Acquire)
+    }
+
+    fn release_post_commit_settlement(&self) {
+        self.post_commit_settlement_released
+            .store(true, Ordering::Release);
+        if let Some(waker) = self
+            .post_commit_settlement_waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+
+    fn release_count(&self) -> u64 {
+        self.releases.load(Ordering::Acquire)
+    }
+}
+
+impl JournalStorage for ObservedJournalStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        let committed = request
+            .batch
+            .evidence
+            .iter()
+            .map(|evidence| (evidence.kind.to_string(), evidence.canonical_body.to_vec()))
+            .collect::<Vec<_>>();
+        let is_settlement = committed
+            .iter()
+            .any(|(kind, _)| kind == DURABLE_EVENT_SETTLED_KIND_V1);
+        let gate = is_settlement
+            && self.settled_commits.fetch_add(1, Ordering::AcqRel) + 1
+                == self.settlement_gate_ordinal;
+        Box::pin(async move {
+            if gate && !self.post_commit_settlement_gate {
+                self.settlement_commit_started
+                    .store(true, Ordering::Release);
+                std::future::poll_fn(|context| {
+                    if self.settlement_commit_released.load(Ordering::Acquire) {
+                        return Poll::Ready(());
+                    }
+                    *self
+                        .settlement_commit_waker
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some(context.waker().clone());
+                    Poll::Pending
+                })
+                .await;
+            }
+            let result = self.inner.commit(request).await;
+            if result.is_ok() {
+                self.committed
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .extend(committed);
+            }
+            if gate && self.post_commit_settlement_gate && result.is_ok() {
+                self.post_commit_settlement_started
+                    .store(true, Ordering::Release);
+                std::future::poll_fn(|context| {
+                    if self.post_commit_settlement_released.load(Ordering::Acquire) {
+                        return Poll::Ready(());
+                    }
+                    *self
+                        .post_commit_settlement_waker
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some(context.waker().clone());
+                    Poll::Pending
+                })
+                .await;
+            }
+            result
+        })
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.releases.fetch_add(1, Ordering::AcqRel);
+        self.inner.release_owner(request)
+    }
+}
+
+#[derive(Default)]
+struct DeliveryGate {
+    calls: AtomicU64,
+    released: AtomicBool,
+    waker: Mutex<Option<Waker>>,
+}
+
+impl DeliveryGate {
+    fn calls(&self) -> u64 {
+        self.calls.load(Ordering::Acquire)
+    }
+
+    fn release(&self) {
+        self.released.store(true, Ordering::Release);
+        if let Some(waker) = self
+            .waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+
+    async fn wait(&self) {
+        std::future::poll_fn(|context| {
+            if self.released.load(Ordering::Acquire) {
+                return Poll::Ready(());
+            }
+            *self
+                .waker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(context.waker().clone());
+            Poll::Pending
+        })
+        .await;
+    }
+}
+
+struct DurableEvidenceSink {
+    storage: Arc<ObservedJournalStore>,
+    terminal_gate: Option<Arc<DeliveryGate>>,
+}
+
+impl EventSink for DurableEvidenceSink {
+    fn deliver<'a>(
+        &'a self,
+        request: EventDeliveryRequest,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        if request.event.execution_id().is_some() {
+            let (kind, body) = self
+                .storage
+                .latest_committed()
+                .unwrap_or_else(|| panic!("durable sink callback preceded journal evidence"));
+            assert_eq!(kind, DURABLE_EVENT_DISPATCHED_KIND_V1);
+            let dispatched = DurableEventDispatchedV1::decode(&body)
+                .unwrap_or_else(|error| panic!("dispatch evidence did not decode: {error:?}"));
+            assert_eq!(dispatched.event_id(), request.event.event_id());
+            assert_eq!(dispatched.attempt_id(), request.attempt_id);
+            assert_eq!(dispatched.retry_number(), request.retry_number);
+        }
+        let terminal_gate = self.terminal_gate.clone();
+        Box::pin(async move {
+            if request.event.kind() == EventKind::TerminalExecution
+                && let Some(gate) = terminal_gate
+            {
+                gate.calls.fetch_add(1, Ordering::AcqRel);
+                gate.wait().await;
+            }
+            Ok(DeliveryOutcome::Success)
+        })
+    }
+}
+
+#[derive(Default)]
+struct ImmediateDurableDeliveryRuntime;
+
+impl EventDeliveryRuntime for ImmediateDurableDeliveryRuntime {
+    fn deliver_with_timeout<'a>(
+        &'a self,
+        sink: &'a dyn EventSink,
+        request: EventDeliveryRequest,
+        _: u64,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        sink.deliver(request)
+    }
+
+    fn sleep<'a>(&'a self, _: u64) -> HostFuture<'a, Result<(), HostError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn sample_full_jitter(&self, _: u64) -> Result<u64, HostError> {
+        Ok(0)
+    }
+}
+
+#[derive(Default)]
+struct ShutdownPayloadSink {
+    payloads: Mutex<Vec<Vec<u8>>>,
+}
+
+impl ShutdownPayloadSink {
+    fn payloads(&self) -> Vec<Vec<u8>> {
+        self.payloads
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+impl EventSink for ShutdownPayloadSink {
+    fn deliver<'a>(
+        &'a self,
+        request: EventDeliveryRequest,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        if request.event.kind() == EventKind::Shutdown {
+            self.payloads
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(request.event.payload().canonical_bytes().to_vec());
+        }
+        Box::pin(async { Ok(DeliveryOutcome::Success) })
+    }
+}
+
+struct SelectiveOutcomeSink {
+    failed_kind: EventKind,
+    attempts: Mutex<
+        Vec<(
+            EventKind,
+            gantry::identity::ProtocolIdentity,
+            gantry::identity::ProtocolIdentity,
+        )>,
+    >,
+}
+
+impl SelectiveOutcomeSink {
+    fn attempts(
+        &self,
+    ) -> Vec<(
+        EventKind,
+        gantry::identity::ProtocolIdentity,
+        gantry::identity::ProtocolIdentity,
+    )> {
+        self.attempts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+impl EventSink for SelectiveOutcomeSink {
+    fn deliver<'a>(
+        &'a self,
+        request: EventDeliveryRequest,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        let kind = request.event.kind();
+        self.attempts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((kind, request.event.event_id(), request.attempt_id));
+        let outcome = if kind == self.failed_kind {
+            DeliveryOutcome::Terminal
+        } else {
+            DeliveryOutcome::Success
+        };
+        Box::pin(async move { Ok(outcome) })
     }
 }
 
@@ -665,6 +1020,163 @@ fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
 }
 
 #[test]
+fn facade_cancellation_drains_finite_events_before_releasing_durable_owner() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(PendingHookIntegration::new(Arc::clone(&hook_state)));
+    let storage = Arc::new(ObservedJournalStore::with_settlement_gate(u64::MAX));
+    let required_gate = Arc::new(DeliveryGate::default());
+    let best_effort_gate = Arc::new(DeliveryGate::default());
+    let required_sink = Arc::new(DurableEvidenceSink {
+        storage: Arc::clone(&storage),
+        terminal_gate: Some(Arc::clone(&required_gate)),
+    });
+    let best_effort_sink = Arc::new(DurableEvidenceSink {
+        storage: Arc::clone(&storage),
+        terminal_gate: Some(Arc::clone(&best_effort_gate)),
+    });
+    let interpreter = interpreter_with_durable_delivery(
+        Arc::clone(&executor),
+        integration,
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_required_and_best_effort_plan(required_sink, best_effort_sink),
+    );
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-facade-cancellation-event-drain")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id,
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("durable cancellation event-drain fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.start.execution_id;
+    let root_task_id = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("accepted durable execution submitted no root task"));
+    assert_eq!(
+        executor.poll_task(root_task_id),
+        Ok(DeterministicTaskPoll::Pending)
+    );
+    assert!(hook_state.dispatch_started.load(Ordering::Acquire));
+
+    let expected_reason = caller_cancellation_reason(Some(Arc::from("drain-events")), 64)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation =
+        Box::pin(interpreter.cancel_execution(execution_id, expected_reason.clone()));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending(),
+        "facade cancellation returned before the pending hook observed cancellation"
+    );
+    assert_eq!(
+        executor.poll_task(root_task_id),
+        Ok(DeterministicTaskPoll::Pending)
+    );
+    assert!(hook_state.cancellation_observed.load(Ordering::Acquire));
+    hook_state.release();
+    poll_task_until(&executor, root_task_id, || required_gate.calls() == 1);
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending(),
+        "facade cancellation returned before required delivery settled"
+    );
+    assert_eq!(required_gate.calls(), 1);
+    assert_eq!(best_effort_gate.calls(), 0);
+    assert_eq!(storage.release_count(), 0);
+
+    required_gate.release();
+    poll_task_until(&executor, root_task_id, || best_effort_gate.calls() == 1);
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending(),
+        "facade cancellation returned before best-effort delivery settled"
+    );
+    assert_eq!(required_gate.calls(), 1);
+    assert_eq!(best_effort_gate.calls(), 1);
+    assert_eq!(storage.release_count(), 0);
+
+    best_effort_gate.release();
+    settle_task(&executor, root_task_id);
+    let record = match cancellation
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(Ok(record)) => record,
+        Poll::Ready(Err(error)) => panic!("facade cancellation failed: {error:?}"),
+        Poll::Pending => panic!("facade cancellation remained pending after delivery settlement"),
+    };
+    assert!(matches!(
+        record,
+        CancellationRecord::Accepted { ref reason, .. } if reason == &expected_reason
+    ));
+    assert_eq!(required_gate.calls(), 1);
+    assert_eq!(best_effort_gate.calls(), 1);
+    assert_eq!(storage.release_count(), 1);
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "drain-events"
+    ));
+
+    let repeated = block_on(interpreter.cancel_execution(execution_id, expected_reason))
+        .unwrap_or_else(|error| panic!("repeated facade cancellation failed: {error:?}"));
+    assert!(matches!(repeated, CancellationRecord::Accepted { .. }));
+    assert_eq!(required_gate.calls(), 1);
+    assert_eq!(best_effort_gate.calls(), 1);
+    assert_eq!(storage.release_count(), 1);
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(
+        shutdown
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    let shutdown_task_id = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("shutdown submitted no owned task"));
+    settle_task(&executor, shutdown_task_id);
+    match shutdown
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(Ok(report)) => assert!(report.orderly),
+        Poll::Ready(Err(error)) => panic!("facade shutdown failed: {error:?}"),
+        Poll::Pending => panic!("facade shutdown did not publish its report"),
+    }
+    assert_eq!(required_gate.calls(), 1);
+    assert_eq!(best_effort_gate.calls(), 1);
+    assert_eq!(storage.release_count(), 1);
+}
+
+#[test]
 fn cancellation_progresses_a_pending_dispatch_and_retains_it_to_settlement() {
     let root = TempDirectory::new(
         "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
@@ -890,7 +1402,14 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
 fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
     let root = TempDirectory::new("fn main() -> Int { 42 }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
-    let interpreter = interpreter(Arc::clone(&executor));
+    let shutdown_sink = Arc::new(ShutdownPayloadSink::default());
+    let interpreter = interpreter_with_durable_delivery(
+        Arc::clone(&executor),
+        Arc::new(ScriptedIntegration::new([], [])),
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(shutdown_sink.clone()),
+    );
     let gate = Arc::new(DurableHandoffTestGate::default());
     interpreter.install_durable_handoff_test_gate(Arc::clone(&gate));
     let storage = Arc::new(GatedCancellationStore::default());
@@ -928,8 +1447,14 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
                 .poll(&mut Context::from_waker(Waker::noop()))
                 .is_pending()
         );
-        assert_eq!(executor.task_ids(), [0]);
-        assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+        let shutdown_task_id = *executor
+            .task_ids()
+            .last()
+            .unwrap_or_else(|| panic!("shutdown submitted no owned task"));
+        assert_eq!(
+            executor.poll_task(shutdown_task_id),
+            Ok(DeterministicTaskPoll::Pending)
+        );
         assert!(
             !signal.is_cancelled(),
             "shutdown directly signalled a durable token while its owner was unpublished"
@@ -945,22 +1470,31 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
                 panic!("durable handoff fixture was rejected: {failure:?}")
             }
         };
-        assert_eq!(executor.task_ids(), [0, 1]);
+        let root_task_id = *executor
+            .task_ids()
+            .last()
+            .unwrap_or_else(|| panic!("accepted durable start submitted no root task"));
         assert!(
-            executor.is_runnable(0),
+            executor.is_runnable(shutdown_task_id),
             "owner publication did not wake shutdown"
         );
-        assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+        assert_eq!(
+            executor.poll_task(shutdown_task_id),
+            Ok(DeterministicTaskPoll::Pending)
+        );
         assert!(
             !signal.is_cancelled(),
             "shutdown signalled durable cancellation before its journal commit"
         );
 
         storage.release_cancellation_commit();
-        assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+        assert_eq!(
+            executor.poll_task(shutdown_task_id),
+            Ok(DeterministicTaskPoll::Pending)
+        );
         assert!(signal.is_cancelled());
-        settle_task(&executor, 1);
-        settle_task(&executor, 0);
+        settle_task(&executor, root_task_id);
+        settle_task(&executor, shutdown_task_id);
         let report = match shutdown
             .as_mut()
             .poll(&mut Context::from_waker(Waker::noop()))
@@ -976,6 +1510,12 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
             observation.terminal,
             Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
         ));
+        let payloads = shutdown_sink.payloads();
+        assert_eq!(payloads.len(), 1);
+        let payload: serde_json::Value = serde_json::from_slice(&payloads[0])
+            .unwrap_or_else(|error| panic!("shutdown payload did not decode: {error}"));
+        assert_eq!(payload["executions_at_start"], 1);
+        assert_eq!(payload["admitted_after_start_count"], 0);
     });
 }
 
@@ -1392,6 +1932,253 @@ fn dropping_the_resume_waiter_does_not_abandon_accepted_work() {
 }
 
 #[test]
+fn durable_event_dispatch_and_settlement_precede_callback_and_terminal_observation() {
+    let root = TempDirectory::new("fn main() -> Int { 67 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let storage = Arc::new(ObservedJournalStore::with_settlement_gate(3));
+    let sink = Arc::new(DurableEvidenceSink {
+        storage: Arc::clone(&storage),
+        terminal_gate: None,
+    });
+    let interpreter = interpreter_with_durable_delivery(
+        Arc::clone(&executor),
+        Arc::new(ScriptedIntegration::new([], [])),
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(sink),
+    );
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-event-ordering")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("durable event ordering fixture was rejected: {failure:?}")
+        }
+    };
+
+    let root_task_id = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("accepted durable execution submitted no root task"));
+    poll_task_until(&executor, root_task_id, || {
+        storage.settlement_commit_started()
+    });
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = &prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    let terminal_occurrence = full
+        .evidence
+        .iter()
+        .filter(|entry| entry.kind.as_ref() == "gantry.event-occurrence/v1")
+        .filter_map(|entry| DurableEventOccurrenceV1::decode(&entry.canonical_body).ok())
+        .find(|occurrence| occurrence.event().kind() == EventKind::TerminalExecution)
+        .unwrap_or_else(|| panic!("terminal event occurrence was not committed"));
+    let terminal_dispatch = full
+        .evidence
+        .iter()
+        .filter(|entry| entry.kind.as_ref() == DURABLE_EVENT_DISPATCHED_KIND_V1)
+        .filter_map(|entry| DurableEventDispatchedV1::decode(&entry.canonical_body).ok())
+        .find(|dispatched| dispatched.event_id() == terminal_occurrence.event().event_id())
+        .unwrap_or_else(|| panic!("terminal event dispatch was not committed"));
+    assert!(
+        full.evidence
+            .iter()
+            .filter(|entry| entry.kind.as_ref() == DURABLE_EVENT_SETTLED_KIND_V1)
+            .filter_map(|entry| DurableEventSettledV1::decode(&entry.canonical_body).ok())
+            .all(|settled| settled.event_id() != terminal_dispatch.event_id()),
+        "terminal event settlement became visible before the gated commit"
+    );
+
+    let mut terminal = pin!(accepted.owned.await_terminal());
+    assert!(
+        terminal
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending(),
+        "terminal observation preceded durable event settlement"
+    );
+    assert_eq!(storage.release_count(), 0);
+
+    storage.release_settlement_commit();
+    settle_task(&executor, root_task_id);
+    let observation = match terminal
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(observation) => observation,
+        Poll::Pending => panic!("terminal observation remained pending after settlement"),
+    };
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Succeeded(ref value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 67)
+    ));
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    assert!(full.evidence.iter().any(|entry| {
+        entry.kind.as_ref() == DURABLE_EVENT_SETTLED_KIND_V1
+            && DurableEventSettledV1::decode(&entry.canonical_body).is_ok_and(|settled| {
+                settled.event_id() == terminal_dispatch.event_id()
+                    && settled.attempt_id() == terminal_dispatch.attempt_id()
+                    && settled.outcome() == DeliveryOutcome::Success
+            })
+    }));
+    assert_eq!(storage.release_count(), 1);
+}
+
+#[test]
+fn terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner() {
+    let root = TempDirectory::new("fn main() -> Int { 71 }");
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let storage = Arc::new(ObservedJournalStore::with_settlement_gate(3));
+    let initial_sink = Arc::new(DurableEvidenceSink {
+        storage: Arc::clone(&storage),
+        terminal_gate: None,
+    });
+    let initial = interpreter_with_durable_delivery(
+        Arc::clone(&initial_executor),
+        Arc::new(ScriptedIntegration::new([], [])),
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(initial_sink),
+    );
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-delivery-only-resume")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("delivery-only resume fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+
+    let initial_root_task_id = *initial_executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("initial durable execution submitted no root task"));
+    poll_task_until(&initial_executor, initial_root_task_id, || {
+        storage.settlement_commit_started()
+    });
+    assert_eq!(storage.release_count(), 0);
+    initial_executor
+        .fail_task(initial_root_task_id)
+        .unwrap_or_else(|error| panic!("could not stop simulated crashed driver: {error:?}"));
+    storage.release_settlement_commit();
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
+    assert_eq!(storage.release_count(), 1);
+
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let terminal_gate = Arc::new(DeliveryGate::default());
+    let resume_sink = Arc::new(DurableEvidenceSink {
+        storage: Arc::clone(&storage),
+        terminal_gate: Some(Arc::clone(&terminal_gate)),
+    });
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let resumed = interpreter_with_durable_delivery(
+        Arc::clone(&resume_executor),
+        Arc::clone(&integration),
+        97,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(resume_sink),
+    );
+    let mut resume = pin!(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id,
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    assert!(
+        resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    poll_task_until(&resume_executor, 0, || terminal_gate.calls() == 1);
+    assert_eq!(resume_executor.task_ids(), [0]);
+    assert_eq!(storage.release_count(), 1);
+    assert_eq!(
+        integration
+            .calls()
+            .iter()
+            .map(|call| call.operation)
+            .collect::<Vec<_>>(),
+        [EmbeddingOperation::ResolveSessions]
+    );
+
+    terminal_gate.release();
+    settle_task(&resume_executor, 0);
+    let accepted = match resume
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
+            panic!("delivery-only terminal resume was rejected: {failure:?}")
+        }
+        Poll::Pending => panic!("delivery-only terminal resume was not published"),
+    };
+    assert_eq!(resume_executor.task_ids(), [0]);
+    assert_eq!(storage.release_count(), 2);
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Succeeded(ref value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 71)
+    ));
+}
+
+#[test]
 fn terminal_resume_accepts_without_submitting_a_root_driver() {
     let root = TempDirectory::new("fn main() -> Int { 73 }");
     let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -1422,11 +2209,6 @@ fn terminal_resume_accepts_without_submitting_a_root_driver() {
     };
     let execution_id = started.start.execution_id;
     settle_task(&initial_executor, 0);
-    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
-        journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
-    }))
-    .unwrap_or_else(|error| panic!("terminal fixture owner release failed: {error:?}"));
 
     let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
     let resumed = interpreter_with_integration_and_identity_start(
@@ -1713,6 +2495,345 @@ fn durable_operation_cuts_commit_before_dispatch_and_source_consumption() {
 }
 
 #[test]
+fn preterminal_required_delivery_exhaustion_commits_runtime_failure_precedence() {
+    let root = TempDirectory::new(
+        "action read_only lookup(value: Int) -> String;\nfn main() -> String { action lookup(7) }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveMappings,
+            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+        )],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&br#""done""#[..]),
+        ))])],
+    ));
+    let sink = Arc::new(SelectiveOutcomeSink {
+        failed_kind: EventKind::OperationDispatch,
+        attempts: Mutex::new(Vec::new()),
+    });
+    let interpreter = interpreter_with_durable_delivery(
+        Arc::clone(&executor),
+        integration.clone(),
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(sink.clone()),
+    );
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-required-delivery-failure")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("required-delivery fixture was rejected: {failure:?}")
+        }
+    };
+    let root_task_id = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("accepted durable execution submitted no root task"));
+    for _ in 0..256 {
+        match executor
+            .poll_task(root_task_id)
+            .unwrap_or_else(|error| panic!("required-delivery root poll failed: {error:?}"))
+        {
+            DeterministicTaskPoll::Settled(_) => break,
+            DeterministicTaskPoll::Pending | DeterministicTaskPoll::NotRunnable => {}
+            other => panic!("required-delivery root settled abnormally: {other:?}"),
+        }
+    }
+    assert!(
+        matches!(
+            executor.poll_task(root_task_id),
+            Ok(DeterministicTaskPoll::Settled(_))
+        ),
+        "required-delivery root did not settle: {:?}",
+        accepted.owned.observation()
+    );
+
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(
+        matches!(
+            observation.terminal,
+            Some(MachineOutcome::Failed(ref failure))
+                if failure.code
+                    == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
+        ),
+        "unexpected required-delivery outcome: {observation:?}"
+    );
+    assert_eq!(observation.required_delivery_failures.len(), 1);
+    let failed = &observation.required_delivery_failures[0];
+    let attempts = sink.attempts();
+    let (_, event_id, attempt_id) = attempts
+        .iter()
+        .find(|(kind, _, _)| *kind == EventKind::OperationDispatch)
+        .copied()
+        .unwrap_or_else(|| panic!("operation-dispatch delivery was not attempted"));
+    assert_eq!(failed.event_id, event_id);
+    assert_eq!(failed.attempt_id, attempt_id);
+    assert_eq!(failed.sink_id.as_str(), "durable-revent-sink");
+    assert_eq!(
+        integration
+            .calls()
+            .iter()
+            .map(|call| call.operation)
+            .collect::<Vec<_>>(),
+        [EmbeddingOperation::ResolveMappings]
+    );
+
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("required-delivery prefix did not recover: {error:?}"));
+    assert_eq!(
+        recovered.latest_cut(),
+        DurableCommitCutV1::TerminalCompletion
+    );
+    assert!(matches!(
+        recovered.machine().outcome(),
+        Some(MachineOutcome::Failed(failure))
+            if failure.code
+                == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
+    ));
+}
+
+#[test]
+fn resume_reconstructs_committed_required_delivery_failure_before_source_progress() {
+    let root = TempDirectory::new(
+        "action read_only lookup(value: Int) -> String;\nfn main() -> String { action lookup(11) }",
+    );
+    let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let initial_integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveMappings,
+            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+        )],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&br#""unexpected""#[..]),
+        ))])],
+    ));
+    let sink = Arc::new(SelectiveOutcomeSink {
+        failed_kind: EventKind::OperationDispatch,
+        attempts: Mutex::new(Vec::new()),
+    });
+    let initial = interpreter_with_durable_delivery(
+        Arc::clone(&initial_executor),
+        Arc::clone(&initial_integration),
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(sink.clone()),
+    );
+    let storage = Arc::new(ObservedJournalStore::with_post_commit_settlement_gate(1));
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-revent-post-commit-resume")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(initial.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("post-commit REVENT fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = started.start.execution_id;
+    let initial_root_task_id = *initial_executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("accepted durable execution submitted no root task"));
+    poll_task_until(&initial_executor, initial_root_task_id, || {
+        storage.post_commit_settlement_started()
+    });
+
+    let attempts = sink.attempts();
+    let operation_attempts = attempts
+        .iter()
+        .filter(|(kind, _, _)| *kind == EventKind::OperationDispatch)
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(operation_attempts.len(), 1);
+    let (_, failed_event_id, failed_attempt_id) = operation_attempts[0];
+    assert_eq!(
+        initial_integration
+            .calls()
+            .iter()
+            .map(|call| call.operation)
+            .collect::<Vec<_>>(),
+        [EmbeddingOperation::ResolveMappings]
+    );
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("post-commit journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = &prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    assert!(full.evidence.iter().any(|entry| {
+        entry.kind.as_ref() == DURABLE_EVENT_SETTLED_KIND_V1
+            && DurableEventSettledV1::decode(&entry.canonical_body).is_ok_and(|settled| {
+                settled.event_id() == failed_event_id
+                    && settled.attempt_id() == failed_attempt_id
+                    && settled.outcome() == DeliveryOutcome::Terminal
+            })
+    }));
+    let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("post-commit prefix did not recover: {error:?}"));
+    assert_eq!(
+        recovered.latest_cut(),
+        DurableCommitCutV1::OperationPrepared
+    );
+
+    initial_executor
+        .fail_task(initial_root_task_id)
+        .unwrap_or_else(|error| panic!("could not stop simulated crashed driver: {error:?}"));
+    storage.release_post_commit_settlement();
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.ownership_token.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
+    assert_eq!(storage.release_count(), 1);
+
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let resume_integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+        ],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&br#""unexpected""#[..]),
+        ))])],
+    ));
+    let resumed = interpreter_with_durable_delivery(
+        Arc::clone(&resume_executor),
+        Arc::clone(&resume_integration),
+        97,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(sink.clone()),
+    );
+    let mut resume = pin!(resumed.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(execution_id),
+            event_delivery: None,
+        },
+    ));
+    let accepted = match resume
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
+            panic!("post-commit REVENT resume was rejected: {failure:?}")
+        }
+        Poll::Pending => {
+            settle_task(&resume_executor, 0);
+            match resume
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+                Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
+                    panic!("post-commit REVENT resume was rejected: {failure:?}")
+                }
+                Poll::Pending => panic!("post-commit REVENT resume was not published"),
+            }
+        }
+    };
+    assert_eq!(storage.release_count(), 1);
+    assert_eq!(resume_executor.task_ids(), [0, 1]);
+
+    settle_task(&resume_executor, 1);
+    let observation = block_on(accepted.owned.await_terminal());
+    assert!(matches!(
+        observation.terminal,
+        Some(MachineOutcome::Failed(ref failure))
+            if failure.code
+                == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
+    ));
+    assert_eq!(
+        observation.latest_cut(),
+        DurableCommitCutV1::TerminalCompletion
+    );
+    assert_eq!(observation.required_delivery_failures.len(), 1);
+    let failed = &observation.required_delivery_failures[0];
+    assert_eq!(failed.event_id, failed_event_id);
+    assert_eq!(failed.attempt_id, failed_attempt_id);
+    assert_eq!(failed.sink_id.as_str(), "durable-revent-sink");
+    assert_eq!(
+        resume_integration
+            .calls()
+            .iter()
+            .map(|call| call.operation)
+            .collect::<Vec<_>>(),
+        [
+            EmbeddingOperation::ResolveMappings,
+            EmbeddingOperation::ResolveSessions,
+        ]
+    );
+    assert_eq!(
+        sink.attempts()
+            .iter()
+            .filter(|(kind, _, _)| *kind == EventKind::OperationDispatch)
+            .count(),
+        1
+    );
+    assert_eq!(storage.release_count(), 2);
+
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("resumed journal read failed: {error:?}"));
+    let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("resumed prefix did not recover: {error:?}"));
+    assert_eq!(
+        recovered.latest_cut(),
+        DurableCommitCutV1::TerminalCompletion
+    );
+    assert!(matches!(
+        recovered.machine().outcome(),
+        Some(MachineOutcome::Failed(failure))
+            if failure.code
+                == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
+    ));
+}
+
+#[test]
 fn durable_lexical_session_state_commits_before_source_progress() {
     let root = TempDirectory::new(
         "agents { worker }\ndefault agent = worker;\nfn main() { session(fork) { discard prompt \"first\" -> String; discard prompt \"second\" -> String; } }",
@@ -1968,6 +3089,56 @@ where
     interpreter_with_capacities(executor, integration, identity_start, 8, 8)
 }
 
+fn interpreter_with_durable_delivery<I>(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    integration: Arc<I>,
+    identity_start: u8,
+    runtime: Arc<dyn EventDeliveryRuntime>,
+    event_delivery: SinkPlan,
+) -> Interpreter
+where
+    I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
+{
+    executor.poll_next_spawn_immediately();
+    let executor_adapter: Arc<dyn ExecutorAdapter> = executor;
+    let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
+        std::iter::successors(Some(identity_start), |byte| byte.checked_add(1))
+            .take(96)
+            .map(|byte| Ok([byte; 32])),
+    ));
+    let required = RequiredConfiguration::new(
+        FrontendLimits::new(
+            32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
+            256, 65_536, 1_000_000,
+        )
+        .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
+        1_048_576,
+        1_048_576,
+        DEFAULT_VALUE_LIMITS,
+        1_000_000,
+        100_000,
+        100_000,
+        1,
+    )
+    .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
+    let configuration = InterpreterConfiguration::new(
+        executor_adapter,
+        identities,
+        required,
+        AsyncCapacityLimits::new(2, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
+    );
+    Interpreter::new_with_event_delivery(
+        configuration,
+        Arc::new(DeterministicUtcClock::new((1_u32..=96).map(timestamp))),
+        integration.clone(),
+        integration.clone(),
+        integration,
+        runtime,
+        event_delivery,
+    )
+}
+
 fn interpreter_with_capacities<I>(
     executor: Arc<DeterministicConcurrentExecutor>,
     integration: Arc<I>,
@@ -2088,6 +3259,81 @@ fn settle_task(executor: &DeterministicConcurrentExecutor, task_id: u64) {
             other => panic!("durable root settled abnormally: {other:?}"),
         }
     }
+}
+
+fn poll_task_until(
+    executor: &DeterministicConcurrentExecutor,
+    task_id: u64,
+    predicate: impl Fn() -> bool,
+) {
+    for _ in 0..64 {
+        if predicate() {
+            return;
+        }
+        match executor
+            .poll_task(task_id)
+            .unwrap_or_else(|error| panic!("durable task poll failed: {error:?}"))
+        {
+            DeterministicTaskPoll::Pending => {}
+            DeterministicTaskPoll::NotRunnable => std::thread::yield_now(),
+            other => panic!("durable task settled before the expected gate: {other:?}"),
+        }
+    }
+    panic!("durable task did not reach the expected gate");
+}
+
+fn durable_plan(sink: Arc<dyn EventSink>) -> SinkPlan {
+    let retry = EventRetryPolicy::new("durable-revent-retry-v1", 0, 0, 0, JitterMode::None)
+        .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+    let policy = SinkDeliveryPolicy::new(
+        SinkClass::Required,
+        false,
+        "durable-revent-redaction-v1",
+        RedactionCapabilities::default(),
+        retry,
+        30,
+    )
+    .unwrap_or_else(|error| panic!("sink policy failed: {error:?}"));
+    SinkPlan::new(vec![SinkRegistration::new(
+        SinkId::new("durable-revent-sink")
+            .unwrap_or_else(|error| panic!("sink identity failed: {error:?}")),
+        policy,
+        sink,
+    )])
+    .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"))
+}
+
+fn durable_required_and_best_effort_plan(
+    required_sink: Arc<dyn EventSink>,
+    best_effort_sink: Arc<dyn EventSink>,
+) -> SinkPlan {
+    let registration = |id, class, sink| {
+        let retry = EventRetryPolicy::new("durable-revent-retry-v1", 0, 0, 0, JitterMode::None)
+            .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        let policy = SinkDeliveryPolicy::new(
+            class,
+            false,
+            "durable-revent-redaction-v1",
+            RedactionCapabilities::default(),
+            retry,
+            30,
+        )
+        .unwrap_or_else(|error| panic!("sink policy failed: {error:?}"));
+        SinkRegistration::new(
+            SinkId::new(id).unwrap_or_else(|error| panic!("sink identity failed: {error:?}")),
+            policy,
+            sink,
+        )
+    };
+    SinkPlan::new(vec![
+        registration("a-durable-required", SinkClass::Required, required_sink),
+        registration(
+            "b-durable-best-effort",
+            SinkClass::BestEffort,
+            best_effort_sink,
+        ),
+    ])
+    .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"))
 }
 
 fn selection() -> ProtocolSelection {

@@ -178,7 +178,7 @@ fn owned_driver_is_send_static_and_publishes_semantic_settlement_before_return()
             )),
             8,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(1), timestamp(2)])),
+        execution_clock(1),
         integration.clone(),
         integration.clone(),
         integration,
@@ -210,7 +210,7 @@ fn driver_yields_and_supervision_observes_physical_completion_after_semantic_set
             )),
             1,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(3), timestamp(4)])),
+        execution_clock(3),
         integration.clone(),
         integration.clone(),
         integration,
@@ -239,7 +239,7 @@ fn failed_yield_settles_the_same_task_with_executor_failure() {
             )),
             1,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(5), timestamp(6)])),
+        execution_clock(5),
         integration.clone(),
         integration.clone(),
         integration,
@@ -268,7 +268,7 @@ fn cancellation_published_during_yield_wins_before_more_source_progress() {
             )),
             1,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(9), timestamp(10)])),
+        execution_clock(9),
         integration.clone(),
         integration.clone(),
         integration,
@@ -323,7 +323,7 @@ fn driver_uses_coordinator_owned_sessions_and_one_serial_hook() {
             )),
             8,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(7), timestamp(8)])),
+        execution_clock(7),
         integration.clone(),
         integration.clone(),
         integration.clone(),
@@ -377,7 +377,7 @@ fn hook_factory_failure_preserves_hook_creation_category() {
             )),
             8,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(11), timestamp(12)])),
+        execution_clock(11),
         integration.clone(),
         integration.clone(),
         integration,
@@ -413,7 +413,7 @@ fn hook_factory_panic_is_contained_as_hook_creation_failure() {
             )),
             8,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(17), timestamp(18)])),
+        execution_clock(17),
         integration.clone(),
         integration.clone(),
         integration,
@@ -441,7 +441,7 @@ fn accepted_root_uses_prevalidated_state_after_return_payload_changes() {
             )),
             8,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(13), timestamp(14)])),
+        execution_clock(13),
         integration.clone(),
         integration.clone(),
         integration,
@@ -470,7 +470,7 @@ fn abnormal_physical_completion_settles_the_unpolled_driver_once() {
             )),
             8,
         ),
-        Arc::new(DeterministicUtcClock::new([timestamp(15), timestamp(16)])),
+        execution_clock(15),
         integration.clone(),
         integration.clone(),
         integration,
@@ -589,6 +589,12 @@ fn timestamp(microseconds: u32) -> Result<UtcTimestamp, gantry::host::contracts:
             protected_diagnostic: None,
         }
     })
+}
+
+fn execution_clock(first_microsecond: u32) -> Arc<DeterministicUtcClock> {
+    Arc::new(DeterministicUtcClock::new(
+        (first_microsecond..first_microsecond + 6).map(timestamp),
+    ))
 }
 
 fn block_on<F: Future>(future: F) -> F::Output {

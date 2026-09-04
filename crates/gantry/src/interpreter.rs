@@ -26,37 +26,43 @@ use gantry_core::portable::{
 use gantry_core::strict_json::{JsonLimits, JsonNode, JsonNodeId, StrictJsonDocument};
 use gantry_core::value::{LogicalValue, OperationErrorValue, ValueLimits};
 use gantry_host::contracts::{
-    CancellationSignal, CancellationToken, FreshIdentityAllocator, HookFactory,
+    CancellationSignal, CancellationToken, DeadlineOutcome, DurationMicros, ExecutorAdapter,
+    FreshIdentityAllocator, HookFactory, HostError, HostFuture, InclusiveJitterRange,
     IntegrationPreflight, OwnedTaskCompletion, OwnedTaskFuture, OwnedTaskResult,
-    RuntimeSessionService, UtcClock,
+    RuntimeSessionService, UtcClock, deadline_race,
 };
+use gantry_host::event::{EventDeliveryRequest, EventDeliveryRuntime, EventSink};
 use gantry_ir::TypeDescriptor;
 use gantry_ir::generated::{OperationSiteKind, TypeKind};
+use gantry_observe::{
+    DeliveryError, DeliveryKernel, EventCompleter, EventCompletionError, SinkPlan,
+    SinkSettlementStatus,
+};
 use gantry_runtime::{
     AbnormalCompletionHandler, AcceptedTranscriptResultV1, ActionOperationRequestV1, AdapterPoison,
     AdmissionClass, AdmissionExhaustion, CancellationReason, CancellationRecord,
-    CapturedOperationRequestV1, ConcurrentTaskStateV1, ExecutionCoordinator, ExecutionHandle,
-    ExecutionSnapshot, FinalShutdownEventSettlement, InterpolationInputV1,
-    InterpreterConfiguration, InterpreterLifecycle, LifecycleError, LogicalSessionRegistryV1,
-    Machine, MachineBuildError, MachineFailure, MachineLabel, MachineOutcome, MachineStep,
-    ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1, OperationLifecycle,
-    OperationLifecycleError, OperationLifecycleFailureV1, OperationRequestHeaderV1,
-    OperationRetryPolicyV1, PhysicalCompletionHandler, ProcessedHookOutcomeV1,
-    RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1, SessionEstablisher,
-    SessionEstablishmentV1, ShutdownCompletionError, ShutdownReport, SupervisedTaskDomain,
-    SupervisionSignal, TaskContextV1, TaskHook, TaskHookError, TaskSessionContextV1,
-    TaskStateError, TranscriptResultKindV1, TranscriptTurnV1, TypedActionArgumentV1,
+    CapturedOperationRequestV1, ConcurrentTaskStateV1, ExecutionCoordinator,
+    ExecutionDeliveryConsequenceV1, ExecutionEventError, ExecutionEventPipeline, ExecutionHandle,
+    ExecutionSnapshot, FinalShutdownEventFailure, FinalShutdownEventSettlement,
+    InterpolationInputV1, InterpreterConfiguration, InterpreterLifecycle, LifecycleError,
+    LogicalSessionRegistryV1, Machine, MachineBuildError, MachineFailure, MachineLabel,
+    MachineOutcome, MachineStep, ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1,
+    OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
+    OperationRequestHeaderV1, OperationRetryPolicyV1, PhysicalCompletionHandler,
+    ProcessedHookOutcomeV1, RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1,
+    SessionEstablisher, SessionEstablishmentV1, ShutdownCompletionError, ShutdownEventSummaryV1,
+    ShutdownReport, SupervisedTaskDomain, SupervisionSignal, TaskContextV1, TaskHook,
+    TaskHookError, TaskSessionContextV1, TaskStateError, TranscriptResultKindV1, TranscriptTurnV1,
+    TypedActionArgumentV1, machine_lifecycle_event, shutdown_event,
 };
 
 #[cfg(feature = "durable")]
 use gantry_host::journal::JournalStorage;
 #[cfg(feature = "durable")]
-use gantry_observe::EventCompleter;
-#[cfg(feature = "durable")]
 use gantry_runtime::{
-    DurableCommitCutV1, DurableOperationEvidenceV1, ExecutionEventDraftV1,
-    OperationResultEventKindV1, SupervisedTask, machine_lifecycle_event,
-    operation_completion_event, operation_dispatch_event, operation_result_event,
+    DurableCommitCutV1, DurableEventBarrierV1, DurableOperationEvidenceV1, ExecutionEventDraftV1,
+    OperationResultEventKindV1, SupervisedTask, operation_completion_event,
+    operation_dispatch_event, operation_result_event,
 };
 
 use crate::start::PreparedExecutionStart;
@@ -95,6 +101,47 @@ struct InterpreterInner {
     preflight: Arc<dyn IntegrationPreflight>,
     session_establisher: SessionEstablisher,
     hook_factory: Arc<dyn HookFactory>,
+    event_delivery_runtime: Arc<dyn EventDeliveryRuntime>,
+    event_delivery: SinkPlan,
+}
+
+struct ExecutorEventDeliveryRuntime {
+    executor: Arc<dyn ExecutorAdapter>,
+}
+
+impl EventDeliveryRuntime for ExecutorEventDeliveryRuntime {
+    fn deliver_with_timeout<'a>(
+        &'a self,
+        sink: &'a dyn EventSink,
+        request: EventDeliveryRequest,
+        timeout_us: u64,
+    ) -> HostFuture<'a, Result<gantry_core::portable::DeliveryOutcome, HostError>> {
+        let timeout = DurationMicros::new(timeout_us)
+            .unwrap_or_else(|| unreachable!("validated event timeout is portable"));
+        Box::pin(async move {
+            match deadline_race(&*self.executor, sink.deliver(request), timeout, None).await {
+                DeadlineOutcome::Completed(result) => result,
+                DeadlineOutcome::TimedOut => Ok(gantry_core::portable::DeliveryOutcome::Retriable),
+                DeadlineOutcome::Failed(error) => Err(error),
+                DeadlineOutcome::Cancelled => Err(HostError {
+                    code: Arc::from("event-delivery-cancelled"),
+                    protected_diagnostic: None,
+                }),
+            }
+        })
+    }
+
+    fn sleep<'a>(&'a self, delay_us: u64) -> HostFuture<'a, Result<(), HostError>> {
+        let delay = DurationMicros::new(delay_us)
+            .unwrap_or_else(|| unreachable!("validated event delay is portable"));
+        self.executor.sleep(delay)
+    }
+
+    fn sample_full_jitter(&self, ceiling_us: u64) -> Result<u64, HostError> {
+        let range = InclusiveJitterRange::new(0, ceiling_us)
+            .unwrap_or_else(|| unreachable!("event jitter range begins at zero"));
+        self.executor.sample_inclusive(range)
+    }
 }
 
 #[cfg(feature = "durable")]
@@ -584,6 +631,32 @@ impl Interpreter {
         runtime_sessions: Arc<dyn RuntimeSessionService>,
         hook_factory: Arc<dyn HookFactory>,
     ) -> Self {
+        let event_delivery_runtime = Arc::new(ExecutorEventDeliveryRuntime {
+            executor: configuration.executor_arc(),
+        });
+        Self::new_with_event_delivery(
+            configuration,
+            clock,
+            preflight,
+            runtime_sessions,
+            hook_factory,
+            event_delivery_runtime,
+            SinkPlan::default(),
+        )
+    }
+
+    /// Constructs one interpreter with explicit event-delivery services and a default sink plan.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_event_delivery(
+        configuration: InterpreterConfiguration,
+        clock: Arc<dyn UtcClock>,
+        preflight: Arc<dyn IntegrationPreflight>,
+        runtime_sessions: Arc<dyn RuntimeSessionService>,
+        hook_factory: Arc<dyn HookFactory>,
+        event_delivery_runtime: Arc<dyn EventDeliveryRuntime>,
+        event_delivery: SinkPlan,
+    ) -> Self {
         let lifecycle = InterpreterLifecycle::new(&configuration);
         let session_establisher = SessionEstablisher::new(
             lifecycle.task_supervisor(),
@@ -606,6 +679,8 @@ impl Interpreter {
                 preflight,
                 session_establisher,
                 hook_factory,
+                event_delivery_runtime,
+                event_delivery,
             }),
             external_owner: true,
         }
@@ -624,18 +699,25 @@ impl Interpreter {
         &self,
         request: StartExecutionRequest<'_>,
     ) -> StartExecutionResult {
+        let event_delivery = request.event_delivery.unwrap_or(&self.inner.event_delivery);
+        let request = StartExecutionRequest {
+            event_delivery: Some(event_delivery),
+            ..request
+        };
         let package = AnalyzePackageCoordinator::new(
             &self.inner.allocator,
             self.inner.configuration.identity_source(),
             self.inner.clock.as_ref(),
-        );
+        )
+        .with_delivery_runtime(self.inner.event_delivery_runtime.as_ref());
         let coordinator = StartExecutionCoordinator::new(
             &package,
             &self.inner.lifecycle,
             &self.inner.configuration,
             &self.inner.allocator,
             Arc::clone(&self.inner.preflight),
-        );
+        )
+        .with_owned_event_delivery(owned_event_delivery_factory(Arc::clone(&self.inner)));
         let prepared = match coordinator.prepare(request).await {
             Ok(prepared) => prepared,
             Err(failure) => return StartExecutionResult::Rejected(failure),
@@ -718,6 +800,17 @@ impl Interpreter {
         storage: Arc<dyn JournalStorage>,
         request: DurableStartExecutionRequest<'_>,
     ) -> DurableStartExecutionResult {
+        let event_delivery = request
+            .start
+            .event_delivery
+            .unwrap_or(&self.inner.event_delivery);
+        let request = DurableStartExecutionRequest {
+            journal_id: request.journal_id,
+            start: StartExecutionRequest {
+                event_delivery: Some(event_delivery),
+                ..request.start
+            },
+        };
         let journal_id = request.journal_id.clone();
         let supervisor = self.inner.lifecycle.task_supervisor();
         let reservation = match supervisor.try_reserve(AdmissionClass::RootTask) {
@@ -738,14 +831,16 @@ impl Interpreter {
             &self.inner.allocator,
             self.inner.configuration.identity_source(),
             self.inner.clock.as_ref(),
-        );
+        )
+        .with_delivery_runtime(self.inner.event_delivery_runtime.as_ref());
         let start = StartExecutionCoordinator::new(
             &package,
             &self.inner.lifecycle,
             &self.inner.configuration,
             &self.inner.allocator,
             Arc::clone(&self.inner.preflight),
-        );
+        )
+        .with_owned_event_delivery(owned_event_delivery_factory(Arc::clone(&self.inner)));
         let durable = DurableStartExecutionCoordinator::new(
             start,
             &self.inner.configuration,
@@ -838,7 +933,12 @@ impl Interpreter {
             protocol_selection: request.protocol_selection.clone(),
             candidate_package_root: request.candidate_package_root.map(PathBuf::from),
             expected_execution_id: request.expected_execution_id,
-            event_delivery: request.event_delivery.cloned(),
+            event_delivery: Some(
+                request
+                    .event_delivery
+                    .cloned()
+                    .unwrap_or_else(|| self.inner.event_delivery.clone()),
+            ),
         };
         let result = Arc::new(SharedResume::default());
         self.start_owned_durable_resume(storage, request, Arc::clone(&result));
@@ -887,14 +987,18 @@ impl Interpreter {
                 &interpreter.inner.allocator,
                 interpreter.inner.configuration.identity_source(),
                 interpreter.inner.clock.as_ref(),
-            );
+            )
+            .with_delivery_runtime(interpreter.inner.event_delivery_runtime.as_ref());
             let start = StartExecutionCoordinator::new(
                 &package,
                 &interpreter.inner.lifecycle,
                 &interpreter.inner.configuration,
                 &interpreter.inner.allocator,
                 Arc::clone(&interpreter.inner.preflight),
-            );
+            )
+            .with_owned_event_delivery(owned_event_delivery_factory(Arc::clone(
+                &interpreter.inner,
+            )));
             let durable = DurableStartExecutionCoordinator::new(
                 start,
                 &interpreter.inner.configuration,
@@ -938,6 +1042,14 @@ impl Interpreter {
                 }
             };
             self.register_durable_execution(Arc::clone(&accepted.owned));
+            let _ = accepted
+                .owned
+                .drain_event_obligations(
+                    &self.inner.allocator,
+                    self.inner.configuration.identity_source(),
+                    self.inner.event_delivery_runtime.as_ref(),
+                )
+                .await;
             return DurableResumeExecutionResult::Accepted(Box::new(accepted));
         }
 
@@ -1282,13 +1394,16 @@ impl Interpreter {
                         owner.fail_driver(last_committed, DurableRunFailure::Internal);
                         return;
                     }
-                    if let Err(failure) = owner.publish_driver_progress(&recovered) {
-                        owner.fail_driver(last_committed, failure);
-                        return;
-                    }
                 }
                 MachineStep::Complete(_) => {
-                    owner.finish_driver(recovered);
+                    let _ = owner
+                        .finish_driver_terminal(
+                            recovered,
+                            &self.inner.allocator,
+                            self.inner.configuration.identity_source(),
+                            self.inner.event_delivery_runtime.as_ref(),
+                        )
+                        .await;
                     return;
                 }
                 _ => {
@@ -1335,6 +1450,11 @@ impl Interpreter {
         let Some(mut recovered) = owner.begin_driver() else {
             return;
         };
+        let mut last_committed = recovered.clone();
+        if let Err(failure) = owner.reconcile_driver_required_delivery_failure(&mut recovered) {
+            owner.fail_driver(last_committed, failure);
+            return;
+        }
         let RecoveredRootDriver {
             coordinator,
             task_id,
@@ -1352,7 +1472,6 @@ impl Interpreter {
             create_request,
         )
         .unwrap_or_else(|_| unreachable!("committed durable start retains hook context"));
-        let mut last_committed = recovered.clone();
         let mut model_session_occurrence = 0_u64;
         let mut task_event_sequence = 0_u64;
         loop {
@@ -1486,10 +1605,6 @@ impl Interpreter {
                         owner.fail_driver(last_committed, DurableRunFailure::Internal);
                         return;
                     }
-                    if let Err(failure) = owner.publish_driver_progress(&recovered) {
-                        owner.fail_driver(last_committed, failure);
-                        return;
-                    }
                 }
                 MachineStep::Transition(_) => {}
                 MachineStep::YieldRequired => {
@@ -1519,7 +1634,14 @@ impl Interpreter {
                     }
                 }
                 MachineStep::Complete(_) => {
-                    owner.finish_driver(recovered);
+                    let _ = owner
+                        .finish_driver_terminal(
+                            recovered,
+                            &self.inner.allocator,
+                            self.inner.configuration.identity_source(),
+                            self.inner.event_delivery_runtime.as_ref(),
+                        )
+                        .await;
                     return;
                 }
                 MachineStep::WaitingSessionScope(scope) => {
@@ -1607,13 +1729,28 @@ impl Interpreter {
         .complete(activity_id, draft)
         .await
         .map_err(|_| DurableRunFailure::Internal)?;
-        owner
+        let frontier = owner
             .commit_driver_event(recovered, event, &protected_payloads)
             .await?;
         *task_sequence = task_sequence
             .checked_add(1)
             .ok_or(DurableRunFailure::Internal)?;
         *last_committed = recovered.clone();
+        if recovered.latest_cut() != DurableCommitCutV1::TerminalCompletion {
+            let barrier = owner
+                .drain_driver_required_event_obligations_through(
+                    recovered,
+                    frontier,
+                    &self.inner.allocator,
+                    self.inner.configuration.identity_source(),
+                    self.inner.event_delivery_runtime.as_ref(),
+                )
+                .await?;
+            *last_committed = recovered.clone();
+            if let DurableEventBarrierV1::RequiredExhausted(failure) = barrier {
+                owner.project_driver_required_delivery_failure(recovered, failure)?;
+            }
+        }
         Ok(())
     }
 
@@ -1848,6 +1985,9 @@ impl Interpreter {
                 last_committed,
             )
             .await?;
+            if recovered.machine().outcome().is_some() {
+                return Ok(());
+            }
             match owner
                 .poll_driver_future(
                     recovered,
@@ -1910,6 +2050,9 @@ impl Interpreter {
                 last_committed,
             )
             .await?;
+            if recovered.machine().outcome().is_some() {
+                return Ok(());
+            }
             match operation
                 .process_outcome(policy, self.inner.configuration.executor(), cancellation)
                 .map_err(|_| DurableRunFailure::Internal)?
@@ -2281,6 +2424,9 @@ impl Interpreter {
                 last_committed,
             )
             .await?;
+            if recovered.machine().outcome().is_some() {
+                return Ok(());
+            }
             match owner
                 .poll_driver_future(
                     recovered,
@@ -2360,6 +2506,9 @@ impl Interpreter {
                 last_committed,
             )
             .await?;
+            if recovered.machine().outcome().is_some() {
+                return Ok(());
+            }
             match operation
                 .process_outcome(policy, self.inner.configuration.executor(), cancellation)
                 .map_err(|_| DurableRunFailure::Internal)?
@@ -2609,6 +2758,17 @@ impl Interpreter {
         let mut model_session_occurrence = 0_u64;
         let mut foreground_fixed = false;
         let mut terminal_fixed = false;
+        let mut events = ExecutionEventPipeline::new(
+            &accepted.handle,
+            accepted.package_activity.activity_id,
+            task_id,
+            &self.inner.allocator,
+            self.inner.configuration.identity_source(),
+            self.inner.clock.as_ref(),
+            self.inner.event_delivery_runtime.as_ref(),
+            accepted.event_delivery.clone(),
+        )
+        .map_err(RunExecutionError::Event)?;
 
         loop {
             if cancellation.is_cancelled() && machine.outcome().is_none() {
@@ -2633,39 +2793,65 @@ impl Interpreter {
                 let _ = machine.cancel(reason);
             }
             match machine.step() {
-                MachineStep::Transition(MachineLabel::TaskSettled(outcome)) => {
-                    coordinator
-                        .settle_task(task_id, outcome)
-                        .map_err(RunExecutionError::TaskState)?;
-                }
-                MachineStep::Transition(MachineLabel::ForegroundCompletion(outcome)) => {
-                    if !foreground_fixed {
-                        let coordinated = coordinator
-                            .complete_foreground()
-                            .map_err(RunExecutionError::TaskState)?;
-                        if coordinated != outcome {
-                            return Err(RunExecutionError::LifecycleTransition);
+                MachineStep::Transition(label) => {
+                    if let Some(event) =
+                        machine_lifecycle_event(&label, accepted.execution_id, task_id)
+                    {
+                        let event = events
+                            .emit_task_draft(event)
+                            .await
+                            .map_err(RunExecutionError::Event)?;
+                        if matches!(
+                            event.consequence,
+                            ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                        ) {
+                            coordinator
+                                .cancel_task_tree(
+                                    task_id,
+                                    Arc::from("required-event-delivery-failure"),
+                                )
+                                .map_err(RunExecutionError::TaskState)?;
+                            let _ = machine.fail_execution(
+                                RuntimeErrorCategory::RequiredEventDeliveryFailure,
+                                gantry_runtime::ExecutionFailureProjection::Full,
+                            );
+                            continue;
                         }
-                        self.inner
-                            .lifecycle
-                            .complete_foreground(&accepted.handle, outcome)
-                            .map_err(|_| RunExecutionError::LifecycleTransition)?;
-                        foreground_fixed = true;
+                    }
+                    match label {
+                        MachineLabel::TaskSettled(outcome) => {
+                            coordinator
+                                .settle_task(task_id, outcome)
+                                .map_err(RunExecutionError::TaskState)?;
+                        }
+                        MachineLabel::ForegroundCompletion(outcome) => {
+                            if !foreground_fixed {
+                                let coordinated = coordinator
+                                    .complete_foreground()
+                                    .map_err(RunExecutionError::TaskState)?;
+                                if coordinated != outcome {
+                                    return Err(RunExecutionError::LifecycleTransition);
+                                }
+                                self.inner
+                                    .lifecycle
+                                    .complete_foreground(&accepted.handle, outcome)
+                                    .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                                foreground_fixed = true;
+                            }
+                        }
+                        MachineLabel::TerminalCompletion(outcome) if !terminal_fixed => {
+                            coordinator
+                                .complete_terminal()
+                                .map_err(RunExecutionError::TaskState)?;
+                            self.inner
+                                .lifecycle
+                                .complete_terminal(&accepted.handle, outcome)
+                                .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                            terminal_fixed = true;
+                        }
+                        _ => {}
                     }
                 }
-                MachineStep::Transition(MachineLabel::TerminalCompletion(outcome)) => {
-                    if !terminal_fixed {
-                        coordinator
-                            .complete_terminal()
-                            .map_err(RunExecutionError::TaskState)?;
-                        self.inner
-                            .lifecycle
-                            .complete_terminal(&accepted.handle, outcome)
-                            .map_err(|_| RunExecutionError::LifecycleTransition)?;
-                        terminal_fixed = true;
-                    }
-                }
-                MachineStep::Transition(_) => {}
                 MachineStep::WaitingSessionScope(scope) => {
                     let parent = coordinator
                         .session(scope.parent_session_id)
@@ -2848,7 +3034,10 @@ impl Interpreter {
     ) -> Result<CancellationRecord, CancelExecutionError> {
         #[cfg(feature = "durable")]
         if let Some(owner) = self.durable_execution(execution_id).await {
-            return match owner.cancel_execution(execution_id, reason).await {
+            return match self
+                .cancel_durable_execution(&owner, execution_id, reason)
+                .await
+            {
                 crate::DurableCancelExecutionResult::Accepted {
                     effective_reason, ..
                 } => Ok(CancellationRecord::Accepted {
@@ -2888,6 +3077,56 @@ impl Interpreter {
                 .await;
         }
         Ok(record)
+    }
+
+    #[cfg(feature = "durable")]
+    async fn cancel_durable_execution(
+        &self,
+        owner: &crate::DurableOwnedExecution,
+        execution_id: ProtocolIdentity,
+        reason: CancellationReason,
+    ) -> crate::DurableCancelExecutionResult {
+        let result = owner.cancel_execution(execution_id, reason).await;
+        match result {
+            crate::DurableCancelExecutionResult::Accepted {
+                effective_reason, ..
+            } => match owner
+                .drain_event_obligations(
+                    &self.inner.allocator,
+                    self.inner.configuration.identity_source(),
+                    self.inner.event_delivery_runtime.as_ref(),
+                )
+                .await
+            {
+                Ok(terminal) => crate::DurableCancelExecutionResult::Accepted {
+                    effective_reason,
+                    terminal: Box::new(terminal),
+                },
+                Err(failure) => crate::DurableCancelExecutionResult::Failed {
+                    effective_reason: Some(effective_reason),
+                    failure,
+                    observation: Box::new(owner.observation()),
+                },
+            },
+            crate::DurableCancelExecutionResult::AlreadyTerminal(_) => match owner
+                .drain_event_obligations(
+                    &self.inner.allocator,
+                    self.inner.configuration.identity_source(),
+                    self.inner.event_delivery_runtime.as_ref(),
+                )
+                .await
+            {
+                Ok(terminal) => {
+                    crate::DurableCancelExecutionResult::AlreadyTerminal(Box::new(terminal))
+                }
+                Err(failure) => crate::DurableCancelExecutionResult::Failed {
+                    effective_reason: owner.observation().cancellation,
+                    failure,
+                    observation: Box::new(owner.observation()),
+                },
+            },
+            result => result,
+        }
     }
 
     #[cfg(feature = "durable")]
@@ -2951,6 +3190,7 @@ impl Interpreter {
                 return;
             }
         };
+        let durations = admission.durations;
         let completion_state = Arc::clone(&self.inner.shutdown);
         let completion_lifecycle = self.inner.lifecycle.clone();
         let completion: PhysicalCompletionHandler = Arc::new(move |completion| {
@@ -2967,15 +3207,8 @@ impl Interpreter {
         let signal = registration.signal();
         let shutdown_owner = Arc::clone(&self.inner);
         let task: OwnedTaskFuture = if let Some(coordinator) = admission.coordinator.take() {
-            let mut progress = Box::pin(coordinator.wait_for_quiescence());
-            let mut context = Context::from_waker(Waker::noop());
-            if std::future::Future::poll(progress.as_mut(), &mut context).is_ready() {
-                let result = coordinator
-                    .complete(true, FinalShutdownEventSettlement::Settled)
-                    .map_err(ShutdownError::Completion);
-                self.inner.shutdown.publish(result);
-                return;
-            }
+            let executions_at_start = coordinator.initial_executions();
+            let tasks_at_start = usize_to_u64(executions_at_start.len());
             Box::pin(async move {
                 coordinator.wait_for_admission_handoffs().await;
                 let mut orderly = true;
@@ -2992,7 +3225,12 @@ impl Interpreter {
                     #[cfg(feature = "durable")]
                     if let Some(owner) = owner {
                         orderly &= matches!(
-                            owner.cancel_execution(execution_id, reason).await,
+                            Interpreter {
+                                inner: Arc::clone(&shutdown_owner),
+                                external_owner: false,
+                            }
+                            .cancel_durable_execution(&owner, execution_id, reason)
+                            .await,
                             crate::DurableCancelExecutionResult::Accepted { .. }
                                 | crate::DurableCancelExecutionResult::AlreadyTerminal(_)
                         );
@@ -3003,9 +3241,19 @@ impl Interpreter {
                         .cancel_execution(execution_id, reason)
                         .is_ok();
                 }
-                progress.await;
+                coordinator.wait_for_quiescence().await;
+                let cohort = coordinator.cohort_executions();
+                let final_event = settle_final_shutdown_event(
+                    &shutdown_owner,
+                    durations,
+                    &executions_at_start,
+                    &cohort,
+                    tasks_at_start,
+                )
+                .await;
+                orderly &= final_event.required_sinks_settled;
                 let result = coordinator
-                    .complete(orderly, FinalShutdownEventSettlement::Settled)
+                    .complete(orderly, final_event.settlement)
                     .map_err(ShutdownError::Completion);
                 shutdown_owner.shutdown.stage(result);
                 signal.settle();
@@ -3883,6 +4131,8 @@ pub enum RunExecutionError {
     MachineBuild(MachineBuildError),
     /// The configured executor failed one cooperative yield.
     ExecutorFailure,
+    /// Nondurable execution-event completion or delivery failed.
+    Event(ExecutionEventError),
     /// A lifecycle transition contradicted accepted execution state.
     LifecycleTransition,
     /// A lifecycle public operation failed.
@@ -3992,6 +4242,163 @@ fn lock_shutdown<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn owned_event_delivery_factory(
+    inner: Arc<InterpreterInner>,
+) -> crate::start::OwnedEventDeliveryFactory {
+    Arc::new(move |events, plan| {
+        let inner = Arc::clone(&inner);
+        Box::pin(async move {
+            let package = AnalyzePackageCoordinator::new(
+                &inner.allocator,
+                inner.configuration.identity_source(),
+                inner.clock.as_ref(),
+            )
+            .with_delivery_runtime(inner.event_delivery_runtime.as_ref());
+            package.deliver_completed_events(&events, Some(&plan)).await
+        })
+    })
+}
+
+async fn settle_final_shutdown_event(
+    inner: &InterpreterInner,
+    durations: gantry_runtime::ShutdownDurations,
+    executions_at_start: &[ProtocolIdentity],
+    cohort: &[ProtocolIdentity],
+    tasks_at_start: u64,
+) -> FinalShutdownEventOutcome {
+    let activity_id = match inner.allocator.allocate(
+        inner.configuration.identity_source(),
+        IdentityKind::Activity,
+    ) {
+        Ok(activity_id) => activity_id,
+        Err(_) => {
+            return FinalShutdownEventOutcome::failed(
+                FinalShutdownEventFailure::IdentityGeneration,
+            );
+        }
+    };
+    let snapshots = cohort
+        .iter()
+        .filter_map(|execution_id| {
+            inner
+                .lifecycle
+                .query_execution(*execution_id)
+                .ok()
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    let cancelled = usize_to_u64(
+        snapshots
+            .iter()
+            .filter(|snapshot| snapshot.cancellation.is_some())
+            .count(),
+    );
+    let completed_naturally = usize_to_u64(
+        snapshots
+            .iter()
+            .filter(|snapshot| snapshot.cancellation.is_none() && snapshot.terminal.is_some())
+            .count(),
+    );
+    let draft = match shutdown_event(&ShutdownEventSummaryV1 {
+        activity_id,
+        graceful_us: durations.graceful.get(),
+        drain_us: durations.drain.get(),
+        executions_at_start: usize_to_u64(executions_at_start.len()),
+        tasks_at_start,
+        admitted_after_start: usize_to_u64(cohort.len().saturating_sub(executions_at_start.len())),
+        completed_naturally,
+        cancelled,
+        aborted: 0,
+        required_state_commit_status: Arc::from("not-applicable"),
+        shutdown_report_reference: Arc::from(format!("shutdown-report:{activity_id}")),
+    }) {
+        Ok(draft) => draft,
+        Err(_) => {
+            return FinalShutdownEventOutcome::failed(FinalShutdownEventFailure::Internal);
+        }
+    };
+    let event = match EventCompleter::new(
+        &inner.allocator,
+        inner.configuration.identity_source(),
+        inner.clock.as_ref(),
+    )
+    .complete(activity_id, draft.draft)
+    .await
+    {
+        Ok(event) => event,
+        Err(EventCompletionError::Identity(_)) => {
+            return FinalShutdownEventOutcome::failed(
+                FinalShutdownEventFailure::IdentityGeneration,
+            );
+        }
+        Err(EventCompletionError::Clock(_)) => {
+            return FinalShutdownEventOutcome::failed(FinalShutdownEventFailure::Executor);
+        }
+        Err(EventCompletionError::InvalidActivityIdentity | EventCompletionError::Contract(_)) => {
+            return FinalShutdownEventOutcome::failed(FinalShutdownEventFailure::Internal);
+        }
+    };
+    let delivery = DeliveryKernel::new(
+        &inner.allocator,
+        inner.configuration.identity_source(),
+        inner.event_delivery_runtime.as_ref(),
+    )
+    .deliver(event, &draft.protected_payloads, &inner.event_delivery)
+    .await;
+    let delivery = match delivery {
+        Ok(delivery) => delivery,
+        Err(DeliveryError::Identity(_)) => {
+            return FinalShutdownEventOutcome::failed(
+                FinalShutdownEventFailure::IdentityGeneration,
+            );
+        }
+        Err(DeliveryError::Runtime(_) | DeliveryError::Retry(_)) => {
+            return FinalShutdownEventOutcome::failed(FinalShutdownEventFailure::Executor);
+        }
+        Err(
+            DeliveryError::Projection(_)
+            | DeliveryError::RetryOverflow
+            | DeliveryError::MissingAttempt,
+        ) => {
+            return FinalShutdownEventOutcome::failed(FinalShutdownEventFailure::Internal);
+        }
+    };
+    let all_settled = delivery
+        .settlements
+        .iter()
+        .all(|settlement| settlement.status == SinkSettlementStatus::Success);
+    let required_sinks_settled = delivery.settlements.iter().all(|settlement| {
+        settlement.class != gantry_core::portable::SinkClass::Required
+            || settlement.status == SinkSettlementStatus::Success
+    });
+    FinalShutdownEventOutcome {
+        settlement: if all_settled {
+            FinalShutdownEventSettlement::Settled
+        } else {
+            FinalShutdownEventSettlement::Exhausted
+        },
+        required_sinks_settled,
+    }
+}
+
+struct FinalShutdownEventOutcome {
+    settlement: FinalShutdownEventSettlement,
+    required_sinks_settled: bool,
+}
+
+impl FinalShutdownEventOutcome {
+    const fn failed(failure: FinalShutdownEventFailure) -> Self {
+        Self {
+            settlement: FinalShutdownEventSettlement::Failed(failure),
+            required_sinks_settled: false,
+        }
+    }
+}
+
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn preparation_error_code(error: &RunExecutionError) -> &'static str {
