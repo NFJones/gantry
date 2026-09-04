@@ -556,7 +556,77 @@ pure fn main() -> String {
 }
 
 #[test]
+fn concurrent_source_lowers_spawn_join_and_typed_captures() {
+    let root = TempDirectory::new(
+        r#"
+fn main() -> Int {
+    let retained: Int = 7;
+    spawn child -> Int { retained }
+    let result: Int = join(child);
+    result
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    let workflow = program
+        .workflow(&entry.path)
+        .unwrap_or_else(|| panic!("entry workflow was not lowered"));
+    let spawn = workflow
+        .instructions
+        .iter()
+        .find_map(|instruction| match &instruction.kind {
+            InstructionKind::Spawn { handle, body } => Some((instruction, handle, body)),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("entry workflow omitted spawn lowering"));
+    assert_eq!(spawn.1.name(), "child");
+    assert_eq!(spawn.1.result_type().canonical_string(), "Int");
+    assert_eq!(spawn.2.spawn_site(), &spawn.0.site);
+    let canonical_spawn = package
+        .workflows()
+        .iter()
+        .find(|facts| facts.path == entry.path)
+        .and_then(|facts| {
+            facts
+                .task_controls
+                .iter()
+                .find(|site| site.kind.wire_name() == "spawn")
+        })
+        .unwrap_or_else(|| panic!("analyzer omitted canonical spawn site"));
+    assert_eq!(spawn.2.spawn_site(), canonical_spawn.id.position());
+    assert!(workflow.instructions.iter().any(|instruction| {
+        matches!(
+            &instruction.kind,
+            InstructionKind::Join { handles }
+                if handles.iter().map(AsRef::as_ref).eq(["child"])
+        ) && instruction.ty.canonical_string() == "Int"
+    }));
+
+    let body = program
+        .task_body(spawn.2)
+        .unwrap_or_else(|| panic!("spawned task body was not lowered"));
+    assert_eq!(body.result_type().canonical_string(), "Int");
+    assert_eq!(body.captures().len(), 1);
+    assert_eq!(body.captures()[0].name(), "retained");
+    assert_eq!(body.captures()[0].ty().canonical_string(), "Int");
+    assert!(!body.captures()[0].is_mutable());
+    assert!(matches!(
+        body.instructions()
+            .last()
+            .map(|instruction| &instruction.kind),
+        Some(InstructionKind::TaskComplete)
+    ));
+}
+
+#[test]
 fn analyzed_concurrent_entry_reaches_the_existing_profile_rejection() {
+    // Executable lowering does not imply adoption of native runtime scheduling.
     let root = TempDirectory::new(
         r#"
 fn main() {
@@ -586,6 +656,311 @@ fn main() {
         ),
         Err(MachineBuildError::UnsupportedEffect(_))
     ));
+}
+
+/// Exercises independent nested bodies and source-order ownership selections.
+#[test]
+fn nested_task_bodies_preserve_captures_and_joinall_order() {
+    let root = TempDirectory::new(
+        r#"
+fn main() {
+    let mut retained: Int = 7;
+    let unused: Bool = false;
+    spawn outer -> Int {
+        let local: Int = 3;
+        spawn inner -> Int { retained = retained + local; retained }
+        join(inner)
+    }
+    spawn alpha -> String { "second" }
+    let results: Tuple<Int, String> = joinall();
+    discard joinall();
+    spawn background { return; }
+    detach(background);
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    assert_eq!(program.task_bodies().len(), 4);
+    let outer = program
+        .task_bodies()
+        .iter()
+        .find(|body| {
+            body.instructions()
+                .iter()
+                .any(|instruction| matches!(instruction.kind, InstructionKind::Spawn { .. }))
+        })
+        .unwrap_or_else(|| panic!("nested fixture omitted outer body"));
+    assert_eq!(outer.captures().len(), 1);
+    assert_eq!(outer.captures()[0].name(), "retained");
+    assert!(outer.captures()[0].is_mutable());
+    let inner = program
+        .task_bodies()
+        .iter()
+        .find(|body| body.captures().len() == 2)
+        .unwrap_or_else(|| panic!("nested fixture omitted inner captures"));
+    assert_eq!(
+        inner
+            .captures()
+            .iter()
+            .map(|capture| capture.name())
+            .collect::<Vec<_>>(),
+        ["retained", "local"]
+    );
+    assert!(inner.captures()[0].is_mutable());
+    assert!(!inner.captures()[1].is_mutable());
+    let workflow = entry_workflow(&package);
+    let joins = workflow
+        .instructions
+        .iter()
+        .filter_map(|instruction| {
+            if let InstructionKind::JoinAll { handles } = &instruction.kind {
+                Some((
+                    handles.iter().map(AsRef::as_ref).collect::<Vec<_>>(),
+                    instruction.ty.canonical_string(),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        joins,
+        [
+            (vec!["outer", "alpha"], "Tuple<Int,String>".to_string()),
+            (vec![], "Unit".to_string())
+        ]
+    );
+    for body in program.task_bodies() {
+        assert!(
+            !body
+                .instructions()
+                .iter()
+                .any(|instruction| matches!(instruction.kind, InstructionKind::Return))
+        );
+        assert!(
+            body.captures()
+                .iter()
+                .all(|capture| capture.name() != "unused")
+        );
+    }
+}
+
+/// A single authored spawn must not alias two closed generic instantiations.
+#[test]
+fn generic_task_bodies_have_closed_distinct_identities() {
+    let root = TempDirectory::new(
+        r#"
+fn copy_task<T>(value: T) -> T {
+    spawn copied -> T { value }
+    join(copied)
+}
+fn main() {
+    discard copy_task(7);
+    discard copy_task("text");
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let bodies = program.task_bodies();
+    assert_eq!(bodies.len(), 2);
+    assert_ne!(
+        bodies[0].identity().enclosing_callable(),
+        bodies[1].identity().enclosing_callable()
+    );
+    assert_eq!(
+        bodies[0].identity().spawn_site(),
+        bodies[1].identity().spawn_site()
+    );
+    for body in bodies {
+        assert_eq!(body.captures()[0].ty(), body.result_type());
+        assert!(["Int", "String"].contains(&body.result_type().canonical_string().as_str()));
+    }
+    let repeated = analyze(&root);
+    assert_eq!(program, executable(&repeated));
+}
+
+/// A join operand must not replace its enclosing arithmetic expression.
+#[test]
+fn join_operand_preserves_surrounding_expression() {
+    let root = TempDirectory::new(
+        r#"
+fn main() -> Int {
+    spawn child -> Int { 7 }
+    join(child) + 1
+}
+"#,
+    );
+    let package = analyze(&root);
+    let workflow = entry_workflow(&package);
+    assert!(
+        workflow
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction.kind, InstructionKind::Primitive(_)))
+    );
+}
+
+/// Break cleanup does not change the statically selected free bindings.
+#[test]
+fn child_loop_exit_preserves_capture_selection() {
+    let root = TempDirectory::new(
+        r#"
+fn main() -> Int {
+    let retained: Int = 7;
+    spawn child -> Int {
+        loop(limit = 1) { break; }
+        let local: Int = 1;
+        retained + local
+    }
+    join(child)
+}
+"#,
+    );
+    let package = analyze(&root);
+    let body = &executable(&package).task_bodies()[0];
+    assert_eq!(body.captures().len(), 1);
+    assert_eq!(body.captures()[0].name(), "retained");
+}
+
+/// Closed generic methods retain the receiver's child-local mutability.
+#[test]
+fn generic_task_captures_mutable_receiver() {
+    let root = TempDirectory::new(
+        r#"
+struct Holder<T> { value: T }
+impl<T> Holder<T> {
+    fn copied(mut self, replacement: T) -> T {
+        spawn child -> T { self.value = replacement; self.value }
+        join(child)
+    }
+}
+fn main() -> Int {
+    let holder: Holder<Int> = Holder::<Int> { value: 1 };
+    holder.copied(7)
+}
+"#,
+    );
+    let package = analyze(&root);
+    let body = &executable(&package).task_bodies()[0];
+    let receiver = body
+        .captures()
+        .iter()
+        .find(|capture| capture.name() == "self")
+        .unwrap_or_else(|| panic!("method task omitted receiver capture"));
+    assert!(receiver.is_mutable());
+    assert_eq!(receiver.ty().canonical_string(), "crate::Holder<Int>");
+    assert_eq!(body.result_type().canonical_string(), "Int");
+}
+
+/// Loop transfers restore nested scopes before continuing or leaving the loop.
+#[test]
+fn lowered_loop_transfers_execute_with_balanced_scopes() {
+    let root = TempDirectory::new(
+        r#"
+fn main() -> Int {
+    let mut count: Int = 0;
+    loop(limit = 5) {
+        count += 1;
+        if count < 3 { continue; }
+        break;
+    }
+    count
+}
+"#,
+    );
+    let package = analyze(&root);
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x51; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(executable(&package).clone()),
+        &entry_workflow(&package).path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("loop program failed: {error:?}"));
+    let outcome = drive(&mut machine);
+    assert!(
+        matches!(outcome, MachineOutcome::Succeeded(ref value)
+        if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 3)),
+        "{outcome:?}"
+    );
+}
+
+/// Requires the executable artifact guaranteed by a valid fixture.
+fn executable(package: &gantry::analysis::TypedPackage) -> &gantry::ir::MachineProgram {
+    package
+        .executable_program()
+        .unwrap_or_else(|| panic!("valid fixture omitted executable program"))
+}
+
+/// Retaining task IR is independent of executing or recovering a task graph.
+#[test]
+fn analyzed_task_program_round_trips_through_retained_codec() {
+    use gantry::runtime::{
+        DurableCommitCutV1, DurableExecutionStartV3, DurableLogicalEvidenceV3, root_task_identity,
+    };
+    let root = TempDirectory::new(
+        r#"
+pure fn value() -> Int { 7 }
+fn main() -> Int {
+    spawn child -> Int { value() }
+    join(child)
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let helper = program
+        .workflows()
+        .iter()
+        .find(|workflow| workflow.path.as_str() == "crate::value")
+        .unwrap_or_else(|| panic!("task call omitted helper"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x52; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let task = root_task_identity(execution);
+    let machine = Machine::new(
+        Arc::new(program.clone()),
+        &helper.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("helper machine failed: {error:?}"));
+    let state = DurableLogicalEvidenceV3::new(
+        execution,
+        task,
+        DurableCommitCutV1::Checkpoint,
+        None,
+        &machine,
+    )
+    .unwrap_or_else(|error| panic!("checkpoint evidence failed: {error:?}"));
+    let retained = DurableExecutionStartV3::new(
+        execution,
+        task,
+        program,
+        Arc::<[u8]>::from(&b"{}"[..]),
+        state,
+    )
+    .unwrap_or_else(|error| panic!("retained program failed: {error:?}"));
+    assert_eq!(
+        &retained
+            .program()
+            .unwrap_or_else(|error| panic!("decode failed: {error:?}")),
+        program
+    );
+}
+
+/// Resolves the fixture entry without hiding missing-artifact diagnostics.
+fn entry_workflow(package: &gantry::analysis::TypedPackage) -> &gantry::ir::Workflow {
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid fixture omitted entry"));
+    executable(package)
+        .workflow(&entry.path)
+        .unwrap_or_else(|| panic!("entry workflow was not lowered"))
 }
 
 fn analyze(root: &TempDirectory) -> gantry::analysis::TypedPackage {

@@ -99,6 +99,9 @@ pub(crate) struct EffectDraft {
 
 pub(crate) struct BodyAnalysis {
     pub(crate) expression_types: Vec<BTreeMap<NodeId, TypeDescriptor>>,
+    /// Typed outer binding candidates indexed by closed owner and authored spawn.
+    pub(crate) spawn_captures:
+        BTreeMap<EffectNode, BTreeMap<SourceSpan, Vec<SpawnCaptureMetadata>>>,
     pub(crate) generic_templates: Vec<GenericTemplate>,
     pub(crate) generic_instantiations: Vec<ConcreteInstantiation>,
     pub(crate) concrete_callables: Vec<ConcreteCallableMetadata>,
@@ -108,6 +111,17 @@ pub(crate) struct BodyAnalysis {
     pub(crate) generic_declarations: BTreeSet<SourceSpan>,
     pub(crate) generic_template_effects: BTreeMap<CanonicalTemplateIdentity, EffectSet>,
     pub(crate) generic_concrete_effects: BTreeMap<InstantiationKey, EffectSet>,
+}
+
+/// A visible value binding from which lowering selects the exact free captures.
+#[derive(Clone, Debug)]
+pub(crate) struct SpawnCaptureMetadata {
+    /// Analyzer-resolved lexical name; never a task-handle name.
+    pub(crate) name: Arc<str>,
+    /// Binding type after substitution for a concrete callable.
+    pub(crate) ty: TypeDescriptor,
+    /// Whether the copied child-local binding permits assignment.
+    pub(crate) mutable: bool,
 }
 
 pub(crate) struct ConcreteCallableMetadata {
@@ -233,6 +247,7 @@ struct BodyContext {
     generic_analysis_counters: RefCell<Option<GenericAnalysisCounters>>,
     trait_obligations: RefCell<BTreeMap<String, ObligationProof>>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
+    spawn_captures: RefCell<BTreeMap<EffectNode, BTreeMap<SourceSpan, Vec<SpawnCaptureMetadata>>>>,
     concrete_declaration_types: RefCell<BTreeMap<InstantiationKey, BTreeMap<NodeId, TypeFact>>>,
     concrete_expression_types:
         RefCell<BTreeMap<InstantiationKey, BTreeMap<NodeId, TypeDescriptor>>>,
@@ -808,6 +823,7 @@ fn build_body_context(
         generic_analysis_counters: RefCell::new(generic_analysis_counters),
         trait_obligations: RefCell::new(BTreeMap::new()),
         expression_types: RefCell::new(BTreeMap::new()),
+        spawn_captures: RefCell::new(BTreeMap::new()),
         concrete_declaration_types: RefCell::new(BTreeMap::new()),
         concrete_expression_types: RefCell::new(BTreeMap::new()),
     })
@@ -1180,6 +1196,7 @@ pub(crate) fn check_package_bodies(
         context.expression_types.borrow_mut().clear();
         Ok(BodyAnalysis {
             expression_types,
+            spawn_captures: context.spawn_captures.take(),
             generic_templates: context.generic_templates.clone(),
             generic_instantiations: context
                 .generic_instantiations
@@ -2488,6 +2505,32 @@ fn check_spawned_block(
         .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
     let block =
         direct_child_form(tree, statement, SyntaxForm::Block).ok_or(AnalysisError::Invariant)?;
+    let captures = environment
+        .iter()
+        .map(|(name, ty)| {
+            Ok(SpawnCaptureMetadata {
+                name: name.clone(),
+                ty: ty.clone(),
+                mutable: assignment_root_is_mutable(
+                    tree,
+                    statement.span(),
+                    name,
+                    name.as_ref() == "self",
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, AnalysisError>>()?;
+    let owner = context
+        .current_effect_owner
+        .borrow()
+        .clone()
+        .ok_or(AnalysisError::Invariant)?;
+    context
+        .spawn_captures
+        .borrow_mut()
+        .entry(owner)
+        .or_default()
+        .insert(statement.span().clone(), captures);
     let completion = check_block(
         tree,
         block,
@@ -3612,6 +3655,7 @@ fn infer_join_expression(
         return Err(AnalysisError::Invariant);
     }
     let mut available = BTreeMap::<Arc<str>, TypeDescriptor>::new();
+    let mut declaration_order = Vec::<Arc<str>>::new();
     let selected_names = matches!(node.form(), SyntaxForm::JoinExpression)
         .then(|| direct_identifiers(tree, join))
         .transpose()?
@@ -3629,6 +3673,7 @@ fn infer_join_expression(
                 let result = direct_child_form(tree, statement_node, SyntaxForm::ValueType)
                     .and_then(|type_node| facts.get(&type_node))
                     .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
+                declaration_order.push(name.clone());
                 available.insert(name, result);
                 continue;
             }
@@ -3648,7 +3693,10 @@ fn infer_join_expression(
             .into_iter()
             .filter_map(|handle| available.get(&handle).cloned())
             .collect::<Vec<_>>(),
-        SyntaxForm::JoinAllExpression => available.into_values().collect::<Vec<_>>(),
+        SyntaxForm::JoinAllExpression => declaration_order
+            .into_iter()
+            .filter_map(|handle| available.get(&handle).cloned())
+            .collect::<Vec<_>>(),
         _ => return Err(AnalysisError::Invariant),
     };
     join_result_type(selected, node.span().clone(), diagnostics).map(Some)

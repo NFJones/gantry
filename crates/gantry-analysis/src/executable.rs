@@ -10,15 +10,15 @@ use std::sync::Arc;
 use gantry_core::numeric::{GantryFloat, GantryInt};
 use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValuePathSegment};
 use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree, TokenKind};
-use gantry_ir::generated::Effect;
 use gantry_ir::{
     ActionInventory, AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison,
-    EffectSet, EntryInventory, ExecutableAction, ExecutableOperation, Instruction, InstructionKind,
-    LoopPhase, MachineProgram, Parameter, Primitive, ProgramError, Projection, StructuralPosition,
-    TypeDescriptor, Workflow, WorkflowFacts,
+    EffectSet, EntryInventory, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
+    ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
+    InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, ProgramError, Projection,
+    StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow, WorkflowFacts,
 };
 
-use crate::bodies::{BodyAnalysis, EffectNode};
+use crate::bodies::{BodyAnalysis, EffectNode, SpawnCaptureMetadata};
 use crate::{AnalysisError, TypeFact};
 
 pub(crate) fn lower_executable_program(
@@ -118,15 +118,8 @@ pub(crate) fn lower_executable_program(
                 .cloned(),
         );
     }
-    let root = body
-        .source_callables
-        .iter()
-        .find(|callable| callable.identity == root_identity)
-        .ok_or(AnalysisError::Invariant)?;
-    let unsupported = [Effect::Spawn, Effect::Join, Effect::Background]
-        .into_iter()
-        .any(|effect| root.effects.contains(effect));
     let mut lowered = Vec::with_capacity(reachable.len());
+    let mut task_bodies = Vec::new();
     for metadata in body
         .source_callables
         .iter()
@@ -157,62 +150,68 @@ pub(crate) fn lower_executable_program(
             closed_enums: &body.closed_enums,
             actions,
             instructions: Vec::new(),
+            identity: &metadata.identity,
+            spawn_captures: body
+                .spawn_captures
+                .get(&EffectNode::Source(metadata.declaration.clone())),
+            task_bodies: &mut task_bodies,
+            task_sites: BTreeMap::new(),
+            loops: Vec::new(),
+            cleanup: Vec::new(),
         };
-        if unsupported {
-            if metadata.identity == root_identity {
-                lowered.push((
-                    metadata.identity.clone(),
-                    compiler.compile_unsupported_root(callable)?,
-                ));
-            }
-        } else {
-            let compiled = compiler.compile_callable(callable)?;
-            lowered.push((metadata.identity.clone(), compiled));
-        }
+        let compiled = compiler.compile_callable(callable)?;
+        lowered.push((metadata.identity.clone(), compiled));
     }
-    if !unsupported {
-        for metadata in body.concrete_callables.iter().filter(|callable| {
-            concrete_identities
-                .get(&callable.key)
-                .is_some_and(|identity| reachable.contains(identity))
-        }) {
-            let identity = concrete_identities
-                .get(&metadata.key)
-                .cloned()
-                .ok_or(AnalysisError::Invariant)?;
-            let facts = workflows
-                .iter()
-                .find(|facts| facts.source == metadata.declaration)
-                .ok_or(AnalysisError::Invariant)?;
-            let (_, tree, callable) = find_callable(sources, &metadata.declaration)?;
-            let effects = body
-                .generic_concrete_effects
-                .get(&metadata.key)
-                .copied()
-                .ok_or(AnalysisError::Invariant)?;
-            let mut compiler = Compiler {
-                tree,
-                declaration_types: &metadata.declaration_types,
-                body_types: &metadata.expression_types,
-                facts,
-                receiver_type: metadata.receiver.as_ref(),
-                result: &metadata.result,
-                effects,
-                direct_targets: direct_targets
-                    .get(&identity)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
-                operation_results: Some(&metadata.operation_results),
-                closed_enums: &body.closed_enums,
-                actions,
-                instructions: Vec::new(),
-            };
-            let compiled = compiler.compile_callable(callable)?;
-            lowered.push((identity, compiled));
-        }
+    for metadata in body.concrete_callables.iter().filter(|callable| {
+        concrete_identities
+            .get(&callable.key)
+            .is_some_and(|identity| reachable.contains(identity))
+    }) {
+        let identity = concrete_identities
+            .get(&metadata.key)
+            .cloned()
+            .ok_or(AnalysisError::Invariant)?;
+        let facts = workflows
+            .iter()
+            .find(|facts| facts.source == metadata.declaration)
+            .ok_or(AnalysisError::Invariant)?;
+        let (_, tree, callable) = find_callable(sources, &metadata.declaration)?;
+        let effects = body
+            .generic_concrete_effects
+            .get(&metadata.key)
+            .copied()
+            .ok_or(AnalysisError::Invariant)?;
+        let mut compiler = Compiler {
+            tree,
+            declaration_types: &metadata.declaration_types,
+            body_types: &metadata.expression_types,
+            facts,
+            receiver_type: metadata.receiver.as_ref(),
+            result: &metadata.result,
+            effects,
+            direct_targets: direct_targets
+                .get(&identity)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+            operation_results: Some(&metadata.operation_results),
+            closed_enums: &body.closed_enums,
+            actions,
+            instructions: Vec::new(),
+            identity: &identity,
+            spawn_captures: body
+                .spawn_captures
+                .get(&EffectNode::Concrete(metadata.key.clone())),
+            task_bodies: &mut task_bodies,
+            task_sites: BTreeMap::new(),
+            loops: Vec::new(),
+            cleanup: Vec::new(),
+        };
+        let compiled = compiler.compile_callable(callable)?;
+        lowered.push((identity, compiled));
     }
     lowered.sort_by(|left, right| left.0.cmp(&right.0));
-    MachineProgram::with_callable_identities(lowered).map_err(|_| AnalysisError::Invariant)
+    task_bodies.sort_by(|left, right| left.identity().cmp(right.identity()));
+    MachineProgram::with_task_bodies(lowered, task_bodies).map_err(|_| AnalysisError::Invariant)
 }
 
 fn find_callable<'a>(
@@ -252,16 +251,30 @@ struct Compiler<'a> {
     closed_enums: &'a BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
     actions: &'a [ActionInventory],
     instructions: Vec<Instruction>,
+    identity: &'a CanonicalCallableIdentity,
+    spawn_captures:
+        Option<&'a BTreeMap<gantry_core::source::SourceSpan, Vec<SpawnCaptureMetadata>>>,
+    task_bodies: &'a mut Vec<ExecutableTaskBody>,
+    task_sites: BTreeMap<usize, StructuralPosition>,
+    loops: Vec<LoopTarget>,
+    cleanup: Vec<InstructionKind>,
+}
+
+/// Pending lexical loop transfers, isolated from enclosing callable/task bodies.
+struct LoopTarget {
+    start: usize,
+    cleanup_depth: usize,
+    breaks: Vec<usize>,
 }
 
 impl Compiler<'_> {
-    fn compile_unsupported_root(&mut self, callable: NodeId) -> Result<Workflow, AnalysisError> {
+    fn compile_callable(&mut self, callable: NodeId) -> Result<Workflow, AnalysisError> {
         let parameters = self.compile_parameters(callable)?;
-        self.emit(
-            TypeDescriptor::UNIT,
-            InstructionKind::Push(LogicalValue::unit()),
-        )?;
-        self.emit(TypeDescriptor::UNIT, InstructionKind::Return)?;
+        let node = self.node(callable)?;
+        let block = direct_child_form(self.tree, node, SyntaxForm::Block)
+            .ok_or(AnalysisError::Invariant)?;
+        self.compile_block(block, BlockMode::Callable)?;
+        self.finish_sites()?;
         Ok(Workflow {
             path: self.facts.path.clone(),
             parameters,
@@ -271,19 +284,207 @@ impl Compiler<'_> {
         })
     }
 
-    fn compile_callable(&mut self, callable: NodeId) -> Result<Workflow, AnalysisError> {
-        let parameters = self.compile_parameters(callable)?;
-        let node = self.node(callable)?;
-        let block = direct_child_form(self.tree, node, SyntaxForm::Block)
+    /// Lowers one independent child and restores the parent's instruction stream.
+    fn compile_spawn(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
+        let node = self.node(statement)?.clone();
+        let site = self
+            .facts
+            .task_controls
+            .iter()
+            .find(|site| site.source == *node.span())
+            .ok_or(AnalysisError::Invariant)?
+            .clone();
+        let result = direct_child_form(self.tree, &node, SyntaxForm::ValueType)
+            .and_then(|id| self.declaration_types.get(&id))
+            .map_or(TypeDescriptor::UNIT, |fact| fact.descriptor.clone());
+        let block = direct_child_form(self.tree, &node, SyntaxForm::Block)
             .ok_or(AnalysisError::Invariant)?;
-        self.compile_block(block, BlockMode::Callable)?;
-        Ok(Workflow {
-            path: self.facts.path.clone(),
-            parameters,
-            result: self.result.clone(),
+        let identity = TaskBodyIdentity::new(self.identity.clone(), site.id.position().clone());
+        let candidates = self
+            .spawn_captures
+            .and_then(|sites| sites.get(node.span()))
+            .ok_or(AnalysisError::Invariant)?;
+        let mut child = Compiler {
+            tree: self.tree,
+            declaration_types: self.declaration_types,
+            body_types: self.body_types,
+            facts: self.facts,
+            receiver_type: self.receiver_type,
+            result: &result,
             effects: self.effects,
-            instructions: std::mem::take(&mut self.instructions),
-        })
+            direct_targets: self.direct_targets,
+            operation_results: self.operation_results,
+            closed_enums: self.closed_enums,
+            actions: self.actions,
+            instructions: Vec::new(),
+            identity: self.identity,
+            spawn_captures: self.spawn_captures,
+            task_bodies: self.task_bodies,
+            task_sites: BTreeMap::new(),
+            loops: Vec::new(),
+            cleanup: Vec::new(),
+        };
+        child.compile_block(block, BlockMode::Callable)?;
+        child.finish_sites()?;
+        let captures = child.select_captures(candidates)?;
+        for instruction in &mut child.instructions {
+            if matches!(instruction.kind, InstructionKind::Return) {
+                instruction.kind = InstructionKind::TaskComplete;
+            }
+        }
+        let body = ExecutableTaskBody::new(
+            identity.clone(),
+            result.clone(),
+            captures,
+            ExecutableTaskContext::v1(),
+            child.instructions,
+        )
+        .map_err(|_| AnalysisError::Invariant)?;
+        self.task_bodies.push(body);
+        let handle = ExecutableTaskHandle::new(
+            site.handles
+                .first()
+                .cloned()
+                .ok_or(AnalysisError::Invariant)?,
+            result,
+        )
+        .map_err(|_| AnalysisError::Invariant)?;
+        let index = self.emit(
+            TypeDescriptor::UNIT,
+            InstructionKind::Spawn {
+                handle,
+                body: identity,
+            },
+        )?;
+        self.task_sites.insert(index, site.id.position().clone());
+        Ok(())
+    }
+
+    /// Selects free value bindings in first-use order, including nested captures.
+    fn select_captures(
+        &self,
+        candidates: &[SpawnCaptureMetadata],
+    ) -> Result<Vec<ExecutableTaskCapture>, AnalysisError> {
+        // Valid source cannot shadow an outer binding. Runtime cleanup may be
+        // emitted on several control-flow edges, so it is not a lexical walk.
+        let locals = self
+            .instructions
+            .iter()
+            .filter_map(|instruction| {
+                if let InstructionKind::Bind { name, .. } = &instruction.kind {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect::<BTreeSet<_>>();
+        let mut selected = BTreeSet::new();
+        let mut captures = Vec::new();
+        for instruction in &self.instructions {
+            let names = match &instruction.kind {
+                InstructionKind::Load(name) | InstructionKind::Assign { name, .. } => {
+                    vec![name.clone()]
+                }
+                InstructionKind::Spawn { body, .. } => self
+                    .task_bodies
+                    .iter()
+                    .find(|candidate| candidate.identity() == body)
+                    .ok_or(AnalysisError::Invariant)?
+                    .captures()
+                    .iter()
+                    .map(|capture| Arc::from(capture.name()))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for name in names {
+                if locals.contains(&name) || !selected.insert(name.clone()) {
+                    continue;
+                }
+                let candidate = candidates
+                    .iter()
+                    .find(|candidate| candidate.name == name)
+                    .ok_or(AnalysisError::Invariant)?;
+                captures.push(
+                    ExecutableTaskCapture::new(name, candidate.ty.clone(), candidate.mutable)
+                        .map_err(|_| AnalysisError::Invariant)?,
+                );
+            }
+        }
+        Ok(captures)
+    }
+
+    /// Uses ownership analysis's exact source/declaration-order handle selection.
+    fn compile_task_control(
+        &mut self,
+        control: NodeId,
+        ty: TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let node = self.node(control)?;
+        let site = self
+            .facts
+            .task_controls
+            .iter()
+            .find(|site| site.source == *node.span())
+            .ok_or(AnalysisError::Invariant)?
+            .clone();
+        let kind = match node.form() {
+            SyntaxForm::JoinExpression => InstructionKind::Join {
+                handles: site.handles,
+            },
+            SyntaxForm::JoinAllExpression => InstructionKind::JoinAll {
+                handles: site.handles,
+            },
+            SyntaxForm::DetachStatement => InstructionKind::Detach {
+                handle: site
+                    .handles
+                    .first()
+                    .cloned()
+                    .ok_or(AnalysisError::Invariant)?,
+            },
+            _ => return Err(AnalysisError::Invariant),
+        };
+        let index = self.emit(ty.clone(), kind)?;
+        self.task_sites.insert(index, site.id.position().clone());
+        Ok(ty)
+    }
+
+    /// Retains canonical task sites while placing auxiliary instructions between them.
+    fn finish_sites(&mut self) -> Result<(), AnalysisError> {
+        if self.task_sites.is_empty() {
+            return Ok(());
+        }
+        let mut previous: Option<StructuralPosition> = None;
+        for index in 0..self.instructions.len() {
+            let site = if let Some(site) = self.task_sites.get(&index) {
+                site.clone()
+            } else {
+                let upper = self.task_sites.range(index..).next().map(|(_, site)| site);
+                let mut components = previous
+                    .as_ref()
+                    .map_or_else(Vec::new, |site| site.components().to_vec());
+                components.push(0);
+                let mut candidate =
+                    StructuralPosition::new(components).map_err(|_| AnalysisError::Invariant)?;
+                if let Some(upper) = upper.filter(|upper| candidate >= **upper) {
+                    let components = upper.components();
+                    let pivot = components
+                        .iter()
+                        .rposition(|part| *part > 0)
+                        .ok_or(AnalysisError::Invariant)?;
+                    let mut before = components[..pivot].to_vec();
+                    before.extend([components[pivot] - 1, u64::MAX, index as u64]);
+                    candidate =
+                        StructuralPosition::new(before).map_err(|_| AnalysisError::Invariant)?;
+                }
+                candidate
+            };
+            if previous.as_ref().is_some_and(|previous| previous >= &site) {
+                return Err(AnalysisError::Invariant);
+            }
+            self.instructions[index].site = site.clone();
+            previous = Some(site);
+        }
+        Ok(())
     }
 
     fn compile_parameters(&self, callable: NodeId) -> Result<Vec<Parameter>, AnalysisError> {
@@ -343,6 +544,10 @@ impl Compiler<'_> {
             match node.form() {
                 SyntaxForm::LetStatement => self.compile_let(child)?,
                 SyntaxForm::AssignmentStatement => self.compile_assignment(child)?,
+                SyntaxForm::SpawnStatement => self.compile_spawn(child)?,
+                SyntaxForm::DetachStatement => {
+                    self.compile_task_control(child, TypeDescriptor::UNIT)?;
+                }
                 SyntaxForm::DiscardStatement => {
                     let expression = direct_child_form(self.tree, node, SyntaxForm::Expression)
                         .ok_or(AnalysisError::Invariant)?;
@@ -365,7 +570,13 @@ impl Compiler<'_> {
                     return Ok(());
                 }
                 SyntaxForm::IfStatement => self.compile_if(child)?,
-                SyntaxForm::WhileStatement => self.compile_while(child)?,
+                SyntaxForm::WhileStatement | SyntaxForm::LoopStatement => {
+                    self.compile_while(child)?
+                }
+                SyntaxForm::BreakStatement | SyntaxForm::ContinueStatement => {
+                    self.compile_loop_transfer(matches!(node.form(), SyntaxForm::BreakStatement))?;
+                    return Ok(());
+                }
                 SyntaxForm::WithStatement | SyntaxForm::SessionStatement => {
                     self.compile_context_statement(child)?;
                 }
@@ -490,18 +701,26 @@ impl Compiler<'_> {
             .collect::<Vec<_>>();
         let when_true = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        self.cleanup.push(InstructionKind::LeaveOccurrence);
+        self.cleanup.push(InstructionKind::ExitScope);
         self.compile_block(
             *blocks.first().ok_or(AnalysisError::Invariant)?,
             BlockMode::Statement,
         )?;
+        self.cleanup.pop();
+        self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
         let when_false = self.instructions.len();
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
+        self.cleanup.push(InstructionKind::LeaveOccurrence);
+        self.cleanup.push(InstructionKind::ExitScope);
         if let Some(otherwise) = blocks.get(1) {
             self.compile_block(*otherwise, BlockMode::Statement)?;
         }
+        self.cleanup.pop();
+        self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         let end = self.instructions.len();
@@ -515,8 +734,7 @@ impl Compiler<'_> {
 
     fn compile_while(&mut self, statement: NodeId) -> Result<(), AnalysisError> {
         let node = self.node(statement)?.clone();
-        let condition = direct_child_form(self.tree, &node, SyntaxForm::Expression)
-            .ok_or(AnalysisError::Invariant)?;
+        let condition = direct_child_form(self.tree, &node, SyntaxForm::Expression);
         let body = direct_child_form(self.tree, &node, SyntaxForm::Block)
             .ok_or(AnalysisError::Invariant)?;
         let source_limit = loop_limit(self.tree, &node);
@@ -528,7 +746,15 @@ impl Compiler<'_> {
                 source_limit: None,
             },
         )?;
-        let condition_type = self.compile_expression(condition)?;
+        let condition_type = if let Some(condition) = condition {
+            self.compile_expression(condition)?
+        } else {
+            self.emit(
+                TypeDescriptor::BOOL,
+                InstructionKind::Push(LogicalValue::boolean(true)),
+            )?;
+            TypeDescriptor::BOOL
+        };
         let branch = self.emit(
             condition_type,
             InstructionKind::Branch {
@@ -546,8 +772,17 @@ impl Compiler<'_> {
                 source_limit,
             },
         )?;
+        self.loops.push(LoopTarget {
+            start,
+            cleanup_depth: self.cleanup.len(),
+            breaks: Vec::new(),
+        });
+        self.cleanup.push(InstructionKind::LeaveOccurrence);
+        self.cleanup.push(InstructionKind::ExitScope);
         self.emit(TypeDescriptor::UNIT, InstructionKind::EnterScope)?;
         self.compile_block(body, BlockMode::Statement)?;
+        self.cleanup.pop();
+        self.cleanup.pop();
         self.emit(TypeDescriptor::UNIT, InstructionKind::ExitScope)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
         self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
@@ -558,6 +793,30 @@ impl Compiler<'_> {
             when_true,
             when_false,
         };
+        let end = self.instructions.len();
+        let target = self.loops.pop().ok_or(AnalysisError::Invariant)?;
+        for jump in target.breaks {
+            self.instructions[jump].kind = InstructionKind::Jump(end);
+        }
+        Ok(())
+    }
+
+    /// Leaves nested lexical scopes before transferring to the nearest loop.
+    fn compile_loop_transfer(&mut self, is_break: bool) -> Result<(), AnalysisError> {
+        let target = self.loops.last().ok_or(AnalysisError::Invariant)?;
+        let start = target.start;
+        let cleanup = self.cleanup[target.cleanup_depth..].to_vec();
+        for kind in cleanup.into_iter().rev() {
+            self.emit(TypeDescriptor::UNIT, kind)?;
+        }
+        let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(start))?;
+        if is_break {
+            self.loops
+                .last_mut()
+                .ok_or(AnalysisError::Invariant)?
+                .breaks
+                .push(jump);
+        }
         Ok(())
     }
 
@@ -574,7 +833,13 @@ impl Compiler<'_> {
                 .ok_or(AnalysisError::Invariant)?;
             self.emit(TypeDescriptor::UNIT, InstructionKind::EnterSession(session))?;
         }
+        self.cleanup.push(if is_with {
+            InstructionKind::ExitAgent
+        } else {
+            InstructionKind::ExitSession
+        });
         self.compile_block(body, BlockMode::Statement)?;
+        self.cleanup.pop();
         self.emit(
             TypeDescriptor::UNIT,
             if is_with {
@@ -595,6 +860,27 @@ impl Compiler<'_> {
             .or_else(|| literal_type(self.tree, &node))
             .unwrap_or(TypeDescriptor::UNIT);
 
+        let control = if matches!(
+            node.form(),
+            SyntaxForm::JoinExpression | SyntaxForm::JoinAllExpression
+        ) {
+            Some(expression)
+        } else if binary_operator(self.tree, &node).is_none() {
+            let children = semantic_children(self.tree, expression)?;
+            (children.len() == 1).then(|| children[0]).filter(|child| {
+                self.tree.node(*child).is_some_and(|node| {
+                    matches!(
+                        node.form(),
+                        SyntaxForm::JoinExpression | SyntaxForm::JoinAllExpression
+                    )
+                })
+            })
+        } else {
+            None
+        };
+        if let Some(control) = control {
+            return self.compile_task_control(control, ty);
+        }
         if let Some(match_expression) =
             descendant_form(self.tree, expression, &[SyntaxForm::MatchExpression])
         {

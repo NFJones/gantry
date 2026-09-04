@@ -205,6 +205,23 @@ validate canonical ordering and direct-target closure. The executable
 projection consequently contains neither `^` parameters nor templates,
 dictionaries, vtables, candidate sets, or source-level resolution operations.
 
+Concurrent source is not replaced with a dummy executable entry. Each reachable
+spawn lowers to an independent task body identified by its closed enclosing
+callable and canonical spawn site, with a `TaskComplete` return boundary.
+The analyzer retains closed binding types and declared mutability at each spawn;
+lowering selects referenced outer bindings in deterministic first-use order,
+including bindings needed by nested children. Child-local declarations, package
+items, and lexical task handles are not captured logical values.
+
+Join and joinall retain the ownership pass's source-order or declaration-order
+handle selection, including an explicit empty joinall instruction. Detach remains
+an ownership instruction rather than a logical-value operation. The executable
+bridge regressions cover nested bodies, closed generic functions and receivers,
+capture mutability, and task-control expression composition. These are static
+lowering guarantees only: the sequential machine still rejects concurrent effects,
+and native executor submission, descendant draining, and durable graph recovery
+remain separate runtime obligations.
+
 ## Requirement and trace links
 
 - Module graph, resolution, and security: `GNT-3.1`, `GNT-3.2`, and the clause
