@@ -404,7 +404,7 @@ pub enum DurableOperationRecoveryV1 {
 }
 
 /// Result of projecting one authoritative journal prefix into the existing machine.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RecoveredDurableStateV1 {
     machine: Machine,
     sessions: Option<LogicalSessionRegistryV1>,
@@ -416,6 +416,24 @@ pub struct RecoveredDurableStateV1 {
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
     operation_recovery: DurableOperationRecoveryV1,
+}
+
+impl Clone for RecoveredDurableStateV1 {
+    /// Copies a durable cut without sharing speculative budget mutations.
+    fn clone(&self) -> Self {
+        Self {
+            machine: self.machine.clone_durable_projection(),
+            sessions: self.sessions.clone(),
+            execution_start: self.execution_start.clone(),
+            execution_state: self.execution_state.clone(),
+            cancellation_reason: self.cancellation_reason.clone(),
+            events: self.events.clone(),
+            latest_sequence: self.latest_sequence,
+            latest_evidence_id: self.latest_evidence_id,
+            latest_cut: self.latest_cut,
+            operation_recovery: self.operation_recovery.clone(),
+        }
+    }
 }
 
 impl RecoveredDurableStateV1 {
@@ -1820,6 +1838,32 @@ mod tests {
         CanonicalTranscriptV1, LogicalSessionRegistryV1, Machine, MachineLimits, MachineOutcome,
         MachineStep, SessionCreationModeV1, ValidationErrorCategoryV1, ValidationErrorV1,
     };
+
+    /// A speculative durable successor must not charge its rollback snapshot.
+    #[test]
+    fn durable_state_clone_isolates_uncommitted_budget_charges() {
+        let program = value_program();
+        let machine = machine(Arc::clone(&program));
+        let evidence = evidence(&machine, DurableCommitCutV1::Checkpoint, None);
+        let first = envelope(1, 1, &evidence, &[]);
+        let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+            journal_id: journal_id(),
+            evidence: Arc::from([first]),
+            committed_through: 1,
+        });
+        let authoritative = recover_authoritative_prefix(program, &prefix)
+            .unwrap_or_else(|error| panic!("recovery failed: {error:?}"));
+        let checkpoint = authoritative.machine().checkpoint();
+        let budget = authoritative.machine().budget_checkpoint();
+        let mut staged = authoritative.clone();
+        assert!(matches!(
+            staged.machine_mut().step(),
+            MachineStep::Transition(_)
+        ));
+        assert_ne!(staged.machine().budget_checkpoint(), budget);
+        assert_eq!(authoritative.machine().checkpoint(), checkpoint);
+        assert_eq!(authoritative.machine().budget_checkpoint(), budget);
+    }
 
     #[test]
     fn full_and_snapshot_prefixes_recover_equivalent_machine_state() {

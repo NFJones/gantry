@@ -997,6 +997,19 @@ impl Machine {
         self.execution_budget.snapshot()
     }
 
+    /// Copies a privately owned durable machine with an independent budget.
+    ///
+    /// This is a rollback/staging projection, not a new sibling task. The caller
+    /// must exclusively own this machine while capturing it; ordinary machine
+    /// clones continue sharing their execution-wide budget.
+    #[cfg(feature = "durable")]
+    pub(crate) fn clone_durable_projection(&self) -> Self {
+        let mut projection = self.clone();
+        projection.execution_budget =
+            ExecutionBudget::from_snapshot(self.execution_budget.snapshot());
+        projection
+    }
+
     /// Reconstructs the same evaluator using its separately recovered shared budget.
     #[cfg(feature = "durable")]
     pub fn recover_from_checkpoint(
