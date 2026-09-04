@@ -230,6 +230,8 @@ pub struct DurableOwnedExecution {
     journal_id: JournalId,
     ownership_token: JournalOwnershipToken,
     handle: ExecutionHandle,
+    /// Read-only coordinator frontier, updated only after semantic commits.
+    committed_budget: gantry_runtime::ExecutionBudget,
     state: Mutex<DurableOwnedExecutionState>,
 }
 
@@ -328,6 +330,7 @@ impl DurableLifecycleCoordinator {
             journal_id,
             ownership_token,
             handle,
+            committed_budget: recovered.machine().execution_budget(),
             state: Mutex::new(DurableOwnedExecutionState {
                 recovered: Some(recovered),
                 owner,
@@ -510,6 +513,7 @@ impl DurableLifecycleCoordinator {
             journal_id,
             ownership_token,
             handle,
+            committed_budget: recovered.machine().execution_budget(),
             state: Mutex::new(DurableOwnedExecutionState {
                 recovered: Some(recovered),
                 owner,
@@ -624,7 +628,10 @@ impl DurableOwnedExecution {
         }
         state.operation_in_flight = true;
         state.driver_active = true;
-        state.recovered.take()
+        let recovered = state.recovered.take()?;
+        // Clone intentionally isolates the driver's speculative budget from
+        // the committed budget retained by coordinator observers.
+        Some(recovered.clone())
     }
 
     pub(crate) fn take_driver_cancellation(&self) -> Option<CancellationReason> {
@@ -717,6 +724,7 @@ impl DurableOwnedExecution {
                 .record_cancellation_commit(requested_reason.clone(), &commit)
                 .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
             *recovered.machine_mut() = staged_machine;
+            self.publish_committed_budget(recovered)?;
             requested_reason
         };
         self.handle
@@ -753,7 +761,22 @@ impl DurableOwnedExecution {
             .map_err(DurableRunFailure::Commit)?;
         recovered
             .record_semantic_commit(&commit)
-            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
+        self.publish_committed_budget(recovered)
+    }
+
+    /// Updates shared budget observers only after the serialized journal commit.
+    fn publish_committed_budget(
+        &self,
+        recovered: &RecoveredDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        self.committed_budget
+            .publish_committed_snapshot(recovered.machine().budget_checkpoint())
+            .map_err(|error| {
+                DurableRunFailure::Commit(DurableCommitError::Evidence(
+                    DurableEvidenceError::Checkpoint(error),
+                ))
+            })
     }
 
     pub(crate) async fn commit_driver_event(

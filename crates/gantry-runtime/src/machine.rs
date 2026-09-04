@@ -168,6 +168,33 @@ impl ExecutionBudget {
         self.inner.lock().unwrap_or_else(|error| error.into_inner())
     }
 
+    /// Publishes a validated durable budget frontier after its journal commit.
+    ///
+    /// The serialized durable owner must call this only after committing the
+    /// corresponding machine cut. This observer budget must not drive machines;
+    /// runnable durable machines use private staged projections instead.
+    #[cfg(feature = "durable")]
+    pub fn publish_committed_snapshot(
+        &self,
+        checkpoint: ExecutionBudgetSnapshot,
+    ) -> Result<(), MachineRecoveryError> {
+        validate_execution_budget_snapshot(&checkpoint)?;
+        let mut state = self.lock();
+        if state.execution != checkpoint.execution
+            || state.maximum_transitions != checkpoint.maximum_transitions
+            || state.maximum_operations != checkpoint.maximum_operations
+            || state.remaining_transitions < checkpoint.remaining_transitions
+            || state.remaining_operations < checkpoint.remaining_operations
+            || state.revision > checkpoint.revision
+        {
+            return Err(MachineRecoveryError::ExecutionBudgetMismatch);
+        }
+        state.remaining_transitions = checkpoint.remaining_transitions;
+        state.remaining_operations = checkpoint.remaining_operations;
+        state.revision = checkpoint.revision;
+        Ok(())
+    }
+
     fn matches(&self, execution: ProtocolIdentity, limits: MachineLimits) -> bool {
         let state = self.lock();
         state.execution == execution
@@ -911,7 +938,7 @@ impl Machine {
     }
 
     /// Returns a clone of this machine's execution-wide budget owner.
-    #[cfg(feature = "concurrent")]
+    #[cfg(any(feature = "concurrent", feature = "durable"))]
     #[must_use]
     pub fn execution_budget(&self) -> ExecutionBudget {
         self.execution_budget.clone()

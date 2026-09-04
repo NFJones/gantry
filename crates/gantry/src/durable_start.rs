@@ -95,6 +95,14 @@ impl DurableStartExecutionAccepted {
     pub fn test_retained_projection(&self) -> Option<RecoveredDurableStateV1> {
         self.owned.test_retained_projection()
     }
+
+    /// Reads the budget shared with the root coordinator for durability assertions.
+    #[cfg(all(feature = "test-support", feature = "concurrent"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_coordinator_budget(&self) -> gantry_runtime::ExecutionBudgetSnapshot {
+        self.execution_budget.snapshot()
+    }
 }
 
 /// Durable start rejection retaining the journal identity and release outcome.
@@ -1020,12 +1028,16 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             Err(_) => return Err(Box::new(prepared)),
         };
         let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&self.storage));
+        // Preserve the budget observer already attached to the gated driver,
+        // while the accepted test projection remains independent.
+        let accepted_projection = prepared.recovered.clone();
+        let recovered = std::mem::replace(&mut prepared.recovered, accepted_projection);
         let owned = lifecycle
             .own_committed_start(
                 prepared.journal_id.clone(),
                 prepared.ownership_token.clone(),
                 handle.clone(),
-                prepared.recovered.clone(),
+                recovered,
                 prepared.event_delivery,
             )
             .unwrap_or_else(|_| unreachable!("validated recovery restores its lifecycle state"));

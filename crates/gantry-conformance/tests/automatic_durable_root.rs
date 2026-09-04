@@ -917,6 +917,10 @@ fn accepted_durable_root_runs_on_the_executor_and_commits_before_observation() {
         recovered.latest_cut(),
         DurableCommitCutV1::TerminalCompletion
     );
+    assert_eq!(
+        accepted.test_coordinator_budget(),
+        recovered.machine().budget_checkpoint()
+    );
 }
 
 #[test]
@@ -3084,6 +3088,10 @@ fn durable_commit_failure_reports_run_failure_and_preserves_sequence_one() {
     );
     assert_eq!(
         retained.machine().budget_checkpoint(),
+        authoritative.machine().budget_checkpoint()
+    );
+    assert_eq!(
+        accepted.test_coordinator_budget(),
         authoritative.machine().budget_checkpoint()
     );
     let JournalPrefixV1::Full(full) = prefix else {
