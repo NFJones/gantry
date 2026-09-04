@@ -1,0 +1,56 @@
+{
+  "format": "gantry.execution-api-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-API-001",
+  "requirements": [
+    {
+      "requirement": "GNT-2.1",
+      "clause": "clause-001",
+      "profiles": ["analyzer", "concurrent-evaluator", "durable-runtime", "embedding", "evaluator", "frontend"]
+    },
+    {
+      "requirement": "GNT-15.0",
+      "clause": "clause-005",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-automatic-execution",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-concurrency-and-reentrancy",
+      "clause": "clause-007",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1-concurrency-and-reentrancy",
+      "clause": "clause-009",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.8",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "handle-only-facade",
+      "evidence": "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer"
+    },
+    {
+      "id": "legacy-manual-driving-unavailable",
+      "evidence": "crates/gantry-conformance/tests/external_facade_matrix.rs#legacy_execution_surface_is_unavailable_to_external_consumers"
+    }
+  ],
+  "exclusions": [
+    "Final product documentation and migration guidance remain owned by GNT-ASYNC-DOC-001.",
+    "Cross-profile conformance closure and publication adoption remain owned by GNT-ASYNC-CONF-001, GNT-ASYNC-PUB-001, and GNT-ASYNC-REL-001."
+  ]
+}

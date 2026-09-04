@@ -20,7 +20,7 @@ use gantry::runtime::{
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValueView};
-use gantry::{Interpreter, RunExecutionError, StartExecutionRequest, StartExecutionResult};
+use gantry::{Interpreter, StartExecutionRequest, StartExecutionResult};
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
 };
@@ -153,7 +153,7 @@ fn checked_in_automatic_root_start_evidence_is_narrow_and_current() {
     declared.sort();
     assert_eq!(declared, assigned);
     assert_eq!(declared.len(), 13);
-    assert_eq!(manifest.exclusions.len(), 4);
+    assert_eq!(manifest.exclusions.len(), 3);
 }
 
 #[test]
@@ -167,15 +167,11 @@ fn immediate_executor_poll_cannot_cross_the_accepted_root_gate() {
     assert_eq!(executor.task_ids(), [0]);
     assert_eq!(executor.poll_count(0), Some(1));
     let before_progress = accepted
-        .handle
+        .handle()
         .snapshot()
         .unwrap_or_else(|error| panic!("accepted snapshot failed: {error:?}"));
     assert!(before_progress.foreground.is_none());
     assert!(before_progress.terminal.is_none());
-    assert!(matches!(
-        interpreter.task_driver(accepted.clone()),
-        Err(RunExecutionError::ExecutionAlreadyOwned)
-    ));
 
     let completed = settle_root(&executor, &interpreter, accepted);
     assert!(matches!(
@@ -195,8 +191,11 @@ fn post_acceptance_submission_failure_returns_accepted_and_settles_the_root() {
 
     let accepted = accepted(&interpreter, &root);
     assert!(executor.task_ids().is_empty());
-    let snapshot = block_on(interpreter.run_execution(accepted))
-        .unwrap_or_else(|error| panic!("failed root observation failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("failed root observation failed: {error:?}"))
+        .unwrap_or_else(|| panic!("failed root disappeared"));
     assert!(matches!(
         snapshot.foreground,
         Some(MachineOutcome::Failed(ref failure))
@@ -313,6 +312,8 @@ fn settle_task(
     accepted: gantry::StartExecutionAccepted,
     task_id: u64,
 ) -> gantry::runtime::ExecutionSnapshot {
+    let handle = accepted.handle().clone();
+    drop(accepted);
     loop {
         match executor
             .poll_task(task_id)
@@ -325,8 +326,9 @@ fn settle_task(
             other => panic!("automatic root settled abnormally: {other:?}"),
         }
     }
-    block_on(interpreter.run_execution(accepted))
+    block_on(interpreter.await_terminal(&handle))
         .unwrap_or_else(|error| panic!("automatic root observation failed: {error:?}"))
+        .unwrap_or_else(|| panic!("automatic root disappeared"))
 }
 
 fn interpreter(executor: Arc<DeterministicConcurrentExecutor>, root_capacity: u64) -> Interpreter {

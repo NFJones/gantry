@@ -81,8 +81,8 @@ fn public_interpreter_drives_and_observes_one_sequential_execution() {
     let StartExecutionResult::Accepted(accepted) = started else {
         panic!("valid deterministic execution was rejected")
     };
-    let execution_id = accepted.execution_id;
-    let handle = accepted.handle.clone();
+    let execution_id = accepted.execution_id();
+    let handle = accepted.handle().clone();
     let initial = interpreter
         .query_execution(execution_id)
         .unwrap_or_else(|error| panic!("initial query failed: {error}"))
@@ -90,8 +90,10 @@ fn public_interpreter_drives_and_observes_one_sequential_execution() {
     assert!(initial.foreground.is_none());
     assert!(initial.terminal.is_none());
 
-    let completed = block_on(interpreter.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("execution drive failed: {error:?}"));
+    drop(accepted);
+    let completed = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted execution disappeared"));
     let foreground = completed
         .foreground
         .as_ref()
@@ -167,8 +169,11 @@ fn public_interpreter_drives_scripted_action_success_and_decline() {
     else {
         panic!("valid action execution was rejected")
     };
-    let snapshot = block_on(successful.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("action execution failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(successful.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("action execution await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted action execution disappeared"));
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
@@ -223,8 +228,11 @@ fn public_interpreter_drives_scripted_action_success_and_decline() {
     else {
         panic!("valid declined action execution was rejected")
     };
-    let snapshot = block_on(declined.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("declined action drive failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(declined.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("declined action await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted declined action execution disappeared"));
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Failed(ref failure))
@@ -281,8 +289,11 @@ fn public_interpreter_captures_and_completes_one_model_prompt() {
     else {
         panic!("valid prompt execution was rejected")
     };
-    let snapshot = block_on(interpreter.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("prompt execution failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("prompt execution await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted prompt execution disappeared"));
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
@@ -355,8 +366,11 @@ fn public_interpreter_reuses_one_lexical_fork_session() {
     else {
         panic!("valid lexical fork execution was rejected")
     };
-    let snapshot = block_on(interpreter.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("lexical fork execution failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("lexical fork execution await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted lexical fork execution disappeared"));
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
@@ -434,8 +448,11 @@ fn public_interpreter_normalizes_declared_result_output() {
     else {
         panic!("valid declared result execution was rejected")
     };
-    let snapshot = block_on(interpreter.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("declared result execution failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("declared result execution await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted declared result execution disappeared"));
     let Some(gantry::runtime::MachineOutcome::Succeeded(value)) = snapshot.foreground else {
         panic!("declared result execution did not succeed")
     };
@@ -490,8 +507,11 @@ fn public_interpreter_decodes_one_sealed_decision() {
     else {
         panic!("valid decide execution was rejected")
     };
-    let snapshot = block_on(interpreter.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("decide execution failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("decide execution await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted decide execution disappeared"));
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
@@ -545,8 +565,11 @@ fn public_interpreter_settles_retry_delay_executor_failure() {
     else {
         panic!("valid retry execution was rejected")
     };
-    let snapshot = block_on(interpreter.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("retry execution failed: {error:?}"));
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("retry execution await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted retry execution disappeared"));
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Failed(ref failure))

@@ -94,7 +94,6 @@
   "exclusions": [
     "Durable root composition and journal commit ordering remain owned by GNT-ASYNC-DROOT-001.",
     "Recovered runnable-set admission and rollback remain owned by GNT-ASYNC-RESUME-001.",
-    "Root cancellation and shutdown semantics remain owned by GNT-ASYNC-ROOTCTL-001.",
-    "Removal of the temporary task_driver and run_execution compatibility surfaces remains owned by GNT-ASYNC-API-001."
+    "Root cancellation and shutdown semantics remain owned by GNT-ASYNC-ROOTCTL-001."
   ]
 }

@@ -29,12 +29,15 @@ pub use durable_lifecycle::{
     DurableQueryExecutionRequest, DurableQueryExecutionResult, DurableRunFailure,
     DurableShutdownError, DurableShutdownReport,
 };
+#[cfg(all(feature = "durable", feature = "test-support"))]
+#[doc(hidden)]
+pub use durable_start::DurableStartExecutionCoordinator;
 #[cfg(feature = "durable")]
 pub use durable_start::{
     DurableResumeExecutionAccepted, DurableResumeExecutionFailure, DurableResumeExecutionRequest,
     DurableResumeExecutionResult, DurableResumeSourceComparison, DurableRetainedArtifacts,
-    DurableStartExecutionAccepted, DurableStartExecutionCoordinator, DurableStartExecutionFailure,
-    DurableStartExecutionRequest, DurableStartExecutionResult,
+    DurableStartExecutionAccepted, DurableStartExecutionFailure, DurableStartExecutionRequest,
+    DurableStartExecutionResult,
 };
 #[cfg(feature = "analyzer")]
 pub use gantry_analysis as analysis;
@@ -56,18 +59,21 @@ pub use gantry_runtime as runtime;
 pub use interpreter::DurableHandoffTestGate;
 #[cfg(feature = "evaluator")]
 pub use interpreter::{
-    CancelExecutionError, Interpreter, RunExecutionError, ShutdownError, TaskDriver,
+    CancelExecutionError, Interpreter, RunExecutionError, ShutdownError,
     caller_cancellation_reason, root_task_identity,
 };
 pub use profile::{
     ConformanceProfile, PROFILE_CLAIMS_ENABLED, PROFILE_DEFINITIONS,
     PROFILE_SPECIFICATION_REVISION, PROFILE_SUPERSEDED_SPECIFICATION_REVISION, ProfileDefinition,
 };
+#[cfg(all(feature = "evaluator", feature = "test-support"))]
+#[doc(hidden)]
+pub use start::StartExecutionCoordinator;
 #[cfg(feature = "evaluator")]
 pub use start::{
     ActionMappingRevision, AgentMappingRevision, MappingRevisions, RootSessionProvenance,
-    RootSessionSpecification, RootSessionState, StartExecutionAccepted, StartExecutionCoordinator,
-    StartExecutionFailure, StartExecutionRequest, StartExecutionResult, ValidatedEntryInput,
+    RootSessionSpecification, RootSessionState, StartExecutionAccepted, StartExecutionFailure,
+    StartExecutionRequest, StartExecutionResult, ValidatedEntryInput,
 };
 #[cfg(feature = "analyzer")]
 pub use validate::{

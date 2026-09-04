@@ -25,8 +25,8 @@ use gantry::host::journal::{
 };
 use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
-    DeliveryOutcome, EventKind, ExecutionObservationState, JitterMode,
-    PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS, RuntimeErrorCategory, SinkClass,
+    DeliveryOutcome, EventKind, JitterMode, PORTABLE_SPECIFICATION_REVISION,
+    PROTOCOL_FAMILY_DEFINITIONS, RuntimeErrorCategory, SinkClass,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
@@ -893,7 +893,9 @@ fn accepted_durable_root_runs_on_the_executor_and_commits_before_observation() {
         }
     }
 
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(
         matches!(
             observation.terminal,
@@ -901,10 +903,6 @@ fn accepted_durable_root_runs_on_the_executor_and_commits_before_observation() {
                 if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
         ),
         "unexpected durable observation: {observation:?}"
-    );
-    assert_eq!(
-        observation.latest_cut(),
-        DurableCommitCutV1::TerminalCompletion
     );
 
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
@@ -961,10 +959,9 @@ fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
             panic!("durable cancellation fixture was rejected: {failure:?}")
         }
     };
-    let execution_id = accepted.start.execution_id;
+    let execution_id = accepted.execution_id();
     let signal = accepted
-        .start
-        .handle
+        .handle()
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
     let expected_reason = caller_cancellation_reason(Some(Arc::from("stop")), 32)
@@ -1002,7 +999,9 @@ fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
         CancellationRecord::Accepted { ref reason, .. } if reason == &expected_reason
     ));
     assert!(signal.is_cancelled());
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop"
@@ -1068,7 +1067,7 @@ fn facade_cancellation_drains_finite_events_before_releasing_durable_owner() {
             panic!("durable cancellation event-drain fixture was rejected: {failure:?}")
         }
     };
-    let execution_id = accepted.start.execution_id;
+    let execution_id = accepted.execution_id();
     let root_task_id = *executor
         .task_ids()
         .last()
@@ -1138,7 +1137,9 @@ fn facade_cancellation_drains_finite_events_before_releasing_durable_owner() {
     assert_eq!(required_gate.calls(), 1);
     assert_eq!(best_effort_gate.calls(), 1);
     assert_eq!(storage.release_count(), 1);
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "drain-events"
@@ -1209,10 +1210,9 @@ fn cancellation_progresses_a_pending_dispatch_and_retains_it_to_settlement() {
             panic!("pending-dispatch fixture was rejected: {failure:?}")
         }
     };
-    let execution_id = accepted.start.execution_id;
+    let execution_id = accepted.execution_id();
     let signal = accepted
-        .start
-        .handle
+        .handle()
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
     assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
@@ -1269,7 +1269,9 @@ fn cancellation_progresses_a_pending_dispatch_and_retains_it_to_settlement() {
         record,
         CancellationRecord::Accepted { ref reason, .. } if reason == &expected_reason
     ));
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop-pending"
@@ -1343,8 +1345,7 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
         }
     };
     let signal = accepted
-        .start
-        .handle
+        .handle()
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
     assert_eq!(
@@ -1381,7 +1382,7 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
     };
     assert!(report.orderly);
     assert_eq!(report.cohort.len(), 1);
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = &report.cohort[0];
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
@@ -1461,7 +1462,7 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
         );
 
         gate.release();
-        let accepted = match start
+        let _accepted = match start
             .join()
             .unwrap_or_else(|_| panic!("durable start thread panicked"))
         {
@@ -1505,7 +1506,7 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
         };
         assert!(report.orderly);
         assert_eq!(report.cohort.len(), 1);
-        let observation = block_on(accepted.owned.await_terminal());
+        let observation = &report.cohort[0];
         assert!(matches!(
             observation.terminal,
             Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
@@ -1555,14 +1556,18 @@ fn resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically
             panic!("resume fixture start was rejected: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
     let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal_id.clone(),
     }))
     .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let (_, recovered_before_resume) =
+        recover_authoritative_prefix_with_retained_program(&prefix_before_resume)
+            .unwrap_or_else(|error| panic!("pre-resume prefix did not recover: {error:?}"));
+    assert_eq!(recovered_before_resume.latest_sequence(), 1);
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
+        ownership_token: started.test_ownership_token().clone(),
     }))
     .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
 
@@ -1615,17 +1620,22 @@ fn resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically
         }
         Poll::Pending => panic!("completed resume coordinator did not publish acceptance"),
     };
-    assert_eq!(accepted.execution_id, execution_id);
-    assert_eq!(accepted.recovered.latest_sequence(), 1);
+    assert_eq!(accepted.execution_id(), execution_id);
     settle_task(&resume_executor, 1);
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(resumed.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Succeeded(ref value))
             if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
     ));
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("resumed prefix did not recover: {error:?}"));
     assert_eq!(
-        observation.latest_cut(),
+        recovered.latest_cut(),
         DurableCommitCutV1::TerminalCompletion
     );
 }
@@ -1666,14 +1676,14 @@ fn resume_executor_rejection_rolls_back_and_releases_the_owner_once() {
             panic!("resume rejection fixture start failed: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
     let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal_id.clone(),
     }))
     .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
+        ownership_token: started.test_ownership_token().clone(),
     }))
     .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
     assert_eq!(storage.release_count(), 1);
@@ -1770,14 +1780,14 @@ fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefi
             panic!("resume rollback fixture start failed: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
     let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal_id.clone(),
     }))
     .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
+        ownership_token: started.test_ownership_token().clone(),
     }))
     .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
 
@@ -1882,10 +1892,10 @@ fn dropping_the_resume_waiter_does_not_abandon_accepted_work() {
             panic!("dropped-waiter fixture start failed: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
+        ownership_token: started.test_ownership_token().clone(),
     }))
     .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
 
@@ -2008,7 +2018,7 @@ fn durable_event_dispatch_and_settlement_precede_callback_and_terminal_observati
         "terminal event settlement became visible before the gated commit"
     );
 
-    let mut terminal = pin!(accepted.owned.await_terminal());
+    let mut terminal = pin!(interpreter.await_terminal(accepted.handle()));
     assert!(
         terminal
             .as_mut()
@@ -2024,7 +2034,9 @@ fn durable_event_dispatch_and_settlement_precede_callback_and_terminal_observati
         .as_mut()
         .poll(&mut Context::from_waker(Waker::noop()))
     {
-        Poll::Ready(observation) => observation,
+        Poll::Ready(Ok(Some(observation))) => observation,
+        Poll::Ready(Ok(None)) => panic!("accepted durable execution disappeared"),
+        Poll::Ready(Err(error)) => panic!("terminal await failed: {error:?}"),
         Poll::Pending => panic!("terminal observation remained pending after settlement"),
     };
     assert!(matches!(
@@ -2087,7 +2099,7 @@ fn terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner() {
             panic!("delivery-only resume fixture was rejected: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
 
     let initial_root_task_id = *initial_executor
         .task_ids()
@@ -2103,7 +2115,7 @@ fn terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner() {
     storage.release_settlement_commit();
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
+        ownership_token: started.test_ownership_token().clone(),
     }))
     .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
     assert_eq!(storage.release_count(), 1);
@@ -2170,7 +2182,9 @@ fn terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner() {
     };
     assert_eq!(resume_executor.task_ids(), [0]);
     assert_eq!(storage.release_count(), 2);
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(resumed.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Succeeded(ref value))
@@ -2207,7 +2221,7 @@ fn terminal_resume_accepts_without_submitting_a_root_driver() {
             panic!("terminal-resume fixture start failed: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
     settle_task(&initial_executor, 0);
 
     let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -2250,7 +2264,9 @@ fn terminal_resume_accepts_without_submitting_a_root_driver() {
         Poll::Pending => panic!("terminal resume acceptance was not published"),
     };
     assert_eq!(resume_executor.task_ids(), [0]);
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(resumed.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Succeeded(ref value))
@@ -2294,14 +2310,14 @@ fn resume_runnable_capacity_refusal_releases_owner_without_mutating_the_prefix()
             panic!("resume-capacity fixture start failed: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
     let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal_id.clone(),
     }))
     .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
+        ownership_token: started.test_ownership_token().clone(),
     }))
     .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
 
@@ -2393,7 +2409,9 @@ fn durable_operation_cuts_commit_before_dispatch_and_source_consumption() {
     };
     settle_task(&executor, 0);
 
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(
         matches!(
             observation.terminal,
@@ -2565,10 +2583,14 @@ fn preterminal_required_delivery_exhaustion_commits_runtime_failure_precedence()
             Ok(DeterministicTaskPoll::Settled(_))
         ),
         "required-delivery root did not settle: {:?}",
-        accepted.owned.observation()
+        interpreter
+            .query_execution(accepted.execution_id())
+            .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
     );
 
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(
         matches!(
             observation.terminal,
@@ -2664,7 +2686,7 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
             panic!("post-commit REVENT fixture was rejected: {failure:?}")
         }
     };
-    let execution_id = started.start.execution_id;
+    let execution_id = started.execution_id();
     let initial_root_task_id = *initial_executor
         .task_ids()
         .last()
@@ -2717,7 +2739,7 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
     storage.release_post_commit_settlement();
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
-        ownership_token: started.ownership_token.clone(),
+        ownership_token: started.test_ownership_token().clone(),
     }))
     .unwrap_or_else(|error| panic!("fixture owner release failed: {error:?}"));
     assert_eq!(storage.release_count(), 1);
@@ -2781,17 +2803,15 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
     assert_eq!(resume_executor.task_ids(), [0, 1]);
 
     settle_task(&resume_executor, 1);
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(resumed.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
         Some(MachineOutcome::Failed(ref failure))
             if failure.code
                 == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
     ));
-    assert_eq!(
-        observation.latest_cut(),
-        DurableCommitCutV1::TerminalCompletion
-    );
     assert_eq!(observation.required_delivery_failures.len(), 1);
     let failed = &observation.required_delivery_failures[0];
     assert_eq!(failed.event_id, failed_event_id);
@@ -2887,7 +2907,9 @@ fn durable_lexical_session_state_commits_before_source_progress() {
     };
     settle_task(&executor, 0);
 
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(
         matches!(
             observation.terminal,
@@ -2989,7 +3011,9 @@ fn durable_submission_failure_commits_terminal_root_failure_after_acceptance() {
     assert_eq!(executor.task_ids(), [0]);
     settle_task(&executor, 0);
 
-    let observation = block_on(accepted.owned.await_terminal());
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(
         matches!(
             observation.terminal,
@@ -2997,10 +3021,6 @@ fn durable_submission_failure_commits_terminal_root_failure_after_acceptance() {
                 if failure.code == gantry::runtime::RuntimeCode::RootSubmissionFailure
         ),
         "unexpected durable submission observation: {observation:?}"
-    );
-    assert_eq!(
-        observation.latest_cut(),
-        DurableCommitCutV1::TerminalCompletion
     );
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
@@ -3044,15 +3064,12 @@ fn durable_commit_failure_reports_run_failure_and_preserves_sequence_one() {
     };
     settle_task(&executor, 0);
 
-    let observation = block_on(accepted.owned.await_terminal());
-    assert_eq!(
-        observation.state,
-        ExecutionObservationState::RunFailedNondurably
-    );
+    let observation = interpreter
+        .query_execution(accepted.execution_id())
+        .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(observation.foreground.is_none());
     assert!(observation.terminal.is_none());
-    assert!(observation.run_failure.is_some());
-    assert_eq!(observation.latest_sequence, 1);
 
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));

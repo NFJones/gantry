@@ -305,10 +305,11 @@ fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
     else {
         panic!("valid shutdown fixture was rejected")
     };
-    let cancellation = accepted
-        .handle
+    let handle = accepted.handle().clone();
+    let cancellation = handle
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+    drop(accepted);
 
     let mut first_waiter = Box::pin(interpreter.shutdown());
     assert!(poll_once(first_waiter.as_mut()).is_pending());
@@ -323,8 +324,9 @@ fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
         executor.poll_task(0),
         Ok(DeterministicTaskPoll::Settled(_))
     ));
-    let execution = block_on(observer.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("cancelled execution did not drain: {error:?}"));
+    let execution = block_on(observer.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("cancelled execution await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("cancelled execution disappeared"));
     assert!(execution.foreground.is_some());
     assert_eq!(execution.terminal, execution.foreground);
     assert!(executor.is_runnable(1));
@@ -368,6 +370,8 @@ fn owned_shutdown_retains_services_after_last_external_facade() {
     else {
         panic!("valid retention fixture was rejected")
     };
+    let handle = accepted.handle().clone();
+    drop(accepted);
 
     let mut shutdown = Box::pin(interpreter.shutdown());
     assert!(poll_once(shutdown.as_mut()).is_pending());
@@ -377,8 +381,9 @@ fn owned_shutdown_retains_services_after_last_external_facade() {
         executor.poll_task(0),
         Ok(DeterministicTaskPoll::Settled(_))
     ));
-    block_on(driver.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("retention fixture did not drain: {error:?}"));
+    block_on(driver.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("retention fixture await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("retention fixture disappeared"));
 
     drop(integration);
     drop(driver);

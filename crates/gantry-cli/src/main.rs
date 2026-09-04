@@ -423,10 +423,20 @@ fn run_command(
             };
         }
     };
-    let snapshot = match runtime.block_on(interpreter.run_execution(*accepted)) {
-        Ok(snapshot) => snapshot,
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let snapshot = match runtime.block_on(interpreter.await_terminal(&handle)) {
+        Ok(Some(snapshot)) => snapshot,
+        Ok(None) => {
+            let _ = writeln!(
+                stderr,
+                "operational-failure[await-terminal:execution-missing]"
+            );
+            let _ = runtime.block_on(interpreter.shutdown());
+            return EXIT_OPERATIONAL_FAILURE;
+        }
         Err(error) => {
-            let _ = writeln!(stderr, "operational-failure[run-execution:{error:?}]");
+            let _ = writeln!(stderr, "operational-failure[await-terminal:{error:?}]");
             let _ = runtime.block_on(interpreter.shutdown());
             return EXIT_OPERATIONAL_FAILURE;
         }

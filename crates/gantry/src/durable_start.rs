@@ -25,11 +25,13 @@ use gantry_runtime::{
 };
 
 use crate::interpreter::{decode_logical_value, root_task_identity};
-use crate::start::{PreparedExecutionStart, decode_mapping_revisions, require_resolved};
+use crate::start::{
+    PreparedExecutionStart, StartExecutionCoordinator, decode_mapping_revisions, require_resolved,
+};
 use crate::{
     AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
     DurableLifecycleCoordinator, DurableOwnedExecution, MappingRevisions, StartExecutionAccepted,
-    StartExecutionCoordinator, StartExecutionFailure, StartExecutionRequest,
+    StartExecutionFailure, StartExecutionRequest,
 };
 
 /// Durable new-execution request retaining the embedder-supplied journal target.
@@ -42,16 +44,47 @@ pub struct DurableStartExecutionRequest<'a> {
 
 /// Accepted durable execution after sequence one became authoritative.
 pub struct DurableStartExecutionAccepted {
-    /// Existing accepted execution state used by the sole evaluator path.
-    pub start: StartExecutionAccepted,
-    /// Execution-owned durable state used for observation and journal-first progress.
-    pub owned: Arc<DurableOwnedExecution>,
-    /// Stable journal target retained for query, resume, and release.
-    pub journal_id: JournalId,
-    /// Current fenced ownership token.
-    pub ownership_token: JournalOwnershipToken,
-    /// Storage-assigned sequence-one evidence identity.
-    pub execution_start_evidence_id: gantry_core::identity::ProtocolIdentity,
+    pub(crate) start: StartExecutionAccepted,
+    pub(crate) owned: Arc<DurableOwnedExecution>,
+    journal_id: JournalId,
+    pub(crate) ownership_token: JournalOwnershipToken,
+    pub(crate) execution_start_evidence_id: gantry_core::identity::ProtocolIdentity,
+}
+
+impl DurableStartExecutionAccepted {
+    /// Returns the stable journal accepted by the durable start.
+    #[must_use]
+    pub const fn journal_id(&self) -> &JournalId {
+        &self.journal_id
+    }
+
+    /// Returns the accepted execution identity.
+    #[must_use]
+    pub const fn execution_id(&self) -> ProtocolIdentity {
+        self.start.execution_id()
+    }
+
+    /// Returns the sole in-process observation and control handle.
+    #[must_use]
+    pub const fn handle(&self) -> &ExecutionHandle {
+        self.start.handle()
+    }
+
+    /// Returns the fenced token for deterministic storage-protocol fixtures.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn test_ownership_token(&self) -> &JournalOwnershipToken {
+        &self.ownership_token
+    }
+
+    /// Returns the sequence-one evidence identity for protocol fixtures.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn test_execution_start_evidence_id(&self) -> ProtocolIdentity {
+        self.execution_start_evidence_id
+    }
 }
 
 /// Durable start rejection retaining the journal identity and release outcome.
@@ -173,23 +206,74 @@ impl DurableRetainedArtifacts {
 #[derive(Clone, Debug)]
 pub struct DurableResumeExecutionAccepted {
     /// Stable accepted execution identity recovered from sequence one.
-    pub execution_id: ProtocolIdentity,
+    execution_id: ProtocolIdentity,
     /// In-process observation and cancellation handle accepted at the resume boundary.
-    pub handle: ExecutionHandle,
-    /// Execution-owned durable state used for observation and journal-first progress.
-    pub owned: Arc<DurableOwnedExecution>,
-    /// Existing machine, sessions, and operation-recovery projection.
-    pub recovered: RecoveredDurableStateV1,
+    handle: ExecutionHandle,
+    pub(crate) owned: Arc<DurableOwnedExecution>,
+    pub(crate) recovered: RecoveredDurableStateV1,
     /// Stable journal target retained by the accepted execution.
-    pub journal_id: JournalId,
-    /// Current fenced ownership token for subsequent durable execution commits.
-    pub ownership_token: JournalOwnershipToken,
+    journal_id: JournalId,
+    pub(crate) ownership_token: JournalOwnershipToken,
     /// Optional completed candidate-source package activity.
-    pub candidate_package_activity: Option<Box<AnalyzePackageResult>>,
+    candidate_package_activity: Option<Box<AnalyzePackageResult>>,
     /// Whether source was omitted, exact, or cosmetically different.
-    pub source_comparison: DurableResumeSourceComparison,
+    source_comparison: DurableResumeSourceComparison,
     /// Exact authenticated analysis artifacts retained without reparsing source.
-    pub retained_artifacts: DurableRetainedArtifacts,
+    retained_artifacts: DurableRetainedArtifacts,
+}
+
+impl DurableResumeExecutionAccepted {
+    /// Returns the accepted execution identity.
+    #[must_use]
+    pub const fn execution_id(&self) -> ProtocolIdentity {
+        self.execution_id
+    }
+
+    /// Returns the sole in-process observation and control handle.
+    #[must_use]
+    pub const fn handle(&self) -> &ExecutionHandle {
+        &self.handle
+    }
+
+    /// Returns the durable journal resumed by this operation.
+    #[must_use]
+    pub const fn journal_id(&self) -> &JournalId {
+        &self.journal_id
+    }
+
+    /// Returns the read-only candidate-source provenance comparison.
+    #[must_use]
+    pub const fn source_comparison(&self) -> DurableResumeSourceComparison {
+        self.source_comparison
+    }
+
+    /// Returns the read-only authenticated artifacts retained for recovery.
+    #[must_use]
+    pub const fn retained_artifacts(&self) -> &DurableRetainedArtifacts {
+        &self.retained_artifacts
+    }
+
+    /// Returns whether resume performed a candidate-source package activity.
+    #[must_use]
+    pub const fn candidate_package_was_analyzed(&self) -> bool {
+        self.candidate_package_activity.is_some()
+    }
+
+    /// Returns recovered state for deterministic recovery-protocol fixtures.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn test_recovered(&self) -> &RecoveredDurableStateV1 {
+        &self.recovered
+    }
+
+    /// Returns the fenced token for deterministic storage-protocol fixtures.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn test_ownership_token(&self) -> &JournalOwnershipToken {
+        &self.ownership_token
+    }
 }
 
 /// Durable resume rejection retaining the primary failure and separate owner-release outcome.

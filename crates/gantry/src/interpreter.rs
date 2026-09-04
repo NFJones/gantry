@@ -65,19 +65,21 @@ use gantry_runtime::{
     operation_dispatch_event, operation_result_event,
 };
 
-use crate::start::PreparedExecutionStart;
+use crate::start::{PreparedExecutionStart, StartExecutionCoordinator};
 use crate::{
-    AnalyzePackageCoordinator, AnalyzePackageResult, StartExecutionAccepted,
-    StartExecutionCoordinator, StartExecutionFailure, StartExecutionRequest, StartExecutionResult,
+    AnalyzePackageCoordinator, AnalyzePackageResult, StartExecutionAccepted, StartExecutionFailure,
+    StartExecutionRequest, StartExecutionResult,
 };
 
 #[cfg(feature = "durable")]
-use crate::durable_start::{DurableRegistrationEvent, PreparedDurableResume};
+use crate::durable_start::{
+    DurableRegistrationEvent, DurableStartExecutionCoordinator, PreparedDurableResume,
+};
 #[cfg(feature = "durable")]
 use crate::{
     DurableResumeExecutionFailure, DurableResumeExecutionRequest, DurableResumeExecutionResult,
-    DurableRunFailure, DurableStartExecutionCoordinator, DurableStartExecutionFailure,
-    DurableStartExecutionRequest, DurableStartExecutionResult,
+    DurableRunFailure, DurableStartExecutionFailure, DurableStartExecutionRequest,
+    DurableStartExecutionResult,
 };
 
 /// Supported nondurable interpreter facade over injected host integrations.
@@ -413,20 +415,6 @@ impl PreparedRootDriver {
         )
     }
 
-    fn new_for_accepted(
-        inner: &InterpreterInner,
-        accepted: &StartExecutionAccepted,
-    ) -> Result<Self, RunExecutionError> {
-        Self::new(
-            inner,
-            accepted.execution_id,
-            &accepted.package_activity,
-            accepted.entry_input.as_ref(),
-            &accepted.root_session,
-            false,
-        )
-    }
-
     #[cfg(feature = "durable")]
     fn new_for_durable_accepted(
         inner: &InterpreterInner,
@@ -744,11 +732,10 @@ impl Interpreter {
                 ));
             }
         };
-        let mut accepted = match prepared.accept_state() {
+        let accepted = match prepared.accept_state() {
             Ok(accepted) => accepted,
             Err(failure) => return StartExecutionResult::Rejected(failure),
         };
-        accepted.mark_automatic_driver();
         let driver = TaskDriver::from_prepared(Arc::clone(&self.inner), accepted.clone(), root);
         let task_coordinator = driver.coordinator();
         let abnormal = driver.abnormal_completion_handler();
@@ -847,7 +834,7 @@ impl Interpreter {
             Arc::clone(&storage),
         );
         let registry = &self.inner.durable_executions;
-        let mut accepted = match durable
+        let accepted = match durable
             .start_with_registration(request, |event| match event {
                 DurableRegistrationEvent::Marked(execution_id) => registry.mark(execution_id),
                 #[cfg(feature = "test-support")]
@@ -865,7 +852,6 @@ impl Interpreter {
             DurableStartExecutionResult::Accepted(accepted) => accepted,
             rejected => return rejected,
         };
-        accepted.start.mark_automatic_driver();
         let prepared = PreparedRootDriver::new_for_durable_accepted(&self.inner, &accepted.start)
             .unwrap_or_else(|_| unreachable!("committed start retained validated root state"));
         let task_id = prepared.task_id;
@@ -2698,34 +2684,6 @@ impl Interpreter {
         }
     }
 
-    /// Constructs one owned asynchronous driver for an accepted execution.
-    pub fn task_driver(
-        &self,
-        accepted: StartExecutionAccepted,
-    ) -> Result<TaskDriver, RunExecutionError> {
-        if accepted.has_automatic_driver() {
-            return Err(RunExecutionError::ExecutionAlreadyOwned);
-        }
-        TaskDriver::new(Arc::clone(&self.inner), accepted)
-    }
-
-    /// Compatibility delegate that observes automatically owned execution to terminal settlement.
-    pub async fn run_execution(
-        &self,
-        accepted: StartExecutionAccepted,
-    ) -> Result<ExecutionSnapshot, RunExecutionError> {
-        if accepted.has_automatic_driver() {
-            return self
-                .inner
-                .lifecycle
-                .await_terminal(accepted.execution_id)
-                .map_err(RunExecutionError::Lifecycle)?
-                .await
-                .ok_or(RunExecutionError::ExecutionNotFound);
-        }
-        self.task_driver(accepted)?.await
-    }
-
     async fn drive_execution(
         &self,
         accepted: StartExecutionAccepted,
@@ -3857,8 +3815,8 @@ impl Interpreter {
     }
 }
 
-/// One owned `Send + 'static` asynchronous driver for a Gantry task.
-pub struct TaskDriver {
+/// One interpreter-owned `Send + 'static` asynchronous driver for a Gantry task.
+struct TaskDriver {
     task_id: ProtocolIdentity,
     coordinator: ExecutionCoordinator,
     failure_context: TaskDriverFailureContext,
@@ -3912,14 +3870,6 @@ impl TaskDriverFailureContext {
 }
 
 impl TaskDriver {
-    fn new(
-        inner: Arc<InterpreterInner>,
-        accepted: StartExecutionAccepted,
-    ) -> Result<Self, RunExecutionError> {
-        let prepared = PreparedRootDriver::new_for_accepted(&inner, &accepted)?;
-        Ok(Self::from_prepared(inner, accepted, prepared))
-    }
-
     fn from_prepared(
         inner: Arc<InterpreterInner>,
         accepted: StartExecutionAccepted,
@@ -3963,42 +3913,26 @@ impl TaskDriver {
         }
     }
 
-    /// Returns the stable logical task identity owned by this driver.
-    #[must_use]
-    pub const fn task_id(&self) -> ProtocolIdentity {
-        self.task_id
-    }
-
     /// Returns the shared semantic coordinator used by this driver.
     #[must_use]
-    pub fn coordinator(&self) -> ExecutionCoordinator {
+    fn coordinator(&self) -> ExecutionCoordinator {
         self.coordinator.clone()
     }
 
     /// Returns the semantic fallback used when physical completion wins unexpectedly.
     #[must_use]
-    pub fn abnormal_completion_handler(&self) -> AbnormalCompletionHandler {
+    fn abnormal_completion_handler(&self) -> AbnormalCompletionHandler {
         let context = self.failure_context.clone();
         Arc::new(move |completion| context.settle(&completion))
     }
 
     /// Returns the callback that releases process-local driver ownership exactly once.
     #[must_use]
-    pub fn physical_completion_handler(&self) -> PhysicalCompletionHandler {
+    fn physical_completion_handler(&self) -> PhysicalCompletionHandler {
         let coordinator = self.coordinator.clone();
         let task_id = self.task_id;
         Arc::new(move |_| {
             let _ = coordinator.mark_driver_physically_settled(task_id);
-        })
-    }
-
-    /// Converts this driver to the executor's opaque owned-task future.
-    #[must_use]
-    pub fn into_owned_task(self, signal: SupervisionSignal) -> OwnedTaskFuture {
-        Box::pin(async move {
-            let _ = self.await;
-            let _ = signal.settle();
-            OwnedTaskResult::new()
         })
     }
 

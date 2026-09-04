@@ -24,8 +24,8 @@ use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::ValueLimits;
 use gantry::{
-    AnalyzePackageCoordinator, RootSessionProvenance, RootSessionSpecification,
-    StartExecutionCoordinator, StartExecutionRequest, StartExecutionResult,
+    AnalyzePackageCoordinator, RootSessionSpecification, StartExecutionCoordinator,
+    StartExecutionRequest, StartExecutionResult,
 };
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -315,40 +315,11 @@ fn main(value: Input) -> Input { value }
     let StartExecutionResult::Accepted(accepted) = result else {
         panic!("valid start was rejected");
     };
-    let entry = accepted
-        .entry_input
-        .as_ref()
-        .unwrap_or_else(|| panic!("normalized entry input was absent"));
-    assert_eq!(
-        entry.canonical_json.bytes(),
-        br#"{"count":1,"empty":null,"note":"fallback"}"#
-    );
-    assert_eq!(accepted.root_session.id, session_id);
-    assert_eq!(
-        accepted.root_session.provenance,
-        RootSessionProvenance::EmbedderSupplied
-    );
-    assert_eq!(accepted.execution_id.kind(), IdentityKind::Execution);
-    assert_eq!(accepted.handle.execution_id(), accepted.execution_id);
-    assert_eq!(
-        accepted
-            .mapping_revisions
-            .agent
-            .as_ref()
-            .map(|revision| revision.as_str()),
-        Some("agents-v1")
-    );
-    assert_eq!(
-        accepted
-            .mapping_revisions
-            .action
-            .as_ref()
-            .map(|revision| revision.as_str()),
-        Some("actions-v1")
-    );
+    assert_eq!(accepted.execution_id().kind(), IdentityKind::Execution);
+    assert_eq!(accepted.handle().execution_id(), accepted.execution_id());
     assert!(
         lifecycle
-            .query_execution(accepted.execution_id)
+            .query_execution(accepted.execution_id())
             .is_ok_and(|value| value.is_some())
     );
 

@@ -354,13 +354,15 @@ fn nondurable_root_events_keep_semantic_order_after_start_and_await_observers_dr
     else {
         panic!("valid root-event fixture was rejected")
     };
-    let execution_id = accepted.execution_id;
+    let execution_id = accepted.execution_id();
+    let handle = accepted.handle().clone();
+    drop(accepted);
     let root_task_id = *executor
         .task_ids()
         .last()
         .unwrap_or_else(|| panic!("accepted execution submitted no root task"));
 
-    let mut terminal_wait = Box::pin(interpreter.run_execution(*accepted));
+    let mut terminal_wait = Box::pin(interpreter.await_terminal(&handle));
     assert!(poll_once(terminal_wait.as_mut()).is_pending());
     drop(terminal_wait);
     assert!(matches!(
@@ -497,7 +499,9 @@ fn required_exhaustion_after_terminal_preserves_the_fixed_root_outcome() {
     else {
         panic!("terminal-exhaustion fixture was rejected")
     };
-    let execution_id = accepted.execution_id;
+    let execution_id = accepted.execution_id();
+    let handle = accepted.handle().clone();
+    drop(accepted);
     let root_task_id = *terminal_executor
         .task_ids()
         .last()
@@ -506,8 +510,9 @@ fn required_exhaustion_after_terminal_preserves_the_fixed_root_outcome() {
         terminal_executor.poll_task(root_task_id),
         Ok(DeterministicTaskPoll::Settled(_))
     ));
-    let snapshot = block_on(terminal.run_execution(*accepted))
-        .unwrap_or_else(|error| panic!("terminal-exhaustion observation failed: {error:?}"));
+    let snapshot = block_on(terminal.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("terminal-exhaustion observation failed: {error:?}"))
+        .unwrap_or_else(|| panic!("terminal-exhaustion execution disappeared"));
     assert_eq!(snapshot.execution_id, execution_id);
     assert!(matches!(
         snapshot.terminal,

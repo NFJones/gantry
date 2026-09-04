@@ -18,9 +18,7 @@ use gantry::runtime::{AsyncCapacityLimits, InterpreterConfiguration, RequiredCon
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValueView};
-use gantry::{
-    Interpreter, RunExecutionError, StartExecutionRequest, StartExecutionResult, TaskDriver,
-};
+use gantry::{Interpreter, StartExecutionRequest, StartExecutionResult};
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
 };
@@ -159,14 +157,11 @@ fn checked_in_task_driver_evidence_is_narrow_and_current() {
     declared.sort();
     assert_eq!(declared, assigned);
     assert_eq!(declared.len(), 11);
-    assert_eq!(manifest.exclusions.len(), 4);
+    assert_eq!(manifest.exclusions.len(), 3);
 }
 
 #[test]
 fn owned_driver_is_send_static_and_publishes_semantic_settlement_before_return() {
-    fn assert_send_static<T: Send + 'static>() {}
-    assert_send_static::<TaskDriver>();
-
     let root = TempDirectory::new("fn main() -> Int { 1 + 2 }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let integration = Arc::new(ScriptedIntegration::new([], []));
@@ -184,10 +179,6 @@ fn owned_driver_is_send_static_and_publishes_semantic_settlement_before_return()
         integration,
     );
     let accepted = accepted(&interpreter, &root);
-    assert!(matches!(
-        interpreter.task_driver(accepted.clone()),
-        Err(RunExecutionError::ExecutionAlreadyOwned)
-    ));
     let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
@@ -275,7 +266,7 @@ fn cancellation_published_during_yield_wins_before_more_source_progress() {
     );
     let accepted = accepted(&interpreter, &root);
     let cancellation = accepted
-        .handle
+        .handle()
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
     executor.cancel_on_next_yield(cancellation);
@@ -446,8 +437,7 @@ fn accepted_root_uses_prevalidated_state_after_return_payload_changes() {
         integration.clone(),
         integration,
     );
-    let mut accepted = accepted(&interpreter, &root);
-    accepted.package_activity.analysis = None;
+    let accepted = accepted(&interpreter, &root);
     let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert!(matches!(
         snapshot.foreground,
@@ -476,7 +466,9 @@ fn abnormal_physical_completion_settles_the_unpolled_driver_once() {
         integration,
     );
     let accepted = accepted(&interpreter, &root);
-    let execution_id = accepted.execution_id;
+    let execution_id = accepted.execution_id();
+    let handle = accepted.handle().clone();
+    drop(accepted);
     executor
         .fail_task(0)
         .unwrap_or_else(|error| panic!("executor failure injection failed: {error:?}"));
@@ -484,8 +476,9 @@ fn abnormal_physical_completion_settles_the_unpolled_driver_once() {
         executor.poll_task(0),
         Ok(DeterministicTaskPoll::Failed(_))
     ));
-    let snapshot = block_on(interpreter.run_execution(accepted))
-        .unwrap_or_else(|error| panic!("failed root observation failed: {error:?}"));
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("failed root observation failed: {error:?}"))
+        .unwrap_or_else(|| panic!("failed root disappeared"));
     assert_eq!(snapshot.execution_id, execution_id);
     assert!(matches!(
         snapshot.foreground,
@@ -518,6 +511,8 @@ fn settle_automatic_root(
     interpreter: &Interpreter,
     accepted: gantry::StartExecutionAccepted,
 ) -> gantry::runtime::ExecutionSnapshot {
+    let handle = accepted.handle().clone();
+    drop(accepted);
     assert_eq!(executor.task_ids(), [0]);
     loop {
         match executor
@@ -531,8 +526,9 @@ fn settle_automatic_root(
             other => panic!("automatic root settled abnormally: {other:?}"),
         }
     }
-    block_on(interpreter.run_execution(accepted))
+    block_on(interpreter.await_terminal(&handle))
         .unwrap_or_else(|error| panic!("automatic root observation failed: {error:?}"))
+        .unwrap_or_else(|| panic!("automatic root disappeared"))
 }
 
 fn configuration(

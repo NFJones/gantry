@@ -96,7 +96,6 @@
   "exclusions": [
     "Automatic accepted-root admission, gated submission, and public start handoff remain owned by GNT-ASYNC-START-001.",
     "Durable stage-commit-publish composition remains owned by GNT-ASYNC-DROOT-001 and GNT-ASYNC-DUR-001.",
-    "Native source-child creation and executable task-control lowering remain owned by GNT-ASYNC-SPAWN-001 and GNT-ASYNC-LOWER-001.",
-    "Public removal of caller-driven run_execution remains owned by GNT-ASYNC-API-001."
+    "Native source-child creation and executable task-control lowering remain owned by GNT-ASYNC-SPAWN-001 and GNT-ASYNC-LOWER-001."
   ]
 }

@@ -112,20 +112,15 @@ pub struct StartExecutionRequest<'a> {
 #[derive(Clone)]
 pub struct StartExecutionAccepted {
     /// Fresh execution identity accepted only at the final boundary.
-    pub execution_id: ProtocolIdentity,
+    pub(crate) execution_id: ProtocolIdentity,
     /// In-process observation and cancellation handle.
-    pub handle: ExecutionHandle,
-    /// Completed parse/analysis activity and its physical events.
-    pub package_activity: Box<AnalyzePackageResult>,
-    /// Validated entry value, absent when `main` has no parameter.
-    pub entry_input: Option<ValidatedEntryInput>,
-    /// Root session fixed for the accepted execution.
-    pub root_session: RootSessionState,
-    /// Agent/action mapping revisions fixed by preflight for this run.
-    pub mapping_revisions: MappingRevisions,
+    pub(crate) handle: ExecutionHandle,
+    pub(crate) package_activity: Box<AnalyzePackageResult>,
+    pub(crate) entry_input: Option<ValidatedEntryInput>,
+    pub(crate) root_session: RootSessionState,
+    pub(crate) mapping_revisions: MappingRevisions,
     /// Effective event delivery plan fixed for the accepted execution.
     pub(crate) event_delivery: SinkPlan,
-    automatic_driver: bool,
 }
 
 impl fmt::Debug for StartExecutionAccepted {
@@ -139,18 +134,21 @@ impl fmt::Debug for StartExecutionAccepted {
             .field("root_session", &self.root_session)
             .field("mapping_revisions", &self.mapping_revisions)
             .field("event_delivery", &self.event_delivery.registrations().len())
-            .field("automatic_driver", &self.automatic_driver)
             .finish()
     }
 }
 
 impl StartExecutionAccepted {
-    pub(crate) fn mark_automatic_driver(&mut self) {
-        self.automatic_driver = true;
+    /// Returns the accepted execution identity.
+    #[must_use]
+    pub const fn execution_id(&self) -> ProtocolIdentity {
+        self.execution_id
     }
 
-    pub(crate) const fn has_automatic_driver(&self) -> bool {
-        self.automatic_driver
+    /// Returns the in-process observation and cancellation handle.
+    #[must_use]
+    pub const fn handle(&self) -> &ExecutionHandle {
+        &self.handle
     }
 }
 
@@ -213,7 +211,6 @@ impl PreparedExecutionStart {
             root_session: self.root_session,
             mapping_revisions: self.mapping_revisions,
             event_delivery: self.event_delivery,
-            automatic_driver: false,
         })
     }
 
@@ -236,7 +233,6 @@ impl PreparedExecutionStart {
             root_session: self.root_session,
             mapping_revisions: self.mapping_revisions,
             event_delivery: self.event_delivery,
-            automatic_driver: false,
         })
     }
 

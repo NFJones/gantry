@@ -44,11 +44,12 @@ use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::{LogicalValueView, ValueLimits};
 use gantry::{
-    AnalyzePackageCoordinator, DurableCancelExecutionResult, DurableJournalOwnerState,
-    DurableLifecycleCoordinator, DurableQueryExecutionRequest, DurableQueryExecutionResult,
-    DurableResumeExecutionRequest, DurableResumeExecutionResult, DurableResumeSourceComparison,
-    DurableRunFailure, DurableStartExecutionCoordinator, DurableStartExecutionRequest,
-    DurableStartExecutionResult, StartExecutionCoordinator, StartExecutionRequest,
+    AnalyzePackageCoordinator, AnalyzePackageRequest, DurableCancelExecutionResult,
+    DurableJournalOwnerState, DurableLifecycleCoordinator, DurableQueryExecutionRequest,
+    DurableQueryExecutionResult, DurableResumeExecutionRequest, DurableResumeExecutionResult,
+    DurableResumeSourceComparison, DurableRunFailure, DurableStartExecutionCoordinator,
+    DurableStartExecutionRequest, DurableStartExecutionResult, StartExecutionCoordinator,
+    StartExecutionRequest,
 };
 use serde::Deserialize;
 
@@ -511,10 +512,9 @@ fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
             panic!("durable cancellation fixture was rejected: {failure:?}")
         }
     };
-    let execution_id = accepted.start.execution_id;
+    let execution_id = accepted.execution_id();
     let signal = accepted
-        .start
-        .handle
+        .handle()
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal was unavailable: {error:?}"));
     assert!(!signal.is_cancelled());
@@ -522,8 +522,8 @@ fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
     let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&storage_adapter));
     let owned = block_on(lifecycle.open_owned_execution(
         journal_id.clone(),
-        accepted.ownership_token.clone(),
-        accepted.start.handle.clone(),
+        accepted.test_ownership_token().clone(),
+        accepted.handle().clone(),
         execution_id,
     ))
     .unwrap_or_else(|error| panic!("durable execution could not be opened: {error:?}"));
@@ -807,7 +807,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
             failure.failure.category, failure.failure.code, failure.release_error
         ),
     };
-    let execution_id = accepted.start.execution_id;
+    let execution_id = accepted.execution_id();
     let prefix_after_start = read_prefix(storage.as_ref(), &journal_id);
     let JournalPrefixV1::Full(full) = &prefix_after_start else {
         panic!("in-memory start did not produce a full prefix");
@@ -817,10 +817,10 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     assert_eq!(full.evidence[0].sequence, 1);
     assert_eq!(full.evidence[0].kind.as_ref(), "gantry.execution-start/v1");
     assert_eq!(
-        accepted.execution_start_evidence_id,
+        accepted.test_execution_start_evidence_id(),
         full.evidence[0].evidence_id
     );
-    assert_eq!(accepted.start.handle.execution_id(), execution_id);
+    assert_eq!(accepted.handle().execution_id(), execution_id);
     let query_before = read_prefix(storage.as_ref(), &journal_id);
     let queried = block_on(query.query(DurableQueryExecutionRequest {
         journal_id: journal_id.clone(),
@@ -947,7 +947,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     release(
         storage.as_ref(),
         &journal_id,
-        accepted.ownership_token.clone(),
+        accepted.test_ownership_token().clone(),
     );
 
     let nonfresh_lifecycle = InterpreterLifecycle::new(&configuration);
@@ -1050,13 +1050,13 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let DurableResumeExecutionResult::Accepted(source_free) = result else {
         panic!("source-free durable resume was rejected");
     };
-    assert_eq!(source_free.execution_id, execution_id);
-    assert_eq!(source_free.handle.execution_id(), execution_id);
-    assert_eq!(source_free.recovered.latest_sequence(), 1);
-    assert!(source_free.recovered.execution_start().is_some());
-    assert!(source_free.candidate_package_activity.is_none());
+    assert_eq!(source_free.execution_id(), execution_id);
+    assert_eq!(source_free.handle().execution_id(), execution_id);
+    assert_eq!(source_free.test_recovered().latest_sequence(), 1);
+    assert!(source_free.test_recovered().execution_start().is_some());
+    assert!(!source_free.candidate_package_was_analyzed());
     assert_eq!(
-        source_free.source_comparison,
+        source_free.source_comparison(),
         DurableResumeSourceComparison::SourceFree
     );
     assert_eq!(
@@ -1066,7 +1066,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     release(
         storage.as_ref(),
         &journal_id,
-        source_free.ownership_token.clone(),
+        source_free.test_ownership_token().clone(),
     );
 
     let deep_candidate = TempDirectory::new(b"fn main(value: Option<Option<Int>>) {}");
@@ -1135,9 +1135,9 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let DurableResumeExecutionResult::Accepted(candidate) = result else {
         panic!("matching candidate-source durable resume was rejected");
     };
-    assert!(candidate.candidate_package_activity.is_some());
+    assert!(candidate.candidate_package_was_analyzed());
     assert_eq!(
-        candidate.source_comparison,
+        candidate.source_comparison(),
         DurableResumeSourceComparison::ExactManifest
     );
     assert_eq!(
@@ -1147,7 +1147,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     release(
         storage.as_ref(),
         &journal_id,
-        candidate.ownership_token.clone(),
+        candidate.test_ownership_token().clone(),
     );
 
     let revised_configuration = test_configuration(Arc::clone(&services))
@@ -1180,9 +1180,9 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let DurableResumeExecutionResult::Accepted(revised) = result else {
         panic!("compatible mutable-policy revision was rejected");
     };
-    assert_eq!(revised.recovered.latest_sequence(), 2);
+    assert_eq!(revised.test_recovered().latest_sequence(), 2);
     let state = revised
-        .recovered
+        .test_recovered()
         .execution_state()
         .unwrap_or_else(|| panic!("execution-state revision was not projected"));
     assert!(
@@ -1202,7 +1202,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     release(
         storage.as_ref(),
         &journal_id,
-        revised.ownership_token.clone(),
+        revised.test_ownership_token().clone(),
     );
 
     let best_effort_plan = best_effort_plan();
@@ -1236,10 +1236,10 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let DurableResumeExecutionResult::Accepted(best_effort) = result else {
         panic!("best-effort sink revision was rejected");
     };
-    assert_eq!(best_effort.recovered.latest_sequence(), 3);
+    assert_eq!(best_effort.test_recovered().latest_sequence(), 3);
     assert!(
         best_effort
-            .recovered
+            .test_recovered()
             .execution_state()
             .is_some_and(|state| std::str::from_utf8(state.mutable_policy())
                 .is_ok_and(|policy| policy.contains("\"class\":\"best-effort\"")))
@@ -1253,7 +1253,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     release(
         storage.as_ref(),
         &journal_id,
-        best_effort.ownership_token.clone(),
+        best_effort.test_ownership_token().clone(),
     );
 
     let yield_configuration = test_configuration_with_quantum(Arc::clone(&services), 7)
@@ -1285,7 +1285,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let DurableResumeExecutionResult::Accepted(yield_changed) = result else {
         panic!("scheduling-only yield quantum change was rejected");
     };
-    assert_eq!(yield_changed.recovered.latest_sequence(), 3);
+    assert_eq!(yield_changed.test_recovered().latest_sequence(), 3);
     assert_eq!(
         read_prefix(storage.as_ref(), &journal_id),
         prefix_after_best_effort
@@ -1293,7 +1293,7 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     release(
         storage.as_ref(),
         &journal_id,
-        yield_changed.ownership_token.clone(),
+        yield_changed.test_ownership_token().clone(),
     );
 }
 
@@ -1331,6 +1331,17 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let expected_package_activity = block_on(package.analyze(AnalyzePackageRequest {
+        package_root: &root.0,
+        protocol_selection: &selection,
+        frontend_limits: configuration.required().frontend_limits,
+        event_delivery: None,
+    }))
+    .unwrap_or_else(|error| panic!("generic pre-start analysis failed: {error:?}"));
+    let analysis = expected_package_activity
+        .analysis
+        .as_ref()
+        .unwrap_or_else(|| panic!("generic pre-start analysis omitted analysis"));
     let start = StartExecutionCoordinator::new(
         &package,
         &lifecycle,
@@ -1356,17 +1367,11 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
             panic!("generic durable start was rejected: {failure:?}")
         }
     };
-    let execution_id = accepted.start.execution_id;
-    let analysis = accepted
-        .start
-        .package_activity
-        .analysis
-        .as_ref()
-        .unwrap_or_else(|| panic!("generic durable start omitted analysis"));
+    let execution_id = accepted.execution_id();
     let expected_program = analysis
         .executable_program()
         .cloned()
-        .unwrap_or_else(|| panic!("generic durable start omitted its executable program"));
+        .unwrap_or_else(|| panic!("generic pre-start analysis omitted its executable program"));
     let expected_ir = analysis
         .canonical_ir()
         .unwrap_or_else(|| panic!("generic durable start omitted canonical IR"))
@@ -1518,7 +1523,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     release(
         storage.as_ref(),
         &journal_id,
-        accepted.ownership_token.clone(),
+        accepted.test_ownership_token().clone(),
     );
 
     let source_free_lifecycle = InterpreterLifecycle::new(&configuration);
@@ -1550,38 +1555,43 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         }
     };
     assert_eq!(
-        source_free.source_comparison,
+        source_free.source_comparison(),
         DurableResumeSourceComparison::SourceFree
     );
-    assert!(source_free.candidate_package_activity.is_none());
-    assert_eq!(source_free.retained_artifacts.canonical_ir(), expected_ir);
+    assert!(!source_free.candidate_package_was_analyzed());
+    assert_eq!(source_free.retained_artifacts().canonical_ir(), expected_ir);
     assert_eq!(
-        source_free.retained_artifacts.canonical_ir_identity(),
+        source_free.retained_artifacts().canonical_ir_identity(),
         expected_ir_identity
     );
     assert_eq!(
-        source_free.retained_artifacts.generated_schemas(),
+        source_free.retained_artifacts().generated_schemas(),
         expected_schemas
     );
     assert_eq!(
-        source_free.retained_artifacts.generated_schemas_identity(),
+        source_free
+            .retained_artifacts()
+            .generated_schemas_identity(),
         expected_schemas_identity
     );
-    assert_eq!(source_free.retained_artifacts.manifest(), expected_manifest);
     assert_eq!(
-        source_free.retained_artifacts.manifest_identity(),
+        source_free.retained_artifacts().manifest(),
+        expected_manifest
+    );
+    assert_eq!(
+        source_free.retained_artifacts().manifest_identity(),
         expected_manifest_identity
     );
     assert_eq!(
-        source_free.retained_artifacts.source_map(),
+        source_free.retained_artifacts().source_map(),
         expected_source_map
     );
     assert_eq!(
-        source_free.retained_artifacts.source_map_identity(),
+        source_free.retained_artifacts().source_map_identity(),
         expected_source_map_identity
     );
     let retained_program = source_free
-        .recovered
+        .test_recovered()
         .execution_start()
         .unwrap_or_else(|| panic!("source-free resume omitted sequence one"))
         .program()
@@ -1593,12 +1603,13 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
             .iter()
             .all(|identity| { !identity.as_str().contains('^') })
     );
-    let outcome = drive_recovered_generic_machine(source_free.recovered.into_machine());
+    let outcome =
+        drive_recovered_generic_machine(source_free.test_recovered().clone().into_machine());
     assert_generic_string_envelope(&outcome);
     release(
         storage.as_ref(),
         &journal_id,
-        source_free.ownership_token.clone(),
+        source_free.test_ownership_token().clone(),
     );
 
     let candidate_lifecycle = InterpreterLifecycle::new(&configuration);
@@ -1630,18 +1641,18 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         }
     };
     assert_eq!(
-        candidate.source_comparison,
+        candidate.source_comparison(),
         DurableResumeSourceComparison::ExactManifest
     );
-    assert!(candidate.candidate_package_activity.is_some());
+    assert!(candidate.candidate_package_was_analyzed());
     assert_eq!(
-        candidate.retained_artifacts.generated_schemas(),
+        candidate.retained_artifacts().generated_schemas(),
         expected_schemas
     );
     release(
         storage.as_ref(),
         &journal_id,
-        candidate.ownership_token.clone(),
+        candidate.test_ownership_token().clone(),
     );
 
     let (program, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
@@ -1898,17 +1909,16 @@ fn start_owned_lifecycle(
             panic!("durable lifecycle fixture was rejected: {failure:?}")
         }
     };
-    let execution_id = accepted.start.execution_id;
+    let execution_id = accepted.execution_id();
     let signal = accepted
-        .start
-        .handle
+        .handle()
         .cancellation_signal()
         .unwrap_or_else(|error| panic!("cancellation signal was unavailable: {error:?}"));
     let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&storage));
     let owned = block_on(lifecycle.open_owned_execution(
         journal_id.clone(),
-        accepted.ownership_token.clone(),
-        accepted.start.handle.clone(),
+        accepted.test_ownership_token().clone(),
+        accepted.handle().clone(),
         execution_id,
     ))
     .unwrap_or_else(|error| panic!("durable execution could not be opened: {error:?}"));
