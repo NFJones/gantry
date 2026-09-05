@@ -503,6 +503,122 @@ fn rejected_cut_releases_publication_before_submission() {
     assert!(coordinator.stage_graph(&mut root, &mut children).is_ok());
 }
 
+/// Root and child progress must charge one private budget and publish one cut.
+#[test]
+fn multiple_machines_publish_one_budget_and_checkpoint_cut() {
+    let (coordinator, mut root, mut children, program) = fixture_with_program();
+    let execution = root.execution_id();
+    let root_id = root.task_id();
+    let session = coordinator.snapshot().sessions()[0].id;
+    let path = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+    let child = coordinator
+        .create_child(
+            crate::TaskCreationRequestV1 {
+                parent_task_id: root_id,
+                handle_name: Arc::from("child"),
+                workflow: path.clone(),
+                spawn_site: StructuralPosition::new(vec![0])
+                    .unwrap_or_else(|error| panic!("site: {error}")),
+                spawn_occurrence: 0,
+                result_type: TypeDescriptor::UNIT,
+                captures: Vec::new(),
+                inherited_agent: None,
+                parent_session_id: session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("child: {error:?}"));
+    let snapshot = coordinator.snapshot();
+    let task_path = Arc::from(
+        snapshot
+            .state()
+            .task(child.task_id)
+            .unwrap_or_else(|| panic!("missing child"))
+            .task_path(),
+    );
+    let limits = MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let machine = Machine::new_concurrent_task_with_context(
+        program.clone(),
+        &path,
+        Vec::new(),
+        execution,
+        child.task_id,
+        task_path,
+        limits,
+        root.execution_budget(),
+        None,
+        Some(child.base_session_id),
+    )
+    .unwrap_or_else(|error| panic!("child machine: {error:?}"));
+    children.insert(child.task_id, machine);
+    coordinator
+        .resolve_submission(child.task_id, Ok(()))
+        .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    let before = coordinator.snapshot();
+    let root_before = root.checkpoint();
+    let child_before = children[&child.task_id].checkpoint();
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal =
+        JournalId::new("multi-machine-cut").unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, root_id, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage: {error:?}"));
+    stage.update(|root, children, _, _| {
+        assert!(matches!(root.step(), MachineStep::Transition(_)));
+        assert!(matches!(
+            children
+                .get_mut(&child.task_id)
+                .unwrap_or_else(|| panic!("missing child"))
+                .step(),
+            MachineStep::Transition(_)
+        ));
+    });
+    assert_eq!(coordinator.snapshot(), before);
+    ready(stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, root_id))
+        .unwrap_or_else(|error| panic!("commit: {error:?}"));
+    assert_ne!(root.checkpoint(), root_before);
+    assert_ne!(children[&child.task_id].checkpoint(), child_before);
+    assert_eq!(
+        root.budget_checkpoint().revision,
+        before
+            .execution_budget()
+            .unwrap_or_else(|| panic!("missing budget"))
+            .revision
+            + 2
+    );
+    assert_eq!(
+        root.budget_checkpoint(),
+        children[&child.task_id].budget_checkpoint()
+    );
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let recovered = crate::recover_concurrent_authoritative_prefix(program, &prefix)
+        .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+    assert_eq!(
+        recovered.execution().foreground().checkpoint(),
+        root.checkpoint()
+    );
+    assert_eq!(
+        recovered.execution().foreground().budget_checkpoint(),
+        root.budget_checkpoint()
+    );
+    assert_eq!(
+        recovered.execution().scheduler().state(),
+        coordinator.snapshot().state()
+    );
+}
+
 impl JournalStorage for PendingStore {
     fn acquire_owner<'a>(
         &'a self,
