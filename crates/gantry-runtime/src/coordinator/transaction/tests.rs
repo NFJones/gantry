@@ -13,6 +13,117 @@ use gantry_ir::{
     Workflow,
 };
 
+/// Probes publication from inside a wake callback to catch lock-held notification.
+struct SettlementWake {
+    coordinator: ExecutionCoordinator,
+    task: ProtocolIdentity,
+    wakes: std::sync::atomic::AtomicUsize,
+}
+
+impl std::task::Wake for SettlementWake {
+    fn wake(self: Arc<Self>) {
+        let snapshot = self
+            .coordinator
+            .try_snapshot()
+            .unwrap_or_else(|| panic!("settlement wake held coordinator lock"));
+        assert!(snapshot.state().root_settled_outcome().is_some());
+        assert!(snapshot.state().task_record(self.task).is_some());
+        self.wakes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Explores both waiter-registration orders around the publication linearization.
+#[test]
+fn settlement_registration_races_do_not_lose_notifications() {
+    for seed in 0..32 {
+        let (coordinator, mut root, mut children) = fixture();
+        let execution = root.execution_id();
+        let task = root.task_id();
+        let storage = Arc::new(InMemoryJournalStore::new());
+        let journal = JournalId::new(format!("registration-race-{seed}"))
+            .unwrap_or_else(|error| panic!("journal: {error:?}"));
+        let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+            journal_id: journal.clone(),
+            operation: JournalOwnerOperationV1::Start,
+        }))
+        .unwrap_or_else(|error| panic!("owner: {error:?}"));
+        let sink = DurableTransitionSink::new(storage, journal, owner.token);
+        let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
+            .unwrap_or_else(|error| panic!("commits: {error:?}"));
+        let initial = coordinator
+            .capture_checkpoint(&root, &children)
+            .unwrap_or_else(|error| panic!("capture: {error:?}"));
+        ready(commits.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, task, initial))
+            .unwrap_or_else(|error| panic!("initial: {error:?}"));
+        let mut stage = coordinator
+            .stage_graph(&mut root, &mut children)
+            .unwrap_or_else(|error| panic!("stage: {error:?}"));
+        stage.update(|root, _, tasks, _| {
+            for _ in 0..10 {
+                if let MachineStep::Transition(crate::MachineLabel::TaskSettled(outcome)) =
+                    root.step()
+                {
+                    tasks
+                        .settle(task, outcome)
+                        .unwrap_or_else(|error| panic!("settle: {error:?}"));
+                    return;
+                }
+            }
+            panic!("root did not settle");
+        });
+        let probe = Arc::new(SettlementWake {
+            coordinator: coordinator.clone(),
+            task,
+            wakes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            let observer = scope.spawn(|| {
+                let mut waiter = Box::pin(
+                    coordinator
+                        .wait_for_task_settlement(task)
+                        .unwrap_or_else(|error| panic!("waiter: {error:?}")),
+                );
+                let waker = Waker::from(probe.clone());
+                if seed % 2 == 0 {
+                    assert!(
+                        waiter
+                            .as_mut()
+                            .poll(&mut Context::from_waker(&waker))
+                            .is_pending()
+                    );
+                }
+                barrier.wait();
+                let pending = waiter
+                    .as_mut()
+                    .poll(&mut Context::from_waker(&waker))
+                    .is_pending();
+                (waiter, pending)
+            });
+            barrier.wait();
+            ready(stage.commit(&mut commits, DurableCommitCutV1::TaskSettlement, task))
+                .unwrap_or_else(|error| panic!("seed {seed}: commit: {error:?}"));
+            let (mut waiter, pending) = observer
+                .join()
+                .unwrap_or_else(|_| panic!("seed {seed}: observer panicked"));
+            assert!(
+                waiter
+                    .as_mut()
+                    .poll(&mut Context::from_waker(Waker::noop()))
+                    .is_ready(),
+                "seed {seed}"
+            );
+            if pending || seed % 2 == 0 {
+                assert_eq!(
+                    probe.wakes.load(std::sync::atomic::Ordering::SeqCst),
+                    1,
+                    "seed {seed}"
+                );
+            }
+        });
+    }
+}
+
 /// Creates an empty child graph with one executable root.
 fn fixture() -> (
     ExecutionCoordinator,
