@@ -148,9 +148,12 @@ impl ConcurrentDurableCheckpointV4 {
             .collect()
     }
 
-    /// Returns one child task's portable status, excluding the foreground root.
+    /// Returns one root or child task's portable status.
     #[must_use]
     pub fn task_status(&self, task_id: ProtocolIdentity) -> Option<TaskStatusKind> {
+        if task_id == self.state.root_task_id {
+            return Some(self.state.root.status.kind());
+        }
         self.state
             .tasks
             .iter()
@@ -1530,6 +1533,14 @@ mod tests {
             &fixture.sessions,
         )
         .unwrap_or_else(|error| panic!("settled-root capture failed: {error:?}"));
+        assert!(
+            crate::ConcurrentDurableEvidenceV4::new(
+                crate::DurableCommitCutV1::TaskSettlement,
+                fixture.root_task,
+                checkpoint.clone(),
+            )
+            .is_ok()
+        );
         let decoded =
             ConcurrentDurableCheckpointV4::decode(&fixture.program, &checkpoint.canonical_bytes())
                 .unwrap_or_else(|error| panic!("settled-root decode failed: {error:?}"));
