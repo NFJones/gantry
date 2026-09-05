@@ -31,6 +31,11 @@ pub struct DurableGraphTransaction<'a> {
     original_budget: ExecutionBudgetSnapshot,
     commit_started: bool,
     installed: bool,
+    event: Option<(
+        gantry_core::event::EventEnvelope,
+        crate::DurableEventPlanV1,
+        Vec<gantry_host::event::ProtectedPayload>,
+    )>,
 }
 
 impl ExecutionCoordinator {
@@ -85,11 +90,29 @@ impl ExecutionCoordinator {
             original_budget,
             commit_started: false,
             installed: false,
+            event: None,
         })
     }
 }
 
 impl DurableGraphTransaction<'_> {
+    /// Freezes the causal event and delivery policy before journal submission.
+    ///
+    /// One semantic cut has at most one event occurrence. Delivery itself stays
+    /// with the existing execution-owned event worker after publication.
+    pub fn set_event(
+        &mut self,
+        event: gantry_core::event::EventEnvelope,
+        plan: crate::DurableEventPlanV1,
+        payloads: Vec<gantry_host::event::ProtectedPayload>,
+    ) -> Result<(), DurableCommitError> {
+        if self.event.is_some() || event.execution_id() != Some(self.tasks.execution_id()) {
+            return Err(DurableCommitError::InvalidState);
+        }
+        self.event = Some((event, plan, payloads));
+        Ok(())
+    }
+
     /// Mutates the private successor synchronously using existing semantic APIs.
     ///
     /// The callback must not invoke integrations or retain budget handles. It
@@ -147,6 +170,15 @@ impl DurableGraphTransaction<'_> {
                 self.commit_started = true;
             })
             .await?;
+        let event_envelope = if let Some((event, plan, payloads)) = self.event.take() {
+            Some(
+                commits
+                    .commit_graph_event(&receipt, event, plan, &payloads)
+                    .await?,
+            )
+        } else {
+            None
+        };
         let waiters = {
             let mut state = lock(&self.coordinator.inner.state);
             if state
@@ -169,10 +201,17 @@ impl DurableGraphTransaction<'_> {
                         .map_err(|_| DurableCommitError::InvalidState)?;
                 }
             }
+            let mut events = state.durable_events.clone();
+            if let Some(envelope) = &event_envelope {
+                events.apply_envelope(envelope).map_err(|error| {
+                    DurableCommitError::Evidence(crate::DurableEvidenceError::Event(error))
+                })?;
+            }
             *self.foreground = self.staged_foreground.clone();
             *self.children = self.staged_children.clone();
             state.tasks = self.tasks.clone();
             state.sessions = self.sessions.clone();
+            state.durable_events = events;
             state.execution_budget = Some(self.budget.clone());
             state.publication = state.publication.wrapping_add(1);
             state.durable_publication_reserved = false;

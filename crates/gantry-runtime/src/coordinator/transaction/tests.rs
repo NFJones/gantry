@@ -109,7 +109,7 @@ fn successful_commit_installs_machine_and_budget_together() {
         operation: JournalOwnerOperationV1::Start,
     }))
     .unwrap_or_else(|error| panic!("owner: {error:?}"));
-    let sink = DurableTransitionSink::new(storage, journal, owner.token);
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
     let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
         .unwrap_or_else(|error| panic!("commits: {error:?}"));
     let before = root.budget_checkpoint();
@@ -117,9 +117,45 @@ fn successful_commit_installs_machine_and_budget_together() {
         .stage_graph(&mut root, &mut children)
         .unwrap_or_else(|error| panic!("stage: {error:?}"));
     stage.update(|root, _, _, _| assert!(matches!(root.step(), MachineStep::Transition(_))));
+    let payload = gantry_core::event::EventPayload::from_validated_canonical_bytes(
+        Arc::<[u8]>::from(&b"{}"[..]),
+    )
+    .unwrap_or_else(|error| panic!("payload: {error:?}"));
+    let draft = gantry_core::event::EventDraft::new(
+        gantry_core::portable::EventKind::OperationCompletion,
+        payload,
+    )
+    .with_execution_id(execution)
+    .unwrap_or_else(|error| panic!("draft: {error:?}"));
+    let event = gantry_core::event::EventEnvelope::complete(
+        ProtocolIdentity::from_fresh_material(IdentityKind::Event, [41; 32])
+            .unwrap_or_else(|error| panic!("event id: {error}")),
+        ProtocolIdentity::from_fresh_material(IdentityKind::Activity, [42; 32])
+            .unwrap_or_else(|error| panic!("activity id: {error}")),
+        gantry_core::timestamp::UtcTimestamp::from_unix_seconds(0, 42)
+            .unwrap_or_else(|error| panic!("time: {error:?}")),
+        draft,
+    )
+    .unwrap_or_else(|error| panic!("event: {error:?}"));
+    stage
+        .set_event(event, crate::DurableEventPlanV1::default(), Vec::new())
+        .unwrap_or_else(|error| panic!("event staging: {error:?}"));
     let receipt = ready(stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, task))
         .unwrap_or_else(|error| panic!("commit: {error:?}"));
     assert_eq!(receipt.sequence, 1);
+    assert_eq!(coordinator.committed_events().events().len(), 1);
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let JournalPrefixV1::Full(prefix) = prefix else {
+        panic!("expected full prefix")
+    };
+    assert_eq!(prefix.committed_through, 2);
+    assert_eq!(
+        prefix.evidence[1].kind.as_ref(),
+        crate::DURABLE_EVENT_OCCURRENCE_KIND_V1
+    );
     assert_eq!(root.budget_checkpoint().revision, before.revision + 1);
     assert_eq!(
         coordinator.snapshot().execution_budget(),
@@ -171,6 +207,117 @@ fn successful_commit_installs_machine_and_budget_together() {
             .is_ready()
     );
     assert!(coordinator.snapshot().state().drivers_are_quiescent());
+}
+
+/// Rejects the event write after accepting the graph's semantic cut.
+#[derive(Default)]
+struct EventFailureStore(InMemoryJournalStore);
+
+impl JournalStorage for EventFailureStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.0.acquire_owner(request)
+    }
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.0.read_prefix(request)
+    }
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        if request
+            .batch
+            .evidence
+            .iter()
+            .any(|entry| entry.kind.as_ref() == crate::DURABLE_EVENT_OCCURRENCE_KIND_V1)
+        {
+            Box::pin(async { Err(JournalError::new(JournalErrorCode::Internal)) })
+        } else {
+            self.0.commit(request)
+        }
+    }
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.0.resolve_payload(request)
+    }
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.0.release_owner(request)
+    }
+}
+
+#[test]
+fn event_commit_failure_keeps_graph_private_and_fences_publication() {
+    let (coordinator, mut root, mut children) = fixture();
+    let before = coordinator.snapshot();
+    let checkpoint = root.checkpoint();
+    let execution = root.execution_id();
+    let task = root.task_id();
+    let storage = Arc::new(EventFailureStore::default());
+    let journal =
+        JournalId::new("event-failure").unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage: {error:?}"));
+    stage.update(|root, _, _, _| assert!(matches!(root.step(), MachineStep::Transition(_))));
+    let payload = gantry_core::event::EventPayload::from_validated_canonical_bytes(
+        Arc::<[u8]>::from(&b"{}"[..]),
+    )
+    .unwrap_or_else(|error| panic!("payload: {error:?}"));
+    let draft = gantry_core::event::EventDraft::new(
+        gantry_core::portable::EventKind::OperationCompletion,
+        payload,
+    )
+    .with_execution_id(execution)
+    .unwrap_or_else(|error| panic!("draft: {error:?}"));
+    let event = gantry_core::event::EventEnvelope::complete(
+        ProtocolIdentity::from_fresh_material(IdentityKind::Event, [51; 32])
+            .unwrap_or_else(|error| panic!("event: {error}")),
+        ProtocolIdentity::from_fresh_material(IdentityKind::Activity, [52; 32])
+            .unwrap_or_else(|error| panic!("activity: {error}")),
+        gantry_core::timestamp::UtcTimestamp::from_unix_seconds(0, 42)
+            .unwrap_or_else(|error| panic!("time: {error:?}")),
+        draft,
+    )
+    .unwrap_or_else(|error| panic!("event: {error:?}"));
+    stage
+        .set_event(event, crate::DurableEventPlanV1::default(), Vec::new())
+        .unwrap_or_else(|error| panic!("event staging: {error:?}"));
+    assert!(matches!(
+        ready(stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, task)),
+        Err(DurableCommitError::Journal(_))
+    ));
+    assert_eq!(root.checkpoint(), checkpoint);
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(coordinator.committed_events().events().is_empty());
+    assert_eq!(
+        coordinator.cancel_execution("blocked"),
+        Err(TaskStateError::DurablePublicationReserved)
+    );
+    let JournalPrefixV1::Full(prefix) = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}")) else {
+        panic!("expected full prefix")
+    };
+    assert_eq!(prefix.committed_through, 1);
 }
 
 /// Storage that keeps commit indeterminate while allowing lock probes.

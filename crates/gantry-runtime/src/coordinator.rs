@@ -64,6 +64,9 @@ struct CoordinatorState {
     /// Complete committed root cut retained independently of its running driver.
     #[cfg(feature = "durable")]
     durable_root: Option<crate::RecoveredDurableStateV1>,
+    /// Journal-first graph event obligations, using the existing delivery model.
+    #[cfg(feature = "durable")]
+    durable_events: crate::RecoveredDurableEventsV1,
 }
 
 #[derive(Clone, Debug)]
@@ -153,6 +156,8 @@ impl ExecutionCoordinator {
                     durable_publication_reserved: false,
                     #[cfg(feature = "durable")]
                     durable_root: None,
+                    #[cfg(feature = "durable")]
+                    durable_events: crate::RecoveredDurableEventsV1::default(),
                 }),
             }),
         })
@@ -225,6 +230,7 @@ impl ExecutionCoordinator {
             state.tasks = tasks;
             state.sessions = sessions;
             state.execution_budget = Some(budget);
+            state.durable_events = projection.events().clone();
             state.durable_root = Some(projection);
             state.publication = state.publication.wrapping_add(1);
             let mut waiters = Vec::new();
@@ -249,6 +255,13 @@ impl ExecutionCoordinator {
     #[must_use]
     pub fn committed_root(&self) -> Option<crate::RecoveredDurableStateV1> {
         lock(&self.inner.state).durable_root.clone()
+    }
+
+    /// Returns committed causal event obligations without driving delivery.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn committed_events(&self) -> crate::RecoveredDurableEventsV1 {
+        lock(&self.inner.state).durable_events.clone()
     }
 
     /// Captures a quiescent graph while task and session state cannot change.

@@ -85,6 +85,11 @@ impl std::fmt::Debug for DurableTransitionSink {
 }
 
 impl DurableTransitionSink {
+    /// Identifies the fenced journal for internally constructed evidence envelopes.
+    pub(crate) fn journal_id(&self) -> &JournalId {
+        &self.journal_id
+    }
+
     /// Binds a transition sink to one current journal ownership token.
     #[must_use]
     pub fn new(

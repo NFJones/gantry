@@ -186,6 +186,49 @@ impl ConcurrentDurableEvidenceV4 {
 }
 
 impl DurableCommitCoordinatorV1<'_> {
+    /// Commits the graph cut's causal event through the existing event owner.
+    pub(crate) async fn commit_graph_event(
+        &mut self,
+        cause: &DurableEvidenceCommitV1,
+        event: gantry_core::event::EventEnvelope,
+        plan: crate::DurableEventPlanV1,
+        payloads: &[gantry_host::event::ProtectedPayload],
+    ) -> Result<gantry_host::journal::JournalEvidenceEnvelopeV1, DurableCommitError> {
+        if self.predecessor != Some((cause.evidence_id, cause.sequence))
+            || event.execution_id() != Some(self.execution_id)
+        {
+            return Err(DurableCommitError::InvalidState);
+        }
+        let occurrence = DurableEventOccurrenceV1::new(cause.evidence_id, event, plan)
+            .map_err(|error| DurableCommitError::Evidence(DurableEvidenceError::Event(error)))?;
+        let mut events = crate::DurableEventCommitCoordinatorV1::new(
+            self.sink,
+            (cause.evidence_id, cause.sequence),
+        )
+        .map_err(map_graph_event_error)?;
+        let receipt = events
+            .commit_occurrence(&occurrence, payloads)
+            .await
+            .map_err(map_graph_event_error)?;
+        self.predecessor = Some((receipt.evidence_id, receipt.sequence));
+        Ok(gantry_host::journal::JournalEvidenceEnvelopeV1 {
+            journal_id: self.sink.journal_id().clone(),
+            sequence: receipt.sequence,
+            evidence_id: receipt.evidence_id,
+            kind: Arc::from(DURABLE_EVENT_OCCURRENCE_KIND_V1),
+            canonical_body: Arc::from(occurrence.canonical_body()),
+            references: Arc::from([cause.evidence_id]),
+            protected_payloads: payloads
+                .iter()
+                .map(|payload| {
+                    gantry_host::journal::JournalPayloadKey::new(payload.reference.key())
+                        .map_err(|_| DurableCommitError::InvalidState)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into(),
+        })
+    }
+
     /// Commits one complete task-graph cut before its dependent external boundary.
     pub async fn commit_concurrent_cut(
         &mut self,
@@ -248,6 +291,21 @@ impl DurableCommitCoordinatorV1<'_> {
             .map_err(DurableCommitError::Evidence)?;
         self.commit_body_with_submission(cut, local_number, local_id, body, submitted)
             .await
+    }
+}
+
+/// Recovered composed runtime plus the latest authoritative journal coordinates.
+fn map_graph_event_error(error: crate::DurableEventCommitError) -> DurableCommitError {
+    match error {
+        crate::DurableEventCommitError::Journal(error)
+        | crate::DurableEventCommitError::StreamTerminated(error) => {
+            DurableCommitError::Journal(error)
+        }
+        crate::DurableEventCommitError::Evidence(error) => {
+            DurableCommitError::Evidence(DurableEvidenceError::Event(error))
+        }
+        crate::DurableEventCommitError::InvalidReceipt => DurableCommitError::InvalidReceipt,
+        _ => DurableCommitError::InvalidState,
     }
 }
 
