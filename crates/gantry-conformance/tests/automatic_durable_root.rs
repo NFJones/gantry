@@ -986,6 +986,20 @@ fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
         authoritative.machine().budget_checkpoint(),
         "pending operation preparation published an uncommitted budget"
     );
+    let retained = accepted
+        .test_retained_projection()
+        .unwrap_or_else(|| panic!("pending driver lost the authoritative cut"));
+    assert_eq!(
+        retained.machine().checkpoint(),
+        authoritative.machine().checkpoint()
+    );
+    assert_eq!(
+        retained.sessions().map(|sessions| sessions.checkpoint()),
+        authoritative
+            .sessions()
+            .map(|sessions| sessions.checkpoint())
+    );
+    assert_eq!(retained.events(), authoritative.events());
     let mut cancellation =
         Box::pin(interpreter.cancel_execution(execution_id, expected_reason.clone()));
     assert!(

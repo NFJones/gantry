@@ -636,7 +636,7 @@ impl DurableOwnedExecution {
         }
         state.operation_in_flight = true;
         state.driver_active = true;
-        let recovered = state.recovered.take()?;
+        let recovered = state.recovered.as_ref()?;
         // Clone intentionally isolates the driver's speculative budget from
         // the committed budget retained by coordinator observers.
         Some(recovered.clone())
@@ -773,18 +773,22 @@ impl DurableOwnedExecution {
         self.publish_committed_budget(recovered)
     }
 
-    /// Updates shared budget observers only after the serialized journal commit.
+    /// Installs the complete authoritative projection after a serialized commit.
     fn publish_committed_budget(
         &self,
         recovered: &RecoveredDurableStateV1,
     ) -> Result<(), DurableRunFailure> {
+        let projection = recovered.clone();
+        let mut state = lock_state(&self.state);
         self.committed_budget
             .publish_committed_snapshot(recovered.machine().budget_checkpoint())
             .map_err(|error| {
                 DurableRunFailure::Commit(DurableCommitError::Evidence(
                     DurableEvidenceError::Checkpoint(error),
                 ))
-            })
+            })?;
+        state.recovered = Some(projection);
+        Ok(())
     }
 
     pub(crate) async fn commit_driver_event(
@@ -836,6 +840,7 @@ impl DurableOwnedExecution {
         let (_, refreshed) = recover_authoritative_prefix_with_retained_program(&prefix)
             .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
         *recovered = refreshed;
+        self.publish_committed_budget(recovered)?;
         recovered
             .events()
             .event_for_cause(cause)
@@ -1256,7 +1261,7 @@ impl DurableOwnedExecution {
         let (_, refreshed) = recover_authoritative_prefix_with_retained_program(&prefix)
             .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))?;
         *recovered = refreshed;
-        Ok(())
+        self.publish_committed_budget(recovered)
     }
 
     async fn resolve_event_payloads(
