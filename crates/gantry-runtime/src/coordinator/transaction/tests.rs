@@ -19,6 +19,17 @@ fn fixture() -> (
     Machine,
     BTreeMap<ProtocolIdentity, Machine>,
 ) {
+    let (coordinator, machine, children, _) = fixture_with_program();
+    (coordinator, machine, children)
+}
+
+/// Retains the exact executable artifact for journal recovery assertions.
+fn fixture_with_program() -> (
+    ExecutionCoordinator,
+    Machine,
+    BTreeMap<ProtocolIdentity, Machine>,
+    Arc<MachineProgram>,
+) {
     let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [17; 32])
         .unwrap_or_else(|error| panic!("identity: {error}"));
     let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [18; 32])
@@ -45,9 +56,10 @@ fn fixture() -> (
         ],
     }])
     .unwrap_or_else(|error| panic!("program: {error:?}"));
+    let program = Arc::new(program);
     let limits = MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
         .unwrap_or_else(|| panic!("limits"));
-    let machine = Machine::new(Arc::new(program), &path, Vec::new(), execution, limits)
+    let machine = Machine::new(program.clone(), &path, Vec::new(), execution, limits)
         .unwrap_or_else(|error| panic!("machine: {error:?}"));
     let tasks = ConcurrentTaskStateV1::new(execution, machine.task_id(), 10)
         .unwrap_or_else(|error| panic!("tasks: {error:?}"));
@@ -61,7 +73,7 @@ fn fixture() -> (
     let coordinator =
         ExecutionCoordinator::new_with_budget(tasks, sessions, machine.execution_budget())
             .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
-    (coordinator, machine, BTreeMap::new())
+    (coordinator, machine, BTreeMap::new(), program)
 }
 
 /// Polls fixtures that must complete synchronously; never spins on pending I/O.
@@ -322,6 +334,98 @@ fn event_commit_failure_keeps_graph_private_and_fences_publication() {
 
 /// Storage that keeps commit indeterminate while allowing lock probes.
 struct PendingStore;
+/// Child creation and failed submission retain one identity across journal cuts.
+#[test]
+fn child_creation_and_submission_failure_publish_coherent_cuts() {
+    let (coordinator, mut root, mut children, program) = fixture_with_program();
+    let execution = root.execution_id();
+    let task = root.task_id();
+    let session = coordinator.snapshot().sessions()[0].id;
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal =
+        JournalId::new("child-transaction").unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let initial = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("capture: {error:?}"));
+    ready(commits.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, task, initial))
+        .unwrap_or_else(|error| panic!("initial: {error:?}"));
+    let before = coordinator.snapshot();
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage: {error:?}"));
+    let child = stage
+        .update(|_, _, tasks, sessions| {
+            tasks.create_child(
+                sessions,
+                crate::TaskCreationRequestV1 {
+                    parent_task_id: task,
+                    handle_name: Arc::from("child"),
+                    workflow: CanonicalPath::new("crate::main")
+                        .unwrap_or_else(|error| panic!("path: {error}")),
+                    spawn_site: StructuralPosition::new(vec![0])
+                        .unwrap_or_else(|error| panic!("site: {error}")),
+                    spawn_occurrence: 0,
+                    result_type: TypeDescriptor::UNIT,
+                    captures: Vec::new(),
+                    inherited_agent: None,
+                    parent_session_id: session,
+                },
+                DEFAULT_VALUE_LIMITS,
+            )
+        })
+        .unwrap_or_else(|error| panic!("creation: {error:?}"));
+    assert_eq!(coordinator.snapshot(), before);
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskCreation,
+        child.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("creation commit: {error:?}"));
+    assert_eq!(coordinator.snapshot().state().created_task_count(), 2);
+    assert!(coordinator.session(child.base_session_id).is_some());
+    let before = coordinator.snapshot();
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage: {error:?}"));
+    stage
+        .update(|_, _, tasks, _| {
+            tasks.resolve_submission(
+                child.task_id,
+                Err(HostError {
+                    code: Arc::from("task-submission-failure"),
+                    protected_diagnostic: None,
+                }),
+            )
+        })
+        .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    assert_eq!(coordinator.snapshot(), before);
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskSettlement,
+        child.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("settlement commit: {error:?}"));
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    // Recover through the same program retained by the root fixture.
+    let recovered = crate::recover_concurrent_authoritative_prefix(program, &prefix)
+        .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+    assert_eq!(
+        recovered.execution().scheduler().state(),
+        coordinator.snapshot().state()
+    );
+}
+
 /// Invalid semantic cuts must be rejected before the pending storage is called.
 #[test]
 fn rejected_cut_releases_publication_before_submission() {

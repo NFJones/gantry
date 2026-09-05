@@ -484,7 +484,12 @@ fn validate_transition(
         }
         DurableCommitCutV1::TaskSettlement => {
             previous_tasks == current_tasks
-                && previous.checkpoint.task_status(current.task_id) == Some(TaskStatusKind::Running)
+                && (previous.checkpoint.task_status(current.task_id)
+                    == Some(TaskStatusKind::Running)
+                    || (previous.checkpoint.task_status(current.task_id)
+                        == Some(TaskStatusKind::Submitting)
+                        && current.checkpoint.task_status(current.task_id)
+                            == Some(TaskStatusKind::Failed)))
                 && matches!(
                     current.checkpoint.task_status(current.task_id),
                     Some(
