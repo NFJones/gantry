@@ -199,6 +199,20 @@ impl DurableCommitCoordinatorV1<'_> {
             .map_err(|error| {
                 DurableCommitError::Evidence(DurableEvidenceError::ConcurrentCheckpoint(error))
             })?;
+        self.commit_graph_checkpoint(cut, affected_task, checkpoint)
+            .await
+    }
+
+    /// Commits an owned coherent graph projection without retaining capture locks.
+    ///
+    /// The execution owner must serialize staged successors and publish their
+    /// semantic state only after this operation returns a validated receipt.
+    pub async fn commit_graph_checkpoint(
+        &mut self,
+        cut: DurableCommitCutV1,
+        affected_task: ProtocolIdentity,
+        checkpoint: ConcurrentDurableCheckpointV4,
+    ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         if checkpoint.execution_id() != self.execution_id
             || checkpoint.root_task_id() != self.task_id
         {
@@ -499,12 +513,19 @@ mod tests {
             DurableTransitionSink::new(Arc::clone(&storage), journal_id.clone(), owner.token);
         let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, root_task, None)
             .unwrap_or_else(|error| panic!("commit coordinator failed: {error:?}"));
-        let initial = block_on(commits.commit_concurrent_cut(
+        let coordinator = crate::ExecutionCoordinator::new_with_budget(
+            scheduler.state().clone(),
+            sessions.clone(),
+            foreground.execution_budget(),
+        )
+        .unwrap_or_else(|error| panic!("execution coordinator failed: {error:?}"));
+        let checkpoint = coordinator
+            .capture_checkpoint(&foreground, &std::collections::BTreeMap::new())
+            .unwrap_or_else(|error| panic!("coordinator capture failed: {error:?}"));
+        let initial = block_on(commits.commit_graph_checkpoint(
             DurableCommitCutV1::Checkpoint,
             root_task,
-            &foreground,
-            &scheduler,
-            &sessions,
+            checkpoint,
         ))
         .unwrap_or_else(|error| panic!("initial graph commit failed: {error:?}"));
         assert_eq!(initial.sequence, 1);
