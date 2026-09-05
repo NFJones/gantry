@@ -6,7 +6,7 @@ mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use concurrent::{
-    ConcurrentDurableEvidenceV3, RecoveredConcurrentDurableStateV1,
+    ConcurrentDurableEvidenceV4, RecoveredConcurrentDurableStateV1,
     recover_concurrent_authoritative_prefix,
 };
 pub use execution_start::{
@@ -41,9 +41,9 @@ use crate::{
     TransitionReceiptV1, TransitionSink, ValidationErrorCategoryV1, ValidationErrorV1,
 };
 
-/// Version-three evidence kind for complete concurrent-durable graph checkpoints.
+/// Version-four evidence kind for complete concurrent-durable graph checkpoints.
 #[cfg(all(feature = "concurrent", feature = "durable"))]
-pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V3: &str = "gantry.concurrent-durable-evidence/v3";
+pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V4: &str = "gantry.concurrent-durable-evidence/v4";
 
 /// Exact semantic boundary represented by one durable logical evidence body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

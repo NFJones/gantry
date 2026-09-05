@@ -13,6 +13,15 @@ The argument is profile-scoped to `durable-runtime` without the concurrent
 refinement. Physical SQLite tables and write behavior are not semantic inputs.
 Combined concurrent-durable task-graph recovery remains outside this claim.
 
+The separate combined-checkpoint/v4 codec retains first-class root status,
+pending and settled outcomes, and root/child driver-ownership bookkeeping.
+It also preserves child pending outcomes rather than reconstructing them as
+absent. Its `GNTCDP04` bytes and concurrent-durable-evidence/v4 envelopes replace
+the superseded v3 graph formats; no legacy decoder is provided. Recorded driver
+bookkeeping is evidence, not a restored executor capability. These round-trip
+guarantees do not establish coherent live coordinator transactions or fenced
+task-graph resubmission, which remain separate integration obligations.
+
 For the generics-and-static-traits amendment, the durable prefix retains the
 canonical analysis artifacts and the distinct closed executable projection
 selected at start. Recovery reconstructs that same projection and machine

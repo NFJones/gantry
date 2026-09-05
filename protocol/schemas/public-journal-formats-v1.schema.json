@@ -133,7 +133,7 @@
         "checkpoint": { "$ref": "#/$defs/hex" },
         "cut": { "type": "string", "minLength": 1 },
         "execution_id": { "$ref": "#/$defs/execution_identity" },
-        "format": { "const": "gantry.concurrent-durable-evidence/v3" },
+        "format": { "const": "gantry.concurrent-durable-evidence/v4" },
         "task_id": { "$ref": "#/$defs/task_identity" }
       },
       "required": ["checkpoint", "cut", "execution_id", "format", "task_id"]

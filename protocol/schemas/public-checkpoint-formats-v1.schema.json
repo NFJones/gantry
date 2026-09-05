@@ -8,11 +8,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "format": { "const": "combined-checkpoint/v3" },
-        "magic": { "const": "GNTCDP03" },
+        "format": { "const": "combined-checkpoint/v4" },
+        "magic": { "const": "GNTCDP04" },
         "fixture_hex": {
           "type": "string",
-          "pattern": "^474e544344503033(?:[0-9a-f]{2})+$"
+          "pattern": "^474e544344503034(?:[0-9a-f]{2})+$"
         }
       },
       "required": ["format", "magic", "fixture_hex"]

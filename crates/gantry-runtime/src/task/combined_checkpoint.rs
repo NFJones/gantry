@@ -21,7 +21,7 @@ use super::{
     DynamicTaskHandleIdentity, TaskCaptureV1, TaskFailureV1, task_identity_key, task_path_frame,
 };
 
-const MAGIC: &[u8; 8] = b"GNTCDP03";
+const MAGIC: &[u8; 8] = b"GNTCDP04";
 const MAX_CAPTURE_ATTEMPTS: usize = 8;
 
 /// One versioned commit-cut snapshot of the composed concurrent-durable runtime.
@@ -30,7 +30,7 @@ const MAX_CAPTURE_ATTEMPTS: usize = 8;
 /// foreground machine, scheduler task state, child machine checkpoints, and
 /// logical-session registry into one canonical recovery boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConcurrentDurableCheckpointV3 {
+pub struct ConcurrentDurableCheckpointV4 {
     execution_budget: ExecutionBudgetSnapshot,
     foreground: MachineCheckpointV3,
     sessions: LogicalSessionRegistryCheckpointV1,
@@ -39,7 +39,7 @@ pub struct ConcurrentDurableCheckpointV3 {
     runnable: VecDeque<ProtocolIdentity>,
 }
 
-impl ConcurrentDurableCheckpointV3 {
+impl ConcurrentDurableCheckpointV4 {
     /// Captures one complete combined state after validating every correspondence.
     pub fn capture(
         foreground: &Machine,
@@ -198,7 +198,7 @@ impl ConcurrentDurableCheckpointV3 {
         &self.sessions
     }
 
-    /// Encodes the unique version-three combined checkpoint.
+    /// Encodes the unique version-four combined checkpoint.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut writer = Writer::default();
@@ -492,6 +492,7 @@ impl From<SessionRecoveryError> for ConcurrentDurableCheckpointError {
 struct TaskStateCheckpointV1 {
     execution_id: ProtocolIdentity,
     root_task_id: ProtocolIdentity,
+    root: super::RootTaskRecordV1,
     maximum_tasks: u64,
     created_tasks: u64,
     tasks: Vec<ConcurrentTaskRecordV1>,
@@ -508,6 +509,7 @@ impl TaskStateCheckpointV1 {
         Self {
             execution_id: state.execution_id,
             root_task_id: state.root_task_id,
+            root: state.root.clone(),
             maximum_tasks: state.maximum_tasks,
             created_tasks: state.created_tasks,
             tasks,
@@ -521,11 +523,15 @@ impl TaskStateCheckpointV1 {
     fn encode(&self, writer: &mut Writer, limits: ValueLimits) {
         write_identity(writer, self.execution_id);
         write_identity(writer, self.root_task_id);
+        write_task_status(writer, &self.root.status);
+        write_optional_outcome(writer, self.root.pending_outcome.as_ref(), limits);
+        write_optional_outcome(writer, self.root.settled_outcome.as_ref(), limits);
+        write_driver_state(writer, self.root.driver_ownership, self.root.recovery_state);
         writer.u64(self.maximum_tasks);
         writer.u64(self.created_tasks);
         writer.count(self.tasks.len());
         for task in &self.tasks {
-            write_task(writer, task);
+            write_task(writer, task, limits);
         }
         let paths = self.task_paths();
         let mut cancellations = self.cancellation_reasons.iter().collect::<Vec<_>>();
@@ -549,6 +555,19 @@ impl TaskStateCheckpointV1 {
     ) -> Result<Self, ConcurrentDurableCheckpointError> {
         let execution_id = read_identity(reader, IdentityKind::Execution)?;
         let root_task_id = read_identity(reader, IdentityKind::Task)?;
+        let status = read_task_status(reader, limits)?;
+        let pending_outcome = read_optional_outcome(reader, limits)?;
+        let settled_outcome = read_optional_outcome(reader, limits)?;
+        let (driver_ownership, recovery_state) = read_driver_state(reader)?;
+        let root = super::RootTaskRecordV1 {
+            task_id: root_task_id,
+            task_path: Arc::from([]),
+            status,
+            pending_outcome,
+            settled_outcome,
+            driver_ownership,
+            recovery_state,
+        };
         let maximum_tasks = reader.u64()?;
         let created_tasks = reader.u64()?;
         let task_count = reader.count()?;
@@ -574,6 +593,7 @@ impl TaskStateCheckpointV1 {
         Ok(Self {
             execution_id,
             root_task_id,
+            root,
             maximum_tasks,
             created_tasks,
             tasks,
@@ -594,6 +614,19 @@ impl TaskStateCheckpointV1 {
             .and_then(|count| count.checked_add(1));
         if self.execution_id.kind() != IdentityKind::Execution
             || self.root_task_id.kind() != IdentityKind::Task
+            || self.root.task_id != self.root_task_id
+            || !self.root.task_path.is_empty()
+            || self.root.pending_outcome.is_some()
+                && !matches!(self.root.status, ConcurrentTaskStatusV1::Running)
+            || match &self.root.settled_outcome {
+                Some(outcome) => {
+                    self.root.status != super::task_status_from_outcome(outcome.clone())
+                }
+                None => !matches!(
+                    self.root.status,
+                    ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+                ),
+            }
             || self.maximum_tasks == 0
             || expected_created_tasks != Some(self.created_tasks)
             || self.created_tasks > self.maximum_tasks
@@ -694,15 +727,7 @@ impl TaskStateCheckpointV1 {
         let mut state = ConcurrentTaskStateV1 {
             execution_id: self.execution_id,
             root_task_id: self.root_task_id,
-            root: super::RootTaskRecordV1 {
-                task_id: self.root_task_id,
-                task_path: Arc::from([]),
-                status: ConcurrentTaskStatusV1::Running,
-                pending_outcome: None,
-                settled_outcome: None,
-                driver_ownership: super::TaskDriverOwnershipV1::Supervised,
-                recovery_state: super::TaskRecoveryStateV1::Original,
-            },
+            root: self.root.clone(),
             maximum_tasks: self.maximum_tasks,
             created_tasks: self.created_tasks,
             task_paths,
@@ -747,6 +772,14 @@ fn validate_task(
     task: &ConcurrentTaskRecordV1,
     limits: ValueLimits,
 ) -> Result<(), ConcurrentDurableCheckpointError> {
+    if task.pending_outcome.is_some() && !matches!(task.status, ConcurrentTaskStatusV1::Running) {
+        return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+    }
+    if let Some(MachineOutcome::Succeeded(value)) = &task.pending_outcome
+        && (!value_matches_type(value, &task.result_type) || value.detached_copy(limits).is_err())
+    {
+        return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+    }
     for (name, capture) in &task.captures {
         if name.is_empty()
             || name.as_ref() != capture.name.as_ref()
@@ -802,7 +835,7 @@ fn validate_task_session(
     Ok(())
 }
 
-fn write_task(writer: &mut Writer, task: &ConcurrentTaskRecordV1) {
+fn write_task(writer: &mut Writer, task: &ConcurrentTaskRecordV1, limits: ValueLimits) {
     write_identity(writer, task.task_id);
     write_identity(writer, task.parent_task_id);
     writer.string(&task.handle_name);
@@ -827,6 +860,8 @@ fn write_task(writer: &mut Writer, task: &ConcurrentTaskRecordV1) {
     writer.string(task.handle_state.wire_name());
     writer.boolean(task.handle_visible);
     write_task_status(writer, &task.status);
+    write_optional_outcome(writer, task.pending_outcome.as_ref(), limits);
+    write_driver_state(writer, task.driver_ownership, task.recovery_state);
 }
 
 fn read_task(
@@ -872,13 +907,8 @@ fn read_task(
         .ok_or(ConcurrentDurableCheckpointError::InvalidEncoding)?;
     let handle_visible = reader.boolean()?;
     let status = read_task_status(reader, limits)?;
-    let driver_ownership = match status {
-        ConcurrentTaskStatusV1::Submitting => super::TaskDriverOwnershipV1::AwaitingSubmission,
-        ConcurrentTaskStatusV1::Running => super::TaskDriverOwnershipV1::Supervised,
-        ConcurrentTaskStatusV1::Succeeded(_)
-        | ConcurrentTaskStatusV1::Failed(_)
-        | ConcurrentTaskStatusV1::Cancelled(_) => super::TaskDriverOwnershipV1::PhysicallySettled,
-    };
+    let pending_outcome = read_optional_outcome(reader, limits)?;
+    let (driver_ownership, recovery_state) = read_driver_state(reader)?;
     Ok(ConcurrentTaskRecordV1 {
         task_id,
         parent_task_id,
@@ -899,10 +929,71 @@ fn read_task(
         handle_state,
         handle_visible,
         status,
-        pending_outcome: None,
+        pending_outcome,
         driver_ownership,
-        recovery_state: super::TaskRecoveryStateV1::Original,
+        recovery_state,
     })
+}
+
+/// Encodes an optional logical outcome without inventing settlement.
+fn write_optional_outcome(
+    writer: &mut Writer,
+    outcome: Option<&MachineOutcome>,
+    limits: ValueLimits,
+) {
+    writer.boolean(outcome.is_some());
+    if let Some(outcome) = outcome {
+        write_outcome(writer, outcome, limits);
+    }
+}
+
+/// Decodes a pending or settled outcome from the graph cut.
+fn read_optional_outcome(
+    reader: &mut Reader<'_>,
+    limits: ValueLimits,
+) -> Result<Option<MachineOutcome>, ConcurrentDurableCheckpointError> {
+    Ok(reader
+        .boolean()?
+        .then(|| read_outcome(reader, limits))
+        .transpose()?)
+}
+
+/// Retains ownership bookkeeping as evidence, never as an executor capability.
+fn write_driver_state(
+    writer: &mut Writer,
+    ownership: super::TaskDriverOwnershipV1,
+    recovery: super::TaskRecoveryStateV1,
+) {
+    writer.u8(match ownership {
+        super::TaskDriverOwnershipV1::AwaitingSubmission => 0,
+        super::TaskDriverOwnershipV1::Supervised => 1,
+        super::TaskDriverOwnershipV1::PhysicallySettled => 2,
+    });
+    writer.u8(match recovery {
+        super::TaskRecoveryStateV1::Original => 0,
+        super::TaskRecoveryStateV1::Recovered => 1,
+    });
+}
+
+/// Rejects unknown driver bookkeeping tags in retained graph evidence.
+fn read_driver_state(
+    reader: &mut Reader<'_>,
+) -> Result<
+    (super::TaskDriverOwnershipV1, super::TaskRecoveryStateV1),
+    ConcurrentDurableCheckpointError,
+> {
+    let ownership = match reader.u8()? {
+        0 => super::TaskDriverOwnershipV1::AwaitingSubmission,
+        1 => super::TaskDriverOwnershipV1::Supervised,
+        2 => super::TaskDriverOwnershipV1::PhysicallySettled,
+        _ => return Err(ConcurrentDurableCheckpointError::InvalidEncoding),
+    };
+    let recovery = match reader.u8()? {
+        0 => super::TaskRecoveryStateV1::Original,
+        1 => super::TaskRecoveryStateV1::Recovered,
+        _ => return Err(ConcurrentDurableCheckpointError::InvalidEncoding),
+    };
+    Ok((ownership, recovery))
 }
 
 fn write_task_status(writer: &mut Writer, status: &ConcurrentTaskStatusV1) {
@@ -974,7 +1065,7 @@ mod tests {
     };
 
     use super::{
-        ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3, MAX_CAPTURE_ATTEMPTS,
+        ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, MAX_CAPTURE_ATTEMPTS,
     };
     use crate::machine::task_identity_key;
     use crate::{
@@ -996,14 +1087,14 @@ mod tests {
             )
             .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
 
-        let checkpoint = ConcurrentDurableCheckpointV3::capture(
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
         )
         .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
         let bytes = checkpoint.canonical_bytes();
-        let decoded = ConcurrentDurableCheckpointV3::decode(&fixture.program, &bytes)
+        let decoded = ConcurrentDurableCheckpointV4::decode(&fixture.program, &bytes)
             .unwrap_or_else(|error| panic!("checkpoint decode failed: {error:?}"));
         assert_eq!(decoded.canonical_bytes(), bytes);
         assert_eq!(decoded.created_task_count(), 2);
@@ -1053,7 +1144,7 @@ mod tests {
 
         let truncated = &bytes[..bytes.len().saturating_sub(1)];
         assert_eq!(
-            ConcurrentDurableCheckpointV3::decode(&fixture.program, truncated),
+            ConcurrentDurableCheckpointV4::decode(&fixture.program, truncated),
             Err(ConcurrentDurableCheckpointError::InvalidEncoding)
         );
     }
@@ -1102,14 +1193,14 @@ mod tests {
             .unwrap_or_else(|error| panic!("cancellation failed: {error:?}"));
         assert!(fixture.foreground.cancel("shutdown").is_some());
 
-        let checkpoint = ConcurrentDurableCheckpointV3::capture(
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
         )
         .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
         let mut recovered =
-            ConcurrentDurableCheckpointV3::decode(&fixture.program, &checkpoint.canonical_bytes())
+            ConcurrentDurableCheckpointV4::decode(&fixture.program, &checkpoint.canonical_bytes())
                 .unwrap_or_else(|error| panic!("checkpoint decode failed: {error:?}"))
                 .recover(Arc::clone(&fixture.program))
                 .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
@@ -1157,7 +1248,7 @@ mod tests {
             Some(ConcurrentTaskStatusV1::Cancelled(reason)) if reason.as_ref() == "shutdown"
         ));
 
-        let settled = ConcurrentDurableCheckpointV3::capture(
+        let settled = ConcurrentDurableCheckpointV4::capture(
             recovered.foreground(),
             recovered.scheduler(),
             recovered.sessions(),
@@ -1215,7 +1306,7 @@ mod tests {
                 )),
             )
             .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
-        let checkpoint = ConcurrentDurableCheckpointV3::capture(
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1225,7 +1316,7 @@ mod tests {
         let mut duplicate_runnable = checkpoint.clone();
         duplicate_runnable.runnable.push_back(created.task_id);
         assert_eq!(
-            ConcurrentDurableCheckpointV3::decode(
+            ConcurrentDurableCheckpointV4::decode(
                 &fixture.program,
                 &duplicate_runnable.canonical_bytes(),
             ),
@@ -1238,7 +1329,7 @@ mod tests {
             .cancellation_reasons
             .insert(created.task_id, Arc::from("not-signalled"));
         assert_eq!(
-            ConcurrentDurableCheckpointV3::decode(
+            ConcurrentDurableCheckpointV4::decode(
                 &fixture.program,
                 &cancellation_mismatch.canonical_bytes(),
             ),
@@ -1250,7 +1341,7 @@ mod tests {
     fn combined_recovery_restores_one_shared_budget_owner() {
         let mut fixture = fixture();
         let created = running_child(&mut fixture, 0);
-        let recovered = ConcurrentDurableCheckpointV3::capture(
+        let recovered = ConcurrentDurableCheckpointV4::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1275,7 +1366,7 @@ mod tests {
     fn malformed_and_mixed_budget_projections_are_rejected() {
         let mut fixture = fixture();
         let _ = running_child(&mut fixture, 0);
-        let checkpoint = ConcurrentDurableCheckpointV3::capture(
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1286,7 +1377,7 @@ mod tests {
         malformed.execution_budget.remaining_transitions =
             malformed.execution_budget.maximum_transitions + 1;
         assert_eq!(
-            ConcurrentDurableCheckpointV3::decode(&fixture.program, &malformed.canonical_bytes(),),
+            ConcurrentDurableCheckpointV4::decode(&fixture.program, &malformed.canonical_bytes(),),
             Err(ConcurrentDurableCheckpointError::Machine(
                 crate::MachineRecoveryError::InvalidCheckpoint,
             ))
@@ -1296,7 +1387,7 @@ mod tests {
         mixed.execution_budget.maximum_transitions += 1;
         mixed.execution_budget.remaining_transitions += 1;
         assert_eq!(
-            ConcurrentDurableCheckpointV3::decode(&fixture.program, &mixed.canonical_bytes()),
+            ConcurrentDurableCheckpointV4::decode(&fixture.program, &mixed.canonical_bytes()),
             Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
         );
     }
@@ -1315,7 +1406,7 @@ mod tests {
             fixture.budget.clone(),
         );
 
-        let checkpoint = ConcurrentDurableCheckpointV3::capture_with_interleaving(
+        let checkpoint = ConcurrentDurableCheckpointV4::capture_with_interleaving(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1352,7 +1443,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            ConcurrentDurableCheckpointV3::capture_with_interleaving(
+            ConcurrentDurableCheckpointV4::capture_with_interleaving(
                 &fixture.foreground,
                 &fixture.scheduler,
                 &fixture.sessions,
@@ -1371,7 +1462,7 @@ mod tests {
     fn post_recovery_final_unit_charges_the_shared_budget() {
         let mut fixture = fixture();
         let created = running_child(&mut fixture, 0);
-        let mut checkpoint = ConcurrentDurableCheckpointV3::capture(
+        let mut checkpoint = ConcurrentDurableCheckpointV4::capture(
             &fixture.foreground,
             &fixture.scheduler,
             &fixture.sessions,
@@ -1410,6 +1501,90 @@ mod tests {
                 if failure.code == RuntimeCode::DeterministicTransitionBudget
         ));
         assert_eq!(recovered.foreground.budget_checkpoint(), after);
+    }
+
+    /// A graph cut must preserve root settlement before foreground publication.
+    #[test]
+    fn settled_root_survives_graph_checkpoint_round_trip() {
+        let mut fixture = fixture();
+        let mut outcome = None;
+        for _ in 0..100 {
+            match fixture.foreground.step() {
+                MachineStep::Transition(MachineLabel::TaskSettled(settled)) => {
+                    outcome = Some(settled);
+                    break;
+                }
+                MachineStep::Transition(_) => {}
+                other => panic!("unexpected root step: {other:?}"),
+            }
+        }
+        let outcome = outcome.unwrap_or_else(|| panic!("root did not settle"));
+        fixture
+            .scheduler
+            .state
+            .settle(fixture.root_task, outcome)
+            .unwrap_or_else(|error| panic!("root settlement failed: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("settled-root capture failed: {error:?}"));
+        let decoded =
+            ConcurrentDurableCheckpointV4::decode(&fixture.program, &checkpoint.canonical_bytes())
+                .unwrap_or_else(|error| panic!("settled-root decode failed: {error:?}"));
+        let recovered = decoded
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("settled-root recovery failed: {error:?}"));
+        assert_eq!(recovered.scheduler().state(), fixture.scheduler.state());
+    }
+
+    /// Pending outcomes are logical state; physical ownership is not settlement.
+    #[test]
+    fn pending_child_and_root_state_round_trip_and_reject_inconsistency() {
+        let mut fixture = fixture();
+        let child = running_child(&mut fixture, 0);
+        fixture
+            .scheduler
+            .state
+            .stage_task_outcome(
+                child.task_id,
+                MachineOutcome::Succeeded(LogicalValue::unit()),
+            )
+            .unwrap_or_else(|error| panic!("child staging failed: {error:?}"));
+        fixture
+            .scheduler
+            .state
+            .stage_task_outcome(
+                fixture.root_task,
+                MachineOutcome::Succeeded(LogicalValue::unit()),
+            )
+            .unwrap_or_else(|error| panic!("root staging failed: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("pending capture failed: {error:?}"));
+        let bytes = checkpoint.canonical_bytes();
+        let decoded = ConcurrentDurableCheckpointV4::decode(&fixture.program, &bytes)
+            .unwrap_or_else(|error| panic!("pending decode failed: {error:?}"));
+        assert_eq!(decoded, checkpoint);
+        let mut legacy = bytes;
+        legacy[..8].copy_from_slice(b"GNTCDP03");
+        assert!(ConcurrentDurableCheckpointV4::decode(&fixture.program, &legacy).is_err());
+        let mut malformed = checkpoint.clone();
+        malformed.state.root.status = ConcurrentTaskStatusV1::Succeeded(LogicalValue::unit());
+        assert!(
+            ConcurrentDurableCheckpointV4::decode(&fixture.program, &malformed.canonical_bytes())
+                .is_err()
+        );
+        let mut malformed = checkpoint;
+        malformed.state.tasks[0].status = ConcurrentTaskStatusV1::Succeeded(LogicalValue::unit());
+        assert!(
+            ConcurrentDurableCheckpointV4::decode(&fixture.program, &malformed.canonical_bytes())
+                .is_err()
+        );
     }
 
     struct Fixture {

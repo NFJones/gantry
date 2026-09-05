@@ -40,7 +40,7 @@ use crate::{
 mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
-    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3,
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4,
     RecoveredConcurrentDurableExecutionV1,
 };
 

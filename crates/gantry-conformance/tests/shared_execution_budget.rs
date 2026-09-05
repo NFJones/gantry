@@ -16,7 +16,7 @@ use gantry::ir::{
 };
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
-    CanonicalTranscriptV1, ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3,
+    CanonicalTranscriptV1, ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4,
     ConcurrentSchedulerV1, ConcurrentTaskStateV1, DurableCommitCutV1, DurableLogicalEvidenceV3,
     ExecutionBudget, ExecutionBudgetSnapshot, ExecutionCoordinator, LogicalSessionRegistryV1,
     Machine, MachineLabel, MachineLimits, MachineOutcome, MachineStep, RuntimeCode,
@@ -416,7 +416,7 @@ fn continuously_torn_combined_capture_is_rejected() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        ConcurrentDurableCheckpointV3::capture_with_test_interleaving(
+        ConcurrentDurableCheckpointV4::capture_with_test_interleaving(
             &foreground,
             &scheduler,
             &sessions,

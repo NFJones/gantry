@@ -112,7 +112,7 @@ pub use outcome::{
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use recovery::{
-    CONCURRENT_DURABLE_EVIDENCE_KIND_V3, ConcurrentDurableEvidenceV3,
+    CONCURRENT_DURABLE_EVIDENCE_KIND_V4, ConcurrentDurableEvidenceV4,
     RecoveredConcurrentDurableStateV1, recover_concurrent_authoritative_prefix,
 };
 #[cfg(feature = "durable")]
@@ -137,7 +137,7 @@ pub use supervision::{
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use task::{
-    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV3,
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4,
     RecoveredConcurrentDurableExecutionV1,
 };
 #[cfg(feature = "concurrent")]
