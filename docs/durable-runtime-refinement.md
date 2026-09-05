@@ -31,8 +31,25 @@ and settlement observers are notified. No coordinator guard crosses storage
 awaits. Physical completion remains separate and is merged monotonically.
 Dropping an unsubmitted stage rolls back; an interrupted or failed submitted
 commit leaves semantic publication fenced because storage may have committed.
-This primitive requires a must-settle execution owner. It is not yet the live
-source-driver/event transaction pipeline and does not establish its conformance.
+This primitive requires a must-settle execution owner. `set_event` freezes the
+causal event and delivery plan; publication waits for the existing event journal
+owner to commit them. Event failure leaves the graph unpublished and fenced.
+The journal retains graph and event evidence as a causal prefix, not necessarily
+one physical record. Delivery remains with the existing event worker.
+
+The live sequential durable driver retains an isolated authoritative projection
+while its private machine advances. Semantic and event commits refresh that
+projection; settlement, foreground, and terminal publication install root state,
+sessions, budgets, and retained evidence together through
+`publish_committed_root`, then notify observers outside the lock. Cancellation
+commit failure retains the last committed machine and budget rather than its
+speculative successor.
+
+The issue-scoped evidence in `protocol/conformance/durable-coordination-v1.json`
+binds these mechanisms to the frozen DUR-001 requirement assignments. It does
+not restore profile claims. Native source-driver submission and task-control
+execution remain downstream integration work; fenced process reconstruction and
+replacement submission remain separate recovery obligations.
 
 For the generics-and-static-traits amendment, the durable prefix retains the
 canonical analysis artifacts and the distinct closed executable projection

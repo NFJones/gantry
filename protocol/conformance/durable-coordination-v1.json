@@ -1,0 +1,31 @@
+{
+  "format": "gantry.durable-coordination-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-DUR-001",
+  "requirements": [
+    {"requirement":"GNT-3-M-STATE","clause":"clause-002","profiles":["concurrent-evaluator","durable-runtime","evaluator"]},
+    {"requirement":"GNT-3-M-SPAWN","clause":"clause-001","profiles":["concurrent-evaluator"]},
+    {"requirement":"GNT-3-M-TASK-SETTLE","clause":"clause-001","profiles":["concurrent-evaluator","durable-runtime","evaluator"]},
+    {"requirement":"GNT-3-D-COMMIT-ORDER","clause":"clause-001","profiles":["durable-runtime"]},
+    {"requirement":"GNT-3-D-CRASH","clause":"clause-001","profiles":["durable-runtime"]},
+    {"requirement":"GNT-11.7","clause":"clause-001","profiles":["durable-runtime"]},
+    {"requirement":"GNT-11.10","clause":"clause-002","profiles":["durable-runtime"]}
+  ],
+  "capabilities": [
+    {"id":"child-ownership-cuts","evidence":"crates/gantry-runtime/src/coordinator/transaction/tests.rs#child_creation_and_submission_failure_publish_coherent_cuts"},
+    {"id":"event-failure-fence","evidence":"crates/gantry-runtime/src/coordinator/transaction/tests.rs#event_commit_failure_keeps_graph_private_and_fences_publication"},
+    {"id":"interrupted-commit-fence","evidence":"crates/gantry-runtime/src/coordinator/transaction/tests.rs#interrupted_commit_keeps_old_state_and_fences_publication"},
+    {"id":"live-root-cancellation-rollback","evidence":"crates/gantry-conformance/tests/durable_start.rs#cancellation_commit_failures_retain_authoritative_machine_and_budget"},
+    {"id":"live-root-pending-cut","evidence":"crates/gantry-conformance/tests/automatic_durable_root.rs#facade_cancellation_of_a_running_durable_root_commits_before_signalling"},
+    {"id":"multi-machine-cut","evidence":"crates/gantry-runtime/src/coordinator/transaction/tests.rs#multiple_machines_publish_one_budget_and_checkpoint_cut"},
+    {"id":"notification-races","evidence":"crates/gantry-runtime/src/coordinator/transaction/tests.rs#settlement_registration_races_do_not_lose_notifications"},
+    {"id":"pre-submission-rollback","evidence":"crates/gantry-runtime/src/coordinator/transaction/tests.rs#rejected_cut_releases_publication_before_submission"},
+    {"id":"root-lifecycle-codec","evidence":"crates/gantry-runtime/src/task/combined_checkpoint.rs#settled_root_survives_graph_checkpoint_round_trip"},
+    {"id":"successful-publication","evidence":"crates/gantry-runtime/src/coordinator/transaction/tests.rs#successful_commit_installs_machine_and_budget_together"}
+  ],
+  "exclusions": [
+    "Requirement assignments identify this issue's coordination slices, not complete profile conformance; no profile claims are restored.",
+    "Native source-driver submission, joins and descendant draining remain with SPAWN-001, JOIN-001 and CANCEL-001.",
+    "Fenced process reconstruction and replacement executor submission remain with REC-001. Graph capture and journal-prefix round trips do not prove exactly-once physical submission."
+  ]
+}
