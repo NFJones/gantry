@@ -413,6 +413,62 @@ fn child_creation_and_submission_failure_publish_coherent_cuts() {
         child.task_id,
     ))
     .unwrap_or_else(|error| panic!("settlement commit: {error:?}"));
+    let limits = gantry_core::source::SourceLimits::new(1, 64, 64, 1, 1)
+        .unwrap_or_else(|error| panic!("source limits: {error:?}"));
+    let mut builder = gantry_core::source::SourceSnapshotBuilder::new(limits);
+    let source = builder
+        .add_file("main.gnt", b"detach(child)")
+        .unwrap_or_else(|error| panic!("source: {error:?}"));
+    let snapshot = builder.finish();
+    let record = snapshot
+        .get(&source)
+        .unwrap_or_else(|| panic!("missing source"));
+    let span = gantry_core::source::SourceSpan::new(
+        record,
+        gantry_core::source::ByteSpan::new(0, 1).unwrap_or_else(|error| panic!("span: {error:?}")),
+    )
+    .unwrap_or_else(|error| panic!("source span: {error:?}"));
+    let control = gantry_ir::TaskControlSite {
+        id: gantry_ir::StaticSiteId::new(
+            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}")),
+            StructuralPosition::new(vec![1]).unwrap_or_else(|error| panic!("site: {error}")),
+        ),
+        kind: gantry_ir::generated::TaskControlSiteKind::Detach,
+        handles: vec![Arc::from("child")],
+        source: span,
+    };
+    let before = coordinator.snapshot();
+    let handle = before
+        .state()
+        .task(child.task_id)
+        .unwrap_or_else(|| panic!("missing child"))
+        .handle_id();
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("detach stage: {error:?}"));
+    stage
+        .update(|_, _, tasks, _| tasks.detach(task, &control, handle))
+        .unwrap_or_else(|error| panic!("detach: {error:?}"));
+    assert_eq!(coordinator.snapshot(), before);
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskOwnership,
+        child.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("detach commit: {error:?}"));
+    let before = coordinator.snapshot();
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("cancellation stage: {error:?}"));
+    stage.update(|root, _, tasks, _| {
+        tasks
+            .cancel_execution("stop")
+            .unwrap_or_else(|error| panic!("cancel: {error:?}"));
+        let _ = root.cancel(Arc::from("stop"));
+    });
+    assert_eq!(coordinator.snapshot(), before);
+    ready(stage.commit(&mut commits, DurableCommitCutV1::Cancellation, task))
+        .unwrap_or_else(|error| panic!("cancellation commit: {error:?}"));
     let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal,
     }))
