@@ -1037,6 +1037,20 @@ impl Machine {
         projection
     }
 
+    /// Copies task-local state onto the private shared budget of a staged graph.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn clone_with_staged_budget(
+        &self,
+        budget: ExecutionBudget,
+    ) -> Result<Self, MachineRecoveryError> {
+        if !budget.matches(self.execution, self.limits) {
+            return Err(MachineRecoveryError::ExecutionBudgetMismatch);
+        }
+        let mut staged = self.clone();
+        staged.execution_budget = budget;
+        Ok(staged)
+    }
+
     /// Reconstructs the same evaluator using its separately recovered shared budget.
     #[cfg(feature = "durable")]
     pub fn recover_from_checkpoint(

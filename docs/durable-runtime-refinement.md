@@ -22,6 +22,18 @@ bookkeeping is evidence, not a restored executor capability. These round-trip
 guarantees do not establish coherent live coordinator transactions or fenced
 task-graph resubmission, which remain separate integration obligations.
 
+`ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
+primitive over borrowed root and child machines. Its private copies share one
+isolated budget; ordinary coordinator semantic writers are rejected until
+publication is released. An owned graph checkpoint crosses the existing fenced
+journal boundary before machine, task, session, and budget state are installed
+and settlement observers are notified. No coordinator guard crosses storage
+awaits. Physical completion remains separate and is merged monotonically.
+Dropping an unsubmitted stage rolls back; an interrupted or failed submitted
+commit leaves semantic publication fenced because storage may have committed.
+This primitive requires a must-settle execution owner. It is not yet the live
+source-driver/event transaction pipeline and does not establish its conformance.
+
 For the generics-and-static-traits amendment, the durable prefix retains the
 canonical analysis artifacts and the distinct closed executable projection
 selected at start. Recovery reconstructs that same projection and machine

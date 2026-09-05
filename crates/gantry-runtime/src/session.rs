@@ -436,6 +436,8 @@ impl LogicalSessionRegistryV1 {
 /// Logical-session registry failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionError {
+    /// A durable transaction owns publication, or an indeterminate commit fenced it.
+    DurablePublicationReserved,
     /// One typed identity has the wrong kind.
     IdentityKind,
     /// The requested enclosing session is absent.

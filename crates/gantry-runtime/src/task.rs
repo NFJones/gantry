@@ -2011,6 +2011,8 @@ impl ConcurrentSchedulerV1 {
 /// Failure to construct or advance concurrent task state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TaskStateError {
+    /// A durable transaction owns publication, or an indeterminate commit fenced it.
+    DurablePublicationReserved,
     /// The configured cumulative task limit is zero.
     InvalidTaskLimit,
     /// Creating another child would exceed or overflow the cumulative limit.

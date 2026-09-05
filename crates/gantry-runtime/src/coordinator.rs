@@ -30,6 +30,11 @@ use crate::{
 
 static NEXT_COORDINATOR_WAITER_ID: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+mod transaction;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use transaction::DurableGraphTransaction;
+
 /// Cloneable execution-scoped semantic coordination owner.
 #[derive(Clone, Debug)]
 pub struct ExecutionCoordinator {
@@ -51,6 +56,8 @@ struct CoordinatorState {
     foreground_waiters: Vec<RegisteredWaiter>,
     terminal_waiters: Vec<RegisteredWaiter>,
     shutdown_waiters: Vec<RegisteredWaiter>,
+    /// Reserved by a durable transaction; retained if its commit is indeterminate.
+    durable_publication_reserved: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +144,7 @@ impl ExecutionCoordinator {
                     foreground_waiters: Vec::new(),
                     terminal_waiters: Vec::new(),
                     shutdown_waiters: Vec::new(),
+                    durable_publication_reserved: false,
                 }),
             }),
         })
@@ -176,6 +184,7 @@ impl ExecutionCoordinator {
     /// Publishes successful root submission and supervision registration.
     pub fn resolve_root_submission(&self) -> Result<(), TaskStateError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
         state.tasks.resolve_root_submission()?;
         state.publication = state.publication.wrapping_add(1);
         Ok(())
@@ -185,6 +194,7 @@ impl ExecutionCoordinator {
     pub fn fail_root_submission(&self, outcome: MachineOutcome) -> Result<(), TaskStateError> {
         let (task_waiters, shutdown_waiters) = {
             let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
             let task_id = state.tasks.root_task_id();
             state.tasks.fail_root_submission(outcome, true)?;
             state.publication = state.publication.wrapping_add(1);
@@ -201,6 +211,7 @@ impl ExecutionCoordinator {
     pub fn fail_root_registration(&self, outcome: MachineOutcome) -> Result<(), TaskStateError> {
         let (task_waiters, shutdown_waiters) = {
             let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
             let task_id = state.tasks.root_task_id();
             state.tasks.fail_root_submission(outcome, false)?;
             state.publication = state.publication.wrapping_add(1);
@@ -240,6 +251,8 @@ impl ExecutionCoordinator {
         establishment: SessionEstablishmentV1,
     ) -> Result<LogicalSessionV1, SessionError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)
+            .map_err(|_| SessionError::DurablePublicationReserved)?;
         let session = state
             .sessions
             .create(
@@ -264,6 +277,8 @@ impl ExecutionCoordinator {
         update: impl FnOnce(&mut LogicalSessionV1) -> T,
     ) -> Result<T, SessionError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)
+            .map_err(|_| SessionError::DurablePublicationReserved)?;
         let result = update(
             state
                 .sessions
@@ -281,6 +296,7 @@ impl ExecutionCoordinator {
         limits: ValueLimits,
     ) -> Result<TaskCreationV1, TaskStateError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
         let CoordinatorState {
             tasks,
             sessions,
@@ -300,6 +316,7 @@ impl ExecutionCoordinator {
     ) -> Result<(), TaskStateError> {
         let (task_waiters, shutdown_waiters) = {
             let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
             state.tasks.resolve_submission(task_id, result)?;
             state.publication = state.publication.wrapping_add(1);
             let task_waiters = if task_is_settled(&state.tasks, task_id) {
@@ -322,6 +339,7 @@ impl ExecutionCoordinator {
         outcome: MachineOutcome,
     ) -> Result<(), TaskStateError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
         state.tasks.stage_task_outcome(task_id, outcome)?;
         state.publication = state.publication.wrapping_add(1);
         Ok(())
@@ -331,6 +349,7 @@ impl ExecutionCoordinator {
     pub fn settle_staged_task(&self, task_id: ProtocolIdentity) -> Result<(), TaskStateError> {
         let (task_waiters, shutdown_waiters) = {
             let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
             state.tasks.settle_staged_task(task_id)?;
             state.publication = state.publication.wrapping_add(1);
             let task_waiters = state.task_waiters.remove(&task_id).unwrap_or_default();
@@ -350,6 +369,7 @@ impl ExecutionCoordinator {
     ) -> Result<(), TaskStateError> {
         let (task_waiters, shutdown_waiters) = {
             let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
             state.tasks.settle(task_id, outcome)?;
             state.publication = state.publication.wrapping_add(1);
             let task_waiters = state.task_waiters.remove(&task_id).unwrap_or_default();
@@ -369,6 +389,7 @@ impl ExecutionCoordinator {
         handles: &[DynamicTaskHandleIdentity],
     ) -> Result<JoinStartV1, TaskStateError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
         let started = state.tasks.begin_join(owner_task_id, control, handles)?;
         state.publication = state.publication.wrapping_add(1);
         Ok(started)
@@ -382,6 +403,7 @@ impl ExecutionCoordinator {
         handle: DynamicTaskHandleIdentity,
     ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
         let detached = state.tasks.detach(owner_task_id, control, handle)?;
         state.publication = state.publication.wrapping_add(1);
         Ok(detached)
@@ -393,6 +415,7 @@ impl ExecutionCoordinator {
         reason: impl Into<Arc<str>>,
     ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
         let affected = state.tasks.cancel_execution(reason)?;
         if !affected.is_empty() {
             state.publication = state.publication.wrapping_add(1);
@@ -407,6 +430,7 @@ impl ExecutionCoordinator {
         reason: impl Into<Arc<str>>,
     ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
         let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
         let affected = state.tasks.cancel_task_tree(task_id, reason)?;
         if !affected.is_empty() {
             state.publication = state.publication.wrapping_add(1);
@@ -418,6 +442,7 @@ impl ExecutionCoordinator {
     pub fn complete_foreground(&self) -> Result<MachineOutcome, TaskStateError> {
         let (outcome, waiters) = {
             let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
             let outcome = state
                 .tasks
                 .root_settled_outcome()
@@ -435,6 +460,7 @@ impl ExecutionCoordinator {
     pub fn complete_terminal(&self) -> Result<ConcurrentTerminalOutcomeV1, TaskStateError> {
         let (outcome, waiters) = {
             let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
             let outcome = state.tasks.complete_terminal()?.clone();
             state.publication = state.publication.wrapping_add(1);
             (outcome, std::mem::take(&mut state.terminal_waiters))
@@ -775,6 +801,15 @@ impl Drop for ShutdownQuiescenceWait {
 
 fn next_waiter_id() -> u64 {
     NEXT_COORDINATOR_WAITER_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Rejects semantic writes while a durable successor owns publication.
+fn require_publication_available(state: &CoordinatorState) -> Result<(), TaskStateError> {
+    if state.durable_publication_reserved {
+        Err(TaskStateError::DurablePublicationReserved)
+    } else {
+        Ok(())
+    }
 }
 
 fn snapshot_from(state: &CoordinatorState) -> ExecutionCoordinatorSnapshot {

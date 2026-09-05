@@ -41,6 +41,8 @@ pub use containment::{
     AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
     contain_gantry_future, contain_integration_future, drop_integration,
 };
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub use coordinator::DurableGraphTransaction;
 pub use coordinator::{
     ExecutionCoordinator, ExecutionCoordinatorSnapshot, ForegroundCompletionWait,
     JoinSettlementWait, ShutdownQuiescenceWait, TaskSettlementWait, TerminalCompletionWait,
