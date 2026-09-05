@@ -20,7 +20,10 @@ use gantry_core::source::{
 
 use crate::ast::{SyntaxForm, SyntaxTree};
 use crate::parser::{ParseError, Parser};
-use crate::provider::{PackageSnapshotLoader, RootDirectorySourceProvider, SourceProviderError};
+use crate::provider::{
+    ModuleResolution, PackageSnapshotAssembler, RootDirectorySourceProvider, SourceProvider,
+    SourceProviderError, SourceReadLimits,
+};
 use crate::token::{Punctuation, TokenKind};
 
 /// Syntax-only judgment for one immutable package snapshot.
@@ -263,101 +266,256 @@ fn validate_package_syntax_with_depth(
 ) -> Result<CompletedSyntaxPhase, PackageSyntaxError> {
     let provider =
         RootDirectorySourceProvider::open(package_root).map_err(PackageSyntaxError::Source)?;
-    let mut loader = PackageSnapshotLoader::new(&provider, limits);
-    let root = loader
-        .load("main.gnt")
-        .map_err(|error| package_source_error(error, &[]))?;
-    let mut pending = VecDeque::from([root]);
-    let mut seen_requests = BTreeSet::new();
-    let mut parsed_sources = Vec::new();
-    let mut module_resolution_issues = Vec::new();
-    let mut diagnostics = Vec::new();
+    let mut step = PackageSyntaxWork::begin(limits, maximum_constructed_type_depth)?;
+    loop {
+        step = match step {
+            PackageSyntaxStep::Acquire(work, request) => {
+                let acquisition = request.acquire(&provider);
+                work.accept_acquisition(request, acquisition)?
+            }
+            PackageSyntaxStep::Parse(work) => work.parse_next()?,
+            PackageSyntaxStep::Complete(phase) => return Ok(phase),
+        };
+    }
+}
 
-    while let Some(source) = pending.pop_front() {
-        let (record, counters) = loader.record_and_counters_mut(&source);
+/// One owned source acquisition needed by incremental package discovery.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PackageSourceRequest {
+    kind: PackageSourceRequestKind,
+    limits: SourceReadLimits,
+}
+
+impl PackageSourceRequest {
+    /// Performs one synchronous source-provider operation.
+    ///
+    /// Callers that expose async APIs must invoke this method only from their
+    /// configured blocking-work service. The request owns every path, module
+    /// name, and source span needed by the provider boundary.
+    pub fn acquire(
+        &self,
+        provider: &dyn SourceProvider,
+    ) -> Result<ModuleResolution, SourceProviderError> {
+        match &self.kind {
+            PackageSourceRequestKind::Root { path } => {
+                provider
+                    .read_source(path, self.limits)
+                    .map(|bytes| ModuleResolution {
+                        path: path.clone(),
+                        bytes,
+                    })
+            }
+            PackageSourceRequestKind::Module {
+                declaring_source,
+                name,
+                ..
+            } => provider.resolve_module_bounded(declaring_source, name, self.limits),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PackageSourceRequestKind {
+    Root {
+        path: PackagePath,
+    },
+    Module {
+        declaring_source: PackagePath,
+        directory: String,
+        name: String,
+        span: gantry_core::source::SourceSpan,
+    },
+}
+
+/// Owned deterministic state between source acquisition and parse jobs.
+pub struct PackageSyntaxWork {
+    assembler: PackageSnapshotAssembler,
+    pending_sources: VecDeque<SourceId>,
+    pending_acquisitions: VecDeque<PackageSourceRequest>,
+    seen_requests: BTreeSet<(String, String)>,
+    parsed_sources: Vec<ParsedSource>,
+    module_resolution_issues: Vec<ModuleResolutionIssue>,
+    diagnostics: Vec<StructuredDiagnostic>,
+    maximum_constructed_type_depth: u64,
+}
+
+/// Next owned package-syntax action.
+pub enum PackageSyntaxStep {
+    /// Acquire exactly one selected source through the provider boundary.
+    Acquire(PackageSyntaxWork, PackageSourceRequest),
+    /// Parse one already acquired immutable source without provider access.
+    Parse(PackageSyntaxWork),
+    /// Return the completed immutable syntax phase.
+    Complete(CompletedSyntaxPhase),
+}
+
+impl PackageSyntaxWork {
+    /// Starts package discovery with one owned `main.gnt` acquisition request.
+    pub fn begin(
+        limits: SourceLimits,
+        maximum_constructed_type_depth: u64,
+    ) -> Result<PackageSyntaxStep, PackageSyntaxError> {
+        let assembler = PackageSnapshotAssembler::new(limits);
+        let read_limits = assembler
+            .next_source_read_limits()
+            .map_err(|error| package_source_error(error, &[]))?;
+        let path = PackagePath::new("main.gnt").map_err(|_| PackageSyntaxError::Invariant)?;
+        Ok(PackageSyntaxStep::Acquire(
+            Self {
+                assembler,
+                pending_sources: VecDeque::new(),
+                pending_acquisitions: VecDeque::new(),
+                seen_requests: BTreeSet::new(),
+                parsed_sources: Vec::new(),
+                module_resolution_issues: Vec::new(),
+                diagnostics: Vec::new(),
+                maximum_constructed_type_depth,
+            },
+            PackageSourceRequest {
+                kind: PackageSourceRequestKind::Root { path },
+                limits: read_limits,
+            },
+        ))
+    }
+
+    /// Applies one provider result without performing parsing or provider I/O.
+    pub fn accept_acquisition(
+        mut self,
+        request: PackageSourceRequest,
+        acquisition: Result<ModuleResolution, SourceProviderError>,
+    ) -> Result<PackageSyntaxStep, PackageSyntaxError> {
+        match (request.kind, acquisition) {
+            (_, Ok(resolution)) => {
+                let source = self
+                    .assembler
+                    .add_resolution(resolution)
+                    .map_err(|error| package_source_error(error, &self.diagnostics))?;
+                self.pending_sources.push_back(source);
+            }
+            (
+                PackageSourceRequestKind::Module {
+                    directory,
+                    name,
+                    span,
+                    ..
+                },
+                Err(SourceProviderError::NotFound),
+            ) => self.module_resolution_issues.push(ModuleResolutionIssue {
+                directory: Arc::from(directory),
+                name: Arc::from(name),
+                span,
+                kind: ModuleResolutionIssueKind::Missing,
+            }),
+            (
+                PackageSourceRequestKind::Module {
+                    directory,
+                    name,
+                    span,
+                    ..
+                },
+                Err(SourceProviderError::AmbiguousModule { flat, nested }),
+            ) => self.module_resolution_issues.push(ModuleResolutionIssue {
+                directory: Arc::from(directory),
+                name: Arc::from(name),
+                span,
+                kind: ModuleResolutionIssueKind::Ambiguous { flat, nested },
+            }),
+            (_, Err(error)) => {
+                return Err(package_source_error(error, &self.diagnostics));
+            }
+        }
+        self.next_step()
+    }
+
+    /// Parses one acquired immutable source and discovers its file modules.
+    pub fn parse_next(mut self) -> Result<PackageSyntaxStep, PackageSyntaxError> {
+        let source = self
+            .pending_sources
+            .pop_front()
+            .ok_or(PackageSyntaxError::Invariant)?;
+        let (record, counters) = self.assembler.record_and_counters_mut(&source);
         let record = record.ok_or(PackageSyntaxError::Invariant)?;
-        let outcome =
-            match Parser::new(record, counters, maximum_constructed_type_depth).parse_module() {
-                Ok(outcome) => outcome,
-                Err(ParseError::ResourceLimit {
+        let outcome = match Parser::new(record, counters, self.maximum_constructed_type_depth)
+            .parse_module()
+        {
+            Ok(outcome) => outcome,
+            Err(ParseError::ResourceLimit {
+                error,
+                diagnostics: mut retained,
+            }) => {
+                self.diagnostics.append(&mut retained);
+                return Err(PackageSyntaxError::FrontendResourceLimit {
                     error,
-                    diagnostics: mut retained,
-                }) => {
-                    diagnostics.append(&mut retained);
-                    return Err(PackageSyntaxError::FrontendResourceLimit { error, diagnostics });
-                }
-                Err(error) => return Err(PackageSyntaxError::Parse(error)),
-            };
-        diagnostics.extend_from_slice(outcome.diagnostics());
+                    diagnostics: self.diagnostics,
+                });
+            }
+            Err(error) => return Err(PackageSyntaxError::Parse(error)),
+        };
+        self.diagnostics.extend_from_slice(outcome.diagnostics());
         let valid = outcome.is_valid();
         let Some(tree) = outcome.recovered_tree().cloned() else {
-            continue;
+            return self.next_step();
         };
         let directory = source_module_directory(source.package_path())?;
         let requests = file_module_requests(&tree, &directory)?;
         if valid {
-            parsed_sources.push(ParsedSource {
+            self.parsed_sources.push(ParsedSource {
                 source: source.clone(),
                 tree,
             });
         }
         for request in requests {
-            if !seen_requests.insert((request.directory.clone(), request.name.clone())) {
+            if !self
+                .seen_requests
+                .insert((request.directory.clone(), request.name.clone()))
+            {
                 continue;
             }
             let declaring = conceptual_declaring_source(&request.directory)?;
-            let read_limits = loader
+            let limits = self
+                .assembler
                 .next_source_read_limits()
-                .map_err(|error| package_source_error(error, &diagnostics))?;
-            let resolution =
-                match provider.resolve_module_bounded(&declaring, &request.name, read_limits) {
-                    Ok(resolution) => resolution,
-                    Err(SourceProviderError::NotFound) => {
-                        module_resolution_issues.push(ModuleResolutionIssue {
-                            directory: Arc::from(request.directory),
-                            name: Arc::from(request.name),
-                            span: request.span,
-                            kind: ModuleResolutionIssueKind::Missing,
-                        });
-                        continue;
-                    }
-                    Err(SourceProviderError::AmbiguousModule { flat, nested }) => {
-                        module_resolution_issues.push(ModuleResolutionIssue {
-                            directory: Arc::from(request.directory),
-                            name: Arc::from(request.name),
-                            span: request.span,
-                            kind: ModuleResolutionIssueKind::Ambiguous { flat, nested },
-                        });
-                        continue;
-                    }
-                    Err(error) => return Err(package_source_error(error, &diagnostics)),
-                };
-            let child = loader
-                .add_resolution(resolution)
-                .map_err(|error| package_source_error(error, &diagnostics))?;
-            pending.push_back(child);
+                .map_err(|error| package_source_error(error, &self.diagnostics))?;
+            self.pending_acquisitions.push_back(PackageSourceRequest {
+                kind: PackageSourceRequestKind::Module {
+                    declaring_source: declaring,
+                    directory: request.directory,
+                    name: request.name,
+                    span: request.span,
+                },
+                limits,
+            });
         }
+        self.next_step()
     }
 
-    let status = if diagnostics.is_empty() {
-        PackageSyntaxStatus::Valid
-    } else {
-        PackageSyntaxStatus::Invalid
-    };
-    let event_payload = package_phase_event_payload(
-        PackageEventPhase::Parse,
-        status == PackageSyntaxStatus::Valid,
-        &diagnostics,
-    );
-    let event_draft = EventDraft::new(EventKind::Parse, event_payload);
-    Ok(CompletedSyntaxPhase {
-        status,
-        diagnostics,
-        snapshot: loader.finish(),
-        parsed_sources,
-        module_resolution_issues,
-        event_draft,
-    })
+    fn next_step(mut self) -> Result<PackageSyntaxStep, PackageSyntaxError> {
+        if let Some(request) = self.pending_acquisitions.pop_front() {
+            return Ok(PackageSyntaxStep::Acquire(self, request));
+        }
+        if !self.pending_sources.is_empty() {
+            return Ok(PackageSyntaxStep::Parse(self));
+        }
+        let status = if self.diagnostics.is_empty() {
+            PackageSyntaxStatus::Valid
+        } else {
+            PackageSyntaxStatus::Invalid
+        };
+        let event_payload = package_phase_event_payload(
+            PackageEventPhase::Parse,
+            status == PackageSyntaxStatus::Valid,
+            &self.diagnostics,
+        );
+        let event_draft = EventDraft::new(EventKind::Parse, event_payload);
+        Ok(PackageSyntaxStep::Complete(CompletedSyntaxPhase {
+            status,
+            diagnostics: self.diagnostics,
+            snapshot: self.assembler.finish(),
+            parsed_sources: self.parsed_sources,
+            module_resolution_issues: self.module_resolution_issues,
+            event_draft,
+        }))
+    }
 }
 
 fn package_source_error(

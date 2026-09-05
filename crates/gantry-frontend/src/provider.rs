@@ -24,6 +24,14 @@ pub trait SourceProvider: Send + Sync {
         path: &PackagePath,
         limits: SourceReadLimits,
     ) -> Result<Vec<u8>, SourceProviderError>;
+
+    /// Resolves one file-module declaration to its unique bounded source.
+    fn resolve_module_bounded(
+        &self,
+        declaring_source: &PackagePath,
+        module_name: &str,
+        limits: SourceReadLimits,
+    ) -> Result<ModuleResolution, SourceProviderError>;
 }
 
 /// Pre-allocation byte limits for one selected source read.
@@ -183,11 +191,28 @@ impl SourceProvider for RootDirectorySourceProvider {
         let file = self.open_source_with_hook(path, |_, _| {})?;
         read_bounded(&file, limits)
     }
+
+    fn resolve_module_bounded(
+        &self,
+        declaring_source: &PackagePath,
+        module_name: &str,
+        limits: SourceReadLimits,
+    ) -> Result<ModuleResolution, SourceProviderError> {
+        RootDirectorySourceProvider::resolve_module_bounded(
+            self,
+            declaring_source,
+            module_name,
+            limits,
+        )
+    }
 }
 
-/// Incremental package snapshot assembly through one source provider.
-pub struct PackageSnapshotLoader<'a> {
-    provider: &'a dyn SourceProvider,
+/// Provider-independent owner of one incrementally assembled package snapshot.
+///
+/// Every admitted path and byte buffer is owned. This lets package orchestration
+/// retain the assembly state outside source-provider calls and move it through
+/// executor-neutral blocking jobs without borrowing provider state.
+pub struct PackageSnapshotAssembler {
     builder: SourceSnapshotBuilder,
     loaded: BTreeSet<PackagePath>,
     maximum_package_files: u64,
@@ -195,12 +220,11 @@ pub struct PackageSnapshotLoader<'a> {
     maximum_package_source_bytes: u64,
 }
 
-impl<'a> PackageSnapshotLoader<'a> {
-    /// Starts one immutable package snapshot under the supplied source limits.
+impl PackageSnapshotAssembler {
+    /// Starts one empty immutable package snapshot under finite source limits.
     #[must_use]
-    pub fn new(provider: &'a dyn SourceProvider, limits: SourceLimits) -> Self {
+    pub fn new(limits: SourceLimits) -> Self {
         Self {
-            provider,
             builder: SourceSnapshotBuilder::new(limits),
             loaded: BTreeSet::new(),
             maximum_package_files: limits.maximum_package_files(),
@@ -209,38 +233,13 @@ impl<'a> PackageSnapshotLoader<'a> {
         }
     }
 
-    /// Loads one canonical package path at most once.
-    pub fn load(&mut self, path: &str) -> Result<SourceId, SourceProviderError> {
-        let path = PackagePath::new(path).map_err(SourceProviderError::InvalidPath)?;
-        if self.loaded.contains(&path) {
-            return Err(SourceProviderError::DuplicatePath(path));
-        }
-        let (files, package_bytes, _, _) = self.builder.counters().counts();
-        let observed_files = files.checked_add(1);
-        if observed_files.is_none_or(|observed| observed > self.maximum_package_files) {
-            return Err(SourceProviderError::ResourceLimit(FrontendResourceLimit {
-                code: FrontendResourceCode::PackageFileCountLimit,
-                limit: self.maximum_package_files,
-                observed: observed_files,
-            }));
-        }
-        let bytes = self.provider.read_source(
-            &path,
-            SourceReadLimits::new(
-                self.maximum_source_file_bytes,
-                package_bytes,
-                self.maximum_package_source_bytes,
-            ),
-        )?;
-        let id = self
-            .builder
-            .add_file(path.as_str(), &bytes)
-            .map_err(SourceProviderError::Source)?;
-        self.loaded.insert(path);
-        Ok(id)
+    /// Returns whether a canonical package path was already admitted.
+    #[must_use]
+    pub fn contains(&self, path: &PackagePath) -> bool {
+        self.loaded.contains(path)
     }
 
-    /// Admits bytes already selected by deterministic module resolution.
+    /// Admits one owned selected path and its exact bytes.
     pub fn add_resolution(
         &mut self,
         resolution: ModuleResolution,
@@ -265,8 +264,7 @@ impl<'a> PackageSnapshotLoader<'a> {
         self.builder.record_and_counters_mut(id)
     }
 
-    /// Returns the pre-allocation bounds for the next selected source read,
-    /// rejecting the package-file limit before any file bytes are allocated.
+    /// Returns pre-allocation bounds for the next selected source read.
     pub fn next_source_read_limits(&self) -> Result<SourceReadLimits, SourceProviderError> {
         let (files, package_bytes, _, _) = self.builder.counters().counts();
         let observed = files.checked_add(1);
@@ -284,10 +282,68 @@ impl<'a> PackageSnapshotLoader<'a> {
         ))
     }
 
-    /// Finishes the canonically ordered immutable snapshot.
+    /// Freezes the canonically ordered immutable snapshot.
     #[must_use]
     pub fn finish(self) -> SourceSnapshot {
         self.builder.finish()
+    }
+}
+
+/// Incremental package snapshot assembly through one source provider.
+pub struct PackageSnapshotLoader<'a> {
+    provider: &'a dyn SourceProvider,
+    assembler: PackageSnapshotAssembler,
+}
+
+impl<'a> PackageSnapshotLoader<'a> {
+    /// Starts one immutable package snapshot under the supplied source limits.
+    #[must_use]
+    pub fn new(provider: &'a dyn SourceProvider, limits: SourceLimits) -> Self {
+        Self {
+            provider,
+            assembler: PackageSnapshotAssembler::new(limits),
+        }
+    }
+
+    /// Loads one canonical package path at most once.
+    pub fn load(&mut self, path: &str) -> Result<SourceId, SourceProviderError> {
+        let path = PackagePath::new(path).map_err(SourceProviderError::InvalidPath)?;
+        if self.assembler.contains(&path) {
+            return Err(SourceProviderError::DuplicatePath(path));
+        }
+        let limits = self.assembler.next_source_read_limits()?;
+        let bytes = self.provider.read_source(&path, limits)?;
+        self.assembler
+            .add_resolution(ModuleResolution { path, bytes })
+    }
+
+    /// Admits bytes already selected by deterministic module resolution.
+    pub fn add_resolution(
+        &mut self,
+        resolution: ModuleResolution,
+    ) -> Result<SourceId, SourceProviderError> {
+        self.assembler.add_resolution(resolution)
+    }
+
+    /// Borrows one admitted immutable source together with shared activity
+    /// counters for incremental lexing and parsing.
+    pub fn record_and_counters_mut(
+        &mut self,
+        id: &SourceId,
+    ) -> (Option<&SourceRecord>, &mut SourceCounters) {
+        self.assembler.record_and_counters_mut(id)
+    }
+
+    /// Returns the pre-allocation bounds for the next selected source read,
+    /// rejecting the package-file limit before any file bytes are allocated.
+    pub fn next_source_read_limits(&self) -> Result<SourceReadLimits, SourceProviderError> {
+        self.assembler.next_source_read_limits()
+    }
+
+    /// Finishes the canonically ordered immutable snapshot.
+    #[must_use]
+    pub fn finish(self) -> SourceSnapshot {
+        self.assembler.finish()
     }
 }
 

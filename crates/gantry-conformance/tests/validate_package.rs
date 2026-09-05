@@ -188,7 +188,12 @@ fn valid_and_invalid_packages_each_expose_one_parse_occurrence() {
         let identities = ScriptedIdentities::new([Ok([1; 32]), Ok([2; 32])]);
         let allocator = FreshIdentityAllocator::default();
         let clock = FixedClock(Ok(timestamp()));
-        let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
+        let coordinator = ValidatePackageCoordinator::new(
+            &allocator,
+            &identities,
+            &clock,
+            gantry_conformance::blocking_work(),
+        );
         let selection = selection();
         let result = block_on(coordinator.validate(request(&root.0, &selection, None)));
         assert!(result.is_ok());
@@ -224,7 +229,12 @@ fn semantic_errors_remain_outside_syntax_only_validation() {
     let identities = ScriptedIdentities::new([Ok([8; 32]), Ok([9; 32])]);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock(Ok(timestamp()));
-    let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = ValidatePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let selection = selection();
 
     let result = block_on(coordinator.validate(request(&root.0, &selection, None)));
@@ -288,7 +298,12 @@ fn analyze_package_sequences_phases_and_exposes_valid_artifacts() {
     let identities = ScriptedIdentities::new([Ok([1; 32]), Ok([2; 32]), Ok([3; 32])]);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock(Ok(timestamp()));
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = AnalyzePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let selection = selection();
 
     let result = block_on(coordinator.analyze(analyze_request(&valid.0, &selection, None)));
@@ -380,7 +395,12 @@ fn analyze_package_stops_after_syntax_failure_and_reports_semantic_failure() {
     let identities = ScriptedIdentities::new([Ok([4; 32]), Ok([5; 32])]);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock(Ok(timestamp()));
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = AnalyzePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let selection = selection();
     let result =
         block_on(coordinator.analyze(analyze_request(&syntax_invalid.0, &selection, None)));
@@ -400,7 +420,12 @@ fn analyze_package_stops_after_syntax_failure_and_reports_semantic_failure() {
 
     let semantic_invalid = TempDirectory::new(b"fn main() -> Int { \"wrong\" }");
     let identities = ScriptedIdentities::new([Ok([6; 32]), Ok([7; 32]), Ok([8; 32])]);
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = AnalyzePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let result =
         block_on(coordinator.analyze(analyze_request(&semantic_invalid.0, &selection, None)));
     assert!(result.is_ok());
@@ -433,7 +458,12 @@ fn analyze_package_preserves_event_barrier_and_limit_failure_order() {
     let selection = selection();
 
     let identities = ScriptedIdentities::new([Ok([9; 32]), Ok([10; 32])]);
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = AnalyzePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let result = block_on(coordinator.analyze(analyze_request(&root.0, &selection, None)));
     assert!(matches!(result, Err(AnalyzePackageError::Event(_))));
     assert_eq!(
@@ -453,8 +483,13 @@ fn analyze_package_preserves_event_barrier_and_limit_failure_order() {
         Ok([15; 32]),
     ]);
     let runtime = ImmediateRuntime;
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock)
-        .with_delivery_runtime(&runtime);
+    let coordinator = AnalyzePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    )
+    .with_delivery_runtime(&runtime);
     let plan = required_plan(DeliveryOutcome::Success);
     let result = block_on(coordinator.analyze(analyze_request(&root.0, &selection, Some(&plan))));
     assert!(result.is_ok());
@@ -472,8 +507,13 @@ fn analyze_package_preserves_event_barrier_and_limit_failure_order() {
     );
 
     let identities = ScriptedIdentities::new([Ok([16; 32]), Ok([17; 32]), Ok([18; 32])]);
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock)
-        .with_delivery_runtime(&runtime);
+    let coordinator = AnalyzePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    )
+    .with_delivery_runtime(&runtime);
     let plan = required_plan(DeliveryOutcome::Terminal);
     let result = block_on(coordinator.analyze(analyze_request(&root.0, &selection, Some(&plan))));
     assert_eq!(result, Err(AnalyzePackageError::RequiredEventDelivery));
@@ -487,7 +527,12 @@ fn analyze_package_preserves_event_barrier_and_limit_failure_order() {
     );
 
     let identities = ScriptedIdentities::new([Ok([19; 32]), Ok([20; 32])]);
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = AnalyzePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let limits = FrontendLimits::new(32, 1_048_576, 4_194_304, 262_144, 256, 1, 1, 1, 1, 1, 1, 1)
         .unwrap_or_else(|_| unreachable!("positive limits"));
     let result = block_on(coordinator.analyze(AnalyzePackageRequest {
@@ -598,7 +643,12 @@ fn validate_and_analyze_enforce_constructed_type_depth_per_activity() {
     )
     .unwrap_or_else(|_| unreachable!("positive limits"));
     let admitted_identities = ScriptedIdentities::new([Ok([21; 32]), Ok([22; 32])]);
-    let validate = ValidatePackageCoordinator::new(&allocator, &admitted_identities, &clock);
+    let validate = ValidatePackageCoordinator::new(
+        &allocator,
+        &admitted_identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let admitted = block_on(validate.validate(request_with_limits(
         &root.0,
         &selection,
@@ -612,7 +662,12 @@ fn validate_and_analyze_enforce_constructed_type_depth_per_activity() {
     )
     .unwrap_or_else(|_| unreachable!("positive limits"));
     let validate_identities = ScriptedIdentities::new([Ok([23; 32])]);
-    let validate = ValidatePackageCoordinator::new(&allocator, &validate_identities, &clock);
+    let validate = ValidatePackageCoordinator::new(
+        &allocator,
+        &validate_identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let rejected = block_on(validate.validate(request_with_limits(
         &root.0,
         &selection,
@@ -633,7 +688,12 @@ fn validate_and_analyze_enforce_constructed_type_depth_per_activity() {
     assert_eq!(validate_identities.calls(), vec![IdentityKind::Activity]);
 
     let analyze_identities = ScriptedIdentities::new([Ok([24; 32])]);
-    let analyze = AnalyzePackageCoordinator::new(&allocator, &analyze_identities, &clock);
+    let analyze = AnalyzePackageCoordinator::new(
+        &allocator,
+        &analyze_identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let rejected = block_on(analyze.analyze(AnalyzePackageRequest {
         package_root: &root.0,
         protocol_selection: &selection,
@@ -662,7 +722,12 @@ fn frontend_limit_failure_is_separate_and_retains_diagnostics() {
     let identities = ScriptedIdentities::new([Ok([10; 32])]);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock(Ok(timestamp()));
-    let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = ValidatePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let selection = selection();
     let limits = FrontendLimits::new(
         1, 4_096, 4_096, 128, 1, 4_096, 4_096, 4_096, 4_096, 64, 128, 128,
@@ -693,7 +758,12 @@ fn identity_source_and_clock_failures_preserve_phase_ordering() {
     let identities = ScriptedIdentities::new([Err(failure("identity-failed"))]);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock(Ok(timestamp()));
-    let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = ValidatePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let selection = selection();
     let result = block_on(coordinator.validate(request(&missing, &selection, None)));
     assert!(matches!(
@@ -705,7 +775,12 @@ fn identity_source_and_clock_failures_preserve_phase_ordering() {
     let root = TempDirectory::new(b"fn main() {}");
     let identities = ScriptedIdentities::new([Ok([3; 32]), Ok([4; 32])]);
     let clock = FixedClock(Err(failure("clock-failed")));
-    let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock);
+    let coordinator = ValidatePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let result = block_on(coordinator.validate(request(&root.0, &selection, None)));
     assert!(matches!(result, Err(ValidatePackageError::Event(_))));
     assert_eq!(
@@ -721,8 +796,13 @@ fn required_sink_exhaustion_is_an_operational_failure_after_parse() {
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock(Ok(timestamp()));
     let runtime = ImmediateRuntime;
-    let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &clock)
-        .with_delivery_runtime(&runtime);
+    let coordinator = ValidatePackageCoordinator::new(
+        &allocator,
+        &identities,
+        &clock,
+        gantry_conformance::blocking_work(),
+    )
+    .with_delivery_runtime(&runtime);
     let selection = selection();
     let plan = required_plan(DeliveryOutcome::Terminal);
     let result = block_on(coordinator.validate(request(&root.0, &selection, Some(&plan))));

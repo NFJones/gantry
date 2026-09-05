@@ -16354,26 +16354,38 @@
             },
             {
               "profile": "concurrent-evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state",
+                "crates/gantry-conformance/tests/blocking_work.rs#package_jobs_are_owned_separate_deterministic_and_do_not_starve_timers"
+              ],
               "rationale": null
             },
             {
               "profile": "durable-runtime",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+              ],
               "rationale": null
             },
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state",
+                "crates/gantry-conformance/tests/blocking_work.rs#bounded_blocking_work_is_nonblocking_cancellable_and_retained_to_settlement"
+              ],
               "rationale": null
             },
             {
               "profile": "evaluator",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state",
+                "crates/gantry-conformance/tests/blocking_work.rs#package_jobs_are_owned_separate_deterministic_and_do_not_starve_timers"
+              ],
               "rationale": null
             }
           ]
@@ -24574,8 +24586,11 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state",
+                "crates/gantry-conformance/tests/blocking_work.rs#bounded_blocking_work_is_nonblocking_cancellable_and_retained_to_settlement"
+              ],
               "rationale": null
             }
           ]
@@ -24613,8 +24628,12 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state",
+                "crates/gantry-conformance/tests/blocking_work.rs#package_jobs_are_owned_separate_deterministic_and_do_not_starve_timers",
+                "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries"
+              ],
               "rationale": null
             }
           ]
@@ -25148,8 +25167,12 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#bounded_blocking_work_is_nonblocking_cancellable_and_retained_to_settlement",
+                "crates/gantry-conformance/tests/blocking_work.rs#package_waiter_drop_cancels_queued_work_and_discards_started_results",
+                "crates/gantry-conformance/tests/blocking_work.rs#sqlite_worker_remains_isolated_under_generic_blocking_saturation"
+              ],
               "rationale": null
             }
           ]
@@ -25269,8 +25292,11 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state",
+                "crates/gantry-conformance/tests/blocking_work.rs#bounded_blocking_work_is_nonblocking_cancellable_and_retained_to_settlement"
+              ],
               "rationale": null
             }
           ]
@@ -25470,8 +25496,11 @@
           "profile_reviews": [
             {
               "profile": "embedding",
-              "state": "planned",
-              "evidence": [],
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/blocking_work.rs#bounded_blocking_work_is_nonblocking_cancellable_and_retained_to_settlement",
+                "crates/gantry-conformance/tests/blocking_work.rs#package_jobs_are_owned_separate_deterministic_and_do_not_starve_timers"
+              ],
               "rationale": null
             }
           ]

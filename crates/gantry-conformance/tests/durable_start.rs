@@ -496,7 +496,12 @@ fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
     let preflight = Arc::new(ResolvedPreflight::new("agents-v1", "actions-v1"));
     let interpreter_lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let start = StartExecutionCoordinator::new(
         &package,
         &interpreter_lifecycle,
@@ -789,7 +794,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
 
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let start = StartExecutionCoordinator::new(
         &package,
         &lifecycle,
@@ -916,8 +926,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
 
     let racing_lifecycle = InterpreterLifecycle::new(&configuration);
     let racing_allocator = FreshIdentityAllocator::default();
-    let racing_package =
-        AnalyzePackageCoordinator::new(&racing_allocator, services.as_ref(), &clock);
+    let racing_package = AnalyzePackageCoordinator::new(
+        &racing_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let racing_start = StartExecutionCoordinator::new(
         &racing_package,
         &racing_lifecycle,
@@ -955,8 +969,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
 
     let nonfresh_lifecycle = InterpreterLifecycle::new(&configuration);
     let nonfresh_allocator = FreshIdentityAllocator::default();
-    let nonfresh_package =
-        AnalyzePackageCoordinator::new(&nonfresh_allocator, services.as_ref(), &clock);
+    let nonfresh_package = AnalyzePackageCoordinator::new(
+        &nonfresh_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let nonfresh_start = StartExecutionCoordinator::new(
         &nonfresh_package,
         &nonfresh_lifecycle,
@@ -992,8 +1010,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         .unwrap_or_else(|error| panic!("configuration mutation failed: {error:?}"));
     let incompatible_lifecycle = InterpreterLifecycle::new(&incompatible_configuration);
     let incompatible_allocator = FreshIdentityAllocator::default();
-    let incompatible_package =
-        AnalyzePackageCoordinator::new(&incompatible_allocator, services.as_ref(), &clock);
+    let incompatible_package = AnalyzePackageCoordinator::new(
+        &incompatible_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let incompatible_start = StartExecutionCoordinator::new(
         &incompatible_package,
         &incompatible_lifecycle,
@@ -1029,8 +1051,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
 
     let resume_lifecycle = InterpreterLifecycle::new(&configuration);
     let resume_allocator = FreshIdentityAllocator::default();
-    let resume_package =
-        AnalyzePackageCoordinator::new(&resume_allocator, services.as_ref(), &clock);
+    let resume_package = AnalyzePackageCoordinator::new(
+        &resume_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let resume_start = StartExecutionCoordinator::new(
         &resume_package,
         &resume_lifecycle,
@@ -1076,8 +1102,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let limited_configuration = test_configuration_with_type_depth(Arc::clone(&services), 2);
     let limited_lifecycle = InterpreterLifecycle::new(&limited_configuration);
     let limited_allocator = FreshIdentityAllocator::default();
-    let limited_package =
-        AnalyzePackageCoordinator::new(&limited_allocator, services.as_ref(), &clock);
+    let limited_package = AnalyzePackageCoordinator::new(
+        &limited_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let limited_start = StartExecutionCoordinator::new(
         &limited_package,
         &limited_lifecycle,
@@ -1114,8 +1144,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
 
     let candidate_lifecycle = InterpreterLifecycle::new(&configuration);
     let candidate_allocator = FreshIdentityAllocator::default();
-    let candidate_package =
-        AnalyzePackageCoordinator::new(&candidate_allocator, services.as_ref(), &clock);
+    let candidate_package = AnalyzePackageCoordinator::new(
+        &candidate_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let candidate_start = StartExecutionCoordinator::new(
         &candidate_package,
         &candidate_lifecycle,
@@ -1158,8 +1192,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         .unwrap_or_else(|error| panic!("mutable configuration failed: {error:?}"));
     let revised_lifecycle = InterpreterLifecycle::new(&revised_configuration);
     let revised_allocator = FreshIdentityAllocator::default();
-    let revised_package =
-        AnalyzePackageCoordinator::new(&revised_allocator, services.as_ref(), &clock);
+    let revised_package = AnalyzePackageCoordinator::new(
+        &revised_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let revised_preflight = Arc::new(ResolvedPreflight::new("agents-v2", "actions-v2"));
     let revised_start = StartExecutionCoordinator::new(
         &revised_package,
@@ -1214,8 +1252,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         .unwrap_or_else(|error| panic!("best-effort configuration failed: {error:?}"));
     let best_effort_lifecycle = InterpreterLifecycle::new(&best_effort_configuration);
     let best_effort_allocator = FreshIdentityAllocator::default();
-    let best_effort_package =
-        AnalyzePackageCoordinator::new(&best_effort_allocator, services.as_ref(), &clock);
+    let best_effort_package = AnalyzePackageCoordinator::new(
+        &best_effort_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let best_effort_preflight = Arc::new(ResolvedPreflight::new("agents-v2", "actions-v2"));
     let best_effort_start = StartExecutionCoordinator::new(
         &best_effort_package,
@@ -1264,7 +1306,12 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         .unwrap_or_else(|error| panic!("yield configuration failed: {error:?}"));
     let yield_lifecycle = InterpreterLifecycle::new(&yield_configuration);
     let yield_allocator = FreshIdentityAllocator::default();
-    let yield_package = AnalyzePackageCoordinator::new(&yield_allocator, services.as_ref(), &clock);
+    let yield_package = AnalyzePackageCoordinator::new(
+        &yield_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let yield_preflight = Arc::new(ResolvedPreflight::new("agents-v2", "actions-v2"));
     let yield_start = StartExecutionCoordinator::new(
         &yield_package,
@@ -1333,7 +1380,12 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
 
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let expected_package_activity = block_on(package.analyze(AnalyzePackageRequest {
         package_root: &root.0,
         protocol_selection: &selection,
@@ -1540,8 +1592,12 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
 
     let source_free_lifecycle = InterpreterLifecycle::new(&configuration);
     let source_free_allocator = FreshIdentityAllocator::default();
-    let source_free_package =
-        AnalyzePackageCoordinator::new(&source_free_allocator, services.as_ref(), &clock);
+    let source_free_package = AnalyzePackageCoordinator::new(
+        &source_free_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let source_free_start = StartExecutionCoordinator::new(
         &source_free_package,
         &source_free_lifecycle,
@@ -1626,8 +1682,12 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
 
     let candidate_lifecycle = InterpreterLifecycle::new(&configuration);
     let candidate_allocator = FreshIdentityAllocator::default();
-    let candidate_package =
-        AnalyzePackageCoordinator::new(&candidate_allocator, services.as_ref(), &clock);
+    let candidate_package = AnalyzePackageCoordinator::new(
+        &candidate_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let candidate_start = StartExecutionCoordinator::new(
         &candidate_package,
         &candidate_lifecycle,
@@ -1711,8 +1771,12 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     let commits_before_tamper = storage.commit_calls();
     let tamper_lifecycle = InterpreterLifecycle::new(&configuration);
     let tamper_allocator = FreshIdentityAllocator::default();
-    let tamper_package =
-        AnalyzePackageCoordinator::new(&tamper_allocator, services.as_ref(), &clock);
+    let tamper_package = AnalyzePackageCoordinator::new(
+        &tamper_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let tamper_start = StartExecutionCoordinator::new(
         &tamper_package,
         &tamper_lifecycle,
@@ -1772,8 +1836,12 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     }));
     let malformed_lifecycle = InterpreterLifecycle::new(&configuration);
     let malformed_allocator = FreshIdentityAllocator::default();
-    let malformed_package =
-        AnalyzePackageCoordinator::new(&malformed_allocator, services.as_ref(), &clock);
+    let malformed_package = AnalyzePackageCoordinator::new(
+        &malformed_allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let malformed_start = StartExecutionCoordinator::new(
         &malformed_package,
         &malformed_lifecycle,
@@ -1950,7 +2018,12 @@ fn start_owned_lifecycle(
     let preflight = Arc::new(ResolvedPreflight::new("agents-v1", "actions-v1"));
     let interpreter_lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let start = StartExecutionCoordinator::new(
         &package,
         &interpreter_lifecycle,

@@ -53,7 +53,8 @@ use gantry_runtime::{
     SessionEstablisher, SessionEstablishmentV1, ShutdownCompletionError, ShutdownEventSummaryV1,
     ShutdownReport, SupervisedTaskDomain, SupervisionSignal, TaskContextV1, TaskHook,
     TaskHookError, TaskSessionContextV1, TaskStateError, TranscriptResultKindV1, TranscriptTurnV1,
-    TypedActionArgumentV1, machine_lifecycle_event, shutdown_event,
+    TypedActionArgumentV1, catch_integration, contain_integration_future, machine_lifecycle_event,
+    shutdown_event,
 };
 
 #[cfg(feature = "durable")]
@@ -99,6 +100,7 @@ struct InterpreterInner {
     configuration: InterpreterConfiguration,
     lifecycle: InterpreterLifecycle,
     allocator: FreshIdentityAllocator,
+    blocking_work_poison: AdapterPoison,
     clock: Arc<dyn UtcClock>,
     preflight: Arc<dyn IntegrationPreflight>,
     session_establisher: SessionEstablisher,
@@ -693,6 +695,7 @@ impl Interpreter {
                 configuration,
                 lifecycle,
                 allocator: FreshIdentityAllocator::default(),
+                blocking_work_poison: AdapterPoison::default(),
                 clock,
                 preflight,
                 session_establisher,
@@ -726,7 +729,9 @@ impl Interpreter {
             &self.inner.allocator,
             self.inner.configuration.identity_source(),
             self.inner.clock.as_ref(),
+            self.inner.configuration.blocking_work(),
         )
+        .with_blocking_work_poison(self.inner.blocking_work_poison.clone())
         .with_delivery_runtime(self.inner.event_delivery_runtime.as_ref());
         let coordinator = StartExecutionCoordinator::new(
             &package,
@@ -848,7 +853,9 @@ impl Interpreter {
             &self.inner.allocator,
             self.inner.configuration.identity_source(),
             self.inner.clock.as_ref(),
+            self.inner.configuration.blocking_work(),
         )
+        .with_blocking_work_poison(self.inner.blocking_work_poison.clone())
         .with_delivery_runtime(self.inner.event_delivery_runtime.as_ref());
         let start = StartExecutionCoordinator::new(
             &package,
@@ -1011,7 +1018,9 @@ impl Interpreter {
                 &interpreter.inner.allocator,
                 interpreter.inner.configuration.identity_source(),
                 interpreter.inner.clock.as_ref(),
+                interpreter.inner.configuration.blocking_work(),
             )
+            .with_blocking_work_poison(interpreter.inner.blocking_work_poison.clone())
             .with_delivery_runtime(interpreter.inner.event_delivery_runtime.as_ref());
             let start = StartExecutionCoordinator::new(
                 &package,
@@ -3240,6 +3249,19 @@ impl Interpreter {
                         .is_ok();
                 }
                 coordinator.wait_for_quiescence().await;
+                let blocking_shutdown =
+                    match catch_integration(&shutdown_owner.blocking_work_poison, || {
+                        shutdown_owner.configuration.blocking_work().shutdown()
+                    }) {
+                        Ok(shutdown) => contain_integration_future(
+                            shutdown,
+                            shutdown_owner.blocking_work_poison.clone(),
+                        )
+                        .await
+                        .is_ok_and(|result| result.is_ok()),
+                        Err(_) => false,
+                    };
+                orderly &= blocking_shutdown;
                 let cohort = coordinator.cohort_executions();
                 let final_event = settle_final_shutdown_event(
                     &shutdown_owner,
@@ -4228,7 +4250,9 @@ fn owned_event_delivery_factory(
                 &inner.allocator,
                 inner.configuration.identity_source(),
                 inner.clock.as_ref(),
+                inner.configuration.blocking_work(),
             )
+            .with_blocking_work_poison(inner.blocking_work_poison.clone())
             .with_delivery_runtime(inner.event_delivery_runtime.as_ref());
             package.deliver_completed_events(&events, Some(&plan)).await
         })

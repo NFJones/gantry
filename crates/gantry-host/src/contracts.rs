@@ -29,6 +29,13 @@ pub type HostFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// [`OwnedTaskCompletion`] for observation through [`SubmittedTask`].
 pub type OwnedTaskFuture = Pin<Box<dyn Future<Output = OwnedTaskResult> + Send + 'static>>;
 
+/// One type-erased, owned blocking closure submitted outside async workers.
+///
+/// Gantry packages typed inputs and outputs around this transport boundary.
+/// The closure itself owns every value it captures and may run on any service
+/// thread after submission returns.
+pub type OwnedBlockingJob = Box<dyn FnOnce() + Send + 'static>;
+
 /// Exact protocol version carried by a public embedding envelope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EmbeddingVersion {
@@ -582,6 +589,105 @@ pub trait ExecutorAdapter: Send + Sync {
 
     /// Samples uniformly from an inclusive whole-microsecond range.
     fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError>;
+}
+
+/// Executor-neutral service for bounded blocking and CPU-heavy work.
+///
+/// Submission is synchronous and nonblocking. A successful return transfers
+/// the job to the service, which retains started work to physical completion
+/// even when every caller-facing observer is dropped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BlockingWorkCapacities {
+    maximum_queued_jobs: u64,
+    maximum_active_jobs: u64,
+}
+
+impl BlockingWorkCapacities {
+    /// Records finite positive queue and active-job capacities.
+    #[must_use]
+    pub const fn new(maximum_queued_jobs: u64, maximum_active_jobs: u64) -> Option<Self> {
+        if maximum_queued_jobs == 0 || maximum_active_jobs == 0 {
+            None
+        } else {
+            Some(Self {
+                maximum_queued_jobs,
+                maximum_active_jobs,
+            })
+        }
+    }
+
+    /// Returns the maximum number of jobs waiting to start.
+    #[must_use]
+    pub const fn maximum_queued_jobs(self) -> u64 {
+        self.maximum_queued_jobs
+    }
+
+    /// Returns the maximum number of started jobs retained to completion.
+    #[must_use]
+    pub const fn maximum_active_jobs(self) -> u64 {
+        self.maximum_active_jobs
+    }
+}
+
+/// Executor-neutral service for bounded blocking and CPU-heavy work.
+///
+/// Implementations enforce the exact capacities they report and retain every
+/// accepted started job until physical settlement.
+pub trait BlockingWorkService: Send + Sync {
+    /// Returns the exact operational capacities enforced by this service.
+    fn capacities(&self) -> BlockingWorkCapacities;
+
+    /// Attempts one bounded queue admission without waiting for capacity.
+    fn submit(
+        &self,
+        job: OwnedBlockingJob,
+    ) -> Result<Arc<dyn SubmittedBlockingJob>, BlockingWorkSubmitError>;
+
+    /// Stops accepting work, cancels jobs that have not started, and waits for
+    /// every started non-abortable job to settle.
+    fn shutdown<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>>;
+}
+
+/// Nonblocking blocking-work submission failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BlockingWorkSubmitError {
+    /// The configured bounded queue has no remaining capacity.
+    CapacityExhausted,
+    /// The service failed before it could retain the owned job.
+    Failed(HostError),
+}
+
+/// Immutable physical settlement of one blocking job.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BlockingJobCompletion {
+    /// The owned closure returned normally.
+    Completed,
+    /// Cancellation removed the job from the queue before it started.
+    CancelledBeforeStart,
+    /// The owned closure unwound and the service contained the panic.
+    Panicked,
+    /// The service failed after accepting the job.
+    Failed(HostError),
+}
+
+/// Idempotent outcome of attempting to cancel a queued blocking job.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BlockingJobCancellation {
+    /// This call removed the job before it started.
+    Cancelled,
+    /// The non-abortable job had already started.
+    AlreadyStarted,
+    /// The job already had an immutable terminal result.
+    AlreadySettled,
+}
+
+/// Service-owned observation and queued-cancellation capability.
+pub trait SubmittedBlockingJob: Send + Sync {
+    /// Cancels only while the job remains queued.
+    fn cancel_before_start(&self) -> BlockingJobCancellation;
+
+    /// Observes the same immutable physical completion for every caller.
+    fn completion<'a>(&'a self) -> HostFuture<'a, BlockingJobCompletion>;
 }
 
 /// Rejects task submission for a narrow executor double that does not run tasks.

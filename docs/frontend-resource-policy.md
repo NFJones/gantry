@@ -55,3 +55,46 @@ part of package or durable execution identity. Changing them may change whether
 an activity is admitted, but it cannot change the canonical bytes or meaning of
 a package admitted under both policies. They are logical work limits, not host
 memory, allocator, CPU-time, or process-RSS limits.
+
+## Blocking-work isolation
+
+Public validation, analysis, execution start, and candidate-source resume do
+not perform package filesystem access, parsing, or semantic analysis on an
+async executor worker. `InterpreterConfiguration` owns an executor-neutral
+`BlockingWorkService`; its default implementation uses dedicated threads and
+the configured positive `maximum_queued_blocking_jobs` and
+`maximum_active_blocking_jobs` capacities. These capacities are operational
+policy, are excluded from package and durable execution identity, and do not
+change canonical package results.
+
+An embedder may transfer a uniquely owned service into the configuration. The
+service reports its enforced queue and active capacities, and construction
+rejects a service whose report differs from the interpreter policy. A service
+instance cannot be shared across interpreters because its ownership is moved
+into exactly one configuration and shutdown closes that complete scope.
+
+Package discovery alternates between two owned job kinds because parsing one
+selected source discovers the next reachable file-module requests. Source
+acquisition owns its provider, package-relative paths, read limits, and returned
+bytes. Parsing owns the evolving immutable package snapshot, and semantic
+analysis receives the completed owned syntax phase. No blocking job captures a
+borrowed provider, path, source buffer, or caller stack value.
+
+Queue admission is nonblocking. Exhausting either blocking capacity before a
+package operation is accepted returns
+`implementation-resource-exhaustion`; another blocking-service failure returns
+`internal`, and neither outcome fabricates a package judgment or accepted
+execution. Dropping a package-operation waiter cancels its job only while that
+job remains queued. Once started, a non-abortable job is retained to physical
+completion and its result is discarded if the caller no longer owns it.
+
+Each interpreter owns its blocking service exclusively. Orderly shutdown stops
+new blocking admission, cancels queued jobs, and waits for started jobs before
+the interpreter reports completion. A job panic is contained as an operational
+failure and cannot unwind across the public Gantry API or an async task
+boundary.
+
+The SQLite journal adapter is deliberately separate. It continues to retain
+each `rusqlite` connection on its dedicated serialized
+`gantry-sqlite-worker`; journal commands never use async executor workers or the
+generic package blocking pool.

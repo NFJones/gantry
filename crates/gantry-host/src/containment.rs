@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
-use gantry_host::contracts::HostFuture;
+use crate::contracts::HostFuture;
 
 /// Origin retained when an unwind reaches a Gantry boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -65,19 +65,29 @@ pub fn catch_integration<T>(
             origin: PanicOrigin::Integration,
         });
     }
-    catch_unwind(AssertUnwindSafe(invoke)).map_err(|_| {
-        poison.poison();
-        BoundaryFailure {
-            origin: PanicOrigin::Integration,
+    match catch_unwind(AssertUnwindSafe(invoke)) {
+        Ok(value) => Ok(value),
+        Err(payload) => {
+            forget_panic_payload(payload);
+            poison.poison();
+            Err(BoundaryFailure {
+                origin: PanicOrigin::Integration,
+            })
         }
-    })
+    }
 }
 
 /// Invokes Gantry-owned code under the outer public-operation boundary.
 pub fn catch_gantry<T>(invoke: impl FnOnce() -> T) -> Result<T, BoundaryFailure> {
-    catch_unwind(AssertUnwindSafe(invoke)).map_err(|_| BoundaryFailure {
-        origin: PanicOrigin::GantryInvariant,
-    })
+    match catch_unwind(AssertUnwindSafe(invoke)) {
+        Ok(value) => Ok(value),
+        Err(payload) => {
+            forget_panic_payload(payload);
+            Err(BoundaryFailure {
+                origin: PanicOrigin::GantryInvariant,
+            })
+        }
+    }
 }
 
 /// Destroys one integration-owned value without permitting its destructor to unwind.
@@ -90,12 +100,16 @@ pub fn drop_integration<T>(
     value: &mut Option<T>,
 ) -> Result<(), BoundaryFailure> {
     let value = value.take();
-    catch_unwind(AssertUnwindSafe(|| drop(value))).map_err(|_| {
-        poison.poison();
-        BoundaryFailure {
-            origin: PanicOrigin::Integration,
+    match catch_unwind(AssertUnwindSafe(|| drop(value))) {
+        Ok(()) => Ok(()),
+        Err(payload) => {
+            forget_panic_payload(payload);
+            poison.poison();
+            Err(BoundaryFailure {
+                origin: PanicOrigin::Integration,
+            })
         }
-    })
+    }
 }
 
 /// Contains every poll and destruction of one integration-owned future.
@@ -149,7 +163,13 @@ impl<'a, T> ContainedFuture<'a, T> {
 
     fn drop_future(&mut self) -> Result<(), BoundaryFailure> {
         let future = self.future.take();
-        catch_unwind(AssertUnwindSafe(|| drop(future))).map_err(|_| self.failure())
+        match catch_unwind(AssertUnwindSafe(|| drop(future))) {
+            Ok(()) => Ok(()),
+            Err(payload) => {
+                forget_panic_payload(payload);
+                Err(self.failure())
+            }
+        }
     }
 }
 
@@ -180,7 +200,8 @@ impl<T> Future for ContainedFuture<'_, T> {
                     Err(failure) => Poll::Ready(Err(failure)),
                 }
             }
-            Err(_) => {
+            Err(payload) => {
+                forget_panic_payload(payload);
                 this.complete = true;
                 let failure = this.failure();
                 let _ = this.drop_future();
@@ -196,15 +217,28 @@ impl<T> Drop for ContainedFuture<'_, T> {
     }
 }
 
+fn forget_panic_payload(payload: Box<dyn std::any::Any + Send>) {
+    std::mem::forget(payload);
+}
+
 #[cfg(test)]
 mod tests {
     use std::future::Future;
+    use std::panic::panic_any;
     use std::pin::Pin;
     use std::task::{Context, Poll, Waker};
 
     use super::{
         AdapterPoison, PanicOrigin, catch_gantry, catch_integration, contain_integration_future,
     };
+
+    struct PanickingPayload;
+
+    impl Drop for PanickingPayload {
+        fn drop(&mut self) {
+            panic!("panic payload destructor must remain contained");
+        }
+    }
 
     #[test]
     fn synchronous_boundaries_preserve_origin_and_poison_only_integrations() {
@@ -222,6 +256,14 @@ mod tests {
             gantry,
             Err(failure) if failure.origin == PanicOrigin::GantryInvariant
         ));
+
+        let payload_poison = AdapterPoison::default();
+        let payload = catch_integration(&payload_poison, || panic_any(PanickingPayload));
+        assert!(matches!(
+            payload,
+            Err(failure) if failure.origin == PanicOrigin::Integration
+        ));
+        assert!(payload_poison.is_poisoned());
     }
 
     #[test]

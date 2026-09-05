@@ -13,16 +13,16 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{
     CancellationReasonCategory, IdentityKind, InterpreterState, ShutdownCause,
 };
+use gantry_host::containment::{
+    AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
+    contain_integration_future,
+};
 use gantry_host::contracts::{
     CancellationSignal, DurationMicros, HostError, HostFuture, HostRequest, HostResponse,
     IntegrationPreflight, OwnedTaskCompletion, OwnedTaskPanicOrigin, OwnedTaskResult,
 };
 use gantry_host::event::SinkId;
 
-use crate::containment::{
-    AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
-    contain_integration_future,
-};
 use crate::{
     AbnormalCompletionHandler, AdmissionClass, AdmissionExhaustion, InterpreterConfiguration,
     MachineOutcome, SupervisedTaskDomain, TaskSupervisor,

@@ -1618,6 +1618,21 @@ fn resume_preflight_failure(failure: StartExecutionFailure) -> ResumeRejection {
 }
 
 fn resume_analysis_failure(error: AnalyzePackageError) -> ResumeRejection {
+    let code = match &error {
+        AnalyzePackageError::ActivityIdentity(
+            gantry_host::contracts::IdentityAllocationError::Source(_),
+        ) => "identity-source-failure",
+        AnalyzePackageError::ActivityIdentity(
+            gantry_host::contracts::IdentityAllocationError::CollisionLimit,
+        ) => "identity-collision-limit",
+        AnalyzePackageError::ActivityIdentity(
+            gantry_host::contracts::IdentityAllocationError::RegistryUnavailable,
+        ) => "identity-registry-unavailable",
+        AnalyzePackageError::ActivityIdentity(
+            gantry_host::contracts::IdentityAllocationError::WrongOrigin,
+        ) => "identity-origin-invariant",
+        _ => error.code(),
+    };
     let category = match &error {
         AnalyzePackageError::Package(error) if error.frontend_resource_limit().is_some() => {
             ResumeStartFailureCategory::FrontendResourceLimit
@@ -1631,13 +1646,19 @@ fn resume_analysis_failure(error: AnalyzePackageError) -> ResumeRejection {
         AnalyzePackageError::ActivityIdentity(_) => {
             ResumeStartFailureCategory::IntegrationPreflight
         }
+        AnalyzePackageError::BlockingWork(crate::PackageBlockingWorkError::CapacityExhausted) => {
+            ResumeStartFailureCategory::ImplementationResourceExhaustion
+        }
+        AnalyzePackageError::BlockingWork(crate::PackageBlockingWorkError::Internal) => {
+            ResumeStartFailureCategory::Internal
+        }
         AnalyzePackageError::Analysis(_)
         | AnalyzePackageError::Event(_)
         | AnalyzePackageError::MissingDeliveryRuntime
         | AnalyzePackageError::Delivery(_)
         | AnalyzePackageError::RequiredEventDelivery => ResumeStartFailureCategory::Internal,
     };
-    ResumeRejection::new(category, error.code())
+    ResumeRejection::new(category, code)
 }
 
 fn resume_rejected(

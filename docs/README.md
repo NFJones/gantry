@@ -26,6 +26,9 @@ top-level `README.md`.
 The complete twelve-field package-activity policy, its reset and applicability
 rules, stable failures, and reference CLI values are documented in
 [`frontend-resource-policy.md`](frontend-resource-policy.md).
+That guide also defines bounded blocking-work admission, owned package-source
+and analysis jobs, caller-cancellation behavior, interpreter shutdown
+ownership, and SQLite worker isolation.
 
 The syntax-only boundary for parametric declarations and static traits is
 documented in [`frontend-generics-and-traits.md`](frontend-generics-and-traits.md).

@@ -430,7 +430,7 @@ impl<'a> StartExecutionCoordinator<'a> {
             Ok(identity) => identity,
             Err(error) => {
                 return Err(with_package_activity(
-                    identity_failure(error, "execution-identity-source-failure"),
+                    identity_failure(error, "identity-source-failure"),
                     package_activity,
                 ));
             }
@@ -490,7 +490,7 @@ impl<'a> StartExecutionCoordinator<'a> {
         let id = self
             .allocator
             .allocate(self.configuration.identity_source(), IdentityKind::Session)
-            .map_err(|error| identity_failure(error, "root-session-identity-source-failure"))?;
+            .map_err(|error| identity_failure(error, "identity-source-failure"))?;
         let transcript = CanonicalTranscriptV1::empty();
         Ok(RootSessionState {
             id,
@@ -581,7 +581,7 @@ impl<'a> StartExecutionCoordinator<'a> {
     pub(crate) fn fresh_activity_id(&self) -> Result<ProtocolIdentity, StartExecutionFailure> {
         self.allocator
             .allocate(self.configuration.identity_source(), IdentityKind::Activity)
-            .map_err(|error| identity_failure(error, "resume-activity-identity-source-failure"))
+            .map_err(|error| identity_failure(error, "identity-source-failure"))
     }
 }
 
@@ -743,12 +743,21 @@ fn schema_limits(configuration: &InterpreterConfiguration) -> JsonLimits {
 fn analyze_failure(error: AnalyzePackageError) -> StartExecutionFailure {
     match error {
         AnalyzePackageError::ActivityIdentity(error) => {
-            identity_failure(error, "activity-identity-source-failure")
+            identity_failure(error, "identity-source-failure")
         }
         AnalyzePackageError::Package(error) if error.frontend_resource_limit().is_some() => {
             failure(StartFailureCategory::FrontendResourceLimit, error.code())
         }
         AnalyzePackageError::Package(error) => failure(StartFailureCategory::Syntax, error.code()),
+        AnalyzePackageError::BlockingWork(error) => match error {
+            crate::PackageBlockingWorkError::CapacityExhausted => failure(
+                StartFailureCategory::ImplementationResourceExhaustion,
+                error.code(),
+            ),
+            crate::PackageBlockingWorkError::Internal => {
+                failure(StartFailureCategory::Internal, error.code())
+            }
+        },
         AnalyzePackageError::Analysis(gantry_analysis::AnalysisError::ResourceLimit { .. }) => {
             failure(
                 StartFailureCategory::FrontendResourceLimit,

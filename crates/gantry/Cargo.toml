@@ -12,7 +12,7 @@ documentation = "https://docs.rs/gantry"
 
 [features]
 default = ["evaluator"]
-frontend = ["dep:gantry-frontend", "dep:gantry-observe"]
+frontend = ["dep:gantry-frontend", "dep:gantry-observe", "dep:gantry-runtime"]
 analyzer = ["frontend", "dep:gantry-analysis", "dep:gantry-ir"]
 evaluator = ["analyzer", "dep:gantry-runtime"]
 concurrent = ["evaluator", "gantry-runtime/concurrent"]

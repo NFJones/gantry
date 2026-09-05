@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
+use std::time::{Duration, Instant};
 
 use gantry::host::contracts::{
     CancellationToken, ExecutorAdapter, HookFactory, HostError, HostFuture, HostRequest,
@@ -265,7 +266,15 @@ fn last_external_facade_runs_unclean_cleanup_with_internal_activity_references()
         root_session: None,
         event_delivery: None,
     }));
-    assert!(poll_once(start.as_mut()).is_pending());
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while executor.task_ids().is_empty() {
+        assert!(poll_once(start.as_mut()).is_pending());
+        assert!(
+            Instant::now() < deadline,
+            "start did not transfer pending preflight ownership"
+        );
+        std::thread::yield_now();
+    }
     assert_eq!(executor.task_ids(), [0]);
     drop(start);
 

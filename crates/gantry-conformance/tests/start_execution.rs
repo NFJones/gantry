@@ -217,7 +217,12 @@ fn syntax_and_analysis_rejections_cross_no_preflight_or_execution_boundary() {
         let lifecycle = InterpreterLifecycle::new(&configuration);
         let allocator = FreshIdentityAllocator::default();
         let clock = FixedClock;
-        let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+        let package = AnalyzePackageCoordinator::new(
+            &allocator,
+            services.as_ref(),
+            &clock,
+            gantry_conformance::blocking_work(),
+        );
         let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
         let coordinator = StartExecutionCoordinator::new(
             &package,
@@ -247,7 +252,12 @@ fn constructed_type_depth_rejects_start_before_preflight_or_execution_identity()
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
     let coordinator = StartExecutionCoordinator::new(
         &package,
@@ -288,7 +298,12 @@ fn main(value: Input) -> Input { value }
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let preflight = Arc::new(RecordingPreflight::resolved(Arc::clone(&services)));
     let coordinator = StartExecutionCoordinator::new(
         &package,
@@ -380,7 +395,12 @@ fn preflight_failure_allocates_no_root_or_execution_identity() {
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let preflight = Arc::new(RecordingPreflight::failing(
         Arc::clone(&services),
         "mapping-provider-failure",
@@ -421,7 +441,12 @@ fn malformed_mapping_revision_response_rejects_before_execution_identity() {
     let lifecycle = InterpreterLifecycle::new(&configuration);
     let allocator = FreshIdentityAllocator::default();
     let clock = FixedClock;
-    let package = AnalyzePackageCoordinator::new(&allocator, services.as_ref(), &clock);
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &clock,
+        gantry_conformance::blocking_work(),
+    );
     let preflight = Arc::new(RecordingPreflight::malformed_mapping(Arc::clone(&services)));
     let coordinator = StartExecutionCoordinator::new(
         &package,

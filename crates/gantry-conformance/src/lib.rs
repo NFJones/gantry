@@ -6,11 +6,25 @@
 //! becomes a semantic authority for Gantry.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 
 pub mod concurrent_executor;
 pub mod journal;
 pub mod scripted;
 pub mod services;
+
+/// Returns the shared bounded blocking-work service used by public facade fixtures.
+///
+/// Individual blocking-work conformance cases construct isolated services with
+/// narrow capacities; unrelated facade tests share this generously bounded owner.
+#[must_use]
+pub fn blocking_work() -> &'static gantry::runtime::BoundedBlockingWorkService {
+    static SERVICE: OnceLock<gantry::runtime::BoundedBlockingWorkService> = OnceLock::new();
+    SERVICE.get_or_init(|| {
+        gantry::runtime::BoundedBlockingWorkService::new(65_536, 65_536)
+            .unwrap_or_else(|_| unreachable!("positive conformance blocking capacities"))
+    })
+}
 
 /// Returns whether narrow evidence is valid for the current staged language state.
 ///

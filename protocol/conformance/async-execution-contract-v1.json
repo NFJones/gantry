@@ -62,11 +62,11 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "9eb4b82398fe98cbb59f3856ab66f0c80ab51a6bfae1a7089ab00f499b128d1a"
+      "sha256": "44c283936eb6cdbbe9c6419d872d498fd2cd4a264fb82cd16d297a249ce2ccfd"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "c31e580541f33df081dcbd0b1f90306a95fc47d96ae8d3a65e24e208e296f27a"
+      "sha256": "9e0b5f91cc6fe3fd939bc3a049048b4b9b7961236d7465671084ba6f1d6c6a2b"
     },
     {
       "path": "protocol/schemas/embedding-contracts-v1.schema.json",

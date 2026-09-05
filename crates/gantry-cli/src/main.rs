@@ -114,7 +114,10 @@ fn check_command(
     let allocator = FreshIdentityAllocator::default();
     let identity_source = services::SystemIdentitySource;
     let clock = services::SystemUtcClock;
-    let coordinator = ValidatePackageCoordinator::new(&allocator, &identity_source, &clock);
+    let blocking = gantry::runtime::BoundedBlockingWorkService::new(65_536, 65_536)
+        .unwrap_or_else(|_| unreachable!("fixed CLI blocking capacities are valid"));
+    let coordinator =
+        ValidatePackageCoordinator::new(&allocator, &identity_source, &clock, &blocking);
     let result = block_on(coordinator.validate(ValidatePackageRequest {
         package_root,
         protocol_selection: &selection,
@@ -195,7 +198,10 @@ fn analyze_command_with_format(
     let allocator = FreshIdentityAllocator::default();
     let identity_source = services::SystemIdentitySource;
     let clock = services::SystemUtcClock;
-    let coordinator = AnalyzePackageCoordinator::new(&allocator, &identity_source, &clock);
+    let blocking = gantry::runtime::BoundedBlockingWorkService::new(65_536, 65_536)
+        .unwrap_or_else(|_| unreachable!("fixed CLI blocking capacities are valid"));
+    let coordinator =
+        AnalyzePackageCoordinator::new(&allocator, &identity_source, &clock, &blocking);
     let result = block_on(coordinator.analyze(AnalyzePackageRequest {
         package_root,
         protocol_selection: &selection,

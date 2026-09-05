@@ -6,10 +6,13 @@ use std::sync::Arc;
 use gantry_core::portable::{ConfigurationField, JitterMode, MAXIMUM_DIRECTIVE_INTEGER};
 use gantry_core::source::FrontendLimits;
 use gantry_core::value::ValueLimits;
-use gantry_host::contracts::{DurationMicros, ExecutorAdapter, IdentitySource};
+use gantry_host::containment::{AdapterPoison, catch_integration, drop_integration};
+use gantry_host::contracts::{
+    BlockingWorkCapacities, BlockingWorkService, DurationMicros, ExecutorAdapter, IdentitySource,
+};
 
-use crate::MachineLimits;
 use crate::admission::{AdmissionClass, AsyncAdmission};
+use crate::{BlockingWorkConfigurationError, BoundedBlockingWorkService, MachineLimits};
 
 const MAXIMUM_LENGTH: u64 = 9_007_199_254_740_991;
 
@@ -361,6 +364,7 @@ impl AsyncCapacityLimits {
 /// Complete validated interpreter configuration with executor-neutral integrations.
 pub struct InterpreterConfiguration {
     executor: Arc<dyn ExecutorAdapter>,
+    blocking_work: Box<dyn BlockingWorkService>,
     identity_source: Arc<dyn IdentitySource>,
     required: RequiredConfiguration,
     async_capacities: AsyncCapacityLimits,
@@ -402,8 +406,11 @@ impl InterpreterConfiguration {
         required: RequiredConfiguration,
         async_capacities: AsyncCapacityLimits,
     ) -> Self {
+        let blocking_work = BoundedBlockingWorkService::from_capacities(async_capacities)
+            .unwrap_or_else(|_| unreachable!("validated capacities are positive"));
         Self {
             executor,
+            blocking_work: Box::new(blocking_work),
             identity_source,
             required,
             async_capacities,
@@ -414,6 +421,43 @@ impl InterpreterConfiguration {
             maximum_workflow_call_depth: 1_024,
             maximum_tasks_per_execution: 65_536,
         }
+    }
+
+    /// Replaces the default with one uniquely owned, capacity-matched service.
+    ///
+    /// Ownership transfers into this configuration so interpreter shutdown
+    /// cannot close a service concurrently owned by another interpreter.
+    pub fn with_blocking_work_service(
+        mut self,
+        blocking_work: Box<dyn BlockingWorkService>,
+    ) -> Result<Self, BlockingWorkConfigurationError> {
+        let expected = BlockingWorkCapacities::new(
+            self.async_capacities.maximum_queued_blocking_jobs(),
+            self.async_capacities.maximum_active_blocking_jobs(),
+        )
+        .unwrap_or_else(|| unreachable!("validated capacities are positive"));
+        let poison = AdapterPoison::default();
+        let mut blocking_work = Some(blocking_work);
+        let actual = match catch_integration(&poison, || {
+            blocking_work
+                .as_ref()
+                .unwrap_or_else(|| unreachable!("service exists during validation"))
+                .capacities()
+        }) {
+            Ok(actual) => actual,
+            Err(_) => {
+                let _ = drop_integration(&poison, &mut blocking_work);
+                return Err(BlockingWorkConfigurationError::IntegrationFailure);
+            }
+        };
+        if actual != expected {
+            let _ = drop_integration(&poison, &mut blocking_work);
+            return Err(BlockingWorkConfigurationError::CapacityMismatch { expected, actual });
+        }
+        self.blocking_work = blocking_work
+            .take()
+            .unwrap_or_else(|| unreachable!("validated service remains owned"));
+        Ok(self)
     }
 
     /// Replaces the structured-output and event-delivery retry defaults.
@@ -493,6 +537,12 @@ impl InterpreterConfiguration {
     #[must_use]
     pub fn executor_arc(&self) -> Arc<dyn ExecutorAdapter> {
         Arc::clone(&self.executor)
+    }
+
+    /// Returns the configured executor-neutral blocking-work service.
+    #[must_use]
+    pub fn blocking_work(&self) -> &(dyn BlockingWorkService + 'static) {
+        self.blocking_work.as_ref()
     }
 
     /// Returns the configured fresh-identity source.

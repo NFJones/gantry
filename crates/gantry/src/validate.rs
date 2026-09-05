@@ -5,6 +5,7 @@
 //! and optional delivery settlement.
 
 use std::path::Path;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use gantry_core::event::{EventDraft, EventEnvelope};
 #[cfg(feature = "analyzer")]
@@ -20,10 +21,15 @@ use gantry_core::source::StructuredDiagnostic;
 #[cfg(feature = "analyzer")]
 use gantry_frontend::PackageSyntaxStatus;
 use gantry_frontend::{
-    CompletedSyntaxPhase, PackageSyntaxError, validate_package_syntax_with_limits,
+    CompletedSyntaxPhase, PackageSyntaxError, PackageSyntaxStep, PackageSyntaxWork,
+    RootDirectorySourceProvider, SourceProvider,
+};
+use gantry_host::containment::{
+    AdapterPoison, catch_integration, contain_integration_future, drop_integration,
 };
 use gantry_host::contracts::{
-    FreshIdentityAllocator, IdentityAllocationError, IdentitySource, UtcClock,
+    BlockingJobCompletion, BlockingWorkService, BlockingWorkSubmitError, FreshIdentityAllocator,
+    IdentityAllocationError, IdentitySource, SubmittedBlockingJob, UtcClock,
 };
 use gantry_host::event::EventDeliveryRuntime;
 use gantry_observe::{
@@ -75,6 +81,8 @@ pub enum ValidatePackageError {
     ActivityIdentity(IdentityAllocationError),
     /// Source discovery or syntax processing failed operationally.
     Package(PackageSyntaxError),
+    /// Bounded blocking admission or execution failed operationally.
+    BlockingWork(PackageBlockingWorkError),
     /// Event identity, clock, or envelope completion failed after parsing.
     Event(EventCompletionError),
     /// An event plan was supplied without a delivery runtime.
@@ -92,6 +100,7 @@ impl ValidatePackageError {
         match self {
             Self::ActivityIdentity(_) => "identity-generation-failure",
             Self::Package(error) => error.code(),
+            Self::BlockingWork(error) => error.code(),
             Self::Event(EventCompletionError::Identity(_)) => "identity-generation-failure",
             Self::Event(EventCompletionError::Clock(_)) => "executor-failure",
             Self::Event(_) => "internal",
@@ -109,6 +118,34 @@ impl std::fmt::Display for ValidatePackageError {
 }
 
 impl std::error::Error for ValidatePackageError {}
+
+/// Stable package-operation failure at the blocking-work boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackageBlockingWorkError {
+    /// The configured bounded queue refused admission without waiting.
+    CapacityExhausted,
+    /// Submission, execution, completion, or result transfer failed.
+    Internal,
+}
+
+impl PackageBlockingWorkError {
+    /// Returns the exact pre-execution operational category.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::CapacityExhausted => "implementation-resource-exhaustion",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+impl std::fmt::Display for PackageBlockingWorkError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.code())
+    }
+}
+
+impl std::error::Error for PackageBlockingWorkError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum PackageEventError {
@@ -305,6 +342,8 @@ pub enum AnalyzePackageError {
     ActivityIdentity(IdentityAllocationError),
     /// Source discovery or syntax processing failed operationally.
     Package(PackageSyntaxError),
+    /// Bounded blocking admission or execution failed operationally.
+    BlockingWork(PackageBlockingWorkError),
     /// Semantic analysis failed before producing a source judgment.
     Analysis(AnalysisError),
     /// Event identity, clock, or envelope completion failed.
@@ -325,6 +364,7 @@ impl AnalyzePackageError {
         match self {
             Self::ActivityIdentity(_) => "identity-generation-failure",
             Self::Package(error) => error.code(),
+            Self::BlockingWork(error) => error.code(),
             Self::Analysis(AnalysisError::ResourceLimit { .. }) => "frontend-resource-limit",
             Self::Analysis(AnalysisError::SyntaxInvalid | AnalysisError::Invariant) => "internal",
             Self::Event(EventCompletionError::Identity(_)) => "identity-generation-failure",
@@ -364,23 +404,35 @@ pub struct ValidatePackageCoordinator<'a> {
     allocator: &'a FreshIdentityAllocator,
     identity_source: &'a dyn IdentitySource,
     clock: &'a dyn UtcClock,
+    blocking_work: &'a dyn BlockingWorkService,
+    blocking_work_poison: AdapterPoison,
     delivery_runtime: Option<&'a dyn EventDeliveryRuntime>,
 }
 
 impl<'a> ValidatePackageCoordinator<'a> {
     /// Constructs a coordinator without configured event delivery.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         allocator: &'a FreshIdentityAllocator,
         identity_source: &'a dyn IdentitySource,
         clock: &'a dyn UtcClock,
+        blocking_work: &'a dyn BlockingWorkService,
     ) -> Self {
         Self {
             allocator,
             identity_source,
             clock,
+            blocking_work,
+            blocking_work_poison: AdapterPoison::default(),
             delivery_runtime: None,
         }
+    }
+
+    /// Shares the adapter poison state across coordinators for one interpreter.
+    #[must_use]
+    pub fn with_blocking_work_poison(mut self, poison: AdapterPoison) -> Self {
+        self.blocking_work_poison = poison;
+        self
     }
 
     /// Supplies the executor-neutral runtime used only when a sink plan exists.
@@ -404,9 +456,13 @@ impl<'a> ValidatePackageCoordinator<'a> {
             .allocator
             .allocate(self.identity_source, IdentityKind::Activity)
             .map_err(ValidatePackageError::ActivityIdentity)?;
-        let phase =
-            validate_package_syntax_with_limits(request.package_root, request.frontend_limits)
-                .map_err(ValidatePackageError::Package)?;
+        let phase = self
+            .run_syntax(request.package_root, request.frontend_limits)
+            .await
+            .map_err(|error| match error {
+                PackageSyntaxRunError::Package(error) => ValidatePackageError::Package(error),
+                PackageSyntaxRunError::Blocking(error) => ValidatePackageError::BlockingWork(error),
+            })?;
         let draft = phase.event_draft().clone();
         let (event, delivery) = self
             .complete_and_deliver(activity_id, draft, request.event_delivery)
@@ -435,9 +491,13 @@ impl<'a> ValidatePackageCoordinator<'a> {
             .allocator
             .allocate(self.identity_source, IdentityKind::Activity)
             .map_err(AnalyzePackageError::ActivityIdentity)?;
-        let syntax =
-            validate_package_syntax_with_limits(request.package_root, request.frontend_limits)
-                .map_err(AnalyzePackageError::Package)?;
+        let syntax = self
+            .run_syntax(request.package_root, request.frontend_limits)
+            .await
+            .map_err(|error| match error {
+                PackageSyntaxRunError::Package(error) => AnalyzePackageError::Package(error),
+                PackageSyntaxRunError::Blocking(error) => AnalyzePackageError::BlockingWork(error),
+            })?;
 
         let (parse_event, parse_delivery) = self
             .complete_and_deliver(
@@ -461,8 +521,15 @@ impl<'a> ValidatePackageCoordinator<'a> {
             });
         }
 
-        let analysis = analyze_package_types_with_limits(&syntax, request.frontend_limits)
-            .map_err(AnalyzePackageError::Analysis)?;
+        let limits = request.frontend_limits;
+        let (syntax, analysis) =
+            run_blocking_job(self.blocking_work, &self.blocking_work_poison, move || {
+                let analysis = analyze_package_types_with_limits(&syntax, limits);
+                (syntax, analysis)
+            })
+            .await
+            .map_err(AnalyzePackageError::BlockingWork)?;
+        let analysis = analysis.map_err(AnalyzePackageError::Analysis)?;
         let status = if analysis.status() == AnalysisStatus::Valid {
             AnalyzePackageStatus::SourceValid
         } else {
@@ -493,6 +560,57 @@ impl<'a> ValidatePackageCoordinator<'a> {
             events,
             deliveries,
         })
+    }
+
+    async fn run_syntax(
+        &self,
+        package_root: &Path,
+        limits: FrontendLimits,
+    ) -> Result<CompletedSyntaxPhase, PackageSyntaxRunError> {
+        let root = package_root.to_path_buf();
+        let provider =
+            run_blocking_job(self.blocking_work, &self.blocking_work_poison, move || {
+                RootDirectorySourceProvider::open(&root)
+            })
+            .await
+            .map_err(PackageSyntaxRunError::Blocking)?
+            .map_err(|error| PackageSyntaxRunError::Package(PackageSyntaxError::Source(error)))?;
+        let provider: Arc<dyn SourceProvider> = Arc::new(provider);
+        let mut step = PackageSyntaxWork::begin(
+            limits.source_limits(),
+            limits.maximum_constructed_type_depth(),
+        )
+        .map_err(PackageSyntaxRunError::Package)?;
+        loop {
+            step = match step {
+                PackageSyntaxStep::Acquire(work, request) => {
+                    let owned_request = request.clone();
+                    let provider = Arc::clone(&provider);
+                    let acquisition = run_blocking_job(
+                        self.blocking_work,
+                        &self.blocking_work_poison,
+                        move || owned_request.acquire(provider.as_ref()),
+                    )
+                    .await
+                    .map_err(PackageSyntaxRunError::Blocking)?;
+                    run_blocking_job(self.blocking_work, &self.blocking_work_poison, move || {
+                        work.accept_acquisition(request, acquisition)
+                    })
+                    .await
+                    .map_err(PackageSyntaxRunError::Blocking)?
+                    .map_err(PackageSyntaxRunError::Package)?
+                }
+                PackageSyntaxStep::Parse(work) => {
+                    run_blocking_job(self.blocking_work, &self.blocking_work_poison, move || {
+                        work.parse_next()
+                    })
+                    .await
+                    .map_err(PackageSyntaxRunError::Blocking)?
+                    .map_err(PackageSyntaxRunError::Package)?
+                }
+                PackageSyntaxStep::Complete(phase) => return Ok(phase),
+            };
+        }
     }
 
     #[cfg(feature = "evaluator")]
@@ -555,6 +673,91 @@ impl<'a> ValidatePackageCoordinator<'a> {
         }
         Ok(result)
     }
+}
+
+enum PackageSyntaxRunError {
+    Package(PackageSyntaxError),
+    Blocking(PackageBlockingWorkError),
+}
+
+struct CancelQueuedOnDrop {
+    handle: Option<Arc<dyn SubmittedBlockingJob>>,
+    poison: AdapterPoison,
+    settled: bool,
+}
+
+impl CancelQueuedOnDrop {
+    fn finish(mut self) -> Result<(), PackageBlockingWorkError> {
+        self.settled = true;
+        drop_integration(&self.poison, &mut self.handle)
+            .map_err(|_| PackageBlockingWorkError::Internal)
+    }
+}
+
+impl Drop for CancelQueuedOnDrop {
+    fn drop(&mut self) {
+        if !self.settled {
+            let _ = self
+                .handle
+                .as_ref()
+                .map(|handle| catch_integration(&self.poison, || handle.cancel_before_start()));
+        }
+        let _ = drop_integration(&self.poison, &mut self.handle);
+    }
+}
+
+async fn run_blocking_job<T, F>(
+    service: &dyn BlockingWorkService,
+    poison: &AdapterPoison,
+    work: F,
+) -> Result<T, PackageBlockingWorkError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let result = Arc::new(Mutex::new(None));
+    let job_result = Arc::clone(&result);
+    let job = Box::new(move || {
+        *lock_package_result(&job_result) = Some(work());
+    });
+    let handle = catch_integration(poison, || service.submit(job))
+        .map_err(|_| PackageBlockingWorkError::Internal)?
+        .map_err(|error| match error {
+            BlockingWorkSubmitError::CapacityExhausted => {
+                PackageBlockingWorkError::CapacityExhausted
+            }
+            BlockingWorkSubmitError::Failed(_) => PackageBlockingWorkError::Internal,
+        })?;
+    let handle_poison = AdapterPoison::default();
+    let cancellation = CancelQueuedOnDrop {
+        handle: Some(handle),
+        poison: handle_poison.clone(),
+        settled: false,
+    };
+    let observer = cancellation
+        .handle
+        .as_ref()
+        .ok_or(PackageBlockingWorkError::Internal)?;
+    let completion = catch_integration(&handle_poison, || observer.completion())
+        .map_err(|_| PackageBlockingWorkError::Internal)?;
+    let completion = contain_integration_future(completion, handle_poison)
+        .await
+        .map_err(|_| PackageBlockingWorkError::Internal)?;
+    cancellation.finish()?;
+    match completion {
+        BlockingJobCompletion::Completed => lock_package_result(&result)
+            .take()
+            .ok_or(PackageBlockingWorkError::Internal),
+        BlockingJobCompletion::CancelledBeforeStart
+        | BlockingJobCompletion::Panicked
+        | BlockingJobCompletion::Failed(_) => Err(PackageBlockingWorkError::Internal),
+    }
+}
+
+fn lock_package_result<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[cfg(test)]
@@ -629,7 +832,10 @@ mod tests {
         let identities =
             ScriptedIdentitySource(Mutex::new(VecDeque::from([Ok([1; 32]), Ok([2; 32])])));
         let allocator = FreshIdentityAllocator::default();
-        let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &FixedClock);
+        let blocking = gantry_runtime::BoundedBlockingWorkService::new(8, 8)
+            .unwrap_or_else(|_| unreachable!("positive test capacities"));
+        let coordinator =
+            ValidatePackageCoordinator::new(&allocator, &identities, &FixedClock, &blocking);
         let selection = selection();
         let result = block_on(coordinator.validate(request(&root.0, &selection)));
         assert!(result.is_ok());
@@ -649,7 +855,10 @@ mod tests {
             "identity-source-failure",
         ))])));
         let allocator = FreshIdentityAllocator::default();
-        let coordinator = ValidatePackageCoordinator::new(&allocator, &identities, &FixedClock);
+        let blocking = gantry_runtime::BoundedBlockingWorkService::new(8, 8)
+            .unwrap_or_else(|_| unreachable!("positive test capacities"));
+        let coordinator =
+            ValidatePackageCoordinator::new(&allocator, &identities, &FixedClock, &blocking);
         let selection = selection();
         let result = block_on(coordinator.validate(request(&missing, &selection)));
         assert!(matches!(

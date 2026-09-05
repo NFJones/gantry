@@ -30,7 +30,7 @@
   "artifacts": [
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "d846562cc023aac55cc3a921da9581fc8d9253ae659f0af9d8279521cba6ef42"
+      "sha256": "49dd4c0100c63f88c70114b6aed33130d301c4f96b1ae0684cf29701e65ccbd3"
     },
     {
       "path": "protocol/conformance/automatic-durable-root-v1.json",

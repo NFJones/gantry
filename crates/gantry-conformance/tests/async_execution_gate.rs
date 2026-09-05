@@ -40,7 +40,7 @@ const ASSIGNMENT_SHA256: &str = "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49
 const ARTIFACTS: [(&str, &str); 15] = [
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "d846562cc023aac55cc3a921da9581fc8d9253ae659f0af9d8279521cba6ef42",
+        "49dd4c0100c63f88c70114b6aed33130d301c4f96b1ae0684cf29701e65ccbd3",
     ),
     (
         "protocol/conformance/automatic-durable-root-v1.json",

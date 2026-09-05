@@ -1,0 +1,64 @@
+{
+  "format": "gantry.blocking-work-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-BLOCK-001",
+  "requirements": [
+    {
+      "requirement": "GNT-7.17",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "embedding", "evaluator"]
+    },
+    {
+      "requirement": "GNT-15.0",
+      "clause": "clause-005",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.1",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.7",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    },
+    {
+      "requirement": "GNT-15.9",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "blocking-failure-mapping",
+      "evidence": "crates/gantry-conformance/tests/blocking_work.rs#blocking_failures_map_without_fabricating_package_or_execution_state"
+    },
+    {
+      "id": "bounded-admission-cancellation-retention",
+      "evidence": "crates/gantry-conformance/tests/blocking_work.rs#bounded_blocking_work_is_nonblocking_cancellable_and_retained_to_settlement"
+    },
+    {
+      "id": "owned-package-isolation",
+      "evidence": "crates/gantry-conformance/tests/blocking_work.rs#package_jobs_are_owned_separate_deterministic_and_do_not_starve_timers"
+    },
+    {
+      "id": "sqlite-worker-isolation",
+      "evidence": "crates/gantry-conformance/tests/blocking_work.rs#sqlite_worker_remains_isolated_under_generic_blocking_saturation"
+    },
+    {
+      "id": "waiter-cancellation-result-discard",
+      "evidence": "crates/gantry-conformance/tests/blocking_work.rs#package_waiter_drop_cancels_queued_work_and_discards_started_results"
+    }
+  ],
+  "exclusions": [
+    "Asynchronous network source providers remain outside the v1 package provider boundary.",
+    "SQLite retains its dedicated serialized connection-affine worker; this issue does not redesign storage.",
+    "Native source-task scheduling, cancellation graphs, and durable graph recovery remain owned by their downstream async-execution issues."
+  ]
+}

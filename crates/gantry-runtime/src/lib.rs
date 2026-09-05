@@ -9,8 +9,8 @@
 //! fallback.
 
 mod admission;
+mod blocking;
 mod configuration;
-mod containment;
 mod coordinator;
 #[cfg(feature = "durable")]
 mod durable;
@@ -33,13 +33,10 @@ pub use admission::{
     AdmissionPermit, AdmissionRequest, AdmissionReservation, AdmissionResourceClass,
     AdmissionSnapshot, AsyncAdmission,
 };
+pub use blocking::{BlockingWorkConfigurationError, BoundedBlockingWorkService};
 pub use configuration::{
     AsyncCapacityLimits, ConfigurationError, ConfigurationErrorKind, InterpreterConfiguration,
     RequiredConfiguration, RetryDefaults,
-};
-pub use containment::{
-    AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
-    contain_gantry_future, contain_integration_future, drop_integration,
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use coordinator::DurableGraphTransaction;
@@ -73,6 +70,10 @@ pub use event::{
 pub use event::{
     concurrent_detach_event, concurrent_detached_failure_event, concurrent_join_event,
     concurrent_spawn_event, concurrent_task_cancellation_event, concurrent_terminal_event,
+};
+pub use gantry_host::containment::{
+    AdapterPoison, BoundaryFailure, PanicOrigin, catch_gantry, catch_integration,
+    contain_gantry_future, contain_integration_future, drop_integration,
 };
 pub use gantry_ir::Comparison;
 pub use gantry_ir::{

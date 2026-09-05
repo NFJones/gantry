@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
+use std::time::{Duration, Instant};
 
 use gantry::event::EventEnvelope;
 use gantry::host::contracts::{ExecutorAdapter, HostError, HostFuture, IdentitySource};
@@ -291,10 +292,18 @@ fn dropped_start_waiter_does_not_abandon_required_default_plan_delivery() {
     let selection = selection();
     let mut start = Box::pin(interpreter.start_execution(request(&root, &selection, None)));
 
-    assert!(
-        poll_once(start.as_mut()).is_pending(),
-        "required default-plan delivery did not remain an admitted start activity"
-    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while calls.load(Ordering::Acquire) == 0 {
+        assert!(
+            poll_once(start.as_mut()).is_pending(),
+            "required default-plan delivery did not remain an admitted start activity"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "start did not reach required default-plan delivery"
+        );
+        std::thread::yield_now();
+    }
     assert_eq!(calls.load(Ordering::Acquire), 1);
     drop(start);
     assert!(

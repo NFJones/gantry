@@ -52,7 +52,7 @@ pub use gantry_host as host;
 pub use gantry_ir as ir;
 #[cfg(feature = "frontend")]
 pub use gantry_observe as observe;
-#[cfg(feature = "evaluator")]
+#[cfg(feature = "frontend")]
 pub use gantry_runtime as runtime;
 #[cfg(all(feature = "durable", feature = "test-support"))]
 #[doc(hidden)]
@@ -78,7 +78,7 @@ pub use start::{
 #[cfg(feature = "analyzer")]
 pub use validate::{
     AnalyzePackageArtifacts, AnalyzePackageError, AnalyzePackageGenericFacts,
-    AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
+    AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus, PackageBlockingWorkError,
 };
 #[cfg(feature = "frontend")]
 pub use validate::{
