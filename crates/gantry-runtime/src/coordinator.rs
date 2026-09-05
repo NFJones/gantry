@@ -30,6 +30,9 @@ use crate::{
 
 static NEXT_COORDINATOR_WAITER_ID: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(all(test, feature = "durable"))]
+mod root_tests;
+
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 mod transaction;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -58,6 +61,9 @@ struct CoordinatorState {
     shutdown_waiters: Vec<RegisteredWaiter>,
     /// Reserved by a durable transaction; retained if its commit is indeterminate.
     durable_publication_reserved: bool,
+    /// Complete committed root cut retained independently of its running driver.
+    #[cfg(feature = "durable")]
+    durable_root: Option<crate::RecoveredDurableStateV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -145,6 +151,8 @@ impl ExecutionCoordinator {
                     terminal_waiters: Vec::new(),
                     shutdown_waiters: Vec::new(),
                     durable_publication_reserved: false,
+                    #[cfg(feature = "durable")]
+                    durable_root: None,
                 }),
             }),
         })
@@ -154,6 +162,93 @@ impl ExecutionCoordinator {
     #[must_use]
     pub fn snapshot(&self) -> ExecutionCoordinatorSnapshot {
         snapshot_from(&lock(&self.inner.state))
+    }
+
+    /// Installs a journal-committed sequential root cut after causal event evidence.
+    ///
+    /// The durable execution owner invokes this only after committing the cut
+    /// and its event obligations. Validation and task transitions are private
+    /// until installation; notifications run after unlocking. Child graphs use
+    /// the graph transaction instead of this sequential projection.
+    #[cfg(feature = "durable")]
+    pub fn publish_committed_root(
+        &self,
+        recovered: &crate::RecoveredDurableStateV1,
+    ) -> Result<(), TaskStateError> {
+        use crate::DurableCommitCutV1;
+        let projection = recovered.clone();
+        let sessions = recovered
+            .sessions()
+            .cloned()
+            .ok_or(TaskStateError::SessionExecutionMismatch)?;
+        let budget =
+            ExecutionBudget::recover_from_checkpoint(recovered.machine().budget_checkpoint())
+                .map_err(|_| TaskStateError::InvalidTaskMachine)?;
+        let waiters = {
+            let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
+            let root = state.tasks.root_task_id();
+            if state.tasks.task_record_count() != 1
+                || recovered.machine().execution_id() != state.tasks.execution_id()
+                || recovered.machine().task_id() != root
+                || state
+                    .durable_root
+                    .as_ref()
+                    .is_some_and(|prior| prior.latest_sequence() >= recovered.latest_sequence())
+            {
+                return Err(TaskStateError::InvalidTaskMachine);
+            }
+            let mut tasks = state.tasks.clone();
+            let outcome = || {
+                recovered
+                    .machine()
+                    .outcome()
+                    .cloned()
+                    .ok_or(TaskStateError::InvalidTransition)
+            };
+            match recovered.latest_cut() {
+                DurableCommitCutV1::TaskSettlement => {
+                    if tasks.task_record(root).is_some_and(|record| {
+                        matches!(record.status(), ConcurrentTaskStatusV1::Submitting)
+                    }) {
+                        tasks.fail_root_submission(outcome()?, true)?;
+                    } else {
+                        tasks.settle(root, outcome()?)?;
+                    }
+                }
+                DurableCommitCutV1::ForegroundCompletion => tasks.complete_foreground(outcome()?)?,
+                DurableCommitCutV1::TerminalCompletion => {
+                    tasks.complete_terminal()?;
+                }
+                _ => return Err(TaskStateError::InvalidTransition),
+            }
+            state.tasks = tasks;
+            state.sessions = sessions;
+            state.execution_budget = Some(budget);
+            state.durable_root = Some(projection);
+            state.publication = state.publication.wrapping_add(1);
+            let mut waiters = Vec::new();
+            if task_is_settled(&state.tasks, root) {
+                waiters.extend(state.task_waiters.remove(&root).unwrap_or_default());
+            }
+            if state.tasks.foreground_outcome().is_some() {
+                waiters.append(&mut state.foreground_waiters);
+            }
+            if state.tasks.terminal_outcome().is_some() {
+                waiters.append(&mut state.terminal_waiters);
+            }
+            waiters.extend(take_shutdown_waiters_if_quiescent(&mut state));
+            waiters
+        };
+        wake_all(waiters);
+        Ok(())
+    }
+
+    /// Returns an isolated copy of the last published durable root cut.
+    #[cfg(feature = "durable")]
+    #[must_use]
+    pub fn committed_root(&self) -> Option<crate::RecoveredDurableStateV1> {
+        lock(&self.inner.state).durable_root.clone()
     }
 
     /// Captures a quiescent graph while task and session state cannot change.

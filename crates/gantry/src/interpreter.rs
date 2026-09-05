@@ -1337,7 +1337,7 @@ impl Interpreter {
                         owner.fail_driver(last_committed, failure);
                         return;
                     }
-                    if coordinator.fail_root_submission(outcome).is_err() {
+                    if coordinator.publish_committed_root(&recovered).is_err() {
                         owner.fail_driver(last_committed, DurableRunFailure::Internal);
                         return;
                     }
@@ -1376,12 +1376,9 @@ impl Interpreter {
                         owner.fail_driver(last_committed, failure);
                         return;
                     }
-                    match coordinator.complete_foreground() {
-                        Ok(coordinated) if coordinated == outcome => {}
-                        _ => {
-                            owner.fail_driver(last_committed, DurableRunFailure::Internal);
-                            return;
-                        }
+                    if coordinator.publish_committed_root(&recovered).is_err() {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
                     }
                     if let Err(failure) = owner.publish_driver_progress(&recovered) {
                         owner.fail_driver(last_committed, failure);
@@ -1422,7 +1419,7 @@ impl Interpreter {
                         owner.fail_driver(last_committed, failure);
                         return;
                     }
-                    if coordinator.complete_terminal().is_err() {
+                    if coordinator.publish_committed_root(&recovered).is_err() {
                         owner.fail_driver(last_committed, DurableRunFailure::Internal);
                         return;
                     }
@@ -1548,7 +1545,7 @@ impl Interpreter {
                         owner.fail_driver(last_committed, failure);
                         return;
                     }
-                    if coordinator.settle_task(task_id, outcome).is_err() {
+                    if coordinator.publish_committed_root(&recovered).is_err() {
                         owner.fail_driver(last_committed, DurableRunFailure::Internal);
                         return;
                     }
@@ -1587,12 +1584,9 @@ impl Interpreter {
                         owner.fail_driver(last_committed, failure);
                         return;
                     }
-                    match coordinator.complete_foreground() {
-                        Ok(coordinated) if coordinated == outcome => {}
-                        _ => {
-                            owner.fail_driver(last_committed, DurableRunFailure::Internal);
-                            return;
-                        }
+                    if coordinator.publish_committed_root(&recovered).is_err() {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
                     }
                     if let Err(failure) = owner.publish_driver_progress(&recovered) {
                         owner.fail_driver(last_committed, failure);
@@ -1633,7 +1627,7 @@ impl Interpreter {
                         owner.fail_driver(last_committed, failure);
                         return;
                     }
-                    if coordinator.complete_terminal().is_err() {
+                    if coordinator.publish_committed_root(&recovered).is_err() {
                         owner.fail_driver(last_committed, DurableRunFailure::Internal);
                         return;
                     }
