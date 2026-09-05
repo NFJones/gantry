@@ -9,6 +9,8 @@ use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind, RuntimeEr
 use gantry_core::value::{
     LogicalValue, LogicalValueView, OperationErrorValue, OperationErrorView, ValueLimits,
 };
+#[cfg(feature = "concurrent")]
+use gantry_ir::{CanonicalCallableIdentity, ExecutableTaskHandle, TaskBodyIdentity};
 use gantry_ir::{
     CanonicalPath, InstructionKind, MachineProgram, StructuralPosition, TypeDescriptor,
 };
@@ -19,9 +21,17 @@ use super::{
     PendingOperation, RuntimeCode, Scope, SessionCreationModeV1, SessionScopeOccurrence,
     WorkflowFrame, validate_execution_budget_snapshot, validate_machine_checkpoint,
 };
+#[cfg(feature = "concurrent")]
+use super::{
+    HandleScope, MachineSpawnSuspension, MachineTaskCapture, MachineTaskHandle, PendingTaskControl,
+};
+#[cfg(feature = "concurrent")]
+use crate::task::{DynamicTaskHandleIdentity, TaskCaptureV1};
 
 const MACHINE_MAGIC: &[u8; 8] = b"GNTMCP03";
 const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
+#[cfg(feature = "concurrent")]
+const TASK_CONTROL_EXTENSION_MAGIC: &[u8; 8] = b"GNTMTC01";
 
 pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
     let mut writer = Writer::default();
@@ -109,6 +119,16 @@ pub(super) fn encode_machine_checkpoint(checkpoint: &MachineCheckpointV3) -> Vec
         checkpoint.outcome.as_ref(),
         checkpoint.limits.value_limits,
     );
+    #[cfg(feature = "concurrent")]
+    if checkpoint.task_body.is_some()
+        || checkpoint.pending_task_control.is_some()
+        || checkpoint
+            .frames
+            .iter()
+            .any(|frame| frame.handle_scopes.iter().any(|scope| !scope.is_empty()))
+    {
+        write_task_control_extension(&mut writer, checkpoint);
+    }
     writer.finish()
 }
 
@@ -149,7 +169,7 @@ pub(super) fn decode_machine_checkpoint(
     let remaining_loop_iterations = reader.u64()?;
     let consecutive_transitions = reader.u64()?;
     let pending_session_scope = read_pending_session(&mut reader)?;
-    let pending_operation = read_pending_operation(&mut reader, program, limits.value_limits)?;
+    let mut pending_operation = read_pending_operation(&mut reader, program, limits.value_limits)?;
     let label_count = reader.count()?;
     let mut pending_labels = VecDeque::new();
     for _ in 0..label_count {
@@ -158,6 +178,20 @@ pub(super) fn decode_machine_checkpoint(
     let cancellation = reader.optional_string()?.map(Arc::from);
     let status = read_status(&mut reader)?;
     let outcome = read_optional_outcome(&mut reader, limits.value_limits)?;
+    #[cfg(feature = "concurrent")]
+    let (task_body, pending_task_control) = if reader.is_empty() {
+        (None, None)
+    } else {
+        read_task_control_extension(&mut reader, &mut frames, limits.value_limits)?
+    };
+    #[cfg(feature = "concurrent")]
+    if frames.len() == 1
+        && let Some(body_identity) = task_body.as_ref()
+        && let Some(pending) = pending_operation.as_mut()
+    {
+        pending.occurrence.metadata =
+            task_body_operation_metadata(program, body_identity, &pending.occurrence.site);
+    }
     if !reader.is_empty() {
         return Err(MachineRecoveryError::InvalidEncoding);
     }
@@ -166,6 +200,8 @@ pub(super) fn decode_machine_checkpoint(
         task_id,
         task_path,
         execution_foreground,
+        #[cfg(feature = "concurrent")]
+        task_body,
         limits,
         frames,
         values,
@@ -180,6 +216,8 @@ pub(super) fn decode_machine_checkpoint(
         consecutive_transitions,
         pending_session_scope,
         pending_operation,
+        #[cfg(feature = "concurrent")]
+        pending_task_control,
         pending_labels,
         cancellation,
         status,
@@ -271,12 +309,171 @@ fn read_frame(
         workflow,
         pc,
         scopes,
+        #[cfg(feature = "concurrent")]
+        handle_scopes: (0..scope_count).map(|_| HandleScope::new()).collect(),
         stack_base: reader.usize()?,
         occurrence_base: reader.usize()?,
         agent_stack_base: reader.usize()?,
         agent_at_entry: reader.optional_string()?.map(Arc::from),
         session_stack_base: reader.usize()?,
         session_at_entry: reader.optional_identity(Some(IdentityKind::Session))?,
+    })
+}
+
+#[cfg(feature = "concurrent")]
+fn write_task_control_extension(writer: &mut Writer, checkpoint: &MachineCheckpointV3) {
+    writer.raw(TASK_CONTROL_EXTENSION_MAGIC);
+    writer.boolean(checkpoint.task_body.is_some());
+    if let Some(identity) = &checkpoint.task_body {
+        write_task_body_identity(writer, identity);
+    }
+    writer.count(checkpoint.frames.len());
+    for frame in &checkpoint.frames {
+        writer.count(frame.handle_scopes.len());
+        for scope in &frame.handle_scopes {
+            writer.count(scope.len());
+            for (name, handle) in scope {
+                writer.string(name);
+                writer.identity(handle.identity.owner());
+                writer.identity(handle.identity.child());
+                writer.string(&handle.result_type.canonical_string());
+            }
+        }
+    }
+    writer.boolean(checkpoint.pending_task_control.is_some());
+    if let Some(pending) = &checkpoint.pending_task_control {
+        write_spawn_suspension(writer, &pending.spawn);
+    }
+}
+
+#[cfg(feature = "concurrent")]
+fn read_task_control_extension(
+    reader: &mut Reader<'_>,
+    frames: &mut [WorkflowFrame],
+    limits: ValueLimits,
+) -> Result<(Option<TaskBodyIdentity>, Option<PendingTaskControl>), MachineRecoveryError> {
+    if reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())? != TASK_CONTROL_EXTENSION_MAGIC {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    let task_body = reader
+        .boolean()?
+        .then(|| read_task_body_identity(reader))
+        .transpose()?;
+    if reader.count()? != frames.len() {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    for frame in frames {
+        let scope_count = reader.count()?;
+        if scope_count != frame.scopes.len() {
+            return Err(MachineRecoveryError::InvalidEncoding);
+        }
+        let mut handle_scopes = Vec::with_capacity(scope_count);
+        for _ in 0..scope_count {
+            let handle_count = reader.count()?;
+            let mut scope = HandleScope::new();
+            for _ in 0..handle_count {
+                let name: Arc<str> = Arc::from(reader.string()?);
+                let owner = reader.identity(Some(IdentityKind::Task))?;
+                let child = reader.identity(Some(IdentityKind::Task))?;
+                let result_type = TypeDescriptor::from_canonical_string(&reader.string()?)
+                    .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+                if name.is_empty()
+                    || scope
+                        .insert(
+                            name,
+                            MachineTaskHandle {
+                                identity: DynamicTaskHandleIdentity::from_parts(owner, child),
+                                result_type,
+                            },
+                        )
+                        .is_some()
+                {
+                    return Err(MachineRecoveryError::InvalidEncoding);
+                }
+            }
+            handle_scopes.push(scope);
+        }
+        frame.handle_scopes = handle_scopes;
+    }
+    let pending_task_control = reader
+        .boolean()?
+        .then(|| read_spawn_suspension(reader, limits))
+        .transpose()?
+        .map(|spawn| PendingTaskControl { spawn });
+    Ok((task_body, pending_task_control))
+}
+
+#[cfg(feature = "concurrent")]
+fn write_task_body_identity(writer: &mut Writer, identity: &TaskBodyIdentity) {
+    writer.string(identity.enclosing_callable().as_str());
+    writer.position(identity.spawn_site());
+}
+
+#[cfg(feature = "concurrent")]
+fn read_task_body_identity(
+    reader: &mut Reader<'_>,
+) -> Result<TaskBodyIdentity, MachineRecoveryError> {
+    let callable = CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
+        .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    Ok(TaskBodyIdentity::new(callable, reader.position()?))
+}
+
+#[cfg(feature = "concurrent")]
+fn write_spawn_suspension(writer: &mut Writer, spawn: &MachineSpawnSuspension) {
+    writer.string(spawn.workflow.as_str());
+    writer.position(&spawn.site);
+    writer.u64(spawn.occurrence);
+    writer.string(spawn.handle.name());
+    writer.string(&spawn.handle.result_type().canonical_string());
+    write_task_body_identity(writer, &spawn.body);
+    writer.count(spawn.captures.len());
+    for capture in &spawn.captures {
+        let capture = capture.task_capture();
+        writer.string(capture.name());
+        writer.string(&capture.ty().canonical_string());
+        writer.boolean(capture.is_mutable());
+        writer.value(capture.value());
+    }
+    writer.optional_string(spawn.inherited_agent.as_deref());
+    writer.optional_identity(spawn.parent_session);
+}
+
+#[cfg(feature = "concurrent")]
+fn read_spawn_suspension(
+    reader: &mut Reader<'_>,
+    limits: ValueLimits,
+) -> Result<MachineSpawnSuspension, MachineRecoveryError> {
+    let workflow =
+        CanonicalPath::new(&reader.string()?).map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    let site = reader.position()?;
+    let occurrence = reader.u64()?;
+    let handle_name: Arc<str> = Arc::from(reader.string()?);
+    let handle_type = TypeDescriptor::from_canonical_string(&reader.string()?)
+        .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    let handle = ExecutableTaskHandle::new(handle_name, handle_type)
+        .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    let body = read_task_body_identity(reader)?;
+    let capture_count = reader.count()?;
+    let mut captures = Vec::with_capacity(capture_count);
+    for _ in 0..capture_count {
+        let name: Arc<str> = Arc::from(reader.string()?);
+        let ty = TypeDescriptor::from_canonical_string(&reader.string()?)
+            .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+        let mutable = reader.boolean()?;
+        let value = reader.value(limits)?;
+        let capture = TaskCaptureV1::new(name, ty, mutable, &value, limits)
+            .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+        captures.push(MachineTaskCapture { capture });
+    }
+    Ok(MachineSpawnSuspension {
+        workflow,
+        site,
+        occurrence,
+        handle,
+        body,
+        captures,
+        inherited_agent: reader.optional_string()?.map(Arc::from),
+        parent_session: reader.optional_identity(Some(IdentityKind::Session))?,
     })
 }
 
@@ -431,11 +628,33 @@ fn read_occurrence(
     })
 }
 
+#[cfg(feature = "concurrent")]
+fn task_body_operation_metadata(
+    program: &MachineProgram,
+    body_identity: &TaskBodyIdentity,
+    site: &StructuralPosition,
+) -> Option<Arc<gantry_ir::ExecutableOperation>> {
+    program
+        .task_body(body_identity)
+        .and_then(|body| {
+            body.instructions()
+                .iter()
+                .find(|instruction| &instruction.site == site)
+        })
+        .and_then(|instruction| match &instruction.kind {
+            InstructionKind::OperationCall { operation, .. } => Some(Arc::new(operation.clone())),
+            InstructionKind::Operation | InstructionKind::OperationWithOperands { .. } => None,
+            _ => None,
+        })
+}
+
 fn write_status(writer: &mut Writer, status: MachineStatus) {
     writer.u8(match status {
         MachineStatus::Running => 0,
         MachineStatus::WaitingSessionScope => 1,
         MachineStatus::WaitingOperation => 2,
+        #[cfg(feature = "concurrent")]
+        MachineStatus::WaitingTaskControl => 7,
         MachineStatus::YieldRequired => 3,
         MachineStatus::Succeeded => 4,
         MachineStatus::Failed => 5,
@@ -448,6 +667,8 @@ fn read_status(reader: &mut Reader<'_>) -> Result<MachineStatus, MachineRecovery
         0 => Ok(MachineStatus::Running),
         1 => Ok(MachineStatus::WaitingSessionScope),
         2 => Ok(MachineStatus::WaitingOperation),
+        #[cfg(feature = "concurrent")]
+        7 => Ok(MachineStatus::WaitingTaskControl),
         3 => Ok(MachineStatus::YieldRequired),
         4 => Ok(MachineStatus::Succeeded),
         5 => Ok(MachineStatus::Failed),
@@ -580,6 +801,11 @@ fn write_label(writer: &mut Writer, label: &MachineLabel, limits: ValueLimits) {
             writer.u8(2);
             writer.identity(*operation);
         }
+        #[cfg(feature = "concurrent")]
+        MachineLabel::TaskControlSuspended(spawn) => {
+            writer.u8(8);
+            write_spawn_suspension(writer, spawn);
+        }
         MachineLabel::Cancellation { reason } => {
             writer.u8(3);
             writer.string(reason);
@@ -621,6 +847,10 @@ fn read_label(
         2 => Ok(MachineLabel::OperationResult {
             operation: reader.identity(Some(IdentityKind::Operation))?,
         }),
+        #[cfg(feature = "concurrent")]
+        8 => Ok(MachineLabel::TaskControlSuspended(read_spawn_suspension(
+            reader, limits,
+        )?)),
         3 => Ok(MachineLabel::Cancellation {
             reason: Arc::from(reader.string()?),
         }),

@@ -97,6 +97,42 @@
       ]
     },
     {
+      "format": "gantry.concurrent-durable-evidence/v5",
+      "family": "journal",
+      "encoding": "canonical-json",
+      "magic": null,
+      "byte_length": "5420",
+      "sha256": "3fea4731945ead7ef32ed760d9f7fa08050d5c4448f7936cf326eaeba6d2733a",
+      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+      "golden": "protocol/goldens/public-formats-v1.json",
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime"
+      ],
+      "requirements": [
+        "GNT-11.8",
+        "GNT-15.8"
+      ]
+    },
+    {
+      "format": "gantry.concurrent-recovery-snapshot/v1",
+      "family": "recovery-projection",
+      "encoding": "canonical-json",
+      "magic": null,
+      "byte_length": "15725",
+      "sha256": "899e3ab8b8f4e319731e8a0e48e55dc5058741dc23c806439f3cb23b660fe4cc",
+      "schema": "protocol/schemas/public-journal-formats-v1.schema.json",
+      "golden": "protocol/goldens/public-formats-v1.json",
+      "profiles": [
+        "concurrent-evaluator",
+        "durable-runtime"
+      ],
+      "requirements": [
+        "GNT-11.8",
+        "GNT-15.8"
+      ]
+    },
+    {
       "format": "gantry.event-delivery-dispatched/v1",
       "family": "event",
       "encoding": "canonical-json",

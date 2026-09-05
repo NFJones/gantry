@@ -5,8 +5,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::task::{Context, Poll, Wake, Waker};
+use std::thread;
 
 use gantry::host::contracts::{
     DurationMicros, ExecutorAdapter, HostError, HostFuture, InclusiveJitterRange, OwnedTaskAbort,
@@ -117,6 +118,19 @@ impl Drop for SignallingTask {
     }
 }
 
+struct ReentrantCloseTask {
+    supervisor: TaskSupervisor,
+}
+
+impl Future for ReentrantCloseTask {
+    type Output = OwnedTaskResult;
+
+    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        self.supervisor.abort_and_relinquish_all();
+        Poll::Ready(OwnedTaskResult::new())
+    }
+}
+
 struct ImmediateExecutor;
 
 impl ExecutorAdapter for ImmediateExecutor {
@@ -154,6 +168,125 @@ impl SubmittedTask for ImmediateSubmittedTask {
 
     fn abort<'a>(&'a self) -> HostFuture<'a, OwnedTaskAbort> {
         Box::pin(std::future::ready(OwnedTaskAbort::AlreadySettled))
+    }
+}
+
+#[derive(Default)]
+struct BlockingSpawnExecutor {
+    state: Arc<BlockingSpawnState>,
+}
+
+#[derive(Default)]
+struct BlockingSpawnState {
+    task: Mutex<Option<OwnedTaskFuture>>,
+    spawn_entered: Mutex<bool>,
+    spawn_entered_wake: Condvar,
+    spawn_released: Mutex<bool>,
+    spawn_released_wake: Condvar,
+    completion: Mutex<Option<OwnedTaskCompletion>>,
+    completion_waiters: Mutex<Vec<Waker>>,
+    abort_waiters: Mutex<Vec<Waker>>,
+    abort_settled: AtomicBool,
+    aborts: AtomicUsize,
+}
+
+impl BlockingSpawnExecutor {
+    fn wait_until_spawn_entered(&self) {
+        let mut entered = lock(&self.state.spawn_entered);
+        while !*entered {
+            entered = wait(&self.state.spawn_entered_wake, entered);
+        }
+    }
+
+    fn release_spawn(&self) {
+        *lock(&self.state.spawn_released) = true;
+        self.state.spawn_released_wake.notify_all();
+    }
+
+    fn settle_abort(&self) {
+        let task = lock(&self.state.task).take();
+        drop(task);
+        *lock(&self.state.completion) = Some(OwnedTaskCompletion::Stopped);
+        self.state.abort_settled.store(true, Ordering::Release);
+        for waiter in std::mem::take(&mut *lock(&self.state.abort_waiters)) {
+            waiter.wake();
+        }
+        for waiter in std::mem::take(&mut *lock(&self.state.completion_waiters)) {
+            waiter.wake();
+        }
+    }
+}
+
+impl ExecutorAdapter for BlockingSpawnExecutor {
+    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
+        *lock(&self.state.task) = Some(task);
+        *lock(&self.state.spawn_entered) = true;
+        self.state.spawn_entered_wake.notify_all();
+        let mut released = lock(&self.state.spawn_released);
+        while !*released {
+            released = wait(&self.state.spawn_released_wake, released);
+        }
+        Ok(Box::new(BlockingSubmittedTask {
+            state: Arc::clone(&self.state),
+        }))
+    }
+
+    fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
+        Ok(range.minimum())
+    }
+}
+
+struct BlockingSubmittedTask {
+    state: Arc<BlockingSpawnState>,
+}
+
+impl SubmittedTask for BlockingSubmittedTask {
+    fn completion<'a>(&'a self) -> HostFuture<'a, OwnedTaskCompletion> {
+        Box::pin(std::future::poll_fn(move |context| {
+            if let Some(completion) = lock(&self.state.completion).clone() {
+                Poll::Ready(completion)
+            } else {
+                let mut waiters = lock(&self.state.completion_waiters);
+                if !waiters
+                    .iter()
+                    .any(|candidate| candidate.will_wake(context.waker()))
+                {
+                    waiters.push(context.waker().clone());
+                }
+                Poll::Pending
+            }
+        }))
+    }
+
+    fn abort<'a>(&'a self) -> HostFuture<'a, OwnedTaskAbort> {
+        Box::pin(std::future::poll_fn(move |context| {
+            if self.state.abort_settled.load(Ordering::Acquire) {
+                return Poll::Ready(OwnedTaskAbort::Stopped);
+            }
+            if self
+                .state
+                .aborts
+                .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                let mut waiters = lock(&self.state.abort_waiters);
+                if !waiters
+                    .iter()
+                    .any(|candidate| candidate.will_wake(context.waker()))
+                {
+                    waiters.push(context.waker().clone());
+                }
+            }
+            Poll::Pending
+        }))
     }
 }
 
@@ -525,6 +658,104 @@ fn control_plane_capacity_remains_available_under_ordinary_saturation() {
 }
 
 #[test]
+fn close_racing_accepted_spawn_registers_and_aborts_before_releasing_capacity() {
+    let executor = Arc::new(BlockingSpawnExecutor::default());
+    let executor_adapter: Arc<dyn ExecutorAdapter> = executor.clone();
+    let admission = AsyncAdmission::new(capacities());
+    let supervisor = TaskSupervisor::new(executor_adapter, admission.clone());
+    let reservation = supervisor
+        .try_reserve(AdmissionClass::RootTask)
+        .unwrap_or_else(|error| panic!("root reservation failed: {error}"));
+    let registration = supervisor.prepare(SupervisedTaskDomain::Root, None);
+    let control = Arc::new(TaskControl::default());
+    let submit_supervisor = supervisor.clone();
+    let submit_control = Arc::clone(&control);
+    let submission = thread::spawn(move || {
+        submit_supervisor.submit(
+            registration,
+            Box::pin(SignallingTask {
+                control: submit_control,
+                signal: None,
+            }),
+            reservation.transfer(),
+        )
+    });
+
+    executor.wait_until_spawn_entered();
+    let close_finished = Arc::new(AtomicBool::new(false));
+    let close_supervisor = supervisor.clone();
+    let close_finished_signal = Arc::clone(&close_finished);
+    let close = thread::spawn(move || {
+        close_supervisor.abort_and_relinquish_all();
+        close_finished_signal.store(true, Ordering::Release);
+    });
+    while !supervisor.snapshot().closed {
+        thread::yield_now();
+    }
+    assert!(supervisor.snapshot().closed);
+    close
+        .join()
+        .unwrap_or_else(|_| panic!("close thread panicked"));
+    assert!(close_finished.load(Ordering::Acquire));
+    assert_eq!(root_capacity_in_use(&admission), 1);
+    assert!(!control.dropped.load(Ordering::Acquire));
+    assert_eq!(executor.state.aborts.load(Ordering::Acquire), 0);
+
+    executor.release_spawn();
+    let result = submission
+        .join()
+        .unwrap_or_else(|_| panic!("submission thread panicked"));
+    assert!(matches!(
+        result,
+        Err(HostError { ref code, .. }) if code.as_ref() == "executor-failure"
+    ));
+    assert_eq!(executor.state.aborts.load(Ordering::Acquire), 1);
+    assert!(!control.dropped.load(Ordering::Acquire));
+    assert_eq!(root_capacity_in_use(&admission), 1);
+    assert_eq!(supervisor.active_count(SupervisedTaskDomain::Root), 1);
+
+    executor.settle_abort();
+    assert!(control.dropped.load(Ordering::Acquire));
+    assert_eq!(root_capacity_in_use(&admission), 0);
+    assert_eq!(supervisor.active_count(SupervisedTaskDomain::Root), 0);
+}
+
+#[test]
+fn immediate_executor_poll_can_reenter_close_during_spawn() {
+    let executor: Arc<dyn ExecutorAdapter> = Arc::new(ImmediateExecutor);
+    let admission = AsyncAdmission::new(capacities());
+    let supervisor = TaskSupervisor::new(executor, admission.clone());
+    let reservation = supervisor
+        .try_reserve(AdmissionClass::RootTask)
+        .unwrap_or_else(|error| panic!("root reservation failed: {error}"));
+    let registration = supervisor.prepare(SupervisedTaskDomain::Root, None);
+    let submit_supervisor = supervisor.clone();
+    let task_supervisor = supervisor.clone();
+    let (finished, completion) = std::sync::mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let result = submit_supervisor.submit(
+            registration,
+            Box::pin(ReentrantCloseTask {
+                supervisor: task_supervisor,
+            }),
+            reservation.transfer(),
+        );
+        let _ = finished.send(result);
+    });
+
+    let result = completion
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .unwrap_or_else(|error| panic!("reentrant close deadlocked submission: {error}"));
+    assert!(matches!(
+        result,
+        Err(HostError { ref code, .. }) if code.as_ref() == "executor-failure"
+    ));
+    assert!(supervisor.snapshot().closed);
+    assert_eq!(root_capacity_in_use(&admission), 0);
+    assert_eq!(supervisor.active_count(SupervisedTaskDomain::Root), 0);
+}
+
+#[test]
 fn control_shares_are_bounded_and_unclean_relinquish_is_nonsemantic() {
     let (supervisor, executor, admission) = supervisor();
     let reservation = supervisor
@@ -656,6 +887,12 @@ fn ready<F: Future>(future: F) -> F::Output {
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn wait<'a, T>(condition: &Condvar, guard: MutexGuard<'a, T>) -> MutexGuard<'a, T> {
+    condition
+        .wait(guard)
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 

@@ -25,7 +25,7 @@
   ],
   "exclusions": [
     "Requirement assignments identify this issue's coordination slices, not complete profile conformance; no profile claims are restored.",
-    "Native source-driver submission, joins and descendant draining remain with SPAWN-001, JOIN-001 and CANCEL-001.",
+    "Native source-child submission and concurrent-durable spawn commit ordering are linked by protocol/conformance/source-spawn-v1.json; joins, detachment, and descendant draining remain with JOIN-001 and CANCEL-001.",
     "Fenced process reconstruction and replacement executor submission remain with REC-001. Graph capture and journal-prefix round trips do not prove exactly-once physical submission."
   ]
 }

@@ -22,15 +22,23 @@ use gantry_host::journal::{
     JournalStorage, ReadJournalPrefixV1, ReleaseJournalOwnerV1, ResolveJournalPayloadV1,
 };
 use gantry_observe::{SinkPlan, project_payloads};
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+use gantry_runtime::{
+    CONCURRENT_DURABLE_EVIDENCE_KIND_V4, CONCURRENT_DURABLE_EVIDENCE_KIND_V5,
+    CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1, ConcurrentDurableRecoverySnapshotV1,
+    DurableGraphTransaction, ExecutionCoordinator, RecoveredConcurrentDurableStateV1,
+    recover_concurrent_authoritative_prefix,
+};
 use gantry_runtime::{
     CancellationReason, DurableCommitCoordinatorV1, DurableCommitCutV1, DurableCommitError,
     DurableDeliveryRecoveryV1, DurableEventBarrierV1, DurableEventCommitCoordinatorV1,
     DurableEventCommitError, DurableEventDispatchedV1, DurableEventOccurrenceV1,
-    DurableEventPlanV1, DurableEventSettledV1, DurableEvidenceError, DurableOperationEvidenceV1,
-    DurableTransitionSink, ExecutionFailureProjection, ExecutionHandle, ExecutionTransitionError,
-    FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleError, MachineOutcome,
-    RecoveredDurableStateV1, RequiredDeliveryRecordV1, RequiredEventDeliveryFailureV1,
-    ShutdownCompletionError, ShutdownReport, recover_authoritative_prefix_with_retained_program,
+    DurableEventPlanV1, DurableEventSettledV1, DurableEvidenceError, DurableExecutionStartV3,
+    DurableOperationEvidenceV1, DurableTransitionSink, ExecutionFailureProjection, ExecutionHandle,
+    ExecutionTransitionError, FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleError,
+    MachineOutcome, RecoveredDurableEventsV1, RecoveredDurableStateV1, RequiredDeliveryRecordV1,
+    RequiredEventDeliveryFailureV1, ShutdownCompletionError, ShutdownReport,
+    recover_authoritative_prefix_with_retained_program,
 };
 
 static NEXT_DURABLE_WAITER_ID: AtomicU64 = AtomicU64::new(0);
@@ -160,8 +168,44 @@ pub enum DurableOwnedExecutionOpenError {
     Format(DurableEvidenceError),
     /// The journal did not contain the expected accepted execution.
     NotFound,
+    /// A valid concurrent graph was recovered, but replacement task submission is not available.
+    RunnableReplacementUnavailable(DurableConcurrentRecovery),
     /// Recovered state could not be reflected in the supplied lifecycle handle.
     Lifecycle(ExecutionTransitionError),
+}
+
+/// Bounded coordinates for a recognized concurrent graph awaiting replacement submission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DurableConcurrentRecovery {
+    /// Execution identity retained by sequence one and the graph checkpoint.
+    pub execution_id: ProtocolIdentity,
+    /// Latest authoritative logical sequence in the recovered graph prefix.
+    pub latest_sequence: u64,
+    /// Latest storage-assigned evidence identity in the recovered graph prefix.
+    pub latest_evidence_id: ProtocolIdentity,
+    /// Latest committed graph boundary.
+    pub latest_cut: DurableCommitCutV1,
+}
+
+pub(crate) enum RecoveredDurablePrefix {
+    Serial(Box<RecoveredDurableStateV1>),
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    Concurrent {
+        execution_start: Box<DurableExecutionStartV3>,
+        recovered: Box<RecoveredConcurrentDurableStateV1>,
+    },
+}
+
+impl RecoveredDurablePrefix {
+    pub(crate) fn execution_start(&self) -> Option<&DurableExecutionStartV3> {
+        match self {
+            Self::Serial(recovered) => recovered.execution_start(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent {
+                execution_start, ..
+            } => Some(execution_start),
+        }
+    }
 }
 
 /// Closed durable cancellation result preserving terminal and operational coordinates.
@@ -247,6 +291,22 @@ impl std::fmt::Debug for DurableOwnedExecution {
 
 struct DurableOwnedExecutionState {
     recovered: Option<RecoveredDurableStateV1>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_frontier: Option<(ProtocolIdentity, u64, DurableCommitCutV1)>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_active: bool,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_failure_pending: Option<DurableRunFailure>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_cancellation: Option<CancellationReason>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_cancellation_claimed: bool,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_cancellation_committed: bool,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_driver_wakers: Vec<Waker>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_owner_release_in_flight: bool,
     owner: DurableJournalOwnerState,
     run_failure: Option<DurableRunFailure>,
     completed_cancellation: Option<DurableCancelExecutionResult>,
@@ -278,6 +338,19 @@ struct DurablePendingDelivery {
 pub(crate) enum DurableDriverPoll<T> {
     Completed(T),
     CancellationSettled,
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub(crate) enum DurableGraphDriverPoll<T> {
+    Completed(T),
+    CancellationSettled,
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub(crate) enum DurableGraphCancellationPoll {
+    Continue,
+    Claimed(CancellationReason),
+    Waiting,
 }
 
 #[derive(Default)]
@@ -333,6 +406,22 @@ impl DurableLifecycleCoordinator {
             committed_budget: recovered.machine().execution_budget(),
             state: Mutex::new(DurableOwnedExecutionState {
                 recovered: Some(recovered),
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_frontier: None,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_active: false,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_failure_pending: None,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_cancellation: None,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_cancellation_claimed: false,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_cancellation_committed: false,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_driver_wakers: Vec::new(),
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_owner_release_in_flight: false,
                 owner,
                 run_failure: None,
                 completed_cancellation: None,
@@ -493,8 +582,8 @@ impl DurableLifecycleCoordinator {
         if prefix_is_empty(&prefix) {
             return Err(DurableOwnedExecutionOpenError::NotFound);
         }
-        let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
-            .map_err(DurableOwnedExecutionOpenError::Format)?;
+        let recovered =
+            recover_durable_prefix(&prefix).map_err(DurableOwnedExecutionOpenError::Format)?;
         let execution_id = recovered
             .execution_start()
             .map(|start| start.execution_id())
@@ -502,6 +591,18 @@ impl DurableLifecycleCoordinator {
         if execution_id != expected_execution_id || handle.execution_id() != execution_id {
             return Err(DurableOwnedExecutionOpenError::NotFound);
         }
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        if let RecoveredDurablePrefix::Concurrent { recovered, .. } = recovered {
+            return Err(
+                DurableOwnedExecutionOpenError::RunnableReplacementUnavailable(
+                    concurrent_recovery(&recovered),
+                ),
+            );
+        }
+        let RecoveredDurablePrefix::Serial(recovered) = recovered else {
+            unreachable!("concurrent recovery is handled above")
+        };
+        let recovered = *recovered;
         restore_lifecycle(&handle, &recovered)
             .map_err(DurableOwnedExecutionOpenError::Lifecycle)?;
         let owner = DurableJournalOwnerState::Held;
@@ -516,6 +617,22 @@ impl DurableLifecycleCoordinator {
             committed_budget: recovered.machine().execution_budget(),
             state: Mutex::new(DurableOwnedExecutionState {
                 recovered: Some(recovered),
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_frontier: None,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_active: false,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_failure_pending: None,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_cancellation: None,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_cancellation_claimed: false,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_cancellation_committed: false,
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_driver_wakers: Vec::new(),
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                graph_owner_release_in_flight: false,
                 owner,
                 run_failure: None,
                 completed_cancellation: None,
@@ -555,7 +672,7 @@ impl DurableLifecycleCoordinator {
         if prefix_is_empty(&prefix) {
             return DurableQueryExecutionResult::NotFound { journal_id };
         }
-        let (_, recovered) = match recover_authoritative_prefix_with_retained_program(&prefix) {
+        let recovered = match recover_durable_prefix(&prefix) {
             Ok(recovered) => recovered,
             Err(error) => {
                 return DurableQueryExecutionResult::Failed(DurableQueryExecutionFailure {
@@ -580,13 +697,21 @@ impl DurableLifecycleCoordinator {
             return DurableQueryExecutionResult::NotFound { journal_id };
         }
 
-        DurableQueryExecutionResult::Snapshot(Box::new(observation_from_recovered(
-            &journal_id,
-            &None::<ExecutionHandle>,
-            &recovered,
-            None,
-            None,
-        )))
+        let observation = match recovered {
+            RecoveredDurablePrefix::Serial(recovered) => observation_from_recovered(
+                &journal_id,
+                &None::<ExecutionHandle>,
+                &recovered,
+                None,
+                None,
+            ),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            RecoveredDurablePrefix::Concurrent {
+                execution_start,
+                recovered,
+            } => observation_from_concurrent(&journal_id, &execution_start, &recovered),
+        };
+        DurableQueryExecutionResult::Snapshot(Box::new(observation))
     }
 }
 
@@ -629,6 +754,283 @@ impl DurableOwnedExecution {
         self.committed_budget.snapshot()
     }
 
+    /// Freezes the current sink policy for a graph-cut event occurrence.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn graph_event_plan(&self) -> Result<DurableEventPlanV1, DurableRunFailure> {
+        DurableEventPlanV1::from_sink_plan(&self.event_plan)
+            .map_err(|_| DurableRunFailure::Internal)
+    }
+
+    /// Commits and publishes one privately staged concurrent graph successor.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn commit_graph_transaction(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        transaction: DurableGraphTransaction<'_>,
+        predecessor: (ProtocolIdentity, u64),
+        cut: DurableCommitCutV1,
+        affected_task: ProtocolIdentity,
+    ) -> Result<(ProtocolIdentity, u64), DurableRunFailure> {
+        let root_task = coordinator.snapshot().state().root_task_id();
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableCommitCoordinatorV1::new(
+            &sink,
+            self.execution_id(),
+            root_task,
+            Some(predecessor),
+        )
+        .map_err(DurableRunFailure::Commit)?;
+        if cut == DurableCommitCutV1::Cancellation {
+            let reason = lock_state(&self.state)
+                .graph_cancellation
+                .clone()
+                .ok_or(DurableRunFailure::Internal)?;
+            commits
+                .set_graph_cancellation(reason)
+                .map_err(DurableRunFailure::Commit)?;
+        }
+        transaction
+            .commit(&mut commits, cut, affected_task)
+            .await
+            .map_err(DurableRunFailure::Commit)?;
+        let frontier = commits.frontier().ok_or(DurableRunFailure::Internal)?;
+        self.publish_graph_progress(coordinator, frontier, cut)?;
+        Ok(frontier)
+    }
+
+    /// Reflects a committed graph cut into lifecycle observation before gates open.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    fn publish_graph_progress(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        frontier: (ProtocolIdentity, u64),
+        cut: DurableCommitCutV1,
+    ) -> Result<(), DurableRunFailure> {
+        let snapshot = coordinator.snapshot();
+        let foreground = snapshot.state().foreground_outcome().cloned();
+        let committed_cancellation = if cut == DurableCommitCutV1::Cancellation {
+            Some(
+                lock_state(&self.state)
+                    .graph_cancellation
+                    .clone()
+                    .ok_or(DurableRunFailure::Internal)?,
+            )
+        } else {
+            None
+        };
+        if let Some(reason) = &committed_cancellation {
+            self.handle
+                .publish_committed_cancellation(reason.clone())
+                .map_err(DurableRunFailure::Lifecycle)?;
+        } else if cut == DurableCommitCutV1::ForegroundCompletion {
+            self.handle
+                .publish_committed_foreground(
+                    foreground.clone().ok_or(DurableRunFailure::Internal)?,
+                )
+                .map_err(DurableRunFailure::Lifecycle)?;
+        } else if cut == DurableCommitCutV1::TerminalCompletion {
+            self.handle
+                .publish_committed_terminal(foreground.clone().ok_or(DurableRunFailure::Internal)?)
+                .map_err(DurableRunFailure::Lifecycle)?;
+        }
+        self.committed_budget
+            .publish_committed_snapshot(
+                snapshot
+                    .execution_budget()
+                    .ok_or(DurableRunFailure::Internal)?,
+            )
+            .map_err(|error| {
+                DurableRunFailure::Commit(DurableCommitError::Evidence(
+                    DurableEvidenceError::Checkpoint(error),
+                ))
+            })?;
+        let lifecycle = self
+            .handle
+            .snapshot()
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let mut state = lock_state(&self.state);
+        state.graph_frontier = Some((frontier.0, frontier.1, cut));
+        if committed_cancellation.is_some() {
+            state.graph_cancellation_committed = true;
+            state.generation = state.generation.wrapping_add(1);
+        }
+        let observation_state = if lifecycle.terminal.is_some() {
+            ExecutionObservationState::Terminal
+        } else {
+            ExecutionObservationState::NotTerminal
+        };
+        state.last_observation = DurableExecutionObservation {
+            journal_id: self.journal_id.clone(),
+            execution_id: self.execution_id(),
+            state: observation_state,
+            foreground: lifecycle.foreground,
+            terminal: lifecycle.terminal,
+            cancellation: lifecycle.cancellation,
+            required_delivery_failures: lifecycle.required_delivery_failures,
+            owner: Some(state.owner.clone()),
+            run_failure: None,
+            latest_sequence: frontier.1,
+            latest_evidence_id: frontier.0,
+        };
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        let operation_waiters = if committed_cancellation.is_some() {
+            std::mem::take(&mut state.operation_waiters)
+        } else {
+            Vec::new()
+        };
+        let graph_waiters = if committed_cancellation.is_some() {
+            std::mem::take(&mut state.graph_driver_wakers)
+        } else {
+            Vec::new()
+        };
+        drop(state);
+        for waiter in operation_waiters
+            .into_iter()
+            .chain(graph_waiters)
+            .chain(observation_waiters)
+        {
+            waiter.wake();
+        }
+        Ok(())
+    }
+
+    /// Ends graph-owned execution after the committed terminal cut is visible.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn finish_graph_driver(&self) -> DurableExecutionObservation {
+        let owner = self.release_graph_owner_once().await;
+        let mut state = lock_state(&self.state);
+        state.owner = owner;
+        state.operation_in_flight = false;
+        state.driver_active = false;
+        state.graph_active = false;
+        state.graph_cancellation_claimed = false;
+        state.driver_cancellation = None;
+        state.driver_waker = None;
+        state.generation = state.generation.wrapping_add(1);
+        state.last_observation.owner = Some(state.owner.clone());
+        if let Some(effective_reason) = state.last_observation.cancellation.clone() {
+            state.completed_cancellation = Some(DurableCancelExecutionResult::Accepted {
+                effective_reason,
+                terminal: Box::new(state.last_observation.clone()),
+            });
+        }
+        let observation = state.last_observation.clone();
+        let operation_waiters = std::mem::take(&mut state.operation_waiters);
+        let graph_waiters = std::mem::take(&mut state.graph_driver_wakers);
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in operation_waiters
+            .into_iter()
+            .chain(graph_waiters)
+            .chain(observation_waiters)
+        {
+            waiter.wake();
+        }
+        observation
+    }
+
+    /// Releases graph ownership before publishing one nondurable run failure.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn finish_failed_graph_driver(
+        &self,
+        failure: DurableRunFailure,
+    ) -> DurableExecutionObservation {
+        let failure = {
+            let mut state = lock_state(&self.state);
+            state.graph_failure_pending.get_or_insert(failure).clone()
+        };
+        let owner = self.release_graph_owner_once().await;
+        let _ = self.handle.publish_run_failed_nondurably();
+        let mut state = lock_state(&self.state);
+        state.owner = owner;
+        state.run_failure = Some(failure.clone());
+        state.graph_failure_pending = None;
+        state.operation_in_flight = false;
+        state.driver_active = false;
+        state.graph_active = false;
+        state.graph_cancellation_claimed = false;
+        state.driver_cancellation = None;
+        state.driver_waker = None;
+        state.generation = state.generation.wrapping_add(1);
+        state.last_observation.state = ExecutionObservationState::RunFailedNondurably;
+        state.last_observation.owner = Some(state.owner.clone());
+        state.last_observation.run_failure = Some(failure);
+        let observation = state.last_observation.clone();
+        let operation_waiters = std::mem::take(&mut state.operation_waiters);
+        let graph_waiters = std::mem::take(&mut state.graph_driver_wakers);
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in operation_waiters
+            .into_iter()
+            .chain(graph_waiters)
+            .chain(observation_waiters)
+        {
+            waiter.wake();
+        }
+        observation
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn release_graph_owner_once(&self) -> DurableJournalOwnerState {
+        loop {
+            let generation = {
+                let mut state = lock_state(&self.state);
+                if state.owner != DurableJournalOwnerState::Held {
+                    return state.owner.clone();
+                }
+                if state.graph_owner_release_in_flight {
+                    Some(state.generation)
+                } else {
+                    state.graph_owner_release_in_flight = true;
+                    None
+                }
+            };
+            if let Some(generation) = generation {
+                self.wait_for_generation(generation).await;
+                continue;
+            }
+
+            let owner = self.release_owner().await;
+            let mut state = lock_state(&self.state);
+            state.owner = owner.clone();
+            state.graph_owner_release_in_flight = false;
+            state.last_observation.owner = Some(owner.clone());
+            state.generation = state.generation.wrapping_add(1);
+            let operation_waiters = std::mem::take(&mut state.operation_waiters);
+            let graph_waiters = std::mem::take(&mut state.graph_driver_wakers);
+            let observation_waiters = state
+                .observation_waiters
+                .iter()
+                .map(|waiter| waiter.waker.clone())
+                .collect::<Vec<_>>();
+            drop(state);
+            for waiter in operation_waiters
+                .into_iter()
+                .chain(graph_waiters)
+                .chain(observation_waiters)
+            {
+                waiter.wake();
+            }
+            return owner;
+        }
+    }
+
     pub(crate) fn begin_driver(&self) -> Option<RecoveredDurableStateV1> {
         let mut state = lock_state(&self.state);
         if state.operation_in_flight || state.run_failure.is_some() {
@@ -646,6 +1048,341 @@ impl DurableOwnedExecution {
         let mut state = lock_state(&self.state);
         state.driver_waker = None;
         state.driver_cancellation.take()
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn activate_graph_driver(&self) {
+        let waiters = {
+            let mut state = lock_state(&self.state);
+            state.graph_active = true;
+            if state.graph_cancellation.is_none() {
+                state.graph_cancellation = state.driver_cancellation.take();
+            }
+            std::mem::take(&mut state.graph_driver_wakers)
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn poll_graph_cancellation(
+        &self,
+        context: &Context<'_>,
+    ) -> DurableGraphCancellationPoll {
+        let mut state = lock_state(&self.state);
+        if let Some(reason) = state.graph_cancellation.clone()
+            && !state.graph_cancellation_committed
+        {
+            if !state.graph_cancellation_claimed {
+                state.graph_cancellation_claimed = true;
+                state
+                    .graph_driver_wakers
+                    .retain(|waiter| !waiter.will_wake(context.waker()));
+                return DurableGraphCancellationPoll::Claimed(reason);
+            }
+            register_graph_driver_waker(&mut state.graph_driver_wakers, context.waker());
+            return DurableGraphCancellationPoll::Waiting;
+        }
+        register_graph_driver_waker(&mut state.graph_driver_wakers, context.waker());
+        DurableGraphCancellationPoll::Continue
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn clear_graph_driver_waker(&self, waker: &Waker) {
+        lock_state(&self.state)
+            .graph_driver_wakers
+            .retain(|registered| !registered.will_wake(waker));
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn request_graph_cancellation(
+        &self,
+        requested_reason: CancellationReason,
+    ) -> CancellationReason {
+        let (reason, waiters) = {
+            let mut state = lock_state(&self.state);
+            let reason = state
+                .graph_cancellation
+                .get_or_insert(requested_reason)
+                .clone();
+            (reason, std::mem::take(&mut state.graph_driver_wakers))
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+        reason
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn complete_graph_cancellation_without_cut(&self) {
+        let waiters = {
+            let mut state = lock_state(&self.state);
+            state.graph_cancellation_committed = true;
+            std::mem::take(&mut state.graph_driver_wakers)
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    /// Settles required graph-event obligations through one occurrence frontier.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn drain_graph_required_event_obligations_through(
+        &self,
+        program: Arc<gantry_ir::MachineProgram>,
+        coordinator: &ExecutionCoordinator,
+        frontier: u64,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<((ProtocolIdentity, u64), DurableEventBarrierV1), DurableRunFailure> {
+        let mut recovered = self
+            .recover_graph_authoritative(Arc::clone(&program))
+            .await?;
+        while let Some(delivery) = next_pending_delivery(recovered.events(), Some(frontier), true)?
+        {
+            self.drive_pending_graph_delivery(
+                &mut recovered,
+                Arc::clone(&program),
+                coordinator,
+                delivery,
+                allocator,
+                identity_source,
+                runtime,
+            )
+            .await?;
+        }
+        let barrier = recovered.events().required_barrier_through(frontier);
+        if matches!(barrier, DurableEventBarrierV1::Pending { .. }) {
+            return Err(DurableRunFailure::Internal);
+        }
+        Ok((
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
+            barrier,
+        ))
+    }
+
+    /// Settles every finite graph-event obligation and publishes their journal tip.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn drain_graph_event_obligations(
+        &self,
+        program: Arc<gantry_ir::MachineProgram>,
+        coordinator: &ExecutionCoordinator,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<(ProtocolIdentity, u64), DurableRunFailure> {
+        let mut recovered = self
+            .recover_graph_authoritative(Arc::clone(&program))
+            .await?;
+        while let Some(delivery) = next_pending_delivery(recovered.events(), None, false)? {
+            self.drive_pending_graph_delivery(
+                &mut recovered,
+                Arc::clone(&program),
+                coordinator,
+                delivery,
+                allocator,
+                identity_source,
+                runtime,
+            )
+            .await?;
+        }
+        self.project_required_delivery_failures_from_events(recovered.events())?;
+        Ok((recovered.latest_evidence_id(), recovered.latest_sequence()))
+    }
+
+    /// Records one exhausted required graph-event obligation after cancellation is durable.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn record_graph_required_delivery_failure(
+        &self,
+        failure: RequiredEventDeliveryFailureV1,
+    ) -> Result<(), DurableRunFailure> {
+        self.handle
+            .record_required_delivery_failure(failure)
+            .map(|_| ())
+            .map_err(DurableRunFailure::Lifecycle)
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn drive_pending_graph_delivery(
+        &self,
+        recovered: &mut RecoveredConcurrentDurableStateV1,
+        program: Arc<gantry_ir::MachineProgram>,
+        coordinator: &ExecutionCoordinator,
+        delivery: DurablePendingDelivery,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+        runtime: &dyn EventDeliveryRuntime,
+    ) -> Result<(), DurableRunFailure> {
+        if let DurableDeliveryRecoveryV1::RetryDelay { delay_us, .. } = delivery.recovery {
+            runtime
+                .sleep(delay_us)
+                .await
+                .map_err(|_| DurableRunFailure::Internal)?;
+        }
+
+        let payloads = self.resolve_event_payloads(&delivery.event).await?;
+        let projected = project_payloads(&delivery.event, &payloads, &delivery.policy)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let retry_number = match delivery.recovery {
+            DurableDeliveryRecoveryV1::Pending { retry_number }
+            | DurableDeliveryRecoveryV1::Indeterminate { retry_number, .. }
+            | DurableDeliveryRecoveryV1::RetryDelay { retry_number, .. } => retry_number,
+            DurableDeliveryRecoveryV1::Success { .. }
+            | DurableDeliveryRecoveryV1::Terminal { .. } => {
+                return Err(DurableRunFailure::Internal);
+            }
+        };
+        if retry_number > delivery.policy.retry.retry_limit {
+            return Err(DurableRunFailure::Internal);
+        }
+        let attempt_id = allocator
+            .allocate(identity_source, IdentityKind::DeliveryAttempt)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let dispatched = DurableEventDispatchedV1::new(
+            delivery.event.event_id(),
+            delivery.sink_id.clone(),
+            attempt_id,
+            retry_number,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableEventCommitCoordinatorV1::from_recovered(
+            &sink,
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
+            recovered.events(),
+        )
+        .map_err(map_event_commit_failure)?;
+        let dispatch = commits
+            .commit_dispatched(delivery.occurrence_evidence_id, &dispatched)
+            .await
+            .map_err(map_event_commit_failure)?;
+        *recovered = self
+            .recover_graph_authoritative(Arc::clone(&program))
+            .await?;
+        self.publish_graph_event_progress(coordinator, recovered)?;
+
+        let outcome = match self.event_plan.registration(&delivery.sink_id) {
+            Some(registration) => runtime
+                .deliver_with_timeout(
+                    registration.sink(),
+                    EventDeliveryRequest {
+                        event: delivery.event.clone(),
+                        protected_payloads: projected,
+                        attempt_id,
+                        retry_number,
+                    },
+                    delivery.policy.attempt_timeout_us,
+                )
+                .await
+                .unwrap_or(DeliveryOutcome::Terminal),
+            None => DeliveryOutcome::Terminal,
+        };
+        let remaining_retries = delivery
+            .policy
+            .retry
+            .retry_limit
+            .saturating_sub(retry_number);
+        let (outcome, selected_delay_us) = if outcome == DeliveryOutcome::Retriable
+            && remaining_retries > 0
+        {
+            let next_retry = retry_number
+                .checked_add(1)
+                .ok_or(DurableRunFailure::Internal)?;
+            let delay =
+                gantry_observe::retry::select_delay(&delivery.policy.retry, next_retry, runtime)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+            (DeliveryOutcome::Retriable, Some(delay))
+        } else if outcome == DeliveryOutcome::Success {
+            (DeliveryOutcome::Success, None)
+        } else {
+            (DeliveryOutcome::Terminal, None)
+        };
+        let settled = DurableEventSettledV1::new(
+            delivery.event.event_id(),
+            delivery.sink_id,
+            attempt_id,
+            retry_number,
+            outcome,
+            remaining_retries,
+            selected_delay_us,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        let mut commits = DurableEventCommitCoordinatorV1::from_recovered(
+            &sink,
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
+            recovered.events(),
+        )
+        .map_err(map_event_commit_failure)?;
+        commits
+            .commit_settled(
+                delivery.occurrence_evidence_id,
+                dispatch.evidence_id,
+                &settled,
+            )
+            .await
+            .map_err(map_event_commit_failure)?;
+        *recovered = self.recover_graph_authoritative(program).await?;
+        self.publish_graph_event_progress(coordinator, recovered)
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn recover_graph_authoritative(
+        &self,
+        program: Arc<gantry_ir::MachineProgram>,
+    ) -> Result<RecoveredConcurrentDurableStateV1, DurableRunFailure> {
+        let prefix = self
+            .storage
+            .read_prefix(ReadJournalPrefixV1 {
+                journal_id: self.journal_id.clone(),
+            })
+            .await
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Journal(error)))?;
+        recover_concurrent_authoritative_prefix(program, &prefix)
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    fn publish_graph_event_progress(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        recovered: &RecoveredConcurrentDurableStateV1,
+    ) -> Result<(), DurableRunFailure> {
+        coordinator
+            .publish_committed_events(recovered.events().clone())
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let lifecycle = self
+            .handle
+            .snapshot()
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let mut state = lock_state(&self.state);
+        state.graph_frontier = Some((
+            recovered.latest_evidence_id(),
+            recovered.latest_sequence(),
+            recovered.latest_cut(),
+        ));
+        state.last_observation.foreground = lifecycle.foreground;
+        state.last_observation.terminal = lifecycle.terminal;
+        state.last_observation.cancellation = lifecycle.cancellation;
+        state.last_observation.required_delivery_failures = lifecycle.required_delivery_failures;
+        state.last_observation.latest_sequence = recovered.latest_sequence();
+        state.last_observation.latest_evidence_id = recovered.latest_evidence_id();
+        let waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in waiters {
+            waiter.wake();
+        }
+        Ok(())
     }
 
     pub(crate) async fn poll_driver_future<F>(
@@ -865,7 +1602,8 @@ impl DurableOwnedExecution {
         identity_source: &dyn IdentitySource,
         runtime: &dyn EventDeliveryRuntime,
     ) -> Result<DurableEventBarrierV1, DurableRunFailure> {
-        while let Some(delivery) = next_pending_delivery(recovered, Some(frontier), true)? {
+        while let Some(delivery) = next_pending_delivery(recovered.events(), Some(frontier), true)?
+        {
             self.drive_pending_delivery(recovered, delivery, allocator, identity_source, runtime)
                 .await?;
         }
@@ -1090,7 +1828,7 @@ impl DurableOwnedExecution {
         identity_source: &dyn IdentitySource,
         runtime: &dyn EventDeliveryRuntime,
     ) -> Result<(), DurableRunFailure> {
-        while let Some(delivery) = next_pending_delivery(recovered, None, false)? {
+        while let Some(delivery) = next_pending_delivery(recovered.events(), None, false)? {
             self.drive_pending_delivery(recovered, delivery, allocator, identity_source, runtime)
                 .await?;
         }
@@ -1295,26 +2033,62 @@ impl DurableOwnedExecution {
         &self,
         recovered: &RecoveredDurableStateV1,
     ) -> Result<(), DurableRunFailure> {
-        for event in recovered.events().events().values() {
-            for (sink_id, delivery) in event.deliveries() {
-                let Some(obligation) = event.occurrence().plan().obligation(sink_id) else {
-                    return Err(DurableRunFailure::Internal);
-                };
-                if obligation.policy().class == SinkClass::Required
-                    && let DurableDeliveryRecoveryV1::Terminal { attempt_id } = delivery
-                {
-                    self.handle
-                        .record_required_delivery_failure(RequiredEventDeliveryFailureV1 {
-                            sink_id: sink_id.clone(),
-                            event_id: event.occurrence().event().event_id(),
-                            attempt_id: *attempt_id,
-                        })
-                        .map_err(DurableRunFailure::Lifecycle)?;
-                }
-            }
+        self.project_required_delivery_failures_from_events(recovered.events())
+    }
+
+    fn project_required_delivery_failures_from_events(
+        &self,
+        events: &RecoveredDurableEventsV1,
+    ) -> Result<(), DurableRunFailure> {
+        for failure in required_delivery_failures_from_events(events)
+            .iter()
+            .cloned()
+        {
+            self.handle
+                .record_required_delivery_failure(failure)
+                .map_err(DurableRunFailure::Lifecycle)?;
         }
         Ok(())
     }
+}
+
+fn required_delivery_failures_from_events(
+    events: &RecoveredDurableEventsV1,
+) -> Arc<[RequiredEventDeliveryFailureV1]> {
+    let mut failures = events
+        .events()
+        .values()
+        .flat_map(|event| {
+            event
+                .deliveries()
+                .iter()
+                .filter_map(move |(sink_id, delivery)| {
+                    let obligation = event.occurrence().plan().obligation(sink_id)?;
+                    if obligation.policy().class != SinkClass::Required {
+                        return None;
+                    }
+                    let DurableDeliveryRecoveryV1::Terminal { attempt_id } = delivery else {
+                        return None;
+                    };
+                    Some((
+                        event.occurrence_sequence(),
+                        RequiredEventDeliveryFailureV1 {
+                            sink_id: sink_id.clone(),
+                            event_id: event.occurrence().event().event_id(),
+                            attempt_id: *attempt_id,
+                        },
+                    ))
+                })
+        })
+        .collect::<Vec<_>>();
+    failures.sort_by(|left, right| {
+        (left.0, left.1.sink_id.as_str()).cmp(&(right.0, right.1.sink_id.as_str()))
+    });
+    failures
+        .into_iter()
+        .map(|(_, failure)| failure)
+        .collect::<Vec<_>>()
+        .into()
 }
 
 impl DurableOwnedExecution {
@@ -1523,14 +2297,48 @@ impl DurableOwnedExecution {
                     state.completed_cancellation = Some(result.clone());
                     return result;
                 }
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                if state
+                    .graph_frontier
+                    .is_some_and(|frontier| frontier.2 == DurableCommitCutV1::TerminalCompletion)
+                {
+                    let result = DurableCancelExecutionResult::AlreadyTerminal(Box::new(
+                        state.last_observation.clone(),
+                    ));
+                    state.completed_cancellation = Some(result.clone());
+                    return result;
+                }
                 if state.driver_active {
-                    if let Some(reason) = &state.driver_cancellation {
-                        requested_reason = reason.clone();
+                    #[cfg(all(feature = "concurrent", feature = "durable"))]
+                    if state.graph_active {
+                        if let Some(reason) = &state.graph_cancellation {
+                            requested_reason = reason.clone();
+                        } else {
+                            state.graph_cancellation = Some(requested_reason.clone());
+                        }
+                        for waker in std::mem::take(&mut state.graph_driver_wakers) {
+                            waker.wake();
+                        }
                     } else {
-                        state.driver_cancellation = Some(requested_reason.clone());
+                        if let Some(reason) = &state.driver_cancellation {
+                            requested_reason = reason.clone();
+                        } else {
+                            state.driver_cancellation = Some(requested_reason.clone());
+                        }
+                        if let Some(waker) = state.driver_waker.take() {
+                            waker.wake();
+                        }
                     }
-                    if let Some(waker) = state.driver_waker.take() {
-                        waker.wake();
+                    #[cfg(not(all(feature = "concurrent", feature = "durable")))]
+                    {
+                        if let Some(reason) = &state.driver_cancellation {
+                            requested_reason = reason.clone();
+                        } else {
+                            state.driver_cancellation = Some(requested_reason.clone());
+                        }
+                        if let Some(waker) = state.driver_waker.take() {
+                            waker.wake();
+                        }
                     }
                     (None, state.generation)
                 } else if state.operation_in_flight {
@@ -1904,13 +2712,21 @@ impl Future for DurableExecutionWait<'_> {
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let mut state = lock_state(&self.execution.state);
         let observation = state.last_observation.clone();
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        let graph_terminal = state.graph_frontier.is_some_and(|frontier| {
+            frontier.2 == DurableCommitCutV1::TerminalCompletion
+                && state.owner != DurableJournalOwnerState::Held
+        });
+        #[cfg(not(all(feature = "concurrent", feature = "durable")))]
+        let graph_terminal = false;
         let ready = observation.run_failure.is_some()
             || (self.terminal
                 && observation.terminal.is_some()
-                && state
-                    .recovered
-                    .as_ref()
-                    .is_some_and(required_event_obligations_settled))
+                && (graph_terminal
+                    || state
+                        .recovered
+                        .as_ref()
+                        .is_some_and(required_event_obligations_settled)))
             || (!self.terminal && observation.foreground.is_some());
         if ready {
             state
@@ -2027,6 +2843,100 @@ fn observation_from_recovered(
     }
 }
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+fn observation_from_concurrent(
+    journal_id: &JournalId,
+    execution_start: &DurableExecutionStartV3,
+    recovered: &RecoveredConcurrentDurableStateV1,
+) -> DurableExecutionObservation {
+    let state = recovered.execution().scheduler().state();
+    let foreground = state.foreground_outcome().cloned();
+    let terminal = state
+        .terminal_outcome()
+        .map(|outcome| outcome.foreground.clone());
+    DurableExecutionObservation {
+        journal_id: journal_id.clone(),
+        execution_id: execution_start.execution_id(),
+        state: if terminal.is_some() {
+            ExecutionObservationState::Terminal
+        } else {
+            ExecutionObservationState::NotTerminal
+        },
+        foreground,
+        terminal,
+        cancellation: recovered.cancellation_reason().cloned(),
+        required_delivery_failures: required_delivery_failures_from_events(recovered.events()),
+        owner: None,
+        run_failure: None,
+        latest_sequence: recovered.latest_sequence(),
+        latest_evidence_id: recovered.latest_evidence_id(),
+    }
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub(crate) fn concurrent_recovery(
+    recovered: &RecoveredConcurrentDurableStateV1,
+) -> DurableConcurrentRecovery {
+    DurableConcurrentRecovery {
+        execution_id: recovered.execution().foreground().execution_id(),
+        latest_sequence: recovered.latest_sequence(),
+        latest_evidence_id: recovered.latest_evidence_id(),
+        latest_cut: recovered.latest_cut(),
+    }
+}
+
+pub(crate) fn recover_durable_prefix(
+    prefix: &JournalPrefixV1,
+) -> Result<RecoveredDurablePrefix, DurableEvidenceError> {
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    if let JournalPrefixV1::Snapshot(snapshot) = prefix
+        && snapshot.snapshot_version == CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1
+    {
+        let program = Arc::new(ConcurrentDurableRecoverySnapshotV1::retained_program(
+            &snapshot.canonical_snapshot,
+        )?);
+        let execution_start =
+            ConcurrentDurableRecoverySnapshotV1::decode(&program, &snapshot.canonical_snapshot)?
+                .execution_start()
+                .clone();
+        let recovered = recover_concurrent_authoritative_prefix(program, prefix)?;
+        return Ok(RecoveredDurablePrefix::Concurrent {
+            execution_start: Box::new(execution_start),
+            recovered: Box::new(recovered),
+        });
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    if let JournalPrefixV1::Full(full) = prefix
+        && full.evidence.iter().any(|entry| {
+            matches!(
+                entry.kind.as_ref(),
+                CONCURRENT_DURABLE_EVIDENCE_KIND_V4 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+            )
+        })
+    {
+        let first = full
+            .evidence
+            .first()
+            .ok_or(DurableEvidenceError::MissingRecoveryState)?;
+        if first.sequence != 1 || first.kind.as_ref() != "gantry.execution-start/v3" {
+            return Err(DurableEvidenceError::InvalidExecutionStart);
+        }
+        let program = Arc::new(DurableExecutionStartV3::retained_program(
+            &first.canonical_body,
+        )?);
+        let execution_start = DurableExecutionStartV3::decode(&program, &first.canonical_body)?;
+        let recovered = recover_concurrent_authoritative_prefix(program, prefix)?;
+        return Ok(RecoveredDurablePrefix::Concurrent {
+            execution_start: Box::new(execution_start),
+            recovered: Box::new(recovered),
+        });
+    }
+
+    recover_authoritative_prefix_with_retained_program(prefix)
+        .map(|(_, recovered)| RecoveredDurablePrefix::Serial(Box::new(recovered)))
+}
+
 fn lock_state(
     state: &Mutex<DurableOwnedExecutionState>,
 ) -> MutexGuard<'_, DurableOwnedExecutionState> {
@@ -2076,13 +2986,20 @@ fn register_durable_waiter(
     }
 }
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+fn register_graph_driver_waker(waiters: &mut Vec<Waker>, waker: &Waker) {
+    if !waiters.iter().any(|registered| registered.will_wake(waker)) {
+        waiters.push(waker.clone());
+    }
+}
+
 fn next_pending_delivery(
-    recovered: &RecoveredDurableStateV1,
+    events: &RecoveredDurableEventsV1,
     frontier: Option<u64>,
     required_only: bool,
 ) -> Result<Option<DurablePendingDelivery>, DurableRunFailure> {
     let mut pending: Option<DurablePendingDelivery> = None;
-    for event in recovered.events().events().values() {
+    for event in events.events().values() {
         if frontier.is_some_and(|frontier| event.occurrence_sequence() > frontier) {
             continue;
         }

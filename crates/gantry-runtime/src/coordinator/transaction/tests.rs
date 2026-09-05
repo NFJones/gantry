@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     CanonicalTranscriptV1, DurableTransitionSink, InMemoryJournalStore, MachineLimits, MachineStep,
 };
-use gantry_core::portable::IdentityKind;
+use gantry_core::portable::{CancellationReasonCategory, IdentityKind};
 use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 use gantry_host::contracts::HostFuture;
 use gantry_host::journal::*;
@@ -578,6 +578,17 @@ fn child_creation_and_submission_failure_publish_coherent_cuts() {
         let _ = root.cancel(Arc::from("stop"));
     });
     assert_eq!(coordinator.snapshot(), before);
+    commits
+        .set_graph_cancellation(
+            crate::CancellationReason::new(
+                CancellationReasonCategory::Caller,
+                Some(Arc::from("stop")),
+                None,
+                32,
+            )
+            .unwrap_or_else(|error| panic!("cancellation reason: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("graph cancellation: {error:?}"));
     ready(stage.commit(&mut commits, DurableCommitCutV1::Cancellation, task))
         .unwrap_or_else(|error| panic!("cancellation commit: {error:?}"));
     let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {

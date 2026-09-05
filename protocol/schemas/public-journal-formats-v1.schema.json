@@ -5,6 +5,8 @@
   "oneOf": [
     { "$ref": "#/$defs/cancellation" },
     { "$ref": "#/$defs/concurrent_evidence" },
+    { "$ref": "#/$defs/concurrent_evidence_v5" },
+    { "$ref": "#/$defs/concurrent_recovery_snapshot" },
     { "$ref": "#/$defs/event_dispatched" },
     { "$ref": "#/$defs/event_occurrence" },
     { "$ref": "#/$defs/event_settled" },
@@ -137,6 +139,127 @@
         "task_id": { "$ref": "#/$defs/task_identity" }
       },
       "required": ["checkpoint", "cut", "execution_id", "format", "task_id"]
+    },
+    "concurrent_evidence_v5": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": { "$ref": "#/$defs/hex" },
+        "cancellation": { "$ref": "#/$defs/concurrent_cancellation" },
+        "cut": { "type": "string", "minLength": 1 },
+        "execution_id": { "$ref": "#/$defs/execution_identity" },
+        "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+        "operation": { "$ref": "#/$defs/operation" },
+        "record": { "enum": ["cancellation", "operation", "submission-resolution"] },
+        "task_id": { "$ref": "#/$defs/task_identity" }
+      },
+      "required": [
+        "checkpoint",
+        "cancellation",
+        "cut",
+        "execution_id",
+        "format",
+        "operation",
+        "record",
+        "task_id"
+      ]
+    },
+    "concurrent_recovery_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cancellation": { "$ref": "#/$defs/nullable_hex" },
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_snapshot_event" }
+        },
+        "execution_start": { "$ref": "#/$defs/hex" },
+        "format": { "const": "gantry.concurrent-recovery-snapshot/v1" },
+        "frontier": { "$ref": "#/$defs/unsigned" },
+        "frontier_evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "graph": { "$ref": "#/$defs/hex" },
+        "graph_evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "graph_kind": {
+          "enum": [
+            "gantry.concurrent-durable-evidence/v4",
+            "gantry.concurrent-durable-evidence/v5"
+          ]
+        },
+        "graph_sequence": { "$ref": "#/$defs/unsigned" },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hex" }
+        },
+        "retained_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_retained_evidence" }
+        },
+        "start_evidence_id": { "$ref": "#/$defs/evidence_identity" }
+      },
+      "required": [
+        "cancellation",
+        "events",
+        "execution_start",
+        "format",
+        "frontier",
+        "frontier_evidence_id",
+        "graph",
+        "graph_evidence_id",
+        "graph_kind",
+        "graph_sequence",
+        "operations",
+        "retained_evidence",
+        "start_evidence_id"
+      ]
+    },
+    "concurrent_snapshot_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body": { "$ref": "#/$defs/hex" },
+        "evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "kind": {
+          "enum": [
+            "gantry.event-delivery-dispatched/v1",
+            "gantry.event-delivery-settled/v1",
+            "gantry.event-occurrence/v1"
+          ]
+        },
+        "payloads": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "references": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence_identity" }
+        },
+        "sequence": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": ["body", "evidence_id", "kind", "payloads", "references", "sequence"]
+    },
+    "concurrent_retained_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "sequence": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": ["evidence_id", "sequence"]
+    },
+    "concurrent_cancellation": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "causal_identity": { "$ref": "#/$defs/causal_identity" },
+            "category": { "type": "string", "minLength": 1 },
+            "message": { "$ref": "#/$defs/nullable_string" }
+          },
+          "required": ["causal_identity", "category", "message"]
+        }
+      ]
     },
     "causal_identity": {
       "oneOf": [

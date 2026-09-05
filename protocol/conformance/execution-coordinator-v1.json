@@ -54,7 +54,7 @@
   "exclusions": [
     "Machine driver loops and executor submission remain owned by GNT-ASYNC-DRIVER-001 and GNT-ASYNC-START-001.",
     "Concrete execution-wide budget storage remains owned by GNT-ASYNC-BUD-001.",
-    "Executable source task-control lowering and native child scheduling remain owned by GNT-ASYNC-LOWER-001 and GNT-ASYNC-SPAWN-001.",
+    "Executable source task-control lowering remains owned by GNT-ASYNC-LOWER-001; native child scheduling is linked by protocol/conformance/source-spawn-v1.json.",
     "Durable stage-commit-publish and process recovery remain owned by GNT-ASYNC-DUR-001 and GNT-ASYNC-REC-001."
   ]
 }

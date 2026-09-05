@@ -20,6 +20,7 @@ use gantry_core::value::ValueLimits;
 use gantry_host::contracts::HostError;
 use gantry_ir::{StructuralPosition, TaskControlSite};
 
+use crate::task::TaskSubmissionDispositionV1;
 use crate::{
     ConcurrentShutdownCohortV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
     ConcurrentTerminalOutcomeV1, DynamicTaskHandleIdentity, ExecutionBudget,
@@ -264,6 +265,19 @@ impl ExecutionCoordinator {
         lock(&self.inner.state).durable_events.clone()
     }
 
+    /// Publishes event-only journal progress without changing semantic graph state.
+    #[cfg(feature = "durable")]
+    pub fn publish_committed_events(
+        &self,
+        events: crate::RecoveredDurableEventsV1,
+    ) -> Result<(), TaskStateError> {
+        let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
+        state.durable_events = events;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(())
+    }
+
     /// Captures a quiescent graph while task and session state cannot change.
     ///
     /// The caller must borrow every live machine, preventing its driver from
@@ -280,9 +294,21 @@ impl ExecutionCoordinator {
             .execution_budget
             .as_ref()
             .ok_or(crate::ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        let foreground = foreground
+            .clone_with_staged_budget(budget.clone())
+            .map_err(crate::ConcurrentDurableCheckpointError::Machine)?;
+        let children = children
+            .iter()
+            .map(|(task_id, machine)| {
+                machine
+                    .clone_with_staged_budget(budget.clone())
+                    .map(|machine| (*task_id, machine))
+                    .map_err(crate::ConcurrentDurableCheckpointError::Machine)
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
         crate::ConcurrentDurableCheckpointV4::capture_coordinated(
-            foreground,
-            children,
+            &foreground,
+            &children,
             &state.tasks,
             &state.sessions,
             budget,
@@ -421,17 +447,36 @@ impl ExecutionCoordinator {
         &self,
         task_id: ProtocolIdentity,
         result: Result<(), HostError>,
-    ) -> Result<(), TaskStateError> {
-        let (task_waiters, shutdown_waiters) = {
+    ) -> Result<TaskSubmissionDispositionV1, TaskStateError> {
+        let (disposition, task_waiters, shutdown_waiters) = {
             let mut state = lock(&self.inner.state);
             require_publication_available(&state)?;
-            state.tasks.resolve_submission(task_id, result)?;
+            let disposition = state.tasks.resolve_submission(task_id, result)?;
             state.publication = state.publication.wrapping_add(1);
             let task_waiters = if task_is_settled(&state.tasks, task_id) {
                 state.task_waiters.remove(&task_id).unwrap_or_default()
             } else {
                 Vec::new()
             };
+            let shutdown_waiters = take_shutdown_waiters_if_quiescent(&mut state);
+            (disposition, task_waiters, shutdown_waiters)
+        };
+        wake_all(task_waiters);
+        wake_all(shutdown_waiters);
+        Ok(disposition)
+    }
+
+    /// Settles cancellation for a child that never acquired executor ownership.
+    pub fn resolve_unsubmitted_cancellation(
+        &self,
+        task_id: ProtocolIdentity,
+    ) -> Result<(), TaskStateError> {
+        let (task_waiters, shutdown_waiters) = {
+            let mut state = lock(&self.inner.state);
+            require_publication_available(&state)?;
+            state.tasks.resolve_unsubmitted_cancellation(task_id)?;
+            state.publication = state.publication.wrapping_add(1);
+            let task_waiters = state.task_waiters.remove(&task_id).unwrap_or_default();
             let shutdown_waiters = take_shutdown_waiters_if_quiescent(&mut state);
             (task_waiters, shutdown_waiters)
         };

@@ -15,8 +15,12 @@ use gantry_ir::{
     Instruction, InstructionKind, LoopPhase, MachineProgram, Primitive, Projection,
     StructuralPosition, TypeDescriptor,
 };
+#[cfg(feature = "concurrent")]
+use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 
 use crate::session::SessionCreationModeV1;
+#[cfg(feature = "concurrent")]
+use crate::task::{DynamicTaskHandleIdentity, TaskCaptureV1};
 
 #[cfg(feature = "durable")]
 pub(crate) mod checkpoint_codec;
@@ -334,6 +338,9 @@ pub enum MachineStatus {
     WaitingSessionScope,
     /// One prepared operation awaits a host-selected result.
     WaitingOperation,
+    /// One source task-control transition awaits coordinator completion.
+    #[cfg(feature = "concurrent")]
+    WaitingTaskControl,
     /// The configured transition quantum requires an executor yield.
     YieldRequired,
     /// The root returned successfully.
@@ -436,6 +443,60 @@ pub enum OperationCompletionError {
     ValueLimit,
 }
 
+/// One typed captured binding required to construct a spawned child machine.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MachineTaskCapture {
+    capture: TaskCaptureV1,
+}
+
+#[cfg(feature = "concurrent")]
+impl MachineTaskCapture {
+    /// Returns the detached typed capture accepted by concurrent task state.
+    #[must_use]
+    pub const fn task_capture(&self) -> &TaskCaptureV1 {
+        &self.capture
+    }
+}
+
+/// Machine-owned spawn state that a coordinator must create and submit.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MachineSpawnSuspension {
+    /// Canonical workflow containing the source spawn.
+    pub workflow: CanonicalPath,
+    /// Canonical structural spawn site.
+    pub site: StructuralPosition,
+    /// Zero-based dynamic occurrence at this spawn site.
+    pub occurrence: u64,
+    /// Lexical handle declaration published after submission settles.
+    pub handle: ExecutableTaskHandle,
+    /// Independently executable child body.
+    pub body: TaskBodyIdentity,
+    /// Analyzer-selected detached captures in declared order.
+    pub captures: Vec<MachineTaskCapture>,
+    /// Active agent inherited by the child under the v1 context contract.
+    pub inherited_agent: Option<Arc<str>>,
+    /// Active parent session snapshot, when established.
+    pub parent_session: Option<ProtocolIdentity>,
+}
+
+/// Rejection while completing one suspended source spawn.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskControlCompletionError {
+    /// No spawn is awaiting completion.
+    NotWaiting,
+    /// The supplied suspension is not the pending spawn.
+    SuspensionMismatch,
+    /// The dynamic handle is owned by another task or names a non-task identity.
+    InvalidHandle,
+    /// Cancellation made the pending completion nonconsumable.
+    Cancelled,
+    /// The lexical handle name is already visible in this scope.
+    DuplicateHandle,
+}
+
 /// One abstract label emitted by the base machine.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MachineLabel {
@@ -455,6 +516,9 @@ pub enum MachineLabel {
         /// Stable logical operation identity.
         operation: ProtocolIdentity,
     },
+    /// One source spawn suspended before coordinator-owned child submission.
+    #[cfg(feature = "concurrent")]
+    TaskControlSuspended(MachineSpawnSuspension),
     /// The first effective cancellation reason was recorded.
     Cancellation {
         /// Immutable first reason.
@@ -494,11 +558,39 @@ struct Binding {
 
 type Scope = BTreeMap<Arc<str>, Binding>;
 
+/// One coordinator-created dynamic task handle visible in a lexical machine scope.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MachineTaskHandle {
+    identity: DynamicTaskHandleIdentity,
+    result_type: TypeDescriptor,
+}
+
+#[cfg(feature = "concurrent")]
+impl MachineTaskHandle {
+    /// Returns the scheduler-owned dynamic handle identity.
+    #[must_use]
+    pub const fn identity(&self) -> DynamicTaskHandleIdentity {
+        self.identity
+    }
+
+    /// Returns the declared result type of the child named by this handle.
+    #[must_use]
+    pub const fn result_type(&self) -> &TypeDescriptor {
+        &self.result_type
+    }
+}
+
+#[cfg(feature = "concurrent")]
+type HandleScope = BTreeMap<Arc<str>, MachineTaskHandle>;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct WorkflowFrame {
     workflow: usize,
     pc: usize,
     scopes: Vec<Scope>,
+    #[cfg(feature = "concurrent")]
+    handle_scopes: Vec<HandleScope>,
     stack_base: usize,
     occurrence_base: usize,
     agent_stack_base: usize,
@@ -513,6 +605,12 @@ struct PendingOperation {
     operands: usize,
 }
 
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingTaskControl {
+    spawn: MachineSpawnSuspension,
+}
+
 /// Complete task-local checkpoint for the existing explicit-frame machine.
 ///
 /// The durable recovery projection treats this as typed logical state rather
@@ -525,6 +623,8 @@ pub struct MachineCheckpointV3 {
     task_id: ProtocolIdentity,
     task_path: Arc<[Arc<str>]>,
     execution_foreground: bool,
+    #[cfg(feature = "concurrent")]
+    task_body: Option<TaskBodyIdentity>,
     limits: MachineLimits,
     frames: Vec<WorkflowFrame>,
     values: Vec<LogicalValue>,
@@ -539,6 +639,8 @@ pub struct MachineCheckpointV3 {
     consecutive_transitions: u64,
     pending_session_scope: Option<SessionScopeOccurrence>,
     pending_operation: Option<PendingOperation>,
+    #[cfg(feature = "concurrent")]
+    pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
     cancellation: Option<Arc<str>>,
     status: MachineStatus,
@@ -609,10 +711,119 @@ impl MachineCheckpointV3 {
         self.status
     }
 
+    /// Returns the source spawn retained by this checkpoint, when suspended.
+    #[cfg(feature = "concurrent")]
+    pub(crate) fn pending_spawn_checkpoint(&self) -> Option<&MachineSpawnSuspension> {
+        self.pending_task_control
+            .as_ref()
+            .map(|pending| &pending.spawn)
+    }
+
+    /// Tests the exact machine-local successor produced by publishing one spawn handle.
+    #[cfg(feature = "concurrent")]
+    pub(crate) fn is_spawn_completion_successor(
+        &self,
+        previous: &Self,
+        identity: DynamicTaskHandleIdentity,
+    ) -> bool {
+        let mut expected = previous.clone();
+        let Some(pending) = expected.pending_task_control.take() else {
+            return false;
+        };
+        if identity.owner() != expected.task_id
+            || identity.child().kind() != IdentityKind::Task
+            || expected.cancellation.is_some()
+        {
+            return false;
+        }
+        let Some(frame) = expected.frames.last_mut() else {
+            return false;
+        };
+        let Some(scope) = frame.handle_scopes.last_mut() else {
+            return false;
+        };
+        if scope
+            .insert(
+                Arc::from(pending.spawn.handle.name()),
+                MachineTaskHandle {
+                    identity,
+                    result_type: pending.spawn.handle.result_type().clone(),
+                },
+            )
+            .is_some()
+        {
+            return false;
+        }
+        frame.pc = frame.pc.saturating_add(1);
+        expected.status = MachineStatus::Running;
+        expected.consecutive_transitions = 0;
+        expected == *self
+    }
+
     /// Returns the remaining task-local loop-entry budget.
     #[must_use]
     pub const fn remaining_loop_iterations(&self) -> u64 {
         self.remaining_loop_iterations
+    }
+
+    #[cfg(all(test, feature = "concurrent"))]
+    pub(crate) fn test_set_pending_spawn_capture_value(
+        &mut self,
+        index: usize,
+        value: LogicalValue,
+    ) -> bool {
+        let Some(capture) = self
+            .pending_task_control
+            .as_mut()
+            .and_then(|pending| pending.spawn.captures.get_mut(index))
+        else {
+            return false;
+        };
+        let current = capture.task_capture();
+        let Ok(updated) = TaskCaptureV1::new(
+            Arc::from(current.name()),
+            current.ty().clone(),
+            current.is_mutable(),
+            &value,
+            self.limits.value_limits,
+        ) else {
+            return false;
+        };
+        capture.capture = updated;
+        true
+    }
+
+    #[cfg(all(test, feature = "concurrent"))]
+    pub(crate) fn test_set_pending_spawn_inherited_agent(
+        &mut self,
+        agent: Option<Arc<str>>,
+    ) -> bool {
+        let Some(pending) = self.pending_task_control.as_mut() else {
+            return false;
+        };
+        pending.spawn.inherited_agent = agent;
+        true
+    }
+
+    #[cfg(all(test, feature = "concurrent"))]
+    pub(crate) fn test_set_pending_spawn_parent_session(
+        &mut self,
+        session: Option<ProtocolIdentity>,
+    ) -> bool {
+        let Some(pending) = self.pending_task_control.as_mut() else {
+            return false;
+        };
+        pending.spawn.parent_session = session;
+        true
+    }
+
+    #[cfg(all(test, feature = "concurrent"))]
+    pub(crate) fn test_set_pending_spawn_occurrence(&mut self, occurrence: u64) -> bool {
+        let Some(pending) = self.pending_task_control.as_mut() else {
+            return false;
+        };
+        pending.spawn.occurrence = occurrence;
+        true
     }
 
     /// Encodes this task-local checkpoint as the unique version-three binary representation.
@@ -645,6 +856,8 @@ pub enum MachineRecoveryError {
 #[derive(Clone, Debug)]
 pub struct Machine {
     program: Arc<MachineProgram>,
+    #[cfg(feature = "concurrent")]
+    task_body: Option<TaskBodyIdentity>,
     execution: ProtocolIdentity,
     task_id: ProtocolIdentity,
     task_path: Arc<[Arc<str>]>,
@@ -664,6 +877,8 @@ pub struct Machine {
     consecutive_transitions: u64,
     pending_session_scope: Option<SessionScopeOccurrence>,
     pending_operation: Option<PendingOperation>,
+    #[cfg(feature = "concurrent")]
+    pending_task_control: Option<PendingTaskControl>,
     pending_labels: VecDeque<MachineLabel>,
     cancellation: Option<Arc<str>>,
     status: MachineStatus,
@@ -734,6 +949,35 @@ impl Machine {
         )
     }
 
+    /// Creates a concurrent-profile root using counters shared with child machines.
+    #[cfg(feature = "concurrent")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_concurrent_root_with_budget_and_context(
+        program: Arc<MachineProgram>,
+        root: &CanonicalPath,
+        arguments: Vec<LogicalValue>,
+        execution: ProtocolIdentity,
+        limits: MachineLimits,
+        execution_budget: ExecutionBudget,
+        initial_agent: Option<Arc<str>>,
+        initial_session: Option<ProtocolIdentity>,
+    ) -> Result<Self, MachineBuildError> {
+        Self::new_task_context(
+            program,
+            root,
+            arguments,
+            execution,
+            root_task_identity(execution),
+            Arc::from([]),
+            limits,
+            execution_budget,
+            initial_agent,
+            initial_session,
+            true,
+            false,
+        )
+    }
+
     /// Creates one spawned task over the same explicit-frame evaluator.
     ///
     /// Child settlement emits `TaskSettled` but does not fabricate root-only
@@ -798,6 +1042,108 @@ impl Machine {
         )
     }
 
+    /// Constructs a spawned body from its analyzer-selected typed captures and context.
+    #[cfg(feature = "concurrent")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_concurrent_task_body_with_context(
+        program: Arc<MachineProgram>,
+        body_identity: &TaskBodyIdentity,
+        captures: &[TaskCaptureV1],
+        execution: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        task_path: Arc<[Arc<str>]>,
+        limits: MachineLimits,
+        execution_budget: ExecutionBudget,
+        inherited_agent: Option<Arc<str>>,
+        child_session: Option<ProtocolIdentity>,
+    ) -> Result<Self, MachineBuildError> {
+        if execution.kind() != IdentityKind::Execution {
+            return Err(MachineBuildError::InvalidExecutionIdentity);
+        }
+        if task_id != expected_task_identity(execution, &task_path)? || task_path.is_empty() {
+            return Err(MachineBuildError::InvalidTaskIdentity);
+        }
+        if !execution_budget.matches(execution, limits) {
+            return Err(MachineBuildError::ExecutionBudgetMismatch);
+        }
+        if child_session.is_some_and(|session| session.kind() != IdentityKind::Session) {
+            return Err(MachineBuildError::InvalidSessionIdentity);
+        }
+        let body = program
+            .task_body(body_identity)
+            .ok_or(MachineBuildError::MissingRoot)?;
+        if captures.len() != body.captures().len() {
+            return Err(MachineBuildError::ArgumentCount);
+        }
+        let mut root_scope = Scope::new();
+        for expected in body.captures() {
+            let capture = captures
+                .iter()
+                .find(|capture| capture.name() == expected.name())
+                .ok_or(MachineBuildError::ArgumentCount)?;
+            capture
+                .value()
+                .validate(limits.value_limits)
+                .map_err(MachineBuildError::Value)?;
+            if capture.ty() != expected.ty()
+                || capture.is_mutable() != expected.is_mutable()
+                || !value_matches_type(capture.value(), expected.ty())
+            {
+                return Err(MachineBuildError::ArgumentType);
+            }
+            root_scope.insert(
+                Arc::from(expected.name()),
+                Binding {
+                    value: capture.value().clone(),
+                    ty: expected.ty().clone(),
+                    mutable: expected.is_mutable(),
+                },
+            );
+        }
+        let workflow = program
+            .callable_index(body_identity.enclosing_callable())
+            .ok_or(MachineBuildError::MissingRoot)?;
+        Ok(Self {
+            program,
+            task_body: Some(body_identity.clone()),
+            execution,
+            task_id,
+            task_path,
+            execution_foreground: false,
+            limits,
+            execution_budget,
+            frames: vec![WorkflowFrame {
+                workflow,
+                pc: 0,
+                scopes: vec![root_scope],
+                handle_scopes: vec![HandleScope::new()],
+                stack_base: 0,
+                occurrence_base: 0,
+                agent_stack_base: 0,
+                agent_at_entry: None,
+                session_stack_base: 0,
+                session_at_entry: None,
+            }],
+            values: Vec::new(),
+            occurrences: Vec::new(),
+            counters: BTreeMap::new(),
+            source_loop_entries: BTreeMap::new(),
+            agent: inherited_agent,
+            agent_stack: Vec::new(),
+            session: child_session,
+            session_stack: Vec::new(),
+            remaining_loop_iterations: limits.maximum_loop_iterations,
+            consecutive_transitions: 0,
+            pending_session_scope: None,
+            pending_operation: None,
+            pending_task_control: None,
+            pending_labels: VecDeque::new(),
+            cancellation: None,
+            status: MachineStatus::Running,
+            outcome: None,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new_task_context(
         program: Arc<MachineProgram>,
@@ -858,6 +1204,8 @@ impl Machine {
         }
         Ok(Self {
             program,
+            #[cfg(feature = "concurrent")]
+            task_body: None,
             execution,
             task_id,
             task_path,
@@ -868,6 +1216,8 @@ impl Machine {
                 workflow: root_index,
                 pc: 0,
                 scopes: vec![root_scope],
+                #[cfg(feature = "concurrent")]
+                handle_scopes: vec![HandleScope::new()],
                 stack_base: 0,
                 occurrence_base: 0,
                 agent_stack_base: 0,
@@ -887,6 +1237,8 @@ impl Machine {
             consecutive_transitions: 0,
             pending_session_scope: None,
             pending_operation: None,
+            #[cfg(feature = "concurrent")]
+            pending_task_control: None,
             pending_labels: VecDeque::new(),
             cancellation: None,
             status: MachineStatus::Running,
@@ -962,6 +1314,33 @@ impl Machine {
         self.outcome.as_ref()
     }
 
+    /// Resolves one coordinator-published lexical task handle visible to this frame.
+    #[cfg(feature = "concurrent")]
+    #[must_use]
+    pub fn task_handle(&self, name: &str) -> Option<&MachineTaskHandle> {
+        self.frames
+            .last()?
+            .handle_scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name))
+    }
+
+    /// Returns the source spawn still awaiting coordinator completion, if any.
+    #[cfg(feature = "concurrent")]
+    #[must_use]
+    pub fn pending_spawn(&self) -> Option<&MachineSpawnSuspension> {
+        self.pending_task_control
+            .as_ref()
+            .map(|pending| &pending.spawn)
+    }
+
+    /// Returns the immutable program used to validate a durable graph transition.
+    #[cfg(feature = "durable")]
+    pub(crate) fn program_arc(&self) -> Arc<MachineProgram> {
+        Arc::clone(&self.program)
+    }
+
     #[cfg(test)]
     pub(crate) fn test_instruction_state(&self) -> (usize, usize, bool) {
         (
@@ -996,6 +1375,8 @@ impl Machine {
             task_id: self.task_id,
             task_path: Arc::clone(&self.task_path),
             execution_foreground: self.execution_foreground,
+            #[cfg(feature = "concurrent")]
+            task_body: self.task_body.clone(),
             limits: self.limits,
             frames: self.frames.clone(),
             values: self.values.clone(),
@@ -1010,6 +1391,8 @@ impl Machine {
             consecutive_transitions: self.consecutive_transitions,
             pending_session_scope: self.pending_session_scope.clone(),
             pending_operation: self.pending_operation.clone(),
+            #[cfg(feature = "concurrent")]
+            pending_task_control: self.pending_task_control.clone(),
             pending_labels: self.pending_labels.clone(),
             cancellation: self.cancellation.clone(),
             status: self.status,
@@ -1074,6 +1457,8 @@ impl Machine {
         }
         Ok(Self {
             program,
+            #[cfg(feature = "concurrent")]
+            task_body: checkpoint.task_body,
             execution: checkpoint.execution,
             task_id: checkpoint.task_id,
             task_path: checkpoint.task_path,
@@ -1093,11 +1478,82 @@ impl Machine {
             consecutive_transitions: checkpoint.consecutive_transitions,
             pending_session_scope: checkpoint.pending_session_scope,
             pending_operation: checkpoint.pending_operation,
+            #[cfg(feature = "concurrent")]
+            pending_task_control: checkpoint.pending_task_control,
             pending_labels: checkpoint.pending_labels,
             cancellation: checkpoint.cancellation,
             status: checkpoint.status,
             outcome: checkpoint.outcome,
         })
+    }
+
+    /// Publishes the coordinator-created dynamic handle and resumes after spawn submission.
+    #[cfg(feature = "concurrent")]
+    pub fn complete_spawn(
+        &mut self,
+        suspension: &MachineSpawnSuspension,
+        identity: DynamicTaskHandleIdentity,
+    ) -> Result<MachineLabel, TaskControlCompletionError> {
+        let pending = self
+            .pending_task_control
+            .as_ref()
+            .ok_or(TaskControlCompletionError::NotWaiting)?;
+        if pending.spawn != *suspension {
+            return Err(TaskControlCompletionError::SuspensionMismatch);
+        }
+        if identity.owner() != self.task_id || identity.child().kind() != IdentityKind::Task {
+            return Err(TaskControlCompletionError::InvalidHandle);
+        }
+        if self.cancellation.is_some() {
+            return Err(TaskControlCompletionError::Cancelled);
+        }
+        let scope = self
+            .frames
+            .last_mut()
+            .and_then(|frame| frame.handle_scopes.last_mut())
+            .ok_or(TaskControlCompletionError::NotWaiting)?;
+        if scope.contains_key(suspension.handle.name()) {
+            return Err(TaskControlCompletionError::DuplicateHandle);
+        }
+        scope.insert(
+            Arc::from(suspension.handle.name()),
+            MachineTaskHandle {
+                identity,
+                result_type: suspension.handle.result_type().clone(),
+            },
+        );
+        self.advance_pc();
+        self.pending_task_control = None;
+        self.status = MachineStatus::Running;
+        self.consecutive_transitions = 0;
+        Ok(MachineLabel::Deterministic {
+            workflow: suspension.workflow.clone(),
+            site: suspension.site.clone(),
+            kind: Arc::from("spawn-complete"),
+        })
+    }
+
+    /// Fails the exact pending source spawn with one typed runtime code.
+    #[cfg(feature = "concurrent")]
+    pub fn fail_spawn(
+        &mut self,
+        suspension: &MachineSpawnSuspension,
+        code: RuntimeCode,
+    ) -> Result<MachineLabel, TaskControlCompletionError> {
+        let pending = self
+            .pending_task_control
+            .as_ref()
+            .ok_or(TaskControlCompletionError::NotWaiting)?;
+        if pending.spawn != *suspension {
+            return Err(TaskControlCompletionError::SuspensionMismatch);
+        }
+        if self.cancellation.is_some() {
+            return Err(TaskControlCompletionError::Cancelled);
+        }
+        match self.fail_at(code, suspension.workflow.clone(), suspension.site.clone()) {
+            MachineStep::Transition(label) => Ok(label),
+            _ => unreachable!("spawn failure emits one transition"),
+        }
     }
 
     /// Records the first cancellation reason without consuming source state.
@@ -1299,6 +1755,15 @@ impl Machine {
                         .unwrap_or_else(|| unreachable!("waiting status retains one operation"));
                     return MachineStep::WaitingOperation(occurrence);
                 }
+                #[cfg(feature = "concurrent")]
+                MachineStatus::WaitingTaskControl => {
+                    let suspension = self
+                        .pending_task_control
+                        .as_ref()
+                        .map(|pending| pending.spawn.clone())
+                        .unwrap_or_else(|| unreachable!("waiting status retains task control"));
+                    return MachineStep::Transition(MachineLabel::TaskControlSuspended(suspension));
+                }
                 MachineStatus::YieldRequired => return MachineStep::YieldRequired,
                 MachineStatus::Succeeded | MachineStatus::Failed | MachineStatus::Cancelled => {
                     return MachineStep::Complete(
@@ -1323,7 +1788,18 @@ impl Machine {
     fn current_instruction(&self) -> Option<(Instruction, CanonicalPath)> {
         let frame = self.frames.last()?;
         let workflow = self.program.workflows().get(frame.workflow)?;
-        let instruction = workflow.instructions.get(frame.pc)?.clone();
+        #[cfg(feature = "concurrent")]
+        let instructions = if self.frames.len() == 1 {
+            self.task_body
+                .as_ref()
+                .and_then(|identity| self.program.task_body(identity))
+                .map_or(workflow.instructions.as_slice(), |body| body.instructions())
+        } else {
+            workflow.instructions.as_slice()
+        };
+        #[cfg(not(feature = "concurrent"))]
+        let instructions = workflow.instructions.as_slice();
+        let instruction = instructions.get(frame.pc)?.clone();
         Some((instruction, workflow.path.clone()))
     }
 
@@ -1378,11 +1854,25 @@ impl Machine {
             InstructionKind::Return => {
                 return self.return_value(workflow, site, &mut budget_state);
             }
-            InstructionKind::Spawn { .. }
-            | InstructionKind::Join { .. }
+            #[cfg(feature = "concurrent")]
+            InstructionKind::Spawn { handle, body } => {
+                return self.prepare_spawn(workflow, site, handle, body);
+            }
+            #[cfg(not(feature = "concurrent"))]
+            InstructionKind::Spawn { .. } => {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            }
+            InstructionKind::Join { .. }
             | InstructionKind::JoinAll { .. }
-            | InstructionKind::Detach { .. }
-            | InstructionKind::TaskComplete => {
+            | InstructionKind::Detach { .. } => {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            }
+            #[cfg(feature = "concurrent")]
+            InstructionKind::TaskComplete => {
+                return self.complete_task_body(workflow, site, &mut budget_state);
+            }
+            #[cfg(not(feature = "concurrent"))]
+            InstructionKind::TaskComplete => {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
             }
             InstructionKind::Operation => {
@@ -1590,11 +2080,13 @@ impl Machine {
 
     fn enter_scope(&mut self, budget_state: &mut ExecutionBudgetState) -> Result<(), RuntimeCode> {
         self.charge_transition(budget_state)?;
-        self.frames
+        let frame = self
+            .frames
             .last_mut()
-            .ok_or(RuntimeCode::InternalInvariant)?
-            .scopes
-            .push(Scope::new());
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        frame.scopes.push(Scope::new());
+        #[cfg(feature = "concurrent")]
+        frame.handle_scopes.push(HandleScope::new());
         self.advance_pc();
         Ok(())
     }
@@ -1604,12 +2096,18 @@ impl Machine {
         if frame.scopes.len() <= 1 {
             return Err(RuntimeCode::InternalInvariant);
         }
+        #[cfg(feature = "concurrent")]
+        if frame.handle_scopes.len() != frame.scopes.len() {
+            return Err(RuntimeCode::InternalInvariant);
+        }
         self.charge_transition(budget_state)?;
-        self.frames
+        let frame = self
+            .frames
             .last_mut()
-            .ok_or(RuntimeCode::InternalInvariant)?
-            .scopes
-            .pop();
+            .ok_or(RuntimeCode::InternalInvariant)?;
+        frame.scopes.pop();
+        #[cfg(feature = "concurrent")]
+        frame.handle_scopes.pop();
         self.advance_pc();
         Ok(())
     }
@@ -1879,6 +2377,8 @@ impl Machine {
             workflow: callee_index,
             pc: 0,
             scopes: vec![scope],
+            #[cfg(feature = "concurrent")]
+            handle_scopes: vec![HandleScope::new()],
             stack_base: self.values.len(),
             occurrence_base: self.occurrences.len(),
             agent_stack_base: self.agent_stack.len(),
@@ -1887,6 +2387,87 @@ impl Machine {
             session_at_entry: self.session,
         });
         self.finish_deterministic(workflow, site, Arc::from("call"))
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn prepare_spawn(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        handle: ExecutableTaskHandle,
+        body_identity: TaskBodyIdentity,
+    ) -> MachineStep {
+        let Some(body) = self.program.task_body(&body_identity) else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        if self.task_handle(handle.name()).is_some() {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
+        let mut captures = Vec::with_capacity(body.captures().len());
+        for expected in body.captures() {
+            let Some(binding) = self.binding(expected.name()) else {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            };
+            if binding.ty != *expected.ty() || binding.mutable != expected.is_mutable() {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            }
+            let capture = match TaskCaptureV1::new(
+                Arc::from(expected.name()),
+                expected.ty().clone(),
+                expected.is_mutable(),
+                &binding.value,
+                self.limits.value_limits,
+            ) {
+                Ok(capture) => capture,
+                Err(_) => return self.fail_at(RuntimeCode::InternalInvariant, workflow, site),
+            };
+            captures.push(MachineTaskCapture { capture });
+        }
+        let key = self.counter_key("spawn", &workflow, &site);
+        let occurrence = self.counters.get(&key).copied().unwrap_or(0);
+        self.counters.insert(key, occurrence.saturating_add(1));
+        let spawn = MachineSpawnSuspension {
+            workflow,
+            site,
+            occurrence,
+            handle,
+            body: body_identity,
+            captures,
+            inherited_agent: self.agent.clone(),
+            parent_session: self.session,
+        };
+        self.pending_task_control = Some(PendingTaskControl {
+            spawn: spawn.clone(),
+        });
+        self.status = MachineStatus::WaitingTaskControl;
+        self.consecutive_transitions = 0;
+        MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn))
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn complete_task_body(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        budget_state: &mut ExecutionBudgetState,
+    ) -> MachineStep {
+        let Some(body_identity) = self.task_body.as_ref() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let Some(body) = self.program.task_body(body_identity) else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let Some(value) = self.values.last().cloned() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        if self.frames.len() != 1 || !value_matches_type(&value, body.result_type()) {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        }
+        if let Err(code) = self.charge_transition(budget_state) {
+            return self.fail_at(code, workflow, site);
+        }
+        self.values.pop();
+        self.finish_outcome(MachineOutcome::Succeeded(value))
     }
 
     fn return_value(
@@ -2091,6 +2672,10 @@ impl Machine {
         let outcome = MachineOutcome::Cancelled(reason);
         self.pending_session_scope = None;
         self.pending_operation = None;
+        #[cfg(feature = "concurrent")]
+        {
+            self.pending_task_control = None;
+        }
         self.finish_outcome(outcome)
     }
 
@@ -2141,6 +2726,10 @@ impl Machine {
         };
         self.pending_session_scope = None;
         self.pending_operation = None;
+        #[cfg(feature = "concurrent")]
+        {
+            self.pending_task_control = None;
+        }
         self.status = MachineStatus::Failed;
         let outcome = MachineOutcome::Failed(failure.clone());
         self.outcome = Some(outcome.clone());
@@ -2199,19 +2788,7 @@ impl Machine {
         workflow: &CanonicalPath,
         site: &StructuralPosition,
     ) -> String {
-        let mut key = self
-            .occurrences
-            .iter()
-            .map(AsRef::as_ref)
-            .collect::<Vec<_>>()
-            .join("/");
-        key.push('|');
-        key.push_str(kind);
-        key.push('|');
-        key.push_str(workflow.as_str());
-        key.push('|');
-        key.push_str(&position_key(site));
-        key
+        occurrence_counter_key(&self.occurrences, kind, workflow, site)
     }
 
     fn next_occurrence(
@@ -2233,6 +2810,26 @@ impl Machine {
                 .unwrap_or_else(|| "-".to_owned())
         ))
     }
+}
+
+fn occurrence_counter_key(
+    occurrences: &[Arc<str>],
+    kind: &str,
+    workflow: &CanonicalPath,
+    site: &StructuralPosition,
+) -> String {
+    let mut key = occurrences
+        .iter()
+        .map(AsRef::as_ref)
+        .collect::<Vec<_>>()
+        .join("/");
+    key.push('|');
+    key.push_str(kind);
+    key.push('|');
+    key.push_str(workflow.as_str());
+    key.push('|');
+    key.push_str(&position_key(site));
+    key
 }
 
 #[cfg(feature = "durable")]
@@ -2267,6 +2864,26 @@ fn validate_machine_checkpoint(
     program: &MachineProgram,
     checkpoint: &MachineCheckpointV3,
 ) -> Result<(), MachineRecoveryError> {
+    #[cfg(feature = "concurrent")]
+    let task_body = checkpoint
+        .task_body
+        .as_ref()
+        .map(|identity| {
+            let body = program
+                .task_body(identity)
+                .ok_or(MachineRecoveryError::ProgramMismatch)?;
+            let root = checkpoint
+                .frames
+                .first()
+                .ok_or(MachineRecoveryError::InvalidCheckpoint)?;
+            if checkpoint.execution_foreground
+                || program.callable_index(identity.enclosing_callable()) != Some(root.workflow)
+            {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            }
+            Ok(body)
+        })
+        .transpose()?;
     if checkpoint.execution.kind() != IdentityKind::Execution
         || !matches!(
             expected_task_identity(checkpoint.execution, &checkpoint.task_path),
@@ -2298,12 +2915,20 @@ fn validate_machine_checkpoint(
         return Err(MachineRecoveryError::InvalidCheckpoint);
     }
 
-    for frame in &checkpoint.frames {
+    for (frame_index, frame) in checkpoint.frames.iter().enumerate() {
         let workflow = program
             .workflows()
             .get(frame.workflow)
             .ok_or(MachineRecoveryError::ProgramMismatch)?;
-        if frame.pc >= workflow.instructions.len()
+        #[cfg(feature = "concurrent")]
+        let instructions = if frame_index == 0 {
+            task_body.map_or(workflow.instructions.as_slice(), |body| body.instructions())
+        } else {
+            workflow.instructions.as_slice()
+        };
+        #[cfg(not(feature = "concurrent"))]
+        let instructions = workflow.instructions.as_slice();
+        if frame.pc >= instructions.len()
             || frame.scopes.is_empty()
             || frame.stack_base > checkpoint.values.len()
             || frame.occurrence_base > checkpoint.occurrences.len()
@@ -2312,6 +2937,18 @@ fn validate_machine_checkpoint(
             || frame
                 .session_at_entry
                 .is_some_and(|session| session.kind() != IdentityKind::Session)
+        {
+            return Err(MachineRecoveryError::InvalidCheckpoint);
+        }
+        #[cfg(feature = "concurrent")]
+        if frame.handle_scopes.len() != frame.scopes.len()
+            || frame.handle_scopes.iter().any(|scope| {
+                scope.iter().any(|(name, handle)| {
+                    name.is_empty()
+                        || handle.identity.owner() != checkpoint.task_id
+                        || handle.identity.child().kind() != IdentityKind::Task
+                })
+            })
         {
             return Err(MachineRecoveryError::InvalidCheckpoint);
         }
@@ -2365,7 +3002,15 @@ fn validate_machine_checkpoint(
         let Some(index) = frame.pc.checked_sub(1) else {
             return false;
         };
-        let Some(instruction) = workflow.instructions.get(index) else {
+        #[cfg(feature = "concurrent")]
+        let instructions = if checkpoint.frames.len() == 1 {
+            task_body.map_or(workflow.instructions.as_slice(), |body| body.instructions())
+        } else {
+            workflow.instructions.as_slice()
+        };
+        #[cfg(not(feature = "concurrent"))]
+        let instructions = workflow.instructions.as_slice();
+        let Some(instruction) = instructions.get(index) else {
             return false;
         };
         let (operands, metadata) = match &instruction.kind {
@@ -2406,15 +3051,131 @@ fn validate_machine_checkpoint(
         return Err(MachineRecoveryError::ProgramMismatch);
     }
 
+    #[cfg(feature = "concurrent")]
+    let pending_task_control_valid =
+        checkpoint
+            .pending_task_control
+            .as_ref()
+            .is_none_or(|pending| {
+                let spawn = &pending.spawn;
+                let Some(frame) = checkpoint.frames.last() else {
+                    return false;
+                };
+                let Some(workflow) = program.workflows().get(frame.workflow) else {
+                    return false;
+                };
+                let Some(body) = program.task_body(&spawn.body) else {
+                    return false;
+                };
+                let instructions = if checkpoint.frames.len() == 1 {
+                    task_body.map_or(workflow.instructions.as_slice(), |body| body.instructions())
+                } else {
+                    workflow.instructions.as_slice()
+                };
+                let occurrence_key = occurrence_counter_key(
+                    &checkpoint.occurrences,
+                    "spawn",
+                    &spawn.workflow,
+                    &spawn.site,
+                );
+                workflow.path == spawn.workflow
+                    && spawn.handle.result_type() == body.result_type()
+                    && spawn.inherited_agent == checkpoint.agent
+                    && spawn.parent_session == checkpoint.session
+                    && checkpoint.counters.get(&occurrence_key)
+                        == Some(&spawn.occurrence.saturating_add(1))
+                    && instructions.get(frame.pc).is_some_and(|instruction| {
+                        instruction.site == spawn.site
+                            && matches!(
+                                &instruction.kind,
+                                InstructionKind::Spawn { handle, body }
+                                    if handle == &spawn.handle && body == &spawn.body
+                            )
+                    })
+                    && body.captures().len() == spawn.captures.len()
+                    && body
+                        .captures()
+                        .iter()
+                        .zip(&spawn.captures)
+                        .all(|(expected, actual)| {
+                            let actual = actual.task_capture();
+                            let binding = frame
+                                .scopes
+                                .iter()
+                                .rev()
+                                .find_map(|scope| scope.get(expected.name()));
+                            expected.name() == actual.name()
+                                && expected.ty() == actual.ty()
+                                && expected.is_mutable() == actual.is_mutable()
+                                && value_matches_type(actual.value(), expected.ty())
+                                && binding.is_some_and(|binding| {
+                                    binding.ty == *expected.ty()
+                                        && binding.mutable == expected.is_mutable()
+                                        && binding.value == *actual.value()
+                                })
+                                && actual
+                                    .value()
+                                    .validate(checkpoint.limits.value_limits)
+                                    .is_ok()
+                        })
+                    && frame
+                        .handle_scopes
+                        .iter()
+                        .all(|scope| !scope.contains_key(spawn.handle.name()))
+            });
+    #[cfg(feature = "concurrent")]
+    if !pending_task_control_valid {
+        return Err(MachineRecoveryError::ProgramMismatch);
+    }
+
     let state_valid = match (checkpoint.status, checkpoint.outcome.as_ref()) {
         (MachineStatus::Running | MachineStatus::YieldRequired, None) => {
-            checkpoint.pending_session_scope.is_none() && checkpoint.pending_operation.is_none()
+            checkpoint.pending_session_scope.is_none()
+                && checkpoint.pending_operation.is_none()
+                && {
+                    #[cfg(feature = "concurrent")]
+                    {
+                        checkpoint.pending_task_control.is_none()
+                    }
+                    #[cfg(not(feature = "concurrent"))]
+                    {
+                        true
+                    }
+                }
         }
         (MachineStatus::WaitingSessionScope, None) => {
-            checkpoint.pending_session_scope.is_some() && checkpoint.pending_operation.is_none()
+            checkpoint.pending_session_scope.is_some()
+                && checkpoint.pending_operation.is_none()
+                && {
+                    #[cfg(feature = "concurrent")]
+                    {
+                        checkpoint.pending_task_control.is_none()
+                    }
+                    #[cfg(not(feature = "concurrent"))]
+                    {
+                        true
+                    }
+                }
         }
         (MachineStatus::WaitingOperation, None) => {
-            checkpoint.pending_operation.is_some() && checkpoint.pending_session_scope.is_none()
+            checkpoint.pending_operation.is_some()
+                && checkpoint.pending_session_scope.is_none()
+                && {
+                    #[cfg(feature = "concurrent")]
+                    {
+                        checkpoint.pending_task_control.is_none()
+                    }
+                    #[cfg(not(feature = "concurrent"))]
+                    {
+                        true
+                    }
+                }
+        }
+        #[cfg(feature = "concurrent")]
+        (MachineStatus::WaitingTaskControl, None) => {
+            checkpoint.pending_task_control.is_some()
+                && checkpoint.pending_session_scope.is_none()
+                && checkpoint.pending_operation.is_none()
         }
         (MachineStatus::Succeeded, Some(MachineOutcome::Succeeded(value))) => {
             value.validate(checkpoint.limits.value_limits).is_ok()

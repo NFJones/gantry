@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gantry::event::{EventDraft, EventEnvelope, EventPayload};
+use gantry::host::contracts::HostError;
 use gantry::host::event::SinkId;
+use gantry::host::journal::{FullJournalPrefixV1, JournalEvidenceEnvelopeV1, JournalId};
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::{
     CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, Parameter,
@@ -15,12 +17,13 @@ use gantry::ir::{
 use gantry::portable::{CancellationReasonCategory, DeliveryOutcome, EventKind, IdentityKind};
 use gantry::runtime::{
     CancellationCausalIdentity, CancellationReason, CanonicalTranscriptV1,
-    ConcurrentDurableCheckpointV4, ConcurrentDurableEvidenceV4, ConcurrentSchedulerV1,
-    ConcurrentTaskStateV1, DurableCancellationEvidenceV3, DurableCommitCutV1,
-    DurableEventDispatchedV1, DurableEventOccurrenceV1, DurableEventPlanV1, DurableEventSettledV1,
-    DurableExecutionStartV3, DurableExecutionStateV1, DurableLogicalEvidenceV3,
-    DurableRecoverySnapshotV3, ExecutionBudgetSnapshot, LogicalSessionRegistryCheckpointV1,
-    LogicalSessionRegistryV1, Machine, MachineCheckpointV3, MachineLimits, SessionCreationModeV1,
+    ConcurrentDurableCheckpointV4, ConcurrentDurableEvidenceV4, ConcurrentDurableEvidenceV5,
+    ConcurrentDurableRecoverySnapshotV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1,
+    DurableCancellationEvidenceV3, DurableCommitCutV1, DurableEventDispatchedV1,
+    DurableEventOccurrenceV1, DurableEventPlanV1, DurableEventSettledV1, DurableExecutionStartV3,
+    DurableExecutionStateV1, DurableLogicalEvidenceV3, DurableRecoverySnapshotV3,
+    ExecutionBudgetSnapshot, LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine,
+    MachineCheckpointV3, MachineLimits, SessionCreationModeV1, TaskCreationRequestV1,
 };
 use gantry::schema::SchemaValidator;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -301,7 +304,7 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
     let root_session = fresh(IdentityKind::Session, 2);
     let program = program();
     let foreground = machine(Arc::clone(&program), execution, root_session);
-    let sessions = LogicalSessionRegistryV1::new(
+    let mut sessions = LogicalSessionRegistryV1::new(
         execution,
         root_session,
         SessionCreationModeV1::GantryRoot,
@@ -310,7 +313,7 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
     .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
     let state = ConcurrentTaskStateV1::new(execution, root_task, 4)
         .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
-    let scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+    let mut scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
         .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
 
     let machine_checkpoint = foreground.checkpoint();
@@ -355,6 +358,71 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
         combined_checkpoint.clone(),
     )
     .unwrap_or_else(|error| panic!("combined evidence failed: {error:?}"));
+    let concurrent_journal = JournalId::new("public-concurrent-recovery-snapshot")
+        .unwrap_or_else(|error| panic!("concurrent journal ID failed: {error:?}"));
+    let start_evidence_id = ProtocolIdentity::from_storage_material([7; 32]);
+    let graph_evidence_id = ProtocolIdentity::from_storage_material([8; 32]);
+    let concurrent_full = FullJournalPrefixV1 {
+        journal_id: concurrent_journal.clone(),
+        evidence: Arc::from([
+            JournalEvidenceEnvelopeV1 {
+                journal_id: concurrent_journal.clone(),
+                sequence: 1,
+                evidence_id: start_evidence_id,
+                kind: Arc::from("gantry.execution-start/v3"),
+                canonical_body: Arc::from(execution_start.canonical_body()),
+                references: Arc::from([]),
+                protected_payloads: Arc::from([]),
+            },
+            JournalEvidenceEnvelopeV1 {
+                journal_id: concurrent_journal,
+                sequence: 2,
+                evidence_id: graph_evidence_id,
+                kind: Arc::from("gantry.concurrent-durable-evidence/v4"),
+                canonical_body: Arc::from(combined.canonical_body()),
+                references: Arc::from([start_evidence_id]),
+                protected_payloads: Arc::from([]),
+            },
+        ]),
+        committed_through: 2,
+    };
+    let concurrent_recovery =
+        ConcurrentDurableRecoverySnapshotV1::from_full_prefix(&program, &concurrent_full)
+            .unwrap_or_else(|error| panic!("concurrent recovery snapshot failed: {error:?}"));
+    let child = scheduler
+        .create_child(
+            &mut sessions,
+            TaskCreationRequestV1 {
+                parent_task_id: root_task,
+                handle_name: Arc::from("child"),
+                workflow: path("crate::main"),
+                spawn_site: position(0),
+                spawn_occurrence: 0,
+                result_type: TypeDescriptor::UNIT,
+                captures: Vec::new(),
+                inherited_agent: None,
+                parent_session_id: root_session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("child creation failed: {error:?}"));
+    scheduler
+        .resolve_submission(
+            child.task_id,
+            Err(HostError {
+                code: Arc::from("executor-closed"),
+                protected_diagnostic: None,
+            }),
+        )
+        .unwrap_or_else(|error| panic!("submission failure failed: {error:?}"));
+    let v5_checkpoint = ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions)
+        .unwrap_or_else(|error| panic!("v5 checkpoint failed: {error:?}"));
+    let combined_v5 = ConcurrentDurableEvidenceV5::new_submission_resolution(
+        DurableCommitCutV1::TaskSettlement,
+        child.task_id,
+        v5_checkpoint,
+    )
+    .unwrap_or_else(|error| panic!("v5 evidence failed: {error:?}"));
 
     let mut cancelled_machine = machine(Arc::clone(&program), execution, root_session);
     assert!(cancelled_machine.cancel("caller-stop").is_some());
@@ -432,6 +500,14 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
             combined.canonical_body(),
         ),
         (
+            "gantry.concurrent-durable-evidence/v5".to_owned(),
+            combined_v5.canonical_body(),
+        ),
+        (
+            "gantry.concurrent-recovery-snapshot/v1".to_owned(),
+            concurrent_recovery.canonical_body(),
+        ),
+        (
             "gantry.event-delivery-dispatched/v1".to_owned(),
             dispatched.canonical_body(),
         ),
@@ -488,6 +564,12 @@ fn assert_format_decodes(format: &str, bytes: &[u8]) {
         "gantry.concurrent-durable-evidence/v4" => {
             assert!(ConcurrentDurableEvidenceV4::decode(&context.program, bytes).is_ok())
         }
+        "gantry.concurrent-durable-evidence/v5" => {
+            assert!(ConcurrentDurableEvidenceV5::decode(&context.program, bytes).is_ok())
+        }
+        "gantry.concurrent-recovery-snapshot/v1" => {
+            assert!(ConcurrentDurableRecoverySnapshotV1::decode(&context.program, bytes).is_ok())
+        }
         "gantry.event-delivery-dispatched/v1" => {
             assert!(DurableEventDispatchedV1::decode(bytes).is_ok())
         }
@@ -530,6 +612,12 @@ fn assert_format_rejects(format: &str, bytes: &[u8]) {
         }
         "gantry.concurrent-durable-evidence/v4" => {
             ConcurrentDurableEvidenceV4::decode(&context.program, bytes).is_err()
+        }
+        "gantry.concurrent-durable-evidence/v5" => {
+            ConcurrentDurableEvidenceV5::decode(&context.program, bytes).is_err()
+        }
+        "gantry.concurrent-recovery-snapshot/v1" => {
+            ConcurrentDurableRecoverySnapshotV1::decode(&context.program, bytes).is_err()
         }
         "gantry.event-delivery-dispatched/v1" => DurableEventDispatchedV1::decode(bytes).is_err(),
         "gantry.event-delivery-settled/v1" => DurableEventSettledV1::decode(bytes).is_err(),

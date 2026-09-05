@@ -1618,6 +1618,9 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         event_delivery: None,
     })) {
         DurableResumeExecutionResult::Accepted(accepted) => accepted,
+        DurableResumeExecutionResult::RunnableReplacementUnavailable(classification) => {
+            panic!("serial source-free resume required graph replacement: {classification:?}")
+        }
         DurableResumeExecutionResult::Rejected(failure) => {
             panic!("source-free generic resume was rejected: {failure:?}")
         }
@@ -1708,6 +1711,9 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         event_delivery: None,
     })) {
         DurableResumeExecutionResult::Accepted(accepted) => accepted,
+        DurableResumeExecutionResult::RunnableReplacementUnavailable(classification) => {
+            panic!("serial candidate resume required graph replacement: {classification:?}")
+        }
         DurableResumeExecutionResult::Rejected(failure) => {
             panic!("candidate generic resume was rejected: {failure:?}")
         }

@@ -10,8 +10,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
 
-#[cfg(feature = "durable")]
+#[cfg(any(feature = "durable", feature = "test-support"))]
 use std::collections::BTreeMap;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+use std::collections::VecDeque;
 #[cfg(all(feature = "durable", feature = "test-support"))]
 use std::sync::Condvar;
 
@@ -56,9 +58,16 @@ use gantry_runtime::{
     TypedActionArgumentV1, catch_integration, contain_integration_future, machine_lifecycle_event,
     shutdown_event,
 };
+#[cfg(feature = "concurrent")]
+use gantry_runtime::{
+    ConcurrentTaskStatusV1, ExecutionBudget, MachineSpawnSuspension, TaskCreationRequestV1,
+    concurrent_spawn_event,
+};
 
 #[cfg(feature = "durable")]
 use gantry_host::journal::JournalStorage;
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+use gantry_runtime::AdmissionReservation;
 #[cfg(feature = "durable")]
 use gantry_runtime::{
     DurableCommitCutV1, DurableEventBarrierV1, DurableOperationEvidenceV1, ExecutionEventDraftV1,
@@ -93,6 +102,8 @@ struct InterpreterInner {
     external_owners: AtomicUsize,
     shutdown_started: AtomicBool,
     shutdown: Arc<SharedShutdown>,
+    #[cfg(feature = "test-support")]
+    nondurable_test_coordinators: Mutex<BTreeMap<ProtocolIdentity, ExecutionCoordinator>>,
     #[cfg(feature = "durable")]
     durable_executions: DurableExecutionRegistry,
     #[cfg(all(feature = "durable", feature = "test-support"))]
@@ -312,9 +323,251 @@ struct RecoveredRootDriver {
     task_id: ProtocolIdentity,
     create_request: gantry_host::contracts::HostRequest,
     operations: DurableOperationContext,
+    #[cfg(feature = "concurrent")]
+    program: Arc<gantry_ir::MachineProgram>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    root_supervision: Arc<Mutex<Option<SupervisedTask>>>,
+}
+
+/// Privately owned machine graph shared by independent durable task futures.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+struct DurableMachineGraph {
+    foreground: Machine,
+    children: BTreeMap<ProtocolIdentity, Machine>,
+    frontier: (ProtocolIdentity, u64),
+    next_event_sequence: BTreeMap<ProtocolIdentity, u64>,
+}
+
+/// Wake-driven exclusive access to one durable machine graph.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+struct SharedDurableMachineGraph {
+    state: Mutex<SharedDurableMachineGraphState>,
+    program: Arc<gantry_ir::MachineProgram>,
+    operations: DurableOperationContext,
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+struct SharedDurableMachineGraphState {
+    graph: Option<DurableMachineGraph>,
+    failed: bool,
+    finalization_requested: bool,
+    control_started: bool,
+    control_reservation: Option<AdmissionReservation>,
+    tasks: BTreeMap<ProtocolIdentity, SupervisedTask>,
+    commands: VecDeque<DurableGraphControlCommand>,
+    control_waker: Option<Waker>,
+    waiters: Vec<Waker>,
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+enum DurableGraphControlCommand {
+    SettleAbnormalChild {
+        task_id: ProtocolIdentity,
+        outcome: MachineOutcome,
+    },
+    Complete,
+    Fail(DurableRunFailure),
+}
+
+/// RAII graph lease restored to the wake-driven owner on every normal return.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+struct DurableMachineGraphLease {
+    shared: Arc<SharedDurableMachineGraph>,
+    graph: Option<DurableMachineGraph>,
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+impl SharedDurableMachineGraph {
+    fn new(
+        graph: DurableMachineGraph,
+        root_task_id: ProtocolIdentity,
+        root_supervision: SupervisedTask,
+        control_reservation: AdmissionReservation,
+        program: Arc<gantry_ir::MachineProgram>,
+        operations: DurableOperationContext,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            state: Mutex::new(SharedDurableMachineGraphState {
+                graph: Some(graph),
+                failed: false,
+                finalization_requested: false,
+                control_started: false,
+                control_reservation: Some(control_reservation),
+                tasks: BTreeMap::from([(root_task_id, root_supervision)]),
+                commands: VecDeque::new(),
+                control_waker: None,
+                waiters: Vec::new(),
+            }),
+            program,
+            operations,
+        })
+    }
+
+    async fn acquire(self: &Arc<Self>) -> Option<DurableMachineGraphLease> {
+        std::future::poll_fn(|context| {
+            let mut state = lock_shutdown(&self.state);
+            if state.failed {
+                return Poll::Ready(None);
+            }
+            if let Some(graph) = state.graph.take() {
+                return Poll::Ready(Some(DurableMachineGraphLease {
+                    shared: Arc::clone(self),
+                    graph: Some(graph),
+                }));
+            }
+            if !state
+                .waiters
+                .iter()
+                .any(|waiter| waiter.will_wake(context.waker()))
+            {
+                state.waiters.push(context.waker().clone());
+            }
+            Poll::Pending
+        })
+        .await
+    }
+
+    fn request_failure(&self, failure: DurableRunFailure) {
+        let (control_waker, waiters) = {
+            let mut state = lock_shutdown(&self.state);
+            if state.failed {
+                return;
+            }
+            state.failed = true;
+            state.finalization_requested = true;
+            state
+                .commands
+                .push_back(DurableGraphControlCommand::Fail(failure));
+            (
+                state.control_waker.take(),
+                std::mem::take(&mut state.waiters),
+            )
+        };
+        if let Some(waker) = control_waker {
+            waker.wake();
+        }
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn request_abnormal_child_settlement(
+        &self,
+        task_id: ProtocolIdentity,
+        outcome: MachineOutcome,
+    ) {
+        let control_waker = {
+            let mut state = lock_shutdown(&self.state);
+            if state.failed || state.finalization_requested {
+                return;
+            }
+            state
+                .commands
+                .push_back(DurableGraphControlCommand::SettleAbnormalChild { task_id, outcome });
+            state.control_waker.take()
+        };
+        if let Some(waker) = control_waker {
+            waker.wake();
+        }
+    }
+
+    fn request_completion(&self) {
+        let control_waker = {
+            let mut state = lock_shutdown(&self.state);
+            if state.failed || state.finalization_requested {
+                return;
+            }
+            state.finalization_requested = true;
+            state
+                .commands
+                .push_back(DurableGraphControlCommand::Complete);
+            state.control_waker.take()
+        };
+        if let Some(waker) = control_waker {
+            waker.wake();
+        }
+    }
+
+    async fn next_control_command(&self) -> DurableGraphControlCommand {
+        std::future::poll_fn(|context| {
+            let mut state = lock_shutdown(&self.state);
+            if let Some(command) = state.commands.pop_front() {
+                return Poll::Ready(command);
+            }
+            state.control_waker = Some(context.waker().clone());
+            Poll::Pending
+        })
+        .await
+    }
+
+    fn register_task(&self, task_id: ProtocolIdentity, task: SupervisedTask) {
+        let mut state = lock_shutdown(&self.state);
+        if state.tasks.insert(task_id, task).is_some() {
+            unreachable!("one supervised handle exists per durable graph task");
+        }
+    }
+
+    fn take_tasks(&self) -> Vec<SupervisedTask> {
+        std::mem::take(&mut lock_shutdown(&self.state).tasks)
+            .into_values()
+            .collect()
+    }
+
+    fn begin_control(&self) -> Result<Option<AdmissionReservation>, DurableRunFailure> {
+        let mut state = lock_shutdown(&self.state);
+        if state.control_started {
+            return Ok(None);
+        }
+        state.control_started = true;
+        state
+            .control_reservation
+            .take()
+            .map(Some)
+            .ok_or(DurableRunFailure::Internal)
+    }
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+impl std::ops::Deref for DurableMachineGraphLease {
+    type Target = DurableMachineGraph;
+
+    fn deref(&self) -> &Self::Target {
+        self.graph
+            .as_ref()
+            .unwrap_or_else(|| unreachable!("live graph lease retains its graph"))
+    }
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+impl std::ops::DerefMut for DurableMachineGraphLease {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.graph
+            .as_mut()
+            .unwrap_or_else(|| unreachable!("live graph lease retains its graph"))
+    }
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+impl Drop for DurableMachineGraphLease {
+    fn drop(&mut self) {
+        let Some(graph) = self.graph.take() else {
+            return;
+        };
+        let waiters = {
+            let mut state = lock_shutdown(&self.shared.state);
+            if !state.failed {
+                state.graph = Some(graph);
+            }
+            std::mem::take(&mut state.waiters)
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
 }
 
 #[cfg(feature = "durable")]
+#[derive(Clone)]
 struct DurableOperationContext {
     execution_id: ProtocolIdentity,
     activity_id: ProtocolIdentity,
@@ -400,6 +653,42 @@ struct PreparedRootDriver {
     task_id: ProtocolIdentity,
     workflow: gantry_ir::CanonicalPath,
     create_request: gantry_host::contracts::HostRequest,
+    #[cfg(feature = "concurrent")]
+    program: Arc<gantry_ir::MachineProgram>,
+    #[cfg(feature = "concurrent")]
+    execution_budget: ExecutionBudget,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    root_supervision: Arc<Mutex<Option<SupervisedTask>>>,
+}
+
+struct PreparedTaskDriver {
+    machine: Machine,
+    coordinator: ExecutionCoordinator,
+    task_id: ProtocolIdentity,
+    workflow: gantry_ir::CanonicalPath,
+    create_request: gantry_host::contracts::HostRequest,
+    base_session: Option<ProtocolIdentity>,
+    #[cfg(feature = "concurrent")]
+    program: Arc<gantry_ir::MachineProgram>,
+    #[cfg(feature = "concurrent")]
+    execution_budget: ExecutionBudget,
+}
+
+impl From<PreparedRootDriver> for PreparedTaskDriver {
+    fn from(root: PreparedRootDriver) -> Self {
+        Self {
+            machine: root.machine,
+            coordinator: root.coordinator,
+            task_id: root.task_id,
+            workflow: root.workflow,
+            create_request: root.create_request,
+            base_session: None,
+            #[cfg(feature = "concurrent")]
+            program: root.program,
+            #[cfg(feature = "concurrent")]
+            execution_budget: root.execution_budget,
+        }
+    }
 }
 
 impl PreparedRootDriver {
@@ -485,12 +774,30 @@ impl PreparedRootDriver {
             .transpose()?
             .unwrap_or_default();
         let initial_agent = analysis.structure().default_agent().map(Arc::from);
-        let machine = Machine::new_with_context(
-            Arc::new(program),
+        let program = Arc::new(program);
+        let machine_limits = inner.configuration.machine_limits();
+        #[cfg(feature = "concurrent")]
+        let execution_budget =
+            execution_budget.unwrap_or_else(|| ExecutionBudget::new(execution_id, machine_limits));
+        #[cfg(feature = "concurrent")]
+        let machine = Machine::new_concurrent_root_with_budget_and_context(
+            Arc::clone(&program),
             &entry.path,
             arguments,
             execution_id,
-            inner.configuration.machine_limits(),
+            machine_limits,
+            execution_budget.clone(),
+            initial_agent.clone(),
+            Some(root_session.id),
+        )
+        .map_err(RunExecutionError::MachineBuild)?;
+        #[cfg(not(feature = "concurrent"))]
+        let machine = Machine::new_with_context(
+            Arc::clone(&program),
+            &entry.path,
+            arguments,
+            execution_id,
+            machine_limits,
             initial_agent.clone(),
             Some(root_session.id),
         )
@@ -522,12 +829,9 @@ impl PreparedRootDriver {
         }
         .map_err(RunExecutionError::TaskState)?;
         #[cfg(feature = "concurrent")]
-        let coordinator = ExecutionCoordinator::new_with_budget(
-            tasks,
-            sessions,
-            execution_budget.unwrap_or_else(|| machine.execution_budget()),
-        )
-        .map_err(RunExecutionError::TaskState)?;
+        let coordinator =
+            ExecutionCoordinator::new_with_budget(tasks, sessions, execution_budget.clone())
+                .map_err(RunExecutionError::TaskState)?;
         #[cfg(not(feature = "concurrent"))]
         let coordinator = {
             let _ = execution_budget;
@@ -557,6 +861,12 @@ impl PreparedRootDriver {
             task_id,
             workflow: entry.path,
             create_request,
+            #[cfg(feature = "concurrent")]
+            program,
+            #[cfg(feature = "concurrent")]
+            execution_budget,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            root_supervision: Arc::new(Mutex::new(None)),
         })
     }
 }
@@ -688,6 +998,8 @@ impl Interpreter {
                 external_owners: AtomicUsize::new(1),
                 shutdown_started: AtomicBool::new(false),
                 shutdown: Arc::new(SharedShutdown::default()),
+                #[cfg(feature = "test-support")]
+                nondurable_test_coordinators: Mutex::new(BTreeMap::new()),
                 #[cfg(feature = "durable")]
                 durable_executions: DurableExecutionRegistry::default(),
                 #[cfg(all(feature = "durable", feature = "test-support"))]
@@ -773,6 +1085,9 @@ impl Interpreter {
         };
         let driver = TaskDriver::from_prepared(Arc::clone(&self.inner), accepted.clone(), root);
         let task_coordinator = driver.coordinator();
+        #[cfg(feature = "test-support")]
+        lock_shutdown(&self.inner.nondurable_test_coordinators)
+            .insert(accepted.execution_id, task_coordinator.clone());
         let abnormal = driver.abnormal_completion_handler();
         let completion = driver.physical_completion_handler();
         let registration = supervisor.prepare_with_completion(
@@ -901,6 +1216,8 @@ impl Interpreter {
             .unwrap_or_else(|_| unreachable!("committed start retained validated root state"));
         let task_id = prepared.task_id;
         let task_coordinator = prepared.coordinator.clone();
+        #[cfg(feature = "concurrent")]
+        let root_supervision = Arc::clone(&prepared.root_supervision);
         let completion_coordinator = task_coordinator.clone();
         let completion: PhysicalCompletionHandler = Arc::new(move |_| {
             let _ = completion_coordinator.mark_driver_physically_settled(task_id);
@@ -930,6 +1247,11 @@ impl Interpreter {
         match supervisor.submit(registration, task, reservation.transfer()) {
             Ok(task) => {
                 if task_coordinator.resolve_root_submission().is_ok() {
+                    #[cfg(feature = "concurrent")]
+                    {
+                        *lock_shutdown(&root_supervision) = Some(task);
+                    }
+                    #[cfg(not(feature = "concurrent"))]
                     task.relinquish();
                     gate.release();
                 } else {
@@ -1112,6 +1434,8 @@ impl Interpreter {
             }
         };
         let task_id = driver.task_id;
+        #[cfg(feature = "concurrent")]
+        let root_supervision = Arc::clone(&driver.root_supervision);
         let completion_coordinator = driver.coordinator.clone();
         let completion: PhysicalCompletionHandler = Arc::new(move |_| {
             let _ = completion_coordinator.mark_driver_physically_settled(task_id);
@@ -1169,6 +1493,11 @@ impl Interpreter {
         };
         self.register_durable_execution(Arc::clone(&accepted.owned));
         *lock_shutdown(&slot) = Some((driver, Arc::clone(&accepted.owned)));
+        #[cfg(feature = "concurrent")]
+        {
+            *lock_shutdown(&root_supervision) = Some(submitted);
+        }
+        #[cfg(not(feature = "concurrent"))]
         submitted.relinquish();
         gate.release();
         DurableResumeExecutionResult::Accepted(Box::new(accepted))
@@ -1253,6 +1582,17 @@ impl Interpreter {
                 declared_value_shapes,
                 schemas,
             },
+            #[cfg(feature = "concurrent")]
+            program: Arc::new(
+                prepared
+                    .recovered
+                    .execution_start()
+                    .ok_or("missing-execution-start")?
+                    .program()
+                    .map_err(|_| "invalid-retained-program")?,
+            ),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            root_supervision: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -1297,6 +1637,180 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    fn start_durable_graph_finalizer(
+        &self,
+        graph: Arc<SharedDurableMachineGraph>,
+        owner: Arc<crate::DurableOwnedExecution>,
+        coordinator: ExecutionCoordinator,
+        program: Arc<gantry_ir::MachineProgram>,
+        operations: DurableOperationContext,
+    ) -> Result<(), DurableRunFailure> {
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let Some(reservation) = graph.begin_control()? else {
+            return Ok(());
+        };
+        let registration = supervisor.prepare(SupervisedTaskDomain::ControlPlane, None);
+        let signal = registration.signal();
+        let inner = Arc::clone(&self.inner);
+        let fallback_graph = Arc::clone(&graph);
+        let fallback_owner = Arc::clone(&owner);
+        let task: OwnedTaskFuture = Box::pin(async move {
+            let interpreter = Interpreter {
+                inner,
+                external_owner: false,
+            };
+            interpreter
+                .drive_durable_graph_control(graph, owner, coordinator, program, operations)
+                .await;
+            let _ = signal.settle();
+            OwnedTaskResult::new()
+        });
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => {
+                task.relinquish();
+                Ok(())
+            }
+            Err(_) => {
+                let _ = fallback_owner;
+                fallback_graph.request_failure(DurableRunFailure::Internal);
+                Err(DurableRunFailure::Internal)
+            }
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn drive_durable_graph_control(
+        &self,
+        graph: Arc<SharedDurableMachineGraph>,
+        owner: Arc<crate::DurableOwnedExecution>,
+        coordinator: ExecutionCoordinator,
+        program: Arc<gantry_ir::MachineProgram>,
+        operations: DurableOperationContext,
+    ) {
+        loop {
+            match graph.next_control_command().await {
+                DurableGraphControlCommand::SettleAbnormalChild { task_id, outcome } => {
+                    if let Err(failure) = self
+                        .settle_durable_abnormal_child(
+                            &graph,
+                            &owner,
+                            &coordinator,
+                            &operations,
+                            task_id,
+                            outcome,
+                        )
+                        .await
+                    {
+                        graph.request_failure(failure);
+                    }
+                }
+                DurableGraphControlCommand::Complete => {
+                    let tasks = graph.take_tasks();
+                    for task in tasks {
+                        let _ = task.completion().await;
+                    }
+                    match owner
+                        .drain_graph_event_obligations(
+                            program,
+                            &coordinator,
+                            &self.inner.allocator,
+                            self.inner.configuration.identity_source(),
+                            self.inner.event_delivery_runtime.as_ref(),
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            let _ = owner.finish_graph_driver().await;
+                        }
+                        Err(failure) => {
+                            let _ = owner.finish_failed_graph_driver(failure).await;
+                        }
+                    }
+                    return;
+                }
+                DurableGraphControlCommand::Fail(failure) => {
+                    if let Ok(cancellation) = owner.execution_handle().cancellation_signal() {
+                        let _ = cancellation.cancel();
+                    }
+                    let tasks = graph.take_tasks();
+                    for task in &tasks {
+                        let _ = task.request_abort();
+                    }
+                    for task in tasks {
+                        let _ = task.completion().await;
+                    }
+                    let _ = owner.finish_failed_graph_driver(failure).await;
+                    return;
+                }
+            }
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn settle_durable_abnormal_child(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        operations: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        outcome: MachineOutcome,
+    ) -> Result<(), DurableRunFailure> {
+        let mut lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
+        let sequence = lease
+            .next_event_sequence
+            .get(&task_id)
+            .copied()
+            .unwrap_or(0);
+        let draft = machine_lifecycle_event(
+            &MachineLabel::TaskSettled(outcome.clone()),
+            operations.execution_id,
+            task_id,
+        )
+        .ok_or(DurableRunFailure::Internal)?;
+        let event = self
+            .complete_graph_event(operations, task_id, sequence, draft.clone())
+            .await?;
+        let predecessor = lease.frontier;
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut *lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        transaction
+            .update(|_, children, tasks, _| {
+                children.remove(&task_id);
+                tasks.mark_driver_physically_settled(task_id)?;
+                tasks.settle(task_id, outcome)
+            })
+            .map_err(|_| DurableRunFailure::Internal)?;
+        transaction
+            .set_event(
+                event,
+                owner.graph_event_plan()?,
+                draft.protected_payloads.to_vec(),
+            )
+            .map_err(DurableRunFailure::Commit)?;
+        lease.frontier = owner
+            .commit_graph_transaction(
+                coordinator,
+                transaction,
+                predecessor,
+                DurableCommitCutV1::TaskSettlement,
+                task_id,
+            )
+            .await?;
+        lease.next_event_sequence.insert(
+            task_id,
+            sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+        );
+        Ok(())
     }
 
     #[cfg(feature = "durable")]
@@ -1466,6 +1980,11 @@ impl Interpreter {
             task_id,
             workflow: _,
             create_request,
+            #[cfg(feature = "concurrent")]
+            program,
+            #[cfg(feature = "concurrent")]
+            root_supervision,
+            ..
         } = prepared;
         self.drive_recovered_durable_execution(
             RecoveredRootDriver {
@@ -1473,6 +1992,10 @@ impl Interpreter {
                 task_id,
                 create_request,
                 operations,
+                #[cfg(feature = "concurrent")]
+                program,
+                #[cfg(feature = "concurrent")]
+                root_supervision,
             },
             owner,
         )
@@ -1498,6 +2021,10 @@ impl Interpreter {
             task_id,
             create_request,
             operations,
+            #[cfg(feature = "concurrent")]
+            program,
+            #[cfg(feature = "concurrent")]
+            root_supervision,
         } = driver;
         let cancellation = owner
             .execution_handle()
@@ -1641,6 +2168,69 @@ impl Interpreter {
                         return;
                     }
                 }
+                #[cfg(feature = "concurrent")]
+                MachineStep::Transition(MachineLabel::TaskControlSuspended(suspension)) => {
+                    let root_supervision = lock_shutdown(&root_supervision)
+                        .take()
+                        .ok_or(DurableRunFailure::Internal);
+                    let control_reservation = self
+                        .inner
+                        .lifecycle
+                        .task_supervisor()
+                        .try_reserve_control_plane()
+                        .map_err(|_| DurableRunFailure::Internal);
+                    let (root_supervision, control_reservation) =
+                        match (root_supervision, control_reservation) {
+                            (Ok(root_supervision), Ok(control_reservation)) => {
+                                (root_supervision, control_reservation)
+                            }
+                            _ => {
+                                owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                                return;
+                            }
+                        };
+                    let graph = SharedDurableMachineGraph::new(
+                        DurableMachineGraph {
+                            foreground: recovered.into_machine(),
+                            children: BTreeMap::new(),
+                            frontier: (
+                                last_committed.latest_evidence_id(),
+                                last_committed.latest_sequence(),
+                            ),
+                            next_event_sequence: BTreeMap::from([(task_id, task_event_sequence)]),
+                        },
+                        task_id,
+                        root_supervision,
+                        control_reservation,
+                        Arc::clone(&program),
+                        operations.clone(),
+                    );
+                    owner.activate_graph_driver();
+                    let result = self
+                        .drive_durable_graph_task(
+                            Arc::clone(&graph),
+                            Arc::clone(&owner),
+                            coordinator.clone(),
+                            Arc::clone(&program),
+                            operations.clone(),
+                            task_id,
+                            Some(hook),
+                            Some(suspension),
+                            model_session_occurrence,
+                        )
+                        .await;
+                    if let Err(failure) = result {
+                        graph.request_failure(failure.clone());
+                        let _ = self.start_durable_graph_finalizer(
+                            Arc::clone(&graph),
+                            Arc::clone(&owner),
+                            coordinator.clone(),
+                            Arc::clone(&program),
+                            operations.clone(),
+                        );
+                    }
+                    return;
+                }
                 MachineStep::Transition(_) => {}
                 MachineStep::YieldRequired => {
                     match owner
@@ -1736,6 +2326,2315 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    fn drive_durable_graph_task<'a>(
+        &'a self,
+        graph: Arc<SharedDurableMachineGraph>,
+        owner: Arc<crate::DurableOwnedExecution>,
+        coordinator: ExecutionCoordinator,
+        program: Arc<gantry_ir::MachineProgram>,
+        operations: DurableOperationContext,
+        task_id: ProtocolIdentity,
+        mut hook: Option<TaskHook<'a>>,
+        mut initial_spawn: Option<MachineSpawnSuspension>,
+        mut model_session_occurrence: u64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DurableRunFailure>> + Send + 'a>> {
+        Box::pin(async move {
+            let cancellation = owner
+                .execution_handle()
+                .cancellation_signal()
+                .map_err(DurableRunFailure::Lifecycle)?;
+            'graph_driver: loop {
+                if let Some(suspension) = initial_spawn.take() {
+                    self.submit_durable_source_child(
+                        Arc::clone(&graph),
+                        Arc::clone(&owner),
+                        coordinator.clone(),
+                        Arc::clone(&program),
+                        operations.clone(),
+                        task_id,
+                        suspension,
+                    )
+                    .await?;
+                    continue;
+                }
+
+                let mut lease = match self
+                    .poll_durable_graph_future(&graph, &owner, &coordinator, graph.acquire())
+                    .await?
+                {
+                    crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Some(lease)) => {
+                        lease
+                    }
+                    crate::durable_lifecycle::DurableGraphDriverPoll::Completed(None) => {
+                        return Ok(());
+                    }
+                    crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                        continue;
+                    }
+                };
+                let step = if task_id == lease.foreground.task_id() {
+                    lease.foreground.step()
+                } else {
+                    lease
+                        .children
+                        .get_mut(&task_id)
+                        .ok_or(DurableRunFailure::Internal)?
+                        .step()
+                };
+                match step {
+                    MachineStep::Transition(MachineLabel::TaskControlSuspended(suspension)) => {
+                        drop(lease);
+                        self.submit_durable_source_child(
+                            Arc::clone(&graph),
+                            Arc::clone(&owner),
+                            coordinator.clone(),
+                            Arc::clone(&program),
+                            operations.clone(),
+                            task_id,
+                            suspension,
+                        )
+                        .await?;
+                    }
+                    MachineStep::Transition(MachineLabel::TaskSettled(outcome)) => {
+                        let sequence = lease
+                            .next_event_sequence
+                            .get(&task_id)
+                            .copied()
+                            .unwrap_or(0);
+                        let draft = machine_lifecycle_event(
+                            &MachineLabel::TaskSettled(outcome.clone()),
+                            operations.execution_id,
+                            task_id,
+                        )
+                        .ok_or(DurableRunFailure::Internal)?;
+                        let event = self
+                            .complete_graph_event(&operations, task_id, sequence, draft.clone())
+                            .await?;
+                        let predecessor = lease.frontier;
+                        let DurableMachineGraph {
+                            foreground,
+                            children,
+                            ..
+                        } = &mut *lease;
+                        let mut transaction = coordinator
+                            .stage_graph(foreground, children)
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                        transaction
+                            .update(|_, children, tasks, _| {
+                                if task_id != tasks.root_task_id() {
+                                    children.remove(&task_id);
+                                }
+                                tasks.settle(task_id, outcome)
+                            })
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                        transaction
+                            .set_event(
+                                event,
+                                owner.graph_event_plan()?,
+                                draft.protected_payloads.to_vec(),
+                            )
+                            .map_err(DurableRunFailure::Commit)?;
+                        lease.frontier = owner
+                            .commit_graph_transaction(
+                                &coordinator,
+                                transaction,
+                                predecessor,
+                                DurableCommitCutV1::TaskSettlement,
+                                task_id,
+                            )
+                            .await?;
+                        lease.next_event_sequence.insert(
+                            task_id,
+                            sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                        );
+                        if task_id != coordinator.snapshot().state().root_task_id() {
+                            return Ok(());
+                        }
+                    }
+                    MachineStep::Transition(MachineLabel::ForegroundCompletion(outcome)) => {
+                        loop {
+                            let attached = coordinator.shutdown_cohort().attached_tasks;
+                            if attached.is_empty() {
+                                break;
+                            }
+                            drop(lease);
+                            for child in attached {
+                                let wait = coordinator
+                                    .wait_for_task_settlement(child)
+                                    .map_err(|_| DurableRunFailure::Internal)?;
+                                let _ = self
+                                    .poll_durable_graph_future(&graph, &owner, &coordinator, wait)
+                                    .await?;
+                            }
+                            lease = match self
+                                .poll_durable_graph_future(
+                                    &graph,
+                                    &owner,
+                                    &coordinator,
+                                    graph.acquire(),
+                                )
+                                .await?
+                            {
+                                crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Some(
+                                    lease,
+                                )) => lease,
+                                crate::durable_lifecycle::DurableGraphDriverPoll::Completed(None) => {
+                                    return Ok(())
+                                }
+                                crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                                    continue 'graph_driver
+                                }
+                            };
+                        }
+                        self.commit_durable_graph_lifecycle(
+                            &mut lease,
+                            &owner,
+                            &coordinator,
+                            &operations,
+                            task_id,
+                            MachineLabel::ForegroundCompletion(outcome),
+                            DurableCommitCutV1::ForegroundCompletion,
+                        )
+                        .await?;
+                    }
+                    MachineStep::Transition(MachineLabel::TerminalCompletion(outcome)) => {
+                        loop {
+                            let detached = coordinator.shutdown_cohort().detached_tasks;
+                            if detached.is_empty() {
+                                break;
+                            }
+                            drop(lease);
+                            for child in detached {
+                                let wait = coordinator
+                                    .wait_for_task_settlement(child)
+                                    .map_err(|_| DurableRunFailure::Internal)?;
+                                let _ = self
+                                    .poll_durable_graph_future(&graph, &owner, &coordinator, wait)
+                                    .await?;
+                            }
+                            lease = match self
+                                .poll_durable_graph_future(
+                                    &graph,
+                                    &owner,
+                                    &coordinator,
+                                    graph.acquire(),
+                                )
+                                .await?
+                            {
+                                crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Some(
+                                    lease,
+                                )) => lease,
+                                crate::durable_lifecycle::DurableGraphDriverPoll::Completed(None) => {
+                                    return Ok(())
+                                }
+                                crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                                    continue 'graph_driver
+                                }
+                            };
+                        }
+                        self.commit_durable_graph_lifecycle(
+                            &mut lease,
+                            &owner,
+                            &coordinator,
+                            &operations,
+                            task_id,
+                            MachineLabel::TerminalCompletion(outcome),
+                            DurableCommitCutV1::TerminalCompletion,
+                        )
+                        .await?;
+                        drop(lease);
+                        graph.request_completion();
+                        self.start_durable_graph_finalizer(
+                            Arc::clone(&graph),
+                            Arc::clone(&owner),
+                            coordinator.clone(),
+                            Arc::clone(&program),
+                            operations.clone(),
+                        )?;
+                        return Ok(());
+                    }
+                    MachineStep::Transition(MachineLabel::OperationPrepared(_)) => {}
+                    MachineStep::Transition(_) => {}
+                    MachineStep::YieldRequired => {
+                        drop(lease);
+                        match self
+                            .poll_durable_graph_future(
+                                &graph,
+                                &owner,
+                                &coordinator,
+                                self.inner.configuration.executor().yield_now(),
+                            )
+                            .await?
+                        {
+                            crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Ok(())) => {}
+                            crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Err(_)) => {
+                                return Err(DurableRunFailure::Internal)
+                            }
+                            crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                                continue
+                            }
+                        }
+                        let mut lease = match self
+                            .poll_durable_graph_future(
+                                &graph,
+                                &owner,
+                                &coordinator,
+                                graph.acquire(),
+                            )
+                            .await?
+                        {
+                            crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Some(
+                                lease,
+                            )) => lease,
+                            crate::durable_lifecycle::DurableGraphDriverPoll::Completed(None) => {
+                                return Ok(())
+                            }
+                            crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                                continue
+                            }
+                        };
+                        let machine = if task_id == lease.foreground.task_id() {
+                            &mut lease.foreground
+                        } else {
+                            lease
+                                .children
+                                .get_mut(&task_id)
+                                .ok_or(DurableRunFailure::Internal)?
+                        };
+                        if !machine.resume_after_yield() {
+                            return Err(DurableRunFailure::Internal);
+                        }
+                    }
+                    MachineStep::WaitingOperation(operation) => {
+                        drop(lease);
+                        if operation
+                            .metadata
+                            .as_ref()
+                            .is_some_and(|metadata| metadata.kind == OperationSiteKind::Action)
+                        {
+                            self.drive_durable_graph_action_operation(
+                                &graph,
+                                &owner,
+                                &coordinator,
+                                &operations,
+                                task_id,
+                                hook.as_mut().ok_or(DurableRunFailure::Internal)?,
+                                &cancellation,
+                                &operation,
+                            )
+                            .await?;
+                        } else {
+                            self.drive_durable_graph_model_operation(
+                                &graph,
+                                &owner,
+                                &coordinator,
+                                &operations,
+                                task_id,
+                                hook.as_mut().ok_or(DurableRunFailure::Internal)?,
+                                &cancellation,
+                                &operation,
+                                model_session_occurrence,
+                            )
+                            .await?;
+                            model_session_occurrence = model_session_occurrence.saturating_add(1);
+                        }
+                    }
+                    MachineStep::WaitingSessionScope(_) => {
+                        return Err(DurableRunFailure::Internal);
+                    }
+                    MachineStep::Complete(_) => return Ok(()),
+                }
+            }
+        })
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn poll_durable_graph_future<F>(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        future: F,
+    ) -> Result<crate::durable_lifecycle::DurableGraphDriverPoll<F::Output>, DurableRunFailure>
+    where
+        F: Future,
+    {
+        let mut future = std::pin::pin!(future);
+        let first = std::future::poll_fn(|context| match owner.poll_graph_cancellation(context) {
+            crate::durable_lifecycle::DurableGraphCancellationPoll::Claimed(reason) => {
+                Poll::Ready(Err(reason))
+            }
+            crate::durable_lifecycle::DurableGraphCancellationPoll::Waiting => Poll::Pending,
+            crate::durable_lifecycle::DurableGraphCancellationPoll::Continue => {
+                match future.as_mut().poll(context) {
+                    Poll::Ready(output) => {
+                        owner.clear_graph_driver_waker(context.waker());
+                        Poll::Ready(Ok(output))
+                    }
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+        })
+        .await;
+        match first {
+            Ok(output) => Ok(crate::durable_lifecycle::DurableGraphDriverPoll::Completed(
+                output,
+            )),
+            Err(reason) => {
+                self.commit_durable_graph_cancellation(graph, owner, coordinator, reason)
+                    .await?;
+                Ok(crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled)
+            }
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn commit_durable_graph_cancellation(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        reason: CancellationReason,
+    ) -> Result<(), DurableRunFailure> {
+        let mut lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
+        self.commit_durable_graph_cancellation_with_lease(&mut lease, owner, coordinator, reason)
+            .await
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn commit_durable_graph_cancellation_with_lease(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        reason: CancellationReason,
+    ) -> Result<(), DurableRunFailure> {
+        let reason_text = reason
+            .message
+            .clone()
+            .unwrap_or_else(|| Arc::from(reason.category.wire_name()));
+        let predecessor = lease.frontier;
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut **lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let affected = transaction
+            .update(|foreground, children, tasks, _| {
+                let affected = tasks.cancel_execution(Arc::clone(&reason_text))?;
+                for task_id in &affected {
+                    if *task_id == foreground.task_id() {
+                        let _ = foreground.cancel(Arc::clone(&reason_text));
+                    } else if let Some(machine) = children.get_mut(task_id) {
+                        let _ = machine.cancel(Arc::clone(&reason_text));
+                    }
+                }
+                Ok::<_, TaskStateError>(affected)
+            })
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let Some(affected_task) = affected.first().copied() else {
+            drop(transaction);
+            owner.complete_graph_cancellation_without_cut();
+            return Ok(());
+        };
+        lease.frontier = owner
+            .commit_graph_transaction(
+                coordinator,
+                transaction,
+                predecessor,
+                DurableCommitCutV1::Cancellation,
+                affected_task,
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn acquire_durable_graph_lease(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+    ) -> Result<Option<DurableMachineGraphLease>, DurableRunFailure> {
+        match self
+            .poll_durable_graph_future(graph, owner, coordinator, graph.acquire())
+            .await?
+        {
+            crate::durable_lifecycle::DurableGraphDriverPoll::Completed(lease) => Ok(lease),
+            crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => Ok(None),
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    fn durable_graph_machine_mut(
+        lease: &mut DurableMachineGraphLease,
+        task_id: ProtocolIdentity,
+    ) -> Result<&mut Machine, DurableRunFailure> {
+        if task_id == lease.foreground.task_id() {
+            Ok(&mut lease.foreground)
+        } else {
+            lease
+                .children
+                .get_mut(&task_id)
+                .ok_or(DurableRunFailure::Internal)
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn fail_durable_graph_spawn(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        parent_task_id: ProtocolIdentity,
+        suspension: &MachineSpawnSuspension,
+        code: RuntimeCode,
+    ) -> Result<(), DurableRunFailure> {
+        Self::durable_graph_machine_mut(lease, parent_task_id)?
+            .fail_spawn(suspension, code)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        self.commit_durable_graph_checkpoint(lease, owner, coordinator)
+            .await
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_durable_source_child(
+        &self,
+        graph: Arc<SharedDurableMachineGraph>,
+        owner: Arc<crate::DurableOwnedExecution>,
+        coordinator: ExecutionCoordinator,
+        program: Arc<gantry_ir::MachineProgram>,
+        operations: DurableOperationContext,
+        parent_task_id: ProtocolIdentity,
+        suspension: MachineSpawnSuspension,
+    ) -> Result<(), DurableRunFailure> {
+        let task_limit_reached = |coordinator: &ExecutionCoordinator| {
+            let snapshot = coordinator.snapshot();
+            snapshot.state().created_task_count() >= snapshot.state().maximum_task_count()
+        };
+        let parent_is_cancelled = |coordinator: &ExecutionCoordinator| {
+            coordinator
+                .snapshot()
+                .state()
+                .task_cancellation_reason(parent_task_id)
+                .is_some()
+        };
+
+        let Some(mut lease) = self
+            .acquire_durable_graph_lease(&graph, &owner, &coordinator)
+            .await?
+        else {
+            return Ok(());
+        };
+        if parent_is_cancelled(&coordinator)
+            || Self::durable_graph_machine_mut(&mut lease, parent_task_id)?
+                .outcome()
+                .is_some()
+        {
+            return Ok(());
+        }
+        if task_limit_reached(&coordinator) {
+            return self
+                .fail_durable_graph_spawn(
+                    &mut lease,
+                    &owner,
+                    &coordinator,
+                    parent_task_id,
+                    &suspension,
+                    RuntimeCode::Deterministic(DeterministicEvaluationCode::TaskCountLimit),
+                )
+                .await;
+        }
+        let parent_session_id = suspension
+            .parent_session
+            .ok_or(DurableRunFailure::Internal)?;
+        let parent_session = coordinator
+            .session(parent_session_id)
+            .ok_or(DurableRunFailure::Internal)?;
+        drop(lease);
+        let established = match self
+            .poll_durable_graph_future(
+                &graph,
+                &owner,
+                &coordinator,
+                self.inner
+                    .session_establisher
+                    .establish(operations.execution_id, &parent_session),
+            )
+            .await?
+        {
+            crate::durable_lifecycle::DurableGraphDriverPoll::Completed(established) => established,
+            crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => return Ok(()),
+        };
+        let Some(mut lease) = self
+            .acquire_durable_graph_lease(&graph, &owner, &coordinator)
+            .await?
+        else {
+            return Ok(());
+        };
+        if parent_is_cancelled(&coordinator)
+            || Self::durable_graph_machine_mut(&mut lease, parent_task_id)?
+                .outcome()
+                .is_some()
+        {
+            return Ok(());
+        }
+        if established.is_err() {
+            return self
+                .fail_durable_graph_spawn(
+                    &mut lease,
+                    &owner,
+                    &coordinator,
+                    parent_task_id,
+                    &suspension,
+                    RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
+                )
+                .await;
+        }
+        if task_limit_reached(&coordinator) {
+            return self
+                .fail_durable_graph_spawn(
+                    &mut lease,
+                    &owner,
+                    &coordinator,
+                    parent_task_id,
+                    &suspension,
+                    RuntimeCode::Deterministic(DeterministicEvaluationCode::TaskCountLimit),
+                )
+                .await;
+        }
+        let sequence = lease
+            .next_event_sequence
+            .get(&parent_task_id)
+            .copied()
+            .unwrap_or(0);
+        let captures = suspension
+            .captures
+            .iter()
+            .map(|capture| capture.task_capture().clone())
+            .collect::<Vec<_>>();
+        let predecessor = lease.frontier;
+        let root_task = coordinator.snapshot().state().root_task_id();
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut *lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let created = match transaction.update(|_, _, tasks, sessions| {
+            tasks.create_child(
+                sessions,
+                TaskCreationRequestV1 {
+                    parent_task_id,
+                    handle_name: Arc::from(suspension.handle.name()),
+                    workflow: suspension.workflow.clone(),
+                    spawn_site: suspension.site.clone(),
+                    spawn_occurrence: suspension.occurrence,
+                    result_type: suspension.handle.result_type().clone(),
+                    captures: captures.clone(),
+                    inherited_agent: suspension.inherited_agent.clone(),
+                    parent_session_id,
+                },
+                self.inner.configuration.required().value_limits,
+            )
+        }) {
+            Ok(created) => created,
+            Err(TaskStateError::TaskCountLimit) => {
+                transaction
+                    .update(|foreground, children, _, _| {
+                        let parent = if foreground.task_id() == parent_task_id {
+                            foreground
+                        } else {
+                            children
+                                .get_mut(&parent_task_id)
+                                .ok_or(TaskStateError::UnknownTask)?
+                        };
+                        parent
+                            .fail_spawn(
+                                &suspension,
+                                RuntimeCode::Deterministic(
+                                    DeterministicEvaluationCode::TaskCountLimit,
+                                ),
+                            )
+                            .map(|_| ())
+                            .map_err(|_| TaskStateError::InvalidTransition)
+                    })
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                lease.frontier = owner
+                    .commit_graph_transaction(
+                        &coordinator,
+                        transaction,
+                        predecessor,
+                        DurableCommitCutV1::Checkpoint,
+                        root_task,
+                    )
+                    .await?;
+                return Ok(());
+            }
+            Err(TaskStateError::TaskCancelled) => return Ok(()),
+            Err(_) => return Err(DurableRunFailure::Internal),
+        };
+        let draft = concurrent_spawn_event(operations.execution_id, &created.transition, sequence)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let event = self
+            .complete_graph_event(&operations, parent_task_id, sequence, draft.clone())
+            .await?;
+        transaction
+            .set_event(
+                event,
+                owner.graph_event_plan()?,
+                draft.protected_payloads.to_vec(),
+            )
+            .map_err(DurableRunFailure::Commit)?;
+        lease.frontier = owner
+            .commit_graph_transaction(
+                &coordinator,
+                transaction,
+                predecessor,
+                DurableCommitCutV1::TaskCreation,
+                created.task_id,
+            )
+            .await?;
+        lease.next_event_sequence.insert(
+            parent_task_id,
+            sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+        );
+
+        let occurrence_frontier = lease.frontier.1;
+        let (frontier, barrier) = owner
+            .drain_graph_required_event_obligations_through(
+                Arc::clone(&program),
+                &coordinator,
+                occurrence_frontier,
+                &self.inner.allocator,
+                self.inner.configuration.identity_source(),
+                self.inner.event_delivery_runtime.as_ref(),
+            )
+            .await?;
+        lease.frontier = frontier;
+        if let DurableEventBarrierV1::RequiredExhausted(failure) = barrier {
+            let reason = owner.request_graph_cancellation(CancellationReason {
+                category: CancellationReasonCategory::Runtime,
+                message: Some(Arc::from("required-event-delivery-failure")),
+                causal_identity: None,
+            });
+            self.commit_durable_graph_cancellation_with_lease(
+                &mut lease,
+                &owner,
+                &coordinator,
+                reason,
+            )
+            .await?;
+            owner.record_graph_required_delivery_failure(failure)?;
+            self.settle_durable_cancelled_unsubmitted_child(
+                &mut lease,
+                &owner,
+                &coordinator,
+                created.task_id,
+            )
+            .await?;
+            return Ok(());
+        }
+
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve(AdmissionClass::SourceChildTask) {
+            Ok(reservation) => reservation,
+            Err(_) => {
+                self.commit_durable_child_submission_resolution(
+                    &mut lease,
+                    &owner,
+                    &coordinator,
+                    &operations,
+                    parent_task_id,
+                    &created,
+                    &suspension,
+                    None,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+
+        let snapshot = coordinator.snapshot();
+        let child_record = snapshot
+            .state()
+            .task(created.task_id)
+            .ok_or(DurableRunFailure::Internal)?;
+        let child_session = coordinator
+            .session(created.base_session_id)
+            .ok_or(DurableRunFailure::Internal)?;
+        let root_session = coordinator
+            .session(child_session.root)
+            .ok_or(DurableRunFailure::Internal)?;
+        let root_provenance = match root_session.mode {
+            SessionCreationModeV1::EmbedderRoot => RootSessionProvenanceV1::EmbedderSupplied,
+            SessionCreationModeV1::GantryRoot => RootSessionProvenanceV1::GantryCreated,
+            SessionCreationModeV1::New | SessionCreationModeV1::Fork => {
+                return Err(DurableRunFailure::Internal);
+            }
+        };
+        let child_machine = match Machine::new_concurrent_task_body_with_context(
+            Arc::clone(&program),
+            &suspension.body,
+            &captures,
+            operations.execution_id,
+            created.task_id,
+            Arc::from(child_record.task_path()),
+            self.inner.configuration.machine_limits(),
+            lease.foreground.execution_budget(),
+            suspension.inherited_agent.clone(),
+            Some(created.base_session_id),
+        ) {
+            Ok(machine) => machine,
+            Err(_) => {
+                drop(reservation);
+                self.commit_durable_child_submission_resolution(
+                    &mut lease,
+                    &owner,
+                    &coordinator,
+                    &operations,
+                    parent_task_id,
+                    &created,
+                    &suspension,
+                    None,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+        let create_request = match (TaskContextV1 {
+            execution_id: operations.execution_id,
+            task_id: created.task_id,
+            inherited_agent: suspension.inherited_agent.clone(),
+            session: TaskSessionContextV1::Forked {
+                base_session_id: created.base_session_id,
+                parent_session_id,
+                root_session_id: child_session.root,
+                root_provenance,
+            },
+        })
+        .into_host_request()
+        {
+            Ok(request) => request,
+            Err(_) => {
+                drop(reservation);
+                self.commit_durable_child_submission_resolution(
+                    &mut lease,
+                    &owner,
+                    &coordinator,
+                    &operations,
+                    parent_task_id,
+                    &created,
+                    &suspension,
+                    None,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+
+        let child_task_id = created.task_id;
+        let task_graph = Arc::clone(&graph);
+        let task_owner = Arc::clone(&owner);
+        let task_coordinator = coordinator.clone();
+        let task_program = Arc::clone(&program);
+        let task_operations = operations.clone();
+        let task_inner = Arc::clone(&self.inner);
+        let task_session = child_session.clone();
+        let task_future = Box::pin(async move {
+            let interpreter = Interpreter {
+                inner: task_inner,
+                external_owner: false,
+            };
+            let (established, cancellation_settled) = match interpreter
+                .poll_durable_graph_future(
+                    &task_graph,
+                    &task_owner,
+                    &task_coordinator,
+                    interpreter
+                        .inner
+                        .session_establisher
+                        .establish(task_operations.execution_id, &task_session),
+                )
+                .await
+            {
+                Ok(crate::durable_lifecycle::DurableGraphDriverPoll::Completed(established)) => {
+                    match interpreter
+                        .poll_durable_graph_future(
+                            &task_graph,
+                            &task_owner,
+                            &task_coordinator,
+                            std::future::ready(()),
+                        )
+                        .await
+                    {
+                        Ok(crate::durable_lifecycle::DurableGraphDriverPoll::Completed(())) => {
+                            (established, false)
+                        }
+                        Ok(
+                            crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled,
+                        ) => (Ok(()), true),
+                        Err(failure) => {
+                            task_graph.request_failure(failure.clone());
+                            let _ = interpreter.start_durable_graph_finalizer(
+                                Arc::clone(&task_graph),
+                                Arc::clone(&task_owner),
+                                task_coordinator,
+                                task_program,
+                                task_operations,
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
+                Ok(crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled) => {
+                    (Ok(()), true)
+                }
+                Err(failure) => {
+                    task_graph.request_failure(failure.clone());
+                    let _ = interpreter.start_durable_graph_finalizer(
+                        Arc::clone(&task_graph),
+                        Arc::clone(&task_owner),
+                        task_coordinator,
+                        task_program,
+                        task_operations,
+                    );
+                    return Ok(());
+                }
+            };
+            let hook = if cancellation_settled {
+                None
+            } else if established.is_err() {
+                if let Some(mut lease) = task_graph.acquire().await
+                    && let Some(machine) = lease.children.get_mut(&child_task_id)
+                {
+                    let _ = machine.fail_execution(
+                        RuntimeErrorCategory::LogicalSessionSetup,
+                        gantry_runtime::ExecutionFailureProjection::Full,
+                    );
+                }
+                None
+            } else {
+                Some(
+                    TaskHook::new(
+                        &interpreter.inner.lifecycle,
+                        interpreter.inner.hook_factory.as_ref(),
+                        AdapterPoison::default(),
+                        create_request,
+                    )
+                    .map_err(|_| DurableRunFailure::Internal),
+                )
+            };
+            let result = match hook.transpose() {
+                Ok(hook) => {
+                    interpreter
+                        .drive_durable_graph_task(
+                            Arc::clone(&task_graph),
+                            Arc::clone(&task_owner),
+                            task_coordinator.clone(),
+                            Arc::clone(&task_program),
+                            task_operations.clone(),
+                            child_task_id,
+                            hook,
+                            None,
+                            0,
+                        )
+                        .await
+                }
+                Err(failure) => Err(failure),
+            };
+            if let Err(failure) = result {
+                task_graph.request_failure(failure.clone());
+                let _ = interpreter.start_durable_graph_finalizer(
+                    Arc::clone(&task_graph),
+                    Arc::clone(&task_owner),
+                    task_coordinator,
+                    task_program,
+                    task_operations,
+                );
+            }
+            Ok(())
+        });
+        let driver = TaskDriver::from_durable_graph_child(
+            Arc::clone(&self.inner),
+            coordinator.clone(),
+            child_task_id,
+            suspension.workflow.clone(),
+            Arc::clone(&graph),
+            Arc::clone(&owner),
+            task_future,
+        );
+        let abnormal = driver.abnormal_completion_handler();
+        let completion = driver.physical_completion_handler();
+        let registration = supervisor.prepare_with_completion(
+            SupervisedTaskDomain::SourceChild,
+            Some(abnormal),
+            Some(completion),
+        );
+        let signal = registration.signal();
+        let gate = Arc::new(RootStartGate::default());
+        let task = driver.into_gated_owned_task(signal, Arc::clone(&gate));
+
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => {
+                let disposition = self
+                    .commit_durable_child_submission_resolution(
+                        &mut lease,
+                        &owner,
+                        &coordinator,
+                        &operations,
+                        parent_task_id,
+                        &created,
+                        &suspension,
+                        Some(child_machine),
+                    )
+                    .await;
+                match disposition {
+                    Ok(false) => {
+                        graph.register_task(child_task_id, task);
+                        gate.release();
+                    }
+                    Ok(true) => {
+                        gate.cancel();
+                        let _ = task.request_abort();
+                        let _ = task.completion().await;
+                        task.relinquish();
+                    }
+                    Err(failure) => {
+                        gate.cancel();
+                        let _ = task.request_abort();
+                        let _ = task.completion().await;
+                        task.relinquish();
+                        return Err(failure);
+                    }
+                }
+            }
+            Err(_) => {
+                self.commit_durable_child_submission_resolution(
+                    &mut lease,
+                    &owner,
+                    &coordinator,
+                    &operations,
+                    parent_task_id,
+                    &created,
+                    &suspension,
+                    None,
+                )
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn settle_durable_cancelled_unsubmitted_child(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        task_id: ProtocolIdentity,
+    ) -> Result<(), DurableRunFailure> {
+        let predecessor = lease.frontier;
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut **lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        transaction
+            .update(|_, _, tasks, _| {
+                tasks.resolve_submission(task_id, Ok(()))?;
+                tasks.mark_driver_physically_settled(task_id)?;
+                Ok::<_, TaskStateError>(())
+            })
+            .map_err(|_| DurableRunFailure::Internal)?;
+        lease.frontier = owner
+            .commit_graph_transaction(
+                coordinator,
+                transaction,
+                predecessor,
+                DurableCommitCutV1::TaskSettlement,
+                task_id,
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn commit_durable_child_submission_resolution(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        operations: &DurableOperationContext,
+        parent_task_id: ProtocolIdentity,
+        created: &gantry_runtime::TaskCreationV1,
+        suspension: &MachineSpawnSuspension,
+        child_machine: Option<Machine>,
+    ) -> Result<bool, DurableRunFailure> {
+        let completed_event = if child_machine.is_none() {
+            let sequence = lease
+                .next_event_sequence
+                .get(&created.task_id)
+                .copied()
+                .unwrap_or(0);
+            let outcome = MachineOutcome::Failed(MachineFailure {
+                code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
+                workflow: suspension.workflow.clone(),
+                site: suspension.site.clone(),
+            });
+            let draft = machine_lifecycle_event(
+                &MachineLabel::TaskSettled(outcome),
+                operations.execution_id,
+                created.task_id,
+            )
+            .ok_or(DurableRunFailure::Internal)?;
+            let event = self
+                .complete_graph_event(operations, created.task_id, sequence, draft.clone())
+                .await?;
+            Some((sequence, event, draft))
+        } else {
+            None
+        };
+        let predecessor = lease.frontier;
+        let root_task = coordinator.snapshot().state().root_task_id();
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut **lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let submitted = child_machine.is_some();
+        let disposition = transaction
+            .update(|foreground, children, tasks, _| {
+                let parent = if foreground.task_id() == parent_task_id {
+                    foreground
+                } else {
+                    children
+                        .get_mut(&parent_task_id)
+                        .ok_or(TaskStateError::UnknownTask)?
+                };
+                parent
+                    .complete_spawn(suspension, created.handle_id)
+                    .map_err(|_| TaskStateError::InvalidTransition)?;
+                tasks.resolve_submission(
+                    created.task_id,
+                    if submitted {
+                        Ok(())
+                    } else {
+                        Err(HostError {
+                            code: Arc::from("task-submission-failure"),
+                            protected_diagnostic: None,
+                        })
+                    },
+                )
+            })
+            .map_err(|_| DurableRunFailure::Internal)?;
+        if !disposition.is_cancelled()
+            && let Some(machine) = child_machine
+        {
+            transaction
+                .install_child_machine(created.task_id, machine)
+                .map_err(|_| DurableRunFailure::Internal)?;
+        }
+        if disposition.is_rejected()
+            && let Some((_, event, draft)) = &completed_event
+        {
+            transaction
+                .set_event(
+                    event.clone(),
+                    owner.graph_event_plan()?,
+                    draft.protected_payloads.to_vec(),
+                )
+                .map_err(DurableRunFailure::Commit)?;
+        }
+        let (cut, affected_task) = if submitted && !disposition.is_cancelled() {
+            (DurableCommitCutV1::Checkpoint, root_task)
+        } else {
+            (DurableCommitCutV1::TaskSettlement, created.task_id)
+        };
+        lease.frontier = owner
+            .commit_graph_transaction(coordinator, transaction, predecessor, cut, affected_task)
+            .await?;
+        if disposition.is_rejected()
+            && let Some((sequence, _, _)) = completed_event
+        {
+            lease.next_event_sequence.insert(
+                created.task_id,
+                sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+            );
+        }
+        Ok(disposition.is_cancelled())
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn drive_durable_graph_action_operation(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        context: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        hook: &mut TaskHook<'_>,
+        cancellation: &CancellationSignal,
+        occurrence: &gantry_runtime::OperationOccurrence,
+    ) -> Result<(), DurableRunFailure> {
+        let metadata = occurrence
+            .metadata
+            .as_ref()
+            .ok_or(DurableRunFailure::Internal)?;
+        let action = metadata
+            .action
+            .as_ref()
+            .ok_or(DurableRunFailure::Internal)?;
+        if metadata.kind != OperationSiteKind::Action
+            || action.parameters.len() != occurrence.inputs.len()
+        {
+            return Err(DurableRunFailure::Internal);
+        }
+        let expected_schema = context
+            .schema(&metadata.result_type)
+            .ok_or(DurableRunFailure::Internal)?;
+        let mapping_revision = context
+            .mapping_revisions
+            .action
+            .clone()
+            .ok_or(DurableRunFailure::Internal)?;
+        let captured = CapturedOperationRequestV1::Action {
+            header: OperationRequestHeaderV1 {
+                execution_id: context.execution_id,
+                task_id,
+                operation_id: occurrence.identity,
+                kind: metadata.kind,
+                expected_type: metadata.result_type.clone(),
+                expected_schema,
+                maximum_hook_output_bytes: self
+                    .inner
+                    .configuration
+                    .required()
+                    .maximum_hook_output_bytes,
+                value_limits: self.inner.configuration.required().value_limits,
+                workflow: occurrence.workflow.clone(),
+                site: occurrence.site.clone(),
+            },
+            body: ActionOperationRequestV1 {
+                path: action.path.clone(),
+                signature: action.signature.clone(),
+                recovery: action.recovery,
+                mapping_revision,
+                arguments: action
+                    .parameters
+                    .iter()
+                    .zip(occurrence.inputs.iter())
+                    .map(|(parameter, value)| TypedActionArgumentV1 {
+                        name: Arc::from(parameter.name()),
+                        ty: parameter.ty().clone(),
+                        value: value.canonical_json(),
+                    })
+                    .collect(),
+            },
+        };
+        let mut operation =
+            OperationLifecycle::new(captured).map_err(|_| DurableRunFailure::Internal)?;
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            self.inner.configuration.retry_defaults(),
+            metadata.retry_limit,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        operation
+            .prepare(
+                &self.inner.allocator,
+                self.inner.configuration.identity_source(),
+                0,
+                0,
+                &[],
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let mut retries_left = None;
+
+        loop {
+            let (prepared, validation_attempt, recovery_dispatch) =
+                operation
+                    .prepared_dispatch()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let dispatch_id = prepared.dispatch_id;
+            let request_bytes: Arc<[u8]> = Arc::from(prepared.request.canonical_bytes());
+            let action_recovery = Some(action.recovery);
+            let dispatch_event = operation_dispatch_event(
+                operation.captured(),
+                prepared,
+                validation_attempt,
+                recovery_dispatch,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            let Some(mut lease) = self
+                .acquire_durable_graph_lease(graph, owner, coordinator)
+                .await?
+            else {
+                return Ok(());
+            };
+            self.commit_durable_graph_operation_cut(
+                &mut lease,
+                owner,
+                coordinator,
+                context,
+                task_id,
+                DurableCommitCutV1::OperationPrepared,
+                DurableOperationEvidenceV1 {
+                    operation_id: occurrence.identity,
+                    dispatch_id: Some(dispatch_id),
+                    validation_attempt,
+                    recovery_dispatch,
+                    retry_delay_us: None,
+                    retries_left,
+                    action_recovery,
+                    request_bytes: Some(Arc::clone(&request_bytes)),
+                    outcome: None,
+                    retry_errors: Arc::from([]),
+                    result_type: None,
+                    result_bytes: None,
+                },
+                Some(dispatch_event),
+            )
+            .await?;
+            drop(lease);
+            let dispatch = match self
+                .poll_durable_graph_future(
+                    graph,
+                    owner,
+                    coordinator,
+                    operation.dispatch(hook, cancellation),
+                )
+                .await?
+            {
+                crate::durable_lifecycle::DurableGraphDriverPoll::Completed(result) => result,
+                crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                    return Ok(());
+                }
+            };
+            if dispatch.is_err() {
+                let Some(mut lease) = self
+                    .acquire_durable_graph_lease(graph, owner, coordinator)
+                    .await?
+                else {
+                    return Ok(());
+                };
+                let machine = if task_id == lease.foreground.task_id() {
+                    &mut lease.foreground
+                } else {
+                    lease
+                        .children
+                        .get_mut(&task_id)
+                        .ok_or(DurableRunFailure::Internal)?
+                };
+                let category = if hook.is_ready() {
+                    RuntimeErrorCategory::HookFailure
+                } else {
+                    RuntimeErrorCategory::HookCreation
+                };
+                machine
+                    .fail_operation(occurrence.identity, category)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                    .await?;
+                return Ok(());
+            }
+            let (_, outcome, validation_attempt, recovery_dispatch) =
+                operation
+                    .outcome_context()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let outcome = outcome.clone();
+            let completion_event = operation_completion_event(
+                operation.captured(),
+                dispatch_id,
+                validation_attempt,
+                recovery_dispatch,
+                &outcome,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            let Some(mut lease) = self
+                .acquire_durable_graph_lease(graph, owner, coordinator)
+                .await?
+            else {
+                return Ok(());
+            };
+            self.commit_durable_graph_operation_cut(
+                &mut lease,
+                owner,
+                coordinator,
+                context,
+                task_id,
+                DurableCommitCutV1::OperationOutcome,
+                DurableOperationEvidenceV1 {
+                    operation_id: occurrence.identity,
+                    dispatch_id: Some(dispatch_id),
+                    validation_attempt,
+                    recovery_dispatch,
+                    retry_delay_us: None,
+                    retries_left,
+                    action_recovery,
+                    request_bytes: Some(Arc::clone(&request_bytes)),
+                    outcome: Some(outcome.clone()),
+                    retry_errors: Arc::from([]),
+                    result_type: None,
+                    result_bytes: None,
+                },
+                Some(completion_event),
+            )
+            .await?;
+            drop(lease);
+            match operation
+                .process_outcome(policy, self.inner.configuration.executor(), cancellation)
+                .map_err(|_| DurableRunFailure::Internal)?
+            {
+                ProcessedHookOutcomeV1::Accepted(output) => {
+                    let result_bytes: Arc<[u8]> = Arc::from(output.canonical_json().bytes());
+                    let value = decode_logical_value(
+                        &result_bytes,
+                        &metadata.result_type,
+                        self.inner.configuration.required().value_limits,
+                        context.declared_value_shapes.as_ref(),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let (result_kind, result_value) = match metadata.result_type.kind() {
+                        TypeKind::Unit => (OperationResultEventKindV1::Unit, None),
+                        TypeKind::Decision => (OperationResultEventKindV1::Decision, Some(&value)),
+                        _ => (OperationResultEventKindV1::Value, Some(&value)),
+                    };
+                    let result_event = operation_result_event(
+                        occurrence.identity,
+                        &metadata.result_type,
+                        result_kind,
+                        result_value,
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let Some(mut lease) = self
+                        .acquire_durable_graph_lease(graph, owner, coordinator)
+                        .await?
+                    else {
+                        return Ok(());
+                    };
+                    let machine = Self::durable_graph_machine_mut(&mut lease, task_id)?;
+                    if metadata.attempted {
+                        operation.accept_attempt(machine, value)
+                    } else {
+                        operation.accept(machine, value)
+                    }
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    self.commit_durable_graph_operation_cut(
+                        &mut lease,
+                        owner,
+                        coordinator,
+                        context,
+                        task_id,
+                        DurableCommitCutV1::OperationResult,
+                        DurableOperationEvidenceV1 {
+                            operation_id: occurrence.identity,
+                            dispatch_id: None,
+                            validation_attempt,
+                            recovery_dispatch,
+                            retry_delay_us: None,
+                            retries_left,
+                            action_recovery,
+                            request_bytes: None,
+                            outcome: None,
+                            retry_errors: Arc::from([]),
+                            result_type: Some(metadata.result_type.clone()),
+                            result_bytes: Some(result_bytes),
+                        },
+                        Some(result_event),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                ProcessedHookOutcomeV1::Retry(wait) => {
+                    retries_left = Some(wait.retries_left);
+                    let Some(mut lease) = self
+                        .acquire_durable_graph_lease(graph, owner, coordinator)
+                        .await?
+                    else {
+                        return Ok(());
+                    };
+                    self.commit_durable_graph_operation_cut(
+                        &mut lease,
+                        owner,
+                        coordinator,
+                        context,
+                        task_id,
+                        DurableCommitCutV1::RetryWaiting,
+                        DurableOperationEvidenceV1 {
+                            operation_id: occurrence.identity,
+                            dispatch_id: Some(dispatch_id),
+                            validation_attempt,
+                            recovery_dispatch,
+                            retry_delay_us: Some(wait.delay.get()),
+                            retries_left,
+                            action_recovery,
+                            request_bytes: Some(request_bytes),
+                            outcome: Some(outcome),
+                            retry_errors: Arc::clone(&wait.errors),
+                            result_type: None,
+                            result_bytes: None,
+                        },
+                        None,
+                    )
+                    .await?;
+                    drop(lease);
+                    let prepared = match self
+                        .poll_durable_graph_future(
+                            graph,
+                            owner,
+                            coordinator,
+                            operation.prepare_after_retry_wait(
+                                self.inner.configuration.executor(),
+                                cancellation,
+                                &self.inner.allocator,
+                                self.inner.configuration.identity_source(),
+                            ),
+                        )
+                        .await?
+                    {
+                        crate::durable_lifecycle::DurableGraphDriverPoll::Completed(result) => {
+                            result.map_err(|_| DurableRunFailure::Internal)?
+                        }
+                        crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                            return Ok(());
+                        }
+                    };
+                    if prepared.is_none() {
+                        let Some(mut lease) = self
+                            .acquire_durable_graph_lease(graph, owner, coordinator)
+                            .await?
+                        else {
+                            return Ok(());
+                        };
+                        let machine = if task_id == lease.foreground.task_id() {
+                            &mut lease.foreground
+                        } else {
+                            lease
+                                .children
+                                .get_mut(&task_id)
+                                .ok_or(DurableRunFailure::Internal)?
+                        };
+                        Self::settle_retry_terminal(machine, occurrence, &operation)
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                        self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                            .await?;
+                        return Ok(());
+                    }
+                }
+                ProcessedHookOutcomeV1::Failed(failure) => {
+                    let Some(mut lease) = self
+                        .acquire_durable_graph_lease(graph, owner, coordinator)
+                        .await?
+                    else {
+                        return Ok(());
+                    };
+                    let machine = Self::durable_graph_machine_mut(&mut lease, task_id)?;
+                    if metadata.attempted
+                        && matches!(
+                            operation.lifecycle_failure(),
+                            Some(OperationLifecycleFailureV1::Operation(_))
+                        )
+                    {
+                        operation
+                            .accept_attempt_failure(machine)
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    } else {
+                        machine
+                            .fail_operation(occurrence.identity, failure.runtime_category())
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    }
+                    self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                        .await?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn drive_durable_graph_model_operation(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        context: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        hook: &mut TaskHook<'_>,
+        cancellation: &CancellationSignal,
+        occurrence: &gantry_runtime::OperationOccurrence,
+        session_occurrence: u64,
+    ) -> Result<(), DurableRunFailure> {
+        let metadata = occurrence
+            .metadata
+            .as_ref()
+            .ok_or(DurableRunFailure::Internal)?;
+        let interpolation_count = metadata.interpolation_types.len();
+        if !matches!(
+            metadata.kind,
+            OperationSiteKind::Prompt | OperationSiteKind::Decide
+        ) || metadata.named_input_names.len() != metadata.named_input_types.len()
+            || occurrence.inputs.len()
+                != interpolation_count.saturating_add(metadata.named_input_types.len())
+        {
+            return Err(DurableRunFailure::Internal);
+        }
+        let expected_schema = context
+            .schema(&metadata.result_type)
+            .ok_or(DurableRunFailure::Internal)?;
+        let selected_agent = occurrence
+            .active_agent
+            .clone()
+            .ok_or(DurableRunFailure::Internal)?;
+        let mapping_revision = context
+            .mapping_revisions
+            .agent
+            .clone()
+            .ok_or(DurableRunFailure::Internal)?;
+        let parent_session_id = occurrence
+            .active_session
+            .ok_or(DurableRunFailure::Internal)?;
+        let active_session_id = if let Some(mode) = metadata.session_mode.as_deref() {
+            let mode = match mode {
+                "fork" => SessionCreationModeV1::Fork,
+                "new" => SessionCreationModeV1::New,
+                _ => return Err(DurableRunFailure::Internal),
+            };
+            let Some(mut lease) = self
+                .acquire_durable_graph_lease(graph, owner, coordinator)
+                .await?
+            else {
+                return Ok(());
+            };
+            let predecessor = lease.frontier;
+            let root_task = coordinator.snapshot().state().root_task_id();
+            let DurableMachineGraph {
+                foreground,
+                children,
+                ..
+            } = &mut *lease;
+            let mut transaction = coordinator
+                .stage_graph(foreground, children)
+                .map_err(|_| DurableRunFailure::Internal)?;
+            let session_id = transaction
+                .update(|_, _, _, sessions| {
+                    sessions
+                        .create(
+                            parent_session_id,
+                            task_id,
+                            occurrence.site.clone(),
+                            session_occurrence,
+                            mode,
+                            SessionEstablishmentV1::OperationRequest,
+                        )
+                        .map(|session| session.id)
+                })
+                .map_err(|_| DurableRunFailure::Internal)?;
+            lease.frontier = owner
+                .commit_graph_transaction(
+                    coordinator,
+                    transaction,
+                    predecessor,
+                    DurableCommitCutV1::Checkpoint,
+                    root_task,
+                )
+                .await?;
+            session_id
+        } else {
+            parent_session_id
+        };
+        let session = coordinator
+            .session(active_session_id)
+            .ok_or(DurableRunFailure::Internal)?;
+        let interpolation_inputs = metadata
+            .interpolation_types
+            .iter()
+            .zip(occurrence.inputs.iter().take(interpolation_count))
+            .enumerate()
+            .map(|(position, (ty, value))| {
+                Ok(InterpolationInputV1 {
+                    position: u64::try_from(position).map_err(|_| DurableRunFailure::Internal)?,
+                    ty: ty.clone(),
+                    value: value.canonical_json(),
+                })
+            })
+            .collect::<Result<Vec<_>, DurableRunFailure>>()?;
+        let named_inputs = metadata
+            .named_input_names
+            .iter()
+            .zip(&metadata.named_input_types)
+            .zip(occurrence.inputs.iter().skip(interpolation_count))
+            .map(|((name, ty), value)| NamedInputV1 {
+                name: Arc::clone(name),
+                ty: ty.clone(),
+                value: value.canonical_json(),
+            })
+            .collect::<Vec<_>>();
+        let rendered_prompt = match render_prompt(
+            &metadata.template_segments,
+            occurrence.inputs.iter().take(interpolation_count),
+            self.inner
+                .configuration
+                .required()
+                .value_limits
+                .maximum_string_scalars(),
+        ) {
+            Ok(prompt) => prompt,
+            Err(RenderPromptError::Limit) => {
+                let Some(mut lease) = self
+                    .acquire_durable_graph_lease(graph, owner, coordinator)
+                    .await?
+                else {
+                    return Ok(());
+                };
+                Self::durable_graph_machine_mut(&mut lease, task_id)?
+                    .fail_operation_with_code(
+                        occurrence.identity,
+                        RuntimeCode::Deterministic(DeterministicEvaluationCode::StringSizeLimit),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                    .await?;
+                return Ok(());
+            }
+            Err(RenderPromptError::Shape) => return Err(DurableRunFailure::Internal),
+        };
+        let session_use = if let Some(mode) = metadata.session_mode.as_ref() {
+            ModelSessionUseV1::Create {
+                mode: Arc::clone(mode),
+                session_id: session.id,
+                parent_session_id,
+                root_session_id: session.root,
+                provenance: Arc::from("operation-request"),
+            }
+        } else {
+            ModelSessionUseV1::Inline
+        };
+        let captured = CapturedOperationRequestV1::Model {
+            header: OperationRequestHeaderV1 {
+                execution_id: context.execution_id,
+                task_id,
+                operation_id: occurrence.identity,
+                kind: metadata.kind,
+                expected_type: metadata.result_type.clone(),
+                expected_schema,
+                maximum_hook_output_bytes: self
+                    .inner
+                    .configuration
+                    .required()
+                    .maximum_hook_output_bytes,
+                value_limits: self.inner.configuration.required().value_limits,
+                workflow: occurrence.workflow.clone(),
+                site: occurrence.site.clone(),
+            },
+            body: Box::new(ModelOperationRequestV1 {
+                selected_agent: Arc::clone(&selected_agent),
+                mapping_revision,
+                template_segments: metadata.template_segments.clone(),
+                rendered_prompt: Arc::clone(&rendered_prompt),
+                interpolation_inputs: interpolation_inputs.clone(),
+                named_inputs: named_inputs.clone(),
+                transcript: session.transcript.clone(),
+                active_session_id: session.id,
+                parent_session_id: session.parent,
+                root_session_id: session.root,
+                session_use,
+            }),
+        };
+        let mut operation =
+            OperationLifecycle::new(captured).map_err(|_| DurableRunFailure::Internal)?;
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            self.inner.configuration.retry_defaults(),
+            metadata.retry_limit,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        operation
+            .prepare(
+                &self.inner.allocator,
+                self.inner.configuration.identity_source(),
+                0,
+                0,
+                &[],
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let mut retries_left = None;
+
+        loop {
+            let (prepared, validation_attempt, recovery_dispatch) =
+                operation
+                    .prepared_dispatch()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let dispatch_id = prepared.dispatch_id;
+            let request_bytes: Arc<[u8]> = Arc::from(prepared.request.canonical_bytes());
+            let dispatch_event = operation_dispatch_event(
+                operation.captured(),
+                prepared,
+                validation_attempt,
+                recovery_dispatch,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            let Some(mut lease) = self
+                .acquire_durable_graph_lease(graph, owner, coordinator)
+                .await?
+            else {
+                return Ok(());
+            };
+            self.commit_durable_graph_operation_cut(
+                &mut lease,
+                owner,
+                coordinator,
+                context,
+                task_id,
+                DurableCommitCutV1::OperationPrepared,
+                DurableOperationEvidenceV1 {
+                    operation_id: occurrence.identity,
+                    dispatch_id: Some(dispatch_id),
+                    validation_attempt,
+                    recovery_dispatch,
+                    retry_delay_us: None,
+                    retries_left,
+                    action_recovery: None,
+                    request_bytes: Some(Arc::clone(&request_bytes)),
+                    outcome: None,
+                    retry_errors: Arc::from([]),
+                    result_type: None,
+                    result_bytes: None,
+                },
+                Some(dispatch_event),
+            )
+            .await?;
+            drop(lease);
+
+            let dispatch = match self
+                .poll_durable_graph_future(
+                    graph,
+                    owner,
+                    coordinator,
+                    operation.dispatch_model(
+                        hook,
+                        cancellation,
+                        &self.inner.session_establisher,
+                        context.execution_id,
+                        &session,
+                    ),
+                )
+                .await?
+            {
+                crate::durable_lifecycle::DurableGraphDriverPoll::Completed(result) => result,
+                crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                    return Ok(());
+                }
+            };
+            if let Err(error) = dispatch {
+                let category = match error {
+                    OperationLifecycleError::Cancelled => RuntimeErrorCategory::Cancellation,
+                    OperationLifecycleError::Session(_) => {
+                        RuntimeErrorCategory::LogicalSessionSetup
+                    }
+                    OperationLifecycleError::Hook(_) if hook.is_ready() => {
+                        RuntimeErrorCategory::HookFailure
+                    }
+                    OperationLifecycleError::Hook(_) => RuntimeErrorCategory::HookCreation,
+                    _ => return Err(DurableRunFailure::Internal),
+                };
+                let Some(mut lease) = self
+                    .acquire_durable_graph_lease(graph, owner, coordinator)
+                    .await?
+                else {
+                    return Ok(());
+                };
+                Self::durable_graph_machine_mut(&mut lease, task_id)?
+                    .fail_operation(occurrence.identity, category)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                    .await?;
+                return Ok(());
+            }
+
+            let (_, outcome, validation_attempt, recovery_dispatch) =
+                operation
+                    .outcome_context()
+                    .ok_or(DurableRunFailure::Internal)?;
+            let outcome = outcome.clone();
+            let completion_event = operation_completion_event(
+                operation.captured(),
+                dispatch_id,
+                validation_attempt,
+                recovery_dispatch,
+                &outcome,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            let Some(mut lease) = self
+                .acquire_durable_graph_lease(graph, owner, coordinator)
+                .await?
+            else {
+                return Ok(());
+            };
+            self.commit_durable_graph_operation_cut(
+                &mut lease,
+                owner,
+                coordinator,
+                context,
+                task_id,
+                DurableCommitCutV1::OperationOutcome,
+                DurableOperationEvidenceV1 {
+                    operation_id: occurrence.identity,
+                    dispatch_id: Some(dispatch_id),
+                    validation_attempt,
+                    recovery_dispatch,
+                    retry_delay_us: None,
+                    retries_left,
+                    action_recovery: None,
+                    request_bytes: Some(Arc::clone(&request_bytes)),
+                    outcome: Some(outcome.clone()),
+                    retry_errors: Arc::from([]),
+                    result_type: None,
+                    result_bytes: None,
+                },
+                Some(completion_event),
+            )
+            .await?;
+            drop(lease);
+
+            match operation
+                .process_outcome(policy, self.inner.configuration.executor(), cancellation)
+                .map_err(|_| DurableRunFailure::Internal)?
+            {
+                ProcessedHookOutcomeV1::Accepted(output) => {
+                    let result_bytes: Arc<[u8]> = Arc::from(output.canonical_json().bytes());
+                    let value = decode_logical_value(
+                        &result_bytes,
+                        &metadata.result_type,
+                        self.inner.configuration.required().value_limits,
+                        context.declared_value_shapes.as_ref(),
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let turn = TranscriptTurnV1 {
+                        operation_kind: metadata.kind,
+                        template_representation: metadata.template_segments.clone(),
+                        rendered_prompt: Arc::clone(&rendered_prompt),
+                        interpolation_inputs: interpolation_inputs.clone(),
+                        using_inputs: named_inputs.clone(),
+                        selected_agent: Arc::clone(&selected_agent),
+                        accepted_result: AcceptedTranscriptResultV1 {
+                            kind: transcript_result_kind(&metadata.result_type),
+                            ty: metadata.result_type.clone(),
+                            value: value.canonical_json(),
+                        },
+                    };
+                    let (result_kind, result_value) = match metadata.result_type.kind() {
+                        TypeKind::Unit => (OperationResultEventKindV1::Unit, None),
+                        TypeKind::Decision => (OperationResultEventKindV1::Decision, Some(&value)),
+                        _ => (OperationResultEventKindV1::Value, Some(&value)),
+                    };
+                    let result_event = operation_result_event(
+                        occurrence.identity,
+                        &metadata.result_type,
+                        result_kind,
+                        result_value,
+                    )
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                    let Some(mut lease) = self
+                        .acquire_durable_graph_lease(graph, owner, coordinator)
+                        .await?
+                    else {
+                        return Ok(());
+                    };
+                    let sequence = lease
+                        .next_event_sequence
+                        .get(&task_id)
+                        .copied()
+                        .unwrap_or(0);
+                    let completed_event = self
+                        .complete_graph_event(context, task_id, sequence, result_event.clone())
+                        .await?;
+                    let predecessor = lease.frontier;
+                    let DurableMachineGraph {
+                        foreground,
+                        children,
+                        ..
+                    } = &mut *lease;
+                    let mut transaction = coordinator
+                        .stage_graph(foreground, children)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    let accepted = transaction.update(|foreground, children, _, sessions| {
+                        let machine = if foreground.task_id() == task_id {
+                            foreground
+                        } else {
+                            children
+                                .get_mut(&task_id)
+                                .ok_or(OperationLifecycleError::InvalidAcceptedValue)?
+                        };
+                        let session = sessions
+                            .get_mut(active_session_id)
+                            .ok_or(OperationLifecycleError::InvalidAcceptedValue)?;
+                        if metadata.attempted {
+                            operation.accept_model_attempt(
+                                machine,
+                                session,
+                                &turn,
+                                self.inner.configuration.required().value_limits,
+                                value,
+                            )
+                        } else {
+                            operation.accept_model(
+                                machine,
+                                session,
+                                &turn,
+                                self.inner.configuration.required().value_limits,
+                                value,
+                            )
+                        }
+                    });
+                    match accepted {
+                        Ok(_) => {}
+                        Err(OperationLifecycleError::Transcript(
+                            gantry_runtime::TranscriptError::Limit,
+                        )) => {
+                            drop(transaction);
+                            Self::durable_graph_machine_mut(&mut lease, task_id)?
+                                .fail_operation(
+                                    occurrence.identity,
+                                    RuntimeErrorCategory::LogicalSessionTranscriptLimit,
+                                )
+                                .map_err(|_| DurableRunFailure::Internal)?;
+                            self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                                .await?;
+                            return Ok(());
+                        }
+                        Err(_) => return Err(DurableRunFailure::Internal),
+                    }
+                    transaction
+                        .set_operation(DurableOperationEvidenceV1 {
+                            operation_id: occurrence.identity,
+                            dispatch_id: None,
+                            validation_attempt,
+                            recovery_dispatch,
+                            retry_delay_us: None,
+                            retries_left,
+                            action_recovery: None,
+                            request_bytes: None,
+                            outcome: None,
+                            retry_errors: Arc::from([]),
+                            result_type: Some(metadata.result_type.clone()),
+                            result_bytes: Some(result_bytes),
+                        })
+                        .map_err(DurableRunFailure::Commit)?;
+                    transaction
+                        .set_event(
+                            completed_event,
+                            owner.graph_event_plan()?,
+                            result_event.protected_payloads.to_vec(),
+                        )
+                        .map_err(DurableRunFailure::Commit)?;
+                    lease.frontier = owner
+                        .commit_graph_transaction(
+                            coordinator,
+                            transaction,
+                            predecessor,
+                            DurableCommitCutV1::OperationResult,
+                            task_id,
+                        )
+                        .await?;
+                    lease.next_event_sequence.insert(
+                        task_id,
+                        sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                    );
+                    return Ok(());
+                }
+                ProcessedHookOutcomeV1::Retry(wait) => {
+                    retries_left = Some(wait.retries_left);
+                    let Some(mut lease) = self
+                        .acquire_durable_graph_lease(graph, owner, coordinator)
+                        .await?
+                    else {
+                        return Ok(());
+                    };
+                    self.commit_durable_graph_operation_cut(
+                        &mut lease,
+                        owner,
+                        coordinator,
+                        context,
+                        task_id,
+                        DurableCommitCutV1::RetryWaiting,
+                        DurableOperationEvidenceV1 {
+                            operation_id: occurrence.identity,
+                            dispatch_id: Some(dispatch_id),
+                            validation_attempt,
+                            recovery_dispatch,
+                            retry_delay_us: Some(wait.delay.get()),
+                            retries_left,
+                            action_recovery: None,
+                            request_bytes: Some(request_bytes),
+                            outcome: Some(outcome),
+                            retry_errors: Arc::clone(&wait.errors),
+                            result_type: None,
+                            result_bytes: None,
+                        },
+                        None,
+                    )
+                    .await?;
+                    drop(lease);
+                    let prepared = match self
+                        .poll_durable_graph_future(
+                            graph,
+                            owner,
+                            coordinator,
+                            operation.prepare_after_retry_wait(
+                                self.inner.configuration.executor(),
+                                cancellation,
+                                &self.inner.allocator,
+                                self.inner.configuration.identity_source(),
+                            ),
+                        )
+                        .await?
+                    {
+                        crate::durable_lifecycle::DurableGraphDriverPoll::Completed(result) => {
+                            result.map_err(|_| DurableRunFailure::Internal)?
+                        }
+                        crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                            return Ok(());
+                        }
+                    };
+                    if prepared.is_none() {
+                        let Some(mut lease) = self
+                            .acquire_durable_graph_lease(graph, owner, coordinator)
+                            .await?
+                        else {
+                            return Ok(());
+                        };
+                        Self::settle_retry_terminal(
+                            Self::durable_graph_machine_mut(&mut lease, task_id)?,
+                            occurrence,
+                            &operation,
+                        )
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                        self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                            .await?;
+                        return Ok(());
+                    }
+                }
+                ProcessedHookOutcomeV1::Failed(failure) => {
+                    let Some(mut lease) = self
+                        .acquire_durable_graph_lease(graph, owner, coordinator)
+                        .await?
+                    else {
+                        return Ok(());
+                    };
+                    let machine = Self::durable_graph_machine_mut(&mut lease, task_id)?;
+                    if metadata.attempted
+                        && matches!(
+                            operation.lifecycle_failure(),
+                            Some(OperationLifecycleFailureV1::Operation(_))
+                        )
+                    {
+                        operation
+                            .accept_attempt_failure(machine)
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    } else {
+                        machine
+                            .fail_operation(occurrence.identity, failure.runtime_category())
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                    }
+                    self.commit_durable_graph_checkpoint(&mut lease, owner, coordinator)
+                        .await?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn commit_durable_graph_operation_cut(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        context: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        cut: DurableCommitCutV1,
+        operation: DurableOperationEvidenceV1,
+        event: Option<ExecutionEventDraftV1>,
+    ) -> Result<(), DurableRunFailure> {
+        let completed_event = if let Some(event) = event {
+            let sequence = lease
+                .next_event_sequence
+                .get(&task_id)
+                .copied()
+                .unwrap_or(0);
+            Some((
+                sequence,
+                self.complete_graph_event(context, task_id, sequence, event.clone())
+                    .await?,
+                event,
+            ))
+        } else {
+            None
+        };
+        let predecessor = lease.frontier;
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut **lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        transaction
+            .set_operation(operation)
+            .map_err(DurableRunFailure::Commit)?;
+        if let Some((_, completed, draft)) = &completed_event {
+            transaction
+                .set_event(
+                    completed.clone(),
+                    owner.graph_event_plan()?,
+                    draft.protected_payloads.to_vec(),
+                )
+                .map_err(DurableRunFailure::Commit)?;
+        }
+        lease.frontier = owner
+            .commit_graph_transaction(coordinator, transaction, predecessor, cut, task_id)
+            .await?;
+        if let Some((sequence, _, _)) = completed_event {
+            lease.next_event_sequence.insert(
+                task_id,
+                sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn commit_durable_graph_checkpoint(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+    ) -> Result<(), DurableRunFailure> {
+        let predecessor = lease.frontier;
+        let root_task = coordinator.snapshot().state().root_task_id();
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut **lease;
+        let transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        lease.frontier = owner
+            .commit_graph_transaction(
+                coordinator,
+                transaction,
+                predecessor,
+                DurableCommitCutV1::Checkpoint,
+                root_task,
+            )
+            .await?;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn complete_graph_event(
+        &self,
+        operations: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        sequence: u64,
+        event: ExecutionEventDraftV1,
+    ) -> Result<gantry_core::event::EventEnvelope, DurableRunFailure> {
+        let draft = event
+            .draft
+            .with_execution_id(operations.execution_id)
+            .and_then(|draft| draft.with_task(task_id, sequence))
+            .map_err(|_| DurableRunFailure::Internal)?;
+        EventCompleter::new(
+            &self.inner.allocator,
+            self.inner.configuration.identity_source(),
+            self.inner.clock.as_ref(),
+        )
+        .complete(operations.activity_id, draft)
+        .await
+        .map_err(|_| DurableRunFailure::Internal)
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn commit_durable_graph_lifecycle(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        operations: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        label: MachineLabel,
+        cut: DurableCommitCutV1,
+    ) -> Result<(), DurableRunFailure> {
+        let sequence = lease
+            .next_event_sequence
+            .get(&task_id)
+            .copied()
+            .unwrap_or(0);
+        let draft = machine_lifecycle_event(&label, operations.execution_id, task_id)
+            .ok_or(DurableRunFailure::Internal)?;
+        let event = self
+            .complete_graph_event(operations, task_id, sequence, draft.clone())
+            .await?;
+        let outcome = match label {
+            MachineLabel::ForegroundCompletion(outcome)
+            | MachineLabel::TerminalCompletion(outcome) => outcome,
+            _ => return Err(DurableRunFailure::Internal),
+        };
+        let predecessor = lease.frontier;
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut **lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        transaction
+            .update(|_, _, tasks, _| match cut {
+                DurableCommitCutV1::ForegroundCompletion => tasks.complete_foreground(outcome),
+                DurableCommitCutV1::TerminalCompletion => tasks.complete_terminal().map(|_| ()),
+                _ => Err(TaskStateError::InvalidTransition),
+            })
+            .map_err(|_| DurableRunFailure::Internal)?;
+        transaction
+            .set_event(
+                event,
+                owner.graph_event_plan()?,
+                draft.protected_payloads.to_vec(),
+            )
+            .map_err(DurableRunFailure::Commit)?;
+        lease.frontier = owner
+            .commit_graph_transaction(coordinator, transaction, predecessor, cut, task_id)
+            .await?;
+        lease.next_event_sequence.insert(
+            task_id,
+            sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+        );
+        Ok(())
     }
 
     #[cfg(feature = "durable")]
@@ -2738,30 +5637,68 @@ impl Interpreter {
         accepted: StartExecutionAccepted,
         prepared: PreparedRootDriver,
     ) -> Result<ExecutionSnapshot, RunExecutionError> {
+        self.drive_task(accepted, prepared.into(), true)
+            .await?
+            .ok_or(RunExecutionError::ExecutionNotFound)
+    }
+
+    async fn drive_task(
+        &self,
+        accepted: StartExecutionAccepted,
+        prepared: PreparedTaskDriver,
+        execution_foreground: bool,
+    ) -> Result<Option<ExecutionSnapshot>, RunExecutionError> {
         let analysis = accepted
             .package_activity
             .analysis
             .as_ref()
             .ok_or(RunExecutionError::MissingAnalysis)?;
-        let PreparedRootDriver {
+        let PreparedTaskDriver {
             mut machine,
             coordinator,
             task_id,
             workflow,
             create_request,
+            base_session,
+            #[cfg(feature = "concurrent")]
+            program,
+            #[cfg(feature = "concurrent")]
+            execution_budget,
         } = prepared;
         let cancellation = accepted
             .handle
             .cancellation_signal()
             .map_err(|_| RunExecutionError::LifecycleTransition)?;
-        let mut hook = TaskHook::new(
-            &self.inner.lifecycle,
-            self.inner.hook_factory.as_ref(),
-            AdapterPoison::default(),
-            create_request,
-        )
-        .map_err(RunExecutionError::TaskHook)?;
         let session_establisher = self.inner.session_establisher.clone();
+        let setup_succeeded = if let Some(base_session) = base_session {
+            let session = coordinator
+                .session(base_session)
+                .ok_or(RunExecutionError::MissingLogicalSession)?;
+            let established = session_establisher
+                .establish(accepted.execution_id, &session)
+                .await;
+            self.apply_task_cancellation(&accepted, &coordinator, task_id, &mut machine)?;
+            if established.is_err() && machine.outcome().is_none() {
+                let _ = machine.fail_execution(
+                    RuntimeErrorCategory::LogicalSessionSetup,
+                    gantry_runtime::ExecutionFailureProjection::Full,
+                );
+            }
+            established.is_ok() && machine.outcome().is_none()
+        } else {
+            true
+        };
+        let mut hook = setup_succeeded
+            .then(|| {
+                TaskHook::new(
+                    &self.inner.lifecycle,
+                    self.inner.hook_factory.as_ref(),
+                    AdapterPoison::default(),
+                    create_request,
+                )
+            })
+            .transpose()
+            .map_err(RunExecutionError::TaskHook)?;
         let mut model_session_occurrence = 0_u64;
         let mut foreground_fixed = false;
         let mut terminal_fixed = false;
@@ -2778,27 +5715,7 @@ impl Interpreter {
         .map_err(RunExecutionError::Event)?;
 
         loop {
-            if cancellation.is_cancelled() && machine.outcome().is_none() {
-                let reason = self
-                    .inner
-                    .lifecycle
-                    .query_execution(accepted.execution_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|snapshot| snapshot.cancellation)
-                    .map_or_else(
-                        || Arc::from("cancellation"),
-                        |reason| {
-                            reason
-                                .message
-                                .unwrap_or_else(|| Arc::from(reason.category.wire_name()))
-                        },
-                    );
-                coordinator
-                    .cancel_task_tree(task_id, Arc::clone(&reason))
-                    .map_err(RunExecutionError::TaskState)?;
-                let _ = machine.cancel(reason);
-            }
+            self.apply_task_cancellation(&accepted, &coordinator, task_id, &mut machine)?;
             match machine.step() {
                 MachineStep::Transition(label) => {
                     if let Some(event) =
@@ -2831,11 +5748,10 @@ impl Interpreter {
                                 .settle_task(task_id, outcome)
                                 .map_err(RunExecutionError::TaskState)?;
                         }
-                        MachineLabel::ForegroundCompletion(outcome) => {
+                        MachineLabel::ForegroundCompletion(outcome) if execution_foreground => {
                             if !foreground_fixed {
-                                let coordinated = coordinator
-                                    .complete_foreground()
-                                    .map_err(RunExecutionError::TaskState)?;
+                                let coordinated =
+                                    self.complete_nondurable_foreground(&coordinator).await?;
                                 if coordinated != outcome {
                                     return Err(RunExecutionError::LifecycleTransition);
                                 }
@@ -2846,7 +5762,9 @@ impl Interpreter {
                                 foreground_fixed = true;
                             }
                         }
-                        MachineLabel::TerminalCompletion(outcome) if !terminal_fixed => {
+                        MachineLabel::TerminalCompletion(outcome)
+                            if execution_foreground && !terminal_fixed =>
+                        {
                             coordinator
                                 .complete_terminal()
                                 .map_err(RunExecutionError::TaskState)?;
@@ -2855,6 +5773,23 @@ impl Interpreter {
                                 .complete_terminal(&accepted.handle, outcome)
                                 .map_err(|_| RunExecutionError::LifecycleTransition)?;
                             terminal_fixed = true;
+                        }
+                        #[cfg(feature = "concurrent")]
+                        MachineLabel::TaskControlSuspended(suspension) => {
+                            self.submit_source_child(
+                                &accepted,
+                                &mut machine,
+                                &coordinator,
+                                task_id,
+                                &program,
+                                &execution_budget,
+                                &session_establisher,
+                                &cancellation,
+                                &mut events,
+                                execution_foreground,
+                                suspension,
+                            )
+                            .await?;
                         }
                         _ => {}
                     }
@@ -2921,6 +5856,13 @@ impl Interpreter {
                         .await
                         .is_err()
                     {
+                        if !execution_foreground {
+                            let _ = machine.fail_execution(
+                                RuntimeErrorCategory::ExecutorFailure,
+                                gantry_runtime::ExecutionFailureProjection::Full,
+                            );
+                            continue;
+                        }
                         let failure = MachineFailure {
                             code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
                             workflow: workflow.clone(),
@@ -2952,6 +5894,13 @@ impl Interpreter {
                 }
                 MachineStep::WaitingOperation(operation) => {
                     let Some(metadata) = operation.metadata.as_ref() else {
+                        if !execution_foreground {
+                            let _ = machine.fail_execution(
+                                RuntimeErrorCategory::InternalInvariantFailure,
+                                gantry_runtime::ExecutionFailureProjection::Full,
+                            );
+                            continue;
+                        }
                         let failure = MachineFailure {
                             code: RuntimeCode::InternalInvariant,
                             workflow: operation.workflow,
@@ -2966,7 +5915,8 @@ impl Interpreter {
                                 &accepted,
                                 analysis,
                                 &mut machine,
-                                &mut hook,
+                                hook.as_mut()
+                                    .ok_or(RunExecutionError::LifecycleTransition)?,
                                 &cancellation,
                                 &operation,
                             )
@@ -2977,7 +5927,8 @@ impl Interpreter {
                                 &accepted,
                                 analysis,
                                 &mut machine,
-                                &mut hook,
+                                hook.as_mut()
+                                    .ok_or(RunExecutionError::LifecycleTransition)?,
                                 &cancellation,
                                 &operation,
                                 &coordinator,
@@ -2990,15 +5941,466 @@ impl Interpreter {
                     }
                 }
                 MachineStep::Complete(_) => {
-                    return self
-                        .inner
-                        .lifecycle
-                        .query_execution(accepted.execution_id)
-                        .map_err(RunExecutionError::Lifecycle)?
-                        .ok_or(RunExecutionError::ExecutionNotFound);
+                    if execution_foreground {
+                        return self
+                            .inner
+                            .lifecycle
+                            .query_execution(accepted.execution_id)
+                            .map_err(RunExecutionError::Lifecycle);
+                    }
+                    return Ok(None);
                 }
             }
         }
+    }
+
+    fn apply_task_cancellation(
+        &self,
+        accepted: &StartExecutionAccepted,
+        coordinator: &ExecutionCoordinator,
+        task_id: ProtocolIdentity,
+        machine: &mut Machine,
+    ) -> Result<(), RunExecutionError> {
+        if machine.outcome().is_some() {
+            return Ok(());
+        }
+        let coordinated_reason = coordinator
+            .snapshot()
+            .state()
+            .task_cancellation_reason(task_id)
+            .map(Arc::from);
+        let lifecycle_reason = accepted
+            .handle
+            .cancellation_signal()
+            .ok()
+            .filter(CancellationToken::is_cancelled)
+            .map(|_| {
+                self.inner
+                    .lifecycle
+                    .query_execution(accepted.execution_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|snapshot| snapshot.cancellation)
+                    .map_or_else(
+                        || Arc::from("cancellation"),
+                        |reason| {
+                            reason
+                                .message
+                                .unwrap_or_else(|| Arc::from(reason.category.wire_name()))
+                        },
+                    )
+            });
+        let Some(reason) = coordinated_reason.or(lifecycle_reason) else {
+            return Ok(());
+        };
+        coordinator
+            .cancel_task_tree(task_id, Arc::clone(&reason))
+            .map_err(RunExecutionError::TaskState)?;
+        let _ = machine.cancel(reason);
+        Ok(())
+    }
+
+    async fn complete_nondurable_foreground(
+        &self,
+        coordinator: &ExecutionCoordinator,
+    ) -> Result<MachineOutcome, RunExecutionError> {
+        loop {
+            match coordinator.complete_foreground() {
+                Ok(outcome) => return Ok(outcome),
+                Err(TaskStateError::AttachedTasksPending) => {
+                    let attached = coordinator.shutdown_cohort().attached_tasks;
+                    if attached.is_empty() {
+                        return Err(RunExecutionError::LifecycleTransition);
+                    }
+                    for task_id in attached {
+                        coordinator
+                            .wait_for_task_settlement(task_id)
+                            .map_err(RunExecutionError::TaskState)?
+                            .await;
+                    }
+                }
+                Err(error) => return Err(RunExecutionError::TaskState(error)),
+            }
+        }
+    }
+
+    #[cfg(feature = "concurrent")]
+    #[allow(clippy::too_many_arguments)]
+    async fn fail_source_child_submission(
+        &self,
+        accepted: &StartExecutionAccepted,
+        machine: &mut Machine,
+        coordinator: &ExecutionCoordinator,
+        parent_task_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        handle_id: gantry_runtime::DynamicTaskHandleIdentity,
+        cancellation: &dyn CancellationToken,
+        events: &mut ExecutionEventPipeline<'_>,
+        suspension: &MachineSpawnSuspension,
+    ) -> Result<(), RunExecutionError> {
+        self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+        if cancellation.is_cancelled() || machine.outcome().is_some() {
+            coordinator
+                .resolve_unsubmitted_cancellation(task_id)
+                .map_err(RunExecutionError::TaskState)?;
+            return Ok(());
+        }
+        let outcome = MachineOutcome::Failed(MachineFailure {
+            code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
+            workflow: suspension.workflow.clone(),
+            site: suspension.site.clone(),
+        });
+        machine
+            .complete_spawn(suspension, handle_id)
+            .map_err(|_| RunExecutionError::LifecycleTransition)?;
+        let disposition = coordinator
+            .resolve_submission(
+                task_id,
+                Err(HostError {
+                    code: Arc::from("task-submission-failure"),
+                    protected_diagnostic: None,
+                }),
+            )
+            .map_err(RunExecutionError::TaskState)?;
+        if disposition.is_cancelled() {
+            return Ok(());
+        }
+        let draft = machine_lifecycle_event(
+            &MachineLabel::TaskSettled(outcome),
+            accepted.execution_id,
+            task_id,
+        )
+        .ok_or(RunExecutionError::LifecycleTransition)?;
+        let completion = events
+            .emit_task_draft_for(task_id, 0, draft)
+            .await
+            .map_err(RunExecutionError::Event)?;
+        if matches!(
+            completion.consequence,
+            ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
+        ) {
+            coordinator
+                .cancel_task_tree(parent_task_id, Arc::from("required-event-delivery-failure"))
+                .map_err(RunExecutionError::TaskState)?;
+            self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+            return Ok(());
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "concurrent")]
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_source_child(
+        &self,
+        accepted: &StartExecutionAccepted,
+        machine: &mut Machine,
+        coordinator: &ExecutionCoordinator,
+        parent_task_id: ProtocolIdentity,
+        program: &Arc<gantry_ir::MachineProgram>,
+        execution_budget: &ExecutionBudget,
+        session_establisher: &SessionEstablisher,
+        cancellation: &dyn CancellationToken,
+        events: &mut ExecutionEventPipeline<'_>,
+        _execution_foreground: bool,
+        suspension: MachineSpawnSuspension,
+    ) -> Result<(), RunExecutionError> {
+        self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+        if cancellation.is_cancelled() || machine.outcome().is_some() {
+            return Ok(());
+        }
+        let task_limit_reached = |coordinator: &ExecutionCoordinator| {
+            let state = coordinator.snapshot();
+            state.state().created_task_count() >= state.state().maximum_task_count()
+        };
+        if task_limit_reached(coordinator) {
+            machine
+                .fail_spawn(
+                    &suspension,
+                    RuntimeCode::Deterministic(DeterministicEvaluationCode::TaskCountLimit),
+                )
+                .map_err(|_| RunExecutionError::LifecycleTransition)?;
+            return Ok(());
+        }
+        let parent_session_id = suspension
+            .parent_session
+            .ok_or(RunExecutionError::MissingLogicalSession)?;
+        let parent_session = coordinator
+            .session(parent_session_id)
+            .ok_or(RunExecutionError::MissingLogicalSession)?;
+        if session_establisher
+            .establish(accepted.execution_id, &parent_session)
+            .await
+            .is_err()
+        {
+            let _ = machine.fail_execution(
+                RuntimeErrorCategory::LogicalSessionSetup,
+                gantry_runtime::ExecutionFailureProjection::Full,
+            );
+            return Ok(());
+        }
+        self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+        if cancellation.is_cancelled() || machine.outcome().is_some() {
+            return Ok(());
+        }
+        if task_limit_reached(coordinator) {
+            machine
+                .fail_spawn(
+                    &suspension,
+                    RuntimeCode::Deterministic(DeterministicEvaluationCode::TaskCountLimit),
+                )
+                .map_err(|_| RunExecutionError::LifecycleTransition)?;
+            return Ok(());
+        }
+
+        let captures = suspension
+            .captures
+            .iter()
+            .map(|capture| capture.task_capture().clone())
+            .collect::<Vec<_>>();
+        let created = match coordinator.create_child(
+            TaskCreationRequestV1 {
+                parent_task_id,
+                handle_name: Arc::from(suspension.handle.name()),
+                workflow: suspension.workflow.clone(),
+                spawn_site: suspension.site.clone(),
+                spawn_occurrence: suspension.occurrence,
+                result_type: suspension.handle.result_type().clone(),
+                captures: captures.clone(),
+                inherited_agent: suspension.inherited_agent.clone(),
+                parent_session_id,
+            },
+            self.inner.configuration.required().value_limits,
+        ) {
+            Ok(created) => created,
+            Err(TaskStateError::TaskCountLimit) => {
+                machine
+                    .fail_spawn(
+                        &suspension,
+                        RuntimeCode::Deterministic(DeterministicEvaluationCode::TaskCountLimit),
+                    )
+                    .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                return Ok(());
+            }
+            Err(error) => return Err(RunExecutionError::TaskState(error)),
+        };
+
+        let spawn_event = concurrent_spawn_event(accepted.execution_id, &created.transition, 0)
+            .map_err(|_| RunExecutionError::LifecycleTransition)?;
+        let spawn_event = events
+            .emit_task_draft(spawn_event)
+            .await
+            .map_err(RunExecutionError::Event)?;
+        if matches!(
+            spawn_event.consequence,
+            ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
+        ) {
+            coordinator
+                .cancel_task_tree(parent_task_id, Arc::from("required-event-delivery-failure"))
+                .map_err(RunExecutionError::TaskState)?;
+        }
+
+        self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+        if cancellation.is_cancelled() || machine.outcome().is_some() {
+            // This already-created child never acquired executor ownership, so
+            // cancellation settles both its semantics and physical driver coordinate.
+            coordinator
+                .resolve_unsubmitted_cancellation(created.task_id)
+                .map_err(RunExecutionError::TaskState)?;
+            return Ok(());
+        }
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve(AdmissionClass::SourceChildTask) {
+            Ok(reservation) if !cancellation.is_cancelled() && machine.outcome().is_none() => {
+                reservation
+            }
+            Ok(reservation) => {
+                drop(reservation);
+                self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+                coordinator
+                    .resolve_unsubmitted_cancellation(created.task_id)
+                    .map_err(RunExecutionError::TaskState)?;
+                return Ok(());
+            }
+            Err(_) => {
+                self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+                if cancellation.is_cancelled() || machine.outcome().is_some() {
+                    coordinator
+                        .resolve_unsubmitted_cancellation(created.task_id)
+                        .map_err(RunExecutionError::TaskState)?;
+                    return Ok(());
+                }
+                self.fail_source_child_submission(
+                    accepted,
+                    machine,
+                    coordinator,
+                    parent_task_id,
+                    created.task_id,
+                    created.handle_id,
+                    cancellation,
+                    events,
+                    &suspension,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+
+        let snapshot = coordinator.snapshot();
+        let child_record = snapshot
+            .state()
+            .task(created.task_id)
+            .ok_or(RunExecutionError::TaskState(TaskStateError::UnknownTask))?;
+        let child_session = coordinator
+            .session(created.base_session_id)
+            .ok_or(RunExecutionError::MissingLogicalSession)?;
+        let root_session = coordinator
+            .session(child_session.root)
+            .ok_or(RunExecutionError::MissingLogicalSession)?;
+        let root_provenance = match root_session.mode {
+            SessionCreationModeV1::EmbedderRoot => RootSessionProvenanceV1::EmbedderSupplied,
+            SessionCreationModeV1::GantryRoot => RootSessionProvenanceV1::GantryCreated,
+            SessionCreationModeV1::New | SessionCreationModeV1::Fork => {
+                return Err(RunExecutionError::LifecycleTransition);
+            }
+        };
+        let child_machine = match Machine::new_concurrent_task_body_with_context(
+            Arc::clone(program),
+            &suspension.body,
+            &captures,
+            accepted.execution_id,
+            created.task_id,
+            Arc::from(child_record.task_path()),
+            self.inner.configuration.machine_limits(),
+            execution_budget.clone(),
+            suspension.inherited_agent.clone(),
+            Some(created.base_session_id),
+        ) {
+            Ok(machine) => machine,
+            Err(_) => {
+                drop(reservation);
+                self.fail_source_child_submission(
+                    accepted,
+                    machine,
+                    coordinator,
+                    parent_task_id,
+                    created.task_id,
+                    created.handle_id,
+                    cancellation,
+                    events,
+                    &suspension,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+        let create_request = match (TaskContextV1 {
+            execution_id: accepted.execution_id,
+            task_id: created.task_id,
+            inherited_agent: suspension.inherited_agent.clone(),
+            session: TaskSessionContextV1::Forked {
+                base_session_id: created.base_session_id,
+                parent_session_id,
+                root_session_id: child_session.root,
+                root_provenance,
+            },
+        })
+        .into_host_request()
+        {
+            Ok(request) => request,
+            Err(_) => {
+                drop(reservation);
+                self.fail_source_child_submission(
+                    accepted,
+                    machine,
+                    coordinator,
+                    parent_task_id,
+                    created.task_id,
+                    created.handle_id,
+                    cancellation,
+                    events,
+                    &suspension,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+        let prepared = PreparedTaskDriver {
+            machine: child_machine,
+            coordinator: coordinator.clone(),
+            task_id: created.task_id,
+            workflow: suspension.workflow.clone(),
+            create_request,
+            base_session: Some(created.base_session_id),
+            program: Arc::clone(program),
+            execution_budget: execution_budget.clone(),
+        };
+        let driver = TaskDriver::from_child(Arc::clone(&self.inner), accepted.clone(), prepared);
+        let abnormal = driver.abnormal_completion_handler();
+        let completion = driver.physical_completion_handler();
+        let registration = supervisor.prepare_with_completion(
+            SupervisedTaskDomain::SourceChild,
+            Some(abnormal),
+            Some(completion),
+        );
+        let signal = registration.signal();
+        let gate = Arc::new(RootStartGate::default());
+        let task = driver.into_gated_owned_task(signal, Arc::clone(&gate));
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => {
+                // The child gate stays closed until the task-created event, submission
+                // handle, and submission state are published in that order. These two
+                // in-memory transitions cannot be atomic; the closed gate prevents child
+                // progress across their bounded interval.
+                let disposition = machine
+                    .complete_spawn(&suspension, created.handle_id)
+                    .map_err(|_| TaskStateError::InvalidTransition)
+                    .and_then(|_| coordinator.resolve_submission(created.task_id, Ok(())));
+                let Ok(disposition) = disposition else {
+                    gate.cancel();
+                    let fallback = MachineOutcome::Failed(MachineFailure {
+                        code: RuntimeCode::InternalInvariant,
+                        workflow: suspension.workflow,
+                        site: suspension.site,
+                    });
+                    let _ = coordinator.settle_task(created.task_id, fallback);
+                    task.relinquish();
+                    return Err(RunExecutionError::LifecycleTransition);
+                };
+                if disposition.is_cancelled() {
+                    gate.cancel();
+                    let _ = task.request_abort();
+                    let _ = task.completion().await;
+                    task.relinquish();
+                    return Ok(());
+                }
+                task.relinquish();
+                gate.release();
+            }
+            Err(_) => {
+                self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine)?;
+                if cancellation.is_cancelled() || machine.outcome().is_some() {
+                    coordinator
+                        .resolve_unsubmitted_cancellation(created.task_id)
+                        .map_err(RunExecutionError::TaskState)?;
+                    return Ok(());
+                }
+                self.fail_source_child_submission(
+                    accepted,
+                    machine,
+                    coordinator,
+                    parent_task_id,
+                    created.task_id,
+                    created.handle_id,
+                    cancellation,
+                    events,
+                    &suspension,
+                )
+                .await?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns one point-in-time snapshot for an accepted execution identity.
@@ -3007,6 +6409,31 @@ impl Interpreter {
         execution_id: ProtocolIdentity,
     ) -> Result<Option<ExecutionSnapshot>, LifecycleError> {
         self.inner.lifecycle.query_execution(execution_id)
+    }
+
+    /// Returns concurrent task state for focused nondurable conformance assertions.
+    #[cfg(all(feature = "concurrent", feature = "test-support"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_nondurable_task_state(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Option<ConcurrentTaskStateV1> {
+        lock_shutdown(&self.inner.nondurable_test_coordinators)
+            .get(&execution_id)
+            .map(|coordinator| coordinator.snapshot().state().clone())
+    }
+
+    /// Returns the in-process durable observation for focused failure-order assertions.
+    #[cfg(all(feature = "durable", feature = "test-support"))]
+    #[doc(hidden)]
+    pub async fn test_durable_observation(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Option<crate::DurableExecutionObservation> {
+        self.durable_execution(execution_id)
+            .await
+            .map(|owner| owner.observation())
     }
 
     /// Waits independently for the foreground coordinate of one in-process handle.
@@ -3814,6 +7241,30 @@ impl Interpreter {
         self.settle_driver_failure(coordinator, task_id, handle, fallback)
     }
 
+    #[cfg(feature = "concurrent")]
+    fn settle_child_driver_failure(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        task_id: ProtocolIdentity,
+        fallback: MachineOutcome,
+    ) -> Result<(), RunExecutionError> {
+        let snapshot = coordinator.snapshot();
+        let status = snapshot
+            .state()
+            .task(task_id)
+            .ok_or(RunExecutionError::TaskState(TaskStateError::UnknownTask))?
+            .status();
+        if matches!(
+            status,
+            ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+        ) {
+            coordinator
+                .settle_task(task_id, fallback)
+                .map_err(RunExecutionError::TaskState)?;
+        }
+        Ok(())
+    }
+
     fn settle_driver_failure(
         &self,
         coordinator: &ExecutionCoordinator,
@@ -3882,9 +7333,7 @@ struct TaskDriver {
     task_id: ProtocolIdentity,
     coordinator: ExecutionCoordinator,
     failure_context: TaskDriverFailureContext,
-    future: Pin<
-        Box<dyn Future<Output = Result<ExecutionSnapshot, RunExecutionError>> + Send + 'static>,
-    >,
+    future: Pin<Box<dyn Future<Output = Result<(), RunExecutionError>> + Send + 'static>>,
 }
 
 #[derive(Clone)]
@@ -3894,6 +7343,11 @@ struct TaskDriverFailureContext {
     task_id: ProtocolIdentity,
     handle: ExecutionHandle,
     workflow: gantry_ir::CanonicalPath,
+    execution_foreground: bool,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    durable_graph: Option<Arc<SharedDurableMachineGraph>>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    durable_owner: Option<Arc<crate::DurableOwnedExecution>>,
 }
 
 impl TaskDriverFailureContext {
@@ -3912,6 +7366,12 @@ impl TaskDriverFailureContext {
             }
             OwnedTaskCompletion::Completed(_) => return,
         };
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        let code = if self.durable_graph.is_some() {
+            RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure)
+        } else {
+            code
+        };
         let interpreter = Interpreter {
             inner: Arc::clone(&self.inner),
             external_owner: false,
@@ -3922,12 +7382,31 @@ impl TaskDriverFailureContext {
             site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
                 .unwrap_or_else(|_| unreachable!("constant position is valid")),
         });
-        let _ = interpreter.settle_driver_failure(
-            &self.coordinator,
-            self.task_id,
-            &self.handle,
-            fallback,
-        );
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        if let (Some(graph), Some(owner)) = (&self.durable_graph, &self.durable_owner) {
+            graph.request_abnormal_child_settlement(self.task_id, fallback);
+            let _ = interpreter.start_durable_graph_finalizer(
+                Arc::clone(graph),
+                Arc::clone(owner),
+                self.coordinator.clone(),
+                Arc::clone(&graph.program),
+                graph.operations.clone(),
+            );
+            return;
+        }
+        if self.execution_foreground {
+            let _ = interpreter.settle_driver_failure(
+                &self.coordinator,
+                self.task_id,
+                &self.handle,
+                fallback.clone(),
+            );
+        }
+        #[cfg(feature = "concurrent")]
+        if !self.execution_foreground {
+            let _ =
+                interpreter.settle_child_driver_failure(&self.coordinator, self.task_id, fallback);
+        }
     }
 }
 
@@ -3948,6 +7427,11 @@ impl TaskDriver {
             task_id,
             handle: handle.clone(),
             workflow: workflow.clone(),
+            execution_foreground: true,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            durable_graph: None,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            durable_owner: None,
         };
         let future = Box::pin(async move {
             let interpreter = Interpreter {
@@ -3964,9 +7448,92 @@ impl TaskDriver {
                 )?;
                 Err(error)
             } else {
-                result
+                Ok(())
             }
         });
+        Self {
+            task_id,
+            coordinator,
+            failure_context,
+            future,
+        }
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn from_child(
+        inner: Arc<InterpreterInner>,
+        accepted: StartExecutionAccepted,
+        prepared: PreparedTaskDriver,
+    ) -> Self {
+        let task_id = prepared.task_id;
+        let coordinator = prepared.coordinator.clone();
+        let failure_coordinator = coordinator.clone();
+        let handle = accepted.handle.clone();
+        let workflow = prepared.workflow.clone();
+        let failure_context = TaskDriverFailureContext {
+            inner: Arc::clone(&inner),
+            coordinator: coordinator.clone(),
+            task_id,
+            handle,
+            workflow: workflow.clone(),
+            execution_foreground: false,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            durable_graph: None,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            durable_owner: None,
+        };
+        let future = Box::pin(async move {
+            let interpreter = Interpreter {
+                inner,
+                external_owner: false,
+            };
+            match interpreter.drive_task(accepted, prepared, false).await {
+                Ok(_) => Ok(()),
+                Err(error) => {
+                    let fallback = MachineOutcome::Failed(MachineFailure {
+                        code: RuntimeCode::InternalInvariant,
+                        workflow,
+                        site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
+                            .map_err(|_| RunExecutionError::LifecycleTransition)?,
+                    });
+                    interpreter.settle_child_driver_failure(
+                        &failure_coordinator,
+                        task_id,
+                        fallback,
+                    )?;
+                    Err(error)
+                }
+            }
+        });
+        Self {
+            task_id,
+            coordinator,
+            failure_context,
+            future,
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_durable_graph_child(
+        inner: Arc<InterpreterInner>,
+        coordinator: ExecutionCoordinator,
+        task_id: ProtocolIdentity,
+        workflow: gantry_ir::CanonicalPath,
+        graph: Arc<SharedDurableMachineGraph>,
+        owner: Arc<crate::DurableOwnedExecution>,
+        future: Pin<Box<dyn Future<Output = Result<(), RunExecutionError>> + Send + 'static>>,
+    ) -> Self {
+        let failure_context = TaskDriverFailureContext {
+            inner,
+            coordinator: coordinator.clone(),
+            task_id,
+            handle: owner.execution_handle(),
+            workflow,
+            execution_foreground: false,
+            durable_graph: Some(graph),
+            durable_owner: Some(owner),
+        };
         Self {
             task_id,
             coordinator,
@@ -4014,7 +7581,7 @@ impl TaskDriver {
 }
 
 impl Future for TaskDriver {
-    type Output = Result<ExecutionSnapshot, RunExecutionError>;
+    type Output = Result<(), RunExecutionError>;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         self.future.as_mut().poll(context)

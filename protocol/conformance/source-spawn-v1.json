@@ -1,0 +1,31 @@
+{
+  "format": "gantry.source-spawn-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-SPAWN-001",
+  "requirements": [
+    {"requirement":"GNT-3.6","clause":"clause-001","profiles":["concurrent-evaluator","durable-runtime","embedding","evaluator"]},
+    {"requirement":"GNT-3-M-SPAWN","clause":"clause-001","profiles":["concurrent-evaluator"]},
+    {"requirement":"GNT-3-D-COMMIT-ORDER","clause":"clause-001","profiles":["durable-runtime"]},
+    {"requirement":"GNT-7.17","clause":"clause-003","profiles":["concurrent-evaluator","durable-runtime","embedding","evaluator"]},
+    {"requirement":"GNT-15.2-runtime-sessions","clause":"clause-001","profiles":["embedding"]},
+    {"requirement":"GNT-15.4","clause":"clause-001","profiles":["embedding"]},
+    {"requirement":"GNT-15.4-owned-work","clause":"clause-001","profiles":["embedding"]}
+  ],
+  "capabilities": [
+    {"id":"child-session-before-hook","evidence":"crates/gantry-conformance/tests/source_spawn.rs#native_child_submission_keeps_the_gate_closed_and_establishes_session_before_hook"},
+    {"id":"durable-child-creation-order","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_child_creation_and_success_publish_before_immediate_child_polling"},
+    {"id":"durable-child-operation-order","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_child_action_commits_ordered_operation_cuts"},
+    {"id":"durable-child-submission-failure-order","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_child_submission_failure_settles_the_created_identity_before_parent_progress"},
+    {"id":"native-executor-child-submission","evidence":"crates/gantry-conformance/tests/source_spawn.rs#native_child_submission_keeps_the_gate_closed_and_establishes_session_before_hook"},
+    {"id":"parent-session-precheck","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_parent_session_failure_is_task_local_and_creates_no_child"},
+    {"id":"required-spawn-event-barrier","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_required_spawn_event_settles_before_child_submission"},
+    {"id":"submission-rejection-settlement","evidence":"crates/gantry-conformance/tests/source_spawn.rs#child_executor_rejection_settles_without_submitting_another_driver"},
+    {"id":"task-limit-precheck","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_task_limit_precheck_skips_parent_session_and_child_creation"}
+  ],
+  "exclusions": [
+    "Source JOIN, JOINALL, DETACH, descendant draining, and their complete concurrent-evaluator behavior remain owned by GNT-ASYNC-JOIN-001 and GNT-ASYNC-CANCEL-001.",
+    "The linked source fixtures do not claim successful source JOIN execution; after the child behavior under test, their join site may terminate with the current unsupported task-control invariant.",
+    "Complete concurrent-evaluator graph cancellation is not inferred from the focused durable cancellation ordering case.",
+    "Recovered child reconstruction and fenced executor resubmission remain owned by GNT-ASYNC-REC-001; mixed-prefix resume is only classified as runnable replacement unavailable."
+  ]
+}

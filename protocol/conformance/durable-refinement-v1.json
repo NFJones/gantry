@@ -59,16 +59,19 @@
     "crates/gantry-conformance/tests/durable_recovery.rs#public_operation_cuts_reuse_committed_payloads_and_classify_indeterminate_dispatch",
     "crates/gantry-conformance/tests/durable_start.rs#durable_cancellation_commits_once_before_terminal_observation_and_release",
     "crates/gantry-conformance/tests/durable_start.rs#durable_journal_failure_wakes_waiters_without_fabricating_terminal_state",
-    "crates/gantry-conformance/tests/durable_start.rs#durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent"
+    "crates/gantry-conformance/tests/durable_start.rs#durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent",
+    "crates/gantry-conformance/tests/source_spawn.rs#durable_child_action_commits_ordered_operation_cuts",
+    "crates/gantry-conformance/tests/source_spawn.rs#durable_child_creation_and_success_publish_before_immediate_child_polling"
   ],
   "evidence_manifests": [
     "protocol/conformance/durable-events-v1.json",
     "protocol/conformance/durable-recovery-v1.json",
-    "protocol/conformance/durable-start-v1.json"
+    "protocol/conformance/durable-start-v1.json",
+    "protocol/conformance/source-spawn-v1.json"
   ],
   "exclusions": [
     "The bounded search is not an unbounded proof over all programs, prefix lengths, host futures, crash placements, or adapters.",
-    "Concurrent task-graph and combined concurrent-durable obligations remain outside this sequential-durable model.",
+    "Broad concurrent task-graph behavior remains outside this sequential-durable model; protocol/conformance/source-spawn-v1.json separately covers live concurrent-durable spawn and child-operation commit ordering, while JOIN, DETACH, broad CANCEL, and recovered-child resubmission remain excluded.",
     "Physical SQLite write, sync, filesystem, and power-loss behavior remains owned by GNT-SQL-002 and is not inferred from logical recovery.",
     "Genuinely pending integration work remains outside enabled-machine progress until its documented prerequisite resolves."
   ]

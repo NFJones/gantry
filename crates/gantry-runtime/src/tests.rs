@@ -1,4 +1,7 @@
-use std::sync::{Arc, Barrier};
+use std::sync::Arc;
+#[cfg(feature = "concurrent")]
+use std::sync::Barrier;
+#[cfg(feature = "concurrent")]
 use std::thread;
 
 use gantry_core::identity::ProtocolIdentity;
@@ -11,10 +14,20 @@ use gantry_ir::generated::Effect;
 use gantry_ir::{
     CanonicalCallableIdentity, CanonicalPath, EffectSet, StructuralPosition, TypeDescriptor,
 };
+#[cfg(feature = "concurrent")]
+use gantry_ir::{
+    ExecutableTaskBody, ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle,
+    TaskBodyIdentity,
+};
 
+#[cfg(feature = "concurrent")]
 use crate::{
-    ExecutionBudget, Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError,
-    MachineLabel, MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
+    DynamicTaskHandleIdentity, ExecutionBudget, TaskCaptureV1, TaskControlCompletionError,
+    root_task_identity,
+};
+use crate::{
+    Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError, MachineLabel,
+    MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
     OperationCompletionError, Parameter, Primitive, ProgramError, RuntimeCode, Workflow,
 };
 
@@ -60,6 +73,68 @@ fn program(workflows: Vec<Workflow>) -> Arc<MachineProgram> {
         MachineProgram::new(workflows)
             .unwrap_or_else(|error| panic!("invalid fixture program: {error:?}")),
     )
+}
+
+#[cfg(feature = "concurrent")]
+fn spawn_program() -> (Arc<MachineProgram>, TaskBodyIdentity) {
+    spawn_program_with_body(vec![
+        instruction(
+            0,
+            TypeDescriptor::INT,
+            InstructionKind::Load(Arc::from("count")),
+        ),
+        instruction(1, TypeDescriptor::INT, InstructionKind::TaskComplete),
+    ])
+}
+
+#[cfg(feature = "concurrent")]
+fn spawn_program_with_body(
+    instructions: Vec<Instruction>,
+) -> (Arc<MachineProgram>, TaskBodyIdentity) {
+    let root_path = path("crate::main");
+    let caller = CanonicalCallableIdentity::free(&root_path, &[]);
+    let body_identity = TaskBodyIdentity::new(caller.clone(), site(0));
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::INT,
+        vec![
+            ExecutableTaskCapture::new(Arc::from("count"), TypeDescriptor::INT, false)
+                .unwrap_or_else(|error| panic!("invalid fixture capture: {error:?}")),
+        ],
+        ExecutableTaskContext::v1(),
+        instructions,
+    )
+    .unwrap_or_else(|error| panic!("invalid fixture task body: {error:?}"));
+    let root = workflow(
+        "crate::main",
+        vec![Parameter {
+            name: Arc::from("count"),
+            ty: TypeDescriptor::INT,
+            mutable: false,
+        }],
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::UNIT,
+                InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::INT)
+                        .unwrap_or_else(|error| panic!("invalid fixture handle: {error:?}")),
+                    body: body_identity.clone(),
+                },
+            ),
+            instruction(
+                1,
+                TypeDescriptor::UNIT,
+                InstructionKind::Push(LogicalValue::unit()),
+            ),
+            instruction(2, TypeDescriptor::UNIT, InstructionKind::Return),
+        ],
+    );
+    let program = MachineProgram::with_task_bodies(vec![(caller, root)], vec![body])
+        .unwrap_or_else(|error| panic!("invalid fixture spawn program: {error:?}"));
+    (Arc::new(program), body_identity)
 }
 
 fn limits(
@@ -1509,5 +1584,301 @@ fn root_and_call_arguments_preserve_analyzed_types() {
     assert!(matches!(
         root_mismatch,
         Err(MachineBuildError::ArgumentType)
+    ));
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machine_spawn_suspends_until_handle_publication_and_child_completes() {
+    let (program, body_identity) = spawn_program();
+    let machine_limits = limits(16, 1, 1, 1, 16);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let count = LogicalValue::integer(
+        GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    let mut root = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::clone(&program),
+        &path("crate::main"),
+        vec![count.clone()],
+        execution(),
+        machine_limits,
+        budget.clone(),
+        Some(Arc::from("worker")),
+        None,
+    )
+    .unwrap_or_else(|error| panic!("concurrent root construction failed: {error:?}"));
+
+    let suspension = match root.step() {
+        MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn)) => spawn,
+        other => panic!("unexpected spawn step: {other:?}"),
+    };
+    assert_eq!(root.status(), MachineStatus::WaitingTaskControl);
+    assert_eq!(root.pending_spawn(), Some(&suspension));
+    assert_eq!(suspension.body, body_identity);
+    assert_eq!(suspension.occurrence, 0);
+    assert_eq!(suspension.inherited_agent.as_deref(), Some("worker"));
+    assert_eq!(suspension.parent_session, None);
+    assert_eq!(suspension.captures.len(), 1);
+    assert_eq!(suspension.captures[0].task_capture().value(), &count);
+    assert!(root.task_handle("child").is_none());
+
+    let (child_task_id, child_task_path) = child_task_coordinate();
+    let handle =
+        DynamicTaskHandleIdentity::from_parts(root_task_identity(execution()), child_task_id);
+    assert!(matches!(
+        root.complete_spawn(&suspension, handle),
+        Ok(MachineLabel::Deterministic { ref kind, .. }) if kind.as_ref() == "spawn-complete"
+    ));
+    let published = root
+        .task_handle("child")
+        .unwrap_or_else(|| panic!("spawn completion did not publish its lexical handle"));
+    assert_eq!(published.identity(), handle);
+    assert_eq!(published.result_type(), &TypeDescriptor::INT);
+
+    let captures = suspension
+        .captures
+        .iter()
+        .map(|capture| capture.task_capture().clone())
+        .collect::<Vec<_>>();
+    let mut child = Machine::new_concurrent_task_body_with_context(
+        program,
+        &body_identity,
+        &captures,
+        execution(),
+        child_task_id,
+        child_task_path,
+        machine_limits,
+        budget,
+        suspension.inherited_agent.clone(),
+        None,
+    )
+    .unwrap_or_else(|error| panic!("child machine construction failed: {error:?}"));
+    assert_eq!(child.active_agent(), Some("worker"));
+    assert!(matches!(
+        child.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { ref kind, .. })
+            if kind.as_ref() == "variable"
+    ));
+    assert!(matches!(
+        child.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Succeeded(ref value)))
+            if value == &count
+    ));
+    assert!(
+        matches!(drive(&mut root), MachineOutcome::Succeeded(ref value) if value == &LogicalValue::unit())
+    );
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machine_spawn_rejects_wrong_handle_owner_and_mistyped_child_capture() {
+    let (program, body_identity) = spawn_program();
+    let machine_limits = limits(16, 1, 1, 1, 16);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let count = LogicalValue::integer(
+        GantryInt::new(3).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    let mut root = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::clone(&program),
+        &path("crate::main"),
+        vec![count],
+        execution(),
+        machine_limits,
+        budget.clone(),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("concurrent root construction failed: {error:?}"));
+    let suspension = match root.step() {
+        MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn)) => spawn,
+        other => panic!("unexpected spawn step: {other:?}"),
+    };
+    let (child_task_id, child_task_path) = child_task_coordinate();
+    let wrong_owner = DynamicTaskHandleIdentity::from_parts(child_task_id, child_task_id);
+    assert_eq!(
+        root.complete_spawn(&suspension, wrong_owner),
+        Err(TaskControlCompletionError::InvalidHandle)
+    );
+    assert_eq!(root.status(), MachineStatus::WaitingTaskControl);
+    assert!(root.task_handle("child").is_none());
+
+    let string = LogicalValue::string("wrong", DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("fixture string failed: {error:?}"));
+    let wrong_capture = TaskCaptureV1::new(
+        Arc::from("count"),
+        TypeDescriptor::STRING,
+        false,
+        &string,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture capture failed: {error:?}"));
+    assert!(matches!(
+        Machine::new_concurrent_task_body_with_context(
+            program,
+            &body_identity,
+            &[wrong_capture],
+            execution(),
+            child_task_id,
+            child_task_path,
+            machine_limits,
+            budget,
+            None,
+            None,
+        ),
+        Err(MachineBuildError::ArgumentType)
+    ));
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn task_control_checkpoint_recovers_pending_and_published_handle_state() {
+    let (program, _) = spawn_program();
+    let machine_limits = limits(16, 1, 1, 1, 16);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let count = LogicalValue::integer(
+        GantryInt::new(5).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    let mut root = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::clone(&program),
+        &path("crate::main"),
+        vec![count],
+        execution(),
+        machine_limits,
+        budget.clone(),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("concurrent root construction failed: {error:?}"));
+    let suspension = match root.step() {
+        MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn)) => spawn,
+        other => panic!("unexpected spawn step: {other:?}"),
+    };
+
+    let pending_bytes = root.checkpoint().canonical_bytes();
+    let pending_checkpoint = crate::MachineCheckpointV3::decode(&program, &pending_bytes)
+        .unwrap_or_else(|error| panic!("pending checkpoint decode failed: {error:?}"));
+    let mut changed_capture = pending_checkpoint.clone();
+    let other_count = LogicalValue::integer(
+        GantryInt::new(6).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    assert!(changed_capture.test_set_pending_spawn_capture_value(0, other_count));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &changed_capture.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+    let mut changed_agent = pending_checkpoint.clone();
+    assert!(changed_agent.test_set_pending_spawn_inherited_agent(Some(Arc::from("other"))));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &changed_agent.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+    let mut changed_session = pending_checkpoint.clone();
+    let other_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x24; 32])
+        .unwrap_or_else(|error| panic!("invalid fixture session identity: {error}"));
+    assert!(changed_session.test_set_pending_spawn_parent_session(Some(other_session)));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &changed_session.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+    let mut changed_occurrence = pending_checkpoint.clone();
+    assert!(
+        changed_occurrence
+            .test_set_pending_spawn_occurrence(suspension.occurrence.saturating_add(1))
+    );
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &changed_occurrence.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+
+    let mut recovered =
+        Machine::recover_from_checkpoint(Arc::clone(&program), pending_checkpoint, budget.clone())
+            .unwrap_or_else(|error| panic!("pending checkpoint recovery failed: {error:?}"));
+    assert_eq!(recovered.status(), MachineStatus::WaitingTaskControl);
+    assert_eq!(recovered.pending_spawn(), Some(&suspension));
+
+    let (child_task_id, _) = child_task_coordinate();
+    let handle =
+        DynamicTaskHandleIdentity::from_parts(root_task_identity(execution()), child_task_id);
+    recovered
+        .complete_spawn(&suspension, handle)
+        .unwrap_or_else(|error| panic!("recovered spawn completion failed: {error:?}"));
+    let published_bytes = recovered.checkpoint().canonical_bytes();
+    let published_checkpoint = crate::MachineCheckpointV3::decode(&program, &published_bytes)
+        .unwrap_or_else(|error| panic!("published checkpoint decode failed: {error:?}"));
+    let published = Machine::recover_from_checkpoint(program, published_checkpoint, budget)
+        .unwrap_or_else(|error| panic!("published checkpoint recovery failed: {error:?}"));
+    assert_eq!(
+        published
+            .task_handle("child")
+            .map(|task_handle| task_handle.identity()),
+        Some(handle)
+    );
+    assert!(published.pending_spawn().is_none());
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn spawned_body_operation_checkpoint_decodes_and_recovers() {
+    let (program, body_identity) = spawn_program_with_body(vec![
+        instruction(0, TypeDescriptor::INT, InstructionKind::Operation),
+        instruction(1, TypeDescriptor::INT, InstructionKind::TaskComplete),
+    ]);
+    let machine_limits = limits(16, 1, 1, 1, 16);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let count = LogicalValue::integer(
+        GantryInt::new(5).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    let capture = TaskCaptureV1::new(
+        Arc::from("count"),
+        TypeDescriptor::INT,
+        false,
+        &count,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture capture failed: {error:?}"));
+    let (child_task_id, child_task_path) = child_task_coordinate();
+    let mut child = Machine::new_concurrent_task_body_with_context(
+        Arc::clone(&program),
+        &body_identity,
+        &[capture],
+        execution(),
+        child_task_id,
+        child_task_path,
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("child machine construction failed: {error:?}"));
+    let operation = match child.step() {
+        MachineStep::Transition(MachineLabel::OperationPrepared(operation)) => operation,
+        other => panic!("unexpected child operation step: {other:?}"),
+    };
+
+    let checkpoint = child.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("child checkpoint decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    let recovered_budget = ExecutionBudget::recover_from_checkpoint(child.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("child budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, decoded, recovered_budget)
+        .unwrap_or_else(|error| panic!("child checkpoint recovery failed: {error:?}"));
+    assert_eq!(recovered.status(), MachineStatus::WaitingOperation);
+    assert!(matches!(
+        recovered.complete_operation(
+            operation.identity,
+            LogicalValue::integer(
+                GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        ),
+        Ok(MachineLabel::OperationResult { .. })
+    ));
+    assert!(matches!(
+        recovered.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Succeeded(ref value)))
+            if value == &LogicalValue::integer(
+                GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            )
     ));
 }

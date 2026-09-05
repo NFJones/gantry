@@ -182,12 +182,27 @@ impl TaskSupervisor {
                 &self.inner.admission,
                 registration.domain.admission_resource(),
             )
-            || lock(&self.inner.state).closed
         {
             return reject_task_submission(task).map(|_| unreachable!("submission was rejected"));
         }
-        let submitted = catch_unwind(AssertUnwindSafe(|| self.inner.executor.spawn(task)))
-            .unwrap_or_else(|_| Err(executor_failure()))?;
+        {
+            let mut state = lock(&self.inner.state);
+            if state.closed {
+                drop(state);
+                return reject_task_submission(task)
+                    .map(|_| unreachable!("submission was rejected"));
+            }
+            state.submitting.insert(registration.id);
+        }
+        let submitted = match catch_unwind(AssertUnwindSafe(|| self.inner.executor.spawn(task)))
+            .unwrap_or_else(|_| Err(executor_failure()))
+        {
+            Ok(submitted) => submitted,
+            Err(error) => {
+                SupervisorInner::finish_failed_submission(&self.inner, registration.id);
+                return Err(error);
+            }
+        };
         let handle: Arc<dyn SubmittedTask> = Arc::from(submitted);
         let observation = Arc::new(Mutex::new(SupervisedObservation::default()));
         let wake = Arc::new(ReaperWake {
@@ -204,17 +219,25 @@ impl TaskSupervisor {
             permit: Mutex::new(Some(permit)),
             abnormal: Mutex::new(registration.abnormal),
             completion: Mutex::new(registration.completion),
+            unclean_relinquished: AtomicBool::new(false),
         });
-        {
+        let closed = {
             let mut state = lock(&self.inner.state);
-            if state.closed {
-                drop(state);
-                drop(entry);
-                return Err(executor_failure());
+            state.submitting.remove(&registration.id);
+            let closed = state.closed;
+            if closed {
+                entry.unclean_relinquished.store(true, Ordering::Release);
+                let mut observation = lock(&entry.observation);
+                observation.abort_requested = true;
+                observation.control_relinquished = true;
             }
             state.active.insert(registration.id, Arc::clone(&entry));
-        }
+            closed
+        };
         SupervisorInner::enqueue(&self.inner, registration.id);
+        if closed {
+            return Err(executor_failure());
+        }
         Ok(SupervisedTask {
             id: registration.id,
             domain: registration.domain,
@@ -254,7 +277,7 @@ impl TaskSupervisor {
     #[must_use]
     pub fn is_quiescent(&self) -> bool {
         let state = lock(&self.inner.state);
-        state.active.is_empty() && state.finalizing == 0
+        state.active.is_empty() && state.submitting.is_empty() && state.finalizing == 0
     }
 
     /// Returns whether only the shutdown coordinator itself remains active.
@@ -266,7 +289,7 @@ impl TaskSupervisor {
     /// Polls registry quiescence and registers one wake without allocating a watcher task.
     pub fn poll_quiescence(&self, context: &mut Context<'_>) -> Poll<()> {
         let mut state = lock(&self.inner.state);
-        if state.active.is_empty() && state.finalizing == 0 {
+        if state.active.is_empty() && state.submitting.is_empty() && state.finalizing == 0 {
             Poll::Ready(())
         } else {
             register_waker(&mut state.quiescence_waiters, context.waker());
@@ -296,44 +319,27 @@ impl TaskSupervisor {
         }
     }
 
-    /// Closes the registry, requests abort once, and relinquishes every handle.
+    /// Closes the registry, requests abort once, and relinquishes every control share.
     ///
-    /// This is the synchronous unclean-drop path. It deliberately does not run
-    /// abnormal-completion callbacks or fabricate semantic settlement.
+    /// This is the synchronous unclean-drop path. Accepted handles and permits
+    /// remain registry-owned until physical settlement. This path deliberately
+    /// does not run callbacks or fabricate semantic settlement.
     pub fn abort_and_relinquish_all(&self) {
         let entries = {
             let mut state = lock(&self.inner.state);
             state.closed = true;
-            state.queue.clear();
-            state.queued.clear();
-            std::mem::take(&mut state.active)
-                .into_values()
-                .collect::<Vec<_>>()
-        };
-        let waker = Waker::noop();
-        let mut context = Context::from_waker(waker);
-        for entry in entries {
-            let abort = poll_abort(&entry.handle, &mut context);
-            let completion = poll_completion(&entry.handle, &mut context);
-            let waiters = {
+            let entries = state.active.values().cloned().collect::<Vec<_>>();
+            for entry in &entries {
+                entry.unclean_relinquished.store(true, Ordering::Release);
                 let mut observation = lock(&entry.observation);
                 observation.abort_requested = true;
-                if let Poll::Ready(result) = abort {
-                    observation.abort_result = Some(result);
-                }
-                if let Poll::Ready(completion) = completion {
-                    observation.abnormal_before_semantic = !entry.semantic.load(Ordering::Acquire);
-                    observation.completion = Some(completion);
-                }
                 observation.control_relinquished = true;
-                std::mem::take(&mut observation.waiters)
-            };
-            wake_all(waiters);
-            let permit = lock(&entry.permit).take();
-            drop(permit);
-            let _ = catch_unwind(AssertUnwindSafe(|| drop(entry)));
+            }
+            entries
+        };
+        for entry in entries {
+            SupervisorInner::enqueue(&self.inner, entry.id);
         }
-        wake_all(take_quiescence_waiters(&self.inner));
     }
 }
 
@@ -503,6 +509,7 @@ struct SupervisorInner {
 #[derive(Default)]
 struct SupervisorState {
     active: BTreeMap<u64, Arc<SupervisedEntry>>,
+    submitting: BTreeSet<u64>,
     queue: VecDeque<u64>,
     queued: BTreeSet<u64>,
     draining: bool,
@@ -515,7 +522,7 @@ impl SupervisorInner {
     fn enqueue(this: &Arc<Self>, id: u64) {
         let should_drain = {
             let mut state = lock(&this.state);
-            if state.closed || !state.active.contains_key(&id) || !state.queued.insert(id) {
+            if !state.active.contains_key(&id) || !state.queued.insert(id) {
                 return;
             }
             state.queue.push_back(id);
@@ -572,9 +579,6 @@ impl SupervisorInner {
     fn complete(this: &Arc<Self>, entry: Arc<SupervisedEntry>, completion: OwnedTaskCompletion) {
         let entry = {
             let mut state = lock(&this.state);
-            if state.closed {
-                return;
-            }
             let Some(entry) = state.active.remove(&entry.id) else {
                 return;
             };
@@ -582,13 +586,14 @@ impl SupervisorInner {
             entry
         };
         let semantic_settled = entry.semantic.load(Ordering::Acquire);
-        let abnormal = (!semantic_settled)
+        let run_callbacks = !entry.unclean_relinquished.load(Ordering::Acquire);
+        let abnormal = (run_callbacks && !semantic_settled)
             .then(|| lock(&entry.abnormal).take())
             .flatten();
         if let Some(abnormal) = abnormal {
             let _ = catch_unwind(AssertUnwindSafe(|| abnormal(completion.clone())));
         }
-        if let Some(observer) = lock(&entry.completion).take() {
+        if run_callbacks && let Some(observer) = lock(&entry.completion).take() {
             let observed = completion.clone();
             let _ = catch_unwind(AssertUnwindSafe(|| observer(observed)));
         }
@@ -619,6 +624,19 @@ impl SupervisorInner {
             }
         };
         wake_all(quiescence_waiters);
+    }
+
+    fn finish_failed_submission(this: &Arc<Self>, id: u64) {
+        let waiters = {
+            let mut state = lock(&this.state);
+            state.submitting.remove(&id);
+            if shutdown_quiescent(&state) {
+                std::mem::take(&mut state.quiescence_waiters)
+            } else {
+                Vec::new()
+            }
+        };
+        wake_all(waiters);
     }
 
     fn request_abort(this: &Arc<Self>, id: u64) -> bool {
@@ -653,6 +671,7 @@ struct SupervisedEntry {
     permit: Mutex<Option<AdmissionPermit>>,
     abnormal: Mutex<Option<AbnormalCompletionHandler>>,
     completion: Mutex<Option<PhysicalCompletionHandler>>,
+    unclean_relinquished: AtomicBool,
 }
 
 impl SupervisedEntry {
@@ -745,12 +764,9 @@ fn abort_result_from_completion(completion: &OwnedTaskCompletion) -> OwnedTaskAb
     }
 }
 
-fn take_quiescence_waiters(inner: &SupervisorInner) -> Vec<Waker> {
-    std::mem::take(&mut lock(&inner.state).quiescence_waiters)
-}
-
 fn shutdown_quiescent(state: &SupervisorState) -> bool {
     state.finalizing == 0
+        && state.submitting.is_empty()
         && state
             .active
             .values()

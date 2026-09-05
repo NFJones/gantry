@@ -21,8 +21,8 @@ use gantry::ir::{
     StaticSiteId, StructuralPosition, TaskControlSite, TypeDescriptor, Workflow,
 };
 use gantry::portable::{
-    EventKind, IdentityKind, JitterMode, ProtectedReferenceClass, SinkClass, TaskHandleState,
-    TaskStatusKind,
+    CancellationReasonCategory, EventKind, IdentityKind, JitterMode, ProtectedReferenceClass,
+    SinkClass, TaskHandleState, TaskStatusKind,
 };
 use gantry::runtime::{
     CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
@@ -269,6 +269,17 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
         [root_task, child.task_id]
     );
     assert!(foreground.cancel("shutdown").is_some());
+    commits
+        .set_graph_cancellation(
+            gantry::runtime::CancellationReason::new(
+                CancellationReasonCategory::Caller,
+                Some(Arc::from("shutdown")),
+                None,
+                32,
+            )
+            .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("graph cancellation setup failed: {error:?}"));
     let cancellation = block_on(commits.commit_concurrent_cut(
         DurableCommitCutV1::Cancellation,
         root_task,

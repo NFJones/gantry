@@ -54,7 +54,7 @@
     },
     {
       "path": "protocol/conformance/execution-coordinator-v1.json",
-      "sha256": "133cf11d78140dcb708ba8e1b2042c43e9b2593b11642774715b53498364a15f"
+      "sha256": "67948d7a44b2169c6cd87156f83e7f9a6075dc2f1119ccd871fb57e7207c82cc"
     },
     {
       "path": "protocol/conformance/executor-services-v1.json",
@@ -74,11 +74,15 @@
     },
     {
       "path": "protocol/conformance/runtime-sessions-v1.json",
-      "sha256": "3c9567563a26cf4f51bc4c268231c555ba6a43dbe4f78927e115a2cff5672758"
+      "sha256": "a516d67ca23ce2705793266d910bea3030f960b2eca97acf5f8c2e5ff843b107"
+    },
+    {
+      "path": "protocol/conformance/source-spawn-v1.json",
+      "sha256": "2bbaa2b1100aafd01c31173faacf201028313788811ddf928cde1600ee6c4675"
     },
     {
       "path": "protocol/conformance/task-driver-v1.json",
-      "sha256": "8131fdaba1cbbb12c87ce855f650139dd407f7854580e1088eee895c92fa28b1"
+      "sha256": "58fa0a634d5096998df068141b7981a96528132cbdc8695d2dd9ed5a76eaaec6"
     },
     {
       "path": "protocol/conformance/task-supervision-v1.json",

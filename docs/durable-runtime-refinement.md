@@ -18,9 +18,10 @@ pending and settled outcomes, and root/child driver-ownership bookkeeping.
 It also preserves child pending outcomes rather than reconstructing them as
 absent. Its `GNTCDP04` bytes and concurrent-durable-evidence/v4 envelopes replace
 the superseded v3 graph formats; no legacy decoder is provided. Recorded driver
-bookkeeping is evidence, not a restored executor capability. These round-trip
-guarantees do not establish coherent live coordinator transactions or fenced
-task-graph resubmission, which remain separate integration obligations.
+bookkeeping is evidence, not a restored executor capability. The live
+source-spawn evidence now establishes coherent task-creation, operation, and
+settlement commit ordering through those graph envelopes. Fenced task-graph
+reconstruction and executor resubmission remain separate recovery obligations.
 
 `ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
 primitive over borrowed root and child machines. Its private copies share one
@@ -47,9 +48,11 @@ speculative successor.
 
 The issue-scoped evidence in `protocol/conformance/durable-coordination-v1.json`
 binds these mechanisms to the frozen DUR-001 requirement assignments. It does
-not restore profile claims. Native source-driver submission and task-control
-execution remain downstream integration work; fenced process reconstruction and
-replacement submission remain separate recovery obligations.
+not restore profile claims. `protocol/conformance/source-spawn-v1.json` binds
+native executor-owned child submission and live concurrent-durable spawn and
+child-operation ordering to the current specification. Source JOIN, JOINALL,
+DETACH, broad task-graph cancellation, fenced process reconstruction, and
+replacement submission remain separate obligations.
 
 For the generics-and-static-traits amendment, the durable prefix retains the
 canonical analysis artifacts and the distinct closed executable projection
@@ -101,9 +104,19 @@ source analysis.
 - Required-delivery barrier and journal-owner status remain separate from the
   fixed foreground and terminal language outcomes. Release invalidates the
   owner after terminal and finite delivery obligations settle.
-- Full-prefix and snapshot-plus-suffix representations have one logical
+- Serial full-prefix and snapshot-plus-suffix representations have one logical
   projection. Compaction may change representation but cannot change recovered
-  machine, operation, event, barrier, or owner state.
+  machine, operation, event, barrier, or owner state. Concurrent journal
+  snapshot version seven uses `gantry.concurrent-recovery-snapshot/v1` to
+  retain the immutable execution start and program, latest version-four or
+  version-five graph checkpoint, operation-cut history, typed cancellation,
+  event and delivery evidence, retained evidence identities, and the compacted
+  frontier. Public query, open, and resume dispatch that representation through
+  concurrent recovery and validate any contiguous suffix against the retained
+  graph, event, and operation state. Serial snapshot versions five and six are
+  unchanged. Legacy version-four graph cancellation records remain rejected
+  because they cannot reconstruct the typed cancellation category and causal
+  identity without guessing.
 
 ## Property argument
 

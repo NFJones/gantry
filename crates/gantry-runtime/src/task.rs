@@ -112,6 +112,10 @@ pub struct DynamicTaskHandleIdentity {
 }
 
 impl DynamicTaskHandleIdentity {
+    pub(crate) const fn from_parts(owner: ProtocolIdentity, child: ProtocolIdentity) -> Self {
+        Self { owner, child }
+    }
+
     /// Returns the Gantry task that exclusively owns this handle.
     #[must_use]
     pub const fn owner(self) -> ProtocolIdentity {
@@ -284,6 +288,31 @@ pub enum ConcurrentTaskStatusV1 {
     Failed(TaskFailureV1),
     /// Cancellation settled the child without a source result.
     Cancelled(Arc<str>),
+}
+
+/// Atomic result of resolving one child executor submission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskSubmissionDispositionV1 {
+    /// Executor ownership was accepted and the child may be scheduled.
+    Submitted,
+    /// Authoritative cancellation won before the submitted child gate opened.
+    Cancelled,
+    /// Executor submission failed and the child was settled as failed.
+    Rejected,
+}
+
+impl TaskSubmissionDispositionV1 {
+    /// Returns whether cancellation won and no submitted driver may run.
+    #[must_use]
+    pub const fn is_cancelled(self) -> bool {
+        matches!(self, Self::Cancelled)
+    }
+
+    /// Returns whether submission rejection settled the child as failed.
+    #[must_use]
+    pub const fn is_rejected(self) -> bool {
+        matches!(self, Self::Rejected)
+    }
 }
 
 impl ConcurrentTaskStatusV1 {
@@ -1260,7 +1289,7 @@ impl ConcurrentTaskStateV1 {
         &mut self,
         task_id: ProtocolIdentity,
         result: Result<(), HostError>,
-    ) -> Result<(), TaskStateError> {
+    ) -> Result<TaskSubmissionDispositionV1, TaskStateError> {
         let submitted = result.is_ok();
         let task = self
             .tasks
@@ -1272,25 +1301,51 @@ impl ConcurrentTaskStateV1 {
         if self.submitting_by_parent.remove(&task.parent_task_id) != Some(task_id) {
             return Err(TaskStateError::InvalidTransition);
         }
-        task.status = match result {
-            Ok(()) => self
-                .cancellation_reasons
-                .get(&task_id)
-                .map_or(ConcurrentTaskStatusV1::Running, |reason| {
-                    ConcurrentTaskStatusV1::Cancelled(Arc::clone(reason))
+        let cancellation = self.cancellation_reasons.get(&task_id).cloned();
+        let (status, disposition) = match (cancellation, result) {
+            (Some(reason), _) => (
+                ConcurrentTaskStatusV1::Cancelled(reason),
+                TaskSubmissionDispositionV1::Cancelled,
+            ),
+            (None, Ok(())) => (
+                ConcurrentTaskStatusV1::Running,
+                TaskSubmissionDispositionV1::Submitted,
+            ),
+            (None, Err(error)) => (
+                ConcurrentTaskStatusV1::Failed(TaskFailureV1 {
+                    category: RuntimeErrorCategory::ExecutorFailure,
+                    code: error.code,
+                    protected_diagnostic: error.protected_diagnostic,
                 }),
-            Err(error) => ConcurrentTaskStatusV1::Failed(TaskFailureV1 {
-                category: RuntimeErrorCategory::ExecutorFailure,
-                code: error.code,
-                protected_diagnostic: error.protected_diagnostic,
-            }),
+                TaskSubmissionDispositionV1::Rejected,
+            ),
         };
+        task.status = status;
         task.driver_ownership = if submitted {
             TaskDriverOwnershipV1::Supervised
         } else {
             TaskDriverOwnershipV1::PhysicallySettled
         };
         task.handle_visible = true;
+        Ok(disposition)
+    }
+
+    /// Settles a cancelled child for which no executor future was submitted.
+    pub fn resolve_unsubmitted_cancellation(
+        &mut self,
+        task_id: ProtocolIdentity,
+    ) -> Result<(), TaskStateError> {
+        let task = self
+            .tasks
+            .get(&task_id)
+            .ok_or(TaskStateError::UnknownTask)?;
+        if !matches!(task.status, ConcurrentTaskStatusV1::Submitting)
+            || !self.cancellation_reasons.contains_key(&task_id)
+        {
+            return Err(TaskStateError::InvalidTransition);
+        }
+        self.resolve_submission(task_id, Ok(()))?;
+        self.mark_driver_physically_settled(task_id)?;
         Ok(())
     }
 
@@ -1857,7 +1912,7 @@ impl ConcurrentSchedulerV1 {
         &mut self,
         task_id: ProtocolIdentity,
         result: Result<Machine, HostError>,
-    ) -> Result<(), TaskStateError> {
+    ) -> Result<TaskSubmissionDispositionV1, TaskStateError> {
         match result {
             Ok(machine) => {
                 let machine_budget = machine.execution_budget();
@@ -1877,18 +1932,15 @@ impl ConcurrentSchedulerV1 {
                 if !machine.has_concurrent_task_context(task_id, &task_path) {
                     return Err(TaskStateError::InvalidTaskMachine);
                 }
-                self.state.resolve_submission(task_id, Ok(()))?;
-                if matches!(
-                    self.state.task(task_id).map(ConcurrentTaskRecordV1::status),
-                    Some(ConcurrentTaskStatusV1::Running)
-                ) {
+                let disposition = self.state.resolve_submission(task_id, Ok(()))?;
+                if disposition == TaskSubmissionDispositionV1::Submitted {
                     self.machines.insert(task_id, machine);
                     self.runnable.push_back(task_id);
                 }
+                Ok(disposition)
             }
-            Err(error) => self.state.resolve_submission(task_id, Err(error))?,
+            Err(error) => self.state.resolve_submission(task_id, Err(error)),
         }
-        Ok(())
     }
 
     /// Records execution cancellation and signals every live shared-machine task.
@@ -2167,7 +2219,8 @@ mod tests {
     use super::{
         ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
         ConcurrentTerminalCategoryV1, JoinResolutionV1, JoinStartV1, TaskAbortResultV1,
-        TaskCaptureV1, TaskCreationRequestV1, TaskJoinMemberFailureKindV1, TaskStateError,
+        TaskCaptureV1, TaskCreationRequestV1, TaskDriverOwnershipV1, TaskJoinMemberFailureKindV1,
+        TaskStateError, TaskSubmissionDispositionV1,
     };
     use crate::{
         CanonicalTranscriptV1, ExecutionBudget, ExecutionCoordinator, Instruction, InstructionKind,
@@ -2302,6 +2355,49 @@ mod tests {
         assert_eq!(
             state.resolve_submission(created.task_id, Ok(())),
             Err(TaskStateError::InvalidTransition)
+        );
+    }
+
+    #[test]
+    fn cancellation_wins_submission_resolution_without_executor_ownership() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(2);
+        let created = state
+            .create_child(
+                &mut sessions,
+                request(root_task, root_session, 0, Vec::new()),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        state
+            .cancel_execution("cancel-before-resolution")
+            .unwrap_or_else(|error| panic!("cancellation failed: {error:?}"));
+
+        let disposition = state
+            .resolve_submission(
+                created.task_id,
+                Err(HostError {
+                    code: Arc::from("queue-closed"),
+                    protected_diagnostic: None,
+                }),
+            )
+            .unwrap_or_else(|error| panic!("submission resolution failed: {error:?}"));
+
+        assert_eq!(disposition, TaskSubmissionDispositionV1::Cancelled);
+        assert!(!state.parent_is_suspended(root_task));
+        let record = state
+            .task(created.task_id)
+            .unwrap_or_else(|| panic!("cancelled child missing"));
+        assert!(record.handle_is_visible());
+        assert!(matches!(
+            record.status(),
+            ConcurrentTaskStatusV1::Cancelled(reason)
+                if reason.as_ref() == "cancel-before-resolution"
+        ));
+        assert_eq!(
+            state
+                .task_record(created.task_id)
+                .map(|record| record.driver_ownership()),
+            Some(TaskDriverOwnershipV1::PhysicallySettled)
         );
     }
 

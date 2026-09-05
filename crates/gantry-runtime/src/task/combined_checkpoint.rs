@@ -216,6 +216,16 @@ impl ConcurrentDurableCheckpointV4 {
             .map(|task| task.handle_state)
     }
 
+    /// Returns whether submission resolution exposed one child handle.
+    #[must_use]
+    pub fn task_handle_is_visible(&self, task_id: ProtocolIdentity) -> bool {
+        self.state
+            .tasks
+            .iter()
+            .find(|task| task.task_id == task_id)
+            .is_some_and(|task| task.handle_visible)
+    }
+
     /// Returns whether the task has a committed cancellation reason.
     #[must_use]
     pub fn task_is_cancelled(&self, task_id: ProtocolIdentity) -> bool {
@@ -238,6 +248,208 @@ impl ConcurrentDurableCheckpointV4 {
     #[must_use]
     pub const fn foreground_checkpoint(&self) -> &MachineCheckpointV3 {
         &self.foreground
+    }
+
+    /// Returns one root or running child machine checkpoint from this graph cut.
+    #[must_use]
+    pub fn task_checkpoint(&self, task_id: ProtocolIdentity) -> Option<&MachineCheckpointV3> {
+        if task_id == self.state.root_task_id {
+            Some(&self.foreground)
+        } else {
+            self.machines.get(&task_id)
+        }
+    }
+
+    /// Returns the child tasks currently retained as submitting and hidden.
+    pub(crate) fn hidden_submission_task_ids(&self) -> Vec<ProtocolIdentity> {
+        self.state
+            .tasks
+            .iter()
+            .filter(|task| {
+                matches!(task.status, ConcurrentTaskStatusV1::Submitting) && !task.handle_visible
+            })
+            .map(|task| task.task_id)
+            .collect()
+    }
+
+    /// Identifies one previously hidden child whose submission became visible.
+    pub(crate) fn submission_resolution_task(
+        &self,
+        previous_hidden: &[ProtocolIdentity],
+    ) -> Result<Option<ProtocolIdentity>, ConcurrentDurableCheckpointError> {
+        let candidates = previous_hidden
+            .iter()
+            .filter(|task_id| {
+                self.state.tasks.iter().any(|current| {
+                    current.task_id == **task_id
+                        && current.handle_visible
+                        && matches!(
+                            current.status,
+                            ConcurrentTaskStatusV1::Running | ConcurrentTaskStatusV1::Failed(_)
+                        )
+                })
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        match candidates.as_slice() {
+            [] => Ok(None),
+            [task_id] => Ok(Some(*task_id)),
+            _ => Err(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+        }
+    }
+
+    /// Validates the exact child-only successor of one submission resolution.
+    pub(crate) fn validate_submission_resolution(
+        &self,
+        previous: &Self,
+        task_id: ProtocolIdentity,
+        program: Arc<MachineProgram>,
+    ) -> Result<(), ConcurrentDurableCheckpointError> {
+        if self.submission_resolution_task(&previous.hidden_submission_task_ids())? != Some(task_id)
+        {
+            return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+        }
+        let task = previous
+            .state
+            .tasks
+            .iter()
+            .find(|task| task.task_id == task_id)
+            .cloned()
+            .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        if !matches!(task.status, ConcurrentTaskStatusV1::Submitting)
+            || task.handle_visible
+            || task.driver_ownership != super::TaskDriverOwnershipV1::AwaitingSubmission
+            || task.pending_outcome.is_some()
+            || self.execution_budget != previous.execution_budget
+            || self.sessions != previous.sessions
+        {
+            return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+        }
+
+        let current_task = self
+            .state
+            .tasks
+            .iter()
+            .find(|current| current.task_id == task_id)
+            .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        let mut expected_state = previous.state.clone();
+        let expected_task = expected_state
+            .tasks
+            .iter_mut()
+            .find(|current| current.task_id == task_id)
+            .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        expected_task.handle_visible = true;
+        match &current_task.status {
+            ConcurrentTaskStatusV1::Running => {
+                expected_task.status = ConcurrentTaskStatusV1::Running;
+                expected_task.driver_ownership = super::TaskDriverOwnershipV1::Supervised;
+            }
+            ConcurrentTaskStatusV1::Failed(failure)
+                if failure.category == RuntimeErrorCategory::ExecutorFailure =>
+            {
+                expected_task.status = ConcurrentTaskStatusV1::Failed(failure.clone());
+                expected_task.driver_ownership = super::TaskDriverOwnershipV1::PhysicallySettled;
+            }
+            _ => return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+        }
+        if expected_state != self.state {
+            return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+        }
+
+        let previous_parent = if task.parent_task_id == previous.foreground.task_id() {
+            &previous.foreground
+        } else {
+            previous
+                .machines
+                .get(&task.parent_task_id)
+                .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?
+        };
+        let current_parent = if task.parent_task_id == self.foreground.task_id() {
+            &self.foreground
+        } else {
+            self.machines
+                .get(&task.parent_task_id)
+                .ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?
+        };
+        let suspension = previous_parent.pending_spawn_checkpoint().cloned();
+        if let Some(suspension) = &suspension {
+            let matching_creation = suspension.workflow == task.workflow
+                && suspension.site == task.spawn_site
+                && suspension.occurrence == task.spawn_occurrence
+                && suspension.handle.name() == task.handle_name.as_ref()
+                && suspension.handle.result_type() == &task.result_type
+                && suspension.inherited_agent == task.inherited_agent
+                && suspension.parent_session == Some(task.parent_session_id)
+                && suspension.captures.len() == task.captures.len()
+                && suspension.captures.iter().all(|capture| {
+                    task.captures.get(capture.task_capture().name()) == Some(capture.task_capture())
+                });
+            if !matching_creation {
+                return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+            }
+            if !current_parent.is_spawn_completion_successor(previous_parent, task.handle_id) {
+                return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+            }
+        } else if current_parent != previous_parent
+            || matches!(current_task.status, ConcurrentTaskStatusV1::Running)
+        {
+            return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+        }
+
+        let mut expected_foreground = previous.foreground.clone();
+        let mut expected_machines = previous.machines.clone();
+        if task.parent_task_id == previous.foreground.task_id() {
+            expected_foreground = current_parent.clone();
+        } else {
+            expected_machines.insert(task.parent_task_id, current_parent.clone());
+        }
+        match &current_task.status {
+            ConcurrentTaskStatusV1::Running => {
+                let suspension =
+                    suspension.ok_or(ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+                let limits = previous_parent.machine_limits();
+                let budget = ExecutionBudget::recover_from_checkpoint(self.execution_budget)?;
+                let machine = Machine::new_concurrent_task_body_with_context(
+                    program,
+                    &suspension.body,
+                    &suspension
+                        .captures
+                        .iter()
+                        .map(|capture| capture.task_capture().clone())
+                        .collect::<Vec<_>>(),
+                    previous.execution_id(),
+                    task_id,
+                    Arc::clone(&task.task_path),
+                    limits,
+                    budget,
+                    suspension.inherited_agent,
+                    Some(task.base_session_id),
+                )
+                .map_err(|_| ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+                expected_machines.insert(task_id, machine.checkpoint());
+            }
+            ConcurrentTaskStatusV1::Failed(_) => {}
+            _ => return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint),
+        }
+        let expected_runnable = expected_machines
+            .iter()
+            .filter_map(|(id, machine)| {
+                (!matches!(
+                    machine.status(),
+                    MachineStatus::WaitingSessionScope
+                        | MachineStatus::WaitingOperation
+                        | MachineStatus::YieldRequired
+                ))
+                .then_some(*id)
+            })
+            .collect::<VecDeque<_>>();
+        if self.foreground != expected_foreground
+            || self.machines != expected_machines
+            || self.runnable != expected_runnable
+        {
+            return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+        }
+        Ok(())
     }
 
     /// Returns the exact session checkpoint composed into this graph cut.
@@ -501,6 +713,15 @@ impl RecoveredConcurrentDurableExecutionV1 {
     pub fn into_parts(self) -> (Machine, ConcurrentSchedulerV1, LogicalSessionRegistryV1) {
         (self.foreground, self.scheduler, self.sessions)
     }
+
+    /// Consumes recovery into independently driven root and child machines.
+    ///
+    /// The returned machines retain one private shared budget owner. Production
+    /// task drivers use this graph form rather than polling the legacy scheduler.
+    #[must_use]
+    pub fn into_machine_graph(self) -> (Machine, BTreeMap<ProtocolIdentity, Machine>) {
+        (self.foreground, self.scheduler.machines)
+    }
 }
 
 /// Rejection of malformed or internally inconsistent combined recovery state.
@@ -756,6 +977,10 @@ impl TaskStateCheckpointV1 {
             }
         }
         if self.execution_cancellation.is_some()
+            && matches!(
+                self.root.status,
+                ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+            )
             && !self.cancellation_reasons.contains_key(&self.root_task_id)
         {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
@@ -1106,6 +1331,7 @@ mod tests {
     use gantry_core::portable::{IdentityKind, TaskHandleState, TaskStatusKind};
     use gantry_core::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
     use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
+    use gantry_host::contracts::HostError;
     use gantry_ir::generated::TaskControlSiteKind;
     use gantry_ir::{
         CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, Parameter,
@@ -1194,6 +1420,81 @@ mod tests {
         assert_eq!(
             ConcurrentDurableCheckpointV4::decode(&fixture.program, truncated),
             Err(ConcurrentDurableCheckpointError::InvalidEncoding)
+        );
+    }
+
+    #[test]
+    fn submission_resolution_preserves_every_unrelated_checkpoint_component() {
+        let mut fixture = fixture();
+        let created = fixture
+            .scheduler
+            .create_child(
+                &mut fixture.sessions,
+                request(fixture.root_task, fixture.root_session, 0),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let previous = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("pre-submission capture failed: {error:?}"));
+        let mut recovered = previous
+            .clone()
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("pre-submission recovery failed: {error:?}"));
+        recovered
+            .scheduler
+            .resolve_submission(
+                created.task_id,
+                Err(HostError {
+                    code: Arc::from("executor-closed"),
+                    protected_diagnostic: None,
+                }),
+            )
+            .unwrap_or_else(|error| panic!("submission failure failed: {error:?}"));
+        let resolved = ConcurrentDurableCheckpointV4::capture(
+            &recovered.foreground,
+            &recovered.scheduler,
+            &recovered.sessions,
+        )
+        .unwrap_or_else(|error| panic!("resolved capture failed: {error:?}"));
+
+        assert_eq!(
+            resolved.validate_submission_resolution(
+                &previous,
+                created.task_id,
+                Arc::clone(&fixture.program),
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            resolved.validate_submission_resolution(
+                &previous,
+                fixture.root_task,
+                Arc::clone(&fixture.program),
+            ),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+
+        assert!(matches!(
+            recovered.foreground.step(),
+            MachineStep::Transition(_)
+        ));
+        let unrelated_progress = ConcurrentDurableCheckpointV4::capture(
+            &recovered.foreground,
+            &recovered.scheduler,
+            &recovered.sessions,
+        )
+        .unwrap_or_else(|error| panic!("unrelated-progress capture failed: {error:?}"));
+        assert_eq!(
+            unrelated_progress.validate_submission_resolution(
+                &previous,
+                created.task_id,
+                Arc::clone(&fixture.program),
+            ),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
         );
     }
 

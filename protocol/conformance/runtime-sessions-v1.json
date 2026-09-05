@@ -22,7 +22,7 @@
   ],
   "exclusions": [
     "Pre-acceptance ResolveMappings and ResolveSessions ownership remains on IntegrationPreflight and GNT-ASYNC-ACT-001.",
-    "Source spawn sequencing and child-session failure publication remain owned by GNT-ASYNC-SPAWN-001.",
+    "Source spawn sequencing and child-session-before-hook ordering are linked by protocol/conformance/source-spawn-v1.json; recovered child-session reconstruction remains outside this evidence slice.",
     "Recovered execution reconstruction and reusable-session preflight remain owned by GNT-ASYNC-REC-001.",
     "Submitted session-operation handles are retained here; common physical reaping and shutdown registry integration remain owned by GNT-ASYNC-SUP-001."
   ]

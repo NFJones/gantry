@@ -1644,6 +1644,9 @@ fn resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("atomic resume was rejected: {failure:?}")
         }
@@ -1754,6 +1757,9 @@ fn resume_executor_rejection_rolls_back_and_releases_the_owner_once() {
         Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
             panic!("executor-rejected resume was accepted")
         }
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Pending => panic!("completed rejection was not published"),
     };
     assert_eq!(
@@ -1865,6 +1871,9 @@ fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefi
         Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
             panic!("commit-failed resume was accepted")
         }
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Pending => panic!("completed rollback was not published"),
     };
     assert_eq!(
@@ -2204,6 +2213,9 @@ fn terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner() {
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial terminal resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("delivery-only terminal resume was rejected: {failure:?}")
         }
@@ -2287,6 +2299,9 @@ fn terminal_resume_accepts_without_submitting_a_root_driver() {
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial terminal resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("terminal resume was rejected: {failure:?}")
         }
@@ -2378,6 +2393,9 @@ fn resume_runnable_capacity_refusal_releases_owner_without_mutating_the_prefix()
         Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
             panic!("capacity-refused resume was accepted")
         }
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Pending => panic!("capacity refusal was not published"),
     };
     assert_eq!(
@@ -2811,6 +2829,9 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial REVENT resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("post-commit REVENT resume was rejected: {failure:?}")
         }
@@ -2821,6 +2842,11 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
                 .poll(&mut Context::from_waker(Waker::noop()))
             {
                 Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+                Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+                    classification,
+                )) => {
+                    panic!("serial REVENT resume required graph replacement: {classification:?}")
+                }
                 Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
                     panic!("post-commit REVENT resume was rejected: {failure:?}")
                 }

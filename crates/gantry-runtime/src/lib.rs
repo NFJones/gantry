@@ -104,6 +104,10 @@ pub use machine::{
 };
 #[cfg(feature = "durable")]
 pub use machine::{MachineCheckpointV3, MachineRecoveryError};
+#[cfg(feature = "concurrent")]
+pub use machine::{
+    MachineSpawnSuspension, MachineTaskCapture, MachineTaskHandle, TaskControlCompletionError,
+};
 pub use operation::{
     OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
     OperationLifecycleState, TaskHook, TaskHookError, TaskHookSessionError,
@@ -115,8 +119,11 @@ pub use outcome::{
 };
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use recovery::{
-    CONCURRENT_DURABLE_EVIDENCE_KIND_V4, ConcurrentDurableEvidenceV4,
-    RecoveredConcurrentDurableStateV1, recover_concurrent_authoritative_prefix,
+    CONCURRENT_DURABLE_EVIDENCE_KIND_V4, CONCURRENT_DURABLE_EVIDENCE_KIND_V5,
+    CONCURRENT_DURABLE_RECOVERY_SNAPSHOT_FORMAT_V1, CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1,
+    ConcurrentDurableEvidenceRecordV5, ConcurrentDurableEvidenceV4, ConcurrentDurableEvidenceV5,
+    ConcurrentDurableRecoverySnapshotV1, RecoveredConcurrentDurableStateV1,
+    recover_concurrent_authoritative_prefix,
 };
 #[cfg(feature = "durable")]
 pub use recovery::{
