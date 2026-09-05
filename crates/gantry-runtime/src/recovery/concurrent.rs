@@ -213,6 +213,18 @@ impl DurableCommitCoordinatorV1<'_> {
         affected_task: ProtocolIdentity,
         checkpoint: ConcurrentDurableCheckpointV4,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
+        self.commit_graph_checkpoint_with_submission(cut, affected_task, checkpoint, || {})
+            .await
+    }
+
+    /// Reports the storage invocation boundary to the staged publication owner.
+    pub(crate) async fn commit_graph_checkpoint_with_submission(
+        &mut self,
+        cut: DurableCommitCutV1,
+        affected_task: ProtocolIdentity,
+        checkpoint: ConcurrentDurableCheckpointV4,
+        submitted: impl FnOnce(),
+    ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         if checkpoint.execution_id() != self.execution_id
             || checkpoint.root_task_id() != self.task_id
         {
@@ -234,7 +246,8 @@ impl DurableCommitCoordinatorV1<'_> {
         let body = evidence
             .unfinalized(local_id.clone(), references)
             .map_err(DurableCommitError::Evidence)?;
-        self.commit_body(cut, local_number, local_id, body).await
+        self.commit_body_with_submission(cut, local_number, local_id, body, submitted)
+            .await
     }
 }
 

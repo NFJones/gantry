@@ -175,6 +175,27 @@ fn successful_commit_installs_machine_and_budget_together() {
 
 /// Storage that keeps commit indeterminate while allowing lock probes.
 struct PendingStore;
+/// Invalid semantic cuts must be rejected before the pending storage is called.
+#[test]
+fn rejected_cut_releases_publication_before_submission() {
+    let (coordinator, mut root, mut children) = fixture();
+    let before = coordinator.snapshot();
+    let task = root.task_id();
+    let sink = DurableTransitionSink::new(
+        Arc::new(PendingStore),
+        JournalId::new("rejected").unwrap_or_else(|error| panic!("journal: {error:?}")),
+        JournalOwnershipToken::new("owner").unwrap_or_else(|error| panic!("token: {error:?}")),
+    );
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, root.execution_id(), task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("stage: {error:?}"));
+    assert!(ready(stage.commit(&mut commits, DurableCommitCutV1::TaskSettlement, task)).is_err());
+    assert_eq!(coordinator.snapshot(), before);
+    assert!(coordinator.stage_graph(&mut root, &mut children).is_ok());
+}
+
 impl JournalStorage for PendingStore {
     fn acquire_owner<'a>(
         &'a self,

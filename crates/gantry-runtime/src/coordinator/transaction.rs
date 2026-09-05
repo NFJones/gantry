@@ -142,9 +142,10 @@ impl DurableGraphTransaction<'_> {
                 return Err(DurableCommitError::InvalidState);
             }
         }
-        self.commit_started = true;
         let receipt = commits
-            .commit_graph_checkpoint(cut, affected_task, checkpoint)
+            .commit_graph_checkpoint_with_submission(cut, affected_task, checkpoint, || {
+                self.commit_started = true;
+            })
             .await?;
         let waiters = {
             let mut state = lock(&self.coordinator.inner.state);

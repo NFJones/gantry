@@ -284,12 +284,26 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
         local_id: BatchLocalEvidenceId,
         body: UnfinalizedEvidenceV1,
     ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
+        self.commit_body_with_submission(cut, local_number, local_id, body, || {})
+            .await
+    }
+
+    /// Marks submission only after all local batch and sequence checks succeed.
+    async fn commit_body_with_submission(
+        &mut self,
+        cut: DurableCommitCutV1,
+        local_number: u64,
+        local_id: BatchLocalEvidenceId,
+        body: UnfinalizedEvidenceV1,
+        submitted: impl FnOnce(),
+    ) -> Result<DurableEvidenceCommitV1, DurableCommitError> {
         let batch = JournalBatchV1::new(vec![body], Vec::new())
             .map_err(|_| DurableCommitError::InvalidState)?;
         let expected_sequence = self
             .predecessor
             .map_or(Some(1), |(_, sequence)| sequence.checked_add(1))
             .ok_or(DurableCommitError::InvalidState)?;
+        submitted();
         let receipt = self
             .sink
             .record(batch)
