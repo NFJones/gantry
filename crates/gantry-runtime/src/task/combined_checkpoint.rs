@@ -40,6 +40,51 @@ pub struct ConcurrentDurableCheckpointV4 {
 }
 
 impl ConcurrentDurableCheckpointV4 {
+    /// Captures immutably borrowed machines under the coordinator's state lock.
+    pub(crate) fn capture_coordinated(
+        foreground: &Machine,
+        children: &BTreeMap<ProtocolIdentity, Machine>,
+        tasks: &ConcurrentTaskStateV1,
+        sessions: &LogicalSessionRegistryV1,
+        budget: &ExecutionBudget,
+    ) -> Result<Self, ConcurrentDurableCheckpointError> {
+        if !budget.same_owner(&foreground.execution_budget())
+            || children
+                .values()
+                .any(|machine| !budget.same_owner(&machine.execution_budget()))
+        {
+            return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+        }
+        let before = budget.snapshot();
+        let checkpoint = Self {
+            execution_budget: before,
+            foreground: foreground.checkpoint(),
+            sessions: sessions.checkpoint(),
+            state: TaskStateCheckpointV1::from_state(tasks),
+            machines: children
+                .iter()
+                .map(|(id, machine)| (*id, machine.checkpoint()))
+                .collect(),
+            runnable: children
+                .iter()
+                .filter_map(|(id, machine)| {
+                    (!matches!(
+                        machine.status(),
+                        MachineStatus::WaitingSessionScope
+                            | MachineStatus::WaitingOperation
+                            | MachineStatus::YieldRequired
+                    ))
+                    .then_some(*id)
+                })
+                .collect(),
+        };
+        if budget.snapshot() != before {
+            return Err(ConcurrentDurableCheckpointError::CaptureRace);
+        }
+        checkpoint.validate()?;
+        Ok(checkpoint)
+    }
+
     /// Captures one complete combined state after validating every correspondence.
     pub fn capture(
         foreground: &Machine,
@@ -1595,6 +1640,35 @@ mod tests {
         assert!(
             ConcurrentDurableCheckpointV4::decode(&fixture.program, &malformed.canonical_bytes())
                 .is_err()
+        );
+    }
+
+    /// Coordinator capture needs no scheduler and rejects incomplete live sets.
+    #[test]
+    fn coordinator_capture_preserves_graph_and_rejects_missing_machine() {
+        let mut fixture = fixture();
+        let child = running_child(&mut fixture, 0);
+        let coordinator = crate::ExecutionCoordinator::new_with_budget(
+            fixture.scheduler.state.clone(),
+            fixture.sessions.clone(),
+            fixture.budget.clone(),
+        )
+        .unwrap_or_else(|error| panic!("coordinator failed: {error:?}"));
+        let checkpoint = coordinator
+            .capture_checkpoint(&fixture.foreground, &fixture.scheduler.machines)
+            .unwrap_or_else(|error| panic!("coordinator capture failed: {error:?}"));
+        let reference = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("reference capture failed: {error:?}"));
+        assert_eq!(checkpoint, reference);
+        assert!(coordinator.try_snapshot().is_some());
+        fixture.scheduler.machines.remove(&child.task_id);
+        assert_eq!(
+            coordinator.capture_checkpoint(&fixture.foreground, &fixture.scheduler.machines),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
         );
     }
 

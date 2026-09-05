@@ -148,6 +148,31 @@ impl ExecutionCoordinator {
         snapshot_from(&lock(&self.inner.state))
     }
 
+    /// Captures a quiescent graph while task and session state cannot change.
+    ///
+    /// The caller must borrow every live machine, preventing its driver from
+    /// advancing during capture. The budget revision check rejects charges by
+    /// other holders. No guard escapes this synchronous operation.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub fn capture_checkpoint(
+        &self,
+        foreground: &crate::Machine,
+        children: &BTreeMap<ProtocolIdentity, crate::Machine>,
+    ) -> Result<crate::ConcurrentDurableCheckpointV4, crate::ConcurrentDurableCheckpointError> {
+        let state = lock(&self.inner.state);
+        let budget = state
+            .execution_budget
+            .as_ref()
+            .ok_or(crate::ConcurrentDurableCheckpointError::InvalidCheckpoint)?;
+        crate::ConcurrentDurableCheckpointV4::capture_coordinated(
+            foreground,
+            children,
+            &state.tasks,
+            &state.sessions,
+            budget,
+        )
+    }
+
     /// Publishes successful root submission and supervision registration.
     pub fn resolve_root_submission(&self) -> Result<(), TaskStateError> {
         let mut state = lock(&self.inner.state);
