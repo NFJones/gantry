@@ -41,8 +41,9 @@ pub use configuration::{
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use coordinator::DurableGraphTransaction;
 pub use coordinator::{
-    ExecutionCoordinator, ExecutionCoordinatorSnapshot, ForegroundCompletionWait,
-    JoinSettlementWait, ShutdownQuiescenceWait, TaskSettlementWait, TerminalCompletionWait,
+    BestEffortEventDeliveryWait, ExecutionCoordinator, ExecutionCoordinatorSnapshot,
+    ForegroundCompletionWait, JoinSettlementWait, RequiredEventDeliveryWait,
+    ShutdownQuiescenceWait, TaskEventSequenceError, TaskSettlementWait, TerminalCompletionWait,
 };
 #[cfg(feature = "durable")]
 pub use durable::{
@@ -59,12 +60,13 @@ pub use durable_event::{
     RecoveredDurableEventV1, RecoveredDurableEventsV1,
 };
 pub use event::{
-    BranchConditionV1, ExecutionDeliveryConsequenceV1, ExecutionEventDraftV1, ExecutionEventError,
-    ExecutionEventOutcomeV1, ExecutionEventPipeline, OperationEventDraftError,
-    OperationResultEventKindV1, ShutdownEventSummaryV1, WorkflowEventPhaseV1,
-    branch_decision_event, machine_lifecycle_event, mutation_event, operation_completion_event,
-    operation_dispatch_event, operation_result_event, report_emergency_diagnostic, shutdown_event,
-    structured_output_validation_failure_event, validation_retry_event, workflow_event,
+    BranchConditionV1, CompletedExecutionEventV1, ExecutionDeliveryConsequenceV1,
+    ExecutionEventDraftV1, ExecutionEventError, ExecutionEventOutcomeV1, ExecutionEventPipeline,
+    OperationEventDraftError, OperationResultEventKindV1, ShutdownEventSummaryV1,
+    WorkflowEventPhaseV1, branch_decision_event, machine_lifecycle_event, mutation_event,
+    operation_completion_event, operation_dispatch_event, operation_result_event,
+    report_emergency_diagnostic, shutdown_event, structured_output_validation_failure_event,
+    validation_retry_event, workflow_event,
 };
 #[cfg(feature = "concurrent")]
 pub use event::{
@@ -91,7 +93,8 @@ pub use lifecycle::{
     CancellationReasonError, CancellationRecord, ExecutionHandle, ExecutionSnapshot,
     ExecutionTransitionError, ExecutionWait, FinalShutdownEventFailure,
     FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleCode, LifecycleError,
-    LifecycleSnapshot, OperationAdmission, OwnedActivityError, OwnedPreflightWait,
+    LifecycleSnapshot, OperationAdmission, OwnedActivityError, OwnedEventDeliveryHandoffWait,
+    OwnedEventDeliveryReservation, OwnedEventDeliveryReservationWait, OwnedPreflightWait,
     RequiredDeliveryRecordV1, RequiredEventDeliveryFailureV1, ShutdownAdmission,
     ShutdownCompletionError, ShutdownCoordinator, ShutdownDurations, ShutdownJournalOwnerRelease,
     ShutdownJournalOwnerReleaseStatus, ShutdownProgress, ShutdownReport, ShutdownWait,

@@ -90,6 +90,29 @@ behavior; the finite coordinates do not model analyzer algorithms.
   monotonic cohort. Required-delivery failure remains a separate observation
   coordinate and cannot rewrite a fixed language outcome.
 
+**Delivery closure.** Each terminal event has one logical occurrence, and a
+sink records at most one settled delivery for that occurrence; retries may
+precede settlement but cannot redeliver it afterward. Foreground waits for its
+named required-delivery barrier, and terminal waits for all finite required
+obligations, including the final event. A child cannot settle until its own
+produced obligations required at its settlement boundary are closed. Within one
+task, one coordinator-owned completion turn spans sequence reservation, event
+identity allocation, and the awaited UTC clock, so each sink observes increasing
+per-task sequence order even when pipelines share that task. Completion freezes
+the complete required/best-effort plan and atomically registers both ordering
+coordinates before a caller-independent lifecycle handoff owns the completed
+occurrence, full plan, and predecessor-readiness future. The handoff resolves
+all required and best-effort predecessors before requesting bounded delivery
+admission, so a later registration cannot consume the sole permit while waiting
+for an earlier handoff. Dropping or aborting the producer therefore cannot
+discard a completed occurrence or an unadmitted sink obligation. Once ready,
+one handoff owns one event and one ordinary delivery permit, and its producer
+remains backpressured until submission, so there is no unbounded fallback queue.
+Required settlement may affect execution precedence; best-effort exhaustion or
+worker rejection settles only its own delivery coordinate and cannot rewrite the
+language result. Neither a sink's progress nor one task's delivery progress
+orders another task's source steps.
+
 ## Property argument
 
 **Progress and fairness.** The bounded model checks that every nonterminal

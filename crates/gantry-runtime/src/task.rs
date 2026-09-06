@@ -918,6 +918,12 @@ impl ConcurrentTaskStateV1 {
         self.cancellation_reasons.get(&task_id).map(AsRef::as_ref)
     }
 
+    /// Returns the first effective execution-wide cancellation reason.
+    #[must_use]
+    pub fn execution_cancellation_reason(&self) -> Option<&str> {
+        self.execution_cancellation.as_deref()
+    }
+
     /// Returns every task covered by the effective execution cancellation.
     #[must_use]
     pub fn execution_cancellation_cohort(&self) -> Vec<ProtocolIdentity> {
@@ -987,6 +993,14 @@ impl ConcurrentTaskStateV1 {
         if self.terminal.is_some() {
             return Ok(Vec::new());
         }
+        let reason = reason.into();
+        if reason.is_empty() {
+            return Err(TaskStateError::InvalidCancellationReason);
+        }
+        let reason = self
+            .execution_cancellation
+            .get_or_insert_with(|| Arc::clone(&reason))
+            .clone();
         let root_is_live = matches!(
             self.root.status,
             ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
@@ -1000,14 +1014,6 @@ impl ConcurrentTaskStateV1 {
         if !root_is_live && !has_live_child {
             return Ok(Vec::new());
         }
-        let reason = reason.into();
-        if reason.is_empty() {
-            return Err(TaskStateError::InvalidCancellationReason);
-        }
-        let reason = self
-            .execution_cancellation
-            .get_or_insert_with(|| Arc::clone(&reason))
-            .clone();
         let mut affected = Vec::new();
         if root_is_live && !self.cancellation_reasons.contains_key(&self.root_task_id) {
             self.cancellation_reasons
@@ -1136,22 +1142,27 @@ impl ConcurrentTaskStateV1 {
             })
             .collect::<Vec<_>>();
         detached_failures.sort_by(|left, right| left.task_path.cmp(&right.task_path));
-        let category = match &foreground {
-            MachineOutcome::Failed(failure) => {
-                ConcurrentTerminalCategoryV1::Runtime(machine_failure_category(failure.code))
-            }
-            MachineOutcome::Succeeded(_) if !detached_failures.is_empty() => {
-                ConcurrentTerminalCategoryV1::TerminalOnly(
-                    TerminalOnlyCategory::DetachedTaskFailure,
-                )
-            }
-            MachineOutcome::Cancelled(_) => ConcurrentTerminalCategoryV1::Cancellation,
-            MachineOutcome::Succeeded(_) if self.execution_cancellation.is_some() => {
-                ConcurrentTerminalCategoryV1::Cancellation
-            }
-            MachineOutcome::Succeeded(_) => {
-                ConcurrentTerminalCategoryV1::TerminalOnly(TerminalOnlyCategory::Success)
-            }
+        let category = match self.execution_cancellation.as_deref() {
+            Some("required-event-delivery-failure") => ConcurrentTerminalCategoryV1::Runtime(
+                RuntimeErrorCategory::RequiredEventDeliveryFailure,
+            ),
+            _ => match &foreground {
+                MachineOutcome::Failed(failure) => {
+                    ConcurrentTerminalCategoryV1::Runtime(machine_failure_category(failure.code))
+                }
+                MachineOutcome::Succeeded(_) if !detached_failures.is_empty() => {
+                    ConcurrentTerminalCategoryV1::TerminalOnly(
+                        TerminalOnlyCategory::DetachedTaskFailure,
+                    )
+                }
+                MachineOutcome::Cancelled(_) => ConcurrentTerminalCategoryV1::Cancellation,
+                MachineOutcome::Succeeded(_) if self.execution_cancellation.is_some() => {
+                    ConcurrentTerminalCategoryV1::Cancellation
+                }
+                MachineOutcome::Succeeded(_) => {
+                    ConcurrentTerminalCategoryV1::TerminalOnly(TerminalOnlyCategory::Success)
+                }
+            },
         };
         self.terminal = Some(ConcurrentTerminalOutcomeV1 {
             category,

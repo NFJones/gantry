@@ -462,7 +462,8 @@ impl ConcurrentDurableEvidenceV5 {
                     || operation.is_some()
                     || ownership.is_some()
                     || cancellation.is_none()
-                    || !checkpoint.task_is_cancelled(task_id)
+                    || (!checkpoint.task_is_cancelled(task_id)
+                        && task_id != checkpoint.root_task_id())
                 {
                     return Err(DurableEvidenceError::InvalidState);
                 }
@@ -1315,11 +1316,12 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                 .message
                 .as_deref()
                 .unwrap_or_else(|| reason.category.wire_name());
-            if execution
-                .scheduler()
-                .state()
-                .task_cancellation_reason(cancellation.evidence.task_id())
-                != Some(expected)
+            let state = execution.scheduler().state();
+            let task_reason = state.task_cancellation_reason(cancellation.evidence.task_id());
+            let execution_reason = state.execution_cancellation_reason();
+            if task_reason != Some(expected)
+                && (cancellation.evidence.task_id() != state.root_task_id()
+                    || execution_reason != Some(expected))
             {
                 return Err(DurableEvidenceError::InvalidState);
             }
@@ -2480,11 +2482,11 @@ pub fn recover_concurrent_authoritative_prefix(
             .message
             .as_deref()
             .unwrap_or_else(|| reason.category.wire_name());
-        if execution
-            .scheduler()
-            .state()
-            .task_cancellation_reason(task_id)
-            != Some(expected)
+        let state = execution.scheduler().state();
+        let task_reason = state.task_cancellation_reason(task_id);
+        let execution_reason = state.execution_cancellation_reason();
+        if task_reason != Some(expected)
+            && (task_id != state.root_task_id() || execution_reason != Some(expected))
         {
             return Err(DurableEvidenceError::InvalidState);
         }
@@ -3575,7 +3577,10 @@ fn validate_execution_cancellation_transition(
         return Ok(false);
     };
     if current_evidence.record() != ConcurrentDurableEvidenceRecordV5::Cancellation
-        || previous.checkpoint().task_is_cancelled(current.task_id())
+        || previous
+            .checkpoint()
+            .execution_cancellation_reason()
+            .is_some()
     {
         return Ok(false);
     }
@@ -3595,7 +3600,12 @@ fn validate_execution_cancellation_transition(
         .scheduler_mut()
         .cancel_execution(reason)
         .map_err(|_| DurableEvidenceError::InvalidState)?;
-    if affected.first().copied() != Some(current.task_id()) {
+    if affected
+        .first()
+        .copied()
+        .unwrap_or_else(|| expected.scheduler().state().root_task_id())
+        != current.task_id()
+    {
         return Ok(false);
     }
     let _ = expected.foreground_mut().cancel(reason);

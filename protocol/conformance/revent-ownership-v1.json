@@ -21,12 +21,36 @@
   ],
   "capabilities": [
     {
+      "id": "durable-best-effort-live-progress",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#committed_best_effort_operation_dispatch_delivery_settles_while_child_hook_is_pending"
+    },
+    {
       "id": "durable-cancellation-drains-finite-delivery",
       "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#facade_cancellation_drains_finite_events_before_releasing_durable_owner"
     },
     {
+      "id": "durable-delivery-admission-capacity",
+      "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_graph_sink_delivery_obeys_maximum_active_event_deliveries"
+    },
+    {
       "id": "durable-dispatch-settlement-barrier",
       "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_event_dispatch_and_settlement_precede_callback_and_terminal_observation"
+    },
+    {
+      "id": "nondurable-best-effort-rejection-isolation",
+      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#best_effort_delivery_submission_rejection_preserves_language_result"
+    },
+    {
+      "id": "nondurable-cancelled-producer-first-admission",
+      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#aborted_producer_does_not_drop_completed_event_waiting_for_first_sink_admission"
+    },
+    {
+      "id": "nondurable-cancelled-producer-second-sink",
+      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#aborted_producer_does_not_drop_second_sink_from_admitted_mixed_plan"
+    },
+    {
+      "id": "nondurable-capacity-one-reverse-order",
+      "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#capacity_one_reverse_polling_preserves_nondurable_per_sink_task_order"
     },
     {
       "id": "nondurable-root-order-and-observer-independence",
@@ -49,11 +73,15 @@
       "evidence": "crates/gantry-conformance/tests/revent_ownership.rs#shutdown_emits_one_final_event_and_reports_its_actual_settlement"
     },
     {
+      "id": "task-sequence-clock-publication-order",
+      "evidence": "crates/gantry-runtime/src/event.rs#shared_task_pipelines_serialize_sequence_across_delayed_clock_completion"
+    },
+    {
       "id": "terminal-delivery-only-resume",
       "evidence": "crates/gantry-conformance/tests/automatic_durable_root.rs#terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner"
     }
   ],
   "exclusions": [
-    "Cross-task event sequence races and causal ordering among independently scheduled source tasks remain owned by GNT-ASYNC-OBS-001."
+    "Cross-task event sequence, causality, and named-barrier evidence is linked by protocol/conformance/async-execution-observation-v1.json under GNT-ASYNC-OBS-001."
   ]
 }

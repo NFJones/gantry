@@ -15,6 +15,7 @@ use serde::Deserialize;
 
 const ATOMIC_EVIDENCE: &str = "crates/gantry-conformance/tests/async_admission.rs#public_admission_batches_are_atomic_nonblocking_and_boundary_typed";
 const CONFIGURATION_EVIDENCE: &str = "crates/gantry-conformance/tests/async_admission.rs#public_async_capacities_are_explicit_positive_operational_policy";
+const OWNED_WAITER_EVIDENCE: &str = "crates/gantry-runtime/src/admission.rs#owned_waiters_replace_wakers_deregister_on_drop_and_wake_once";
 const CLEANUP_EVIDENCE: &str = "crates/gantry-conformance/tests/async_admission.rs#public_cleanup_reserve_survives_ordinary_saturation";
 
 #[derive(Debug, Deserialize)]
@@ -59,7 +60,12 @@ fn checked_in_async_admission_evidence_is_narrow_and_current() {
             .iter()
             .map(|entry| entry.evidence.as_str())
             .collect::<Vec<_>>(),
-        [ATOMIC_EVIDENCE, CONFIGURATION_EVIDENCE, CLEANUP_EVIDENCE]
+        [
+            ATOMIC_EVIDENCE,
+            CONFIGURATION_EVIDENCE,
+            OWNED_WAITER_EVIDENCE,
+            CLEANUP_EVIDENCE,
+        ]
     );
     assert_eq!(manifest.exclusions.len(), 4);
 }

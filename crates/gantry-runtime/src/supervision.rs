@@ -134,6 +134,14 @@ impl TaskSupervisor {
             .try_reserve(AdmissionRequest::single(class, 1))
     }
 
+    /// Waits for one ordinary capacity unit without acquiring any other class.
+    pub async fn reserve(&self, class: AdmissionClass) -> AdmissionReservation {
+        self.inner
+            .admission
+            .reserve(AdmissionRequest::single(class, 1))
+            .await
+    }
+
     /// Reserves one isolated cleanup/control-plane unit before submission.
     pub fn try_reserve_control_plane(&self) -> Result<AdmissionReservation, AdmissionExhaustion> {
         self.inner.admission.try_reserve_control_plane(1)

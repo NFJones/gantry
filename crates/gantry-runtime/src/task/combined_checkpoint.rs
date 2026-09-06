@@ -289,6 +289,12 @@ impl ConcurrentDurableCheckpointV4 {
         self.state.cancellation_reasons.contains_key(&task_id)
     }
 
+    /// Returns the committed execution-wide cancellation reason, when present.
+    #[must_use]
+    pub fn execution_cancellation_reason(&self) -> Option<&str> {
+        self.state.execution_cancellation.as_deref()
+    }
+
     /// Returns whether foreground completion has been fixed.
     #[must_use]
     pub const fn foreground_is_fixed(&self) -> bool {

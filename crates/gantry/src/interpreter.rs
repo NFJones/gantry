@@ -39,27 +39,28 @@ use gantry_host::event::{EventDeliveryRequest, EventDeliveryRuntime, EventSink};
 use gantry_ir::TypeDescriptor;
 use gantry_ir::generated::{OperationSiteKind, TaskControlSiteKind, TypeKind};
 use gantry_observe::{
-    DeliveryError, DeliveryKernel, EventCompleter, EventCompletionError, SinkPlan,
+    ActivityBarrier, DeliveryError, DeliveryKernel, EventCompleter, EventCompletionError, SinkPlan,
     SinkSettlementStatus,
 };
 use gantry_runtime::{
     AbnormalCompletionHandler, AcceptedTranscriptResultV1, ActionOperationRequestV1, AdapterPoison,
     AdmissionClass, AdmissionExhaustion, AdmissionKind, CancellationReason, CancellationRecord,
-    CapturedOperationRequestV1, ConcurrentTaskStateV1, ExecutionCoordinator,
-    ExecutionDeliveryConsequenceV1, ExecutionEventError, ExecutionEventPipeline, ExecutionHandle,
-    ExecutionSnapshot, FinalShutdownEventFailure, FinalShutdownEventSettlement,
+    CapturedOperationRequestV1, CompletedExecutionEventV1, ConcurrentTaskStateV1,
+    ExecutionCoordinator, ExecutionEventDraftV1, ExecutionEventError, ExecutionEventPipeline,
+    ExecutionHandle, ExecutionSnapshot, FinalShutdownEventFailure, FinalShutdownEventSettlement,
     InterpolationInputV1, InterpreterConfiguration, InterpreterLifecycle, LifecycleError,
     LogicalSessionRegistryV1, Machine, MachineBuildError, MachineFailure, MachineLabel,
     MachineOutcome, MachineStep, ModelOperationRequestV1, ModelSessionUseV1, NamedInputV1,
     OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
-    OperationRequestHeaderV1, OperationRetryPolicyV1, PhysicalCompletionHandler,
-    ProcessedHookOutcomeV1, RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1,
-    SessionEstablisher, SessionEstablishmentV1, ShutdownAdmission, ShutdownCompletionError,
-    ShutdownEventSummaryV1, ShutdownJournalOwnerRelease, ShutdownJournalOwnerReleaseStatus,
-    ShutdownReport, SupervisedTask, SupervisedTaskDomain, SupervisionSignal, TaskContextV1,
-    TaskHook, TaskHookError, TaskSessionContextV1, TaskStateError, TranscriptResultKindV1,
-    TranscriptTurnV1, TypedActionArgumentV1, catch_integration, contain_integration_future,
-    machine_lifecycle_event, shutdown_event,
+    OperationRequestHeaderV1, OperationRetryPolicyV1, OwnedEventDeliveryReservation,
+    OwnedEventDeliveryReservationWait, PhysicalCompletionHandler, ProcessedHookOutcomeV1,
+    RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1, SessionEstablisher,
+    SessionEstablishmentV1, ShutdownAdmission, ShutdownCompletionError, ShutdownEventSummaryV1,
+    ShutdownJournalOwnerRelease, ShutdownJournalOwnerReleaseStatus, ShutdownReport, SupervisedTask,
+    SupervisedTaskDomain, SupervisionSignal, TaskContextV1, TaskHook, TaskHookError,
+    TaskSessionContextV1, TaskStateError, TranscriptResultKindV1, TranscriptTurnV1,
+    TypedActionArgumentV1, catch_integration, contain_integration_future, machine_lifecycle_event,
+    shutdown_event,
 };
 #[cfg(feature = "concurrent")]
 use gantry_runtime::{
@@ -74,7 +75,7 @@ use gantry_host::journal::JournalStorage;
 use gantry_runtime::AdmissionReservation;
 #[cfg(feature = "durable")]
 use gantry_runtime::{
-    DurableCommitCutV1, DurableEventBarrierV1, DurableOperationEvidenceV1, ExecutionEventDraftV1,
+    DurableCommitCutV1, DurableEventBarrierV1, DurableOperationEvidenceV1,
     OperationResultEventKindV1, operation_completion_event, operation_dispatch_event,
     operation_result_event,
 };
@@ -107,6 +108,8 @@ struct InterpreterInner {
     shutdown_started: AtomicBool,
     shutdown: Arc<SharedShutdown>,
     nondurable_executions: NondurableExecutionRegistry,
+    #[cfg(all(feature = "concurrent", feature = "test-support"))]
+    nondurable_before_child_executor_submit: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     #[cfg(all(feature = "concurrent", feature = "test-support"))]
     nondurable_cancel_before_child_submit: Mutex<Option<CancellationSignal>>,
     #[cfg(all(feature = "concurrent", feature = "test-support"))]
@@ -732,6 +735,10 @@ struct SharedDurableMachineGraphState {
     graph: Option<DurableMachineGraph>,
     failed: bool,
     finalization_requested: bool,
+    delivery_enabled: bool,
+    live_delivery_queued: bool,
+    live_delivery_requested_through: u64,
+    live_delivery_completed_through: u64,
     cancellation_drains: BTreeSet<ProtocolIdentity>,
     control_started: bool,
     control_reservation: Option<AdmissionReservation>,
@@ -743,6 +750,10 @@ struct SharedDurableMachineGraphState {
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 enum DurableGraphControlCommand {
+    DeliverCommittedEvents,
+    DeliverCommittedEventsFinished {
+        result: Box<Result<(DurableMachineGraphLease, DurableEventBarrierV1), DurableRunFailure>>,
+    },
     SettleAbnormalChild {
         task_id: ProtocolIdentity,
         outcome: MachineOutcome,
@@ -864,8 +875,10 @@ struct DurableMachineGraphLease {
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 impl SharedDurableMachineGraph {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         graph: DurableMachineGraph,
+        initial_delivery_pending: bool,
         root_task_id: ProtocolIdentity,
         root_supervision: SupervisedTask,
         control_reservation: AdmissionReservation,
@@ -873,16 +886,29 @@ impl SharedDurableMachineGraph {
         program: Arc<gantry_ir::MachineProgram>,
         operations: DurableOperationContext,
     ) -> Arc<Self> {
+        let initial_frontier = graph.frontier.1;
         Arc::new(Self {
             state: Mutex::new(SharedDurableMachineGraphState {
                 graph: Some(graph),
                 failed: false,
                 finalization_requested: false,
+                delivery_enabled: initial_delivery_pending,
+                live_delivery_queued: initial_delivery_pending,
+                live_delivery_requested_through: initial_frontier,
+                live_delivery_completed_through: if initial_delivery_pending {
+                    0
+                } else {
+                    initial_frontier
+                },
                 cancellation_drains: BTreeSet::new(),
                 control_started: false,
                 control_reservation: Some(control_reservation),
                 tasks: BTreeMap::from([(root_task_id, root_supervision)]),
-                commands: VecDeque::new(),
+                commands: if initial_delivery_pending {
+                    VecDeque::from([DurableGraphControlCommand::DeliverCommittedEvents])
+                } else {
+                    VecDeque::new()
+                },
                 control_waker: None,
                 waiters: Vec::new(),
             }),
@@ -1003,6 +1029,57 @@ impl SharedDurableMachineGraph {
         }
     }
 
+    fn complete_live_delivery(&self, frontier: u64) {
+        let (control_waker, waiters) = {
+            let mut state = lock_shutdown(&self.state);
+            state.live_delivery_completed_through =
+                state.live_delivery_completed_through.max(frontier);
+            state.live_delivery_queued = false;
+            if state.failed
+                || state.finalization_requested
+                || state.live_delivery_requested_through <= state.live_delivery_completed_through
+            {
+                (None, std::mem::take(&mut state.waiters))
+            } else {
+                state.live_delivery_queued = true;
+                state
+                    .commands
+                    .push_back(DurableGraphControlCommand::DeliverCommittedEvents);
+                (
+                    state.control_waker.take(),
+                    std::mem::take(&mut state.waiters),
+                )
+            }
+        };
+        if let Some(waker) = control_waker {
+            waker.wake();
+        }
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    async fn wait_for_live_delivery(&self, frontier: u64) -> bool {
+        std::future::poll_fn(|context| {
+            let mut state = lock_shutdown(&self.state);
+            if state.live_delivery_completed_through >= frontier {
+                Poll::Ready(true)
+            } else if state.failed {
+                Poll::Ready(false)
+            } else {
+                if !state
+                    .waiters
+                    .iter()
+                    .any(|waiter| waiter.will_wake(context.waker()))
+                {
+                    state.waiters.push(context.waker().clone());
+                }
+                Poll::Pending
+            }
+        })
+        .await
+    }
+
     fn request_completion(&self) {
         let control_waker = {
             let mut state = lock_shutdown(&self.state);
@@ -1020,16 +1097,110 @@ impl SharedDurableMachineGraph {
         }
     }
 
-    async fn next_control_command(&self) -> DurableGraphControlCommand {
+    async fn next_control_command(
+        &self,
+        lifecycle: &InterpreterLifecycle,
+    ) -> (
+        DurableGraphControlCommand,
+        Option<OwnedEventDeliveryReservation>,
+    ) {
+        let mut delivery_wait: Option<OwnedEventDeliveryReservationWait> = None;
         std::future::poll_fn(|context| {
             let mut state = lock_shutdown(&self.state);
-            if let Some(command) = state.commands.pop_front() {
-                return Poll::Ready(command);
+            if let Some(position) = state.commands.iter().position(|command| {
+                matches!(
+                    command,
+                    DurableGraphControlCommand::DeliverCommittedEventsFinished { .. }
+                )
+            }) {
+                let command = state
+                    .commands
+                    .remove(position)
+                    .unwrap_or_else(|| unreachable!("located delivery result remains queued"));
+                return Poll::Ready((command, None));
+            }
+            if matches!(
+                state.commands.front(),
+                Some(DurableGraphControlCommand::DeliverCommittedEvents)
+            ) {
+                let wait = delivery_wait
+                    .get_or_insert_with(|| lifecycle.owned_event_delivery_reservation());
+                if let Poll::Ready(reservation) = Pin::new(wait).poll(context) {
+                    let command = state
+                        .commands
+                        .pop_front()
+                        .unwrap_or_else(|| unreachable!("delivery command remains queued"));
+                    return Poll::Ready((command, Some(reservation)));
+                }
+            }
+            if matches!(
+                state.commands.front(),
+                Some(DurableGraphControlCommand::DeliverCommittedEvents)
+            ) {
+                if let Some(position) = state.commands.iter().position(|command| {
+                    matches!(
+                        command,
+                        DurableGraphControlCommand::DrainCancellation { .. }
+                            | DurableGraphControlCommand::Fail(_)
+                    )
+                }) {
+                    let command = state
+                        .commands
+                        .remove(position)
+                        .unwrap_or_else(|| unreachable!("located cleanup command remains queued"));
+                    return Poll::Ready((command, None));
+                }
+                state.control_waker = Some(context.waker().clone());
+                return Poll::Pending;
+            }
+            if state.live_delivery_queued {
+                if let Some(position) = state.commands.iter().position(|command| {
+                    matches!(
+                        command,
+                        DurableGraphControlCommand::DrainCancellation { .. }
+                            | DurableGraphControlCommand::Fail(_)
+                    )
+                }) {
+                    let command = state
+                        .commands
+                        .remove(position)
+                        .unwrap_or_else(|| unreachable!("located cleanup command remains queued"));
+                    return Poll::Ready((command, None));
+                }
+                state.control_waker = Some(context.waker().clone());
+                return Poll::Pending;
+            }
+            if let Some(position) = state.commands.iter().position(|command| {
+                !matches!(command, DurableGraphControlCommand::DeliverCommittedEvents)
+            }) {
+                let command = state
+                    .commands
+                    .remove(position)
+                    .unwrap_or_else(|| unreachable!("located control command remains queued"));
+                return Poll::Ready((command, None));
             }
             state.control_waker = Some(context.waker().clone());
             Poll::Pending
         })
         .await
+    }
+
+    fn finish_live_delivery(
+        &self,
+        result: Result<(DurableMachineGraphLease, DurableEventBarrierV1), DurableRunFailure>,
+    ) {
+        let control_waker = {
+            let mut state = lock_shutdown(&self.state);
+            state
+                .commands
+                .push_back(DurableGraphControlCommand::DeliverCommittedEventsFinished {
+                    result: Box::new(result),
+                });
+            state.control_waker.take()
+        };
+        if let Some(waker) = control_waker {
+            waker.wake();
+        }
     }
 
     fn register_task(&self, task_id: ProtocolIdentity, task: SupervisedTask) {
@@ -1085,13 +1256,37 @@ impl Drop for DurableMachineGraphLease {
         let Some(graph) = self.graph.take() else {
             return;
         };
-        let waiters = {
+        let frontier = graph.frontier.1;
+        let (control_waker, waiters) = {
             let mut state = lock_shutdown(&self.shared.state);
             if !state.failed {
                 state.graph = Some(graph);
             }
-            std::mem::take(&mut state.waiters)
+            state.live_delivery_requested_through =
+                state.live_delivery_requested_through.max(frontier);
+            if !state.delivery_enabled {
+                state.live_delivery_completed_through =
+                    state.live_delivery_completed_through.max(frontier);
+            }
+            let control_waker = if state.delivery_enabled
+                && !state.failed
+                && !state.finalization_requested
+                && !state.live_delivery_queued
+                && state.live_delivery_requested_through > state.live_delivery_completed_through
+            {
+                state.live_delivery_queued = true;
+                state
+                    .commands
+                    .push_back(DurableGraphControlCommand::DeliverCommittedEvents);
+                state.control_waker.take()
+            } else {
+                None
+            };
+            (control_waker, std::mem::take(&mut state.waiters))
         };
+        if let Some(waker) = control_waker {
+            waker.wake();
+        }
         for waiter in waiters {
             waiter.wake();
         }
@@ -1569,6 +1764,8 @@ impl Interpreter {
                 shutdown_started: AtomicBool::new(false),
                 shutdown: Arc::new(SharedShutdown::default()),
                 nondurable_executions: NondurableExecutionRegistry::default(),
+                #[cfg(all(feature = "concurrent", feature = "test-support"))]
+                nondurable_before_child_executor_submit: Mutex::new(None),
                 #[cfg(all(feature = "concurrent", feature = "test-support"))]
                 nondurable_cancel_before_child_submit: Mutex::new(None),
                 #[cfg(all(feature = "concurrent", feature = "test-support"))]
@@ -2318,7 +2515,91 @@ impl Interpreter {
         operations: DurableOperationContext,
     ) {
         loop {
-            match graph.next_control_command().await {
+            let (command, reservation) = graph.next_control_command(&self.inner.lifecycle).await;
+            match command {
+                DurableGraphControlCommand::DeliverCommittedEvents => {
+                    let Some(reservation) = reservation else {
+                        graph.request_failure(DurableRunFailure::Internal);
+                        continue;
+                    };
+                    let Some(lease) = graph.acquire().await else {
+                        continue;
+                    };
+                    let occurrence_frontier = lease.frontier.1;
+                    let delivery_graph = Arc::clone(&graph);
+                    let delivery_owner = Arc::clone(&owner);
+                    let delivery_coordinator = coordinator.clone();
+                    let delivery_program = Arc::clone(&program);
+                    let delivery_inner = Arc::clone(&self.inner);
+                    self.inner.lifecycle.spawn_reserved_event_delivery(
+                        reservation,
+                        async move {
+                            let mut lease = lease;
+                            let (frontier, barrier) = delivery_owner
+                                .drain_graph_required_event_obligations_through(
+                                    delivery_program,
+                                    &delivery_coordinator,
+                                    occurrence_frontier,
+                                    &delivery_inner.allocator,
+                                    delivery_inner.configuration.identity_source(),
+                                    delivery_inner.event_delivery_runtime.as_ref(),
+                                )
+                                .await?;
+                            lease.frontier = frontier;
+                            Ok::<_, DurableRunFailure>((lease, barrier))
+                        },
+                        move |result| {
+                            delivery_graph.finish_live_delivery(match result {
+                                Ok(result) => result,
+                                Err(_) => Err(DurableRunFailure::Internal),
+                            });
+                        },
+                    );
+                }
+                DurableGraphControlCommand::DeliverCommittedEventsFinished { result } => {
+                    match *result {
+                        Ok((mut lease, barrier)) => {
+                            if let DurableEventBarrierV1::RequiredExhausted(failure) = barrier {
+                                let result =
+                                    if owner.graph_required_delivery_failure_recorded(&failure) {
+                                        Ok(())
+                                    } else if coordinator.terminal_outcome().is_some() {
+                                        owner.record_graph_post_terminal_delivery_failure(
+                                            &coordinator,
+                                            failure,
+                                        )
+                                    } else {
+                                        owner.exclude_graph_event_sink(failure.sink_id.clone());
+                                        let reason =
+                                            owner.request_graph_cancellation(CancellationReason {
+                                                category: CancellationReasonCategory::Runtime,
+                                                message: Some(Arc::from(
+                                                    "required-event-delivery-failure",
+                                                )),
+                                                causal_identity: None,
+                                            });
+                                        self.commit_durable_graph_cancellation_with_lease(
+                                            &mut lease,
+                                            &owner,
+                                            &coordinator,
+                                            reason,
+                                        )
+                                        .await
+                                        .and_then(|()| {
+                                            owner.record_graph_required_delivery_failure(failure)
+                                        })
+                                    };
+                                if let Err(failure) = result {
+                                    drop(lease);
+                                    graph.request_failure(failure);
+                                    continue;
+                                }
+                            }
+                            graph.complete_live_delivery(lease.frontier.1);
+                        }
+                        Err(failure) => graph.request_failure(failure),
+                    }
+                }
                 DurableGraphControlCommand::SettleAbnormalChild { task_id, outcome } => {
                     if let Err(failure) = self
                         .settle_durable_abnormal_child(
@@ -2343,29 +2624,18 @@ impl Interpreter {
                     }
                 }
                 DurableGraphControlCommand::Complete => {
+                    if let Err(failure) = owner.publish_graph_terminal(&coordinator) {
+                        let _ = owner.finish_failed_graph_driver(failure).await;
+                        return;
+                    }
                     let tasks = graph.take_tasks();
                     let physically_settled = self.drain_durable_graph_tasks(tasks).await;
-                    match owner
-                        .drain_graph_event_obligations(
-                            program,
-                            &coordinator,
-                            &self.inner.allocator,
-                            self.inner.configuration.identity_source(),
-                            self.inner.event_delivery_runtime.as_ref(),
-                        )
-                        .await
-                    {
-                        Ok(_) if physically_settled => {
-                            let _ = owner.finish_graph_driver().await;
-                        }
-                        Ok(_) => {
-                            let _ = owner
-                                .finish_failed_graph_driver(DurableRunFailure::Internal)
-                                .await;
-                        }
-                        Err(failure) => {
-                            let _ = owner.finish_failed_graph_driver(failure).await;
-                        }
+                    if physically_settled {
+                        let _ = owner.finish_graph_driver().await;
+                    } else {
+                        let _ = owner
+                            .finish_failed_graph_driver(DurableRunFailure::Internal)
+                            .await;
                     }
                     return;
                 }
@@ -2967,6 +3237,9 @@ impl Interpreter {
                             ),
                             next_event_sequence: BTreeMap::from([(task_id, task_event_sequence)]),
                         },
+                        !owner
+                            .graph_event_plan()
+                            .is_ok_and(|plan| plan.obligations().is_empty()),
                         task_id,
                         root_supervision,
                         control_reservation,
@@ -2975,6 +3248,20 @@ impl Interpreter {
                         operations.clone(),
                     );
                     owner.activate_graph_driver();
+                    if !owner
+                        .graph_event_plan()
+                        .is_ok_and(|plan| plan.obligations().is_empty())
+                        && let Err(failure) = self.start_durable_graph_finalizer(
+                            Arc::clone(&graph),
+                            Arc::clone(&owner),
+                            coordinator.clone(),
+                            Arc::clone(&program),
+                            operations.clone(),
+                        )
+                    {
+                        graph.request_failure(failure);
+                        return;
+                    }
                     let result = self
                         .drive_durable_graph_task(
                             Arc::clone(&graph),
@@ -3531,6 +3818,12 @@ impl Interpreter {
                             DurableCommitCutV1::ForegroundCompletion,
                         )
                         .await?;
+                        let occurrence_frontier = lease.frontier.1;
+                        drop(lease);
+                        if !graph.wait_for_live_delivery(occurrence_frontier).await {
+                            return Err(DurableRunFailure::Internal);
+                        }
+                        owner.publish_graph_foreground(&coordinator)?;
                     }
                     MachineStep::Transition(MachineLabel::TerminalCompletion(outcome)) => {
                         let detached = coordinator.shutdown_cohort().detached_tasks;
@@ -4180,7 +4473,15 @@ impl Interpreter {
             })
             .map_err(|_| DurableRunFailure::Internal)?;
         let Some(affected_task) = affected.first().copied() else {
-            drop(transaction);
+            lease.frontier = owner
+                .commit_graph_transaction(
+                    coordinator,
+                    transaction,
+                    predecessor,
+                    DurableCommitCutV1::Cancellation,
+                    coordinator.snapshot().state().root_task_id(),
+                )
+                .await?;
             owner.complete_graph_cancellation_without_cut();
             return Ok(());
         };
@@ -4746,44 +5047,6 @@ impl Interpreter {
             parent_task_id,
             sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
         );
-
-        let occurrence_frontier = lease.frontier.1;
-        let (frontier, barrier) = owner
-            .drain_graph_required_event_obligations_through(
-                Arc::clone(&program),
-                &coordinator,
-                occurrence_frontier,
-                &self.inner.allocator,
-                self.inner.configuration.identity_source(),
-                self.inner.event_delivery_runtime.as_ref(),
-            )
-            .await?;
-        lease.frontier = frontier;
-        if let DurableEventBarrierV1::RequiredExhausted(failure) = barrier {
-            let reason = owner.request_graph_cancellation(CancellationReason {
-                category: CancellationReasonCategory::Runtime,
-                message: Some(Arc::from("required-event-delivery-failure")),
-                causal_identity: None,
-            });
-            self.commit_durable_graph_cancellation_with_lease(
-                &mut lease,
-                &owner,
-                &coordinator,
-                reason,
-            )
-            .await?;
-            owner.record_graph_required_delivery_failure(failure)?;
-            self.settle_durable_cancelled_unsubmitted_child(
-                &mut lease,
-                &owner,
-                &coordinator,
-                parent_task_id,
-                created.task_id,
-                &suspension,
-            )
-            .await?;
-            return Ok(());
-        }
 
         let supervisor = self.inner.lifecycle.task_supervisor();
         let reservation = match supervisor.try_reserve(AdmissionClass::SourceChildTask) {
@@ -6550,7 +6813,7 @@ impl Interpreter {
             .checked_add(1)
             .ok_or(DurableRunFailure::Internal)?;
         *last_committed = recovered.clone();
-        if recovered.latest_cut() != DurableCommitCutV1::TerminalCompletion {
+        if recovered.latest_cut() == DurableCommitCutV1::ForegroundCompletion {
             let barrier = owner
                 .drain_driver_required_event_obligations_through(
                     recovered,
@@ -7557,6 +7820,7 @@ impl Interpreter {
         let session_establisher = self.inner.session_establisher.clone();
         let mut events = ExecutionEventPipeline::new(
             &accepted.handle,
+            &coordinator,
             accepted.package_activity.activity_id,
             task_id,
             &self.inner.allocator,
@@ -7633,39 +7897,21 @@ impl Interpreter {
             .await?;
             match machine.step() {
                 MachineStep::Transition(label) => {
-                    #[cfg(feature = "concurrent")]
-                    let defer_terminal_event = matches!(
-                        label,
-                        MachineLabel::TerminalCompletion(_) if execution_foreground
-                    );
-                    #[cfg(not(feature = "concurrent"))]
-                    let defer_terminal_event = false;
+                    let defer_execution_completion_event =
+                        should_defer_execution_completion_event(&label, execution_foreground);
                     let defer_task_settlement_event = matches!(label, MachineLabel::TaskSettled(_));
-                    if !defer_terminal_event
+                    if !defer_execution_completion_event
                         && !defer_task_settlement_event
                         && let Some(event) =
                             machine_lifecycle_event(&label, accepted.execution_id, task_id)
                     {
-                        let event = events
-                            .emit_task_draft(event)
-                            .await
-                            .map_err(RunExecutionError::Event)?;
-                        if matches!(
-                            event.consequence,
-                            ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                        ) {
-                            coordinator
-                                .cancel_task_tree(
-                                    task_id,
-                                    Arc::from("required-event-delivery-failure"),
-                                )
-                                .map_err(RunExecutionError::TaskState)?;
-                            let _ = machine.fail_execution(
-                                RuntimeErrorCategory::RequiredEventDeliveryFailure,
-                                gantry_runtime::ExecutionFailureProjection::Full,
-                            );
-                            continue;
-                        }
+                        self.complete_and_enqueue_nondurable_event(
+                            &coordinator,
+                            &accepted.handle,
+                            &accepted.event_delivery,
+                            events.complete_task_draft(event),
+                        )
+                        .await?;
                     }
                     match label {
                         MachineLabel::TaskSettled(outcome) => {
@@ -7691,41 +7937,74 @@ impl Interpreter {
                                 task_id,
                             )
                             .ok_or(RunExecutionError::LifecycleTransition)?;
-                            let event = events
-                                .emit_task_draft(draft)
-                                .await
-                                .map_err(RunExecutionError::Event)?;
-                            if matches!(
-                                event.consequence,
-                                ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                                    | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
-                            ) {
-                                coordinator
-                                    .cancel_task_tree(
-                                        task_id,
-                                        Arc::from("required-event-delivery-failure"),
-                                    )
-                                    .map_err(RunExecutionError::TaskState)?;
-                            }
+                            self.complete_and_enqueue_nondurable_event(
+                                &coordinator,
+                                &accepted.handle,
+                                &accepted.event_delivery,
+                                events.complete_task_draft(draft),
+                            )
+                            .await?;
                             coordinator
                                 .settle_staged_task(task_id)
                                 .map_err(RunExecutionError::TaskState)?;
                         }
                         MachineLabel::ForegroundCompletion(outcome) if execution_foreground => {
                             if !foreground_fixed {
-                                let coordinated =
-                                    self.complete_nondurable_foreground(&coordinator).await?;
-                                if coordinated != outcome {
-                                    return Err(RunExecutionError::LifecycleTransition);
-                                }
+                                self.wait_for_nondurable_attached_tasks(&coordinator)
+                                    .await?;
+                                coordinator.wait_for_required_event_delivery().await;
+                                let selected_outcome = if coordinator
+                                    .event_delivery_executor_failed()
+                                {
+                                    MachineOutcome::Failed(MachineFailure {
+                                        code: RuntimeCode::Operation(
+                                            RuntimeErrorCategory::ExecutorFailure,
+                                        ),
+                                        workflow: workflow.clone(),
+                                        site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
+                                            .map_err(|_| RunExecutionError::LifecycleTransition)?,
+                                        #[cfg(feature = "concurrent")]
+                                        join_failure: None,
+                                    })
+                                } else if coordinator.required_event_delivery_failed() {
+                                    MachineOutcome::Failed(MachineFailure {
+                                        code: RuntimeCode::Operation(
+                                            RuntimeErrorCategory::RequiredEventDeliveryFailure,
+                                        ),
+                                        workflow: workflow.clone(),
+                                        site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
+                                            .map_err(|_| RunExecutionError::LifecycleTransition)?,
+                                        #[cfg(feature = "concurrent")]
+                                        join_failure: None,
+                                    })
+                                } else {
+                                    outcome
+                                };
+                                coordinator
+                                    .complete_foreground_with_outcome(selected_outcome.clone())
+                                    .map_err(RunExecutionError::TaskState)?;
+                                let draft = machine_lifecycle_event(
+                                    &MachineLabel::ForegroundCompletion(selected_outcome.clone()),
+                                    accepted.execution_id,
+                                    task_id,
+                                )
+                                .ok_or(RunExecutionError::LifecycleTransition)?;
+                                self.complete_and_enqueue_nondurable_event(
+                                    &coordinator,
+                                    &accepted.handle,
+                                    &accepted.event_delivery,
+                                    events.complete_task_draft(draft),
+                                )
+                                .await?;
+                                coordinator.wait_for_required_event_delivery().await;
                                 self.inner
                                     .lifecycle
-                                    .complete_foreground(&accepted.handle, outcome)
+                                    .complete_foreground(&accepted.handle, selected_outcome.clone())
                                     .map_err(|_| RunExecutionError::LifecycleTransition)?;
                                 foreground_fixed = true;
                             }
                         }
-                        MachineLabel::TerminalCompletion(outcome)
+                        MachineLabel::TerminalCompletion(_outcome)
                             if execution_foreground && !terminal_fixed =>
                         {
                             #[cfg(feature = "concurrent")]
@@ -7751,36 +8030,34 @@ impl Interpreter {
                                         }
                                     }
                                 };
-                                let event = if terminal.detached_failures.is_empty() {
-                                    let draft = machine_lifecycle_event(
-                                        &MachineLabel::TerminalCompletion(outcome.clone()),
-                                        accepted.execution_id,
-                                        task_id,
-                                    )
-                                    .ok_or(RunExecutionError::LifecycleTransition)?;
-                                    events.emit_task_draft(draft).await
-                                } else {
-                                    let draft = concurrent_terminal_event(
-                                        accepted.execution_id,
-                                        task_id,
-                                        &terminal,
-                                    )
-                                    .map_err(|_| RunExecutionError::LifecycleTransition)?;
-                                    events.emit_execution_draft(draft).await
-                                }
-                                .map_err(RunExecutionError::Event)?;
-                                if matches!(
-                                event.consequence,
-                                ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                                    | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
-                            ) {
-                                coordinator
-                                    .cancel_task_tree(
-                                        task_id,
-                                        Arc::from("required-event-delivery-failure"),
-                                    )
-                                    .map_err(RunExecutionError::TaskState)?;
-                            }
+                                self.complete_and_enqueue_nondurable_event(
+                                    &coordinator,
+                                    &accepted.handle,
+                                    &accepted.event_delivery,
+                                    async {
+                                        if terminal.detached_failures.is_empty() {
+                                            let draft = machine_lifecycle_event(
+                                                &MachineLabel::TerminalCompletion(
+                                                    terminal.foreground.clone(),
+                                                ),
+                                                accepted.execution_id,
+                                                task_id,
+                                            )
+                                            .ok_or(ExecutionEventError::IdentityKind)?;
+                                            events.complete_task_draft(draft).await
+                                        } else {
+                                            let draft = concurrent_terminal_event(
+                                                accepted.execution_id,
+                                                task_id,
+                                                &terminal,
+                                            )
+                                            .map_err(|_| ExecutionEventError::IdentityKind)?;
+                                            events.complete_execution_draft(draft).await
+                                        }
+                                    },
+                                )
+                                .await?;
+                                coordinator.wait_for_required_event_delivery().await;
                                 self.inner
                                     .lifecycle
                                     .complete_terminal(&accepted.handle, terminal)
@@ -7788,22 +8065,26 @@ impl Interpreter {
                             }
                             #[cfg(not(feature = "concurrent"))]
                             {
-                                coordinator
+                                let terminal = coordinator
                                     .complete_terminal()
                                     .map_err(RunExecutionError::TaskState)?;
                                 let draft = machine_lifecycle_event(
-                                    &MachineLabel::TerminalCompletion(outcome.clone()),
+                                    &MachineLabel::TerminalCompletion(terminal.foreground.clone()),
                                     accepted.execution_id,
                                     task_id,
                                 )
                                 .ok_or(RunExecutionError::LifecycleTransition)?;
-                                events
-                                    .emit_task_draft(draft)
-                                    .await
-                                    .map_err(RunExecutionError::Event)?;
+                                self.complete_and_enqueue_nondurable_event(
+                                    &coordinator,
+                                    &accepted.handle,
+                                    &accepted.event_delivery,
+                                    events.complete_task_draft(draft),
+                                )
+                                .await?;
+                                coordinator.wait_for_required_event_delivery().await;
                                 self.inner
                                     .lifecycle
-                                    .complete_terminal(&accepted.handle, outcome)
+                                    .complete_terminal(&accepted.handle, terminal)
                                     .map_err(|_| RunExecutionError::LifecycleTransition)?;
                             }
                             terminal_fixed = true;
@@ -7840,22 +8121,13 @@ impl Interpreter {
                                 0,
                             )
                             .map_err(|_| RunExecutionError::LifecycleTransition)?;
-                            let event = events
-                                .emit_task_draft(draft)
-                                .await
-                                .map_err(RunExecutionError::Event)?;
-                            if matches!(
-                                event.consequence,
-                                ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                                    | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
-                            ) {
-                                coordinator
-                                    .cancel_task_tree(
-                                        task_id,
-                                        Arc::from("required-event-delivery-failure"),
-                                    )
-                                    .map_err(RunExecutionError::TaskState)?;
-                            }
+                            self.complete_and_enqueue_nondurable_event(
+                                &coordinator,
+                                &accepted.handle,
+                                &accepted.event_delivery,
+                                events.complete_task_draft(draft),
+                            )
+                            .await?;
                             continue;
                         }
                         #[cfg(feature = "concurrent")]
@@ -7963,22 +8235,13 @@ impl Interpreter {
                                     0,
                                 )
                                 .map_err(|_| RunExecutionError::LifecycleTransition)?;
-                                let event = events
-                                    .emit_task_draft(draft)
-                                    .await
-                                    .map_err(RunExecutionError::Event)?;
-                                if matches!(
-                                    event.consequence,
-                                    ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                                        | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
-                                ) {
-                                    coordinator
-                                        .cancel_task_tree(
-                                            task_id,
-                                            Arc::from("required-event-delivery-failure"),
-                                        )
-                                        .map_err(RunExecutionError::TaskState)?;
-                                }
+                                self.complete_and_enqueue_nondurable_event(
+                                    &coordinator,
+                                    &accepted.handle,
+                                    &accepted.event_delivery,
+                                    events.complete_task_draft(draft),
+                                )
+                                .await?;
                                 self.apply_task_cancellation(
                                     &accepted,
                                     &coordinator,
@@ -8009,22 +8272,13 @@ impl Interpreter {
                                 let draft =
                                     concurrent_detach_event(accepted.execution_id, &ownership, 0)
                                         .map_err(|_| RunExecutionError::LifecycleTransition)?;
-                                let event = events
-                                    .emit_task_draft(draft)
-                                    .await
-                                    .map_err(RunExecutionError::Event)?;
-                                if matches!(
-                                    event.consequence,
-                                    ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                                        | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
-                                ) {
-                                    coordinator
-                                        .cancel_task_tree(
-                                            task_id,
-                                            Arc::from("required-event-delivery-failure"),
-                                        )
-                                        .map_err(RunExecutionError::TaskState)?;
-                                }
+                                self.complete_and_enqueue_nondurable_event(
+                                    &coordinator,
+                                    &accepted.handle,
+                                    &accepted.event_delivery,
+                                    events.complete_task_draft(draft),
+                                )
+                                .await?;
                                 self.apply_task_cancellation(
                                     &accepted,
                                     &coordinator,
@@ -8253,10 +8507,13 @@ impl Interpreter {
         if let Some(label) = machine.cancel(reason)
             && let Some(draft) = machine_lifecycle_event(&label, accepted.execution_id, task_id)
         {
-            let _ = events
-                .emit_task_draft(draft)
-                .await
-                .map_err(RunExecutionError::Event)?;
+            self.complete_and_enqueue_nondurable_event(
+                coordinator,
+                &accepted.handle,
+                &accepted.event_delivery,
+                events.complete_task_draft(draft),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -8406,25 +8663,23 @@ impl Interpreter {
             _ => return Err(RunExecutionError::LifecycleTransition),
         }
         drop(snapshot);
-        for (sequence, label) in [
+        for label in [
             MachineLabel::Cancellation {
                 reason: Arc::clone(&reason),
             },
             MachineLabel::TaskSettled(MachineOutcome::Cancelled(reason)),
         ]
         .into_iter()
-        .enumerate()
         {
             let draft = machine_lifecycle_event(&label, accepted.execution_id, task_id)
                 .ok_or(RunExecutionError::LifecycleTransition)?;
-            let _ = events
-                .emit_task_draft_for(
-                    task_id,
-                    u64::try_from(sequence).map_err(|_| RunExecutionError::LifecycleTransition)?,
-                    draft,
-                )
-                .await
-                .map_err(RunExecutionError::Event)?;
+            self.complete_and_enqueue_nondurable_event(
+                coordinator,
+                &accepted.handle,
+                &accepted.event_delivery,
+                events.complete_task_draft_for(task_id, draft),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -8455,35 +8710,173 @@ impl Interpreter {
             task_id,
         )
         .ok_or(RunExecutionError::LifecycleTransition)?;
-        let _ = events
-            .emit_task_draft_for(task_id, 0, draft)
-            .await
-            .map_err(RunExecutionError::Event)?;
+        self.complete_and_enqueue_nondurable_event(
+            coordinator,
+            &accepted.handle,
+            &accepted.event_delivery,
+            events.complete_task_draft_for(task_id, draft),
+        )
+        .await?;
         Ok(())
     }
 
-    async fn complete_nondurable_foreground(
+    async fn wait_for_nondurable_attached_tasks(
         &self,
         coordinator: &ExecutionCoordinator,
-    ) -> Result<MachineOutcome, RunExecutionError> {
+    ) -> Result<(), RunExecutionError> {
         loop {
-            match coordinator.complete_foreground() {
-                Ok(outcome) => return Ok(outcome),
-                Err(TaskStateError::AttachedTasksPending) => {
-                    let attached = coordinator.shutdown_cohort().attached_tasks;
-                    if attached.is_empty() {
-                        return Err(RunExecutionError::LifecycleTransition);
-                    }
-                    for task_id in attached {
-                        coordinator
-                            .wait_for_task_settlement(task_id)
-                            .map_err(RunExecutionError::TaskState)?
-                            .await;
-                    }
-                }
-                Err(error) => return Err(RunExecutionError::TaskState(error)),
+            let attached = coordinator.shutdown_cohort().attached_tasks;
+            if attached.is_empty() {
+                return Ok(());
+            }
+            for task_id in attached {
+                coordinator
+                    .wait_for_task_settlement(task_id)
+                    .map_err(RunExecutionError::TaskState)?
+                    .await;
             }
         }
+    }
+
+    async fn complete_and_enqueue_nondurable_event<F>(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        handle: &ExecutionHandle,
+        initial_plan: &SinkPlan,
+        completion: F,
+    ) -> Result<(), RunExecutionError>
+    where
+        F: Future<Output = Result<CompletedExecutionEventV1, ExecutionEventError>>,
+    {
+        let active_plan = coordinator.event_plan(initial_plan);
+        if active_plan.registrations().is_empty() {
+            completion.await.map_err(RunExecutionError::Event)?;
+            return Ok(());
+        }
+        let completed = completion.await.map_err(RunExecutionError::Event)?;
+        self.handoff_nondurable_event_delivery(coordinator, handle, completed, active_plan)?
+            .await;
+        Ok(())
+    }
+
+    fn handoff_nondurable_event_delivery(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        handle: &ExecutionHandle,
+        completed: CompletedExecutionEventV1,
+        plan: SinkPlan,
+    ) -> Result<gantry_runtime::OwnedEventDeliveryHandoffWait, RunExecutionError> {
+        let required = plan.required_only();
+        let best_effort = plan.best_effort_only();
+        let has_required = !required.registrations().is_empty();
+        let has_best_effort = !best_effort.registrations().is_empty();
+        let (required_delivery, best_effort_delivery) = coordinator
+            .begin_event_delivery_plan(has_required, has_best_effort)
+            .map_err(|_| RunExecutionError::Event(ExecutionEventError::TaskSequenceExhausted))?;
+        let inner = Arc::clone(&self.inner);
+        let delivery_coordinator = coordinator.clone();
+        let required_predecessor = required_delivery
+            .map(|delivery| coordinator.wait_for_required_event_delivery_predecessors(delivery));
+        let best_effort_predecessor = best_effort_delivery
+            .map(|delivery| coordinator.wait_for_best_effort_event_delivery_predecessors(delivery));
+        let required_settled = Arc::new(AtomicBool::new(false));
+        let best_effort_settled = Arc::new(AtomicBool::new(false));
+        let operation_required_settled = Arc::clone(&required_settled);
+        let operation_best_effort_settled = Arc::clone(&best_effort_settled);
+        let abnormal_required_settled = Arc::clone(&required_settled);
+        let abnormal_best_effort_settled = Arc::clone(&best_effort_settled);
+        let operation_coordinator = coordinator.clone();
+        let operation_handle = handle.clone();
+        Ok(self.inner.lifecycle.spawn_owned_event_delivery_after(
+            async move {
+                if let Some(predecessor) = required_predecessor {
+                    predecessor.await;
+                }
+                if let Some(predecessor) = best_effort_predecessor {
+                    predecessor.await;
+                }
+            },
+            async move {
+                if let Some(delivery) = required_delivery {
+                    match DeliveryKernel::new(
+                        &inner.allocator,
+                        inner.configuration.identity_source(),
+                        inner.event_delivery_runtime.as_ref(),
+                    )
+                    .deliver(
+                        completed.event.clone(),
+                        &completed.protected_payloads,
+                        &required,
+                    )
+                    .await
+                    {
+                        Ok(delivery_result) => {
+                            if let ActivityBarrier::RequiredExhausted {
+                                sink_id,
+                                event_id,
+                                attempt_id,
+                            } = delivery_result.barrier
+                            {
+                                operation_coordinator.exclude_event_sink(&sink_id);
+                                operation_coordinator.note_required_event_delivery_failure();
+                                let failure = gantry_runtime::RequiredEventDeliveryFailureV1 {
+                                    sink_id,
+                                    event_id,
+                                    attempt_id,
+                                };
+                                if let Some(terminal) = operation_coordinator.terminal_outcome() {
+                                    let _ = operation_handle
+                                        .record_post_terminal_required_delivery_failure(
+                                            failure, terminal,
+                                        );
+                                } else {
+                                    let _ =
+                                        operation_handle.record_required_delivery_failure(failure);
+                                    let _ = operation_coordinator.cancel_execution(Arc::from(
+                                        "required-event-delivery-failure",
+                                    ));
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            operation_coordinator.note_event_delivery_executor_failure();
+                            let _ = operation_coordinator
+                                .cancel_execution(Arc::from("event-delivery-executor-failure"));
+                        }
+                    }
+                    operation_required_settled.store(true, Ordering::Release);
+                    operation_coordinator.settle_required_event_delivery(delivery);
+                }
+                if let Some(delivery) = best_effort_delivery {
+                    let _ = DeliveryKernel::new(
+                        &inner.allocator,
+                        inner.configuration.identity_source(),
+                        inner.event_delivery_runtime.as_ref(),
+                    )
+                    .deliver(completed.event, &completed.protected_payloads, &best_effort)
+                    .await;
+                    operation_best_effort_settled.store(true, Ordering::Release);
+                    operation_coordinator.settle_best_effort_event_delivery(delivery);
+                }
+            },
+            move |result| {
+                if let Some(delivery) = required_delivery
+                    && !abnormal_required_settled.swap(true, Ordering::AcqRel)
+                {
+                    if !matches!(result, Ok(())) {
+                        delivery_coordinator.note_event_delivery_executor_failure();
+                        let _ = delivery_coordinator
+                            .cancel_execution(Arc::from("event-delivery-executor-failure"));
+                    }
+                    delivery_coordinator.settle_required_event_delivery(delivery);
+                }
+                if let Some(delivery) = best_effort_delivery
+                    && !abnormal_best_effort_settled.swap(true, Ordering::AcqRel)
+                {
+                    delivery_coordinator.settle_best_effort_event_delivery(delivery);
+                }
+            },
+        ))
     }
 
     #[cfg(feature = "concurrent")]
@@ -8535,22 +8928,13 @@ impl Interpreter {
             task_id,
         )
         .ok_or(RunExecutionError::LifecycleTransition)?;
-        let completion = events
-            .emit_task_draft_for(task_id, 0, draft)
-            .await
-            .map_err(RunExecutionError::Event)?;
-        if matches!(
-            completion.consequence,
-            ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
-        ) {
-            coordinator
-                .cancel_task_tree(parent_task_id, Arc::from("required-event-delivery-failure"))
-                .map_err(RunExecutionError::TaskState)?;
-            self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine, events)
-                .await?;
-            return Ok(());
-        }
+        self.complete_and_enqueue_nondurable_event(
+            coordinator,
+            &accepted.handle,
+            &accepted.event_delivery,
+            events.complete_task_draft_for(task_id, draft),
+        )
+        .await?;
         Ok(())
     }
 
@@ -8654,19 +9038,13 @@ impl Interpreter {
 
         let spawn_event = concurrent_spawn_event(accepted.execution_id, &created.transition, 0)
             .map_err(|_| RunExecutionError::LifecycleTransition)?;
-        let spawn_event = events
-            .emit_task_draft(spawn_event)
-            .await
-            .map_err(RunExecutionError::Event)?;
-        if matches!(
-            spawn_event.consequence,
-            ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
-                | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
-        ) {
-            coordinator
-                .cancel_task_tree(parent_task_id, Arc::from("required-event-delivery-failure"))
-                .map_err(RunExecutionError::TaskState)?;
-        }
+        self.complete_and_enqueue_nondurable_event(
+            coordinator,
+            &accepted.handle,
+            &accepted.event_delivery,
+            events.complete_task_draft(spawn_event),
+        )
+        .await?;
 
         self.apply_task_cancellation(accepted, coordinator, parent_task_id, machine, events)
             .await?;
@@ -8855,6 +9233,12 @@ impl Interpreter {
                 .await?;
             return Ok(());
         }
+        #[cfg(feature = "test-support")]
+        if let Some(hook) =
+            lock_shutdown(&self.inner.nondurable_before_child_executor_submit).take()
+        {
+            hook();
+        }
         match supervisor.submit(registration, task, reservation.transfer()) {
             Ok(task) => {
                 self.apply_task_cancellation(
@@ -9024,6 +9408,13 @@ impl Interpreter {
             .map(|coordinator| coordinator.snapshot().state().clone())
     }
 
+    /// Installs a one-shot callback at the source-child executor submission cut.
+    #[cfg(all(feature = "concurrent", feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn test_before_nondurable_child_executor_submit(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *lock_shutdown(&self.inner.nondurable_before_child_executor_submit) = Some(hook);
+    }
+
     /// Installs a deterministic cancellation at the last pre-submission checkpoint.
     #[cfg(all(feature = "concurrent", feature = "test-support"))]
     #[doc(hidden)]
@@ -9076,6 +9467,20 @@ impl Interpreter {
     #[doc(hidden)]
     pub fn test_task_supervisor_snapshot(&self) -> gantry_runtime::TaskSupervisorSnapshot {
         self.inner.lifecycle.task_supervisor().snapshot()
+    }
+
+    /// Aborts physical drivers owned by one execution for deterministic handoff tests.
+    #[cfg(all(feature = "concurrent", feature = "test-support"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn test_abort_nondurable_execution_tasks(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Arc<[SupervisedTask]> {
+        self.inner
+            .lifecycle
+            .task_supervisor()
+            .request_abort_owned_execution(execution_id)
     }
 
     #[cfg(feature = "concurrent")]
@@ -11857,4 +12262,36 @@ pub fn caller_cancellation_reason(
 /// Derives the stable root-task identity for public hook composition.
 pub fn root_task_identity(execution_id: ProtocolIdentity) -> ProtocolIdentity {
     gantry_runtime::root_task_identity(execution_id)
+}
+
+fn should_defer_execution_completion_event(
+    label: &MachineLabel,
+    execution_foreground: bool,
+) -> bool {
+    execution_foreground
+        && matches!(
+            label,
+            MachineLabel::ForegroundCompletion(_) | MachineLabel::TerminalCompletion(_)
+        )
+}
+
+#[cfg(all(test, feature = "evaluator", not(feature = "concurrent")))]
+mod evaluator_only_tests {
+    use super::should_defer_execution_completion_event;
+    use gantry_core::value::LogicalValue;
+    use gantry_runtime::{MachineLabel, MachineOutcome};
+
+    #[test]
+    fn terminal_event_is_deferred_to_the_single_evaluator_specific_arm() {
+        let outcome = MachineOutcome::Succeeded(LogicalValue::unit());
+
+        assert!(should_defer_execution_completion_event(
+            &MachineLabel::TerminalCompletion(outcome.clone()),
+            true,
+        ));
+        assert!(should_defer_execution_completion_event(
+            &MachineLabel::ForegroundCompletion(outcome),
+            true,
+        ));
+    }
 }

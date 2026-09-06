@@ -1,6 +1,6 @@
 //! Durable lifecycle ownership and observation over authoritative journal state.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, poll_fn};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -277,6 +277,7 @@ pub struct DurableExecutionWait<'a> {
 pub struct DurableOwnedExecution {
     storage: Arc<dyn JournalStorage>,
     event_plan: SinkPlan,
+    excluded_graph_event_sinks: Mutex<BTreeSet<SinkId>>,
     journal_id: JournalId,
     ownership_token: JournalOwnershipToken,
     handle: ExecutionHandle,
@@ -421,6 +422,7 @@ impl DurableLifecycleCoordinator {
         Ok(Arc::new(DurableOwnedExecution {
             storage: Arc::clone(&self.storage),
             event_plan,
+            excluded_graph_event_sinks: Mutex::new(BTreeSet::new()),
             journal_id,
             ownership_token,
             handle,
@@ -761,6 +763,7 @@ impl DurableLifecycleCoordinator {
         Ok(Arc::new(DurableOwnedExecution {
             storage: Arc::clone(&self.storage),
             event_plan: SinkPlan::default(),
+            excluded_graph_event_sinks: Mutex::new(BTreeSet::new()),
             journal_id,
             ownership_token,
             handle,
@@ -915,8 +918,42 @@ impl DurableOwnedExecution {
     /// Freezes the current sink policy for a graph-cut event occurrence.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     pub(crate) fn graph_event_plan(&self) -> Result<DurableEventPlanV1, DurableRunFailure> {
-        DurableEventPlanV1::from_sink_plan(&self.event_plan)
-            .map_err(|_| DurableRunFailure::Internal)
+        let lifecycle = self
+            .handle
+            .snapshot()
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let mut plan = self.event_plan.clone();
+        let excluded = self
+            .excluded_graph_event_sinks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for sink_id in excluded.iter() {
+            plan = plan.without_sink(sink_id);
+        }
+        for failure in lifecycle.required_delivery_failures.iter() {
+            plan = plan.without_sink(&failure.sink_id);
+        }
+        DurableEventPlanV1::from_sink_plan(&plan).map_err(|_| DurableRunFailure::Internal)
+    }
+
+    /// Excludes one exhausted sink from graph termination-consequence events.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn exclude_graph_event_sink(&self, sink_id: SinkId) {
+        self.excluded_graph_event_sinks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(sink_id);
+    }
+
+    /// Returns whether this exact required-delivery exhaustion is already retained.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn graph_required_delivery_failure_recorded(
+        &self,
+        failure: &RequiredEventDeliveryFailureV1,
+    ) -> bool {
+        self.handle
+            .snapshot()
+            .is_ok_and(|snapshot| snapshot.required_delivery_failures.contains(failure))
     }
 
     /// Commits and publishes one privately staged concurrent graph successor.
@@ -1018,7 +1055,6 @@ impl DurableOwnedExecution {
         execution_cancellation: bool,
     ) -> Result<(), DurableRunFailure> {
         let snapshot = coordinator.snapshot();
-        let foreground = snapshot.state().foreground_outcome().cloned();
         let committed_cancellation = if execution_cancellation {
             Some(
                 lock_state(&self.state)
@@ -1032,22 +1068,6 @@ impl DurableOwnedExecution {
         if let Some(reason) = &committed_cancellation {
             self.handle
                 .publish_committed_cancellation(reason.clone())
-                .map_err(DurableRunFailure::Lifecycle)?;
-        } else if cut == DurableCommitCutV1::ForegroundCompletion {
-            self.handle
-                .publish_committed_foreground(
-                    foreground.clone().ok_or(DurableRunFailure::Internal)?,
-                )
-                .map_err(DurableRunFailure::Lifecycle)?;
-        } else if cut == DurableCommitCutV1::TerminalCompletion {
-            self.handle
-                .publish_committed_terminal(
-                    snapshot
-                        .state()
-                        .terminal_outcome()
-                        .cloned()
-                        .ok_or(DurableRunFailure::Internal)?,
-                )
                 .map_err(DurableRunFailure::Lifecycle)?;
         }
         self.committed_budget
@@ -1110,6 +1130,74 @@ impl DurableOwnedExecution {
             .chain(graph_waiters)
             .chain(observation_waiters)
         {
+            waiter.wake();
+        }
+        Ok(())
+    }
+
+    /// Publishes a committed graph foreground after its required-delivery barrier.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn publish_graph_foreground(
+        &self,
+        coordinator: &ExecutionCoordinator,
+    ) -> Result<(), DurableRunFailure> {
+        let outcome = coordinator
+            .snapshot()
+            .state()
+            .foreground_outcome()
+            .cloned()
+            .ok_or(DurableRunFailure::Internal)?;
+        self.handle
+            .publish_committed_foreground(outcome)
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let lifecycle = self
+            .handle
+            .snapshot()
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let mut state = lock_state(&self.state);
+        state.last_observation.foreground = lifecycle.foreground;
+        state.last_observation.cancellation = lifecycle.cancellation;
+        state.last_observation.required_delivery_failures = lifecycle.required_delivery_failures;
+        let waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in waiters {
+            waiter.wake();
+        }
+        Ok(())
+    }
+
+    /// Publishes committed graph terminal state after its required-event barrier.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn publish_graph_terminal(
+        &self,
+        coordinator: &ExecutionCoordinator,
+    ) -> Result<(), DurableRunFailure> {
+        let terminal = coordinator
+            .terminal_outcome()
+            .ok_or(DurableRunFailure::Internal)?;
+        self.handle
+            .publish_committed_terminal(terminal)
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let lifecycle = self
+            .handle
+            .snapshot()
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let mut state = lock_state(&self.state);
+        state.last_observation.state = ExecutionObservationState::Terminal;
+        state.last_observation.terminal = lifecycle.terminal;
+        state.last_observation.cancellation = lifecycle.cancellation;
+        state.last_observation.required_delivery_failures = lifecycle.required_delivery_failures;
+        let waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in waiters {
             waiter.wake();
         }
         Ok(())
@@ -1345,7 +1433,7 @@ impl DurableOwnedExecution {
         let mut recovered = self
             .recover_graph_authoritative(Arc::clone(&program))
             .await?;
-        while let Some(delivery) = next_pending_delivery(recovered.events(), Some(frontier), true)?
+        while let Some(delivery) = next_pending_delivery(recovered.events(), Some(frontier), false)?
         {
             self.drive_pending_graph_delivery(
                 &mut recovered,
@@ -1368,36 +1456,7 @@ impl DurableOwnedExecution {
         ))
     }
 
-    /// Settles every finite graph-event obligation and publishes their journal tip.
-    #[cfg(all(feature = "concurrent", feature = "durable"))]
-    pub(crate) async fn drain_graph_event_obligations(
-        &self,
-        program: Arc<gantry_ir::MachineProgram>,
-        coordinator: &ExecutionCoordinator,
-        allocator: &FreshIdentityAllocator,
-        identity_source: &dyn IdentitySource,
-        runtime: &dyn EventDeliveryRuntime,
-    ) -> Result<(ProtocolIdentity, u64), DurableRunFailure> {
-        let mut recovered = self
-            .recover_graph_authoritative(Arc::clone(&program))
-            .await?;
-        while let Some(delivery) = next_pending_delivery(recovered.events(), None, false)? {
-            self.drive_pending_graph_delivery(
-                &mut recovered,
-                Arc::clone(&program),
-                coordinator,
-                delivery,
-                allocator,
-                identity_source,
-                runtime,
-            )
-            .await?;
-        }
-        self.project_required_delivery_failures_from_events(recovered.events())?;
-        Ok((recovered.latest_evidence_id(), recovered.latest_sequence()))
-    }
-
-    /// Records one exhausted required graph-event obligation after cancellation is durable.
+    /// Records one exhausted required graph obligation after cancellation is durable.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     pub(crate) fn record_graph_required_delivery_failure(
         &self,
@@ -1407,6 +1466,37 @@ impl DurableOwnedExecution {
             .record_required_delivery_failure(failure)
             .map(|_| ())
             .map_err(DurableRunFailure::Lifecycle)
+    }
+
+    /// Records required exhaustion after graph terminal semantics are fixed.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn record_graph_post_terminal_delivery_failure(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        failure: RequiredEventDeliveryFailureV1,
+    ) -> Result<(), DurableRunFailure> {
+        let terminal = coordinator
+            .terminal_outcome()
+            .ok_or(DurableRunFailure::Internal)?;
+        self.handle
+            .record_post_terminal_required_delivery_failure(failure, terminal)
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let lifecycle = self
+            .handle
+            .snapshot()
+            .map_err(DurableRunFailure::Lifecycle)?;
+        let mut state = lock_state(&self.state);
+        state.last_observation.required_delivery_failures = lifecycle.required_delivery_failures;
+        let waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in waiters {
+            waiter.wake();
+        }
+        Ok(())
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]

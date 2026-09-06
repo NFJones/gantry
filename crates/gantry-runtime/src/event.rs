@@ -1235,6 +1235,15 @@ pub struct ExecutionEventOutcomeV1 {
     pub consequence: ExecutionDeliveryConsequenceV1,
 }
 
+/// One completed execution event and its sink-neutral protected side bundle.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletedExecutionEventV1 {
+    /// Immutable standard event occurrence.
+    pub event: EventEnvelope,
+    /// Exact protected bytes corresponding to the event's references.
+    pub protected_payloads: Arc<[ProtectedPayload]>,
+}
+
 /// Failure before one execution event can be fully completed and settled.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecutionEventError {
@@ -1264,13 +1273,13 @@ pub enum ExecutionEventError {
 /// the ordinary event envelope.
 pub struct ExecutionEventPipeline<'a> {
     handle: ExecutionHandle,
+    coordinator: crate::ExecutionCoordinator,
     execution_id: ProtocolIdentity,
     activity_id: ProtocolIdentity,
     task_id: ProtocolIdentity,
     completer: EventCompleter<'a>,
     delivery: DeliveryKernel<'a>,
     active_plan: SinkPlan,
-    next_task_sequence: Option<u64>,
     required_failures: Vec<RequiredEventDeliveryFailureV1>,
 }
 
@@ -1279,6 +1288,7 @@ impl<'a> ExecutionEventPipeline<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         handle: &ExecutionHandle,
+        coordinator: &crate::ExecutionCoordinator,
         activity_id: ProtocolIdentity,
         task_id: ProtocolIdentity,
         allocator: &'a FreshIdentityAllocator,
@@ -1296,13 +1306,13 @@ impl<'a> ExecutionEventPipeline<'a> {
         }
         Ok(Self {
             handle: handle.clone(),
+            coordinator: coordinator.clone(),
             execution_id,
             activity_id,
             task_id,
             completer: EventCompleter::new(allocator, identity_source, clock),
             delivery: DeliveryKernel::new(allocator, identity_source, delivery_runtime),
             active_plan: plan,
-            next_task_sequence: Some(0),
             required_failures: Vec::new(),
         })
     }
@@ -1324,21 +1334,48 @@ impl<'a> ExecutionEventPipeline<'a> {
         &mut self,
         event: ExecutionEventDraftV1,
     ) -> Result<ExecutionEventOutcomeV1, ExecutionEventError> {
-        self.emit_task_event(event.draft, &event.protected_payloads)
+        let completed = self.complete_task_draft(event).await?;
+        self.deliver(completed.event, &completed.protected_payloads)
             .await
     }
 
+    /// Completes one typed task event without waiting for sink acknowledgement.
+    pub async fn complete_task_draft(
+        &self,
+        event: ExecutionEventDraftV1,
+    ) -> Result<CompletedExecutionEventV1, ExecutionEventError> {
+        self.complete_task_draft_for(self.task_id, event).await
+    }
+
     /// Completes and settles one event for an explicitly coordinated child task.
-    ///
-    /// The caller owns that child's sequence because this pipeline continues to
-    /// track only its bound task's sequence.
     pub async fn emit_task_draft_for(
         &mut self,
         task_id: ProtocolIdentity,
-        task_sequence: u64,
         event: ExecutionEventDraftV1,
     ) -> Result<ExecutionEventOutcomeV1, ExecutionEventError> {
+        let completed = self.complete_task_draft_for(task_id, event).await?;
+        self.deliver(completed.event, &completed.protected_payloads)
+            .await
+    }
+
+    /// Completes one explicitly coordinated task event without waiting for sinks.
+    pub async fn complete_task_draft_for(
+        &self,
+        task_id: ProtocolIdentity,
+        event: ExecutionEventDraftV1,
+    ) -> Result<CompletedExecutionEventV1, ExecutionEventError> {
         self.require_enabled_event(event.draft.kind())?;
+        let completion = self
+            .coordinator
+            .acquire_task_event_completion(task_id)
+            .await
+            .map_err(|error| match error {
+                crate::TaskEventSequenceError::UnknownTask => ExecutionEventError::IdentityKind,
+                crate::TaskEventSequenceError::Exhausted => {
+                    ExecutionEventError::TaskSequenceExhausted
+                }
+            })?;
+        let task_sequence = completion.sequence();
         let protected_payloads = Arc::clone(&event.protected_payloads);
         let draft = event
             .draft
@@ -1346,7 +1383,14 @@ impl<'a> ExecutionEventPipeline<'a> {
             .and_then(|draft| draft.with_task(task_id, task_sequence))
             .map_err(ExecutionEventError::Contract)?;
         let event = self.complete(draft).await?;
-        self.deliver(event, &protected_payloads).await
+        completion.commit().map_err(|error| match error {
+            crate::TaskEventSequenceError::UnknownTask => ExecutionEventError::IdentityKind,
+            crate::TaskEventSequenceError::Exhausted => ExecutionEventError::TaskSequenceExhausted,
+        })?;
+        Ok(CompletedExecutionEventV1 {
+            event,
+            protected_payloads,
+        })
     }
 
     /// Completes and settles one typed execution event and its protected side bundle.
@@ -1354,8 +1398,27 @@ impl<'a> ExecutionEventPipeline<'a> {
         &mut self,
         event: ExecutionEventDraftV1,
     ) -> Result<ExecutionEventOutcomeV1, ExecutionEventError> {
-        self.emit_execution_event(event.draft, &event.protected_payloads)
+        let completed = self.complete_execution_draft(event).await?;
+        self.deliver(completed.event, &completed.protected_payloads)
             .await
+    }
+
+    /// Completes one execution-level event without waiting for sink acknowledgement.
+    pub async fn complete_execution_draft(
+        &self,
+        event: ExecutionEventDraftV1,
+    ) -> Result<CompletedExecutionEventV1, ExecutionEventError> {
+        self.require_enabled_event(event.draft.kind())?;
+        let protected_payloads = Arc::clone(&event.protected_payloads);
+        let draft = event
+            .draft
+            .with_execution_id(self.execution_id)
+            .map_err(ExecutionEventError::Contract)?;
+        let event = self.complete(draft).await?;
+        Ok(CompletedExecutionEventV1 {
+            event,
+            protected_payloads,
+        })
     }
 
     /// Completes and settles one root-task-backed event in per-task order.
@@ -1365,15 +1428,26 @@ impl<'a> ExecutionEventPipeline<'a> {
         protected_payloads: &[ProtectedPayload],
     ) -> Result<ExecutionEventOutcomeV1, ExecutionEventError> {
         self.require_enabled_event(draft.kind())?;
-        let sequence = self
-            .next_task_sequence
-            .ok_or(ExecutionEventError::TaskSequenceExhausted)?;
+        let completion = self
+            .coordinator
+            .acquire_task_event_completion(self.task_id)
+            .await
+            .map_err(|error| match error {
+                crate::TaskEventSequenceError::UnknownTask => ExecutionEventError::IdentityKind,
+                crate::TaskEventSequenceError::Exhausted => {
+                    ExecutionEventError::TaskSequenceExhausted
+                }
+            })?;
+        let sequence = completion.sequence();
         let draft = draft
             .with_execution_id(self.execution_id)
             .and_then(|draft| draft.with_task(self.task_id, sequence))
             .map_err(ExecutionEventError::Contract)?;
         let event = self.complete(draft).await?;
-        self.next_task_sequence = sequence.checked_add(1);
+        completion.commit().map_err(|error| match error {
+            crate::TaskEventSequenceError::UnknownTask => ExecutionEventError::IdentityKind,
+            crate::TaskEventSequenceError::Exhausted => ExecutionEventError::TaskSequenceExhausted,
+        })?;
         self.deliver(event, protected_payloads).await
     }
 
@@ -1423,9 +1497,10 @@ impl<'a> ExecutionEventPipeline<'a> {
         event: EventEnvelope,
         protected_payloads: &[ProtectedPayload],
     ) -> Result<ExecutionEventOutcomeV1, ExecutionEventError> {
+        let active_plan = self.coordinator.event_plan(&self.active_plan);
         let delivery = self
             .delivery
-            .deliver(event.clone(), protected_payloads, &self.active_plan)
+            .deliver(event.clone(), protected_payloads, &active_plan)
             .await
             .map_err(ExecutionEventError::Delivery)?;
         let consequence = match &delivery.barrier {
@@ -1440,7 +1515,7 @@ impl<'a> ExecutionEventPipeline<'a> {
                     event_id: *event_id,
                     attempt_id: *attempt_id,
                 };
-                self.active_plan = self.active_plan.without_sink(sink_id);
+                self.coordinator.exclude_event_sink(sink_id);
                 self.required_failures.push(failure.clone());
                 self.apply_required_failure(failure)?
             }
@@ -1479,6 +1554,7 @@ impl<'a> ExecutionEventPipeline<'a> {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::task::{Context, Poll, Waker};
 
     use gantry_core::canonical_json::CanonicalJson;
     use gantry_core::event::{EventPayload, EventVersion};
@@ -1500,8 +1576,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        ActionOperationRequestV1, AdmissionKind, InterpreterConfiguration, InterpreterLifecycle,
-        OperationRequestHeaderV1, RequiredConfiguration,
+        ActionOperationRequestV1, AdmissionKind, CanonicalTranscriptV1, ConcurrentTaskStateV1,
+        ExecutionCoordinator, InterpreterConfiguration, InterpreterLifecycle,
+        LogicalSessionRegistryV1, OperationRequestHeaderV1, RequiredConfiguration,
+        SessionCreationModeV1,
     };
 
     #[derive(Default)]
@@ -1545,6 +1623,53 @@ mod tests {
     impl UtcClock for Services {
         fn utc_now<'b>(&'b self) -> HostFuture<'b, Result<UtcTimestamp, HostError>> {
             Box::pin(async { UtcTimestamp::from_unix_seconds(0, 1).map_err(|_| failure("clock")) })
+        }
+    }
+
+    #[derive(Default)]
+    struct DelayedFirstClock {
+        calls: AtomicUsize,
+        released: std::sync::atomic::AtomicBool,
+        waker: Mutex<Option<Waker>>,
+    }
+
+    impl DelayedFirstClock {
+        fn release(&self) {
+            self.released.store(true, Ordering::Release);
+            if let Some(waker) = self
+                .waker
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                waker.wake();
+            }
+        }
+    }
+
+    impl UtcClock for DelayedFirstClock {
+        fn utc_now<'b>(&'b self) -> HostFuture<'b, Result<UtcTimestamp, HostError>> {
+            let call = self.calls.fetch_add(1, Ordering::AcqRel);
+            if call == 0 {
+                Box::pin(std::future::poll_fn(move |context| {
+                    if self.released.load(Ordering::Acquire) {
+                        Poll::Ready(
+                            UtcTimestamp::from_unix_seconds(0, 1).map_err(|_| failure("clock")),
+                        )
+                    } else {
+                        *self
+                            .waker
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                            Some(context.waker().clone());
+                        Poll::Pending
+                    }
+                }))
+            } else {
+                Box::pin(async {
+                    UtcTimestamp::from_unix_seconds(0, 2).map_err(|_| failure("clock"))
+                })
+            }
         }
     }
 
@@ -1965,8 +2090,10 @@ mod tests {
         .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"));
         let allocator = FreshIdentityAllocator::default();
         let task = derived(IdentityKind::Task, b"root-task");
+        let coordinator = coordinator(execution, task);
         let mut pipeline = ExecutionEventPipeline::new(
             &handle,
+            &coordinator,
             fresh(IdentityKind::Activity, 8),
             task,
             &allocator,
@@ -2038,10 +2165,13 @@ mod tests {
         )])
         .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"));
         let allocator = FreshIdentityAllocator::default();
+        let task = derived(IdentityKind::Task, b"root-task");
+        let coordinator = coordinator(execution, task);
         let mut pipeline = ExecutionEventPipeline::new(
             &handle,
+            &coordinator,
             fresh(IdentityKind::Activity, 18),
-            derived(IdentityKind::Task, b"root-task"),
+            task,
             &allocator,
             services.as_ref(),
             services.as_ref(),
@@ -2070,6 +2200,85 @@ mod tests {
                 .map(|terminal| terminal.foreground),
             Some(terminal)
         );
+    }
+
+    #[test]
+    fn shared_task_pipelines_serialize_sequence_across_delayed_clock_completion() {
+        let services = Arc::new(Services::default());
+        let clock = DelayedFirstClock::default();
+        let configuration = configuration(services.clone());
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let execution = fresh(IdentityKind::Execution, 29);
+        let mut admission = lifecycle
+            .admit(AdmissionKind::NewWork)
+            .unwrap_or_else(|error| panic!("admission failed: {error:?}"));
+        let handle = admission
+            .accept_execution(execution)
+            .unwrap_or_else(|error| panic!("acceptance failed: {error:?}"));
+        let task = derived(IdentityKind::Task, b"shared-sequence-root");
+        let coordinator = coordinator(execution, task);
+        let allocator = FreshIdentityAllocator::default();
+        let first = ExecutionEventPipeline::new(
+            &handle,
+            &coordinator,
+            fresh(IdentityKind::Activity, 28),
+            task,
+            &allocator,
+            services.as_ref(),
+            &clock,
+            services.as_ref(),
+            SinkPlan::default(),
+        )
+        .unwrap_or_else(|error| panic!("first pipeline failed: {error:?}"));
+        let second = ExecutionEventPipeline::new(
+            &handle,
+            &coordinator,
+            fresh(IdentityKind::Activity, 27),
+            task,
+            &allocator,
+            services.as_ref(),
+            &clock,
+            services.as_ref(),
+            SinkPlan::default(),
+        )
+        .unwrap_or_else(|error| panic!("second pipeline failed: {error:?}"));
+
+        let mut first = Box::pin(first.complete_task_draft(ExecutionEventDraftV1 {
+            draft: draft(EventKind::Mutation),
+            protected_payloads: Arc::from([]),
+        }));
+        let mut second = Box::pin(second.complete_task_draft(ExecutionEventDraftV1 {
+            draft: draft(EventKind::Mutation),
+            protected_payloads: Arc::from([]),
+        }));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(first.as_mut().poll(&mut context).is_pending());
+        assert_eq!(clock.calls.load(Ordering::Acquire), 1);
+        assert!(second.as_mut().poll(&mut context).is_pending());
+        assert_eq!(
+            clock.calls.load(Ordering::Acquire),
+            1,
+            "the successor clock must not run before sequence zero is publishable"
+        );
+
+        clock.release();
+        let Poll::Ready(Ok(first)) = first.as_mut().poll(&mut context) else {
+            panic!("first event did not complete after releasing its clock")
+        };
+        let Poll::Ready(Ok(second)) = second.as_mut().poll(&mut context) else {
+            panic!("second event did not acquire the published successor turn")
+        };
+        assert_eq!(first.event.per_task_sequence(), Some(0));
+        assert_eq!(second.event.per_task_sequence(), Some(1));
+        assert_eq!(
+            first.event.timestamp().to_string(),
+            "1970-01-01T00:00:00.000001Z"
+        );
+        assert_eq!(
+            second.event.timestamp().to_string(),
+            "1970-01-01T00:00:00.000002Z"
+        );
+        assert_eq!(clock.calls.load(Ordering::Acquire), 2);
     }
 
     fn draft(kind: EventKind) -> EventDraft {
@@ -2169,6 +2378,23 @@ mod tests {
 
     fn sink_id(value: &str) -> SinkId {
         SinkId::new(value).unwrap_or_else(|error| panic!("sink ID failed: {error:?}"))
+    }
+
+    fn coordinator(
+        execution: ProtocolIdentity,
+        root_task: ProtocolIdentity,
+    ) -> ExecutionCoordinator {
+        let tasks = ConcurrentTaskStateV1::new(execution, root_task, 8)
+            .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            fresh(IdentityKind::Session, 250),
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("session state failed: {error:?}"));
+        ExecutionCoordinator::new(tasks, sessions)
+            .unwrap_or_else(|error| panic!("coordinator failed: {error:?}"))
     }
 
     fn fresh(kind: IdentityKind, byte: u8) -> ProtocolIdentity {

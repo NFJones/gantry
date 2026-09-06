@@ -43,6 +43,22 @@ impl SinkRegistration {
 #[derive(Clone, Default)]
 pub struct SinkPlan(Arc<[SinkRegistration]>);
 
+impl fmt::Debug for SinkPlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SinkPlan")
+            .field(
+                "sink_ids",
+                &self
+                    .0
+                    .iter()
+                    .map(|registration| registration.id().as_str())
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
 impl SinkPlan {
     /// Sorts registrations by unsigned UTF-8 sink ID and rejects duplicates.
     pub fn new(mut registrations: Vec<SinkRegistration>) -> Result<Self, SinkPlanError> {
@@ -82,6 +98,34 @@ impl SinkPlan {
             self.0
                 .iter()
                 .filter(|registration| registration.id() != sink_id)
+                .cloned()
+                .collect(),
+        )
+    }
+
+    /// Returns the frozen required-sink obligations in canonical sink order.
+    #[must_use]
+    pub fn required_only(&self) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|registration| {
+                    registration.policy().class == gantry_core::portable::SinkClass::Required
+                })
+                .cloned()
+                .collect(),
+        )
+    }
+
+    /// Returns the frozen best-effort obligations in canonical sink order.
+    #[must_use]
+    pub fn best_effort_only(&self) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|registration| {
+                    registration.policy().class == gantry_core::portable::SinkClass::BestEffort
+                })
                 .cloned()
                 .collect(),
         )

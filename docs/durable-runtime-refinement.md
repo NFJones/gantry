@@ -119,6 +119,28 @@ source analysis.
 - Required-delivery barrier and journal-owner status remain separate from the
   fixed foreground and terminal language outcomes. Release invalidates the
   owner after terminal and finite delivery obligations settle.
+- Each terminal event has one committed logical occurrence, and each sink has
+  at most one committed settled delivery for it. Retry attempts precede that
+  settlement; recovery never redelivers a settled occurrence. Foreground waits
+  for its named required barrier, terminal waits for every finite required
+  obligation including its final event, and child settlement waits for its
+  required child-produced obligations. Live durable delivery advances required
+  and best-effort obligations independently of source completion through the
+  existing supervised event-delivery domain. Each physical worker owns one
+  ordinary `maximum_active_event_deliveries` permit; graph control retains its
+  reserved cleanup path and consumes the worker's journal frontier rather than
+  invoking sinks directly. A sink preserves increasing per-task sequence order,
+  while durable delivery progress is retained and advanced independently of task
+  execution and fixed language outcomes.
+- Nondurable completed occurrences use the same supervised event-delivery
+  boundary without introducing a second pipeline. Completion freezes the whole
+  required/best-effort plan and transfers its predecessor-readiness and bounded
+  admission phases to a caller-independent lifecycle owner. Required and
+  best-effort predecessors become ready before that owner requests a delivery
+  permit, so registration-to-handoff races cannot invert capacity-one progress.
+  Producer cancellation or abort cannot drop either the occurrence or a later
+  sink in that plan, and best-effort-only rejection cannot rewrite the language
+  result.
 - Serial full-prefix and snapshot-plus-suffix representations have one logical
   projection. Compaction may change representation but cannot change recovered
   machine, operation, event, barrier, or owner state. Concurrent journal

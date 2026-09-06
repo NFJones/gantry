@@ -928,7 +928,7 @@ fn expected_source_spawn_capabilities() -> Vec<SourceSpawnCapability> {
         ),
         (
             "required-spawn-event-barrier",
-            "durable_required_spawn_event_settles_before_child_submission",
+            "durable_spawn_event_commits_before_child_dependence_and_settles_by_foreground",
         ),
         (
             "submission-rejection-settlement",

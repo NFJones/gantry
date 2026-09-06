@@ -4,7 +4,7 @@
   "issue": "GNT-ASYNC-SPAWN-001",
   "source_test": {
     "path": "crates/gantry-conformance/tests/source_spawn.rs",
-    "sha256": "5e09e8dd77ac94fce826fed1d6f1e89b9b9ad1ba5ce06c76e7b0a79d8573f53e"
+    "sha256": "16c772f159a5d390708f1cf4835fb62fa2e5ee2572b152ff60ca0b027ce46552"
   },
   "requirements": [
     {"requirement":"GNT-3.6","clause":"clause-001","profiles":["concurrent-evaluator","durable-runtime","embedding","evaluator"]},
@@ -32,7 +32,7 @@
     {"id":"nondurable-cancellation-after-child-resolution","evidence":"crates/gantry-conformance/tests/source_spawn.rs#nondurable_cancellation_after_child_resolution_precedes_released_child_work"},
     {"id":"nondurable-cancellation-immediately-before-child-submit","evidence":"crates/gantry-conformance/tests/source_spawn.rs#nondurable_cancellation_immediately_before_child_submit_settles_without_a_driver"},
     {"id":"parent-session-precheck","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_parent_session_failure_is_task_local_and_creates_no_child"},
-    {"id":"required-spawn-event-barrier","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_required_spawn_event_settles_before_child_submission"},
+    {"id":"required-spawn-event-barrier","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_spawn_event_commits_before_child_dependence_and_settles_by_foreground"},
     {"id":"submission-rejection-settlement","evidence":"crates/gantry-conformance/tests/source_spawn.rs#child_executor_rejection_settles_without_submitting_another_driver"},
     {"id":"task-limit-precheck","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_task_limit_precheck_skips_parent_session_and_child_creation"}
   ],

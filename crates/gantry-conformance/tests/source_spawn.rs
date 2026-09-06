@@ -41,7 +41,7 @@ use gantry::runtime::{
     ConcurrentTaskStatusV1, DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
     DURABLE_EVENT_SETTLED_KIND_V1, DurableCommitCutV1, DurableEventOccurrenceV1,
     DurableExecutionStartV3, InMemoryJournalStore, InterpreterConfiguration, MachineOutcome,
-    RequiredConfiguration, RuntimeCode, TaskDriverOwnershipV1,
+    RequiredConfiguration, RuntimeCode, SupervisedTaskDomain, TaskDriverOwnershipV1,
     recover_concurrent_authoritative_prefix,
 };
 use gantry::source::FrontendLimits;
@@ -158,6 +158,7 @@ struct RecordingSink {
     spawn_outcome: DeliveryOutcome,
     events: Mutex<Vec<RecordedEvent>>,
     delivery_observer: Mutex<Option<EventDeliveryObserver>>,
+    task_completion_gate: Mutex<Option<Arc<TaskCompletionDeliveryGate>>>,
 }
 
 impl RecordingSink {
@@ -167,6 +168,7 @@ impl RecordingSink {
             spawn_outcome,
             events: Mutex::new(Vec::new()),
             delivery_observer: Mutex::new(None),
+            task_completion_gate: Mutex::new(None),
         }
     }
 
@@ -177,6 +179,10 @@ impl RecordingSink {
     fn observe_delivery(&self, observer: EventDeliveryObserver) {
         *lock(&self.delivery_observer) = Some(observer);
     }
+
+    fn gate_task_completion(&self, gate: Arc<TaskCompletionDeliveryGate>) {
+        *lock(&self.task_completion_gate) = Some(gate);
+    }
 }
 
 impl EventSink for RecordingSink {
@@ -186,6 +192,9 @@ impl EventSink for RecordingSink {
     ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
         Box::pin(async move {
             let kind = request.event.kind();
+            let gated_completion = lock(&self.task_completion_gate)
+                .clone()
+                .filter(|gate| gate.matches(&request.event));
             if let Some(observer) = lock(&self.delivery_observer).clone() {
                 observer(&request.event);
             }
@@ -194,12 +203,64 @@ impl EventSink for RecordingSink {
                 event: request.event,
                 executor_task_ids,
             });
+            if let Some(gate) = gated_completion {
+                gate.wait().await;
+            }
             if kind == EventKind::Spawn {
                 Ok(self.spawn_outcome)
             } else {
                 Ok(DeliveryOutcome::Success)
             }
         })
+    }
+}
+
+struct TaskCompletionDeliveryGate {
+    root_task_id: ProtocolIdentity,
+    started: AtomicBool,
+    released: AtomicBool,
+    waker: Mutex<Option<Waker>>,
+}
+
+impl TaskCompletionDeliveryGate {
+    fn new(root_task_id: ProtocolIdentity) -> Self {
+        Self {
+            root_task_id,
+            started: AtomicBool::new(false),
+            released: AtomicBool::new(false),
+            waker: Mutex::new(None),
+        }
+    }
+
+    fn matches(&self, event: &EventEnvelope) -> bool {
+        event.kind() == EventKind::TaskCompletion
+            && event
+                .task_id()
+                .is_some_and(|task_id| task_id != self.root_task_id)
+    }
+
+    fn started(&self) -> bool {
+        self.started.load(Ordering::Acquire)
+    }
+
+    async fn wait(&self) {
+        self.started.store(true, Ordering::Release);
+        std::future::poll_fn(|context| {
+            if self.released.load(Ordering::Acquire) {
+                Poll::Ready(())
+            } else {
+                *lock(&self.waker) = Some(context.waker().clone());
+                Poll::Pending
+            }
+        })
+        .await;
+    }
+
+    fn release(&self) {
+        self.released.store(true, Ordering::Release);
+        if let Some(waker) = lock(&self.waker).take() {
+            waker.wake();
+        }
     }
 }
 
@@ -276,11 +337,21 @@ impl RuntimeSessionService for CancelAfterEstablishment {
 struct CountingJournalStore {
     inner: InMemoryJournalStore,
     releases: AtomicU64,
+    release_after: Mutex<Option<Arc<AtomicBool>>>,
+    released_too_early: AtomicBool,
 }
 
 impl CountingJournalStore {
     fn release_count(&self) -> u64 {
         self.releases.load(Ordering::Acquire)
+    }
+
+    fn observe_release_after(&self, signal: Arc<AtomicBool>) {
+        *lock(&self.release_after) = Some(signal);
+    }
+
+    fn released_too_early(&self) -> bool {
+        self.released_too_early.load(Ordering::Acquire)
     }
 }
 
@@ -317,6 +388,12 @@ impl JournalStorage for CountingJournalStore {
         &'a self,
         request: ReleaseJournalOwnerV1,
     ) -> HostFuture<'a, Result<(), JournalError>> {
+        if lock(&self.release_after)
+            .as_ref()
+            .is_some_and(|signal| !signal.load(Ordering::Acquire))
+        {
+            self.released_too_early.store(true, Ordering::Release);
+        }
         self.releases.fetch_add(1, Ordering::AcqRel);
         self.inner.release_owner(request)
     }
@@ -569,18 +646,40 @@ fn native_child_submission_keeps_the_gate_closed_and_establishes_session_before_
     let handle = accepted.handle().clone();
     drop(accepted);
 
-    executor.poll_next_spawn_immediately();
+    let child_executor_id = Arc::new(Mutex::new(None));
+    let observed_child_executor_id = Arc::clone(&child_executor_id);
+    let child_executor = Arc::clone(&executor);
+    interpreter.test_before_nondurable_child_executor_submit(Arc::new(move || {
+        *lock(&observed_child_executor_id) = u64::try_from(child_executor.task_ids().len()).ok();
+        child_executor.poll_next_spawn_immediately();
+    }));
     assert!(matches!(
         executor.poll_task(1),
         Ok(DeterministicTaskPoll::Pending)
     ));
-    assert_eq!(executor.task_ids(), [0, 1, 2]);
-    assert_eq!(executor.poll_count(2), Some(1));
+    let child_executor_id = lock(&child_executor_id)
+        .unwrap_or_else(|| panic!("source-child submission callback did not run"));
+    assert_eq!(executor.poll_count(child_executor_id), Some(1));
+    for _ in 0..1_000 {
+        if sink
+            .events()
+            .iter()
+            .any(|record| record.event.kind() == EventKind::Spawn)
+        {
+            break;
+        }
+        for task_id in executor.task_ids() {
+            if task_id != child_executor_id && executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+    }
     let task_state = interpreter
         .test_nondurable_task_state(handle.execution_id())
         .unwrap_or_else(|| panic!("nondurable task state is absent"));
     let spawn = spawn_event(&sink);
-    assert_eq!(spawn.executor_task_ids, [0, 1]);
     assert_eq!(spawn.event.task_id(), Some(task_state.root_task_id()));
     assert_eq!(spawn.event.causal_ids().len(), 2);
     let child_id = spawn.event.causal_ids()[1];
@@ -748,11 +847,15 @@ fn nondurable_cancellation_immediately_before_child_submit_settles_without_a_dri
     );
 
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
+    drive_event_delivery_to_quiescence(&executor, &interpreter);
     assert!(matches!(
         snapshot.foreground,
         Some(MachineOutcome::Cancelled(_))
     ));
-    assert_eq!(executor.task_ids(), [0, 1]);
+    assert!(!has_source_child_driver(
+        &interpreter,
+        handle.execution_id()
+    ));
     let state = interpreter
         .test_nondurable_task_state(handle.execution_id())
         .unwrap_or_else(|| panic!("nondurable task state is absent"));
@@ -862,6 +965,7 @@ fn nondurable_cancellation_after_child_resolution_precedes_released_child_work()
     );
 
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
+    drive_event_delivery_to_quiescence(&executor, &interpreter);
     assert!(matches!(
         snapshot.foreground,
         Some(MachineOutcome::Cancelled(_))
@@ -1282,6 +1386,9 @@ fn child_executor_rejection_settles_without_submitting_another_driver() {
         let state = observing_interpreter
             .test_nondurable_task_state(execution_id)
             .unwrap_or_else(|| panic!("nondurable task state is absent during delivery"));
+        if task_id == state.root_task_id() {
+            return;
+        }
         let Some(child) = state.task(task_id) else {
             return;
         };
@@ -1295,15 +1402,21 @@ fn child_executor_rejection_settles_without_submitting_another_driver() {
         observed_rejection.store(true, Ordering::Release);
     }));
 
-    executor.fail_next_spawn();
+    let child_executor = Arc::clone(&executor);
+    interpreter.test_before_nondurable_child_executor_submit(Arc::new(move || {
+        child_executor.fail_next_spawn();
+    }));
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
+    drive_event_delivery_to_quiescence(&executor, &interpreter);
     assert!(rejection_was_published.load(Ordering::Acquire));
-    assert_eq!(executor.task_ids(), [0, 1]);
+    assert!(!has_source_child_driver(
+        &interpreter,
+        handle.execution_id()
+    ));
     let task_state = interpreter
         .test_nondurable_task_state(handle.execution_id())
         .unwrap_or_else(|| panic!("nondurable task state is absent"));
     let spawn = spawn_event(&sink);
-    assert_eq!(spawn.executor_task_ids, [0, 1]);
     let child_id = spawn.event.causal_ids()[1];
     let child = task_state
         .task(child_id)
@@ -1367,19 +1480,21 @@ fn accepted_immediately_failed_child_is_not_published_as_running_or_supervised()
     let accepted = accepted(&interpreter, &root);
     let handle = accepted.handle().clone();
     drop(accepted);
-    assert_eq!(executor.task_ids(), [0, 1]);
-    executor.complete_next_spawn_on_accept(OwnedTaskCompletion::Failed(HostError {
-        code: Arc::from("immediate-executor-failure"),
-        protected_diagnostic: None,
+    let child_executor = Arc::clone(&executor);
+    interpreter.test_before_nondurable_child_executor_submit(Arc::new(move || {
+        child_executor.complete_next_spawn_on_accept(OwnedTaskCompletion::Failed(HostError {
+            code: Arc::from("immediate-executor-failure"),
+            protected_diagnostic: None,
+        }));
     }));
-    assert!(matches!(
-        executor.poll_task(1),
-        Ok(DeterministicTaskPoll::Pending | DeterministicTaskPoll::Settled(_))
-    ));
 
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
+    drive_event_delivery_to_quiescence(&executor, &interpreter);
     assert!(snapshot.terminal.is_some());
-    assert_eq!(executor.task_ids(), [0, 1, 2]);
+    assert!(!has_source_child_driver(
+        &interpreter,
+        handle.execution_id()
+    ));
     let task_state = interpreter
         .test_nondurable_task_state(handle.execution_id())
         .unwrap_or_else(|| panic!("nondurable task state is absent"));
@@ -1399,6 +1514,101 @@ fn accepted_immediately_failed_child_is_not_published_as_running_or_supervised()
         Some(TaskDriverOwnershipV1::PhysicallySettled)
     );
     assert!(task_state.drivers_are_quiescent());
+}
+
+#[test]
+fn nondurable_foreground_waits_for_late_required_child_completion_delivery() {
+    let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let sink = Arc::new(RecordingSink::new(
+        Arc::clone(&executor),
+        DeliveryOutcome::Success,
+    ));
+    let interpreter = interpreter_with_delivery(
+        Arc::clone(&executor),
+        integration,
+        8,
+        65_536,
+        plan(SinkClass::Required, sink.clone()),
+    );
+    executor.poll_next_spawn_immediately();
+    let accepted = accepted(&interpreter, &root);
+    let handle = accepted.handle().clone();
+    drop(accepted);
+    let root_task_id = interpreter
+        .test_nondurable_task_state(handle.execution_id())
+        .unwrap_or_else(|| panic!("nondurable task state is absent"))
+        .root_task_id();
+    let gate = Arc::new(TaskCompletionDeliveryGate::new(root_task_id));
+    sink.gate_task_completion(Arc::clone(&gate));
+
+    for _ in 0..1_000 {
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        if gate.started()
+            && interpreter
+                .test_nondurable_task_state(handle.execution_id())
+                .and_then(|state| {
+                    state
+                        .task_record(root_task_id)
+                        .map(|task| task.status().clone())
+                })
+                .is_some_and(|status| matches!(status, ConcurrentTaskStatusV1::Succeeded(_)))
+        {
+            break;
+        }
+    }
+
+    assert!(
+        gate.started(),
+        "child completion delivery did not reach the gate"
+    );
+    let task_state = interpreter
+        .test_nondurable_task_state(handle.execution_id())
+        .unwrap_or_else(|| panic!("nondurable task state is absent"));
+    let root_record = task_state
+        .task_record(root_task_id)
+        .unwrap_or_else(|| panic!("root task record is absent"));
+    assert!(matches!(
+        root_record.status(),
+        ConcurrentTaskStatusV1::Running
+    ));
+    let child_id = spawn_event(&sink).event.causal_ids()[1];
+    assert!(sink.events().iter().any(|record| {
+        record.event.kind() == EventKind::TaskCompletion && record.event.task_id() == Some(child_id)
+    }));
+    let pending = interpreter
+        .query_execution(handle.execution_id())
+        .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+        .unwrap_or_else(|| panic!("execution snapshot is absent"));
+    assert_eq!(pending.foreground, None);
+    assert_eq!(pending.terminal, None);
+
+    gate.release();
+    let terminal = drive_to_terminal(&executor, &interpreter, &handle);
+    assert!(matches!(
+        terminal.foreground,
+        Some(MachineOutcome::Succeeded(_))
+    ));
+    assert!(terminal.terminal.is_some());
 }
 
 #[test]
@@ -1453,7 +1663,7 @@ fn cumulative_task_limit_fails_the_spawn_before_session_establishment() {
 }
 
 #[test]
-fn required_spawn_delivery_failure_cancels_the_same_created_child_before_submission() {
+fn required_spawn_delivery_failure_cancels_the_same_created_child() {
     let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let integration = Arc::new(ScriptedIntegration::new(
@@ -1480,17 +1690,18 @@ fn required_spawn_delivery_failure_cancels_the_same_created_child_before_submiss
     drop(accepted);
 
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
-    assert_eq!(executor.task_ids(), [0, 1]);
     assert_eq!(snapshot.required_delivery_failures.len(), 1);
     assert!(matches!(
         snapshot.foreground,
-        Some(gantry::runtime::MachineOutcome::Cancelled(_))
+        Some(gantry::runtime::MachineOutcome::Failed(ref failure))
+            if failure.code == RuntimeCode::Operation(
+                RuntimeErrorCategory::RequiredEventDeliveryFailure
+            )
     ));
     let task_state = interpreter
         .test_nondurable_task_state(handle.execution_id())
         .unwrap_or_else(|| panic!("nondurable task state is absent"));
     let spawn = spawn_event(&sink);
-    assert_eq!(spawn.executor_task_ids, [0, 1]);
     let child = task_state
         .task(spawn.event.causal_ids()[1])
         .unwrap_or_else(|| panic!("cancelled child is absent from task state"));
@@ -2093,7 +2304,7 @@ fn durable_parent_session_failure_is_task_local_and_creates_no_child() {
 }
 
 #[test]
-fn durable_required_spawn_event_settles_before_child_submission() {
+fn durable_spawn_event_commits_before_child_dependence_and_settles_by_foreground() {
     let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let integration = Arc::new(ScriptedIntegration::new(
@@ -2147,7 +2358,10 @@ fn durable_required_spawn_event_settles_before_child_submission() {
         }
     }
     let spawn = spawn_event(&sink);
-    assert_eq!(executor.task_ids().len(), spawn.executor_task_ids.len() + 1);
+    assert!(
+        executor.task_ids().len() >= spawn.executor_task_ids.len(),
+        "delivery observed executor work that was not yet submitted"
+    );
 
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
@@ -2161,9 +2375,27 @@ fn durable_required_spawn_event_settles_before_child_submission() {
         .collect::<Vec<_>>();
     assert_eq!(kinds[1], CONCURRENT_DURABLE_EVIDENCE_KIND_V4);
     assert_eq!(kinds[2], DURABLE_EVENT_OCCURRENCE_KIND_V1);
-    assert_eq!(kinds[3], DURABLE_EVENT_DISPATCHED_KIND_V1);
-    assert_eq!(kinds[4], DURABLE_EVENT_SETTLED_KIND_V1);
-    assert_eq!(kinds[5], CONCURRENT_DURABLE_EVIDENCE_KIND_V5);
+    let child_dependence = kinds
+        .iter()
+        .enumerate()
+        .skip(3)
+        .find_map(|(index, kind)| (*kind == CONCURRENT_DURABLE_EVIDENCE_KIND_V5).then_some(index))
+        .unwrap_or_else(|| panic!("durable child dependence was not committed"));
+    let dispatched = kinds
+        .iter()
+        .enumerate()
+        .skip(child_dependence + 1)
+        .find_map(|(index, kind)| (*kind == DURABLE_EVENT_DISPATCHED_KIND_V1).then_some(index))
+        .unwrap_or_else(|| panic!("spawn delivery was not dispatched"));
+    let settled = kinds
+        .iter()
+        .enumerate()
+        .skip(dispatched + 1)
+        .find_map(|(index, kind)| (*kind == DURABLE_EVENT_SETTLED_KIND_V1).then_some(index))
+        .unwrap_or_else(|| panic!("spawn delivery was not settled"));
+    assert!(2 < child_dependence);
+    assert!(child_dependence < dispatched);
+    assert!(dispatched < settled);
     drop(accepted);
 }
 
@@ -2834,6 +3066,14 @@ fn durable_graph_owner_releases_after_physical_quiescence_and_finite_events() {
         plan(SinkClass::BestEffort, sink.clone()),
     );
     let storage = Arc::new(CountingJournalStore::default());
+    let terminal_delivered = Arc::new(AtomicBool::new(false));
+    let observed_terminal = Arc::clone(&terminal_delivered);
+    sink.observe_delivery(Arc::new(move |event| {
+        if event.kind() == EventKind::TerminalExecution {
+            observed_terminal.store(true, Ordering::Release);
+        }
+    }));
+    storage.observe_release_after(Arc::clone(&terminal_delivered));
     let journal_id = JournalId::new("durable-source-spawn-owner-quiescence")
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     executor.poll_next_spawn_immediately();
@@ -2842,26 +3082,16 @@ fn durable_graph_owner_releases_after_physical_quiescence_and_finite_events() {
 
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
     assert!(snapshot.terminal.is_some());
-    let finalizer_task = *executor
-        .task_ids()
-        .last()
-        .unwrap_or_else(|| panic!("terminal graph submitted no finalizer"));
-    assert_eq!(storage.release_count(), 0);
-    assert!(
-        sink.events()
-            .iter()
-            .all(|record| record.event.kind() != EventKind::TerminalExecution)
-    );
-    assert!(matches!(
-        executor.poll_task(finalizer_task),
-        Ok(DeterministicTaskPoll::Settled(_))
-    ));
+    for task_id in executor.task_ids() {
+        if executor.is_runnable(task_id) {
+            let _ = executor
+                .poll_task(task_id)
+                .unwrap_or_else(|error| panic!("finalizer task {task_id} failed: {error:?}"));
+        }
+    }
     assert_eq!(storage.release_count(), 1);
-    assert!(
-        sink.events()
-            .iter()
-            .any(|record| record.event.kind() == EventKind::TerminalExecution)
-    );
+    assert!(terminal_delivered.load(Ordering::Acquire));
+    assert!(!storage.released_too_early());
 }
 
 #[test]
@@ -2912,7 +3142,7 @@ fn durable_graph_finalizer_bounds_pending_completion_after_failed_abort() {
         .unwrap_or_else(|| panic!("terminal graph submitted no finalizer"));
     assert!(matches!(
         executor.poll_task(finalizer_task),
-        Ok(DeterministicTaskPoll::Pending)
+        Ok(DeterministicTaskPoll::Pending | DeterministicTaskPoll::NotRunnable)
     ));
     assert_eq!(
         executor.sleep_durations(),
@@ -3635,7 +3865,6 @@ fn durable_child_submission_failure_settles_the_created_identity_before_parent_p
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
     assert!(snapshot.terminal.is_some());
     assert_eq!(executor.task_ids(), [0, 1]);
-    assert_eq!(executor.poll_count(1), Some(0));
 
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
@@ -3999,6 +4228,46 @@ fn drive_to_terminal(
     panic!(
         "source-spawn execution did not reach terminal state; latest={latest:?}; tasks={tasks:?}; durable={durable:?}"
     )
+}
+
+fn drive_event_delivery_to_quiescence(
+    executor: &DeterministicConcurrentExecutor,
+    interpreter: &Interpreter,
+) {
+    for _ in 0..1_000 {
+        if interpreter
+            .test_task_supervisor_snapshot()
+            .tasks
+            .iter()
+            .all(|task| task.domain != SupervisedTaskDomain::EventDelivery)
+        {
+            return;
+        }
+        let mut progressed = false;
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                progressed = true;
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        if !progressed {
+            std::thread::yield_now();
+        }
+    }
+    panic!("event-delivery tasks did not become quiescent");
+}
+
+fn has_source_child_driver(interpreter: &Interpreter, execution_id: ProtocolIdentity) -> bool {
+    interpreter
+        .test_task_supervisor_snapshot()
+        .tasks
+        .iter()
+        .any(|task| {
+            task.domain == SupervisedTaskDomain::SourceChild
+                && task.execution_id == Some(execution_id)
+        })
 }
 
 fn selection() -> ProtocolSelection {

@@ -5,7 +5,7 @@
   "artifacts": [
     {
       "path": "crates/gantry-conformance/tests/automatic_durable_root.rs",
-      "sha256": "6fae95496e8249bff5e35e91ae623c5bd0142b614b3f6d405876cb081c55f28c"
+      "sha256": "b772bfc1284c2813cd5d542828a53f01870277f4ffe52b6a1dfafab8ffb71b03"
     },
     {
       "path": "crates/gantry-conformance/tests/interpreter_ownership.rs",
@@ -13,7 +13,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/source_spawn.rs",
-      "sha256": "5e09e8dd77ac94fce826fed1d6f1e89b9b9ad1ba5ce06c76e7b0a79d8573f53e"
+      "sha256": "16c772f159a5d390708f1cf4835fb62fa2e5ee2572b152ff60ca0b027ce46552"
     },
     {
       "path": "crates/gantry-conformance/tests/source_spawn_tokio.rs",

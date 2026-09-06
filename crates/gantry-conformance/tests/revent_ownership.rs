@@ -19,12 +19,12 @@ use gantry::host::event::{
 use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
     DeliveryOutcome, EventKind, JitterMode, PORTABLE_SPECIFICATION_REVISION,
-    PROTOCOL_FAMILY_DEFINITIONS, SinkClass, StartFailureCategory,
+    PROTOCOL_FAMILY_DEFINITIONS, RuntimeErrorCategory, SinkClass, StartFailureCategory,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
     AsyncCapacityLimits, FinalShutdownEventFailure, FinalShutdownEventSettlement,
-    InterpreterConfiguration, MachineOutcome, RequiredConfiguration,
+    InterpreterConfiguration, MachineOutcome, RequiredConfiguration, RuntimeCode,
 };
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
@@ -38,13 +38,23 @@ use gantry_conformance::services::{DeterministicIdentitySource, DeterministicUtc
 use serde::Deserialize;
 
 const DURABLE_BARRIER_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_event_dispatch_and_settlement_precede_callback_and_terminal_observation";
+const DURABLE_BEST_EFFORT_PROGRESS_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#committed_best_effort_operation_dispatch_delivery_settles_while_child_hook_is_pending";
 const DURABLE_CANCELLATION_DRAIN_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#facade_cancellation_drains_finite_events_before_releasing_durable_owner";
+const DURABLE_DELIVERY_CAPACITY_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_graph_sink_delivery_obeys_maximum_active_event_deliveries";
+const NONDURABLE_BEST_EFFORT_REJECTION_EVIDENCE: &str = "crates/gantry-conformance/tests/revent_ownership.rs#best_effort_delivery_submission_rejection_preserves_language_result";
+const NONDURABLE_CANCELLED_FIRST_ADMISSION_EVIDENCE: &str = "crates/gantry-conformance/tests/revent_ownership.rs#aborted_producer_does_not_drop_completed_event_waiting_for_first_sink_admission";
+const NONDURABLE_CANCELLED_SECOND_SINK_EVIDENCE: &str = "crates/gantry-conformance/tests/revent_ownership.rs#aborted_producer_does_not_drop_second_sink_from_admitted_mixed_plan";
+const NONDURABLE_CAPACITY_ORDER_EVIDENCE: &str = "crates/gantry-conformance/tests/revent_ownership.rs#capacity_one_reverse_polling_preserves_nondurable_per_sink_task_order";
 const NONDURABLE_ORDER_EVIDENCE: &str = "crates/gantry-conformance/tests/revent_ownership.rs#nondurable_root_events_keep_semantic_order_after_start_and_await_observers_drop";
 const OWNED_DELIVERY_EVIDENCE: &str = "crates/gantry-conformance/tests/revent_ownership.rs#dropped_start_waiter_does_not_abandon_required_default_plan_delivery";
 const PRETERMINAL_EXHAUSTION_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#preterminal_required_delivery_exhaustion_commits_runtime_failure_precedence";
 const REQUIRED_FAILURE_RECOVERY_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#resume_reconstructs_committed_required_delivery_failure_before_source_progress";
 const SHUTDOWN_EVIDENCE: &str = "crates/gantry-conformance/tests/revent_ownership.rs#shutdown_emits_one_final_event_and_reports_its_actual_settlement";
+const TASK_SEQUENCE_CLOCK_EVIDENCE: &str = "crates/gantry-runtime/src/event.rs#shared_task_pipelines_serialize_sequence_across_delayed_clock_completion";
 const TERMINAL_RESUME_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner";
+const OBS_CONCURRENT_EVIDENCE: &str = "crates/gantry-conformance/tests/source_spawn.rs#native_child_submission_keeps_the_gate_closed_and_establishes_session_before_hook";
+const OBS_DURABLE_EVIDENCE: &str = "crates/gantry-conformance/tests/source_spawn.rs#durable_spawn_event_commits_before_child_dependence_and_settles_by_foreground";
+const OBS_EXHAUSTION_EVIDENCE: &str = "crates/gantry-conformance/tests/source_spawn.rs#public_durable_query_retains_required_spawn_delivery_failure";
 
 #[derive(Debug, Deserialize)]
 struct EvidenceManifest {
@@ -114,13 +124,20 @@ fn checked_in_revent_ownership_evidence_is_narrow_and_current() {
             .map(|entry| entry.evidence.as_str())
             .collect::<Vec<_>>(),
         [
+            DURABLE_BEST_EFFORT_PROGRESS_EVIDENCE,
             DURABLE_CANCELLATION_DRAIN_EVIDENCE,
+            DURABLE_DELIVERY_CAPACITY_EVIDENCE,
             DURABLE_BARRIER_EVIDENCE,
+            NONDURABLE_BEST_EFFORT_REJECTION_EVIDENCE,
+            NONDURABLE_CANCELLED_FIRST_ADMISSION_EVIDENCE,
+            NONDURABLE_CANCELLED_SECOND_SINK_EVIDENCE,
+            NONDURABLE_CAPACITY_ORDER_EVIDENCE,
             NONDURABLE_ORDER_EVIDENCE,
             OWNED_DELIVERY_EVIDENCE,
             PRETERMINAL_EXHAUSTION_EVIDENCE,
             REQUIRED_FAILURE_RECOVERY_EVIDENCE,
             SHUTDOWN_EVIDENCE,
+            TASK_SEQUENCE_CLOCK_EVIDENCE,
             TERMINAL_RESUME_EVIDENCE,
         ]
     );
@@ -146,6 +163,64 @@ fn checked_in_revent_ownership_evidence_is_narrow_and_current() {
     assert_eq!(declared, assigned);
     assert_eq!(declared.len(), 3);
     assert_eq!(manifest.exclusions.len(), 1);
+}
+
+#[test]
+fn checked_in_async_execution_observation_evidence_is_narrow_and_current() {
+    let root = workspace_root();
+    let manifest: EvidenceManifest =
+        read_json(&root.join("protocol/conformance/async-execution-observation-v1.json"));
+    let review: RequirementReview = read_json(&root.join("protocol/requirements/reviewed-v1.json"));
+    let gate: ContractGate =
+        read_json(&root.join("protocol/conformance/async-execution-contract-v1.json"));
+
+    assert_eq!(
+        manifest.format,
+        "gantry.async-execution-observation-evidence/v1"
+    );
+    assert_eq!(manifest.specification_sha256, review.specification_sha256);
+    assert_eq!(manifest.issue, "GNT-ASYNC-OBS-001");
+    assert!(
+        manifest
+            .capabilities
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+    );
+    assert_eq!(
+        manifest
+            .capabilities
+            .iter()
+            .map(|entry| entry.evidence.as_str())
+            .collect::<Vec<_>>(),
+        [
+            OBS_CONCURRENT_EVIDENCE,
+            OBS_DURABLE_EVIDENCE,
+            NONDURABLE_ORDER_EVIDENCE,
+            OBS_EXHAUSTION_EVIDENCE,
+        ]
+    );
+
+    let mut assigned = gate
+        .requirement_assignments
+        .into_iter()
+        .filter(|assignment| {
+            assignment
+                .evidence_owners
+                .iter()
+                .any(|owner| owner == "GNT-ASYNC-OBS-001")
+        })
+        .map(|assignment| RequirementEvidence {
+            requirement: assignment.requirement,
+            clause: assignment.clause,
+            profiles: assignment.profiles,
+        })
+        .collect::<Vec<_>>();
+    assigned.sort();
+    let mut declared = manifest.requirements;
+    declared.sort();
+    assert_eq!(declared, assigned);
+    assert_eq!(declared.len(), 3);
+    assert_eq!(manifest.exclusions.len(), 4);
 }
 
 struct TempDirectory(PathBuf);
@@ -274,6 +349,77 @@ impl EventSink for PendingSink {
     }
 }
 
+#[derive(Default)]
+struct DeliveryGate {
+    calls: AtomicU64,
+    released: AtomicBool,
+    waker: Mutex<Option<Waker>>,
+}
+
+impl DeliveryGate {
+    fn release(&self) {
+        self.released.store(true, Ordering::Release);
+        if let Some(waker) = lock(&self.waker).take() {
+            waker.wake();
+        }
+    }
+}
+
+struct GatedDelivery {
+    gate: Arc<DeliveryGate>,
+}
+
+impl Future for GatedDelivery {
+    type Output = Result<DeliveryOutcome, HostError>;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.gate.released.load(Ordering::Acquire) {
+            Poll::Ready(Ok(DeliveryOutcome::Success))
+        } else {
+            *lock(&self.gate.waker) = Some(context.waker().clone());
+            Poll::Pending
+        }
+    }
+}
+
+struct GatedRecordingSink {
+    gated_kind: EventKind,
+    gate: Arc<DeliveryGate>,
+    events: Mutex<Vec<EventEnvelope>>,
+}
+
+impl GatedRecordingSink {
+    fn new(gated_kind: EventKind, gate: Arc<DeliveryGate>) -> Self {
+        Self {
+            gated_kind,
+            gate,
+            events: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn events(&self) -> Vec<EventEnvelope> {
+        lock(&self.events).clone()
+    }
+}
+
+impl EventSink for GatedRecordingSink {
+    fn deliver<'a>(
+        &'a self,
+        request: EventDeliveryRequest,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        let gated = request.event.kind() == self.gated_kind;
+        lock(&self.events).push(request.event);
+        if gated {
+            self.gate.calls.fetch_add(1, Ordering::AcqRel);
+            Box::pin(GatedDelivery {
+                gate: Arc::clone(&self.gate),
+            })
+        } else {
+            Box::pin(async { Ok(DeliveryOutcome::Success) })
+        }
+    }
+}
+
 #[test]
 fn dropped_start_waiter_does_not_abandon_required_default_plan_delivery() {
     let root = TempDirectory::new("fn main() -> Int { 3 }");
@@ -374,6 +520,7 @@ fn nondurable_root_events_keep_semantic_order_after_start_and_await_observers_dr
     let mut terminal_wait = Box::pin(interpreter.await_terminal(&handle));
     assert!(poll_once(terminal_wait.as_mut()).is_pending());
     drop(terminal_wait);
+    drive_execution_tasks(&executor, &interpreter, &handle);
     assert!(matches!(
         executor.poll_task(root_task_id),
         Ok(DeterministicTaskPoll::Settled(_))
@@ -419,6 +566,435 @@ fn nondurable_root_events_keep_semantic_order_after_start_and_await_observers_dr
             .all(|pair| pair[0].event_id() != pair[1].event_id())
     );
     assert_eq!(runtime.attempts(), 5);
+}
+
+#[test]
+fn reverse_polling_preserves_nondurable_per_sink_task_order() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let required = Arc::new(RecordingSink::new([]));
+    let best_effort = Arc::new(RecordingSink::new([]));
+    let interpreter = interpreter_with_delivery(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        SinkPlan::new(vec![
+            registration("required", SinkClass::Required, required.clone()),
+            registration("best-effort", SinkClass::BestEffort, best_effort.clone()),
+        ])
+        .unwrap_or_else(|error| panic!("sink plan failed: {error:?}")),
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(request(&root, &selection, None)))
+    else {
+        panic!("reverse-poll fixture was rejected")
+    };
+    let handle = accepted.handle().clone();
+    drop(accepted);
+
+    drive_execution_tasks_in_reverse(&executor, &interpreter, &handle);
+
+    let expected = [
+        EventKind::Parse,
+        EventKind::Analysis,
+        EventKind::TaskCompletion,
+        EventKind::ForegroundCompletion,
+        EventKind::TerminalExecution,
+    ];
+    assert_eq!(
+        required
+            .events()
+            .iter()
+            .map(EventEnvelope::kind)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        best_effort
+            .events()
+            .iter()
+            .map(EventEnvelope::kind)
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
+fn one_active_delivery_backpressures_without_dropping_accepted_obligations() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let required = Arc::new(RecordingSink::new([]));
+    let best_effort = Arc::new(RecordingSink::new([]));
+    let interpreter = interpreter_with_delivery_capacity(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        SinkPlan::new(vec![
+            registration("required", SinkClass::Required, required.clone()),
+            registration("best-effort", SinkClass::BestEffort, best_effort.clone()),
+        ])
+        .unwrap_or_else(|error| panic!("sink plan failed: {error:?}")),
+        1,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(request(&root, &selection, None)))
+    else {
+        panic!("capacity-one fixture was rejected")
+    };
+    let handle = accepted.handle().clone();
+    drop(accepted);
+
+    drive_execution_tasks(&executor, &interpreter, &handle);
+    drive_runnable_tasks(&executor, false);
+
+    let expected = [
+        EventKind::Parse,
+        EventKind::Analysis,
+        EventKind::TaskCompletion,
+        EventKind::ForegroundCompletion,
+        EventKind::TerminalExecution,
+    ];
+    assert_eq!(
+        required
+            .events()
+            .iter()
+            .map(EventEnvelope::kind)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        best_effort
+            .events()
+            .iter()
+            .map(EventEnvelope::kind)
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
+fn aborted_producer_does_not_drop_completed_event_waiting_for_first_sink_admission() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let required = Arc::new(RecordingSink::new([]));
+    let gate = Arc::new(DeliveryGate::default());
+    let best_effort = Arc::new(GatedRecordingSink::new(
+        EventKind::TaskCompletion,
+        Arc::clone(&gate),
+    ));
+    let interpreter = interpreter_with_delivery_capacity(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        SinkPlan::new(vec![
+            registration("required", SinkClass::Required, required.clone()),
+            registration("best-effort", SinkClass::BestEffort, best_effort.clone()),
+        ])
+        .unwrap_or_else(|error| panic!("sink plan failed: {error:?}")),
+        1,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(request(&root, &selection, None)))
+    else {
+        panic!("first-admission cancellation fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    drop(accepted);
+    let root_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("accepted execution submitted no root task"));
+
+    assert_eq!(
+        executor
+            .poll_task(root_task)
+            .unwrap_or_else(|error| panic!("root poll failed: {error:?}")),
+        DeterministicTaskPoll::Pending
+    );
+    let first_delivery = *executor
+        .task_ids()
+        .last()
+        .filter(|task| **task != root_task)
+        .unwrap_or_else(|| panic!("task completion did not submit a delivery worker"));
+    assert_eq!(
+        executor
+            .poll_task(first_delivery)
+            .unwrap_or_else(|error| panic!("first delivery poll failed: {error:?}")),
+        DeterministicTaskPoll::Pending
+    );
+    assert_eq!(gate.calls.load(Ordering::Acquire), 1);
+    assert!(executor.is_runnable(root_task));
+    assert_eq!(
+        executor
+            .poll_task(root_task)
+            .unwrap_or_else(|error| panic!("foreground handoff poll failed: {error:?}")),
+        DeterministicTaskPoll::Pending
+    );
+    assert!(
+        !required
+            .events()
+            .iter()
+            .any(|event| event.kind() == EventKind::ForegroundCompletion)
+    );
+
+    let aborted = interpreter.test_abort_nondurable_execution_tasks(execution_id);
+    assert_eq!(aborted.len(), 1);
+    assert!(executor.abort_result(root_task).is_some());
+    gate.release();
+    assert!(matches!(
+        executor.poll_task(first_delivery),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    for _ in 0..16 {
+        if !drive_runnable_tasks(&executor, false) {
+            break;
+        }
+    }
+
+    assert!(
+        required
+            .events()
+            .iter()
+            .any(|event| event.kind() == EventKind::ForegroundCompletion),
+        "the completed event was lost with its aborted producer"
+    );
+    assert!(
+        best_effort
+            .events()
+            .iter()
+            .any(|event| event.kind() == EventKind::ForegroundCompletion),
+        "the completed event's best-effort obligation was not retained"
+    );
+}
+
+#[test]
+fn aborted_producer_does_not_drop_second_sink_from_admitted_mixed_plan() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let required = Arc::new(RecordingSink::new([]));
+    let best_effort = Arc::new(RecordingSink::new([]));
+    let interpreter = interpreter_with_delivery_capacity(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        SinkPlan::new(vec![
+            registration("required", SinkClass::Required, required.clone()),
+            registration("best-effort", SinkClass::BestEffort, best_effort.clone()),
+        ])
+        .unwrap_or_else(|error| panic!("sink plan failed: {error:?}")),
+        1,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(request(&root, &selection, None)))
+    else {
+        panic!("second-admission cancellation fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    drop(accepted);
+    let root_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("accepted execution submitted no root task"));
+
+    assert_eq!(
+        executor
+            .poll_task(root_task)
+            .unwrap_or_else(|error| panic!("root poll failed: {error:?}")),
+        DeterministicTaskPoll::Pending
+    );
+    let delivery = *executor
+        .task_ids()
+        .last()
+        .filter(|task| **task != root_task)
+        .unwrap_or_else(|| panic!("task completion did not submit a delivery worker"));
+    let aborted = interpreter.test_abort_nondurable_execution_tasks(execution_id);
+    assert_eq!(aborted.len(), 1);
+    assert!(executor.abort_result(root_task).is_some());
+    assert!(matches!(
+        executor.poll_task(delivery),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+
+    assert!(
+        required
+            .events()
+            .iter()
+            .any(|event| event.kind() == EventKind::TaskCompletion)
+    );
+    assert!(
+        best_effort
+            .events()
+            .iter()
+            .any(|event| event.kind() == EventKind::TaskCompletion),
+        "producer abort dropped the mixed plan before its second sink"
+    );
+}
+
+#[test]
+fn best_effort_delivery_submission_rejection_preserves_language_result() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let sink = Arc::new(RecordingSink::new([]));
+    let interpreter = interpreter_with_delivery(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        plan(SinkClass::BestEffort, sink.clone()),
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(request(&root, &selection, None)))
+    else {
+        panic!("best-effort rejection fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    let handle = accepted.handle().clone();
+    drop(accepted);
+
+    executor.fail_next_spawn();
+    drive_execution_tasks(&executor, &interpreter, &handle);
+    for _ in 0..16 {
+        if !drive_runnable_tasks(&executor, false) {
+            break;
+        }
+    }
+    let snapshot = interpreter
+        .query_execution(execution_id)
+        .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted execution disappeared"));
+    assert!(snapshot.cancellation.is_none());
+    assert!(matches!(
+        snapshot.terminal.as_ref().map(|terminal| &terminal.foreground),
+        Some(MachineOutcome::Succeeded(value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
+    ));
+    assert!(
+        !sink
+            .events()
+            .iter()
+            .any(|event| event.kind() == EventKind::TaskCompletion),
+        "the executor-rejected best-effort operation unexpectedly reached its sink"
+    );
+    assert!(
+        sink.events()
+            .iter()
+            .any(|event| event.kind() == EventKind::TerminalExecution)
+    );
+}
+
+#[test]
+fn capacity_one_reverse_polling_preserves_nondurable_per_sink_task_order() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let required = Arc::new(RecordingSink::new([]));
+    let best_effort = Arc::new(RecordingSink::new([]));
+    let interpreter = interpreter_with_delivery_capacity(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        SinkPlan::new(vec![
+            registration("required", SinkClass::Required, required.clone()),
+            registration("best-effort", SinkClass::BestEffort, best_effort.clone()),
+        ])
+        .unwrap_or_else(|error| panic!("sink plan failed: {error:?}")),
+        1,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(request(&root, &selection, None)))
+    else {
+        panic!("capacity-one reverse-poll fixture was rejected")
+    };
+    let handle = accepted.handle().clone();
+    drop(accepted);
+
+    drive_execution_tasks_in_reverse(&executor, &interpreter, &handle);
+
+    let expected = [
+        EventKind::Parse,
+        EventKind::Analysis,
+        EventKind::TaskCompletion,
+        EventKind::ForegroundCompletion,
+        EventKind::TerminalExecution,
+    ];
+    assert_eq!(
+        required
+            .events()
+            .iter()
+            .map(EventEnvelope::kind)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        best_effort
+            .events()
+            .iter()
+            .map(EventEnvelope::kind)
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
+fn foreground_event_agrees_with_rewritten_public_failure_after_required_delivery_failure() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let failed = Arc::new(RecordingSink::new([(
+        Some(EventKind::TaskCompletion),
+        DeliveryOutcome::Terminal,
+    )]));
+    let observer = Arc::new(RecordingSink::new([]));
+    let interpreter = interpreter_with_delivery(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        SinkPlan::new(vec![
+            registration("failed", SinkClass::Required, failed.clone()),
+            registration("observer", SinkClass::Required, observer.clone()),
+        ])
+        .unwrap_or_else(|error| panic!("sink plan failed: {error:?}")),
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(request(&root, &selection, None)))
+    else {
+        panic!("required-delivery-failure fixture was rejected")
+    };
+    let handle = accepted.handle().clone();
+    drop(accepted);
+
+    drive_execution_tasks(&executor, &interpreter, &handle);
+    let snapshot = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("terminal observation failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted execution disappeared"));
+    let foreground = &snapshot
+        .terminal
+        .as_ref()
+        .unwrap_or_else(|| panic!("execution had no terminal outcome"))
+        .foreground;
+    assert!(matches!(
+        foreground,
+        MachineOutcome::Failed(failure)
+            if failure.code
+                == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
+    ));
+    assert_eq!(snapshot.required_delivery_failures.len(), 1);
+
+    let foreground_event = observer
+        .events()
+        .into_iter()
+        .find(|event| event.kind() == EventKind::ForegroundCompletion)
+        .unwrap_or_else(|| panic!("observer did not receive foreground completion"));
+    let payload: serde_json::Value =
+        serde_json::from_slice(foreground_event.payload().canonical_bytes())
+            .unwrap_or_else(|error| panic!("foreground payload was not JSON: {error}"));
+    assert_eq!(
+        payload["completion_category"],
+        RuntimeErrorCategory::RequiredEventDeliveryFailure.wire_name()
+    );
+    assert!(
+        payload["failure_reference"]
+            .as_str()
+            .is_some_and(|reference| reference.ends_with(":required-event-delivery-failure")),
+        "foreground payload: {payload}"
+    );
 }
 
 #[test]
@@ -515,6 +1091,7 @@ fn required_exhaustion_after_terminal_preserves_the_fixed_root_outcome() {
         .task_ids()
         .last()
         .unwrap_or_else(|| panic!("accepted execution submitted no root task"));
+    drive_execution_tasks(&terminal_executor, &terminal, &handle);
     assert!(matches!(
         terminal_executor.poll_task(root_task_id),
         Ok(DeterministicTaskPoll::Settled(_))
@@ -717,10 +1294,108 @@ fn interpreter_with_delivery(
     interpreter_with_delivery_polling(executor, runtime, event_delivery, true)
 }
 
+fn drive_execution_tasks(
+    executor: &DeterministicConcurrentExecutor,
+    interpreter: &Interpreter,
+    handle: &gantry::runtime::ExecutionHandle,
+) {
+    for _ in 0..1_000 {
+        if interpreter
+            .query_execution(handle.execution_id())
+            .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+            .is_some_and(|snapshot| snapshot.terminal.is_some())
+        {
+            return;
+        }
+        let mut progressed = false;
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                progressed = true;
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        if !progressed {
+            std::thread::yield_now();
+        }
+    }
+    panic!("execution did not reach terminal state");
+}
+
+fn drive_execution_tasks_in_reverse(
+    executor: &DeterministicConcurrentExecutor,
+    interpreter: &Interpreter,
+    handle: &gantry::runtime::ExecutionHandle,
+) {
+    for _ in 0..1_000 {
+        let terminal = interpreter
+            .query_execution(handle.execution_id())
+            .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+            .is_some_and(|snapshot| snapshot.terminal.is_some());
+        let progressed = drive_runnable_tasks(executor, true);
+        if terminal && !progressed {
+            return;
+        }
+        if !progressed {
+            std::thread::yield_now();
+        }
+    }
+    panic!("reverse-polled execution did not settle all delivery tasks");
+}
+
+fn drive_runnable_tasks(executor: &DeterministicConcurrentExecutor, reverse: bool) -> bool {
+    let mut task_ids = executor.task_ids();
+    if reverse {
+        task_ids.reverse();
+    }
+    let mut progressed = false;
+    for task_id in task_ids {
+        if executor.is_runnable(task_id) {
+            progressed = true;
+            let _ = executor
+                .poll_task(task_id)
+                .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+        }
+    }
+    progressed
+}
+
 fn interpreter_with_delivery_polling(
     executor: Arc<DeterministicConcurrentExecutor>,
     runtime: Arc<ImmediateDeliveryRuntime>,
     event_delivery: SinkPlan,
+    poll_next_spawn_immediately: bool,
+) -> Interpreter {
+    interpreter_with_delivery_capacity_and_polling(
+        executor,
+        runtime,
+        event_delivery,
+        8,
+        poll_next_spawn_immediately,
+    )
+}
+
+fn interpreter_with_delivery_capacity(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    runtime: Arc<ImmediateDeliveryRuntime>,
+    event_delivery: SinkPlan,
+    maximum_active_event_deliveries: u64,
+) -> Interpreter {
+    interpreter_with_delivery_capacity_and_polling(
+        executor,
+        runtime,
+        event_delivery,
+        maximum_active_event_deliveries,
+        true,
+    )
+}
+
+fn interpreter_with_delivery_capacity_and_polling(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    runtime: Arc<ImmediateDeliveryRuntime>,
+    event_delivery: SinkPlan,
+    maximum_active_event_deliveries: u64,
     poll_next_spawn_immediately: bool,
 ) -> Interpreter {
     if poll_next_spawn_immediately {
@@ -732,7 +1407,11 @@ fn interpreter_with_delivery_polling(
     ));
     let integration = Arc::new(ScriptedIntegration::new([], []));
     Interpreter::new_with_event_delivery(
-        configuration(executor_adapter, identities),
+        configuration_with_event_delivery_capacity(
+            executor_adapter,
+            identities,
+            maximum_active_event_deliveries,
+        ),
         Arc::new(DeterministicUtcClock::new((1_u32..=192).map(timestamp))),
         integration.clone(),
         integration.clone(),
@@ -761,6 +1440,14 @@ fn configuration(
     executor: Arc<dyn ExecutorAdapter>,
     identities: Arc<dyn IdentitySource>,
 ) -> InterpreterConfiguration {
+    configuration_with_event_delivery_capacity(executor, identities, 8)
+}
+
+fn configuration_with_event_delivery_capacity(
+    executor: Arc<dyn ExecutorAdapter>,
+    identities: Arc<dyn IdentitySource>,
+    maximum_active_event_deliveries: u64,
+) -> InterpreterConfiguration {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
@@ -780,12 +1467,17 @@ fn configuration(
         executor,
         identities,
         required,
-        AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+        AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, maximum_active_event_deliveries, 8)
             .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
     )
 }
 
 fn plan(class: SinkClass, sink: Arc<dyn EventSink>) -> SinkPlan {
+    SinkPlan::new(vec![registration("revent-sink", class, sink)])
+        .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"))
+}
+
+fn registration(id: &str, class: SinkClass, sink: Arc<dyn EventSink>) -> SinkRegistration {
     let retry = EventRetryPolicy::new("revent-retry-v1", 0, 0, 0, JitterMode::None)
         .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
     let policy = SinkDeliveryPolicy::new(
@@ -797,13 +1489,11 @@ fn plan(class: SinkClass, sink: Arc<dyn EventSink>) -> SinkPlan {
         30,
     )
     .unwrap_or_else(|error| panic!("sink policy failed: {error:?}"));
-    SinkPlan::new(vec![SinkRegistration::new(
-        SinkId::new("revent-sink")
-            .unwrap_or_else(|error| panic!("sink identity failed: {error:?}")),
+    SinkRegistration::new(
+        SinkId::new(id).unwrap_or_else(|error| panic!("sink identity failed: {error:?}")),
         policy,
         sink,
-    )])
-    .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"))
+    )
 }
 
 fn selection() -> ProtocolSelection {

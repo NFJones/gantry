@@ -12,7 +12,7 @@ const OWNER: &str = "GNT-ASYNC-CANCEL-001";
 const ARTIFACTS: [(&str, &str); 4] = [
     (
         "crates/gantry-conformance/tests/automatic_durable_root.rs",
-        "6fae95496e8249bff5e35e91ae623c5bd0142b614b3f6d405876cb081c55f28c",
+        "b772bfc1284c2813cd5d542828a53f01870277f4ffe52b6a1dfafab8ffb71b03",
     ),
     (
         "crates/gantry-conformance/tests/interpreter_ownership.rs",
@@ -20,7 +20,7 @@ const ARTIFACTS: [(&str, &str); 4] = [
     ),
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "5e09e8dd77ac94fce826fed1d6f1e89b9b9ad1ba5ce06c76e7b0a79d8573f53e",
+        "16c772f159a5d390708f1cf4835fb62fa2e5ee2572b152ff60ca0b027ce46552",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn_tokio.rs",

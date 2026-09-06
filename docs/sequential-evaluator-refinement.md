@@ -148,6 +148,19 @@ consistent snapshot without advancing `M`. Required-delivery failures can
 start cancellation before terminal, but after terminal they remain a separate
 record and cannot replace the fixed language outcome.
 
+**Root delivery closure.** The root's final event has one logical occurrence
+and each sink settles that occurrence at most once; retry attempts precede, and
+never follow, that settled record. The foreground barrier waits for its named
+required obligations, while the terminal barrier waits for every finite
+required obligation, including the final event. The sequential profile has no
+children; child-produced obligations and cross-task ordering are established by
+the concurrent argument. Once an event is completed, a caller-independent
+lifecycle handoff retains its frozen required/best-effort plan and bounded
+delivery admission even if the producing task is cancelled or physically
+aborted. Required failure follows the barrier precedence above; isolated
+best-effort exhaustion or worker rejection settles without changing the fixed
+language outcome.
+
 **Shutdown and terminal uniqueness.** The interpreter phase is monotonic from
 running to shutting down to terminated. A single coordinator owns the phase
 change; repeated shutdown calls share its report. In the base evaluator the

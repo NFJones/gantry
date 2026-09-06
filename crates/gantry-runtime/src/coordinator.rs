@@ -8,7 +8,7 @@
 //! supervision, adapter, event-delivery, or journal locks; callers snapshot
 //! the required state before invoking those owners.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -19,7 +19,9 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::TaskStatusKind;
 use gantry_core::value::ValueLimits;
 use gantry_host::contracts::HostError;
+use gantry_host::event::SinkId;
 use gantry_ir::{CanonicalPath, StructuralPosition, TaskControlSite};
+use gantry_observe::SinkPlan;
 
 use crate::{
     ConcurrentShutdownCohortV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
@@ -45,6 +47,31 @@ pub struct ExecutionCoordinator {
     inner: Arc<CoordinatorInner>,
 }
 
+/// Failure while allocating one coordinator-owned per-task event sequence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskEventSequenceError {
+    /// The requested task is not part of this execution.
+    UnknownTask,
+    /// The task has exhausted the portable sequence counter.
+    Exhausted,
+}
+
+/// Waiter for exclusive completion of one task-backed event occurrence.
+pub(crate) struct TaskEventCompletionWait {
+    inner: Arc<CoordinatorInner>,
+    task_id: ProtocolIdentity,
+    waiter_id: u64,
+    completed: bool,
+}
+
+/// Exclusive per-task turn retained through asynchronous event completion.
+pub(crate) struct TaskEventCompletionPermit {
+    inner: Arc<CoordinatorInner>,
+    task_id: ProtocolIdentity,
+    sequence: u64,
+    committed: bool,
+}
+
 #[derive(Debug)]
 struct CoordinatorInner {
     state: Mutex<CoordinatorState>,
@@ -56,6 +83,18 @@ struct CoordinatorState {
     sessions: LogicalSessionRegistryV1,
     execution_budget: Option<ExecutionBudget>,
     publication: u64,
+    next_event_sequence: BTreeMap<ProtocolIdentity, u64>,
+    task_event_completion_active: BTreeSet<ProtocolIdentity>,
+    task_event_completion_waiters: BTreeMap<ProtocolIdentity, Vec<RegisteredWaiter>>,
+    active_event_plan: Option<SinkPlan>,
+    next_required_delivery: u64,
+    pending_required_deliveries: BTreeSet<u64>,
+    next_best_effort_delivery: u64,
+    pending_best_effort_deliveries: BTreeSet<u64>,
+    required_event_delivery_failed: bool,
+    event_delivery_executor_failed: bool,
+    required_delivery_waiters: Vec<RegisteredWaiter>,
+    best_effort_delivery_waiters: Vec<RegisteredWaiter>,
     task_waiters: BTreeMap<ProtocolIdentity, Vec<RegisteredWaiter>>,
     foreground_waiters: Vec<RegisteredWaiter>,
     terminal_waiters: Vec<RegisteredWaiter>,
@@ -153,6 +192,18 @@ impl ExecutionCoordinator {
                     sessions,
                     execution_budget,
                     publication: 0,
+                    next_event_sequence: BTreeMap::new(),
+                    task_event_completion_active: BTreeSet::new(),
+                    task_event_completion_waiters: BTreeMap::new(),
+                    active_event_plan: None,
+                    next_required_delivery: 0,
+                    pending_required_deliveries: BTreeSet::new(),
+                    next_best_effort_delivery: 0,
+                    pending_best_effort_deliveries: BTreeSet::new(),
+                    required_event_delivery_failed: false,
+                    event_delivery_executor_failed: false,
+                    required_delivery_waiters: Vec::new(),
+                    best_effort_delivery_waiters: Vec::new(),
                     task_waiters: BTreeMap::new(),
                     foreground_waiters: Vec::new(),
                     terminal_waiters: Vec::new(),
@@ -700,20 +751,33 @@ impl ExecutionCoordinator {
 
     /// Derives foreground completion from the settled root and wakes observers.
     pub fn complete_foreground(&self) -> Result<MachineOutcome, TaskStateError> {
-        let (outcome, waiters) = {
+        let outcome = lock(&self.inner.state)
+            .tasks
+            .root_settled_outcome()
+            .cloned()
+            .ok_or(TaskStateError::RootTaskPending)?;
+        self.complete_foreground_with_outcome(outcome.clone())?;
+        Ok(outcome)
+    }
+
+    /// Fixes foreground completion with an execution-level outcome selected at
+    /// an explicit required-delivery barrier after root settlement.
+    pub fn complete_foreground_with_outcome(
+        &self,
+        outcome: MachineOutcome,
+    ) -> Result<(), TaskStateError> {
+        let waiters = {
             let mut state = lock(&self.inner.state);
             require_publication_available(&state)?;
-            let outcome = state
-                .tasks
-                .root_settled_outcome()
-                .cloned()
-                .ok_or(TaskStateError::RootTaskPending)?;
-            state.tasks.complete_foreground(outcome.clone())?;
+            if state.tasks.root_settled_outcome().is_none() {
+                return Err(TaskStateError::RootTaskPending);
+            }
+            state.tasks.complete_foreground(outcome)?;
             state.publication = state.publication.wrapping_add(1);
-            (outcome, std::mem::take(&mut state.foreground_waiters))
+            std::mem::take(&mut state.foreground_waiters)
         };
         wake_all(waiters);
-        Ok(outcome)
+        Ok(())
     }
 
     /// Fixes terminal completion and wakes observers after publication.
@@ -727,6 +791,12 @@ impl ExecutionCoordinator {
         };
         wake_all(waiters);
         Ok(outcome)
+    }
+
+    /// Returns the fixed terminal semantic outcome, when terminal computation completed.
+    #[must_use]
+    pub fn terminal_outcome(&self) -> Option<ConcurrentTerminalOutcomeV1> {
+        lock(&self.inner.state).tasks.terminal_outcome().cloned()
     }
 
     /// Returns a stable snapshot of work participating in execution shutdown.
@@ -760,6 +830,182 @@ impl ExecutionCoordinator {
         };
         wake_all(waiters);
         Ok(changed)
+    }
+
+    /// Acquires one task-local turn spanning sequence assignment and completion.
+    pub(crate) fn acquire_task_event_completion(
+        &self,
+        task_id: ProtocolIdentity,
+    ) -> TaskEventCompletionWait {
+        TaskEventCompletionWait {
+            inner: Arc::clone(&self.inner),
+            task_id,
+            waiter_id: next_waiter_id(),
+            completed: false,
+        }
+    }
+
+    /// Installs the execution's immutable initial sink plan and returns the
+    /// currently active plan after any required-sink exclusions.
+    pub fn event_plan(&self, initial: &SinkPlan) -> SinkPlan {
+        let mut state = lock(&self.inner.state);
+        state
+            .active_event_plan
+            .get_or_insert_with(|| initial.clone())
+            .clone()
+    }
+
+    /// Excludes one exhausted sink from later consequence-event plans.
+    pub fn exclude_event_sink(&self, sink_id: &SinkId) {
+        let mut state = lock(&self.inner.state);
+        if let Some(plan) = state.active_event_plan.take() {
+            state.active_event_plan = Some(plan.without_sink(sink_id));
+        }
+    }
+
+    /// Registers one asynchronously owned required-delivery acknowledgement.
+    pub fn begin_required_event_delivery(&self) -> Result<u64, TaskEventSequenceError> {
+        let mut state = lock(&self.inner.state);
+        let delivery = state.next_required_delivery;
+        state.next_required_delivery = delivery
+            .checked_add(1)
+            .ok_or(TaskEventSequenceError::Exhausted)?;
+        state.pending_required_deliveries.insert(delivery);
+        Ok(delivery)
+    }
+
+    /// Atomically registers the required and best-effort sides of one frozen plan.
+    pub fn begin_event_delivery_plan(
+        &self,
+        has_required: bool,
+        has_best_effort: bool,
+    ) -> Result<(Option<u64>, Option<u64>), TaskEventSequenceError> {
+        let mut state = lock(&self.inner.state);
+        let required = has_required.then_some(state.next_required_delivery);
+        let best_effort = has_best_effort.then_some(state.next_best_effort_delivery);
+        let next_required = required
+            .map(|delivery| {
+                delivery
+                    .checked_add(1)
+                    .ok_or(TaskEventSequenceError::Exhausted)
+            })
+            .transpose()?;
+        let next_best_effort = best_effort
+            .map(|delivery| {
+                delivery
+                    .checked_add(1)
+                    .ok_or(TaskEventSequenceError::Exhausted)
+            })
+            .transpose()?;
+        if let (Some(delivery), Some(next)) = (required, next_required) {
+            state.next_required_delivery = next;
+            state.pending_required_deliveries.insert(delivery);
+        }
+        if let (Some(delivery), Some(next)) = (best_effort, next_best_effort) {
+            state.next_best_effort_delivery = next;
+            state.pending_best_effort_deliveries.insert(delivery);
+        }
+        Ok((required, best_effort))
+    }
+
+    /// Settles one required-delivery acknowledgement and wakes named barriers.
+    pub fn settle_required_event_delivery(&self, delivery: u64) {
+        let waiters = {
+            let mut state = lock(&self.inner.state);
+            if !state.pending_required_deliveries.remove(&delivery) {
+                return;
+            }
+            std::mem::take(&mut state.required_delivery_waiters)
+        };
+        wake_all(waiters);
+    }
+
+    /// Records that an asynchronously acknowledged required obligation failed.
+    pub fn note_required_event_delivery_failure(&self) {
+        lock(&self.inner.state).required_event_delivery_failed = true;
+    }
+
+    /// Records that delivery infrastructure failed after semantic acceptance.
+    pub fn note_event_delivery_executor_failure(&self) {
+        lock(&self.inner.state).event_delivery_executor_failed = true;
+    }
+
+    /// Returns whether a required obligation has failed for this execution.
+    #[must_use]
+    pub fn required_event_delivery_failed(&self) -> bool {
+        lock(&self.inner.state).required_event_delivery_failed
+    }
+
+    /// Returns whether accepted delivery work failed in executor infrastructure.
+    #[must_use]
+    pub fn event_delivery_executor_failed(&self) -> bool {
+        lock(&self.inner.state).event_delivery_executor_failed
+    }
+
+    /// Registers an ordering barrier through required predecessors of one delivery.
+    #[must_use]
+    pub fn wait_for_required_event_delivery_predecessors(
+        &self,
+        delivery: u64,
+    ) -> RequiredEventDeliveryWait {
+        RequiredEventDeliveryWait {
+            inner: Arc::clone(&self.inner),
+            through: delivery.checked_sub(1),
+            waiter_id: next_waiter_id(),
+            completed: false,
+        }
+    }
+
+    /// Registers one asynchronously owned best-effort delivery obligation.
+    pub fn begin_best_effort_event_delivery(&self) -> Result<u64, TaskEventSequenceError> {
+        let mut state = lock(&self.inner.state);
+        let delivery = state.next_best_effort_delivery;
+        state.next_best_effort_delivery = delivery
+            .checked_add(1)
+            .ok_or(TaskEventSequenceError::Exhausted)?;
+        state.pending_best_effort_deliveries.insert(delivery);
+        Ok(delivery)
+    }
+
+    /// Settles one best-effort obligation and wakes ordering barriers.
+    pub fn settle_best_effort_event_delivery(&self, delivery: u64) {
+        let waiters = {
+            let mut state = lock(&self.inner.state);
+            if !state.pending_best_effort_deliveries.remove(&delivery) {
+                return;
+            }
+            std::mem::take(&mut state.best_effort_delivery_waiters)
+        };
+        wake_all(waiters);
+    }
+
+    /// Registers an ordering barrier through best-effort predecessors.
+    #[must_use]
+    pub fn wait_for_best_effort_event_delivery_predecessors(
+        &self,
+        delivery: u64,
+    ) -> BestEffortEventDeliveryWait {
+        BestEffortEventDeliveryWait {
+            inner: Arc::clone(&self.inner),
+            through: delivery.checked_sub(1),
+            waiter_id: next_waiter_id(),
+            completed: false,
+        }
+    }
+
+    /// Registers an explicit barrier through all required acknowledgements
+    /// that were admitted before the barrier is polled.
+    #[must_use]
+    pub fn wait_for_required_event_delivery(&self) -> RequiredEventDeliveryWait {
+        let through = lock(&self.inner.state)
+            .next_required_delivery
+            .checked_sub(1);
+        RequiredEventDeliveryWait {
+            inner: Arc::clone(&self.inner),
+            through,
+            waiter_id: next_waiter_id(),
+            completed: false,
+        }
     }
 
     /// Registers a race-safe, non-polling task-settlement observer.
@@ -824,6 +1070,222 @@ impl ExecutionCoordinator {
             inner: Arc::clone(&self.inner),
             waiter_id: next_waiter_id(),
             completed: false,
+        }
+    }
+}
+
+impl Future for TaskEventCompletionWait {
+    type Output = Result<TaskEventCompletionPermit, TaskEventSequenceError>;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let result = {
+            let mut state = lock(&self.inner.state);
+            if state.tasks.task_record(self.task_id).is_none() {
+                remove_task_waiter(
+                    &mut state.task_event_completion_waiters,
+                    self.task_id,
+                    self.waiter_id,
+                );
+                Some(Err(TaskEventSequenceError::UnknownTask))
+            } else if state.task_event_completion_active.contains(&self.task_id) {
+                register_task_waiter(
+                    &mut state.task_event_completion_waiters,
+                    self.task_id,
+                    self.waiter_id,
+                    context.waker(),
+                );
+                None
+            } else {
+                let sequence = *state.next_event_sequence.entry(self.task_id).or_insert(0);
+                if sequence.checked_add(1).is_none() {
+                    remove_task_waiter(
+                        &mut state.task_event_completion_waiters,
+                        self.task_id,
+                        self.waiter_id,
+                    );
+                    Some(Err(TaskEventSequenceError::Exhausted))
+                } else {
+                    remove_task_waiter(
+                        &mut state.task_event_completion_waiters,
+                        self.task_id,
+                        self.waiter_id,
+                    );
+                    state.task_event_completion_active.insert(self.task_id);
+                    Some(Ok(TaskEventCompletionPermit {
+                        inner: Arc::clone(&self.inner),
+                        task_id: self.task_id,
+                        sequence,
+                        committed: false,
+                    }))
+                }
+            }
+        };
+        match result {
+            Some(result) => {
+                self.completed = true;
+                Poll::Ready(result)
+            }
+            None => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for TaskEventCompletionWait {
+    fn drop(&mut self) {
+        if !self.completed {
+            remove_task_waiter(
+                &mut lock(&self.inner.state).task_event_completion_waiters,
+                self.task_id,
+                self.waiter_id,
+            );
+        }
+    }
+}
+
+impl TaskEventCompletionPermit {
+    /// Returns the sequence reserved for this task-local completion turn.
+    pub(crate) const fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    /// Publishes successful event completion and releases the task-local turn.
+    pub(crate) fn commit(mut self) -> Result<(), TaskEventSequenceError> {
+        let waiters = {
+            let mut state = lock(&self.inner.state);
+            let next = self
+                .sequence
+                .checked_add(1)
+                .ok_or(TaskEventSequenceError::Exhausted)?;
+            state.next_event_sequence.insert(self.task_id, next);
+            state.task_event_completion_active.remove(&self.task_id);
+            state
+                .task_event_completion_waiters
+                .remove(&self.task_id)
+                .unwrap_or_default()
+        };
+        self.committed = true;
+        wake_all(waiters);
+        Ok(())
+    }
+}
+
+impl Drop for TaskEventCompletionPermit {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        let waiters = {
+            let mut state = lock(&self.inner.state);
+            state.task_event_completion_active.remove(&self.task_id);
+            state
+                .task_event_completion_waiters
+                .remove(&self.task_id)
+                .unwrap_or_default()
+        };
+        wake_all(waiters);
+    }
+}
+
+/// Independent required-event-delivery barrier observer.
+pub struct RequiredEventDeliveryWait {
+    inner: Arc<CoordinatorInner>,
+    through: Option<u64>,
+    waiter_id: u64,
+    completed: bool,
+}
+
+impl Future for RequiredEventDeliveryWait {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let ready = {
+            let mut state = lock(&self.inner.state);
+            if self.through.is_none_or(|through| {
+                state
+                    .pending_required_deliveries
+                    .range(..=through)
+                    .next()
+                    .is_none()
+            }) {
+                remove_waiter(&mut state.required_delivery_waiters, self.waiter_id);
+                true
+            } else {
+                register_waiter(
+                    &mut state.required_delivery_waiters,
+                    self.waiter_id,
+                    context.waker(),
+                );
+                false
+            }
+        };
+        if ready {
+            self.completed = true;
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for RequiredEventDeliveryWait {
+    fn drop(&mut self) {
+        if !self.completed {
+            remove_waiter(
+                &mut lock(&self.inner.state).required_delivery_waiters,
+                self.waiter_id,
+            );
+        }
+    }
+}
+
+/// Independent best-effort predecessor barrier observer.
+pub struct BestEffortEventDeliveryWait {
+    inner: Arc<CoordinatorInner>,
+    through: Option<u64>,
+    waiter_id: u64,
+    completed: bool,
+}
+
+impl Future for BestEffortEventDeliveryWait {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let ready = {
+            let mut state = lock(&self.inner.state);
+            if self.through.is_none_or(|through| {
+                state
+                    .pending_best_effort_deliveries
+                    .range(..=through)
+                    .next()
+                    .is_none()
+            }) {
+                remove_waiter(&mut state.best_effort_delivery_waiters, self.waiter_id);
+                true
+            } else {
+                register_waiter(
+                    &mut state.best_effort_delivery_waiters,
+                    self.waiter_id,
+                    context.waker(),
+                );
+                false
+            }
+        };
+        if ready {
+            self.completed = true;
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for BestEffortEventDeliveryWait {
+    fn drop(&mut self) {
+        if !self.completed {
+            remove_waiter(
+                &mut lock(&self.inner.state).best_effort_delivery_waiters,
+                self.waiter_id,
+            );
         }
     }
 }
@@ -1130,6 +1592,31 @@ fn remove_waiter_for_task(state: &mut CoordinatorState, task_id: ProtocolIdentit
 
 fn remove_waiter(waiters: &mut Vec<RegisteredWaiter>, waiter_id: u64) {
     waiters.retain(|waiter| waiter.id != waiter_id);
+}
+
+fn register_task_waiter(
+    waiters: &mut BTreeMap<ProtocolIdentity, Vec<RegisteredWaiter>>,
+    task_id: ProtocolIdentity,
+    waiter_id: u64,
+    waker: &Waker,
+) {
+    register_waiter(waiters.entry(task_id).or_default(), waiter_id, waker);
+}
+
+fn remove_task_waiter(
+    waiters: &mut BTreeMap<ProtocolIdentity, Vec<RegisteredWaiter>>,
+    task_id: ProtocolIdentity,
+    waiter_id: u64,
+) {
+    let remove_entry = if let Some(task_waiters) = waiters.get_mut(&task_id) {
+        remove_waiter(task_waiters, waiter_id);
+        task_waiters.is_empty()
+    } else {
+        false
+    };
+    if remove_entry {
+        waiters.remove(&task_id);
+    }
 }
 
 fn take_shutdown_waiters_if_quiescent(state: &mut CoordinatorState) -> Vec<RegisteredWaiter> {

@@ -5,19 +5,22 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::task::{Context, Poll, Wake, Waker};
+use std::time::Duration;
 
 use gantry::host::contracts::{
     EmbeddingVersion, ExecutorAdapter, HostError, HostFuture, HostRequest, HostResponse,
     IdentitySource, IntegrationPreflight,
 };
 use gantry::host::embedding::EmbeddingOperation;
+use gantry::identity::ProtocolIdentity;
 use gantry::portable::IdentityKind;
 use gantry::runtime::{
     AdapterPoison, AdmissionClass, AdmissionResourceClass, AsyncCapacityLimits,
+    CanonicalTranscriptV1, ConcurrentTaskStateV1, ExecutionCoordinator,
     FinalShutdownEventSettlement, InterpreterConfiguration, InterpreterLifecycle, LifecycleCode,
-    OwnedActivityError, RequiredConfiguration,
+    LogicalSessionRegistryV1, OwnedActivityError, RequiredConfiguration, SessionCreationModeV1,
 };
 use gantry::source::FrontendLimits;
 use gantry::value::ValueLimits;
@@ -329,6 +332,125 @@ fn owned_activity_contains_panics_and_rejects_reentrant_callbacks() {
         *lock(&observed),
         Some(LifecycleCode::ReentrantInterpreterCall)
     );
+}
+
+#[test]
+fn predecessor_readiness_precedes_capacity_one_delivery_admission_across_threads() {
+    let (configuration, executor) = configuration(1);
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let coordinator = event_coordinator();
+    let completed = Arc::new(Mutex::new(Vec::new()));
+    let (a_registered_tx, a_registered_rx) = mpsc::sync_channel(1);
+    let (release_a_tx, release_a_rx) = mpsc::sync_channel(1);
+
+    std::thread::scope(|scope| {
+        let a_lifecycle = lifecycle.clone();
+        let a_coordinator = coordinator.clone();
+        let a_completed = Arc::clone(&completed);
+        let a = scope.spawn(move || {
+            let (required, best_effort) = a_coordinator
+                .begin_event_delivery_plan(true, true)
+                .unwrap_or_else(|error| panic!("plan A registration failed: {error:?}"));
+            a_registered_tx
+                .send(())
+                .unwrap_or_else(|_| panic!("plan A registration observer disappeared"));
+            release_a_rx
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap_or_else(|error| panic!("plan A handoff was not released: {error}"));
+            let required_delivery = required.unwrap_or_else(|| panic!("plan A required ordinal"));
+            let best_effort_delivery =
+                best_effort.unwrap_or_else(|| panic!("plan A best-effort ordinal"));
+            let readiness_coordinator = a_coordinator.clone();
+            let operation_coordinator = a_coordinator.clone();
+            let waiter = a_lifecycle.spawn_owned_event_delivery_after(
+                async move {
+                    readiness_coordinator
+                        .wait_for_required_event_delivery_predecessors(required_delivery)
+                        .await;
+                    readiness_coordinator
+                        .wait_for_best_effort_event_delivery_predecessors(best_effort_delivery)
+                        .await;
+                },
+                async move {
+                    lock(&a_completed).push("a");
+                    operation_coordinator.settle_required_event_delivery(required_delivery);
+                    operation_coordinator.settle_best_effort_event_delivery(best_effort_delivery);
+                },
+                |result| assert!(result.is_ok(), "plan A handoff failed: {result:?}"),
+            );
+            drop(waiter);
+        });
+
+        a_registered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap_or_else(|error| panic!("plan A did not register: {error}"));
+        let (required, best_effort) = coordinator
+            .begin_event_delivery_plan(true, true)
+            .unwrap_or_else(|error| panic!("plan B registration failed: {error:?}"));
+        let required_delivery = required.unwrap_or_else(|| panic!("plan B required ordinal"));
+        let best_effort_delivery =
+            best_effort.unwrap_or_else(|| panic!("plan B best-effort ordinal"));
+        let readiness_coordinator = coordinator.clone();
+        let operation_coordinator = coordinator.clone();
+        let b_completed = Arc::clone(&completed);
+        let b_waiter = lifecycle.spawn_owned_event_delivery_after(
+            async move {
+                readiness_coordinator
+                    .wait_for_required_event_delivery_predecessors(required_delivery)
+                    .await;
+                readiness_coordinator
+                    .wait_for_best_effort_event_delivery_predecessors(best_effort_delivery)
+                    .await;
+            },
+            async move {
+                lock(&b_completed).push("b");
+                operation_coordinator.settle_required_event_delivery(required_delivery);
+                operation_coordinator.settle_best_effort_event_delivery(best_effort_delivery);
+            },
+            |result| assert!(result.is_ok(), "plan B handoff failed: {result:?}"),
+        );
+        assert!(executor.task_ids().is_empty());
+
+        release_a_tx
+            .send(())
+            .unwrap_or_else(|_| panic!("plan A producer disappeared"));
+        a.join()
+            .unwrap_or_else(|_| panic!("plan A producer panicked"));
+        assert_eq!(executor.task_ids(), [0]);
+        assert!(matches!(
+            executor.poll_task(0),
+            Ok(DeterministicTaskPoll::Settled(_))
+        ));
+        assert_eq!(executor.task_ids(), [0, 1]);
+        assert!(matches!(
+            executor.poll_task(1),
+            Ok(DeterministicTaskPoll::Settled(_))
+        ));
+        assert!(matches!(block_on(b_waiter), ()));
+    });
+
+    assert_eq!(*lock(&completed), ["a", "b"]);
+    assert_eq!(lifecycle.snapshot().owned_activities, 0);
+}
+
+fn event_coordinator() -> ExecutionCoordinator {
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [1; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let root_task = ProtocolIdentity::derive(IdentityKind::Task, b"owned-delivery-root")
+        .unwrap_or_else(|error| panic!("root task identity failed: {error}"));
+    let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [2; 32])
+        .unwrap_or_else(|error| panic!("root session identity failed: {error}"));
+    let tasks = ConcurrentTaskStateV1::new(execution, root_task, 1)
+        .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("session state failed: {error:?}"));
+    ExecutionCoordinator::new(tasks, sessions)
+        .unwrap_or_else(|error| panic!("event coordinator failed: {error:?}"))
 }
 
 fn configuration(

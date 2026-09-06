@@ -8,11 +8,16 @@
 //! be included in an ordinary request.
 
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{Context, Poll, Waker};
 
 use crate::AsyncCapacityLimits;
 
 const ORDINARY_CLASS_COUNT: usize = 8;
+static NEXT_ADMISSION_WAITER_ID: AtomicU64 = AtomicU64::new(1);
 
 /// One ordinary bounded operational resource class.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -260,6 +265,16 @@ impl AsyncAdmission {
         }))
     }
 
+    /// Creates an owned wait for one complete ordinary reservation.
+    pub(crate) fn reserve(&self, request: AdmissionRequest) -> AdmissionWait {
+        AdmissionWait {
+            admission: self.clone(),
+            request,
+            waiter_id: NEXT_ADMISSION_WAITER_ID.fetch_add(1, Ordering::Relaxed),
+            completed: false,
+        }
+    }
+
     /// Reserves cleanup/control-plane capacity without exposing it to ordinary batches.
     pub fn try_reserve_control_plane(
         &self,
@@ -305,6 +320,11 @@ impl AsyncAdmission {
                 state.ordinary[class.index()].saturating_sub(ordinary[class.index()]);
         }
         state.control_plane = state.control_plane.saturating_sub(control_plane);
+        let waiters = std::mem::take(&mut state.waiters);
+        drop(state);
+        for waiter in waiters {
+            waiter.waker.wake();
+        }
     }
 }
 
@@ -317,6 +337,88 @@ struct AdmissionInner {
 struct AdmissionState {
     ordinary: [u64; ORDINARY_CLASS_COUNT],
     control_plane: u64,
+    waiters: Vec<AdmissionWaiter>,
+}
+
+struct AdmissionWaiter {
+    id: u64,
+    waker: Waker,
+}
+
+/// Owned registration for one atomically acquired ordinary request.
+pub(crate) struct AdmissionWait {
+    admission: AsyncAdmission,
+    request: AdmissionRequest,
+    waiter_id: u64,
+    completed: bool,
+}
+
+impl Future for AdmissionWait {
+    type Output = AdmissionReservation;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let reservation = {
+            let mut state = lock(&self.admission.inner.state);
+            let available = AdmissionClass::ACQUISITION_ORDER.into_iter().all(|class| {
+                self.request.count(class)
+                    <= self
+                        .admission
+                        .inner
+                        .limits
+                        .capacity(class)
+                        .saturating_sub(state.ordinary[class.index()])
+            });
+            if available {
+                remove_admission_waiter(&mut state.waiters, self.waiter_id);
+                for class in AdmissionClass::ACQUISITION_ORDER {
+                    state.ordinary[class.index()] =
+                        state.ordinary[class.index()].saturating_add(self.request.count(class));
+                }
+                Some(AdmissionReservation::new(AdmissionLease {
+                    admission: self.admission.clone(),
+                    ordinary: self.request.counts,
+                    control_plane: 0,
+                }))
+            } else {
+                register_admission_waiter(&mut state.waiters, self.waiter_id, context.waker());
+                None
+            }
+        };
+        if let Some(reservation) = reservation {
+            self.completed = true;
+            Poll::Ready(reservation)
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for AdmissionWait {
+    fn drop(&mut self) {
+        if !self.completed {
+            remove_admission_waiter(
+                &mut lock(&self.admission.inner.state).waiters,
+                self.waiter_id,
+            );
+        }
+    }
+}
+
+fn register_admission_waiter(waiters: &mut Vec<AdmissionWaiter>, id: u64, waker: &Waker) {
+    if let Some(waiter) = waiters.iter_mut().find(|waiter| waiter.id == id) {
+        if !waiter.waker.will_wake(waker) {
+            waiter.waker = waker.clone();
+        }
+    } else {
+        waiters.push(AdmissionWaiter {
+            id,
+            waker: waker.clone(),
+        });
+    }
+}
+
+fn remove_admission_waiter(waiters: &mut Vec<AdmissionWaiter>, id: u64) {
+    waiters.retain(|waiter| waiter.id != id);
 }
 
 /// Immutable bounded usage projection.
@@ -450,11 +552,28 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::{Context, Wake, Waker};
+
     use super::{
         AdmissionBoundary, AdmissionClass, AdmissionFailureCategory, AdmissionRequest,
-        AdmissionResourceClass, AsyncAdmission,
+        AdmissionResourceClass, AsyncAdmission, lock,
     };
     use crate::AsyncCapacityLimits;
+
+    #[derive(Default)]
+    struct CountingWake {
+        wakes: AtomicUsize,
+    }
+
+    impl Wake for CountingWake {
+        fn wake(self: Arc<Self>) {
+            self.wakes.fetch_add(1, Ordering::AcqRel);
+        }
+    }
 
     #[test]
     fn batch_reservation_is_atomic_and_transfer_releases_once() {
@@ -548,6 +667,70 @@ mod tests {
             "child admission waited on or shared root capacity"
         );
         drop(root);
+    }
+
+    #[test]
+    fn owned_waiters_replace_wakers_deregister_on_drop_and_wake_once() {
+        let admission = AsyncAdmission::new(limits(1));
+        let request = AdmissionRequest::single(AdmissionClass::EventDelivery, 1);
+        let occupied = admission
+            .try_reserve(request)
+            .unwrap_or_else(|error| panic!("initial reservation failed: {error}"));
+
+        for _ in 0..128 {
+            let wake = Arc::new(CountingWake::default());
+            let waker = Waker::from(Arc::clone(&wake));
+            let mut context = Context::from_waker(&waker);
+            let mut cancelled = Box::pin(admission.reserve(request));
+            assert!(cancelled.as_mut().poll(&mut context).is_pending());
+            assert_eq!(lock(&admission.inner.state).waiters.len(), 1);
+            drop(cancelled);
+            assert!(lock(&admission.inner.state).waiters.is_empty());
+            assert_eq!(wake.wakes.load(Ordering::Acquire), 0);
+        }
+
+        let first_wake = Arc::new(CountingWake::default());
+        let replacement_wake = Arc::new(CountingWake::default());
+        let dropped_wake = Arc::new(CountingWake::default());
+        let mut first = Box::pin(admission.reserve(request));
+        let mut dropped = Box::pin(admission.reserve(request));
+        let first_waker = Waker::from(Arc::clone(&first_wake));
+        let replacement_waker = Waker::from(Arc::clone(&replacement_wake));
+        let dropped_waker = Waker::from(Arc::clone(&dropped_wake));
+        assert!(
+            first
+                .as_mut()
+                .poll(&mut Context::from_waker(&first_waker))
+                .is_pending()
+        );
+        assert!(
+            first
+                .as_mut()
+                .poll(&mut Context::from_waker(&replacement_waker))
+                .is_pending()
+        );
+        assert!(
+            dropped
+                .as_mut()
+                .poll(&mut Context::from_waker(&dropped_waker))
+                .is_pending()
+        );
+        assert_eq!(lock(&admission.inner.state).waiters.len(), 2);
+        drop(dropped);
+        assert_eq!(lock(&admission.inner.state).waiters.len(), 1);
+
+        drop(occupied);
+        assert_eq!(first_wake.wakes.load(Ordering::Acquire), 0);
+        assert_eq!(replacement_wake.wakes.load(Ordering::Acquire), 1);
+        assert_eq!(dropped_wake.wakes.load(Ordering::Acquire), 0);
+        let reservation = match Pin::new(&mut first)
+            .poll(&mut Context::from_waker(&replacement_waker))
+        {
+            std::task::Poll::Ready(reservation) => reservation,
+            std::task::Poll::Pending => panic!("retained waiter was not admitted after release"),
+        };
+        assert!(lock(&admission.inner.state).waiters.is_empty());
+        drop(reservation);
     }
 
     fn limits(value: u64) -> AsyncCapacityLimits {

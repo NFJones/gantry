@@ -25,8 +25,8 @@ use gantry_host::event::SinkId;
 use gantry_host::journal::JournalError;
 
 use crate::{
-    AbnormalCompletionHandler, AdmissionClass, AdmissionExhaustion, InterpreterConfiguration,
-    MachineOutcome, SupervisedTaskDomain, TaskSupervisor,
+    AbnormalCompletionHandler, AdmissionClass, AdmissionExhaustion, AdmissionReservation,
+    InterpreterConfiguration, MachineOutcome, SupervisedTaskDomain, TaskSupervisor,
 };
 
 static NEXT_INTERPRETER_ID: AtomicU64 = AtomicU64::new(1);
@@ -440,12 +440,303 @@ impl ExecutionHandle {
         execution.cancellation_signal.cancel();
         Ok(RequiredDeliveryRecordV1::CancellationStarted)
     }
+
+    /// Records exhaustion after terminal semantics are fixed but before the
+    /// terminal return barrier publishes that outcome to public waiters.
+    pub fn record_post_terminal_required_delivery_failure(
+        &self,
+        failure: RequiredEventDeliveryFailureV1,
+        terminal: crate::ConcurrentTerminalOutcomeV1,
+    ) -> Result<RequiredDeliveryRecordV1, ExecutionTransitionError> {
+        if failure.event_id.kind() != IdentityKind::Event
+            || failure.attempt_id.kind() != IdentityKind::DeliveryAttempt
+        {
+            return Err(ExecutionTransitionError::WrongIdentityKind);
+        }
+        let inner = self
+            .inner
+            .upgrade()
+            .ok_or(ExecutionTransitionError::InterpreterDropped)?;
+        let mut data = inner.lock();
+        let execution = data
+            .executions
+            .get_mut(&self.execution_id)
+            .ok_or(ExecutionTransitionError::NotFound)?;
+        if execution.required_delivery_failures.contains(&failure) {
+            return Ok(RequiredDeliveryRecordV1::Existing);
+        }
+        execution.required_delivery_failures.push(failure);
+        Ok(RequiredDeliveryRecordV1::PostTerminal(
+            execution.terminal.clone().unwrap_or(terminal),
+        ))
+    }
 }
 
 /// One linearizable interpreter lifecycle owner.
 #[derive(Clone)]
 pub struct InterpreterLifecycle {
     inner: Arc<LifecycleInner>,
+}
+
+/// Opaque ordinary admission owned before a delivery ordering point is published.
+#[must_use = "the reservation must be transferred to one delivery worker"]
+pub struct OwnedEventDeliveryReservation {
+    reservation: AdmissionReservation,
+}
+
+/// Owned, cancellation-safe wait for one event-delivery reservation.
+#[must_use = "dropping the wait deregisters its admission waker"]
+pub struct OwnedEventDeliveryReservationWait {
+    wait: Pin<Box<dyn Future<Output = AdmissionReservation> + Send + 'static>>,
+}
+
+impl Future for OwnedEventDeliveryReservationWait {
+    type Output = OwnedEventDeliveryReservation;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        self.wait
+            .as_mut()
+            .poll(context)
+            .map(|reservation| OwnedEventDeliveryReservation { reservation })
+    }
+}
+
+type OwnedEventDeliveryOperation = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+type OwnedEventDeliveryReadiness = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+type OwnedEventDeliverySettlement =
+    Box<dyn FnOnce(Result<(), OwnedActivityError>) + Send + 'static>;
+
+/// Caller-independent completion observer for one bounded delivery handoff.
+#[must_use = "dropping the observer does not cancel the owned delivery handoff"]
+pub struct OwnedEventDeliveryHandoffWait {
+    owner: Arc<OwnedEventDeliveryHandoff>,
+    waiter_id: u64,
+    completed: bool,
+}
+
+struct OwnedEventDeliveryHandoff {
+    lifecycle: InterpreterLifecycle,
+    _lease: OwnedActivityLease,
+    state: Mutex<OwnedEventDeliveryHandoffState>,
+}
+
+struct OwnedEventDeliveryHandoffState {
+    readiness: Option<OwnedEventDeliveryReadiness>,
+    admission: Option<OwnedEventDeliveryReservationWait>,
+    operation: Option<OwnedEventDeliveryOperation>,
+    settled: Option<OwnedEventDeliverySettlement>,
+    polling: bool,
+    queued: bool,
+    handed_off: bool,
+    completed: bool,
+    waiters: Vec<(u64, Waker)>,
+}
+
+impl Future for OwnedEventDeliveryHandoffWait {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let handed_off = {
+            let mut state = lock_owned_event_delivery_handoff(&self.owner.state);
+            if state.handed_off {
+                remove_owned_event_delivery_handoff_waiter(&mut state.waiters, self.waiter_id);
+                true
+            } else {
+                register_owned_event_delivery_handoff_waiter(
+                    &mut state.waiters,
+                    self.waiter_id,
+                    context.waker(),
+                );
+                false
+            }
+        };
+        if handed_off {
+            self.completed = true;
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for OwnedEventDeliveryHandoffWait {
+    fn drop(&mut self) {
+        if !self.completed {
+            remove_owned_event_delivery_handoff_waiter(
+                &mut lock_owned_event_delivery_handoff(&self.owner.state).waiters,
+                self.waiter_id,
+            );
+        }
+    }
+}
+
+impl OwnedEventDeliveryHandoff {
+    fn start(
+        lifecycle: InterpreterLifecycle,
+        readiness: OwnedEventDeliveryReadiness,
+        operation: OwnedEventDeliveryOperation,
+        settled: OwnedEventDeliverySettlement,
+    ) -> OwnedEventDeliveryHandoffWait {
+        let owner = Arc::new(Self {
+            _lease: OwnedActivityLease {
+                _token: OwnedActivityToken::new(&lifecycle.inner),
+            },
+            state: Mutex::new(OwnedEventDeliveryHandoffState {
+                readiness: Some(readiness),
+                admission: None,
+                operation: Some(operation),
+                settled: Some(settled),
+                polling: false,
+                queued: false,
+                handed_off: false,
+                completed: false,
+                waiters: Vec::new(),
+            }),
+            lifecycle,
+        });
+        let wait = OwnedEventDeliveryHandoffWait {
+            owner: Arc::clone(&owner),
+            waiter_id: NEXT_WAITER_ID.fetch_add(1, Ordering::Relaxed),
+            completed: false,
+        };
+        Self::schedule(&owner);
+        wait
+    }
+
+    fn schedule(this: &Arc<Self>) {
+        let should_poll = {
+            let mut state = lock_owned_event_delivery_handoff(&this.state);
+            if state.completed {
+                false
+            } else if state.polling {
+                state.queued = true;
+                false
+            } else {
+                state.polling = true;
+                state.queued = true;
+                true
+            }
+        };
+        if should_poll {
+            Self::drain(this);
+        }
+    }
+
+    fn drain(this: &Arc<Self>) {
+        loop {
+            let readiness = {
+                let mut state = lock_owned_event_delivery_handoff(&this.state);
+                if !state.queued || state.completed {
+                    state.polling = false;
+                    return;
+                }
+                state.queued = false;
+                state.readiness.take()
+            };
+            let waker = Waker::from(Arc::clone(this));
+            let mut context = Context::from_waker(&waker);
+            if let Some(mut readiness) = readiness {
+                match readiness.as_mut().poll(&mut context) {
+                    Poll::Ready(()) => {
+                        let mut state = lock_owned_event_delivery_handoff(&this.state);
+                        state.admission = Some(this.lifecycle.owned_event_delivery_reservation());
+                        state.queued = true;
+                        continue;
+                    }
+                    Poll::Pending => {
+                        let mut state = lock_owned_event_delivery_handoff(&this.state);
+                        state.readiness = Some(readiness);
+                        if !state.queued {
+                            state.polling = false;
+                            return;
+                        }
+                        continue;
+                    }
+                }
+            }
+            let mut admission = {
+                let mut state = lock_owned_event_delivery_handoff(&this.state);
+                state
+                    .admission
+                    .take()
+                    .unwrap_or_else(|| unreachable!("ready handoff retains admission"))
+            };
+            match Pin::new(&mut admission).poll(&mut context) {
+                Poll::Ready(reservation) => {
+                    let (operation, settled) = {
+                        let mut state = lock_owned_event_delivery_handoff(&this.state);
+                        state.polling = false;
+                        (
+                            state.operation.take().unwrap_or_else(|| {
+                                unreachable!("admitted handoff retains operation")
+                            }),
+                            state.settled.take().unwrap_or_else(|| {
+                                unreachable!("admitted handoff retains settlement")
+                            }),
+                        )
+                    };
+                    let completion_owner = Arc::clone(this);
+                    this.lifecycle.spawn_reserved_event_delivery(
+                        reservation,
+                        operation,
+                        move |result| {
+                            let _ = catch_unwind(AssertUnwindSafe(|| settled(result)));
+                            completion_owner.complete();
+                        },
+                    );
+                    this.mark_handed_off();
+                    return;
+                }
+                Poll::Pending => {
+                    let mut state = lock_owned_event_delivery_handoff(&this.state);
+                    state.admission = Some(admission);
+                    if !state.queued {
+                        state.polling = false;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    fn mark_handed_off(&self) {
+        let waiters = {
+            let mut state = lock_owned_event_delivery_handoff(&self.state);
+            if state.handed_off {
+                return;
+            }
+            state.handed_off = true;
+            std::mem::take(&mut state.waiters)
+        };
+        for (_, waiter) in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn complete(&self) {
+        let waiters = {
+            let mut state = lock_owned_event_delivery_handoff(&self.state);
+            if state.completed {
+                return;
+            }
+            state.completed = true;
+            state.handed_off = true;
+            std::mem::take(&mut state.waiters)
+        };
+        for (_, waiter) in waiters {
+            waiter.wake();
+        }
+    }
+}
+
+impl std::task::Wake for OwnedEventDeliveryHandoff {
+    fn wake(self: Arc<Self>) {
+        Self::schedule(&self);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        Self::schedule(self);
+    }
 }
 
 impl std::fmt::Debug for InterpreterLifecycle {
@@ -701,6 +992,114 @@ impl InterpreterLifecycle {
             }
         }
         OwnedActivityWait { state }
+    }
+
+    /// Transfers event delivery to the existing supervised delivery domain and
+    /// reports its terminal result through one non-recursive callback.
+    ///
+    /// Unlike [`Self::call_owned_event_delivery`], this form has no caller
+    /// waiter. It is used by execution-owned event streams whose explicit
+    /// barriers observe shared acknowledgement state instead.
+    pub fn spawn_owned_event_delivery<F, C>(
+        &self,
+        operation: F,
+        settled: C,
+    ) -> OwnedEventDeliveryHandoffWait
+    where
+        F: Future<Output = ()> + Send + 'static,
+        C: FnOnce(Result<(), OwnedActivityError>) + Send + 'static,
+    {
+        self.spawn_owned_event_delivery_after(async {}, operation, settled)
+    }
+
+    /// Retains predecessor readiness before waiting for bounded delivery admission.
+    ///
+    /// Readiness, the operation, and its settlement callback are owned independently
+    /// of the returned waiter. A pending predecessor therefore consumes no delivery
+    /// permit, and dropping the caller cannot abandon either phase.
+    pub fn spawn_owned_event_delivery_after<R, F, C>(
+        &self,
+        readiness: R,
+        operation: F,
+        settled: C,
+    ) -> OwnedEventDeliveryHandoffWait
+    where
+        R: Future<Output = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+        C: FnOnce(Result<(), OwnedActivityError>) + Send + 'static,
+    {
+        OwnedEventDeliveryHandoff::start(
+            self.clone(),
+            Box::pin(readiness),
+            Box::pin(operation),
+            Box::new(settled),
+        )
+    }
+
+    /// Waits for ordinary event-delivery capacity before ordering state is published.
+    pub async fn reserve_owned_event_delivery(&self) -> OwnedEventDeliveryReservation {
+        self.owned_event_delivery_reservation().await
+    }
+
+    /// Creates an owned delivery-admission wait that deregisters on drop.
+    pub fn owned_event_delivery_reservation(&self) -> OwnedEventDeliveryReservationWait {
+        let supervisor = self.inner.supervisor.clone();
+        OwnedEventDeliveryReservationWait {
+            wait: Box::pin(async move { supervisor.reserve(AdmissionClass::EventDelivery).await }),
+        }
+    }
+
+    /// Transfers a previously reserved delivery permit to one supervised worker.
+    pub fn spawn_reserved_event_delivery<T, F, C>(
+        &self,
+        reservation: OwnedEventDeliveryReservation,
+        operation: F,
+        settled: C,
+    ) where
+        T: Send + 'static,
+        F: Future<Output = T> + Send + 'static,
+        C: FnOnce(Result<T, OwnedActivityError>) + Send + 'static,
+    {
+        let settled = Arc::new(Mutex::new(Some(settled)));
+        let abnormal_settled = Arc::clone(&settled);
+        let abnormal: AbnormalCompletionHandler = Arc::new(move |completion| {
+            if let Some(settled) = abnormal_settled
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                settled(Err(owned_activity_completion_failure(completion)));
+            }
+        });
+        let registration = self
+            .inner
+            .supervisor
+            .prepare(SupervisedTaskDomain::EventDelivery, Some(abnormal));
+        let signal = registration.signal();
+        let task_settled = Arc::clone(&settled);
+        let task = Box::pin(async move {
+            let result = operation.await;
+            if let Some(settled) = task_settled
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                settled(Ok(result));
+            }
+            signal.settle();
+            OwnedTaskResult::new()
+        });
+        if let Err(error) =
+            self.inner
+                .supervisor
+                .submit(registration, task, reservation.reservation.transfer())
+            && let Some(settled) = settled
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+        {
+            settled(Err(OwnedActivityError::Executor(error)));
+        }
     }
 
     /// Returns submitted activity handles retained for later physical supervision.
@@ -1224,6 +1623,32 @@ fn lock_owned_activity<T>(
     state
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_owned_event_delivery_handoff(
+    state: &Mutex<OwnedEventDeliveryHandoffState>,
+) -> MutexGuard<'_, OwnedEventDeliveryHandoffState> {
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn register_owned_event_delivery_handoff_waiter(
+    waiters: &mut Vec<(u64, Waker)>,
+    id: u64,
+    waker: &Waker,
+) {
+    if let Some((_, registered)) = waiters.iter_mut().find(|(waiter_id, _)| *waiter_id == id) {
+        if !registered.will_wake(waker) {
+            *registered = waker.clone();
+        }
+    } else {
+        waiters.push((id, waker.clone()));
+    }
+}
+
+fn remove_owned_event_delivery_handoff_waiter(waiters: &mut Vec<(u64, Waker)>, id: u64) {
+    waiters.retain(|(waiter_id, _)| *waiter_id != id);
 }
 
 fn owned_activity_completion_failure(completion: OwnedTaskCompletion) -> OwnedActivityError {

@@ -553,6 +553,8 @@ impl JournalStorage for ObservedJournalStore {
 #[derive(Default)]
 struct DeliveryGate {
     calls: AtomicU64,
+    active: AtomicU64,
+    maximum_active: AtomicU64,
     released: AtomicBool,
     waker: Mutex<Option<Waker>>,
 }
@@ -586,6 +588,41 @@ impl DeliveryGate {
             Poll::Pending
         })
         .await;
+    }
+}
+
+struct CapacityTrackingDurableSink {
+    storage: Arc<ObservedJournalStore>,
+    gate: Arc<DeliveryGate>,
+}
+
+impl EventSink for CapacityTrackingDurableSink {
+    fn deliver<'a>(
+        &'a self,
+        request: EventDeliveryRequest,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        if request.event.execution_id().is_none() {
+            return Box::pin(async { Ok(DeliveryOutcome::Success) });
+        }
+        let (kind, body) = self
+            .storage
+            .latest_committed()
+            .unwrap_or_else(|| panic!("durable sink callback preceded journal evidence"));
+        assert_eq!(kind, DURABLE_EVENT_DISPATCHED_KIND_V1);
+        let dispatched = DurableEventDispatchedV1::decode(&body)
+            .unwrap_or_else(|error| panic!("dispatch evidence did not decode: {error:?}"));
+        assert_eq!(dispatched.event_id(), request.event.event_id());
+        assert_eq!(dispatched.attempt_id(), request.attempt_id);
+
+        self.gate.calls.fetch_add(1, Ordering::AcqRel);
+        let active = self.gate.active.fetch_add(1, Ordering::AcqRel) + 1;
+        self.gate.maximum_active.fetch_max(active, Ordering::AcqRel);
+        let gate = Arc::clone(&self.gate);
+        Box::pin(async move {
+            gate.wait().await;
+            gate.active.fetch_sub(1, Ordering::AcqRel);
+            Ok(DeliveryOutcome::Success)
+        })
     }
 }
 
@@ -1557,6 +1594,212 @@ fn facade_cancellation_drains_finite_events_before_releasing_durable_owner() {
     assert_eq!(required_gate.calls(), 1);
     assert_eq!(best_effort_gate.calls(), 1);
     assert_eq!(storage.release_count(), 1);
+}
+
+#[test]
+fn durable_graph_sink_delivery_obeys_maximum_active_event_deliveries() {
+    let root = TempDirectory::new("fn main() { spawn child -> Int { 1 } discard join(child); }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let storage = Arc::new(ObservedJournalStore::with_settlement_gate(u64::MAX));
+    let gate = Arc::new(DeliveryGate::default());
+    let sink = Arc::new(CapacityTrackingDurableSink {
+        storage: Arc::clone(&storage),
+        gate: Arc::clone(&gate),
+    });
+    let interpreter = interpreter_with_durable_delivery_capacity(
+        Arc::clone(&executor),
+        Arc::new(ScriptedIntegration::new([], [])),
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_required_and_best_effort_plan(sink.clone(), sink),
+        1,
+    );
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-graph-delivery-capacity")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id,
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("durable graph delivery-capacity fixture was rejected: {failure:?}")
+        }
+    };
+
+    for _ in 0..128 {
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        if gate.calls.load(Ordering::Acquire) == 1 {
+            break;
+        }
+    }
+    assert_eq!(gate.calls.load(Ordering::Acquire), 1);
+    assert_eq!(gate.active.load(Ordering::Acquire), 1);
+
+    for _ in 0..32 {
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+    }
+    assert_eq!(
+        gate.calls.load(Ordering::Acquire),
+        1,
+        "a second durable sink delivery started while capacity one was occupied"
+    );
+    assert_eq!(gate.maximum_active.load(Ordering::Acquire), 1);
+
+    gate.release();
+    for _ in 0..512 {
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        if interpreter
+            .query_execution(accepted.execution_id())
+            .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+            .is_some_and(|observation| observation.terminal.is_some())
+            && gate.active.load(Ordering::Acquire) == 0
+        {
+            break;
+        }
+    }
+    assert!(
+        gate.calls.load(Ordering::Acquire) > 1,
+        "durable graph produced no queued delivery behind the occupied slot"
+    );
+    assert_eq!(gate.maximum_active.load(Ordering::Acquire), 1);
+    assert_eq!(gate.active.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn committed_best_effort_operation_dispatch_delivery_settles_while_child_hook_is_pending() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() { spawn child -> String { action lookup() } discard join(child); }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(PendingHookIntegration::new_graph(Arc::clone(&hook_state)));
+    let sink = Arc::new(SelectiveOutcomeSink {
+        failed_kind: EventKind::TerminalExecution,
+        attempts: Mutex::new(Vec::new()),
+    });
+    let interpreter = interpreter_with_durable_delivery(
+        Arc::clone(&executor),
+        integration,
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan_with_class(SinkClass::BestEffort, sink.clone()),
+    );
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-live-operation-delivery")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("live-delivery fixture was rejected: {failure:?}")
+        }
+    };
+
+    let mut delivered = None;
+    for _ in 0..128 {
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        delivered = sink
+            .attempts()
+            .into_iter()
+            .find(|(kind, _, _)| *kind == EventKind::OperationDispatch);
+        if hook_state.dispatch_started.load(Ordering::Acquire) && delivered.is_some() {
+            break;
+        }
+    }
+
+    assert!(hook_state.dispatch_started.load(Ordering::Acquire));
+    assert!(!hook_state.settled.load(Ordering::Acquire));
+    let (_, delivered_event_id, delivered_attempt_id) =
+        delivered.unwrap_or_else(|| panic!("operation-dispatch delivery did not progress"));
+    let observation = interpreter
+        .query_execution(accepted.execution_id())
+        .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
+    assert!(observation.foreground.is_none());
+    assert!(observation.terminal.is_none());
+
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    assert!(full.evidence.iter().any(|entry| {
+        entry.kind.as_ref() == DURABLE_EVENT_SETTLED_KIND_V1
+            && DurableEventSettledV1::decode(&entry.canonical_body).is_ok_and(|settled| {
+                settled.event_id() == delivered_event_id
+                    && settled.attempt_id() == delivered_attempt_id
+                    && settled.outcome() == DeliveryOutcome::Success
+            })
+    }));
+    let program = full
+        .evidence
+        .first()
+        .and_then(|entry| {
+            gantry::runtime::DurableExecutionStartV3::retained_program(&entry.canonical_body).ok()
+        })
+        .unwrap_or_else(|| panic!("live-delivery prefix omitted its retained program"));
+    let cuts = full
+        .evidence
+        .iter()
+        .filter(|entry| entry.kind.as_ref() == "gantry.logical-evidence/v3")
+        .map(|entry| {
+            DurableLogicalEvidenceV3::decode(&program, &entry.canonical_body)
+                .unwrap_or_else(|error| panic!("logical evidence did not decode: {error:?}"))
+                .cut()
+        })
+        .collect::<Vec<_>>();
+    assert!(!cuts.contains(&DurableCommitCutV1::ForegroundCompletion));
+    assert!(!cuts.contains(&DurableCommitCutV1::TerminalCompletion));
 }
 
 #[test]
@@ -3806,7 +4049,12 @@ fn preterminal_required_delivery_exhaustion_commits_runtime_failure_precedence()
             .iter()
             .map(|call| call.operation)
             .collect::<Vec<_>>(),
-        [EmbeddingOperation::ResolveMappings]
+        [
+            EmbeddingOperation::ResolveMappings,
+            EmbeddingOperation::CreateHook,
+            EmbeddingOperation::DispatchOperation,
+        ],
+        "ordinary source work may advance before the foreground required-delivery barrier"
     );
 
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
@@ -3898,7 +4146,12 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
             .iter()
             .map(|call| call.operation)
             .collect::<Vec<_>>(),
-        [EmbeddingOperation::ResolveMappings]
+        [
+            EmbeddingOperation::ResolveMappings,
+            EmbeddingOperation::CreateHook,
+            EmbeddingOperation::DispatchOperation,
+        ],
+        "durable occurrence commit does not make every sink acknowledgement a source barrier"
     );
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal_id.clone(),
@@ -3919,7 +4172,7 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
         .unwrap_or_else(|error| panic!("post-commit prefix did not recover: {error:?}"));
     assert_eq!(
         recovered.latest_cut(),
-        DurableCommitCutV1::OperationPrepared
+        DurableCommitCutV1::ForegroundCompletion
     );
 
     initial_executor
@@ -4336,6 +4589,27 @@ fn interpreter_with_durable_delivery<I>(
 where
     I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
 {
+    interpreter_with_durable_delivery_capacity(
+        executor,
+        integration,
+        identity_start,
+        runtime,
+        event_delivery,
+        8,
+    )
+}
+
+fn interpreter_with_durable_delivery_capacity<I>(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    integration: Arc<I>,
+    identity_start: u8,
+    runtime: Arc<dyn EventDeliveryRuntime>,
+    event_delivery: SinkPlan,
+    maximum_active_event_deliveries: u64,
+) -> Interpreter
+where
+    I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
+{
     executor.poll_next_spawn_immediately();
     let executor_adapter: Arc<dyn ExecutorAdapter> = executor;
     let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
@@ -4362,7 +4636,7 @@ where
         executor_adapter,
         identities,
         required,
-        AsyncCapacityLimits::new(2, 8, 8, 8, 8, 8, 8, 8, 8)
+        AsyncCapacityLimits::new(2, 8, 8, 8, 8, 8, 8, maximum_active_event_deliveries, 8)
             .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
     );
     Interpreter::new_with_event_delivery(
@@ -4520,10 +4794,14 @@ fn poll_task_until(
 }
 
 fn durable_plan(sink: Arc<dyn EventSink>) -> SinkPlan {
+    durable_plan_with_class(SinkClass::Required, sink)
+}
+
+fn durable_plan_with_class(class: SinkClass, sink: Arc<dyn EventSink>) -> SinkPlan {
     let retry = EventRetryPolicy::new("durable-revent-retry-v1", 0, 0, 0, JitterMode::None)
         .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
     let policy = SinkDeliveryPolicy::new(
-        SinkClass::Required,
+        class,
         false,
         "durable-revent-redaction-v1",
         RedactionCapabilities::default(),

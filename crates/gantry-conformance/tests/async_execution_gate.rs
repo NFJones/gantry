@@ -37,18 +37,22 @@ use tokio::runtime::{Builder, Runtime};
 const MANIFEST_PATH: &str = "protocol/conformance/async-execution-gate-v1.json";
 const CONTRACT_PATH: &str = "protocol/conformance/async-execution-contract-v1.json";
 const ASSIGNMENT_SHA256: &str = "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49c9f3c0f0d6d889102";
-const ARTIFACTS: [(&str, &str); 18] = [
+const ARTIFACTS: [(&str, &str); 19] = [
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "5e09e8dd77ac94fce826fed1d6f1e89b9b9ad1ba5ce06c76e7b0a79d8573f53e",
+        "16c772f159a5d390708f1cf4835fb62fa2e5ee2572b152ff60ca0b027ce46552",
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "1bfb3f111fadf67acbba2026492636b4fcb4222a47a467a44104383a40d63f93",
+        "e307fba21fafec4375f44989e9377246819162c9acea6778faf65690396af33c",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
         "49dd4c0100c63f88c70114b6aed33130d301c4f96b1ae0684cf29701e65ccbd3",
+    ),
+    (
+        "protocol/conformance/async-execution-observation-v1.json",
+        "05be66f4419e592678585626a54276556b896fa5928e6b4c262ea06850adaa6a",
     ),
     (
         "protocol/conformance/automatic-durable-root-v1.json",
@@ -88,7 +92,7 @@ const ARTIFACTS: [(&str, &str); 18] = [
     ),
     (
         "protocol/conformance/revent-ownership-v1.json",
-        "5a75f22d1541c2c531fcd7d2817f0c49158cb8312068a284932083d6d3de9299",
+        "77426876fa1287724834e5cef87eaa493893f15f9f12f6a7ea1df20dd52c3257",
     ),
     (
         "protocol/conformance/runtime-sessions-v1.json",
@@ -96,7 +100,7 @@ const ARTIFACTS: [(&str, &str); 18] = [
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "8488962c1ea68fba0ba4b793f99162aa9a2b09dd813ca13c9877938f337c45f1",
+        "206d33d7481073133bdf6e782162a9b35853bc05a24653b479500e325ac0d46b",
     ),
     (
         "protocol/conformance/task-driver-v1.json",

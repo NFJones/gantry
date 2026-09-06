@@ -27,15 +27,16 @@ use gantry::portable::{
     SinkClass,
 };
 use gantry::runtime::{
-    ActionOperationRequestV1, AdmissionKind, BranchConditionV1, CapturedOperationRequestV1,
+    ActionOperationRequestV1, AdmissionKind, BranchConditionV1, CanonicalTranscriptV1,
+    CapturedOperationRequestV1, ConcurrentTaskStateV1, ExecutionCoordinator,
     ExecutionDeliveryConsequenceV1, ExecutionEventError, ExecutionEventPipeline,
-    InterpreterConfiguration, InterpreterLifecycle, MachineFailure, MachineLabel, MachineOutcome,
-    OperationRequestHeaderV1, OperationResultEventKindV1, OperationRetryWaitV1,
-    RequiredConfiguration, RuntimeCode, ShutdownEventSummaryV1, ValidationErrorCategoryV1,
-    ValidationErrorV1, WorkflowEventPhaseV1, branch_decision_event, machine_lifecycle_event,
-    mutation_event, operation_completion_event, operation_dispatch_event, operation_result_event,
-    report_emergency_diagnostic, shutdown_event, structured_output_validation_failure_event,
-    validation_retry_event, workflow_event,
+    InterpreterConfiguration, InterpreterLifecycle, LogicalSessionRegistryV1, MachineFailure,
+    MachineLabel, MachineOutcome, OperationRequestHeaderV1, OperationResultEventKindV1,
+    OperationRetryWaitV1, RequiredConfiguration, RuntimeCode, SessionCreationModeV1,
+    ShutdownEventSummaryV1, ValidationErrorCategoryV1, ValidationErrorV1, WorkflowEventPhaseV1,
+    branch_decision_event, machine_lifecycle_event, mutation_event, operation_completion_event,
+    operation_dispatch_event, operation_result_event, report_emergency_diagnostic, shutdown_event,
+    structured_output_validation_failure_event, validation_retry_event, workflow_event,
 };
 use gantry::source::FrontendLimits;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -466,8 +467,10 @@ fn public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_s
     .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"));
     let allocator = FreshIdentityAllocator::default();
     let task = derived(IdentityKind::Task, b"root-task");
+    let execution_coordinator = coordinator(execution, task);
     let mut pipeline = ExecutionEventPipeline::new(
         &handle,
+        &execution_coordinator,
         fresh(IdentityKind::Activity, 51),
         task,
         &allocator,
@@ -519,8 +522,10 @@ fn public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_s
         terminal_sink.clone(),
     )])
     .unwrap_or_else(|error| panic!("terminal sink plan failed: {error:?}"));
+    let terminal_coordinator = coordinator(terminal_execution, task);
     let mut terminal_pipeline = ExecutionEventPipeline::new(
         &terminal_handle,
+        &terminal_coordinator,
         fresh(IdentityKind::Activity, 61),
         task,
         &allocator,
@@ -627,6 +632,21 @@ fn accept(
     admission
         .accept_execution(execution)
         .unwrap_or_else(|error| panic!("acceptance failed: {error:?}"))
+}
+
+fn coordinator(execution: ProtocolIdentity, root_task: ProtocolIdentity) -> ExecutionCoordinator {
+    let root_session = fresh(IdentityKind::Session, 250);
+    let tasks = ConcurrentTaskStateV1::new(execution, root_task, 8)
+        .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("session state failed: {error:?}"));
+    ExecutionCoordinator::new(tasks, sessions)
+        .unwrap_or_else(|error| panic!("coordinator failed: {error:?}"))
 }
 
 fn configuration(services: Arc<Services>) -> InterpreterConfiguration {
