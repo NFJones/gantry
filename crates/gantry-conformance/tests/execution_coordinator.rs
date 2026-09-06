@@ -408,15 +408,102 @@ fn registration_and_settlement_interleavings_do_not_lose_wakeups() {
                 .wait_for_task_settlement(root)
                 .unwrap_or_else(|error| panic!("task wait failed: {error:?}")),
         );
+        let probe = Arc::new(PublicationProbe::new(coordinator.clone()));
+        let waker = Waker::from(Arc::clone(&probe));
         barrier.wait();
-        let first = poll_once(wait.as_mut(), Waker::noop());
+        let first = poll_once(wait.as_mut(), &waker);
         thread
             .join()
             .unwrap_or_else(|_| panic!("settlement thread panicked"));
-        if first.is_pending() {
-            assert!(poll_once(wait.as_mut(), Waker::noop()).is_ready());
+        match first {
+            Poll::Ready(status) => assert_eq!(status.kind(), TaskStatusKind::Succeeded),
+            Poll::Pending => {
+                assert!(
+                    probe.wakes.load(Ordering::Acquire) > 0,
+                    "pending first poll lost its registered settlement wake"
+                );
+                assert!(probe.observed_unlocked.load(Ordering::Acquire));
+                assert!(matches!(
+                    poll_once(wait.as_mut(), Waker::noop()),
+                    Poll::Ready(status) if status.kind() == TaskStatusKind::Succeeded
+                ));
+            }
         }
     }
+}
+
+#[test]
+fn concurrent_child_allocation_from_distinct_live_parents_is_unique() {
+    let (coordinator, root, root_session) = fixture(5);
+    let first_parent = coordinator
+        .create_child(
+            request(root, root_session, "first-parent", 0),
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("first parent creation failed: {error:?}"));
+    coordinator
+        .resolve_submission(first_parent.task_id, Ok(()))
+        .unwrap_or_else(|error| panic!("first parent submission failed: {error:?}"));
+    let second_parent = coordinator
+        .create_child(
+            request(root, root_session, "second-parent", 1),
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("second parent creation failed: {error:?}"));
+    coordinator
+        .resolve_submission(second_parent.task_id, Ok(()))
+        .unwrap_or_else(|error| panic!("second parent submission failed: {error:?}"));
+    let before = coordinator.snapshot();
+    assert_eq!(
+        before
+            .state()
+            .task_record(first_parent.task_id)
+            .map(|task| task.status().kind()),
+        Some(TaskStatusKind::Running)
+    );
+    assert_eq!(
+        before
+            .state()
+            .task_record(second_parent.task_id)
+            .map(|task| task.status().kind()),
+        Some(TaskStatusKind::Running)
+    );
+
+    let barrier = Arc::new(Barrier::new(3));
+    let contenders = [first_parent, second_parent].map(|parent| {
+        let coordinator = coordinator.clone();
+        let barrier = Arc::clone(&barrier);
+        std::thread::spawn(move || {
+            barrier.wait();
+            coordinator.create_child(
+                request(parent.task_id, parent.base_session_id, "grandchild", 0),
+                DEFAULT_VALUE_LIMITS,
+            )
+        })
+    });
+    barrier.wait();
+    let [first, second] = contenders.map(|contender| {
+        contender
+            .join()
+            .unwrap_or_else(|_| panic!("child allocation contender panicked"))
+            .unwrap_or_else(|error| panic!("concurrent child creation failed: {error:?}"))
+    });
+
+    assert_ne!(first.task_id, second.task_id);
+    assert_ne!(first.handle_id, second.handle_id);
+    assert_ne!(first.base_session_id, second.base_session_id);
+    let snapshot = coordinator.snapshot();
+    let first_path = snapshot
+        .state()
+        .task_record(first.task_id)
+        .map(|task| task.task_path())
+        .unwrap_or_else(|| panic!("first concurrent child missing"));
+    let second_path = snapshot
+        .state()
+        .task_record(second.task_id)
+        .map(|task| task.task_path())
+        .unwrap_or_else(|| panic!("second concurrent child missing"));
+    assert_ne!(first_path, second_path);
 }
 
 #[test]

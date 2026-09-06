@@ -11,7 +11,9 @@
     "terminal_state_count",
     "obligations",
     "assumptions",
-    "counterexamples"
+    "counterexamples",
+    "coordinator_searches",
+    "coordinator_counterexamples"
   ],
   "properties": {
     "format": { "const": "gantry.concurrent-refinement-model/v1" },
@@ -42,6 +44,200 @@
           "invariant": { "type": "string", "minLength": 1 }
         }
       }
+    },
+    "coordinator_searches": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/search" }
+    },
+    "coordinator_counterexamples": {
+      "type": "array",
+      "minItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id", "search", "trace", "mutation", "rejected_action",
+          "rejection_reason", "invariant"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "search": { "$ref": "#/$defs/search_id" },
+          "trace": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/model_action" }
+          },
+          "mutation": { "$ref": "#/$defs/negative_mutation" },
+          "rejected_action": { "$ref": "#/$defs/model_action" },
+          "rejection_reason": { "$ref": "#/$defs/rejection_reason" },
+          "invariant": { "$ref": "#/$defs/invariant_id" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "state_domains", "action_domain", "initial", "terminal",
+        "closure", "safety_ceiling", "explored_state_count",
+        "terminal_state_count", "maximum_shortest_depth",
+        "frontier_state_count", "fixed_point"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/search_id" },
+        "state_domains": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/state_domain" }
+        },
+        "action_domain": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/model_action" }
+        },
+        "initial": { "$ref": "#/$defs/state_description" },
+        "terminal": { "$ref": "#/$defs/state_description" },
+        "closure": { "const": "queue-exhaustion" },
+        "safety_ceiling": { "type": "integer", "minimum": 1 },
+        "explored_state_count": { "type": "integer", "minimum": 1 },
+        "terminal_state_count": { "type": "integer", "minimum": 1 },
+        "maximum_shortest_depth": { "type": "integer", "minimum": 0 },
+        "frontier_state_count": { "const": 0 },
+        "fixed_point": { "const": true }
+      }
+    },
+    "state_domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "values"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "state_description": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "assignments"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "assignments": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/state_assignment" }
+        }
+      }
+    },
+    "state_assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "value"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    },
+    "search_id": {
+      "enum": [
+        "integrated-coordinator-lifecycle",
+        "auxiliary-resource-identity",
+        "coordinator-guard-external-call"
+      ]
+    },
+    "model_action": {
+      "enum": [
+        "acquire-coordinator-guard", "acquire-permit-a", "acquire-permit-b",
+        "assign-operation-a-one", "assign-operation-a-two",
+        "assign-operation-b-one", "assign-operation-b-two",
+        "assign-task-a-one", "assign-task-a-two", "assign-task-b-one",
+        "assign-task-b-two", "begin-external-call", "complete-external-call",
+        "complete-foreground", "complete-terminal", "consume-operation-a",
+        "consume-operation-b", "consume-transition-a", "consume-transition-b",
+        "create-child", "detach-handle", "join-handle", "notify-waiter",
+        "publish-child-event", "publish-creation", "publish-successor",
+        "register-coordinator-waiter", "register-driver", "register-waiter",
+        "release-coordinator-guard", "release-gate", "release-permit",
+        "request-abort", "request-cancellation", "settle-child-physical",
+        "settle-child-semantic", "settle-root", "submit-driver",
+        "take-published-waiters", "wake-published-waiters"
+      ]
+    },
+    "invariant_id": {
+      "enum": [
+        "abort-after-cancellation", "attached-drain-before-root-settlement",
+        "child-event-after-semantic-settlement", "child-event-at-most-once",
+        "child-event-before-terminal",
+        "coordinator-external-call-after-guard-release",
+        "creation-publication-before-submission", "foreground-before-terminal",
+        "gate-release-after-registration", "handle-ownership-linearization",
+        "no-lost-wakeup", "one-unit-admission-bound",
+        "operation-identity-uniqueness",
+        "permit-release-after-physical-settlement",
+        "root-settlement-before-foreground",
+        "semantic-settlement-after-gate-release",
+        "shared-operation-budget-bound", "shared-transition-budget-bound",
+        "submission-before-registration",
+        "successor-publication-before-notification", "task-identity-uniqueness",
+        "waiter-notification-after-guard-release"
+      ]
+    },
+    "negative_mutation": {
+      "enum": [
+        "abort-without-cancellation", "child-event-before-semantic-settlement",
+        "duplicate-child-event", "duplicate-operation-identity",
+        "duplicate-task-identity", "external-call-under-coordinator-guard",
+        "foreground-before-root-settlement", "gate-before-registration",
+        "joined-and-detached", "lost-registered-wake",
+        "one-unit-admission-oversubscribed", "operation-budget-oversubscribed",
+        "permit-released-before-physical-settlement",
+        "registration-before-submission", "root-before-attached-drain",
+        "semantic-settlement-before-gate",
+        "submission-before-creation-publication", "terminal-before-child-event",
+        "terminal-before-foreground", "transition-budget-oversubscribed",
+        "waiter-notified-before-publication",
+        "waiter-notified-under-coordinator-guard"
+      ]
+    },
+    "rejection_reason": {
+      "enum": [
+        "abort-already-requested", "action-outside-search",
+        "admission-exhausted", "already-created", "already-notified",
+        "already-published", "attached-child-pending",
+        "cancellation-already-requested", "cancellation-not-requested",
+        "child-event-already-published", "child-event-pending",
+        "child-not-created", "coordinator-guard-already-acquired",
+        "coordinator-guard-held", "coordinator-guard-not-held",
+        "creation-unpublished", "driver-already-registered",
+        "driver-already-submitted", "driver-not-registered",
+        "driver-not-submitted", "external-call-already-started",
+        "external-call-not-started", "foreground-already-complete",
+        "foreground-pending", "gate-already-open", "gate-closed",
+        "handle-already-consumed", "handle-not-registered",
+        "operation-budget-exhausted", "operation-identity-duplicate",
+        "operation-identity-missing", "operation-slot-already-assigned",
+        "permit-already-released", "permit-release-pending",
+        "physical-already-settled", "physical-settlement-pending",
+        "root-already-settled", "root-pending", "semantic-already-settled",
+        "semantic-settlement-pending", "successor-already-published",
+        "successor-unpublished", "task-identity-duplicate",
+        "task-identity-missing", "task-slot-already-assigned",
+        "terminal-already-complete", "transition-budget-exhausted",
+        "waiter-already-registered", "waiter-missing", "waiter-not-ready",
+        "waiters-not-taken"
+      ]
     }
   }
 }

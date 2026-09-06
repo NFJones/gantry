@@ -176,7 +176,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_refinement_model.rs",
-      "sha256": "750f82984597fd2886103c77fa9386767bfd91f0120bc2e90905e07cfa32f952"
+      "sha256": "91190de5723ee3556ba5547f7b159b2a611f6529769d6a4017ae6238b68b417e"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_task_state.rs",
@@ -436,7 +436,7 @@
     },
     {
       "path": "protocol/goldens/concurrent-refinement-model-v1.json",
-      "sha256": "111dec1e40066e9c8c8a9fc74b3d7294de138522af0c31f54f8a9496b4a82d80"
+      "sha256": "0e6fd42c9f1e50e6a33a90b5e55b2b7c10f78efdf74fabec3e8d0fbc667eb429"
     },
     {
       "path": "protocol/goldens/diagnostic-machine-v1.json",
@@ -556,7 +556,7 @@
     },
     {
       "path": "protocol/schemas/concurrent-refinement-model-v1.schema.json",
-      "sha256": "7e006ebf62271485a23aafa007d65758e5c2bc22f882464ca50dd7db98e4a732"
+      "sha256": "2b93bd1c13dd10dfbc1307ad797073c72c1294dc54e53e8d4d738e12c67f4ab1"
     },
     {
       "path": "protocol/schemas/durable-events-v1.schema.json",

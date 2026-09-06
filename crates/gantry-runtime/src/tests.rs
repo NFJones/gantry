@@ -555,6 +555,93 @@ fn simultaneous_final_transition_unit_has_one_successor_and_one_unchanged_loser(
 
 #[cfg(feature = "concurrent")]
 #[test]
+fn simultaneous_final_operation_unit_has_one_preparation_and_one_unchanged_loser() {
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![instruction(
+            0,
+            TypeDescriptor::UNIT,
+            InstructionKind::Operation,
+        )],
+    );
+    let program = program(vec![root]);
+    let machine_limits = limits(1, 1, 1, 1, 8);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let (child_task_id, child_task_path) = child_task_coordinate();
+    let machines = [true, false].map(|foreground| {
+        if foreground {
+            Machine::new_with_budget(
+                Arc::clone(&program),
+                &path("crate::main"),
+                Vec::new(),
+                execution(),
+                machine_limits,
+                budget.clone(),
+            )
+        } else {
+            Machine::new_concurrent_task_with_budget_and_context(
+                Arc::clone(&program),
+                &path("crate::main"),
+                Vec::new(),
+                execution(),
+                child_task_id,
+                Arc::clone(&child_task_path),
+                machine_limits,
+                budget.clone(),
+                None,
+                None,
+            )
+        }
+        .unwrap_or_else(|error| panic!("machine construction failed: {error:?}"))
+    });
+    let barrier = Arc::new(Barrier::new(2));
+    let results = machines.map(|mut machine| {
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            let before = machine.test_instruction_state();
+            barrier.wait();
+            let step = machine.step();
+            (before, machine.test_instruction_state(), step)
+        })
+    });
+    let results = results.map(|handle| {
+        handle
+            .join()
+            .unwrap_or_else(|_| panic!("operation budget contender panicked"))
+    });
+
+    assert_eq!(
+        results
+            .iter()
+            .filter(|(_, _, step)| matches!(
+                step,
+                MachineStep::Transition(MachineLabel::OperationPrepared(_))
+            ))
+            .count(),
+        1
+    );
+    let losers = results
+        .iter()
+        .filter(|(_, _, step)| {
+            matches!(
+                step,
+                MachineStep::Transition(MachineLabel::Failure(failure))
+                    if failure.code == RuntimeCode::OperationBudget
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(losers.len(), 1);
+    assert_eq!(losers[0].0, losers[0].1);
+    let snapshot = budget.snapshot();
+    assert_eq!(snapshot.remaining_operations, 0);
+    assert_eq!(snapshot.revision, 1);
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
 fn machine_attachment_validates_budget_execution_and_maxima() {
     let root = workflow(
         "crate::main",

@@ -9716,25 +9716,51 @@ impl Interpreter {
             .map(|task_id| owner.coordinator.wait_for_task_settlement(task_id))
             .collect::<Result<Vec<_>, _>>()
             .map_err(CancelExecutionError::TaskState)?;
-        let _ = deadline_race(
-            self.inner.configuration.executor(),
-            Box::pin(async move {
-                for wait in semantic_waits {
-                    wait.await;
-                }
-            }),
-            self.inner.configuration.post_cancellation_drain(),
-            None,
-        )
-        .await;
+        let semantic_settled = matches!(
+            deadline_race(
+                self.inner.configuration.executor(),
+                Box::pin(async move {
+                    for wait in semantic_waits {
+                        wait.await;
+                    }
+                }),
+                self.inner.configuration.post_cancellation_drain(),
+                None,
+            )
+            .await,
+            DeadlineOutcome::Completed(())
+        );
 
-        let aborted = self
+        let selected = self
             .inner
             .lifecycle
             .task_supervisor()
-            .request_abort_owned_execution(owner.handle.execution_id());
+            .owned_task_controls(owner.handle.execution_id(), &semantic_tasks);
+        let completed_gracefully = if semantic_settled {
+            let graceful_controls = Arc::clone(&selected);
+            matches!(
+                deadline_race(
+                    self.inner.configuration.executor(),
+                    Box::pin(async move {
+                        for task in graceful_controls.iter() {
+                            let _ = task.completion().await;
+                        }
+                    }),
+                    self.inner.configuration.post_cancellation_drain(),
+                    None,
+                )
+                .await,
+                DeadlineOutcome::Completed(())
+            )
+        } else {
+            false
+        };
+        if !completed_gracefully {
+            request_abort_for_active_controls(&selected);
+        }
+        let aborted = selected;
         owner.cancellation.retain_aborts(Arc::clone(&aborted));
-        if !aborted.is_empty() {
+        if !aborted.is_empty() && !completed_gracefully {
             let physical = deadline_race(
                 self.inner.configuration.executor(),
                 Box::pin(wait_for_nondurable_abort_and_completion(&aborted)),

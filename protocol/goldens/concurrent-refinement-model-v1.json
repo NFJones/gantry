@@ -111,6 +111,412 @@
       "rejected_action": "terminal-complete",
       "invariant": "terminal-completion-uniqueness"
     }
+  ],
+  "coordinator_searches": [
+    {
+      "id": "integrated-coordinator-lifecycle",
+      "state_domains": [
+        { "field": "created", "values": ["false", "true"] },
+        { "field": "creation-published", "values": ["false", "true"] },
+        { "field": "submitted", "values": ["false", "true"] },
+        { "field": "registered", "values": ["false", "true"] },
+        { "field": "gate-open", "values": ["false", "true"] },
+        { "field": "joined", "values": ["false", "true"] },
+        { "field": "detached", "values": ["false", "true"] },
+        { "field": "cancelled", "values": ["false", "true"] },
+        { "field": "abort-requested", "values": ["false", "true"] },
+        { "field": "semantic-settled", "values": ["false", "true"] },
+        { "field": "physical-settled", "values": ["false", "true"] },
+        { "field": "permit-released", "values": ["false", "true"] },
+        { "field": "waiter", "values": ["absent", "registered", "queued", "ready"] },
+        { "field": "child-events", "values": ["0", "1"] },
+        { "field": "root-settled", "values": ["false", "true"] },
+        { "field": "foreground", "values": ["false", "true"] },
+        { "field": "terminal", "values": ["false", "true"] }
+      ],
+      "action_domain": [
+        "create-child",
+        "publish-creation",
+        "submit-driver",
+        "register-driver",
+        "release-gate",
+        "join-handle",
+        "detach-handle",
+        "request-cancellation",
+        "request-abort",
+        "register-waiter",
+        "settle-child-semantic",
+        "notify-waiter",
+        "settle-child-physical",
+        "release-permit",
+        "publish-child-event",
+        "settle-root",
+        "complete-foreground",
+        "complete-terminal"
+      ],
+      "initial": {
+        "description": "No child exists; no driver, waiter, settlement, event, or completion coordinate has been published.",
+        "assignments": [
+          { "field": "created", "value": "false" },
+          { "field": "creation-published", "value": "false" },
+          { "field": "submitted", "value": "false" },
+          { "field": "registered", "value": "false" },
+          { "field": "gate-open", "value": "false" },
+          { "field": "joined", "value": "false" },
+          { "field": "detached", "value": "false" },
+          { "field": "cancelled", "value": "false" },
+          { "field": "abort-requested", "value": "false" },
+          { "field": "semantic-settled", "value": "false" },
+          { "field": "physical-settled", "value": "false" },
+          { "field": "permit-released", "value": "false" },
+          { "field": "waiter", "value": "absent" },
+          { "field": "child-events", "value": "0" },
+          { "field": "root-settled", "value": "false" },
+          { "field": "foreground", "value": "false" },
+          { "field": "terminal", "value": "false" }
+        ]
+      },
+      "terminal": {
+        "description": "The child is published, registered, gated, semantically and physically settled, observed, event-published, and closed through root, foreground, and terminal completion.",
+        "assignments": [
+          { "field": "created", "value": "true" },
+          { "field": "creation-published", "value": "true" },
+          { "field": "submitted", "value": "true" },
+          { "field": "registered", "value": "true" },
+          { "field": "gate-open", "value": "true" },
+          { "field": "semantic-settled", "value": "true" },
+          { "field": "physical-settled", "value": "true" },
+          { "field": "permit-released", "value": "true" },
+          { "field": "waiter", "value": "ready" },
+          { "field": "child-events", "value": "1" },
+          { "field": "root-settled", "value": "true" },
+          { "field": "foreground", "value": "true" },
+          { "field": "terminal", "value": "true" }
+        ]
+      },
+      "closure": "queue-exhaustion",
+      "safety_ceiling": 200000,
+      "explored_state_count": 488,
+      "terminal_state_count": 6,
+      "maximum_shortest_depth": 17,
+      "frontier_state_count": 0,
+      "fixed_point": true
+    },
+    {
+      "id": "auxiliary-resource-identity",
+      "state_domains": [
+        { "field": "task-a", "values": ["none", "one", "two"] },
+        { "field": "task-b", "values": ["none", "one", "two"] },
+        { "field": "operation-a", "values": ["none", "one", "two"] },
+        { "field": "operation-b", "values": ["none", "one", "two"] },
+        { "field": "permit-a", "values": ["false", "true"] },
+        { "field": "permit-b", "values": ["false", "true"] },
+        { "field": "transition-a", "values": ["false", "true"] },
+        { "field": "transition-b", "values": ["false", "true"] },
+        { "field": "operation-budget-a", "values": ["false", "true"] },
+        { "field": "operation-budget-b", "values": ["false", "true"] }
+      ],
+      "action_domain": [
+        "assign-task-a-one",
+        "assign-task-a-two",
+        "assign-task-b-one",
+        "assign-task-b-two",
+        "assign-operation-a-one",
+        "assign-operation-a-two",
+        "assign-operation-b-one",
+        "assign-operation-b-two",
+        "acquire-permit-a",
+        "acquire-permit-b",
+        "consume-transition-a",
+        "consume-transition-b",
+        "consume-operation-a",
+        "consume-operation-b"
+      ],
+      "initial": {
+        "description": "Neither actor owns a task identity, operation identity, capacity-one permit, transition unit, or operation unit.",
+        "assignments": [
+          { "field": "task-a", "value": "none" },
+          { "field": "task-b", "value": "none" },
+          { "field": "operation-a", "value": "none" },
+          { "field": "operation-b", "value": "none" },
+          { "field": "permit-a", "value": "false" },
+          { "field": "permit-b", "value": "false" },
+          { "field": "transition-a", "value": "false" },
+          { "field": "transition-b", "value": "false" },
+          { "field": "operation-budget-a", "value": "false" },
+          { "field": "operation-budget-b", "value": "false" }
+        ]
+      },
+      "terminal": {
+        "description": "The canonical representative assigns distinct identities and gives actor A each capacity-one resource while actor B remains rejected.",
+        "assignments": [
+          { "field": "task-a", "value": "one" },
+          { "field": "task-b", "value": "two" },
+          { "field": "operation-a", "value": "one" },
+          { "field": "operation-b", "value": "two" },
+          { "field": "permit-a", "value": "true" },
+          { "field": "permit-b", "value": "false" },
+          { "field": "transition-a", "value": "true" },
+          { "field": "transition-b", "value": "false" },
+          { "field": "operation-budget-a", "value": "true" },
+          { "field": "operation-budget-b", "value": "false" }
+        ]
+      },
+      "closure": "queue-exhaustion",
+      "safety_ceiling": 10000,
+      "explored_state_count": 729,
+      "terminal_state_count": 1,
+      "maximum_shortest_depth": 7,
+      "frontier_state_count": 0,
+      "fixed_point": true
+    },
+    {
+      "id": "coordinator-guard-external-call",
+      "state_domains": [
+        { "field": "guard-held", "values": ["false", "true"] },
+        { "field": "guard-acquisitions", "values": ["0", "1", "2"] },
+        { "field": "external-call", "values": ["not-started", "in-flight", "complete"] },
+        { "field": "successor-published", "values": ["false", "true"] },
+        { "field": "waiter", "values": ["absent", "registered", "taken", "notified"] }
+      ],
+      "action_domain": [
+        "acquire-coordinator-guard",
+        "register-coordinator-waiter",
+        "release-coordinator-guard",
+        "begin-external-call",
+        "complete-external-call",
+        "publish-successor",
+        "take-published-waiters",
+        "wake-published-waiters"
+      ],
+      "initial": {
+        "description": "The coordinator guard is free, no waiter exists, and no external call or successor publication has started.",
+        "assignments": [
+          { "field": "guard-held", "value": "false" },
+          { "field": "guard-acquisitions", "value": "0" },
+          { "field": "external-call", "value": "not-started" },
+          { "field": "successor-published", "value": "false" },
+          { "field": "waiter", "value": "absent" }
+        ]
+      },
+      "terminal": {
+        "description": "The external call completed between guard epochs; the successor and waiter removal were published under the second guard, then the waiter was notified after release.",
+        "assignments": [
+          { "field": "guard-held", "value": "false" },
+          { "field": "guard-acquisitions", "value": "2" },
+          { "field": "external-call", "value": "complete" },
+          { "field": "successor-published", "value": "true" },
+          { "field": "waiter", "value": "notified" }
+        ]
+      },
+      "closure": "queue-exhaustion",
+      "safety_ceiling": 100,
+      "explored_state_count": 16,
+      "terminal_state_count": 1,
+      "maximum_shortest_depth": 10,
+      "frontier_state_count": 0,
+      "fixed_point": true
+    }
+  ],
+  "coordinator_counterexamples": [
+    {
+      "id": "abort-before-cancellation",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "release-gate"],
+      "mutation": "abort-without-cancellation",
+      "rejected_action": "request-abort",
+      "rejection_reason": "cancellation-not-requested",
+      "invariant": "abort-after-cancellation"
+    },
+    {
+      "id": "child-event-before-semantic-settlement",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "release-gate"],
+      "mutation": "child-event-before-semantic-settlement",
+      "rejected_action": "publish-child-event",
+      "rejection_reason": "semantic-settlement-pending",
+      "invariant": "child-event-after-semantic-settlement"
+    },
+    {
+      "id": "duplicate-child-event",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "release-gate", "settle-child-semantic", "publish-child-event"],
+      "mutation": "duplicate-child-event",
+      "rejected_action": "publish-child-event",
+      "rejection_reason": "child-event-already-published",
+      "invariant": "child-event-at-most-once"
+    },
+    {
+      "id": "duplicate-operation-identity",
+      "search": "auxiliary-resource-identity",
+      "trace": ["assign-task-a-one", "assign-task-b-two", "assign-operation-a-one"],
+      "mutation": "duplicate-operation-identity",
+      "rejected_action": "assign-operation-b-one",
+      "rejection_reason": "operation-identity-duplicate",
+      "invariant": "operation-identity-uniqueness"
+    },
+    {
+      "id": "duplicate-task-identity",
+      "search": "auxiliary-resource-identity",
+      "trace": ["assign-task-a-one"],
+      "mutation": "duplicate-task-identity",
+      "rejected_action": "assign-task-b-one",
+      "rejection_reason": "task-identity-duplicate",
+      "invariant": "task-identity-uniqueness"
+    },
+    {
+      "id": "external-call-under-coordinator-guard",
+      "search": "coordinator-guard-external-call",
+      "trace": ["acquire-coordinator-guard"],
+      "mutation": "external-call-under-coordinator-guard",
+      "rejected_action": "begin-external-call",
+      "rejection_reason": "coordinator-guard-held",
+      "invariant": "coordinator-external-call-after-guard-release"
+    },
+    {
+      "id": "foreground-before-root-settlement",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": [],
+      "mutation": "foreground-before-root-settlement",
+      "rejected_action": "complete-foreground",
+      "rejection_reason": "root-pending",
+      "invariant": "root-settlement-before-foreground"
+    },
+    {
+      "id": "gate-before-registration",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver"],
+      "mutation": "gate-before-registration",
+      "rejected_action": "release-gate",
+      "rejection_reason": "driver-not-registered",
+      "invariant": "gate-release-after-registration"
+    },
+    {
+      "id": "join-detach-double-consumption",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "join-handle"],
+      "mutation": "joined-and-detached",
+      "rejected_action": "detach-handle",
+      "rejection_reason": "handle-already-consumed",
+      "invariant": "handle-ownership-linearization"
+    },
+    {
+      "id": "lost-registered-wake",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "release-gate", "register-waiter"],
+      "mutation": "lost-registered-wake",
+      "rejected_action": "notify-waiter",
+      "rejection_reason": "waiter-not-ready",
+      "invariant": "no-lost-wakeup"
+    },
+    {
+      "id": "one-unit-admission-oversubscription",
+      "search": "auxiliary-resource-identity",
+      "trace": ["acquire-permit-a"],
+      "mutation": "one-unit-admission-oversubscribed",
+      "rejected_action": "acquire-permit-b",
+      "rejection_reason": "admission-exhausted",
+      "invariant": "one-unit-admission-bound"
+    },
+    {
+      "id": "operation-budget-oversubscription",
+      "search": "auxiliary-resource-identity",
+      "trace": ["consume-operation-a"],
+      "mutation": "operation-budget-oversubscribed",
+      "rejected_action": "consume-operation-b",
+      "rejection_reason": "operation-budget-exhausted",
+      "invariant": "shared-operation-budget-bound"
+    },
+    {
+      "id": "permit-release-before-physical-settlement",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "release-gate"],
+      "mutation": "permit-released-before-physical-settlement",
+      "rejected_action": "release-permit",
+      "rejection_reason": "physical-settlement-pending",
+      "invariant": "permit-release-after-physical-settlement"
+    },
+    {
+      "id": "registration-before-submission",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation"],
+      "mutation": "registration-before-submission",
+      "rejected_action": "register-driver",
+      "rejection_reason": "driver-not-submitted",
+      "invariant": "submission-before-registration"
+    },
+    {
+      "id": "root-settlement-before-attached-drain",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "join-handle"],
+      "mutation": "root-before-attached-drain",
+      "rejected_action": "settle-root",
+      "rejection_reason": "attached-child-pending",
+      "invariant": "attached-drain-before-root-settlement"
+    },
+    {
+      "id": "semantic-settlement-before-gate",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver"],
+      "mutation": "semantic-settlement-before-gate",
+      "rejected_action": "settle-child-semantic",
+      "rejection_reason": "gate-closed",
+      "invariant": "semantic-settlement-after-gate-release"
+    },
+    {
+      "id": "submission-before-creation-publication",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child"],
+      "mutation": "submission-before-creation-publication",
+      "rejected_action": "submit-driver",
+      "rejection_reason": "creation-unpublished",
+      "invariant": "creation-publication-before-submission"
+    },
+    {
+      "id": "terminal-before-child-event",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "release-gate", "detach-handle", "register-waiter", "settle-child-semantic", "notify-waiter", "settle-child-physical", "release-permit", "settle-root", "complete-foreground"],
+      "mutation": "terminal-before-child-event",
+      "rejected_action": "complete-terminal",
+      "rejection_reason": "child-event-pending",
+      "invariant": "child-event-before-terminal"
+    },
+    {
+      "id": "terminal-before-foreground",
+      "search": "integrated-coordinator-lifecycle",
+      "trace": ["create-child", "publish-creation", "submit-driver", "register-driver", "release-gate", "detach-handle", "register-waiter", "settle-child-semantic", "notify-waiter", "settle-child-physical", "release-permit", "publish-child-event", "settle-root"],
+      "mutation": "terminal-before-foreground",
+      "rejected_action": "complete-terminal",
+      "rejection_reason": "foreground-pending",
+      "invariant": "foreground-before-terminal"
+    },
+    {
+      "id": "transition-budget-oversubscription",
+      "search": "auxiliary-resource-identity",
+      "trace": ["consume-transition-a"],
+      "mutation": "transition-budget-oversubscribed",
+      "rejected_action": "consume-transition-b",
+      "rejection_reason": "transition-budget-exhausted",
+      "invariant": "shared-transition-budget-bound"
+    },
+    {
+      "id": "waiter-notified-before-publication",
+      "search": "coordinator-guard-external-call",
+      "trace": ["acquire-coordinator-guard", "register-coordinator-waiter", "release-coordinator-guard"],
+      "mutation": "waiter-notified-before-publication",
+      "rejected_action": "wake-published-waiters",
+      "rejection_reason": "successor-unpublished",
+      "invariant": "successor-publication-before-notification"
+    },
+    {
+      "id": "waiter-notified-under-coordinator-guard",
+      "search": "coordinator-guard-external-call",
+      "trace": ["acquire-coordinator-guard", "register-coordinator-waiter", "release-coordinator-guard", "begin-external-call", "complete-external-call", "acquire-coordinator-guard", "publish-successor", "take-published-waiters"],
+      "mutation": "waiter-notified-under-coordinator-guard",
+      "rejected_action": "wake-published-waiters",
+      "rejection_reason": "coordinator-guard-held",
+      "invariant": "waiter-notification-after-guard-release"
+    }
   ]
 }
 

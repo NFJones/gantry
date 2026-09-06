@@ -24,7 +24,7 @@ const ARTIFACTS: [(&str, &str); 4] = [
     ),
     (
         "crates/gantry-conformance/tests/source_spawn_tokio.rs",
-        "8fd32b883a41624108785f7dcee7e33be6c31f5a55540ba724f27daad2e51464",
+        "22262049ac67b79b15bcdfedc1ef3ebbb91a968f6e2b9eb5c9503f646afaea3f",
     ),
 ];
 const CAPABILITIES: [(&str, &str); 12] = [
