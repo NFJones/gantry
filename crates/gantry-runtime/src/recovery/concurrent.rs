@@ -1991,6 +1991,16 @@ fn optional_cancellation(
 }
 
 impl DurableCommitCoordinatorV1<'_> {
+    /// Selects one untyped task-local cancellation cut for an owning graph transaction.
+    #[doc(hidden)]
+    pub fn set_graph_task_cancellation(&mut self) -> Result<(), DurableCommitError> {
+        if self.graph_cancellation.is_some() || self.graph_task_cancellation {
+            return Err(DurableCommitError::InvalidState);
+        }
+        self.graph_task_cancellation = true;
+        Ok(())
+    }
+
     /// Commits the graph cut's causal event through the existing event owner.
     pub(crate) async fn commit_graph_event(
         &mut self,
@@ -2116,7 +2126,10 @@ impl DurableCommitCoordinatorV1<'_> {
         if checkpoint.execution_id() != self.execution_id
             || checkpoint.root_task_id() != self.task_id
             || (operation.is_some() && submission_resolution)
-            || (cut == DurableCommitCutV1::Cancellation && self.graph_cancellation.is_none())
+            || (cut == DurableCommitCutV1::Cancellation
+                && self.graph_cancellation.is_none()
+                && !self.graph_task_cancellation)
+            || (cut != DurableCommitCutV1::Cancellation && self.graph_task_cancellation)
         {
             return Err(DurableCommitError::InvalidState);
         }
@@ -2135,6 +2148,11 @@ impl DurableCommitCoordinatorV1<'_> {
             self.graph_cancellation.take()
         } else {
             None
+        };
+        let task_cancellation = if cut == DurableCommitCutV1::Cancellation {
+            std::mem::take(&mut self.graph_task_cancellation)
+        } else {
+            false
         };
         let body = match (operation, submission_resolution, cancellation) {
             (None, false, Some(cancellation)) => ConcurrentDurableEvidenceV5::new_cancellation(
@@ -2160,8 +2178,10 @@ impl DurableCommitCoordinatorV1<'_> {
                 ConcurrentDurableEvidenceV5::new_ownership(affected_task, checkpoint)
                     .and_then(|evidence| evidence.unfinalized(local_id.clone(), references))
             }
-            (None, false, None) => ConcurrentDurableEvidenceV4::new(cut, affected_task, checkpoint)
-                .and_then(|evidence| evidence.unfinalized(local_id.clone(), references)),
+            (None, false, None) if cut != DurableCommitCutV1::Cancellation || task_cancellation => {
+                ConcurrentDurableEvidenceV4::new(cut, affected_task, checkpoint)
+                    .and_then(|evidence| evidence.unfinalized(local_id.clone(), references))
+            }
             _ => Err(DurableEvidenceError::InvalidState),
         }
         .map_err(DurableCommitError::Evidence)?;

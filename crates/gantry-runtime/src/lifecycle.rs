@@ -22,6 +22,7 @@ use gantry_host::contracts::{
     IntegrationPreflight, OwnedTaskCompletion, OwnedTaskPanicOrigin, OwnedTaskResult,
 };
 use gantry_host::event::SinkId;
+use gantry_host::journal::JournalError;
 
 use crate::{
     AbnormalCompletionHandler, AdmissionClass, AdmissionExhaustion, InterpreterConfiguration,
@@ -1386,6 +1387,30 @@ pub enum FinalShutdownEventFailure {
     Internal,
 }
 
+/// Frozen shutdown disposition of one in-process execution-journal owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShutdownJournalOwnerRelease {
+    /// Execution whose fenced journal ownership was considered during shutdown.
+    pub execution_id: ProtocolIdentity,
+    /// Exact release disposition fixed into the immutable shutdown report.
+    pub status: ShutdownJournalOwnerReleaseStatus,
+}
+
+/// Operational shutdown disposition of one execution-journal owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ShutdownJournalOwnerReleaseStatus {
+    /// Release was unsafe because execution-owned work could still use the token.
+    HeldNotSafe,
+    /// The token was invalidated by the owner's single release operation.
+    Released,
+    /// Storage returned this exact error from the release operation.
+    ReleaseFailed(JournalError),
+    /// The bounded shutdown wait elapsed while the retained release remained unsettled.
+    TimedOut,
+    /// The executor failed while timing the bounded release wait.
+    ExecutorFailed(HostError),
+}
+
 /// Immutable shutdown result returned to every caller.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShutdownReport {
@@ -1395,6 +1420,10 @@ pub struct ShutdownReport {
     pub durations: ShutdownDurations,
     /// Stable shutdown cohort in execution-identity order.
     pub cohort: Arc<[ExecutionSnapshot]>,
+    /// Bounded cleanup coordinates that remained unsettled when the report was fixed.
+    pub completion_failures: Arc<[ShutdownCompletionError]>,
+    /// Per-execution journal-owner release dispositions in execution-identity order.
+    pub journal_owner_releases: Arc<[ShutdownJournalOwnerRelease]>,
     /// Whether all cleanup, release, and required delivery obligations were orderly.
     pub orderly: bool,
     /// Whether destruction occurred without completed asynchronous shutdown.
@@ -1491,22 +1520,24 @@ impl ShutdownCoordinator {
         mut self,
         orderly: bool,
         final_event: FinalShutdownEventSettlement,
+        journal_owner_releases: Arc<[ShutdownJournalOwnerRelease]>,
     ) -> Result<Arc<ShutdownReport>, ShutdownCompletionError> {
         if final_event == FinalShutdownEventSettlement::NotAttemptedUnclean {
             return Err(ShutdownCompletionError::FinalEventUnsettled);
         }
         let mut data = self.inner.lock();
+        let mut completion_failures = Vec::new();
         if data.admitted_calls != 0 {
-            return Err(ShutdownCompletionError::AdmittedCallsPending);
+            completion_failures.push(ShutdownCompletionError::AdmittedCallsPending);
         }
         if data.owned_activities != 0 {
-            return Err(ShutdownCompletionError::OwnedActivitiesPending);
+            completion_failures.push(ShutdownCompletionError::OwnedActivitiesPending);
         }
         if !self.inner.supervisor.is_shutdown_quiescent() {
-            return Err(ShutdownCompletionError::SupervisedTasksPending);
+            completion_failures.push(ShutdownCompletionError::SupervisedTasksPending);
         }
         if !pending_executions(&data).is_empty() {
-            return Err(ShutdownCompletionError::ExecutionsPending);
+            completion_failures.push(ShutdownCompletionError::ExecutionsPending);
         }
         let LifecyclePhase::ShuttingDown(shutdown) = &data.state else {
             return match &data.state {
@@ -1530,7 +1561,9 @@ impl ShutdownCoordinator {
             cause,
             durations,
             cohort: Arc::from(cohort),
-            orderly: orderly && cause != ShutdownCause::Poisoned,
+            completion_failures: Arc::from(completion_failures.clone()),
+            journal_owner_releases,
+            orderly: orderly && completion_failures.is_empty() && cause != ShutdownCause::Poisoned,
             unclean: false,
             final_event,
         });
@@ -1730,6 +1763,8 @@ impl LifecycleInner {
             cause,
             durations,
             cohort: Arc::from(cohort),
+            completion_failures: Arc::from([]),
+            journal_owner_releases: Arc::from([]),
             orderly: false,
             unclean: true,
             final_event: FinalShutdownEventSettlement::NotAttemptedUnclean,

@@ -32,7 +32,10 @@ use gantry::runtime::{
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::DEFAULT_VALUE_LIMITS;
-use gantry::{Interpreter, RootSessionSpecification, StartExecutionRequest, StartExecutionResult};
+use gantry::{
+    Interpreter, RootSessionSpecification, StartExecutionRequest, StartExecutionResult,
+    root_task_identity,
+};
 use gantry_adapter_tokio::TokioExecutor;
 use gantry_conformance::services::{DeterministicIdentitySource, DeterministicUtcClock};
 use serde_json::Value;
@@ -348,6 +351,16 @@ fn multithread_tokio_join_failure_waits_for_all_selected_children() {
 }
 
 #[test]
+fn current_thread_tokio_parent_failure_waits_for_attached_descendant_drain() {
+    run_parent_failure_drain(current_thread_runtime());
+}
+
+#[test]
+fn multithread_tokio_parent_failure_waits_for_attached_descendant_drain() {
+    run_parent_failure_drain(multithread_runtime());
+}
+
+#[test]
 fn current_thread_tokio_detach_separates_foreground_success_from_terminal_failure() {
     run_detached_failure(current_thread_runtime());
 }
@@ -530,6 +543,81 @@ fn main() {
         })
         .await
         .unwrap_or_else(|_| panic!("aggregate join failure exceeded the 5s deadline"));
+    });
+}
+
+fn run_parent_failure_drain(runtime: Runtime) {
+    let root = TempDirectory::new(
+        r#"
+action read_only fail(value: Int) -> Int;
+
+fn main() {
+    spawn child -> Int { action fail(11) }
+    discard action fail(22);
+    discard join(child);
+}
+"#,
+    );
+    let integration = Arc::new(PendingIntegration::failing_actions());
+    let sink = Arc::new(RecordingSink::default());
+    let interpreter =
+        interpreter_with_events(&runtime, Arc::clone(&integration), Arc::clone(&sink));
+
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let accepted = start(&interpreter, &root).await;
+            let handle = accepted.handle().clone();
+            let root_task = root_task_identity(handle.execution_id());
+            drop(accepted);
+
+            let dispatches = wait_for_started(&integration, 2).await;
+            let child = dispatch_for_argument(&dispatches, 11);
+            let parent = dispatch_for_argument(&dispatches, 22);
+            parent.release();
+            wait_for_completion(parent).await;
+            tokio::task::yield_now().await;
+
+            assert!(
+                sink.events().into_iter().all(|event| {
+                    event.kind() != EventKind::TaskCompletion || event.task_id() != Some(root_task)
+                }),
+                "parent task settlement was published before its attached child drained"
+            );
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    interpreter.await_foreground(&handle),
+                )
+                .await
+                .is_err(),
+                "parent foreground completed before its attached child drained"
+            );
+
+            child.release();
+            let snapshot = interpreter
+                .await_terminal(&handle)
+                .await
+                .unwrap_or_else(|error| panic!("terminal observation failed: {error:?}"))
+                .unwrap_or_else(|| panic!("failed parent execution disappeared"));
+            assert!(matches!(
+                snapshot.foreground,
+                Some(MachineOutcome::Failed(ref failure))
+                    if failure.code
+                        == RuntimeCode::Operation(RuntimeErrorCategory::ProviderFailure)
+            ));
+            assert_eq!(
+                sink.events()
+                    .into_iter()
+                    .filter(|event| {
+                        event.kind() == EventKind::TaskCompletion
+                            && event.task_id() == Some(root_task)
+                    })
+                    .count(),
+                1
+            );
+        })
+        .await
+        .unwrap_or_else(|_| panic!("parent failure drain exceeded the 5s deadline"));
     });
 }
 

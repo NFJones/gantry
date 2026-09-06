@@ -37,10 +37,14 @@ use tokio::runtime::{Builder, Runtime};
 const MANIFEST_PATH: &str = "protocol/conformance/async-execution-gate-v1.json";
 const CONTRACT_PATH: &str = "protocol/conformance/async-execution-contract-v1.json";
 const ASSIGNMENT_SHA256: &str = "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49c9f3c0f0d6d889102";
-const ARTIFACTS: [(&str, &str); 17] = [
+const ARTIFACTS: [(&str, &str); 18] = [
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "ef6ce7ba6355072250c8eec36de2f03be6866366f1f5ff2c2fb3a0e6e1786e70",
+        "5e09e8dd77ac94fce826fed1d6f1e89b9b9ad1ba5ce06c76e7b0a79d8573f53e",
+    ),
+    (
+        "protocol/conformance/async-cancellation-v1.json",
+        "1bfb3f111fadf67acbba2026492636b4fcb4222a47a467a44104383a40d63f93",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
@@ -92,7 +96,7 @@ const ARTIFACTS: [(&str, &str); 17] = [
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "8484ad605cd50ea5fe2c5344c7b52a8695a617ba6326159ef720e56686a8c8ac",
+        "8488962c1ea68fba0ba4b793f99162aa9a2b09dd813ca13c9877938f337c45f1",
     ),
     (
         "protocol/conformance/task-driver-v1.json",
@@ -200,7 +204,8 @@ const EXCLUSIONS: [&str; 5] = [
     "profile-publication",
     "source-child-concurrency",
 ];
-const VALIDATION_COMMANDS: [&str; 30] = [
+const VALIDATION_COMMANDS: [&str; 33] = [
+    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_cancellation",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_contract_gate",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test async_execution_gate",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test automatic_durable_root",
@@ -218,6 +223,8 @@ const VALIDATION_COMMANDS: [&str; 30] = [
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test revent_ownership",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test runtime_sessions",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test scripted_integration",
+    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test source_spawn",
+    "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test source_spawn_tokio",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test task_driver",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test task_supervision",
     "timeout 120s rustup run 1.97.1 cargo test --locked -p gantry-conformance --test tokio_executor",

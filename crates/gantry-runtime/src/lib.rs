@@ -93,8 +93,8 @@ pub use lifecycle::{
     FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleCode, LifecycleError,
     LifecycleSnapshot, OperationAdmission, OwnedActivityError, OwnedPreflightWait,
     RequiredDeliveryRecordV1, RequiredEventDeliveryFailureV1, ShutdownAdmission,
-    ShutdownCompletionError, ShutdownCoordinator, ShutdownDurations, ShutdownProgress,
-    ShutdownReport, ShutdownWait,
+    ShutdownCompletionError, ShutdownCoordinator, ShutdownDurations, ShutdownJournalOwnerRelease,
+    ShutdownJournalOwnerReleaseStatus, ShutdownProgress, ShutdownReport, ShutdownWait,
 };
 pub use machine::{
     ExecutionBudget, ExecutionBudgetSnapshot, ExecutionFailureProjection, Machine,

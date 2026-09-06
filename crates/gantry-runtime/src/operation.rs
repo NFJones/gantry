@@ -6,9 +6,8 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::OperationStateKind;
 use gantry_core::value::{LogicalValue, ValueError};
 use gantry_host::contracts::{
-    CancellationSignal, CancellationToken, EmbeddingVersion, ExecutorAdapter,
-    FreshIdentityAllocator, HookFactory, HookOutcomeV1, HostError, HostRequest, IdentitySource,
-    OperationHook,
+    CancellationToken, EmbeddingVersion, ExecutorAdapter, FreshIdentityAllocator, HookFactory,
+    HookOutcomeV1, HostError, HostRequest, IdentitySource, OperationHook,
 };
 use gantry_host::embedding::EmbeddingOperation;
 
@@ -536,7 +535,7 @@ impl OperationLifecycle {
     pub async fn prepare_after_retry_wait(
         &mut self,
         executor: &dyn ExecutorAdapter,
-        cancellation: &CancellationSignal,
+        cancellation: &dyn CancellationToken,
         allocator: &FreshIdentityAllocator,
         identity_source: &dyn IdentitySource,
     ) -> Result<Option<ProtocolIdentity>, OperationLifecycleError> {

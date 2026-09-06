@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::task::{Context, Poll, Wake, Waker};
 
+use gantry_core::identity::ProtocolIdentity;
 use gantry_host::contracts::{
     ExecutorAdapter, HostError, OwnedTaskAbort, OwnedTaskCompletion, OwnedTaskFuture,
     SubmittedTask, reject_task_submission,
@@ -156,11 +157,55 @@ impl TaskSupervisor {
         abnormal: Option<AbnormalCompletionHandler>,
         completion: Option<PhysicalCompletionHandler>,
     ) -> SupervisionRegistration {
+        self.prepare_inner(domain, None, abnormal, completion)
+    }
+
+    /// Allocates supervision metadata owned by one execution task.
+    #[must_use]
+    pub fn prepare_owned(
+        &self,
+        domain: SupervisedTaskDomain,
+        execution_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        abnormal: Option<AbnormalCompletionHandler>,
+    ) -> SupervisionRegistration {
+        self.prepare_owned_with_completion(domain, execution_id, task_id, abnormal, None)
+    }
+
+    /// Allocates owned supervision metadata with a physical-completion observer.
+    #[must_use]
+    pub fn prepare_owned_with_completion(
+        &self,
+        domain: SupervisedTaskDomain,
+        execution_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        abnormal: Option<AbnormalCompletionHandler>,
+        completion: Option<PhysicalCompletionHandler>,
+    ) -> SupervisionRegistration {
+        self.prepare_inner(
+            domain,
+            Some(SupervisedTaskOwner {
+                execution_id,
+                task_id,
+            }),
+            abnormal,
+            completion,
+        )
+    }
+
+    fn prepare_inner(
+        &self,
+        domain: SupervisedTaskDomain,
+        owner: Option<SupervisedTaskOwner>,
+        abnormal: Option<AbnormalCompletionHandler>,
+        completion: Option<PhysicalCompletionHandler>,
+    ) -> SupervisionRegistration {
         let id = NEXT_SUPERVISED_TASK_ID.fetch_add(1, Ordering::Relaxed);
         let semantic = Arc::new(AtomicBool::new(false));
         SupervisionRegistration {
             id,
             domain,
+            owner,
             supervisor: Arc::downgrade(&self.inner),
             semantic: Arc::clone(&semantic),
             signal: SupervisionSignal {
@@ -184,6 +229,22 @@ impl TaskSupervisor {
         completion: Option<PhysicalCompletionHandler>,
     ) -> SupervisionRegistration {
         let mut registration = self.prepare_with_completion(domain, abnormal, completion);
+        registration.observation_armed = false;
+        registration
+    }
+
+    /// Allocates owned supervision metadata with deferred completion observation.
+    #[must_use]
+    pub fn prepare_owned_deferred_with_completion(
+        &self,
+        domain: SupervisedTaskDomain,
+        execution_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+        abnormal: Option<AbnormalCompletionHandler>,
+        completion: Option<PhysicalCompletionHandler>,
+    ) -> SupervisionRegistration {
+        let mut registration =
+            self.prepare_owned_with_completion(domain, execution_id, task_id, abnormal, completion);
         registration.observation_armed = false;
         registration
     }
@@ -233,8 +294,10 @@ impl TaskSupervisor {
         let entry = Arc::new(SupervisedEntry {
             id: registration.id,
             domain: registration.domain,
+            owner: registration.owner,
             semantic: registration.semantic,
             handle,
+            abort: Mutex::new(None),
             observation: Arc::clone(&observation),
             wake,
             permit: Mutex::new(Some(permit)),
@@ -262,6 +325,7 @@ impl TaskSupervisor {
         Ok(SupervisedTask {
             id: registration.id,
             domain: registration.domain,
+            owner: registration.owner,
             supervisor: Arc::downgrade(&self.inner),
             semantic: Arc::clone(&entry.semantic),
             observation,
@@ -340,6 +404,82 @@ impl TaskSupervisor {
         }
     }
 
+    /// Selects active physical work owned by selected tasks without requesting abort.
+    ///
+    /// Returned controls retain immutable completion observations after registry
+    /// removal and may request abort later without reselecting by semantic state.
+    #[must_use]
+    pub fn owned_task_controls(
+        &self,
+        execution_id: ProtocolIdentity,
+        task_ids: &[ProtocolIdentity],
+    ) -> Arc<[SupervisedTask]> {
+        let state = lock(&self.inner.state);
+        Arc::from(
+            state
+                .active
+                .values()
+                .filter(|entry| {
+                    entry.owner.is_some_and(|owner| {
+                        owner.execution_id == execution_id && task_ids.contains(&owner.task_id)
+                    })
+                })
+                .map(|entry| self.control_for_entry(entry))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Requests abort for active work owned by selected tasks in one execution.
+    ///
+    /// Selection completes while holding the registry lock. Abort requests are
+    /// issued only after releasing it, and returned controls remain suitable
+    /// for bounded physical-completion drain.
+    #[must_use]
+    pub fn request_abort_owned_tasks(
+        &self,
+        execution_id: ProtocolIdentity,
+        task_ids: &[ProtocolIdentity],
+    ) -> Arc<[SupervisedTask]> {
+        let tasks = self.owned_task_controls(execution_id, task_ids);
+        for task in tasks.iter() {
+            let _ = task.request_abort();
+        }
+        tasks
+    }
+
+    /// Requests abort for every active physical driver owned by one execution.
+    ///
+    /// Selection uses supervisor ownership rather than semantic task status, so
+    /// it includes drivers accepted by the executor whose submission transition
+    /// has not yet been published by the coordinator.
+    #[must_use]
+    pub fn request_abort_owned_execution(
+        &self,
+        execution_id: ProtocolIdentity,
+    ) -> Arc<[SupervisedTask]> {
+        let entries = {
+            let state = lock(&self.inner.state);
+            state
+                .active
+                .values()
+                .filter(|entry| {
+                    entry
+                        .owner
+                        .is_some_and(|owner| owner.execution_id == execution_id)
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let tasks = entries
+            .into_iter()
+            .map(|entry| self.control_for_entry(&entry))
+            .collect::<Vec<_>>();
+        for task in &tasks {
+            let _ = task.request_abort();
+        }
+        Arc::from(tasks)
+    }
+
     /// Requests abort for all work except the shutdown coordinator itself.
     ///
     /// Returned controls retain immutable abort and completion observations even
@@ -357,18 +497,23 @@ impl TaskSupervisor {
         };
         let tasks = entries
             .into_iter()
-            .map(|entry| SupervisedTask {
-                id: entry.id,
-                domain: entry.domain,
-                supervisor: Arc::downgrade(&self.inner),
-                semantic: Arc::clone(&entry.semantic),
-                observation: Arc::clone(&entry.observation),
-            })
+            .map(|entry| self.control_for_entry(&entry))
             .collect::<Vec<_>>();
         for task in &tasks {
             let _ = task.request_abort();
         }
         Arc::from(tasks)
+    }
+
+    fn control_for_entry(&self, entry: &SupervisedEntry) -> SupervisedTask {
+        SupervisedTask {
+            id: entry.id,
+            domain: entry.domain,
+            owner: entry.owner,
+            supervisor: Arc::downgrade(&self.inner),
+            semantic: Arc::clone(&entry.semantic),
+            observation: Arc::clone(&entry.observation),
+        }
     }
 
     /// Closes the registry, requests abort once, and relinquishes every control share.
@@ -383,6 +528,7 @@ impl TaskSupervisor {
             let entries = state.active.values().cloned().collect::<Vec<_>>();
             for entry in &entries {
                 entry.unclean_relinquished.store(true, Ordering::Release);
+                entry.observation_armed.store(true, Ordering::Release);
                 let mut observation = lock(&entry.observation);
                 observation.abort_requested = true;
                 observation.control_relinquished = true;
@@ -399,6 +545,7 @@ impl TaskSupervisor {
 pub struct SupervisionRegistration {
     id: u64,
     domain: SupervisedTaskDomain,
+    owner: Option<SupervisedTaskOwner>,
     supervisor: Weak<SupervisorInner>,
     semantic: Arc<AtomicBool>,
     signal: SupervisionSignal,
@@ -465,6 +612,7 @@ impl SupervisionSignal {
 pub struct SupervisedTask {
     id: u64,
     domain: SupervisedTaskDomain,
+    owner: Option<SupervisedTaskOwner>,
     supervisor: Weak<SupervisorInner>,
     semantic: Arc<AtomicBool>,
     observation: Arc<Mutex<SupervisedObservation>>,
@@ -496,6 +644,7 @@ impl SupervisedTask {
         observation_snapshot(
             self.id,
             self.domain,
+            self.owner,
             &self.observation,
             self.semantic.load(Ordering::Acquire),
         )
@@ -558,6 +707,10 @@ pub struct SupervisedTaskSnapshot {
     pub id: u64,
     /// Semantic ownership domain.
     pub domain: SupervisedTaskDomain,
+    /// Process-local execution owner, absent for legacy unowned preparation.
+    pub execution_id: Option<ProtocolIdentity>,
+    /// Process-local task owner, absent for legacy unowned preparation.
+    pub task_id: Option<ProtocolIdentity>,
     /// Whether Gantry semantic settlement preceded physical observation.
     pub semantic_settled: bool,
     /// Immutable physical completion, when known.
@@ -630,7 +783,7 @@ impl SupervisorInner {
             let abort_requested = lock(&entry.observation).abort_requested;
             if abort_requested
                 && lock(&entry.observation).abort_result.is_none()
-                && let Poll::Ready(result) = poll_abort(&entry.handle, &mut context)
+                && let Poll::Ready(result) = poll_abort(&entry, &mut context)
             {
                 let waiters = {
                     let mut observation = lock(&entry.observation);
@@ -667,10 +820,9 @@ impl SupervisorInner {
         if let Some(abnormal) = abnormal {
             let _ = catch_unwind(AssertUnwindSafe(|| abnormal(completion.clone())));
         }
-        if run_callbacks && let Some(observer) = lock(&entry.completion).take() {
-            let observed = completion.clone();
-            let _ = catch_unwind(AssertUnwindSafe(|| observer(observed)));
-        }
+        let completion_observer = run_callbacks
+            .then(|| lock(&entry.completion).take())
+            .flatten();
         let observation_waiters = {
             let mut observation = lock(&entry.observation);
             if observation.completion.is_none() {
@@ -678,7 +830,7 @@ impl SupervisorInner {
                     observation.abort_result = Some(abort_result_from_completion(&completion));
                 }
                 observation.abnormal_before_semantic = !semantic_settled;
-                observation.completion = Some(completion);
+                observation.completion = Some(completion.clone());
                 std::mem::take(&mut observation.waiters)
             } else {
                 Vec::new()
@@ -687,6 +839,10 @@ impl SupervisorInner {
         let permit = lock(&entry.permit).take();
         wake_all(observation_waiters);
         drop(permit);
+        if let Some(observer) = completion_observer {
+            let observed = completion.clone();
+            let _ = catch_unwind(AssertUnwindSafe(|| observer(observed)));
+        }
         let _ = catch_unwind(AssertUnwindSafe(|| drop(entry)));
         let quiescence_waiters = {
             let mut state = lock(&this.state);
@@ -718,6 +874,7 @@ impl SupervisorInner {
         let Some(entry) = entry else {
             return false;
         };
+        entry.observation_armed.store(true, Ordering::Release);
         let completion_known = {
             let mut observation = lock(&entry.observation);
             observation.abort_requested = true;
@@ -738,8 +895,10 @@ impl SupervisorInner {
 struct SupervisedEntry {
     id: u64,
     domain: SupervisedTaskDomain,
+    owner: Option<SupervisedTaskOwner>,
     semantic: Arc<AtomicBool>,
     handle: Arc<dyn SubmittedTask>,
+    abort: Mutex<Option<Pin<Box<dyn Future<Output = OwnedTaskAbort> + Send + 'static>>>>,
     observation: Arc<Mutex<SupervisedObservation>>,
     wake: Arc<ReaperWake>,
     permit: Mutex<Option<AdmissionPermit>>,
@@ -754,10 +913,17 @@ impl SupervisedEntry {
         observation_snapshot(
             self.id,
             self.domain,
+            self.owner,
             &self.observation,
             self.semantic.load(Ordering::Acquire),
         )
     }
+}
+
+#[derive(Clone, Copy)]
+struct SupervisedTaskOwner {
+    execution_id: ProtocolIdentity,
+    task_id: ProtocolIdentity,
 }
 
 #[derive(Default)]
@@ -794,6 +960,7 @@ impl ReaperWake {
 fn observation_snapshot(
     id: u64,
     domain: SupervisedTaskDomain,
+    owner: Option<SupervisedTaskOwner>,
     observation: &Mutex<SupervisedObservation>,
     semantic_settled: bool,
 ) -> SupervisedTaskSnapshot {
@@ -801,6 +968,8 @@ fn observation_snapshot(
     SupervisedTaskSnapshot {
         id,
         domain,
+        execution_id: owner.map(|owner| owner.execution_id),
+        task_id: owner.map(|owner| owner.task_id),
         semantic_settled,
         completion: observation.completion.clone(),
         abort_requested: observation.abort_requested,
@@ -821,12 +990,20 @@ fn poll_completion(
     .unwrap_or_else(|_| Poll::Ready(OwnedTaskCompletion::Failed(executor_failure())))
 }
 
-fn poll_abort(handle: &Arc<dyn SubmittedTask>, context: &mut Context<'_>) -> Poll<OwnedTaskAbort> {
-    catch_unwind(AssertUnwindSafe(|| {
-        let mut abort = handle.abort();
+fn poll_abort(entry: &SupervisedEntry, context: &mut Context<'_>) -> Poll<OwnedTaskAbort> {
+    let mut admitted = lock(&entry.abort);
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let abort = admitted.get_or_insert_with(|| {
+            let handle = Arc::clone(&entry.handle);
+            Box::pin(async move { handle.abort().await })
+        });
         abort.as_mut().poll(context)
     }))
-    .unwrap_or_else(|_| Poll::Ready(OwnedTaskAbort::Failed(executor_failure())))
+    .unwrap_or_else(|_| Poll::Ready(OwnedTaskAbort::Failed(executor_failure())));
+    if result.is_ready() {
+        let _ = admitted.take();
+    }
+    result
 }
 
 fn abort_result_from_completion(completion: &OwnedTaskCompletion) -> OwnedTaskAbort {
@@ -871,4 +1048,347 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    use gantry_core::portable::IdentityKind;
+    use gantry_host::contracts::{
+        DurationMicros, HostFuture, InclusiveJitterRange, OwnedTaskResult,
+    };
+
+    use super::*;
+    use crate::AsyncCapacityLimits;
+
+    #[derive(Default)]
+    struct RecordingExecutor {
+        tasks: Mutex<Vec<Arc<RecordedTaskState>>>,
+        fail_abort: AtomicBool,
+        pending_abort: AtomicBool,
+    }
+
+    impl RecordingExecutor {
+        fn tasks(&self) -> Vec<Arc<RecordedTaskState>> {
+            lock(&self.tasks).clone()
+        }
+
+        fn fail_abort(&self) {
+            self.fail_abort.store(true, Ordering::Release);
+        }
+
+        fn pending_abort(&self) {
+            self.pending_abort.store(true, Ordering::Release);
+        }
+    }
+
+    impl ExecutorAdapter for RecordingExecutor {
+        fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
+            let state = Arc::new(RecordedTaskState {
+                task: Mutex::new(Some(task)),
+                stopped: AtomicBool::new(false),
+                aborts: AtomicUsize::new(0),
+                abort_polls: AtomicUsize::new(0),
+                completion_polls: AtomicUsize::new(0),
+                fail_abort: self.fail_abort.load(Ordering::Acquire),
+                pending_abort: self.pending_abort.load(Ordering::Acquire),
+            });
+            lock(&self.tasks).push(Arc::clone(&state));
+            Ok(Box::new(RecordedTask { state }))
+        }
+
+        fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
+            Ok(range.minimum())
+        }
+    }
+
+    struct RecordedTask {
+        state: Arc<RecordedTaskState>,
+    }
+
+    struct RecordedTaskState {
+        task: Mutex<Option<OwnedTaskFuture>>,
+        stopped: AtomicBool,
+        aborts: AtomicUsize,
+        abort_polls: AtomicUsize,
+        completion_polls: AtomicUsize,
+        fail_abort: bool,
+        pending_abort: bool,
+    }
+
+    impl SubmittedTask for RecordedTask {
+        fn completion<'a>(&'a self) -> HostFuture<'a, OwnedTaskCompletion> {
+            Box::pin(std::future::poll_fn(move |_| {
+                self.state.completion_polls.fetch_add(1, Ordering::AcqRel);
+                if self.state.stopped.load(Ordering::Acquire) {
+                    Poll::Ready(OwnedTaskCompletion::Stopped)
+                } else {
+                    Poll::Pending
+                }
+            }))
+        }
+
+        fn abort<'a>(&'a self) -> HostFuture<'a, OwnedTaskAbort> {
+            self.state.aborts.fetch_add(1, Ordering::AcqRel);
+            let result = if self.state.fail_abort {
+                OwnedTaskAbort::Failed(HostError {
+                    code: Arc::from("test-abort-failed"),
+                    protected_diagnostic: None,
+                })
+            } else {
+                OwnedTaskAbort::Stopped
+            };
+            let mut pending = self.state.pending_abort;
+            Box::pin(std::future::poll_fn(move |context| {
+                self.state.abort_polls.fetch_add(1, Ordering::AcqRel);
+                if pending {
+                    pending = false;
+                    context.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                self.state.stopped.store(true, Ordering::Release);
+                let _ = lock(&self.state.task).take();
+                Poll::Ready(result.clone())
+            }))
+        }
+    }
+
+    #[test]
+    fn owned_abort_selection_excludes_another_execution() {
+        let (supervisor, executor) = supervisor();
+        let execution_a = identity(IdentityKind::Execution, 1);
+        let execution_b = identity(IdentityKind::Execution, 2);
+        let task_a = identity(IdentityKind::Task, 3);
+        let task_b = identity(IdentityKind::Task, 4);
+
+        submit_owned(&supervisor, execution_a, task_a);
+        submit_owned(&supervisor, execution_b, task_b);
+        let unowned = submit_unowned(&supervisor);
+        assert_eq!(unowned.snapshot().execution_id, None);
+        assert_eq!(unowned.snapshot().task_id, None);
+
+        let selected = supervisor.owned_task_controls(execution_a, &[task_a, task_b]);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].snapshot().execution_id, Some(execution_a));
+        assert_eq!(selected[0].snapshot().task_id, Some(task_a));
+        let tasks = executor.tasks();
+        assert_eq!(tasks[0].aborts.load(Ordering::Acquire), 0);
+        assert_eq!(tasks[1].aborts.load(Ordering::Acquire), 0);
+        assert_eq!(tasks[2].aborts.load(Ordering::Acquire), 0);
+
+        assert!(selected[0].request_abort());
+        assert_eq!(
+            selected[0].snapshot().completion,
+            Some(OwnedTaskCompletion::Stopped)
+        );
+        assert_eq!(tasks[0].aborts.load(Ordering::Acquire), 1);
+        assert_eq!(tasks[1].aborts.load(Ordering::Acquire), 0);
+        assert_eq!(tasks[2].aborts.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn owned_abort_selection_limits_one_execution_to_task_tree_subset() {
+        let (supervisor, executor) = supervisor();
+        let execution = identity(IdentityKind::Execution, 10);
+        let root = identity(IdentityKind::Task, 11);
+        let descendant = identity(IdentityKind::Task, 12);
+        let other_task = identity(IdentityKind::Task, 13);
+
+        submit_owned(&supervisor, execution, root);
+        submit_owned(&supervisor, execution, descendant);
+        submit_owned(&supervisor, execution, other_task);
+
+        let selected = supervisor.request_abort_owned_tasks(execution, &[root, descendant]);
+
+        assert_eq!(
+            selected
+                .iter()
+                .map(|task| task.snapshot().task_id)
+                .collect::<Vec<_>>(),
+            vec![Some(root), Some(descendant)]
+        );
+        let tasks = executor.tasks();
+        assert_eq!(tasks[0].aborts.load(Ordering::Acquire), 1);
+        assert_eq!(tasks[1].aborts.load(Ordering::Acquire), 1);
+        assert_eq!(tasks[2].aborts.load(Ordering::Acquire), 0);
+        assert_eq!(
+            supervisor
+                .snapshot()
+                .tasks
+                .iter()
+                .map(|task| task.task_id)
+                .collect::<Vec<_>>(),
+            vec![Some(other_task)]
+        );
+    }
+
+    #[test]
+    fn owned_abort_arms_deferred_completion_and_releases_permit() {
+        let (supervisor, executor) = supervisor_with_root_capacity(1);
+        let execution = identity(IdentityKind::Execution, 20);
+        let task_id = identity(IdentityKind::Task, 21);
+        let task = submit_owned_deferred(&supervisor, execution, task_id);
+        let state = &executor.tasks()[0];
+
+        assert_eq!(state.completion_polls.load(Ordering::Acquire), 0);
+        assert!(supervisor.try_reserve(AdmissionClass::RootTask).is_err());
+
+        let selected = supervisor.request_abort_owned_tasks(execution, &[task_id]);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(
+            task.snapshot().completion,
+            Some(OwnedTaskCompletion::Stopped)
+        );
+        assert!(state.completion_polls.load(Ordering::Acquire) > 0);
+        assert!(supervisor.is_quiescent());
+        assert!(supervisor.try_reserve(AdmissionClass::RootTask).is_ok());
+    }
+
+    #[test]
+    fn shutdown_abort_arms_deferred_completion_and_releases_permit() {
+        let (supervisor, executor) = supervisor_with_root_capacity(1);
+        let execution = identity(IdentityKind::Execution, 30);
+        let task_id = identity(IdentityKind::Task, 31);
+        let task = submit_owned_deferred(&supervisor, execution, task_id);
+        let state = &executor.tasks()[0];
+
+        assert_eq!(state.completion_polls.load(Ordering::Acquire), 0);
+        assert!(supervisor.try_reserve(AdmissionClass::RootTask).is_err());
+
+        let selected = supervisor.request_abort_shutdown_work();
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(
+            task.snapshot().completion,
+            Some(OwnedTaskCompletion::Stopped)
+        );
+        assert!(state.completion_polls.load(Ordering::Acquire) > 0);
+        assert!(supervisor.is_quiescent());
+        assert!(supervisor.try_reserve(AdmissionClass::RootTask).is_ok());
+    }
+
+    #[test]
+    fn deferred_abort_failure_remains_observable_after_completion() {
+        let (supervisor, executor) = supervisor_with_root_capacity(1);
+        executor.fail_abort();
+        let execution = identity(IdentityKind::Execution, 40);
+        let task_id = identity(IdentityKind::Task, 41);
+        submit_owned_deferred(&supervisor, execution, task_id);
+
+        let selected = supervisor.request_abort_owned_tasks(execution, &[task_id]);
+        let snapshot = selected[0].snapshot();
+
+        assert!(matches!(
+            snapshot.abort_result,
+            Some(OwnedTaskAbort::Failed(_))
+        ));
+        assert_eq!(snapshot.completion, Some(OwnedTaskCompletion::Stopped));
+        assert!(supervisor.is_quiescent());
+        assert!(supervisor.try_reserve(AdmissionClass::RootTask).is_ok());
+    }
+
+    #[test]
+    fn pending_abort_future_is_retained_until_ready() {
+        let (supervisor, executor) = supervisor_with_root_capacity(1);
+        executor.pending_abort();
+        let execution = identity(IdentityKind::Execution, 50);
+        let task_id = identity(IdentityKind::Task, 51);
+        let task = submit_owned_deferred(&supervisor, execution, task_id);
+
+        let selected = supervisor.request_abort_owned_tasks(execution, &[task_id]);
+        let state = &executor.tasks()[0];
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(state.aborts.load(Ordering::Acquire), 1);
+        assert_eq!(state.abort_polls.load(Ordering::Acquire), 2);
+        assert_eq!(task.snapshot().abort_result, Some(OwnedTaskAbort::Stopped));
+        assert_eq!(
+            task.snapshot().completion,
+            Some(OwnedTaskCompletion::Stopped)
+        );
+        assert!(supervisor.is_quiescent());
+        assert!(supervisor.try_reserve(AdmissionClass::RootTask).is_ok());
+    }
+
+    fn supervisor() -> (TaskSupervisor, Arc<RecordingExecutor>) {
+        supervisor_with_root_capacity(8)
+    }
+
+    fn supervisor_with_root_capacity(
+        maximum_active_root_tasks: u64,
+    ) -> (TaskSupervisor, Arc<RecordingExecutor>) {
+        let executor = Arc::new(RecordingExecutor::default());
+        let limits = AsyncCapacityLimits::new(maximum_active_root_tasks, 8, 8, 8, 8, 8, 8, 8, 8)
+            .unwrap_or_else(|error| panic!("capacity fixture failed: {error}"));
+        let supervisor = TaskSupervisor::new(executor.clone(), AsyncAdmission::new(limits));
+        (supervisor, executor)
+    }
+
+    fn submit_owned(
+        supervisor: &TaskSupervisor,
+        execution_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+    ) -> SupervisedTask {
+        let registration =
+            supervisor.prepare_owned(SupervisedTaskDomain::Root, execution_id, task_id, None);
+        submit(supervisor, registration)
+    }
+
+    fn submit_unowned(supervisor: &TaskSupervisor) -> SupervisedTask {
+        let registration = supervisor.prepare(SupervisedTaskDomain::Root, None);
+        submit(supervisor, registration)
+    }
+
+    fn submit_owned_deferred(
+        supervisor: &TaskSupervisor,
+        execution_id: ProtocolIdentity,
+        task_id: ProtocolIdentity,
+    ) -> SupervisedTask {
+        let registration = supervisor.prepare_owned_deferred_with_completion(
+            SupervisedTaskDomain::Root,
+            execution_id,
+            task_id,
+            None,
+            None,
+        );
+        submit(supervisor, registration)
+    }
+
+    fn submit(
+        supervisor: &TaskSupervisor,
+        registration: SupervisionRegistration,
+    ) -> SupervisedTask {
+        let permit = supervisor
+            .try_reserve(AdmissionClass::RootTask)
+            .unwrap_or_else(|error| panic!("task reservation failed: {error}"))
+            .transfer();
+        supervisor
+            .submit(
+                registration,
+                Box::pin(async { OwnedTaskResult::new() }),
+                permit,
+            )
+            .unwrap_or_else(|error| panic!("task submission failed: {error:?}"))
+    }
+
+    fn identity(kind: IdentityKind, value: u8) -> ProtocolIdentity {
+        match kind {
+            IdentityKind::Execution => ProtocolIdentity::from_fresh_material(kind, [value; 32])
+                .unwrap_or_else(|error| panic!("execution identity failed: {error}")),
+            IdentityKind::Task => ProtocolIdentity::derive(kind, &[value])
+                .unwrap_or_else(|error| panic!("task identity failed: {error}")),
+            _ => unreachable!("fixture supports execution and task identities"),
+        }
+    }
 }

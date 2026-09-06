@@ -3,6 +3,7 @@
 //! The facade owns orchestration only. Source analysis, machine transitions,
 //! cancellation, waits, and shutdown remain in their existing subsystem owners.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -13,8 +14,6 @@ use std::task::{Context, Poll, Waker};
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 use std::task::Wake;
 
-#[cfg(any(feature = "durable", feature = "test-support"))]
-use std::collections::BTreeMap;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 use std::collections::VecDeque;
 #[cfg(all(feature = "durable", feature = "test-support"))]
@@ -45,7 +44,7 @@ use gantry_observe::{
 };
 use gantry_runtime::{
     AbnormalCompletionHandler, AcceptedTranscriptResultV1, ActionOperationRequestV1, AdapterPoison,
-    AdmissionClass, AdmissionExhaustion, CancellationReason, CancellationRecord,
+    AdmissionClass, AdmissionExhaustion, AdmissionKind, CancellationReason, CancellationRecord,
     CapturedOperationRequestV1, ConcurrentTaskStateV1, ExecutionCoordinator,
     ExecutionDeliveryConsequenceV1, ExecutionEventError, ExecutionEventPipeline, ExecutionHandle,
     ExecutionSnapshot, FinalShutdownEventFailure, FinalShutdownEventSettlement,
@@ -55,11 +54,12 @@ use gantry_runtime::{
     OperationLifecycle, OperationLifecycleError, OperationLifecycleFailureV1,
     OperationRequestHeaderV1, OperationRetryPolicyV1, PhysicalCompletionHandler,
     ProcessedHookOutcomeV1, RootSessionProvenanceV1, RuntimeCode, SessionCreationModeV1,
-    SessionEstablisher, SessionEstablishmentV1, ShutdownCompletionError, ShutdownEventSummaryV1,
-    ShutdownReport, SupervisedTaskDomain, SupervisionSignal, TaskContextV1, TaskHook,
-    TaskHookError, TaskSessionContextV1, TaskStateError, TranscriptResultKindV1, TranscriptTurnV1,
-    TypedActionArgumentV1, catch_integration, contain_integration_future, machine_lifecycle_event,
-    shutdown_event,
+    SessionEstablisher, SessionEstablishmentV1, ShutdownAdmission, ShutdownCompletionError,
+    ShutdownEventSummaryV1, ShutdownJournalOwnerRelease, ShutdownJournalOwnerReleaseStatus,
+    ShutdownReport, SupervisedTask, SupervisedTaskDomain, SupervisionSignal, TaskContextV1,
+    TaskHook, TaskHookError, TaskSessionContextV1, TaskStateError, TranscriptResultKindV1,
+    TranscriptTurnV1, TypedActionArgumentV1, catch_integration, contain_integration_future,
+    machine_lifecycle_event, shutdown_event,
 };
 #[cfg(feature = "concurrent")]
 use gantry_runtime::{
@@ -72,8 +72,6 @@ use gantry_runtime::{
 use gantry_host::journal::JournalStorage;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 use gantry_runtime::AdmissionReservation;
-#[cfg(any(feature = "concurrent", feature = "durable"))]
-use gantry_runtime::SupervisedTask;
 #[cfg(feature = "durable")]
 use gantry_runtime::{
     DurableCommitCutV1, DurableEventBarrierV1, DurableOperationEvidenceV1, ExecutionEventDraftV1,
@@ -108,8 +106,7 @@ struct InterpreterInner {
     external_owners: AtomicUsize,
     shutdown_started: AtomicBool,
     shutdown: Arc<SharedShutdown>,
-    #[cfg(feature = "test-support")]
-    nondurable_test_coordinators: Mutex<BTreeMap<ProtocolIdentity, ExecutionCoordinator>>,
+    nondurable_executions: NondurableExecutionRegistry,
     #[cfg(all(feature = "concurrent", feature = "test-support"))]
     nondurable_cancel_before_child_submit: Mutex<Option<CancellationSignal>>,
     #[cfg(all(feature = "concurrent", feature = "test-support"))]
@@ -136,6 +133,47 @@ struct InterpreterInner {
     hook_factory: Arc<dyn HookFactory>,
     event_delivery_runtime: Arc<dyn EventDeliveryRuntime>,
     event_delivery: SinkPlan,
+}
+
+#[derive(Default)]
+struct NondurableExecutionRegistry {
+    state: Mutex<NondurableExecutionRegistryState>,
+}
+
+#[derive(Default)]
+struct NondurableExecutionRegistryState {
+    executions: BTreeMap<ProtocolIdentity, NondurableExecutionRegistration>,
+    waiters: BTreeMap<ProtocolIdentity, Vec<Waker>>,
+}
+
+enum NondurableExecutionRegistration {
+    Pending {
+        coordinator: ExecutionCoordinator,
+        workflow: gantry_ir::CanonicalPath,
+    },
+    Owned(Arc<NondurableExecutionOwner>),
+}
+
+struct NondurableExecutionOwner {
+    coordinator: ExecutionCoordinator,
+    workflow: gantry_ir::CanonicalPath,
+    handle: ExecutionHandle,
+    cancellation: Arc<SharedNondurableCancellation>,
+}
+
+#[derive(Default)]
+struct SharedNondurableCancellation {
+    state: Mutex<SharedNondurableCancellationState>,
+}
+
+#[derive(Default)]
+struct SharedNondurableCancellationState {
+    requested_reason: Option<CancellationReason>,
+    started: bool,
+    control_active: bool,
+    result: Option<Result<CancellationRecord, CancelExecutionError>>,
+    aborts: Vec<Arc<[SupervisedTask]>>,
+    waiters: Vec<Waker>,
 }
 
 struct ExecutorEventDeliveryRuntime {
@@ -174,6 +212,287 @@ impl EventDeliveryRuntime for ExecutorEventDeliveryRuntime {
         let range = InclusiveJitterRange::new(0, ceiling_us)
             .unwrap_or_else(|| unreachable!("event jitter range begins at zero"));
         self.executor.sample_inclusive(range)
+    }
+}
+
+impl NondurableExecutionRegistry {
+    fn mark(
+        &self,
+        execution_id: ProtocolIdentity,
+        coordinator: ExecutionCoordinator,
+        workflow: gantry_ir::CanonicalPath,
+    ) {
+        let mut state = lock_shutdown(&self.state);
+        state
+            .executions
+            .entry(execution_id)
+            .or_insert(NondurableExecutionRegistration::Pending {
+                coordinator,
+                workflow,
+            });
+    }
+
+    fn publish(&self, execution_id: ProtocolIdentity, handle: ExecutionHandle) {
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            let Some(NondurableExecutionRegistration::Pending {
+                coordinator,
+                workflow,
+            }) = state.executions.remove(&execution_id)
+            else {
+                return;
+            };
+            state.executions.insert(
+                execution_id,
+                NondurableExecutionRegistration::Owned(Arc::new(NondurableExecutionOwner {
+                    coordinator,
+                    workflow,
+                    handle,
+                    cancellation: Arc::new(SharedNondurableCancellation::default()),
+                })),
+            );
+            state.waiters.remove(&execution_id).unwrap_or_default()
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn abandon(&self, execution_id: ProtocolIdentity) {
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            state.executions.remove(&execution_id);
+            state.waiters.remove(&execution_id).unwrap_or_default()
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn coordinator(&self, execution_id: ProtocolIdentity) -> Option<ExecutionCoordinator> {
+        match lock_shutdown(&self.state).executions.get(&execution_id) {
+            Some(NondurableExecutionRegistration::Pending { coordinator, .. }) => {
+                Some(coordinator.clone())
+            }
+            Some(NondurableExecutionRegistration::Owned(owner)) => Some(owner.coordinator.clone()),
+            None => None,
+        }
+    }
+
+    fn cancellation_control_is_active(&self) -> bool {
+        lock_shutdown(&self.state)
+            .executions
+            .values()
+            .any(|registration| match registration {
+                NondurableExecutionRegistration::Pending { .. } => false,
+                NondurableExecutionRegistration::Owned(owner) => {
+                    owner.cancellation.control_is_active()
+                }
+            })
+    }
+
+    fn requested_executions(&self, execution_ids: &[ProtocolIdentity]) -> Vec<ProtocolIdentity> {
+        let state = lock_shutdown(&self.state);
+        execution_ids
+            .iter()
+            .copied()
+            .filter(|execution_id| {
+                matches!(
+                    state.executions.get(execution_id),
+                    Some(NondurableExecutionRegistration::Owned(owner))
+                        if owner.cancellation.is_requested()
+                )
+            })
+            .collect()
+    }
+
+    fn poll_cancellation_requested(
+        &self,
+        execution_ids: &[ProtocolIdentity],
+        context: &mut Context<'_>,
+    ) -> Poll<()> {
+        let owners = {
+            let mut state = lock_shutdown(&self.state);
+            let mut owners = Vec::new();
+            for execution_id in execution_ids {
+                match state.executions.get(execution_id) {
+                    Some(NondurableExecutionRegistration::Owned(owner)) => {
+                        owners.push(Arc::clone(owner));
+                    }
+                    Some(NondurableExecutionRegistration::Pending { .. }) => {
+                        let waiters = state.waiters.entry(*execution_id).or_default();
+                        if !waiters
+                            .iter()
+                            .any(|waiter| waiter.will_wake(context.waker()))
+                        {
+                            waiters.push(context.waker().clone());
+                        }
+                    }
+                    None => {}
+                }
+            }
+            owners
+        };
+        if owners
+            .iter()
+            .any(|owner| owner.cancellation.poll_requested(context).is_ready())
+        {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+
+    fn confirmed_stopped_abort_ids(&self, execution_ids: &[ProtocolIdentity]) -> Vec<u64> {
+        let state = lock_shutdown(&self.state);
+        execution_ids
+            .iter()
+            .filter_map(|execution_id| match state.executions.get(execution_id) {
+                Some(NondurableExecutionRegistration::Owned(owner)) => Some(owner),
+                Some(NondurableExecutionRegistration::Pending { .. }) | None => None,
+            })
+            .flat_map(|owner| owner.cancellation.confirmed_stopped_abort_ids())
+            .collect()
+    }
+
+    async fn owner(&self, execution_id: ProtocolIdentity) -> Option<Arc<NondurableExecutionOwner>> {
+        std::future::poll_fn(|context| {
+            let mut state = lock_shutdown(&self.state);
+            match state.executions.get(&execution_id) {
+                Some(NondurableExecutionRegistration::Owned(owner)) => {
+                    Poll::Ready(Some(Arc::clone(owner)))
+                }
+                Some(NondurableExecutionRegistration::Pending { .. }) => {
+                    let waiters = state.waiters.entry(execution_id).or_default();
+                    if !waiters
+                        .iter()
+                        .any(|waiter| waiter.will_wake(context.waker()))
+                    {
+                        waiters.push(context.waker().clone());
+                    }
+                    Poll::Pending
+                }
+                None => Poll::Ready(None),
+            }
+        })
+        .await
+    }
+}
+
+impl SharedNondurableCancellation {
+    fn request(&self, reason: CancellationReason) {
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            if state.requested_reason.is_some() {
+                return;
+            }
+            state.requested_reason = Some(reason);
+            std::mem::take(&mut state.waiters)
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn is_requested(&self) -> bool {
+        lock_shutdown(&self.state).requested_reason.is_some()
+    }
+
+    fn poll_requested(&self, context: &mut Context<'_>) -> Poll<()> {
+        let mut state = lock_shutdown(&self.state);
+        if state.requested_reason.is_some() {
+            return Poll::Ready(());
+        }
+        if !state
+            .waiters
+            .iter()
+            .any(|waiter| waiter.will_wake(context.waker()))
+        {
+            state.waiters.push(context.waker().clone());
+        }
+        Poll::Pending
+    }
+
+    fn claim(&self) -> bool {
+        let mut state = lock_shutdown(&self.state);
+        if state.started {
+            false
+        } else {
+            state.started = true;
+            true
+        }
+    }
+
+    fn release_claim(&self) {
+        let mut state = lock_shutdown(&self.state);
+        if state.result.is_none() {
+            state.started = false;
+        }
+    }
+
+    fn mark_control_active(&self) {
+        lock_shutdown(&self.state).control_active = true;
+    }
+
+    fn mark_physically_completed(&self) {
+        lock_shutdown(&self.state).control_active = false;
+    }
+
+    fn control_is_active(&self) -> bool {
+        let state = lock_shutdown(&self.state);
+        state.control_active || (state.started && state.result.is_none())
+    }
+
+    fn requested_reason(&self) -> Option<CancellationReason> {
+        lock_shutdown(&self.state).requested_reason.clone()
+    }
+
+    fn retain_aborts(&self, aborts: Arc<[SupervisedTask]>) {
+        if !aborts.is_empty() {
+            lock_shutdown(&self.state).aborts.push(aborts);
+        }
+    }
+
+    fn confirmed_stopped_abort_ids(&self) -> Vec<u64> {
+        lock_shutdown(&self.state)
+            .aborts
+            .iter()
+            .flat_map(|tasks| tasks.iter())
+            .filter(|task| task.snapshot().abort_result == Some(OwnedTaskAbort::Stopped))
+            .map(SupervisedTask::id)
+            .collect()
+    }
+
+    fn publish(&self, result: Result<CancellationRecord, CancelExecutionError>) {
+        let waiters = {
+            let mut state = lock_shutdown(&self.state);
+            if state.result.is_some() {
+                return;
+            }
+            state.result = Some(result);
+            std::mem::take(&mut state.waiters)
+        };
+        for waiter in waiters {
+            waiter.wake();
+        }
+    }
+
+    fn poll(
+        &self,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<CancellationRecord, CancelExecutionError>> {
+        let mut state = lock_shutdown(&self.state);
+        if let Some(result) = &state.result {
+            return Poll::Ready(result.clone());
+        }
+        if !state
+            .waiters
+            .iter()
+            .any(|waiter| waiter.will_wake(context.waker()))
+        {
+            state.waiters.push(context.waker().clone());
+        }
+        Poll::Pending
     }
 }
 
@@ -259,7 +578,7 @@ impl DurableHandoffTestGate {
 
 #[cfg(feature = "durable")]
 impl DurableExecutionRegistry {
-    fn fence_shutdown(&self) {
+    fn fence_root_submission(&self) {
         lock_shutdown(&self.state).shutdown_fenced = true;
     }
 
@@ -287,13 +606,13 @@ impl DurableExecutionRegistry {
         Some(DurableRootSubmissionClaim { _state: state })
     }
 
-    fn owned(&self, execution_ids: &[ProtocolIdentity]) -> Vec<Arc<crate::DurableOwnedExecution>> {
-        let state = lock_shutdown(&self.state);
-        execution_ids
-            .iter()
-            .filter_map(|execution_id| match state.executions.get(execution_id) {
-                Some(DurableExecutionRegistration::Owned(owner)) => Some(Arc::clone(owner)),
-                Some(DurableExecutionRegistration::Pending) | None => None,
+    fn all_owned(&self) -> Vec<Arc<crate::DurableOwnedExecution>> {
+        lock_shutdown(&self.state)
+            .executions
+            .values()
+            .filter_map(|registration| match registration {
+                DurableExecutionRegistration::Owned(owner) => Some(Arc::clone(owner)),
+                DurableExecutionRegistration::Pending => None,
             })
             .collect()
     }
@@ -403,6 +722,7 @@ struct DurableMachineGraph {
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 struct SharedDurableMachineGraph {
     state: Mutex<SharedDurableMachineGraphState>,
+    owner: std::sync::Weak<crate::DurableOwnedExecution>,
     program: Arc<gantry_ir::MachineProgram>,
     operations: DurableOperationContext,
 }
@@ -412,6 +732,7 @@ struct SharedDurableMachineGraphState {
     graph: Option<DurableMachineGraph>,
     failed: bool,
     finalization_requested: bool,
+    cancellation_drains: BTreeSet<ProtocolIdentity>,
     control_started: bool,
     control_reservation: Option<AdmissionReservation>,
     tasks: BTreeMap<ProtocolIdentity, SupervisedTask>,
@@ -425,6 +746,9 @@ enum DurableGraphControlCommand {
     SettleAbnormalChild {
         task_id: ProtocolIdentity,
         outcome: MachineOutcome,
+    },
+    DrainCancellation {
+        task_id: ProtocolIdentity,
     },
     Complete,
     Fail(DurableRunFailure),
@@ -545,6 +869,7 @@ impl SharedDurableMachineGraph {
         root_task_id: ProtocolIdentity,
         root_supervision: SupervisedTask,
         control_reservation: AdmissionReservation,
+        owner: &Arc<crate::DurableOwnedExecution>,
         program: Arc<gantry_ir::MachineProgram>,
         operations: DurableOperationContext,
     ) -> Arc<Self> {
@@ -553,6 +878,7 @@ impl SharedDurableMachineGraph {
                 graph: Some(graph),
                 failed: false,
                 finalization_requested: false,
+                cancellation_drains: BTreeSet::new(),
                 control_started: false,
                 control_reservation: Some(control_reservation),
                 tasks: BTreeMap::from([(root_task_id, root_supervision)]),
@@ -560,6 +886,7 @@ impl SharedDurableMachineGraph {
                 control_waker: None,
                 waiters: Vec::new(),
             }),
+            owner: Arc::downgrade(owner),
             program,
             operations,
         })
@@ -650,6 +977,25 @@ impl SharedDurableMachineGraph {
             state
                 .commands
                 .push_back(DurableGraphControlCommand::SettleAbnormalChild { task_id, outcome });
+            state.control_waker.take()
+        };
+        if let Some(waker) = control_waker {
+            waker.wake();
+        }
+    }
+
+    fn request_cancellation_drain(&self, task_id: ProtocolIdentity) {
+        let control_waker = {
+            let mut state = lock_shutdown(&self.state);
+            if state.failed || state.finalization_requested {
+                return;
+            }
+            if !state.cancellation_drains.insert(task_id) {
+                return;
+            }
+            state
+                .commands
+                .push_back(DurableGraphControlCommand::DrainCancellation { task_id });
             state.control_waker.take()
         };
         if let Some(waker) = control_waker {
@@ -1063,6 +1409,44 @@ struct RootStartGate {
     waiters: Mutex<Vec<Waker>>,
 }
 
+struct NondurableTaskCancellation {
+    execution: CancellationSignal,
+    coordinator: ExecutionCoordinator,
+    task_id: ProtocolIdentity,
+}
+
+impl CancellationToken for NondurableTaskCancellation {
+    fn is_cancelled(&self) -> bool {
+        self.execution.is_cancelled()
+            || self
+                .coordinator
+                .snapshot()
+                .state()
+                .task_cancellation_reason(self.task_id)
+                .is_some()
+    }
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+struct DurableTaskCancellation {
+    execution: CancellationSignal,
+    coordinator: ExecutionCoordinator,
+    task_id: ProtocolIdentity,
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+impl CancellationToken for DurableTaskCancellation {
+    fn is_cancelled(&self) -> bool {
+        self.execution.is_cancelled()
+            || self
+                .coordinator
+                .snapshot()
+                .state()
+                .task_cancellation_reason(self.task_id)
+                .is_some()
+    }
+}
+
 impl RootStartGate {
     async fn wait(&self) -> bool {
         std::future::poll_fn(|context| {
@@ -1184,8 +1568,7 @@ impl Interpreter {
                 external_owners: AtomicUsize::new(1),
                 shutdown_started: AtomicBool::new(false),
                 shutdown: Arc::new(SharedShutdown::default()),
-                #[cfg(feature = "test-support")]
-                nondurable_test_coordinators: Mutex::new(BTreeMap::new()),
+                nondurable_executions: NondurableExecutionRegistry::default(),
                 #[cfg(all(feature = "concurrent", feature = "test-support"))]
                 nondurable_cancel_before_child_submit: Mutex::new(None),
                 #[cfg(all(feature = "concurrent", feature = "test-support"))]
@@ -1277,19 +1660,31 @@ impl Interpreter {
                 ));
             }
         };
+        let execution_id = root.coordinator.snapshot().state().execution_id();
+        self.inner.nondurable_executions.mark(
+            execution_id,
+            root.coordinator.clone(),
+            workflow.clone(),
+        );
         let accepted = match prepared.accept_state() {
             Ok(accepted) => accepted,
-            Err(failure) => return StartExecutionResult::Rejected(failure),
+            Err(failure) => {
+                self.inner.nondurable_executions.abandon(execution_id);
+                return StartExecutionResult::Rejected(failure);
+            }
         };
+        self.inner
+            .nondurable_executions
+            .publish(execution_id, accepted.handle.clone());
         let driver = TaskDriver::from_prepared(Arc::clone(&self.inner), accepted.clone(), root);
         let task_coordinator = driver.coordinator();
-        #[cfg(feature = "test-support")]
-        lock_shutdown(&self.inner.nondurable_test_coordinators)
-            .insert(accepted.execution_id, task_coordinator.clone());
         let abnormal = driver.abnormal_completion_handler();
         let completion = driver.physical_completion_handler();
-        let registration = supervisor.prepare_with_completion(
+        let root_task_id = task_coordinator.snapshot().state().root_task_id();
+        let registration = supervisor.prepare_owned_with_completion(
             SupervisedTaskDomain::Root,
+            accepted.execution_id,
+            root_task_id,
             Some(abnormal),
             Some(completion),
         );
@@ -1427,8 +1822,13 @@ impl Interpreter {
         let completion: PhysicalCompletionHandler = Arc::new(move |_| {
             let _ = completion_coordinator.mark_driver_physically_settled(task_id);
         });
-        let registration =
-            supervisor.prepare_with_completion(SupervisedTaskDomain::Root, None, Some(completion));
+        let registration = supervisor.prepare_owned_with_completion(
+            SupervisedTaskDomain::Root,
+            accepted.execution_id(),
+            task_id,
+            None,
+            Some(completion),
+        );
         let signal = registration.signal();
         let gate = Arc::new(RootStartGate::default());
         let owner = Arc::clone(&accepted.owned);
@@ -1647,8 +2047,10 @@ impl Interpreter {
         let completion: PhysicalCompletionHandler = Arc::new(move |_| {
             let _ = completion_coordinator.mark_driver_physically_settled(task_id);
         });
-        let registration = supervisor.prepare_with_completion(
+        let registration = supervisor.prepare_owned_with_completion(
             SupervisedTaskDomain::Resume,
+            prepared.execution_id,
+            task_id,
             None,
             Some(completion),
         );
@@ -1932,6 +2334,14 @@ impl Interpreter {
                         graph.request_failure(failure);
                     }
                 }
+                DurableGraphControlCommand::DrainCancellation { task_id } => {
+                    if let Err(failure) = self
+                        .drain_durable_graph_cancellation(&owner, &coordinator, task_id)
+                        .await
+                    {
+                        owner.fail_live_graph(failure);
+                    }
+                }
                 DurableGraphControlCommand::Complete => {
                     let tasks = graph.take_tasks();
                     let physically_settled = self.drain_durable_graph_tasks(tasks).await;
@@ -1996,6 +2406,55 @@ impl Interpreter {
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn drain_durable_graph_cancellation(
+        &self,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        task_id: ProtocolIdentity,
+    ) -> Result<(), DurableRunFailure> {
+        let settlement = coordinator
+            .wait_for_task_settlement(task_id)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        if matches!(
+            deadline_race(
+                self.inner.configuration.executor(),
+                Box::pin(settlement),
+                self.inner.configuration.post_cancellation_drain(),
+                None,
+            )
+            .await,
+            DeadlineOutcome::Completed(_)
+        ) {
+            return Ok(());
+        }
+
+        let tasks = self
+            .inner
+            .lifecycle
+            .task_supervisor()
+            .request_abort_owned_tasks(owner.execution_id(), &[task_id]);
+        if tasks.is_empty() {
+            return Ok(());
+        }
+        match deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(wait_for_abort_and_completion(&tasks)),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await
+        {
+            DeadlineOutcome::Completed(Ok(())) => Ok(()),
+            DeadlineOutcome::Completed(Err(error)) | DeadlineOutcome::Failed(error) => {
+                Err(DurableRunFailure::Executor(error))
+            }
+            DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
+                Err(DurableRunFailure::Internal)
+            }
+        }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
     async fn settle_durable_abnormal_child(
         &self,
         graph: &Arc<SharedDurableMachineGraph>,
@@ -2005,6 +2464,13 @@ impl Interpreter {
         task_id: ProtocolIdentity,
         outcome: MachineOutcome,
     ) -> Result<(), DurableRunFailure> {
+        let outcome = coordinator
+            .snapshot()
+            .state()
+            .task_cancellation_reason(task_id)
+            .map_or(outcome, |reason| {
+                MachineOutcome::Cancelled(Arc::from(reason))
+            });
         let mut lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
         let sequence = lease
             .next_event_sequence
@@ -2504,6 +2970,7 @@ impl Interpreter {
                         task_id,
                         root_supervision,
                         control_reservation,
+                        &owner,
                         Arc::clone(&program),
                         operations.clone(),
                     );
@@ -2645,10 +3112,15 @@ impl Interpreter {
         mut model_session_occurrence: u64,
     ) -> Pin<Box<dyn Future<Output = Result<(), DurableRunFailure>> + Send + 'a>> {
         Box::pin(async move {
-            let cancellation = owner
+            let execution_cancellation = owner
                 .execution_handle()
                 .cancellation_signal()
                 .map_err(DurableRunFailure::Lifecycle)?;
+            let cancellation = DurableTaskCancellation {
+                execution: execution_cancellation,
+                coordinator: coordinator.clone(),
+                task_id,
+            };
             let mut staged_join = {
                 let lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
                 let pending = if task_id == lease.foreground.task_id() {
@@ -2667,7 +3139,7 @@ impl Interpreter {
             let mut staged_detach = None;
             'graph_driver: loop {
                 if let Some(suspension) = initial_spawn.take() {
-                    self.submit_durable_source_child(
+                    self.submit_durable_source_child_boxed(
                         Arc::clone(&graph),
                         Arc::clone(&owner),
                         coordinator.clone(),
@@ -2833,7 +3305,7 @@ impl Interpreter {
                 match step {
                     MachineStep::Transition(MachineLabel::TaskControlSuspended(suspension)) => {
                         drop(lease);
-                        self.submit_durable_source_child(
+                        self.submit_durable_source_child_boxed(
                             Arc::clone(&graph),
                             Arc::clone(&owner),
                             coordinator.clone(),
@@ -2917,6 +3389,39 @@ impl Interpreter {
                         }
                     }
                     MachineStep::Transition(MachineLabel::TaskSettled(outcome)) => {
+                        let execution_cancelled = owner
+                            .execution_handle()
+                            .cancellation_signal()
+                            .is_ok_and(|signal| signal.is_cancelled());
+                        if matches!(
+                            outcome,
+                            MachineOutcome::Failed(_) | MachineOutcome::Cancelled(_)
+                        ) && !execution_cancelled
+                            && let Some(descendants) = self
+                                .commit_durable_descendant_cancellation(
+                                    &mut lease,
+                                    &owner,
+                                    &coordinator,
+                                    task_id,
+                                    &outcome,
+                                )
+                                .await?
+                        {
+                            drop(lease);
+                            self.drain_durable_cancelled_descendants(
+                                operations.execution_id,
+                                &coordinator,
+                                &descendants,
+                            )
+                            .await?;
+                            continue 'graph_driver;
+                        }
+                        let outcome = coordinator
+                            .snapshot()
+                            .state()
+                            .task_record(task_id)
+                            .and_then(|record| record.pending_outcome().cloned())
+                            .unwrap_or(outcome);
                         let sequence = lease
                             .next_event_sequence
                             .get(&task_id)
@@ -2945,7 +3450,14 @@ impl Interpreter {
                                 if task_id != tasks.root_task_id() {
                                     children.remove(&task_id);
                                 }
-                                tasks.settle(task_id, outcome)
+                                if tasks
+                                    .task_record(task_id)
+                                    .is_some_and(|record| record.pending_outcome().is_some())
+                                {
+                                    tasks.settle_staged_task(task_id)
+                                } else {
+                                    tasks.settle(task_id, outcome)
+                                }
                             })
                             .map_err(|_| DurableRunFailure::Internal)?;
                         transaction
@@ -3490,13 +4002,21 @@ impl Interpreter {
         graph: &Arc<SharedDurableMachineGraph>,
         owner: &crate::DurableOwnedExecution,
         coordinator: &ExecutionCoordinator,
+        task_id: ProtocolIdentity,
         future: F,
     ) -> Result<crate::durable_lifecycle::DurableGraphDriverPoll<F::Output>, DurableRunFailure>
     where
         F: Future,
     {
-        self.poll_durable_graph_future_with_retention(graph, owner, coordinator, future, true)
-            .await
+        self.poll_durable_graph_future_with_cancellation_owner(
+            graph,
+            owner,
+            coordinator,
+            future,
+            true,
+            Some(task_id),
+        )
+        .await
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -3511,6 +4031,30 @@ impl Interpreter {
     where
         F: Future,
     {
+        self.poll_durable_graph_future_with_cancellation_owner(
+            graph,
+            owner,
+            coordinator,
+            future,
+            retain_to_settlement,
+            None,
+        )
+        .await
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn poll_durable_graph_future_with_cancellation_owner<F>(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        future: F,
+        retain_to_settlement: bool,
+        cancellation_owner: Option<ProtocolIdentity>,
+    ) -> Result<crate::durable_lifecycle::DurableGraphDriverPoll<F::Output>, DurableRunFailure>
+    where
+        F: Future,
+    {
         let mut future = std::pin::pin!(future);
         let first = std::future::poll_fn(|context| match owner.poll_graph_cancellation(context) {
             crate::durable_lifecycle::DurableGraphCancellationPoll::Claimed(reason) => {
@@ -3518,6 +4062,20 @@ impl Interpreter {
             }
             crate::durable_lifecycle::DurableGraphCancellationPoll::Waiting => Poll::Pending,
             crate::durable_lifecycle::DurableGraphCancellationPoll::Committed => {
+                if let Some(task_id) = cancellation_owner {
+                    graph.request_cancellation_drain(task_id);
+                    if let Some(control_owner) = graph.owner.upgrade() {
+                        let _ = self.start_durable_graph_finalizer(
+                            Arc::clone(graph),
+                            control_owner,
+                            coordinator.clone(),
+                            Arc::clone(&graph.program),
+                            graph.operations.clone(),
+                        );
+                    } else {
+                        graph.request_failure(DurableRunFailure::Internal);
+                    }
+                }
                 if retain_to_settlement {
                     match future.as_mut().poll(context) {
                         Poll::Ready(_) => Poll::Ready(Ok(
@@ -3550,6 +4108,19 @@ impl Interpreter {
                 let cancellation = self
                     .commit_durable_graph_cancellation(graph, owner, coordinator, reason)
                     .await;
+                if cancellation.is_ok()
+                    && let Some(task_id) = cancellation_owner
+                {
+                    graph.request_cancellation_drain(task_id);
+                    let control_owner = graph.owner.upgrade().ok_or(DurableRunFailure::Internal)?;
+                    self.start_durable_graph_finalizer(
+                        Arc::clone(graph),
+                        control_owner,
+                        coordinator.clone(),
+                        Arc::clone(&graph.program),
+                        graph.operations.clone(),
+                    )?;
+                }
                 if retain_to_settlement {
                     let _ = future.await;
                 }
@@ -3652,6 +4223,221 @@ impl Interpreter {
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn commit_durable_descendant_cancellation(
+        &self,
+        lease: &mut DurableMachineGraphLease,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        task_id: ProtocolIdentity,
+        outcome: &MachineOutcome,
+    ) -> Result<Option<Vec<ProtocolIdentity>>, DurableRunFailure> {
+        let reason: Arc<str> = match outcome {
+            MachineOutcome::Failed(failure) => Arc::from(failure.code.wire_name()),
+            MachineOutcome::Cancelled(reason) => Arc::clone(reason),
+            MachineOutcome::Succeeded(_) => return Ok(None),
+        };
+        let already_cancelled = {
+            let snapshot = coordinator.snapshot();
+            let state = snapshot.state();
+            let attached = state.shutdown_cohort().attached_tasks;
+            attached.iter().all(|descendant| {
+                state.task_cancellation_reason(*descendant).is_some()
+                    || state
+                        .task(*descendant)
+                        .is_none_or(|task| task.parent_task_id() != task_id)
+            })
+        };
+        if already_cancelled {
+            let descendants = {
+                let snapshot = coordinator.snapshot();
+                let state = snapshot.state();
+                let attached = state.shutdown_cohort().attached_tasks;
+                let mut descendants = Vec::new();
+                let mut frontier = vec![task_id];
+                while let Some(parent_task_id) = frontier.pop() {
+                    for child_task_id in &attached {
+                        if descendants.contains(child_task_id) {
+                            continue;
+                        }
+                        if state
+                            .task(*child_task_id)
+                            .is_some_and(|child| child.parent_task_id() == parent_task_id)
+                        {
+                            descendants.push(*child_task_id);
+                            frontier.push(*child_task_id);
+                        }
+                    }
+                }
+                descendants
+            };
+            if descendants.is_empty() {
+                return Ok(None);
+            }
+            let machine = Self::durable_graph_machine_mut(lease, task_id)?;
+            machine.defer_transition(MachineLabel::TaskSettled(outcome.clone()));
+            return Ok(Some(descendants));
+        }
+        let predecessor = lease.frontier;
+        let root_task = coordinator.snapshot().state().root_task_id();
+        let DurableMachineGraph {
+            foreground,
+            children,
+            ..
+        } = &mut **lease;
+        let mut transaction = coordinator
+            .stage_graph(foreground, children)
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let (descendants, affected) = transaction
+            .update(|foreground, children, tasks, _| {
+                let attached = tasks.shutdown_cohort().attached_tasks;
+                let mut descendants = Vec::new();
+                let mut frontier = vec![task_id];
+                while let Some(parent_task_id) = frontier.pop() {
+                    for child_task_id in &attached {
+                        if descendants.contains(child_task_id) {
+                            continue;
+                        }
+                        if tasks
+                            .task(*child_task_id)
+                            .is_some_and(|child| child.parent_task_id() == parent_task_id)
+                        {
+                            descendants.push(*child_task_id);
+                            frontier.push(*child_task_id);
+                        }
+                    }
+                }
+                if descendants.is_empty() {
+                    return Ok((descendants, Vec::new()));
+                }
+
+                match tasks
+                    .task_record(task_id)
+                    .and_then(|record| record.pending_outcome())
+                {
+                    Some(pending) if pending == outcome => {}
+                    Some(_) => return Err(TaskStateError::InvalidTransition),
+                    None => tasks.stage_task_outcome(task_id, outcome.clone())?,
+                }
+                let machine = if foreground.task_id() == task_id {
+                    foreground
+                } else {
+                    children
+                        .get_mut(&task_id)
+                        .ok_or(TaskStateError::UnknownTask)?
+                };
+                machine.defer_transition(MachineLabel::TaskSettled(outcome.clone()));
+
+                let direct_children = descendants
+                    .iter()
+                    .copied()
+                    .filter(|child_task_id| {
+                        tasks
+                            .task(*child_task_id)
+                            .is_some_and(|child| child.parent_task_id() == task_id)
+                    })
+                    .collect::<Vec<_>>();
+                let mut affected = Vec::new();
+                for child_task_id in direct_children {
+                    affected.extend(tasks.cancel_task_tree(child_task_id, Arc::clone(&reason))?);
+                }
+                for affected_task_id in &affected {
+                    if let Some(machine) = children.get_mut(affected_task_id) {
+                        let _ = machine.cancel(Arc::clone(&reason));
+                    }
+                }
+                Ok::<_, TaskStateError>((descendants, affected))
+            })
+            .map_err(|_| DurableRunFailure::Internal)?;
+        if descendants.is_empty() {
+            drop(transaction);
+            return Ok(None);
+        }
+
+        lease.frontier = if let Some(affected_task) = affected.first().copied() {
+            owner
+                .commit_graph_task_cancellation_transaction(
+                    coordinator,
+                    transaction,
+                    predecessor,
+                    affected_task,
+                )
+                .await?
+        } else {
+            owner
+                .commit_graph_transaction(
+                    coordinator,
+                    transaction,
+                    predecessor,
+                    DurableCommitCutV1::Checkpoint,
+                    root_task,
+                )
+                .await?
+        };
+        Ok(Some(descendants))
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn drain_durable_cancelled_descendants(
+        &self,
+        execution_id: ProtocolIdentity,
+        coordinator: &ExecutionCoordinator,
+        descendants: &[ProtocolIdentity],
+    ) -> Result<(), DurableRunFailure> {
+        let selected = self
+            .inner
+            .lifecycle
+            .task_supervisor()
+            .owned_task_controls(execution_id, descendants);
+        let waits = descendants
+            .iter()
+            .copied()
+            .map(|task_id| coordinator.wait_for_task_settlement(task_id))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| DurableRunFailure::Internal)?;
+        let graceful_controls = Arc::clone(&selected);
+        let graceful = deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(async move {
+                for wait in waits {
+                    wait.await;
+                }
+                for task in graceful_controls.iter() {
+                    let _ = task.completion().await;
+                }
+            }),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await;
+        if matches!(graceful, DeadlineOutcome::Completed(())) {
+            return Ok(());
+        }
+
+        request_abort_for_active_controls(&selected);
+        let physical = deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(wait_for_abort_and_completion(&selected)),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await;
+        if !matches!(physical, DeadlineOutcome::Completed(Ok(()))) {
+            return Err(DurableRunFailure::Internal);
+        }
+
+        let waits = descendants
+            .iter()
+            .copied()
+            .map(|task_id| coordinator.wait_for_task_settlement(task_id))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| DurableRunFailure::Internal)?;
+        for wait in waits {
+            wait.await;
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
     async fn acquire_durable_graph_lease(
         &self,
         graph: &Arc<SharedDurableMachineGraph>,
@@ -3730,6 +4516,29 @@ impl Interpreter {
             .map_err(|_| DurableRunFailure::Internal)?;
         self.commit_durable_graph_checkpoint(lease, owner, coordinator)
             .await
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    fn submit_durable_source_child_boxed(
+        &self,
+        graph: Arc<SharedDurableMachineGraph>,
+        owner: Arc<crate::DurableOwnedExecution>,
+        coordinator: ExecutionCoordinator,
+        program: Arc<gantry_ir::MachineProgram>,
+        operations: DurableOperationContext,
+        parent_task_id: ProtocolIdentity,
+        suspension: MachineSpawnSuspension,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DurableRunFailure>> + Send + '_>> {
+        Box::pin(self.submit_durable_source_child(
+            graph,
+            owner,
+            coordinator,
+            program,
+            operations,
+            parent_task_id,
+            suspension,
+        ))
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -4247,8 +5056,10 @@ impl Interpreter {
         );
         let abnormal = driver.abnormal_completion_handler();
         let completion = driver.physical_completion_handler();
-        let registration = supervisor.prepare_deferred_with_completion(
+        let registration = supervisor.prepare_owned_deferred_with_completion(
             SupervisedTaskDomain::SourceChild,
+            operations.execution_id,
+            created.task_id,
             Some(abnormal),
             Some(completion),
         );
@@ -4550,7 +5361,7 @@ impl Interpreter {
         context: &DurableOperationContext,
         task_id: ProtocolIdentity,
         hook: &mut TaskHook<'_>,
-        cancellation: &CancellationSignal,
+        cancellation: &dyn CancellationToken,
         occurrence: &gantry_runtime::OperationOccurrence,
     ) -> Result<(), DurableRunFailure> {
         let metadata = occurrence
@@ -4678,6 +5489,7 @@ impl Interpreter {
                     graph,
                     owner,
                     coordinator,
+                    task_id,
                     operation.dispatch(hook, cancellation),
                 )
                 .await?
@@ -4938,7 +5750,7 @@ impl Interpreter {
         context: &DurableOperationContext,
         task_id: ProtocolIdentity,
         hook: &mut TaskHook<'_>,
-        cancellation: &CancellationSignal,
+        cancellation: &dyn CancellationToken,
         occurrence: &gantry_runtime::OperationOccurrence,
         session_occurrence: u64,
     ) -> Result<(), DurableRunFailure> {
@@ -5188,6 +6000,7 @@ impl Interpreter {
                     graph,
                     owner,
                     coordinator,
+                    task_id,
                     operation.dispatch_model(
                         hook,
                         cancellation,
@@ -6732,10 +7545,15 @@ impl Interpreter {
             #[cfg(feature = "concurrent")]
             execution_budget,
         } = prepared;
-        let cancellation = accepted
+        let execution_cancellation = accepted
             .handle
             .cancellation_signal()
             .map_err(|_| RunExecutionError::LifecycleTransition)?;
+        let cancellation = NondurableTaskCancellation {
+            execution: execution_cancellation.clone(),
+            coordinator: coordinator.clone(),
+            task_id,
+        };
         let session_establisher = self.inner.session_establisher.clone();
         let mut events = ExecutionEventPipeline::new(
             &accepted.handle,
@@ -6822,7 +7640,9 @@ impl Interpreter {
                     );
                     #[cfg(not(feature = "concurrent"))]
                     let defer_terminal_event = false;
+                    let defer_task_settlement_event = matches!(label, MachineLabel::TaskSettled(_));
                     if !defer_terminal_event
+                        && !defer_task_settlement_event
                         && let Some(event) =
                             machine_lifecycle_event(&label, accepted.execution_id, task_id)
                     {
@@ -6850,7 +7670,45 @@ impl Interpreter {
                     match label {
                         MachineLabel::TaskSettled(outcome) => {
                             coordinator
-                                .settle_task(task_id, outcome)
+                                .stage_task_outcome(task_id, outcome.clone())
+                                .map_err(RunExecutionError::TaskState)?;
+                            #[cfg(feature = "concurrent")]
+                            if matches!(
+                                outcome,
+                                MachineOutcome::Failed(_) | MachineOutcome::Cancelled(_)
+                            ) {
+                                self.cancel_and_drain_nondurable_descendants(
+                                    accepted.execution_id,
+                                    &coordinator,
+                                    task_id,
+                                    &outcome,
+                                )
+                                .await?;
+                            }
+                            let draft = machine_lifecycle_event(
+                                &MachineLabel::TaskSettled(outcome),
+                                accepted.execution_id,
+                                task_id,
+                            )
+                            .ok_or(RunExecutionError::LifecycleTransition)?;
+                            let event = events
+                                .emit_task_draft(draft)
+                                .await
+                                .map_err(RunExecutionError::Event)?;
+                            if matches!(
+                                event.consequence,
+                                ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                                    | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
+                            ) {
+                                coordinator
+                                    .cancel_task_tree(
+                                        task_id,
+                                        Arc::from("required-event-delivery-failure"),
+                                    )
+                                    .map_err(RunExecutionError::TaskState)?;
+                            }
+                            coordinator
+                                .settle_staged_task(task_id)
                                 .map_err(RunExecutionError::TaskState)?;
                         }
                         MachineLabel::ForegroundCompletion(outcome) if execution_foreground => {
@@ -7054,7 +7912,7 @@ impl Interpreter {
                                                 )
                                                 .map_err(RunExecutionError::TaskState)?
                                         );
-                                        let cancellation_wait = cancellation.cancelled();
+                                        let cancellation_wait = execution_cancellation.cancelled();
                                         let mut cancellation_wait =
                                             std::pin::pin!(cancellation_wait);
                                         let resolution = std::future::poll_fn(|context| {
@@ -7399,6 +8257,126 @@ impl Interpreter {
                 .emit_task_draft(draft)
                 .await
                 .map_err(RunExecutionError::Event)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "concurrent")]
+    async fn cancel_and_drain_nondurable_descendants(
+        &self,
+        execution_id: ProtocolIdentity,
+        coordinator: &ExecutionCoordinator,
+        task_id: ProtocolIdentity,
+        outcome: &MachineOutcome,
+    ) -> Result<(), RunExecutionError> {
+        let reason: Arc<str> = match outcome {
+            MachineOutcome::Failed(failure) => Arc::from(failure.code.wire_name()),
+            MachineOutcome::Cancelled(reason) => Arc::clone(reason),
+            MachineOutcome::Succeeded(_) => return Ok(()),
+        };
+        let mut affected = {
+            let snapshot = coordinator.snapshot();
+            let state = snapshot.state();
+            let attached = state.shutdown_cohort().attached_tasks;
+            let mut descendants = Vec::new();
+            let mut frontier = vec![task_id];
+            while let Some(parent_task_id) = frontier.pop() {
+                for child_task_id in &attached {
+                    if descendants.contains(child_task_id) {
+                        continue;
+                    }
+                    if state
+                        .task(*child_task_id)
+                        .is_some_and(|child| child.parent_task_id() == parent_task_id)
+                    {
+                        descendants.push(*child_task_id);
+                        frontier.push(*child_task_id);
+                    }
+                }
+            }
+            descendants
+        };
+        let direct_attached_children = {
+            let snapshot = coordinator.snapshot();
+            let state = snapshot.state();
+            affected
+                .iter()
+                .copied()
+                .filter(|child_task_id| {
+                    state
+                        .task(*child_task_id)
+                        .is_some_and(|child| child.parent_task_id() == task_id)
+                })
+                .collect::<Vec<_>>()
+        };
+        for child_task_id in direct_attached_children {
+            for newly_affected in coordinator
+                .cancel_task_tree(child_task_id, Arc::clone(&reason))
+                .map_err(RunExecutionError::TaskState)?
+            {
+                if !affected.contains(&newly_affected) {
+                    affected.push(newly_affected);
+                }
+            }
+        }
+        if affected.is_empty() {
+            return Ok(());
+        }
+
+        let selected = self
+            .inner
+            .lifecycle
+            .task_supervisor()
+            .owned_task_controls(execution_id, &affected);
+        let waits = affected
+            .iter()
+            .copied()
+            .map(|affected_task_id| coordinator.wait_for_task_settlement(affected_task_id))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(RunExecutionError::TaskState)?;
+        let graceful_controls = Arc::clone(&selected);
+        let graceful = deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(async move {
+                for wait in waits {
+                    wait.await;
+                }
+                for task in graceful_controls.iter() {
+                    let _ = task.completion().await;
+                }
+            }),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await;
+        if matches!(graceful, DeadlineOutcome::Completed(())) {
+            return Ok(());
+        }
+
+        request_abort_for_active_controls(&selected);
+        let physical = deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(wait_for_abort_and_completion(&selected)),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await;
+        if !matches!(physical, DeadlineOutcome::Completed(Ok(()))) {
+            return Err(RunExecutionError::ExecutorFailure);
+        }
+        let snapshot = coordinator.snapshot();
+        if affected.iter().any(|affected_task_id| {
+            snapshot
+                .state()
+                .task_record(*affected_task_id)
+                .is_some_and(|task| {
+                    matches!(
+                        task.status(),
+                        ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+                    )
+                })
+        }) {
+            return Err(RunExecutionError::ExecutorFailure);
         }
         Ok(())
     }
@@ -7850,8 +8828,10 @@ impl Interpreter {
         let driver = TaskDriver::from_child(Arc::clone(&self.inner), accepted.clone(), prepared);
         let abnormal = driver.abnormal_completion_handler();
         let completion = driver.physical_completion_handler();
-        let registration = supervisor.prepare_deferred_with_completion(
+        let registration = supervisor.prepare_owned_deferred_with_completion(
             SupervisedTaskDomain::SourceChild,
+            accepted.execution_id,
+            created.task_id,
             Some(abnormal),
             Some(completion),
         );
@@ -8038,8 +9018,9 @@ impl Interpreter {
         &self,
         execution_id: ProtocolIdentity,
     ) -> Option<ConcurrentTaskStateV1> {
-        lock_shutdown(&self.inner.nondurable_test_coordinators)
-            .get(&execution_id)
+        self.inner
+            .nondurable_executions
+            .coordinator(execution_id)
             .map(|coordinator| coordinator.snapshot().state().clone())
     }
 
@@ -8211,23 +9192,221 @@ impl Interpreter {
                 }
             };
         }
-        let record = self
+        let admission = self
             .inner
             .lifecycle
-            .cancel_execution(execution_id, reason)
+            .admit(AdmissionKind::ExistingExecution(execution_id))
             .map_err(CancelExecutionError::Lifecycle)?;
-        if matches!(
-            record,
-            CancellationRecord::Accepted { .. } | CancellationRecord::Existing { .. }
-        ) {
-            let _ = self
-                .inner
-                .lifecycle
-                .await_terminal(execution_id)
-                .map_err(CancelExecutionError::Lifecycle)?
-                .await;
+        let Some(owner) = self.inner.nondurable_executions.owner(execution_id).await else {
+            drop(admission);
+            return Ok(CancellationRecord::NotFound);
+        };
+        owner.cancellation.request(reason);
+        if owner.cancellation.claim() {
+            self.start_nondurable_cancellation(Arc::clone(&owner));
         }
-        Ok(record)
+        drop(admission);
+        std::future::poll_fn(|context| owner.cancellation.poll(context)).await
+    }
+
+    fn start_nondurable_cancellation(&self, owner: Arc<NondurableExecutionOwner>) {
+        if self.inner.shutdown_started.load(Ordering::Acquire) {
+            owner.cancellation.release_claim();
+            self.start_owned_shutdown();
+            return;
+        }
+        let supervisor = self.inner.lifecycle.task_supervisor();
+        let reservation = match supervisor.try_reserve_control_plane() {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                if self.inner.shutdown_started.load(Ordering::Acquire) {
+                    owner.cancellation.release_claim();
+                    self.start_owned_shutdown();
+                } else {
+                    owner
+                        .cancellation
+                        .publish(Err(CancelExecutionError::Admission(error)));
+                }
+                return;
+            }
+        };
+        let cancellation = Arc::clone(&owner.cancellation);
+        let completion_inner = Arc::clone(&self.inner);
+        let completion: PhysicalCompletionHandler = Arc::new(move |_| {
+            cancellation.mark_physically_completed();
+            if completion_inner.shutdown_started.load(Ordering::Acquire) {
+                let interpreter = Interpreter {
+                    inner: Arc::clone(&completion_inner),
+                    external_owner: false,
+                };
+                interpreter.start_owned_shutdown();
+            }
+        });
+        let abnormal_cancellation = Arc::clone(&owner.cancellation);
+        let abnormal: AbnormalCompletionHandler = Arc::new(move |completion| {
+            abnormal_cancellation.publish(Err(CancelExecutionError::Physical(completion)));
+        });
+        let registration = supervisor.prepare_with_completion(
+            SupervisedTaskDomain::ControlPlane,
+            Some(abnormal),
+            Some(completion),
+        );
+        let signal = registration.signal();
+        let task_inner = Arc::clone(&self.inner);
+        let task_cancellation = Arc::clone(&owner.cancellation);
+        let task_owner = Arc::clone(&owner);
+        let task: OwnedTaskFuture = Box::pin(async move {
+            let interpreter = Interpreter {
+                inner: task_inner,
+                external_owner: false,
+            };
+            let result = interpreter.drive_nondurable_cancellation(&task_owner).await;
+            task_cancellation.publish(result);
+            let _ = signal.settle();
+            OwnedTaskResult::new()
+        });
+        owner.cancellation.mark_control_active();
+        match supervisor.submit(registration, task, reservation.transfer()) {
+            Ok(task) => task.relinquish(),
+            Err(error) => {
+                owner.cancellation.mark_physically_completed();
+                owner
+                    .cancellation
+                    .publish(Err(CancelExecutionError::Executor(error)));
+                if self.inner.shutdown_started.load(Ordering::Acquire) {
+                    self.start_owned_shutdown();
+                }
+            }
+        }
+    }
+
+    async fn drive_nondurable_cancellation(
+        &self,
+        owner: &NondurableExecutionOwner,
+    ) -> Result<CancellationRecord, CancelExecutionError> {
+        let reason = owner
+            .cancellation
+            .requested_reason()
+            .ok_or(CancelExecutionError::Invariant)?;
+        let reason_text = reason
+            .message
+            .clone()
+            .unwrap_or_else(|| Arc::from(reason.category.wire_name()));
+        owner
+            .coordinator
+            .cancel_execution(reason_text)
+            .map_err(CancelExecutionError::TaskState)?;
+        let record = owner
+            .handle
+            .publish_committed_cancellation(reason)
+            .map_err(CancelExecutionError::Transition)?;
+        if matches!(record, CancellationRecord::AlreadyTerminal(_)) {
+            return Ok(record);
+        }
+
+        let semantic_tasks = owner.coordinator.execution_cancellation_cohort();
+        let semantic_waits = semantic_tasks
+            .iter()
+            .copied()
+            .map(|task_id| owner.coordinator.wait_for_task_settlement(task_id))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CancelExecutionError::TaskState)?;
+        let _ = deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(async move {
+                for wait in semantic_waits {
+                    wait.await;
+                }
+            }),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await;
+
+        let aborted = self
+            .inner
+            .lifecycle
+            .task_supervisor()
+            .request_abort_owned_execution(owner.handle.execution_id());
+        owner.cancellation.retain_aborts(Arc::clone(&aborted));
+        if !aborted.is_empty() {
+            let physical = deadline_race(
+                self.inner.configuration.executor(),
+                Box::pin(wait_for_nondurable_abort_and_completion(&aborted)),
+                self.inner.configuration.post_cancellation_drain(),
+                None,
+            )
+            .await;
+            match physical {
+                DeadlineOutcome::Completed(Ok(())) => {}
+                DeadlineOutcome::Completed(Err(error)) | DeadlineOutcome::Failed(error) => {
+                    let snapshot = owner.coordinator.snapshot();
+                    let root_task_id = snapshot.state().root_task_id();
+                    drop(snapshot);
+                    let outcome = MachineOutcome::Failed(MachineFailure {
+                        code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
+                        workflow: owner.workflow.clone(),
+                        site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
+                            .map_err(|_| CancelExecutionError::Invariant)?,
+                        #[cfg(feature = "concurrent")]
+                        join_failure: None,
+                    });
+                    owner
+                        .coordinator
+                        .settle_after_abort_failure(root_task_id, outcome.clone())
+                        .map_err(CancelExecutionError::TaskState)?;
+                    self.complete_nondurable_execution_if_ready(
+                        &owner.coordinator,
+                        &owner.handle,
+                        outcome,
+                    )
+                    .map_err(|_| CancelExecutionError::Invariant)?;
+                    return Err(CancelExecutionError::Executor(error));
+                }
+                DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
+                    let _ = owner.handle.publish_run_failed_nondurably();
+                    return Err(CancelExecutionError::CleanupTimedOut);
+                }
+            }
+        }
+
+        let quiescence = deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(owner.coordinator.wait_for_shutdown_quiescence()),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await;
+        if !matches!(quiescence, DeadlineOutcome::Completed(())) {
+            let _ = owner.handle.publish_run_failed_nondurably();
+            return match quiescence {
+                DeadlineOutcome::Failed(error) => Err(CancelExecutionError::Executor(error)),
+                DeadlineOutcome::Completed(()) => unreachable!(),
+                DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
+                    Err(CancelExecutionError::CleanupTimedOut)
+                }
+            };
+        }
+        let terminal = self
+            .inner
+            .lifecycle
+            .await_terminal(owner.handle.execution_id())
+            .map_err(CancelExecutionError::Lifecycle)?;
+        match deadline_race(
+            self.inner.configuration.executor(),
+            Box::pin(terminal),
+            self.inner.configuration.post_cancellation_drain(),
+            None,
+        )
+        .await
+        {
+            DeadlineOutcome::Completed(_) => Ok(record),
+            DeadlineOutcome::Failed(error) => Err(CancelExecutionError::Executor(error)),
+            DeadlineOutcome::TimedOut | DeadlineOutcome::Cancelled => {
+                let _ = owner.handle.publish_run_failed_nondurably();
+                Err(CancelExecutionError::CleanupTimedOut)
+            }
+        }
     }
 
     #[cfg(feature = "durable")]
@@ -8321,10 +9500,41 @@ impl Interpreter {
     }
 
     fn start_owned_shutdown(&self) {
+        let Some(retained_admission) = self.inner.shutdown.claim_launch() else {
+            return;
+        };
+        let mut admission = match retained_admission {
+            Some(admission) => admission,
+            None => match self.inner.lifecycle.begin_shutdown(None, None) {
+                Ok(admission) => admission,
+                Err(error) => {
+                    self.inner
+                        .shutdown
+                        .publish(Err(ShutdownError::Lifecycle(error)));
+                    return;
+                }
+            },
+        };
+        if self
+            .inner
+            .nondurable_executions
+            .cancellation_control_is_active()
+        {
+            self.inner.shutdown.defer_launch(admission);
+            return;
+        }
         let supervisor = self.inner.lifecycle.task_supervisor();
         let reservation = match supervisor.try_reserve_control_plane() {
             Ok(reservation) => reservation,
             Err(error) => {
+                if self
+                    .inner
+                    .nondurable_executions
+                    .cancellation_control_is_active()
+                {
+                    self.inner.shutdown.defer_launch(admission);
+                    return;
+                }
                 self.inner.lifecycle.fail_owned_shutdown();
                 self.inner
                     .shutdown
@@ -8332,17 +9542,6 @@ impl Interpreter {
                 return;
             }
         };
-        let mut admission = match self.inner.lifecycle.begin_shutdown(None, None) {
-            Ok(admission) => admission,
-            Err(error) => {
-                self.inner
-                    .shutdown
-                    .publish(Err(ShutdownError::Lifecycle(error)));
-                return;
-            }
-        };
-        #[cfg(feature = "durable")]
-        self.inner.durable_executions.fence_shutdown();
         let durations = admission.durations;
         let completion_state = Arc::clone(&self.inner.shutdown);
         let completion_lifecycle = self.inner.lifecycle.clone();
@@ -8367,19 +9566,28 @@ impl Interpreter {
                 let mut orderly = true;
                 let executor = shutdown_owner.configuration.executor();
                 let mut retained_cancellations = Vec::new();
-                let grace = deadline_race(
+                coordinator.wait_for_admission_handoffs().await;
+                let handoff_cohort = coordinator.cohort_executions();
+                let grace = shutdown_grace_race(
                     executor,
-                    Box::pin(coordinator.wait_for_quiescence()),
+                    coordinator.wait_for_quiescence(),
+                    &shutdown_owner.nondurable_executions,
+                    &handoff_cohort,
                     durations.graceful,
-                    None,
                 )
                 .await;
                 orderly &= !matches!(grace, DeadlineOutcome::Failed(_));
-                let mut cleanup_fixed = matches!(grace, DeadlineOutcome::Completed(()));
                 let mut aborts = Arc::from([]);
                 if !matches!(grace, DeadlineOutcome::Completed(())) {
-                    retained_cancellations = coordinator
-                        .pending_executions()
+                    let mut cancellation_executions = coordinator.pending_executions().to_vec();
+                    cancellation_executions.extend(
+                        shutdown_owner
+                            .nondurable_executions
+                            .requested_executions(&handoff_cohort),
+                    );
+                    cancellation_executions.sort_unstable();
+                    cancellation_executions.dedup();
+                    retained_cancellations = cancellation_executions
                         .iter()
                         .copied()
                         .map(|execution_id| {
@@ -8448,6 +9656,55 @@ impl Interpreter {
                                         );
                                     }
                                 }
+                                if let Some(owner) = cancellation_owner
+                                    .nondurable_executions
+                                    .owner(execution_id)
+                                    .await
+                                {
+                                    let cancellation_signal = owner
+                                        .handle
+                                        .cancellation_signal()
+                                        .ok();
+                                    let reason = CancellationReason::new(
+                                        CancellationReasonCategory::Shutdown,
+                                        None,
+                                        None,
+                                        0,
+                                    )
+                                    .unwrap_or_else(|_| {
+                                        unreachable!("empty shutdown reason is always bounded")
+                                    });
+                                    owner.cancellation.request(reason);
+                                    let result = if owner.cancellation.claim() {
+                                        let interpreter = Interpreter {
+                                            inner: Arc::clone(&cancellation_owner),
+                                            external_owner: false,
+                                        };
+                                        let result = interpreter
+                                            .drive_nondurable_cancellation(&owner)
+                                            .await;
+                                        owner.cancellation.publish(result.clone());
+                                        result
+                                    } else {
+                                        std::future::poll_fn(|context| {
+                                            owner.cancellation.poll(context)
+                                        })
+                                        .await
+                                    };
+                                    if cancellation_signal
+                                        .as_ref()
+                                        .is_some_and(CancellationToken::is_cancelled)
+                                        || result.is_ok()
+                                    {
+                                        committed_by_task.cancel();
+                                    }
+                                    return matches!(
+                                        result,
+                                        Ok(CancellationRecord::Accepted { .. }
+                                            | CancellationRecord::Existing { .. }
+                                            | CancellationRecord::AlreadyTerminal(_))
+                                    );
+                                }
                                 let reason = CancellationReason::new(
                                     CancellationReasonCategory::Shutdown,
                                     None,
@@ -8468,7 +9725,7 @@ impl Interpreter {
                                 committed,
                                 completion,
                                 outcome: None,
-                                durable,
+                                commit_observation_required: true,
                             }
                         })
                         .collect::<Vec<_>>();
@@ -8494,7 +9751,6 @@ impl Interpreter {
                         .await;
                         if let DeadlineOutcome::Completed(cancellations_orderly) = drain {
                             orderly &= cancellations_orderly;
-                            cleanup_fixed = true;
                         } else {
                             orderly &= !matches!(drain, DeadlineOutcome::Failed(_));
                             aborts = shutdown_supervisor.request_abort_shutdown_work();
@@ -8505,8 +9761,7 @@ impl Interpreter {
                                 None,
                             )
                             .await;
-                            cleanup_fixed = matches!(completion, DeadlineOutcome::Completed(()));
-                            orderly &= cleanup_fixed;
+                            orderly &= matches!(completion, DeadlineOutcome::Completed(()));
                         }
                     } else {
                         orderly = false;
@@ -8518,18 +9773,20 @@ impl Interpreter {
                             None,
                         )
                         .await;
-                        cleanup_fixed = matches!(completion, DeadlineOutcome::Completed(()));
-                        orderly &= cleanup_fixed;
+                        orderly &= matches!(completion, DeadlineOutcome::Completed(()));
                     }
                 }
-                let aborted = usize_to_u64(
-                    aborts
-                        .iter()
-                        .filter(|task| {
-                            task.snapshot().abort_result == Some(OwnedTaskAbort::Stopped)
-                        })
-                        .count(),
+                let mut confirmed_abort_ids = aborts
+                    .iter()
+                    .filter(|task| task.snapshot().abort_result == Some(OwnedTaskAbort::Stopped))
+                    .map(SupervisedTask::id)
+                    .collect::<BTreeSet<_>>();
+                confirmed_abort_ids.extend(
+                    shutdown_owner
+                        .nondurable_executions
+                        .confirmed_stopped_abort_ids(&handoff_cohort),
                 );
+                let aborted = usize_to_u64(confirmed_abort_ids.len());
                 let mut blocking_shutdown =
                     catch_integration(&shutdown_owner.blocking_work_poison, || {
                         shutdown_owner.configuration.blocking_work().shutdown()
@@ -8560,53 +9817,82 @@ impl Interpreter {
                     false
                 };
                 if !blocking_settled {
-                    cleanup_fixed = false;
                     orderly = false;
                 }
                 let cohort = coordinator.cohort_executions();
                 #[cfg(feature = "durable")]
-                for owner in shutdown_owner.durable_executions.owned(&cohort) {
-                    match deadline_race(
+                let mut journal_owner_releases = Vec::new();
+                #[cfg(not(feature = "durable"))]
+                let journal_owner_releases = Vec::new();
+                #[cfg(feature = "durable")]
+                let mut retained_owner_releases = Vec::new();
+                #[cfg(feature = "durable")]
+                for owner in shutdown_owner.durable_executions.all_owned() {
+                    let execution_id = owner.execution_id();
+                    let mut release =
+                        Box::pin(async move { owner.release_owner_for_shutdown().await });
+                    let status = match observe_shutdown_deadline(
                         executor,
-                        Box::pin(owner.release_owner_for_shutdown()),
+                        release.as_mut(),
                         durations.drain,
-                        None,
                     )
                     .await
                     {
-                        DeadlineOutcome::Completed(observation) => {
-                            let released = observation.owner
-                                == Some(crate::DurableJournalOwnerState::Released);
-                            cleanup_fixed &= released;
-                            orderly &= released;
+                        DeadlineOutcome::Completed(observation) => match observation.owner {
+                            Some(crate::DurableJournalOwnerState::Released) => {
+                                ShutdownJournalOwnerReleaseStatus::Released
+                            }
+                            Some(crate::DurableJournalOwnerState::ReleaseFailed(error)) => {
+                                ShutdownJournalOwnerReleaseStatus::ReleaseFailed(error)
+                            }
+                            Some(crate::DurableJournalOwnerState::Held) | None => {
+                                ShutdownJournalOwnerReleaseStatus::HeldNotSafe
+                            }
+                        },
+                        DeadlineOutcome::Cancelled => unreachable!(
+                            "shutdown owner-release observation has no cancellation signal"
+                        ),
+                        DeadlineOutcome::TimedOut => {
+                            retained_owner_releases.push(release);
+                            ShutdownJournalOwnerReleaseStatus::TimedOut
                         }
-                        DeadlineOutcome::Cancelled
-                        | DeadlineOutcome::TimedOut
-                        | DeadlineOutcome::Failed(_) => {
-                            cleanup_fixed = false;
-                            orderly = false;
+                        DeadlineOutcome::Failed(error) => {
+                            retained_owner_releases.push(release);
+                            ShutdownJournalOwnerReleaseStatus::ExecutorFailed(error)
                         }
-                    }
+                    };
+                    let released = status == ShutdownJournalOwnerReleaseStatus::Released;
+                    orderly &= released;
+                    journal_owner_releases.push(ShutdownJournalOwnerRelease {
+                        execution_id,
+                        status,
+                    });
                 }
-                let final_event = if cleanup_fixed {
-                    settle_final_shutdown_event(
-                        &shutdown_owner,
-                        durations,
-                        &executions_at_start,
-                        &cohort,
-                        tasks_at_start,
-                        aborted,
-                    )
-                    .await
-                } else {
-                    FinalShutdownEventOutcome::failed(FinalShutdownEventFailure::Internal)
-                };
+                let final_event = settle_final_shutdown_event(
+                    &shutdown_owner,
+                    durations,
+                    &executions_at_start,
+                    &cohort,
+                    tasks_at_start,
+                    aborted,
+                )
+                .await;
                 orderly &= final_event.required_sinks_settled;
                 let result = coordinator
-                    .complete(orderly, final_event.settlement)
+                    .complete(
+                        orderly,
+                        final_event.settlement,
+                        Arc::from(journal_owner_releases),
+                    )
                     .map_err(ShutdownError::Completion);
+                #[cfg(feature = "durable")]
+                shutdown_owner.durable_executions.fence_root_submission();
                 shutdown_owner.shutdown.publish(result);
                 let _ = signal.settle();
+                #[cfg(feature = "durable")]
+                for release in retained_owner_releases {
+                    let _ = release.await;
+                }
                 wait_for_retained_shutdown_cancellations(&mut retained_cancellations).await;
                 if retain_blocking_shutdown && let Some(shutdown) = blocking_shutdown {
                     let _ = shutdown.await;
@@ -8622,7 +9908,10 @@ impl Interpreter {
             })
         };
         match supervisor.submit(registration, task, reservation.transfer()) {
-            Ok(task) => task.relinquish(),
+            Ok(task) => {
+                self.inner.shutdown.mark_submitted();
+                task.relinquish();
+            }
             Err(error) => {
                 self.inner.lifecycle.fail_owned_shutdown();
                 self.inner
@@ -9165,20 +10454,9 @@ impl Interpreter {
         task_id: ProtocolIdentity,
         fallback: MachineOutcome,
     ) -> Result<(), RunExecutionError> {
-        let snapshot = coordinator.snapshot();
-        let status = snapshot
-            .state()
-            .task(task_id)
-            .ok_or(RunExecutionError::TaskState(TaskStateError::UnknownTask))?
-            .status();
-        if matches!(
-            status,
-            ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
-        ) {
-            coordinator
-                .settle_task(task_id, fallback)
-                .map_err(RunExecutionError::TaskState)?;
-        }
+        coordinator
+            .settle_after_driver_failure(task_id, fallback)
+            .map_err(RunExecutionError::TaskState)?;
         Ok(())
     }
 
@@ -9189,34 +10467,37 @@ impl Interpreter {
         handle: &ExecutionHandle,
         fallback: MachineOutcome,
     ) -> Result<(), RunExecutionError> {
-        let mut coordinated = coordinator.snapshot();
-        let outcome = if let Some(outcome) = coordinated.state().root_settled_outcome().cloned() {
-            outcome
-        } else {
-            coordinator
-                .settle_task(task_id, fallback.clone())
-                .map_err(RunExecutionError::TaskState)?;
-            fallback
-        };
-        coordinated = coordinator.snapshot();
+        coordinator
+            .settle_after_driver_failure(task_id, fallback)
+            .map_err(RunExecutionError::TaskState)?;
+        let outcome = coordinator
+            .snapshot()
+            .state()
+            .root_settled_outcome()
+            .cloned()
+            .ok_or(RunExecutionError::LifecycleTransition)?;
+        self.complete_nondurable_execution_if_ready(coordinator, handle, outcome)
+    }
+
+    fn complete_nondurable_execution_if_ready(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        handle: &ExecutionHandle,
+        outcome: MachineOutcome,
+    ) -> Result<(), RunExecutionError> {
+        let coordinated = coordinator.snapshot();
         if coordinated.state().foreground_outcome().is_none() {
-            let published = coordinator
-                .complete_foreground()
-                .map_err(RunExecutionError::TaskState)?;
+            let published = match coordinator.complete_foreground() {
+                Ok(published) => published,
+                Err(TaskStateError::AttachedTasksPending) => return Ok(()),
+                Err(error) => return Err(RunExecutionError::TaskState(error)),
+            };
             if published != outcome {
                 return Err(RunExecutionError::LifecycleTransition);
             }
         } else if coordinated.state().foreground_outcome() != Some(&outcome) {
             return Err(RunExecutionError::LifecycleTransition);
         }
-        let terminal =
-            if let Some(terminal) = coordinator.snapshot().state().terminal_outcome().cloned() {
-                terminal
-            } else {
-                coordinator
-                    .complete_terminal()
-                    .map_err(RunExecutionError::TaskState)?
-            };
 
         let execution = self
             .inner
@@ -9232,6 +10513,16 @@ impl Interpreter {
         } else if execution.foreground.as_ref() != Some(&outcome) {
             return Err(RunExecutionError::LifecycleTransition);
         }
+        let terminal =
+            if let Some(terminal) = coordinator.snapshot().state().terminal_outcome().cloned() {
+                terminal
+            } else {
+                match coordinator.complete_terminal() {
+                    Ok(terminal) => terminal,
+                    Err(TaskStateError::DetachedTasksPending) => return Ok(()),
+                    Err(error) => return Err(RunExecutionError::TaskState(error)),
+                }
+            };
         let execution = self
             .inner
             .lifecycle
@@ -9250,7 +10541,6 @@ impl Interpreter {
 
 /// One interpreter-owned `Send + 'static` asynchronous driver for a Gantry task.
 struct TaskDriver {
-    task_id: ProtocolIdentity,
     coordinator: ExecutionCoordinator,
     failure_context: TaskDriverFailureContext,
     future: Pin<Box<dyn Future<Output = Result<(), RunExecutionError>> + Send + 'static>>,
@@ -9330,9 +10620,42 @@ impl TaskDriverFailureContext {
         }
         #[cfg(feature = "concurrent")]
         if !self.execution_foreground {
-            let _ =
-                interpreter.settle_child_driver_failure(&self.coordinator, self.task_id, fallback);
+            let _ = self
+                .coordinator
+                .settle_after_driver_failure(self.task_id, fallback);
         }
+    }
+
+    fn physical_completion(&self) {
+        let _ = self
+            .coordinator
+            .mark_driver_physically_settled(self.task_id);
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        if self.durable_graph.is_some() {
+            return;
+        }
+        let snapshot = self.coordinator.snapshot();
+        let state = snapshot.state();
+        let root_task_id = state.root_task_id();
+        let Some(root) = state.task_record(root_task_id) else {
+            return;
+        };
+        if root.driver_ownership() != gantry_runtime::TaskDriverOwnershipV1::PhysicallySettled {
+            return;
+        }
+        let Some(outcome) = state.root_settled_outcome().cloned() else {
+            return;
+        };
+        drop(snapshot);
+        let interpreter = Interpreter {
+            inner: Arc::clone(&self.inner),
+            external_owner: false,
+        };
+        let _ = interpreter.complete_nondurable_execution_if_ready(
+            &self.coordinator,
+            &self.handle,
+            outcome,
+        );
     }
 }
 
@@ -9379,7 +10702,6 @@ impl TaskDriver {
             }
         });
         Self {
-            task_id,
             coordinator,
             failure_context,
             future,
@@ -9435,7 +10757,6 @@ impl TaskDriver {
             }
         });
         Self {
-            task_id,
             coordinator,
             failure_context,
             future,
@@ -9464,7 +10785,6 @@ impl TaskDriver {
             durable_owner: Some(owner),
         };
         Self {
-            task_id,
             coordinator,
             failure_context,
             future,
@@ -9487,11 +10807,8 @@ impl TaskDriver {
     /// Returns the callback that releases process-local driver ownership exactly once.
     #[must_use]
     fn physical_completion_handler(&self) -> PhysicalCompletionHandler {
-        let coordinator = self.coordinator.clone();
-        let task_id = self.task_id;
-        Arc::new(move |_| {
-            let _ = coordinator.mark_driver_physically_settled(task_id);
-        })
+        let context = self.failure_context.clone();
+        Arc::new(move |_| context.physical_completion())
     }
 
     fn into_gated_owned_task(
@@ -9639,11 +10956,22 @@ pub enum RunExecutionError {
 /// Failure while coordinating one public execution-cancellation operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CancelExecutionError {
+    /// Isolated control-plane capacity was unavailable before ownership transfer.
+    Admission(AdmissionExhaustion),
     /// The public operation was rejected by the interpreter lifecycle.
     Lifecycle(LifecycleError),
-    /// A committed durable transition could not be reflected in lifecycle state.
-    #[cfg(feature = "durable")]
+    /// Coordinator task state rejected cancellation publication.
+    TaskState(TaskStateError),
+    /// A committed semantic transition could not be reflected in lifecycle state.
     Transition(gantry_runtime::ExecutionTransitionError),
+    /// The executor rejected control ownership or reported an immutable abort failure.
+    Executor(HostError),
+    /// Bounded cancellation cleanup ended before physical settlement.
+    CleanupTimedOut,
+    /// The supervised cancellation owner stopped abnormally.
+    Physical(OwnedTaskCompletion),
+    /// Retained cancellation state was internally incomplete.
+    Invariant,
     /// Durable cancellation failed without fabricating terminal state.
     #[cfg(feature = "durable")]
     Durable(DurableRunFailure),
@@ -9669,14 +10997,52 @@ struct SharedShutdown {
     state: Mutex<SharedShutdownState>,
 }
 
-#[derive(Default)]
 struct SharedShutdownState {
+    launch: SharedShutdownLaunch,
     staged: Option<Result<Arc<ShutdownReport>, ShutdownError>>,
     published: Option<Result<Arc<ShutdownReport>, ShutdownError>>,
     waiters: Vec<Waker>,
 }
 
+enum SharedShutdownLaunch {
+    New,
+    Launching,
+    Deferred(ShutdownAdmission),
+    Submitted,
+}
+
+impl Default for SharedShutdownState {
+    fn default() -> Self {
+        Self {
+            launch: SharedShutdownLaunch::New,
+            staged: None,
+            published: None,
+            waiters: Vec::new(),
+        }
+    }
+}
+
 impl SharedShutdown {
+    fn claim_launch(&self) -> Option<Option<ShutdownAdmission>> {
+        let mut state = lock_shutdown(&self.state);
+        match std::mem::replace(&mut state.launch, SharedShutdownLaunch::Launching) {
+            SharedShutdownLaunch::New => Some(None),
+            SharedShutdownLaunch::Deferred(admission) => Some(Some(admission)),
+            launch @ (SharedShutdownLaunch::Launching | SharedShutdownLaunch::Submitted) => {
+                state.launch = launch;
+                None
+            }
+        }
+    }
+
+    fn defer_launch(&self, admission: ShutdownAdmission) {
+        lock_shutdown(&self.state).launch = SharedShutdownLaunch::Deferred(admission);
+    }
+
+    fn mark_submitted(&self) {
+        lock_shutdown(&self.state).launch = SharedShutdownLaunch::Submitted;
+    }
+
     fn stage(&self, result: Result<Arc<ShutdownReport>, ShutdownError>) {
         let mut state = lock_shutdown(&self.state);
         if state.staged.is_none() && state.published.is_none() {
@@ -9743,25 +11109,20 @@ struct ShutdownCancellation {
     committed: CancellationSignal,
     completion: HostFuture<'static, bool>,
     outcome: Option<bool>,
-    durable: bool,
+    commit_observation_required: bool,
 }
 
 async fn wait_for_shutdown_cancellation_commits(cancellations: &mut [ShutdownCancellation]) {
     std::future::poll_fn(|context| {
         let mut commits_complete = true;
         for cancellation in cancellations.iter_mut() {
-            let committed_before_poll =
-                !cancellation.durable || cancellation.committed.is_cancelled();
             if cancellation.outcome.is_none()
                 && let Poll::Ready(result) = cancellation.completion.as_mut().poll(context)
             {
                 cancellation.outcome = Some(result);
             }
-            if !committed_before_poll {
+            if cancellation.commit_observation_required && !cancellation.committed.is_cancelled() {
                 commits_complete = false;
-                if cancellation.committed.is_cancelled() {
-                    context.waker().wake_by_ref();
-                }
             }
         }
         if commits_complete {
@@ -9817,6 +11178,78 @@ async fn wait_for_retained_shutdown_cancellations(cancellations: &mut [ShutdownC
             Poll::Ready(())
         } else {
             Poll::Pending
+        }
+    })
+    .await
+}
+
+async fn wait_for_nondurable_abort_and_completion(
+    tasks: &[SupervisedTask],
+) -> Result<(), HostError> {
+    wait_for_abort_and_completion(tasks).await
+}
+
+fn request_abort_for_active_controls(tasks: &[SupervisedTask]) {
+    for task in tasks {
+        if task.snapshot().completion.is_none() {
+            let _ = task.request_abort();
+        }
+    }
+}
+
+async fn wait_for_abort_and_completion(tasks: &[SupervisedTask]) -> Result<(), HostError> {
+    std::future::poll_fn(|context| {
+        let mut complete = true;
+        let mut abort_failure = None;
+        for task in tasks {
+            let snapshot = task.snapshot();
+            match snapshot.abort_result {
+                Some(OwnedTaskAbort::Failed(error)) => {
+                    abort_failure.get_or_insert(error);
+                }
+                Some(OwnedTaskAbort::Stopped | OwnedTaskAbort::AlreadySettled) => {}
+                None if snapshot.abort_requested => complete = false,
+                None => {}
+            }
+            let mut completion = Box::pin(task.completion());
+            if completion.as_mut().poll(context).is_pending() {
+                complete = false;
+            }
+        }
+        if let Some(error) = abort_failure {
+            Poll::Ready(Err(error))
+        } else if complete {
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
+    })
+    .await
+}
+
+async fn shutdown_grace_race(
+    executor: &dyn ExecutorAdapter,
+    progress: gantry_runtime::ShutdownProgress,
+    nondurable: &NondurableExecutionRegistry,
+    execution_ids: &[ProtocolIdentity],
+    timeout: DurationMicros,
+) -> DeadlineOutcome<()> {
+    let mut progress = Box::pin(progress);
+    let mut timer = executor.sleep(timeout);
+    std::future::poll_fn(|context| {
+        if nondurable
+            .poll_cancellation_requested(execution_ids, context)
+            .is_ready()
+        {
+            return Poll::Ready(DeadlineOutcome::Cancelled);
+        }
+        if progress.as_mut().poll(context).is_ready() {
+            return Poll::Ready(DeadlineOutcome::Completed(()));
+        }
+        match timer.as_mut().poll(context) {
+            Poll::Ready(Ok(())) => Poll::Ready(DeadlineOutcome::TimedOut),
+            Poll::Ready(Err(error)) => Poll::Ready(DeadlineOutcome::Failed(error)),
+            Poll::Pending => Poll::Pending,
         }
     })
     .await

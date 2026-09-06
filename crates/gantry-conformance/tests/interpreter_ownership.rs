@@ -23,13 +23,17 @@ use gantry::portable::{
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    BoundedBlockingWorkService, FinalShutdownEventFailure, FinalShutdownEventSettlement,
-    InterpreterConfiguration, RequiredConfiguration, ShutdownCompletionError,
+    BoundedBlockingWorkService, CancellationRecord, ConcurrentTaskStatusV1,
+    FinalShutdownEventSettlement, InterpreterConfiguration, RequiredConfiguration,
+    ShutdownCompletionError, TaskDriverOwnershipV1,
 };
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::DEFAULT_VALUE_LIMITS;
-use gantry::{Interpreter, ShutdownError, StartExecutionRequest, StartExecutionResult};
+use gantry::{
+    CancelExecutionError, Interpreter, StartExecutionRequest, StartExecutionResult,
+    caller_cancellation_reason,
+};
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
 };
@@ -393,6 +397,334 @@ fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
 }
 
 #[test]
+fn dropped_cancellation_waiter_does_not_abandon_nondurable_cleanup() {
+    let root = TempDirectory::new("fn main() -> Int { 7 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let interpreter = interpreter(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: None,
+            root_session: None,
+            event_delivery: None,
+        }))
+    else {
+        panic!("valid cancellation fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    let handle = accepted.handle().clone();
+    let signal = handle
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+    let reason = caller_cancellation_reason(Some(Arc::from("drop-caller")), 32)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+
+    let mut cancellation = Box::pin(interpreter.cancel_execution(execution_id, reason.clone()));
+    assert!(poll_once(cancellation.as_mut()).is_pending());
+    assert_eq!(executor.task_ids(), [0, 1]);
+    drop(cancellation);
+    assert!(!signal.is_cancelled());
+
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(signal.is_cancelled());
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+
+    let terminal = block_on(interpreter.await_terminal(&handle))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("cancelled execution disappeared"));
+    assert!(terminal.terminal.is_some());
+    let joined = block_on(interpreter.cancel_execution(execution_id, reason))
+        .unwrap_or_else(|error| panic!("joining cancellation failed: {error:?}"));
+    assert!(matches!(joined, CancellationRecord::Accepted { .. }));
+}
+
+#[test]
+fn public_cancellation_aborts_a_submitted_unpolled_driver() {
+    let root = TempDirectory::new("fn main() -> Int { 11 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let interpreter = interpreter(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: None,
+            root_session: None,
+            event_delivery: None,
+        }))
+    else {
+        panic!("valid unpolled cancellation fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    let reason = caller_cancellation_reason(Some(Arc::from("stop-unpolled")), 32)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation = Box::pin(interpreter.cancel_execution(execution_id, reason));
+    assert!(poll_once(cancellation.as_mut()).is_pending());
+    assert_eq!(executor.poll_count(0), Some(0));
+
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("semantic drain release failed: {error:?}"));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert_eq!(executor.poll_count(0), Some(0));
+    assert_eq!(executor.abort_result(0), Some(OwnedTaskAbort::Stopped));
+    assert!(matches!(
+        poll_once(cancellation.as_mut()),
+        Poll::Ready(Ok(CancellationRecord::Accepted { .. }))
+    ));
+}
+
+#[test]
+fn public_cancellation_classifies_abort_failure_without_false_physical_settlement() {
+    let root = TempDirectory::new("fn main() -> Int { 13 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let interpreter = interpreter(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: None,
+            root_session: None,
+            event_delivery: None,
+        }))
+    else {
+        panic!("valid abort-failure fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    executor
+        .fail_abort(0)
+        .unwrap_or_else(|error| panic!("abort-failure injection failed: {error:?}"));
+    let reason = caller_cancellation_reason(Some(Arc::from("failed-abort")), 32)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation = Box::pin(interpreter.cancel_execution(execution_id, reason));
+    assert!(poll_once(cancellation.as_mut()).is_pending());
+
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("semantic drain release failed: {error:?}"));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        poll_once(cancellation.as_mut()),
+        Poll::Ready(Err(CancelExecutionError::Executor(_)))
+    ));
+    assert!(matches!(
+        executor.abort_result(0),
+        Some(OwnedTaskAbort::Failed(_))
+    ));
+    let state = interpreter
+        .test_nondurable_task_state(execution_id)
+        .unwrap_or_else(|| panic!("retained nondurable coordinator disappeared"));
+    let root = state
+        .task_record(state.root_task_id())
+        .unwrap_or_else(|| panic!("root task record disappeared"));
+    assert!(matches!(
+        root.status(),
+        ConcurrentTaskStatusV1::Failed(failure)
+            if failure.category == gantry::portable::RuntimeErrorCategory::ExecutorFailure
+    ));
+    assert_eq!(
+        root.driver_ownership(),
+        TaskDriverOwnershipV1::Supervised,
+        "failed abort falsely published physical settlement"
+    );
+    let terminal = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted execution disappeared"));
+    assert!(matches!(
+        terminal.foreground,
+        Some(gantry::runtime::MachineOutcome::Failed(ref failure))
+            if failure.code == gantry::runtime::RuntimeCode::Operation(
+                gantry::portable::RuntimeErrorCategory::ExecutorFailure
+            )
+    ));
+
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+}
+
+#[test]
+fn shutdown_reuses_active_nondurable_cancellation_control_reserve() {
+    let root = TempDirectory::new("fn main() -> Int { 17 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let interpreter = interpreter(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: None,
+            root_session: None,
+            event_delivery: None,
+        }))
+    else {
+        panic!("valid shutdown handoff fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    let reason = caller_cancellation_reason(Some(Arc::from("before-shutdown")), 32)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation = Box::pin(interpreter.cancel_execution(execution_id, reason));
+    assert!(poll_once(cancellation.as_mut()).is_pending());
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(poll_once(shutdown.as_mut()).is_pending());
+    assert_eq!(
+        executor.task_ids(),
+        [0, 1],
+        "shutdown duplicated the active control-plane owner"
+    );
+
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert_eq!(executor.task_ids(), [0, 1, 2]);
+    assert!(matches!(
+        executor.poll_task(2),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        poll_once(cancellation.as_mut()),
+        Poll::Ready(Ok(CancellationRecord::Accepted { .. }))
+    ));
+    let report = match poll_once(shutdown.as_mut()) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("shutdown handoff did not publish its report: {other:?}"),
+    };
+    assert!(report.orderly);
+    assert_eq!(report.cohort.len(), 1);
+}
+
+#[test]
+fn cancellation_during_shutdown_joins_the_existing_control_owner() {
+    let root = TempDirectory::new("fn main() -> Int { 19 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let interpreter = interpreter(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: None,
+            root_session: None,
+            event_delivery: None,
+        }))
+    else {
+        panic!("valid shutdown-first cancellation fixture was rejected")
+    };
+    let execution_id = accepted.execution_id();
+    let signal = accepted
+        .handle()
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(poll_once(shutdown.as_mut()).is_pending());
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+
+    let reason = caller_cancellation_reason(Some(Arc::from("during-shutdown")), 32)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation = Box::pin(interpreter.cancel_execution(execution_id, reason.clone()));
+    assert!(poll_once(cancellation.as_mut()).is_pending());
+    assert_eq!(
+        executor.task_ids(),
+        [0, 1],
+        "cancellation duplicated the active shutdown control owner"
+    );
+
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("grace timer release failed: {error:?}"));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(signal.is_cancelled());
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        poll_once(cancellation.as_mut()),
+        Poll::Ready(Ok(CancellationRecord::Accepted {
+            reason: ref effective,
+            ..
+        })) if effective == &reason
+    ));
+    let report = match poll_once(shutdown.as_mut()) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("shutdown-first cancellation did not publish its report: {other:?}"),
+    };
+    assert!(report.orderly);
+    assert_eq!(report.cohort.len(), 1);
+}
+
+#[test]
 fn natural_completion_during_shutdown_grace_avoids_cancellation() {
     let root = TempDirectory::new("fn main() -> Int { 11 }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -575,13 +907,21 @@ fn cancellation_resistant_work_receives_abort_and_shutdown_returns_boundedly() {
         executor.poll_task(1),
         Ok(DeterministicTaskPoll::Settled(_))
     ));
-    assert!(matches!(
-        poll_once(shutdown.as_mut()),
-        Poll::Ready(Err(ShutdownError::Completion(
-            ShutdownCompletionError::OwnedActivitiesPending
-                | ShutdownCompletionError::SupervisedTasksPending
-        )))
-    ));
+    let report = match poll_once(shutdown.as_mut()) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("bounded failed-abort shutdown did not publish a report: {other:?}"),
+    };
+    assert!(!report.orderly);
+    assert!(
+        report
+            .completion_failures
+            .contains(&ShutdownCompletionError::OwnedActivitiesPending)
+    );
+    assert!(
+        report
+            .completion_failures
+            .contains(&ShutdownCompletionError::SupervisedTasksPending)
+    );
     assert!(!response_dropped.load(Ordering::Acquire));
 }
 
@@ -698,7 +1038,8 @@ fn blocking_shutdown_timeout_bounds_report_but_retains_service_to_physical_settl
     assert!(!report.orderly);
     assert_eq!(
         report.final_event,
-        FinalShutdownEventSettlement::Failed(FinalShutdownEventFailure::Internal)
+        FinalShutdownEventSettlement::Settled,
+        "blocking-service timeout must not masquerade as final-event failure"
     );
 
     drop(shutdown);

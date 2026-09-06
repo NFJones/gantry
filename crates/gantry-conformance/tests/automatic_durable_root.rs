@@ -180,6 +180,61 @@ impl JournalStorage for FailAfterStartStore {
 }
 
 #[derive(Default)]
+struct FailingOwnerReleaseStore {
+    inner: InMemoryJournalStore,
+    releases: AtomicU64,
+}
+
+impl FailingOwnerReleaseStore {
+    fn release_count(&self) -> u64 {
+        self.releases.load(Ordering::Acquire)
+    }
+}
+
+impl JournalStorage for FailingOwnerReleaseStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        self.inner.commit(request)
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        _request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.releases.fetch_add(1, Ordering::AcqRel);
+        Box::pin(async {
+            Err(JournalError {
+                code: JournalErrorCode::PayloadConflict,
+                protected_diagnostic: Some(Arc::from("release-diagnostic")),
+            })
+        })
+    }
+}
+
+#[derive(Default)]
 struct GatedOwnerReleaseStore {
     inner: InMemoryJournalStore,
     releases: AtomicU64,
@@ -866,6 +921,26 @@ impl PendingHookIntegration {
                     EmbeddingOperation::ResolveMappings,
                     &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
                 )],
+                [],
+            ),
+            state,
+            cancel_on_create: Mutex::new(None),
+        }
+    }
+
+    fn new_for_two_executions(state: Arc<PendingHookState>) -> Self {
+        Self {
+            scripted: ScriptedIntegration::new(
+                [
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::ResolveMappings,
+                        &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::ResolveMappings,
+                        &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+                    ),
+                ],
                 [],
             ),
             state,
@@ -1632,6 +1707,129 @@ fn graph_cancellation_retains_a_pending_model_dispatch_to_settlement() {
     );
 }
 
+#[test]
+fn graph_cancellation_aborts_resistant_dispatch_after_bounded_drain() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() { spawn child -> String { action lookup() } discard join(child); }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(PendingHookIntegration::new_graph(Arc::clone(&hook_state)));
+    let interpreter = interpreter_with_integration(Arc::clone(&executor), integration);
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-graph-resistant-dispatch-cancellation")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("resistant graph-dispatch fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.execution_id();
+
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Pending | DeterministicTaskPoll::Settled(_))
+    ));
+    assert_eq!(executor.task_ids(), [0, 1]);
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(hook_state.dispatch_started.load(Ordering::Acquire));
+
+    let reason = caller_cancellation_reason(Some(Arc::from("stop-resistant-dispatch")), 64)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation = Box::pin(interpreter.cancel_execution(execution_id, reason.clone()));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    for task_id in [0, 1] {
+        if executor.is_runnable(task_id) {
+            let _ = executor
+                .poll_task(task_id)
+                .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+        }
+    }
+    assert!(hook_state.cancellation_observed.load(Ordering::Acquire));
+    assert_eq!(executor.task_ids(), [0, 1, 2]);
+    assert_eq!(executor.poll_task(2), Ok(DeterministicTaskPoll::Pending));
+    assert_eq!(executor.abort_result(1), None);
+    assert_eq!(executor.sleep_durations().len(), 1);
+
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("cancellation drain release failed: {error:?}"));
+    let mut record = None;
+    for _ in 0..128 {
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        if let Poll::Ready(result) = cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            record =
+                Some(result.unwrap_or_else(|error| {
+                    panic!("bounded graph cancellation failed: {error:?}")
+                }));
+            break;
+        }
+    }
+    assert_eq!(
+        executor.abort_result(1),
+        Some(gantry::host::contracts::OwnedTaskAbort::Stopped)
+    );
+    assert!(!hook_state.settled.load(Ordering::Acquire));
+    assert!(matches!(
+        record,
+        Some(CancellationRecord::Accepted { reason: ref effective, .. }) if effective == &reason
+    ));
+    let observation = block_on(interpreter.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
+    assert!(matches!(
+        observation.terminal,
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Cancelled(ref message),
+            ..
+        }) if message.as_ref() == "stop-resistant-dispatch"
+    ));
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    assert!(full.evidence.iter().any(|entry| {
+        String::from_utf8_lossy(&entry.canonical_body).contains("\"cut\":\"cancellation\"")
+    }));
+    assert!(!full.evidence.iter().any(|entry| {
+        let body = String::from_utf8_lossy(&entry.canonical_body);
+        body.contains("\"cut\":\"operation-outcome\"")
+            || body.contains("\"cut\":\"operation-result\"")
+    }));
+}
+
 fn assert_graph_cancellation_retains_pending_dispatch_to_settlement(
     source: &str,
     journal_name: &str,
@@ -1868,14 +2066,17 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
 }
 
 #[test]
-fn facade_durable_shutdown_bounds_resistant_work_releases_owner_and_suppresses_final_event() {
+fn cancellation_resistant_durable_work_does_not_fake_shutdown_completion() {
+    let completed_root = TempDirectory::new("fn main() -> Int { 42 }");
     let root = TempDirectory::new(
         "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
     );
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     executor.control_sleeps();
     let hook_state = Arc::new(PendingHookState::default());
-    let integration = Arc::new(PendingHookIntegration::new(Arc::clone(&hook_state)));
+    let integration = Arc::new(PendingHookIntegration::new_for_two_executions(Arc::clone(
+        &hook_state,
+    )));
     let shutdown_sink = Arc::new(ShutdownPayloadSink::default());
     let interpreter = interpreter_with_durable_delivery(
         Arc::clone(&executor),
@@ -1886,9 +2087,39 @@ fn facade_durable_shutdown_bounds_resistant_work_releases_owner_and_suppresses_f
     );
     let storage = Arc::new(ObservedJournalStore::with_settlement_gate(u64::MAX));
     let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let completed_journal_id = JournalId::new("automatic-durable-completed-before-shutdown")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let journal_id = JournalId::new("automatic-durable-resistant-facade-shutdown")
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let selection = selection();
+    let completed = match block_on(interpreter.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: completed_journal_id,
+            start: StartExecutionRequest {
+                package_root: &completed_root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("completed durable shutdown fixture was rejected: {failure:?}")
+        }
+    };
+    let completed_execution_id = completed.execution_id();
+    let completed_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("completed durable start submitted no root task"));
+    settle_task(&executor, completed_task);
+    assert_eq!(storage.release_count(), 1);
+
+    executor.poll_next_spawn_immediately();
     let _accepted = match block_on(interpreter.start_durable_execution(
         storage_adapter,
         DurableStartExecutionRequest {
@@ -1943,12 +2174,125 @@ fn facade_durable_shutdown_bounds_resistant_work_releases_owner_and_suppresses_f
         Some(gantry::host::contracts::OwnedTaskAbort::Failed(_))
     ));
     assert_eq!(storage.release_count(), 1);
-    assert!(shutdown_sink.payloads().is_empty());
+    assert_eq!(
+        shutdown_sink.payloads().len(),
+        1,
+        "an unsafe owner must not suppress the independent final shutdown event"
+    );
     assert!(!hook_state.settled.load(Ordering::Acquire));
-    assert!(matches!(
-        shutdown.as_mut().poll(&mut context),
-        Poll::Ready(Err(_))
-    ));
+    let report = match shutdown.as_mut().poll(&mut context) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("bounded durable shutdown did not publish a report: {other:?}"),
+    };
+    assert!(!report.orderly);
+    assert!(
+        report
+            .completion_failures
+            .contains(&gantry::runtime::ShutdownCompletionError::SupervisedTasksPending)
+    );
+    assert_eq!(report.journal_owner_releases.len(), 2);
+    assert_eq!(
+        report.journal_owner_releases[0].execution_id,
+        completed_execution_id
+    );
+    assert_eq!(
+        report.journal_owner_releases[0].status,
+        gantry::runtime::ShutdownJournalOwnerReleaseStatus::Released
+    );
+    assert_eq!(
+        report.journal_owner_releases[1].status,
+        gantry::runtime::ShutdownJournalOwnerReleaseStatus::HeldNotSafe
+    );
+    assert_eq!(
+        storage.release_count(),
+        1,
+        "shutdown retried a released owner"
+    );
+    assert_ne!(
+        report.final_event,
+        gantry::runtime::FinalShutdownEventSettlement::Failed(
+            gantry::runtime::FinalShutdownEventFailure::Internal
+        ),
+        "an unsafe journal owner must not be collapsed into final-event failure"
+    );
+    let repeated = block_on(interpreter.shutdown())
+        .unwrap_or_else(|error| panic!("repeated shutdown failed: {error:?}"));
+    assert!(Arc::ptr_eq(&report, &repeated));
+    assert_eq!(storage.release_count(), 1);
+}
+
+#[test]
+fn shutdown_report_preserves_exact_owner_release_failure_and_repeat_identity() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let interpreter = interpreter(Arc::clone(&executor));
+    let storage = Arc::new(FailingOwnerReleaseStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-owner-release-failure")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id,
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("release-failure fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.execution_id();
+    let root_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("release-failure fixture submitted no root task"));
+    settle_task(&executor, root_task);
+    assert_eq!(storage.release_count(), 1);
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(
+        shutdown
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    let shutdown_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("release-failure shutdown submitted no coordinator task"));
+    settle_task(&executor, shutdown_task);
+    let report = match shutdown
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("release-failure shutdown did not publish a report: {other:?}"),
+    };
+    assert!(!report.orderly);
+    assert_eq!(report.journal_owner_releases.len(), 1);
+    assert_eq!(report.journal_owner_releases[0].execution_id, execution_id);
+    assert_eq!(
+        report.journal_owner_releases[0].status,
+        gantry::runtime::ShutdownJournalOwnerReleaseStatus::ReleaseFailed(JournalError {
+            code: JournalErrorCode::PayloadConflict,
+            protected_diagnostic: Some(Arc::from("release-diagnostic")),
+        })
+    );
+    assert_eq!(storage.release_count(), 1);
+
+    let repeated = block_on(interpreter.shutdown())
+        .unwrap_or_else(|error| panic!("repeated release-failure shutdown failed: {error:?}"));
+    assert!(Arc::ptr_eq(&report, &repeated));
+    assert_eq!(storage.release_count(), 1);
 }
 
 #[test]
@@ -2007,7 +2351,7 @@ fn durable_owner_release_survives_shutdown_deadline_and_settles_exactly_once() {
         executor.poll_task(shutdown_task),
         Ok(DeterministicTaskPoll::Pending)
     );
-    for timer in 0..4 {
+    for timer in 0..3 {
         executor
             .release_sleep(timer)
             .unwrap_or_else(|error| panic!("shutdown timer {timer} release failed: {error:?}"));
@@ -2015,16 +2359,29 @@ fn durable_owner_release_survives_shutdown_deadline_and_settles_exactly_once() {
             .poll_task(shutdown_task)
             .unwrap_or_else(|error| panic!("shutdown task poll failed: {error:?}"));
     }
-    assert!(storage.release_started());
-    assert_eq!(storage.release_count(), 1);
-    assert!(matches!(
-        shutdown.as_mut().poll(&mut context),
-        Poll::Ready(Err(_))
-    ));
+    assert!(!storage.release_started());
+    assert_eq!(storage.release_count(), 0);
+    let report = match shutdown.as_mut().poll(&mut context) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("bounded shutdown did not publish a report: {other:?}"),
+    };
+    assert!(!report.orderly);
+    assert!(
+        report
+            .completion_failures
+            .contains(&gantry::runtime::ShutdownCompletionError::SupervisedTasksPending)
+    );
 
     storage.pause_before_release_completion();
+    hook_state.release();
+    assert!(matches!(
+        executor.poll_task(root_task),
+        Ok(DeterministicTaskPoll::Pending)
+    ));
+    assert!(storage.release_started());
     std::thread::scope(|scope| {
-        let first = scope.spawn(|| block_on(accepted.test_release_owner_for_shutdown()));
+        let release_executor = Arc::clone(&executor);
+        let poller = scope.spawn(move || release_executor.poll_task(root_task));
         storage.release_owner_gate();
         storage.wait_until_release_completion_is_observed();
 
@@ -2053,16 +2410,15 @@ fn durable_owner_release_survives_shutdown_deadline_and_settles_exactly_once() {
         let registered_while_host_polling = registration.recv_timeout(Duration::from_millis(100));
         storage.allow_release_completion();
 
-        let first_observation = first
-            .join()
-            .unwrap_or_else(|_| panic!("first owner-release caller panicked"));
+        assert!(matches!(
+            poller
+                .join()
+                .unwrap_or_else(|_| panic!("root release poller panicked")),
+            Ok(DeterministicTaskPoll::Settled(_))
+        ));
         let second_observation = second
             .join()
             .unwrap_or_else(|_| panic!("second owner-release caller panicked"));
-        assert_eq!(
-            first_observation.owner,
-            Some(gantry::DurableJournalOwnerState::Released)
-        );
         assert_eq!(
             second_observation.owner,
             Some(gantry::DurableJournalOwnerState::Released),
@@ -2273,11 +2629,21 @@ fn durable_publication_after_shutdown_deadline_is_cancelled_without_root_submiss
                 .poll_task(shutdown_task)
                 .unwrap_or_else(|error| panic!("shutdown task poll failed: {error:?}"));
         }
-        assert!(matches!(
-            shutdown.as_mut().poll(&mut context),
-            Poll::Ready(Err(_))
-        ));
-        assert!(shutdown_sink.payloads().is_empty());
+        let report = match shutdown.as_mut().poll(&mut context) {
+            Poll::Ready(Ok(report)) => report,
+            other => panic!("late-publication shutdown did not publish a report: {other:?}"),
+        };
+        assert!(!report.orderly);
+        assert!(
+            report
+                .completion_failures
+                .contains(&gantry::runtime::ShutdownCompletionError::ExecutionsPending)
+        );
+        assert_eq!(
+            shutdown_sink.payloads().len(),
+            1,
+            "pending execution cleanup must not suppress the final shutdown event"
+        );
         assert!(!signal.is_cancelled());
         let tasks_before_publication = executor.task_ids();
 
@@ -2305,7 +2671,11 @@ fn durable_publication_after_shutdown_deadline_is_cancelled_without_root_submiss
             Some(gantry::DurableJournalOwnerState::Released)
         );
         assert_eq!(storage.release_count(), 1);
-        assert!(shutdown_sink.payloads().is_empty());
+        assert_eq!(
+            shutdown_sink.payloads().len(),
+            1,
+            "late owner settlement must not duplicate the frozen shutdown event"
+        );
     });
 }
 

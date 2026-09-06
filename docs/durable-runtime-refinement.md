@@ -55,9 +55,16 @@ not restore profile claims. `protocol/conformance/source-spawn-v1.json` binds
 native executor-owned child submission and live concurrent-durable spawn and
 child-operation ordering to the current specification, and
 `protocol/conformance/source-join-v1.json` binds completed source JOIN,
-JOINALL, and DETACH behavior to the frozen JOIN-001 rows. Descendant
-cancellation and failure draining remain `GNT-ASYNC-CANCEL-001`; fenced graph
-reconstruction and replacement submission remain `GNT-ASYNC-REC-001`.
+JOINALL, and DETACH behavior to the frozen JOIN-001 rows.
+`protocol/conformance/async-cancellation-v1.json` separately binds the exact
+frozen CANCEL-001 rows to durable attached-descendant drain before parent
+settlement, sibling and detached-task isolation, nondurable executor drain,
+dropped cancellation ownership, submitted-unpolled and failed-abort handling,
+bounded abort of cancellation-resistant durable dispatch, retained journal
+ownership while physical work remains live, and cancellation/shutdown owner
+handoff. Fenced graph reconstruction and
+replacement submission remain `GNT-ASYNC-REC-001`; this evidence does not
+restore a durable-runtime profile publication claim.
 
 For the generics-and-static-traits amendment, the durable prefix retains the
 canonical analysis artifacts and the distinct closed executable projection
@@ -101,7 +108,10 @@ source analysis.
   Recovery waits that complete delay before committing another preparation.
 - A committed cancellation mark disables later source-consuming transitions.
   Task, foreground, and terminal settlement are each monotonic and recovered
-  without replaying their causal label.
+  without replaying their causal label. An already-dispatched hook remains
+  owned through the configured cooperative drain; after that bound, the graph
+  controller uses the executor's supervised abort capability and never drops
+  the dispatch future as evidence of settlement.
 - A committed event cause without its occurrence requires one replacement
   occurrence. A committed occurrence is delivered from its frozen plan. A
   dispatched delivery without settlement is indeterminate; a committed retry
@@ -151,7 +161,16 @@ outcome.
 **Lifecycle and shutdown.** Admission and observation are stuttering steps for
 the source machine. Shutdown is monotonic, uses the same cancellation and
 terminal coordinates, waits for the modeled owner/delivery obligations, and
-publishes one immutable terminal report.
+publishes one immutable terminal report. Bounded cleanup blockers are retained
+as separate non-orderly report coordinates. Each retained durable owner also
+has one frozen release coordinate: released, held because live work could still
+use the token, the exact journal release error, or the bounded timeout/executor
+failure that interrupted observation. Owners are processed independently, so
+an unrelated cleanup failure or unsafe owner does not suppress a safe owner's
+single release attempt or the final shutdown event. A durable owner remains
+held while failed-abort physical work can still advance its journal; delayed
+physical settlement may complete the retained single-flight release but cannot
+rewrite the published report or cause a duplicate release.
 
 ## Generics and static-trait refinement
 
@@ -202,7 +221,9 @@ The current-specification source evidence is split between
 `protocol/conformance/source-join-v1.json`. The latter records the live
 concurrent-durable ownership and all-settled ordering slice only; it does not
 claim recovered runnable-graph resubmission or descendant cancellation and
-failure draining.
+failure draining. The latter behavior is instead frozen by the owner-specific
+`protocol/conformance/async-cancellation-v1.json` evidence without broadening
+the source-spawn/source-join manifests or publishing a conformance profile.
 
 The generics amendment is mapped separately by
 `protocol/conformance/generics-traits-refinements-v1.json`. It links

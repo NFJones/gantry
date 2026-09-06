@@ -174,6 +174,8 @@ pub struct DurableCommitCoordinatorV1<'a> {
     next_local_id: u64,
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     graph_cancellation: Option<CancellationReason>,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_task_cancellation: bool,
 }
 
 impl<'a> DurableCommitCoordinatorV1<'a> {
@@ -200,6 +202,8 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             next_local_id: 0,
             #[cfg(all(feature = "concurrent", feature = "durable"))]
             graph_cancellation: None,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            graph_task_cancellation: false,
         })
     }
 

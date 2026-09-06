@@ -9,7 +9,7 @@ use gantry_core::schema::{NormalizationError, SchemaValidator};
 use gantry_core::strict_json::{JsonError, JsonLimitKind, JsonLimits, StrictJsonDocument};
 use gantry_core::value::{LogicalValue, OperationErrorValue, ValueError, ValueLimits};
 use gantry_host::contracts::{
-    CancellationSignal, DurationMicros, ExecutorAdapter, HookOutcomeV1, HostError, HostFuture,
+    CancellationToken, DurationMicros, ExecutorAdapter, HookOutcomeV1, HostError, HostFuture,
     InclusiveJitterRange,
 };
 use gantry_ir::generated::RecoveryClass;
@@ -158,12 +158,11 @@ pub enum RetryDelayOutcomeV1 {
 pub fn wait_retry_delay<'a>(
     executor: &'a dyn ExecutorAdapter,
     delay: DurationMicros,
-    cancellation: &'a CancellationSignal,
+    cancellation: &'a dyn CancellationToken,
 ) -> HostFuture<'a, RetryDelayOutcomeV1> {
     let mut timer = executor.sleep(delay);
-    let mut cancelled = cancellation.cancelled();
     Box::pin(std::future::poll_fn(move |context| {
-        if cancelled.as_mut().poll(context).is_ready() {
+        if cancellation.is_cancelled() {
             return Poll::Ready(RetryDelayOutcomeV1::Cancelled);
         }
         match timer.as_mut().poll(context) {
@@ -462,7 +461,9 @@ fn executor_contract_failure() -> HostError {
 mod tests {
     use gantry_core::portable::IdentityKind;
     use gantry_core::value::{DEFAULT_VALUE_LIMITS, ValueLimits};
-    use gantry_host::contracts::{ActionMappingRevision, HostFuture, IdentitySource};
+    use gantry_host::contracts::{
+        ActionMappingRevision, CancellationSignal, HostFuture, IdentitySource,
+    };
     use gantry_ir::generated::{OperationSiteKind, RecoveryClass};
     use gantry_ir::{CanonicalPath, CanonicalSignature, StructuralPosition, TypeDescriptor};
 

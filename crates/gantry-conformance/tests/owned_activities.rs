@@ -295,7 +295,7 @@ fn shutdown_waits_for_caller_independent_activity_settlement() {
     assert!(wakes.0.load(Ordering::Acquire) > 0);
     assert!(poll_once(&mut progress, &waker).is_ready());
     let report = coordinator
-        .complete(true, FinalShutdownEventSettlement::Settled)
+        .complete(true, FinalShutdownEventSettlement::Settled, Arc::from([]))
         .unwrap_or_else(|error| panic!("shutdown completion failed: {error:?}"));
     assert!(report.orderly);
 }

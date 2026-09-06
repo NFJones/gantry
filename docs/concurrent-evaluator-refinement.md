@@ -21,9 +21,15 @@ and the live concurrent-durable commit order at source `spawn` edges.
 `join`, `joinall()`, and `detach`: all-settled waiting, source/declaration-order
 results, ordered aggregate failure, the empty `joinall()` case, Join event
 causality, and the foreground/terminal split for detached work. Descendant
-cancellation and failure draining remain with `GNT-ASYNC-CANCEL-001`; resumed
-task-graph reconstruction and child resubmission remain with
-`GNT-ASYNC-REC-001`.
+cancellation and failure draining are frozen separately by
+`protocol/conformance/async-cancellation-v1.json`: owner failure waits for
+attached descendants, leaves siblings and detached work isolated, retains a
+dropped cancellation control owner, distinguishes confirmed and failed abort,
+uses the existing graph controller to bound cancellation-resistant durable
+dispatch, retains durable ownership across failed physical abort, and reuses
+one owner across cancellation/shutdown handoff. Resumed task-graph
+reconstruction and child resubmission remain with `GNT-ASYNC-REC-001`. This
+additional evidence does not advertise or publish a profile.
 
 For the generics-and-static-traits amendment, every spawned machine already
 contains only closed applied descriptors and direct selected call targets.
@@ -105,8 +111,11 @@ transfers a handle twice. Executable permutations show that joins wait for all
 members and preserve source/declaration ordering despite settlement order.
 
 **Cancellation and abort.** Cancellation markers are monotonic and disable
-later source actions in marked tasks. Executor abort failure leaves task state
-unsettled; confirmed stop removes the future and permits one cancelled
+later source actions in marked tasks. A cancellation-resistant durable dispatch
+is cooperatively polled for the configured drain and then stopped only through
+its supervised executor handle. Executor abort failure publishes an
+executor-failure semantic outcome separately from still-live physical
+supervision; confirmed stop removes the future and permits one cancelled
 settlement. Late wakes after stop cannot make the task runnable or mutate its
 settlement.
 
@@ -121,8 +130,14 @@ query, open, and resume use the same concurrent projection as full prefixes.
 **Foreground, terminal, and shutdown uniqueness.** Foreground and terminal
 coordinates are optional monotonic fields fixed at most once. Detached failure
 cannot rewrite foreground state but participates in terminal precedence.
-Shutdown cannot terminate before the cohort reaches terminal state, and a
-barrier failure cannot refinalize either language outcome.
+Shutdown publishes one immutable non-orderly report when bounded physical
+cleanup remains pending, preserving each cleanup blocker separately. Durable
+owners receive identity-ordered frozen release coordinates and are processed
+independently: safe owners release once even when another owner remains unsafe,
+while exact release errors and bounded observation failures remain separate
+from the final shutdown-event result. Shutdown does not release a durable owner
+while failed-abort work remains physically live, and a barrier failure cannot
+refinalize either language outcome.
 
 ## Generics and static-trait refinement
 
@@ -167,8 +182,12 @@ The separate current-specification source manifests divide the executable
 surface by ownership: `source-spawn-v1.json` links native child submission and
 its live concurrent-durable ordering slice, while `source-join-v1.json` links
 integrated JOIN, JOINALL, and DETACH behavior. Neither manifest claims owner
-failure/cancellation draining (`GNT-ASYNC-CANCEL-001`) or resumed graph
-resubmission (`GNT-ASYNC-REC-001`).
+failure/cancellation draining: `async-cancellation-v1.json` binds that separate
+owner's exact frozen requirement rows to deterministic durable isolation,
+Tokio descendant-drain, dropped-owner, submitted-unpolled abort, abort-failure,
+and shutdown-handoff regressions. Resumed graph resubmission remains with
+`GNT-ASYNC-REC-001`, and no profile publication claim follows from these
+evidence links.
 
 The generics amendment is mapped separately by
 `protocol/conformance/generics-traits-refinements-v1.json`. It links

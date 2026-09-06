@@ -918,6 +918,18 @@ impl ConcurrentTaskStateV1 {
         self.cancellation_reasons.get(&task_id).map(AsRef::as_ref)
     }
 
+    /// Returns every task covered by the effective execution cancellation.
+    #[must_use]
+    pub fn execution_cancellation_cohort(&self) -> Vec<ProtocolIdentity> {
+        let mut tasks = self
+            .cancellation_reasons
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        tasks.sort_by(|left, right| self.task_paths.get(left).cmp(&self.task_paths.get(right)));
+        tasks
+    }
+
     /// Returns the fixed foreground outcome, independently of detached work.
     #[must_use]
     pub const fn foreground_outcome(&self) -> Option<&MachineOutcome> {
@@ -1417,6 +1429,72 @@ impl ConcurrentTaskStateV1 {
         self.settle_staged_task(task_id)
     }
 
+    /// Publishes semantic settlement from a staged outcome or caller fallback.
+    ///
+    /// Cancellation recorded before this transition overrides either outcome.
+    /// Repeated publication returns the already-fixed status without changing it,
+    /// and physical driver ownership remains unchanged.
+    pub fn settle_after_driver_failure(
+        &mut self,
+        task_id: ProtocolIdentity,
+        fallback: MachineOutcome,
+    ) -> Result<ConcurrentTaskStatusV1, TaskStateError> {
+        let record = self
+            .task_record(task_id)
+            .ok_or(TaskStateError::UnknownTask)?;
+        if status_is_settled(record.status()) {
+            return Ok(record.status().clone());
+        }
+        if !matches!(record.status(), ConcurrentTaskStatusV1::Running) {
+            return Err(TaskStateError::InvalidTransition);
+        }
+        if record.pending_outcome().is_some() {
+            self.settle_staged_task(task_id)?;
+        } else {
+            self.settle(task_id, fallback)?;
+        }
+        self.task_record(task_id)
+            .map(|record| record.status().clone())
+            .ok_or(TaskStateError::UnknownTask)
+    }
+
+    /// Publishes executor-abort failure without fabricating physical settlement.
+    ///
+    /// Unlike ordinary driver failure, an immutable abort failure takes
+    /// precedence over a pending cancellation outcome because the executor did
+    /// not confirm that cancellation stopped the task.
+    pub fn settle_after_abort_failure(
+        &mut self,
+        task_id: ProtocolIdentity,
+        outcome: MachineOutcome,
+    ) -> Result<ConcurrentTaskStatusV1, TaskStateError> {
+        let record = self
+            .task_record(task_id)
+            .ok_or(TaskStateError::UnknownTask)?;
+        if status_is_settled(record.status()) {
+            return Ok(record.status().clone());
+        }
+        if !matches!(record.status(), ConcurrentTaskStatusV1::Running)
+            || !matches!(outcome, MachineOutcome::Failed(_))
+        {
+            return Err(TaskStateError::InvalidTransition);
+        }
+        let status = task_status_from_outcome(outcome.clone());
+        if task_id == self.root_task_id {
+            self.root.pending_outcome = None;
+            self.root.status = status.clone();
+            self.root.settled_outcome = Some(outcome);
+        } else {
+            let task = self
+                .tasks
+                .get_mut(&task_id)
+                .ok_or(TaskStateError::UnknownTask)?;
+            task.pending_outcome = None;
+            task.status = status.clone();
+        }
+        Ok(status)
+    }
+
     /// Records physical driver completion separately from semantic settlement.
     pub fn mark_driver_physically_settled(
         &mut self,
@@ -1838,6 +1916,7 @@ impl ConcurrentTaskStateV1 {
                 .clone();
             self.submitting_by_parent.remove(&task.parent_task_id);
             task.handle_visible = true;
+            task.pending_outcome = None;
             task.status = ConcurrentTaskStatusV1::Cancelled(reason);
             task.driver_ownership = TaskDriverOwnershipV1::PhysicallySettled;
         }
@@ -3294,6 +3373,138 @@ mod tests {
                 .apply_abort_result(created.task_id, TaskAbortResultV1::Stopped)
                 .unwrap_or_else(|error| panic!("repeat abort failed: {error:?}")),
             ExecutorAbortResultKind::AlreadySettled
+        );
+    }
+
+    #[test]
+    fn stopped_abort_discards_a_staged_outcome_after_effective_cancellation() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(2);
+        let created = state
+            .create_child(
+                &mut sessions,
+                request(root_task, root_session, 0, Vec::new()),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        state
+            .resolve_submission(created.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
+        state
+            .stage_task_outcome(
+                created.task_id,
+                crate::MachineOutcome::Succeeded(LogicalValue::unit()),
+            )
+            .unwrap_or_else(|error| panic!("outcome staging failed: {error:?}"));
+        state
+            .cancel_task_tree(root_task, "shutdown")
+            .unwrap_or_else(|error| panic!("cancellation failed: {error:?}"));
+
+        assert_eq!(
+            state
+                .apply_abort_result(created.task_id, TaskAbortResultV1::Stopped)
+                .unwrap_or_else(|error| panic!("stopped abort failed: {error:?}")),
+            ExecutorAbortResultKind::Stopped
+        );
+        assert!(matches!(
+            state.task(created.task_id).map(|task| task.status()),
+            Some(ConcurrentTaskStatusV1::Cancelled(reason)) if reason.as_ref() == "shutdown"
+        ));
+        assert_eq!(
+            state
+                .task_record(created.task_id)
+                .and_then(|record| record.pending_outcome()),
+            None
+        );
+        assert_eq!(
+            state
+                .task_record(created.task_id)
+                .map(|record| record.driver_ownership()),
+            Some(TaskDriverOwnershipV1::PhysicallySettled)
+        );
+        assert_eq!(
+            state
+                .apply_abort_result(created.task_id, TaskAbortResultV1::Stopped)
+                .unwrap_or_else(|error| panic!("repeat abort failed: {error:?}")),
+            ExecutorAbortResultKind::AlreadySettled
+        );
+        assert_eq!(
+            state
+                .task_record(created.task_id)
+                .and_then(|record| record.pending_outcome()),
+            None
+        );
+    }
+
+    #[test]
+    fn driver_failure_settlement_honors_cancellation_and_preserves_driver_ownership() {
+        let (mut state, _sessions, root_task, _root_session) = fixture(1);
+        state
+            .stage_task_outcome(
+                root_task,
+                crate::MachineOutcome::Succeeded(LogicalValue::unit()),
+            )
+            .unwrap_or_else(|error| panic!("outcome staging failed: {error:?}"));
+        state
+            .cancel_execution("cancel-after-staging")
+            .unwrap_or_else(|error| panic!("cancellation failed: {error:?}"));
+
+        let status = state
+            .settle_after_driver_failure(
+                root_task,
+                crate::MachineOutcome::Cancelled(Arc::from("unused-fallback")),
+            )
+            .unwrap_or_else(|error| panic!("driver failure settlement failed: {error:?}"));
+        assert!(matches!(
+            status,
+            ConcurrentTaskStatusV1::Cancelled(ref reason)
+                if reason.as_ref() == "cancel-after-staging"
+        ));
+        assert_eq!(
+            state
+                .task_record(root_task)
+                .map(|record| record.driver_ownership()),
+            Some(TaskDriverOwnershipV1::Supervised)
+        );
+        assert_eq!(
+            state
+                .task_record(root_task)
+                .and_then(|record| record.pending_outcome()),
+            None
+        );
+
+        assert_eq!(
+            state
+                .settle_after_driver_failure(
+                    root_task,
+                    crate::MachineOutcome::Succeeded(LogicalValue::unit()),
+                )
+                .unwrap_or_else(|error| panic!("repeat settlement failed: {error:?}")),
+            status
+        );
+        assert_eq!(
+            state
+                .task_record(root_task)
+                .map(|record| record.driver_ownership()),
+            Some(TaskDriverOwnershipV1::Supervised)
+        );
+    }
+
+    #[test]
+    fn driver_failure_settlement_uses_fallback_without_a_staged_outcome() {
+        let (mut state, _sessions, root_task, _root_session) = fixture(1);
+        let fallback = crate::MachineOutcome::Succeeded(LogicalValue::unit());
+
+        let status = state
+            .settle_after_driver_failure(root_task, fallback.clone())
+            .unwrap_or_else(|error| panic!("driver failure settlement failed: {error:?}"));
+
+        assert!(matches!(status, ConcurrentTaskStatusV1::Succeeded(_)));
+        assert_eq!(state.root_settled_outcome(), Some(&fallback));
+        assert_eq!(
+            state
+                .task_record(root_task)
+                .map(|record| record.driver_ownership()),
+            Some(TaskDriverOwnershipV1::Supervised)
         );
     }
 

@@ -365,7 +365,7 @@ fn shutdown_races_transfer_admission_and_snapshot_first_durations() {
     assert_eq!(snapshot.cancellation, Some(first_reason));
 
     let report = coordinator
-        .complete(true, FinalShutdownEventSettlement::Settled)
+        .complete(true, FinalShutdownEventSettlement::Settled, Arc::from([]))
         .unwrap_or_else(|error| panic!("shutdown completion failed: {error:?}"));
     assert_eq!(report.cause, ShutdownCause::Requested);
     assert!(report.orderly);

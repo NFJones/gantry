@@ -539,6 +539,65 @@ impl ExecutionCoordinator {
         Ok(())
     }
 
+    /// Atomically publishes semantic settlement after a driver failure.
+    ///
+    /// A staged outcome takes precedence over `fallback`, and an effective
+    /// cancellation takes precedence over both. Already-settled tasks return
+    /// their fixed status without publishing or waking observers again. This
+    /// operation does not change physical driver ownership.
+    pub fn settle_after_driver_failure(
+        &self,
+        task_id: ProtocolIdentity,
+        fallback: MachineOutcome,
+    ) -> Result<ConcurrentTaskStatusV1, TaskStateError> {
+        let (status, task_waiters, shutdown_waiters) = {
+            let mut state = lock(&self.inner.state);
+            let record = state
+                .tasks
+                .task_record(task_id)
+                .ok_or(TaskStateError::UnknownTask)?;
+            if status_is_settled(record.status()) {
+                return Ok(record.status().clone());
+            }
+            require_publication_available(&state)?;
+            let status = state.tasks.settle_after_driver_failure(task_id, fallback)?;
+            state.publication = state.publication.wrapping_add(1);
+            let task_waiters = state.task_waiters.remove(&task_id).unwrap_or_default();
+            let shutdown_waiters = take_shutdown_waiters_if_quiescent(&mut state);
+            (status, task_waiters, shutdown_waiters)
+        };
+        wake_all(task_waiters);
+        wake_all(shutdown_waiters);
+        Ok(status)
+    }
+
+    /// Atomically publishes executor-abort failure without changing physical ownership.
+    pub fn settle_after_abort_failure(
+        &self,
+        task_id: ProtocolIdentity,
+        outcome: MachineOutcome,
+    ) -> Result<ConcurrentTaskStatusV1, TaskStateError> {
+        let (status, task_waiters, shutdown_waiters) = {
+            let mut state = lock(&self.inner.state);
+            let record = state
+                .tasks
+                .task_record(task_id)
+                .ok_or(TaskStateError::UnknownTask)?;
+            if status_is_settled(record.status()) {
+                return Ok(record.status().clone());
+            }
+            require_publication_available(&state)?;
+            let status = state.tasks.settle_after_abort_failure(task_id, outcome)?;
+            state.publication = state.publication.wrapping_add(1);
+            let task_waiters = state.task_waiters.remove(&task_id).unwrap_or_default();
+            let shutdown_waiters = take_shutdown_waiters_if_quiescent(&mut state);
+            (status, task_waiters, shutdown_waiters)
+        };
+        wake_all(task_waiters);
+        wake_all(shutdown_waiters);
+        Ok(status)
+    }
+
     /// Consumes one source join selection at the coordinator linearization point.
     pub fn begin_join(
         &self,
@@ -674,6 +733,14 @@ impl ExecutionCoordinator {
     #[must_use]
     pub fn shutdown_cohort(&self) -> ConcurrentShutdownCohortV1 {
         lock(&self.inner.state).tasks.shutdown_cohort()
+    }
+
+    /// Returns the semantic cohort covered by execution cancellation.
+    #[must_use]
+    pub fn execution_cancellation_cohort(&self) -> Vec<ProtocolIdentity> {
+        lock(&self.inner.state)
+            .tasks
+            .execution_cancellation_cohort()
     }
 
     /// Records physical driver settlement and publishes shutdown progress.
@@ -1081,4 +1148,103 @@ fn wake_all(waiters: Vec<RegisteredWaiter>) {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::Wake;
+
+    use gantry_core::portable::IdentityKind;
+    use gantry_core::value::LogicalValue;
+
+    use super::*;
+    use crate::CanonicalTranscriptV1;
+
+    #[derive(Default)]
+    struct WakeCount(AtomicUsize);
+
+    impl Wake for WakeCount {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    #[test]
+    fn driver_failure_settlement_wakes_task_and_shutdown_waiters_once() {
+        let execution = identity(IdentityKind::Execution, 1);
+        let root_task = ProtocolIdentity::derive(IdentityKind::Task, b"{\"root\":true}")
+            .unwrap_or_else(|error| panic!("root task identity failed: {error}"));
+        let root_session = identity(IdentityKind::Session, 3);
+        let tasks = ConcurrentTaskStateV1::new(execution, root_task, 1)
+            .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("sessions failed: {error:?}"));
+        let coordinator = ExecutionCoordinator::new(tasks, sessions)
+            .unwrap_or_else(|error| panic!("coordinator failed: {error:?}"));
+        coordinator
+            .stage_task_outcome(root_task, MachineOutcome::Succeeded(LogicalValue::unit()))
+            .unwrap_or_else(|error| panic!("outcome staging failed: {error:?}"));
+        assert!(
+            coordinator
+                .mark_driver_physically_settled(root_task)
+                .unwrap_or_else(|error| panic!("physical settlement failed: {error:?}"))
+        );
+        let mut task_wait = Box::pin(
+            coordinator
+                .wait_for_task_settlement(root_task)
+                .unwrap_or_else(|error| panic!("task wait failed: {error:?}")),
+        );
+        let mut shutdown_wait = Box::pin(coordinator.wait_for_shutdown_quiescence());
+        let task_wakes = Arc::new(WakeCount::default());
+        let shutdown_wakes = Arc::new(WakeCount::default());
+        assert!(
+            task_wait
+                .as_mut()
+                .poll(&mut Context::from_waker(&Waker::from(task_wakes.clone())))
+                .is_pending()
+        );
+        assert!(
+            shutdown_wait
+                .as_mut()
+                .poll(&mut Context::from_waker(&Waker::from(
+                    shutdown_wakes.clone()
+                )))
+                .is_pending()
+        );
+
+        let status = coordinator
+            .settle_after_driver_failure(
+                root_task,
+                MachineOutcome::Cancelled(Arc::from("unused-fallback")),
+            )
+            .unwrap_or_else(|error| panic!("driver failure settlement failed: {error:?}"));
+        assert!(matches!(status, ConcurrentTaskStatusV1::Succeeded(_)));
+        assert_eq!(task_wakes.0.load(Ordering::Acquire), 1);
+        assert_eq!(shutdown_wakes.0.load(Ordering::Acquire), 1);
+        let publication = coordinator.snapshot().publication();
+
+        assert_eq!(
+            coordinator
+                .settle_after_driver_failure(
+                    root_task,
+                    MachineOutcome::Cancelled(Arc::from("unused-fallback")),
+                )
+                .unwrap_or_else(|error| panic!("repeat settlement failed: {error:?}")),
+            status
+        );
+        assert_eq!(coordinator.snapshot().publication(), publication);
+        assert_eq!(task_wakes.0.load(Ordering::Acquire), 1);
+        assert_eq!(shutdown_wakes.0.load(Ordering::Acquire), 1);
+    }
+
+    fn identity(kind: IdentityKind, byte: u8) -> ProtocolIdentity {
+        ProtocolIdentity::from_fresh_material(kind, [byte; 32])
+            .unwrap_or_else(|error| panic!("identity failed: {error}"))
+    }
 }

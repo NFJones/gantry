@@ -762,9 +762,21 @@ impl ConcurrentDurableCheckpointV4 {
             }
         }
         if state.tasks.values().any(|task| {
+            let settled_with_settled_owner = !matches!(
+                task.status(),
+                ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+            ) && state
+                .task_record(task.parent_task_id())
+                .is_some_and(|owner| {
+                    !matches!(
+                        owner.status(),
+                        ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running
+                    )
+                });
             task.handle_is_visible()
                 && task.handle_state() == TaskHandleState::Attached
                 && !lexical_handles.contains(&task.handle_id())
+                && !settled_with_settled_owner
         }) {
             return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
         }

@@ -2278,6 +2278,362 @@ fn public_durable_query_retains_required_spawn_delivery_failure() {
 }
 
 #[test]
+fn durable_parent_failure_cancels_only_attached_descendants_before_settlement() {
+    let root = TempDirectory::new(
+        r#"
+fn main() {
+    spawn attached -> Int { 7 }
+    spawn background -> Int { 8 }
+    detach(background);
+    discard 1 / 0;
+    discard join(attached);
+}
+"#,
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let interpreter = interpreter_with_delivery(
+        Arc::clone(&executor),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal_id = JournalId::new("durable-parent-failure-descendant-cancellation")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let accepted = durable_accepted(&interpreter, &root, storage.clone(), journal_id.clone());
+    let execution_id = accepted.execution_id();
+    let snapshot = drive_to_terminal(&executor, &interpreter, accepted.handle());
+    assert!(matches!(
+        snapshot.foreground,
+        Some(MachineOutcome::Failed(ref failure))
+            if failure.code
+                == RuntimeCode::Deterministic(
+                    gantry::portable::DeterministicEvaluationCode::IntegerDivisionByZero,
+                )
+    ));
+    assert!(snapshot.cancellation.is_none());
+
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("parent-failure journal read failed: {error:?}"));
+    let (program, graph_entries) = durable_graph_entries(&prefix);
+    let creations = graph_entries
+        .iter()
+        .filter(|(_, evidence)| evidence.cut() == DurableCommitCutV1::TaskCreation)
+        .map(|(_, evidence)| evidence.task_id())
+        .collect::<Vec<_>>();
+    assert_eq!(creations.len(), 2);
+    let detached_id = graph_entries
+        .iter()
+        .find(|(_, evidence)| evidence.cut() == DurableCommitCutV1::TaskOwnership)
+        .map(|(_, evidence)| evidence.task_id())
+        .unwrap_or_else(|| panic!("detached ownership cut is absent"));
+    let attached_id = creations
+        .iter()
+        .copied()
+        .find(|task_id| *task_id != detached_id)
+        .unwrap_or_else(|| panic!("attached child creation is absent"));
+    let root_id = graph_entries
+        .first()
+        .map(|(_, evidence)| evidence.checkpoint().root_task_id())
+        .unwrap_or_else(|| panic!("durable graph evidence is absent"));
+
+    let cancellation = graph_entries
+        .iter()
+        .find(|(_, evidence)| evidence.cut() == DurableCommitCutV1::Cancellation)
+        .unwrap_or_else(|| panic!("attached-descendant cancellation cut is absent"));
+    assert_eq!(cancellation.1.task_id(), attached_id);
+    assert!(matches!(cancellation.1, ConcurrentDurableEvidence::V4(_)));
+    assert!(cancellation.1.checkpoint().task_is_cancelled(attached_id));
+    assert!(!cancellation.1.checkpoint().task_is_cancelled(root_id));
+    assert!(!cancellation.1.checkpoint().task_is_cancelled(detached_id));
+    assert_eq!(
+        cancellation.1.checkpoint().task_status(root_id),
+        Some(TaskStatusKind::Running),
+        "parent settlement became visible in the cancellation cut"
+    );
+
+    let attached_settlement = graph_entries
+        .iter()
+        .find(|(_, evidence)| {
+            evidence.cut() == DurableCommitCutV1::TaskSettlement
+                && evidence.task_id() == attached_id
+        })
+        .unwrap_or_else(|| panic!("attached descendant settlement is absent"));
+    let root_settlement = graph_entries
+        .iter()
+        .find(|(_, evidence)| {
+            evidence.cut() == DurableCommitCutV1::TaskSettlement && evidence.task_id() == root_id
+        })
+        .unwrap_or_else(|| panic!("failed parent settlement is absent"));
+    let detached_settlement = graph_entries
+        .iter()
+        .find(|(_, evidence)| {
+            evidence.cut() == DurableCommitCutV1::TaskSettlement
+                && evidence.task_id() == detached_id
+        })
+        .unwrap_or_else(|| panic!("detached child settlement is absent"));
+    assert!(cancellation.0 < attached_settlement.0);
+    assert!(attached_settlement.0 < root_settlement.0);
+    assert_eq!(
+        attached_settlement.1.checkpoint().task_status(attached_id),
+        Some(TaskStatusKind::Cancelled)
+    );
+    assert_eq!(
+        detached_settlement.1.checkpoint().task_status(detached_id),
+        Some(TaskStatusKind::Succeeded)
+    );
+
+    let recovered = recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
+        .unwrap_or_else(|error| panic!("parent-failure prefix failed recovery: {error:?}"));
+    assert!(recovered.cancellation_reason().is_none());
+    let state = recovered.execution().scheduler().state();
+    assert!(matches!(
+        state.task(attached_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Cancelled(_))
+    ));
+    assert!(matches!(
+        state.task(detached_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Succeeded(_))
+    ));
+    assert!(matches!(
+        state.root_settled_outcome(),
+        Some(MachineOutcome::Failed(failure))
+            if failure.code
+                == RuntimeCode::Deterministic(
+                    gantry::portable::DeterministicEvaluationCode::IntegerDivisionByZero,
+                )
+    ));
+
+    let JournalPrefixV1::Full(full) = &prefix else {
+        unreachable!("in-memory journal retains its full prefix")
+    };
+    let mut tampered_evidence = full.evidence.to_vec();
+    let cancellation_envelope = tampered_evidence
+        .iter_mut()
+        .find(|entry| entry.sequence == cancellation.0)
+        .unwrap_or_else(|| panic!("cancellation envelope is absent"));
+    assert!(!cancellation_envelope.references.is_empty());
+    cancellation_envelope.references = Arc::from([]);
+    let tampered = JournalPrefixV1::Full(FullJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+        evidence: Arc::from(tampered_evidence),
+        committed_through: full.committed_through,
+    });
+    assert!(
+        recover_concurrent_authoritative_prefix(program, &tampered).is_err(),
+        "recovery accepted a cancellation cut detached from its causal predecessor"
+    );
+    assert_eq!(snapshot.execution_id, execution_id);
+}
+
+#[test]
+fn durable_nested_parent_failure_retains_outcome_and_does_not_cancel_siblings() {
+    let root = TempDirectory::new(
+        r#"
+fn main() {
+    spawn parent -> Int {
+        spawn attached -> Int { 7 }
+        spawn background -> Int { 8 }
+        detach(background);
+        discard 1 / 0;
+        discard join(attached);
+        0
+    }
+    spawn sibling -> Int { 9 }
+    discard join(parent, sibling);
+}
+"#,
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let interpreter = interpreter_with_delivery(
+        Arc::clone(&executor),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal_id = JournalId::new("durable-nested-parent-failure-cancellation")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let accepted = durable_accepted(&interpreter, &root, storage.clone(), journal_id.clone());
+
+    for _ in 0..64 {
+        if executor.task_ids().len() >= 3 {
+            break;
+        }
+        if executor.is_runnable(0) {
+            let _ = executor
+                .poll_task(0)
+                .unwrap_or_else(|error| panic!("root setup poll failed: {error:?}"));
+        }
+    }
+    assert_eq!(executor.task_ids(), [0, 1, 2]);
+
+    let mut cancellation_prefix = None;
+    for _ in 0..128 {
+        if executor.is_runnable(1) {
+            let _ = executor
+                .poll_task(1)
+                .unwrap_or_else(|error| panic!("parent setup poll failed: {error:?}"));
+        }
+        let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: journal_id.clone(),
+        }))
+        .unwrap_or_else(|error| panic!("cancellation-prefix read failed: {error:?}"));
+        let (_, entries) = durable_graph_entries(&prefix);
+        if entries
+            .iter()
+            .any(|(_, evidence)| evidence.cut() == DurableCommitCutV1::Cancellation)
+        {
+            cancellation_prefix = Some(prefix);
+            break;
+        }
+    }
+    let cancellation_prefix = cancellation_prefix
+        .unwrap_or_else(|| panic!("nested parent did not commit descendant cancellation"));
+    let (program, cancellation_entries) = durable_graph_entries(&cancellation_prefix);
+    let creations = cancellation_entries
+        .iter()
+        .filter(|(_, evidence)| evidence.cut() == DurableCommitCutV1::TaskCreation)
+        .map(|(_, evidence)| evidence.task_id())
+        .collect::<Vec<_>>();
+    let [parent_id, sibling_id, attached_id, detached_id] = creations.as_slice() else {
+        panic!("unexpected nested task creation order: {creations:?}")
+    };
+    let cancellation = cancellation_entries
+        .iter()
+        .find(|(_, evidence)| evidence.cut() == DurableCommitCutV1::Cancellation)
+        .unwrap_or_else(|| panic!("nested cancellation cut is absent"));
+    assert_eq!(cancellation.1.task_id(), *attached_id);
+    assert!(cancellation.1.checkpoint().task_is_cancelled(*attached_id));
+    assert!(!cancellation.1.checkpoint().task_is_cancelled(*parent_id));
+    assert!(!cancellation.1.checkpoint().task_is_cancelled(*sibling_id));
+    assert!(!cancellation.1.checkpoint().task_is_cancelled(*detached_id));
+    assert_eq!(
+        cancellation.1.checkpoint().task_status(*parent_id),
+        Some(TaskStatusKind::Running),
+        "parent settlement leaked into its descendant-cancellation cut"
+    );
+
+    let recovered_cut =
+        recover_concurrent_authoritative_prefix(Arc::clone(&program), &cancellation_prefix)
+            .unwrap_or_else(|error| panic!("nested cancellation cut failed recovery: {error:?}"));
+    assert!(recovered_cut.cancellation_reason().is_none());
+    let cut_state = recovered_cut.execution().scheduler().state();
+    assert!(matches!(
+        cut_state
+            .task_record(*parent_id)
+            .and_then(|record| record.pending_outcome()),
+        Some(MachineOutcome::Failed(failure))
+            if failure.code
+                == RuntimeCode::Deterministic(
+                    gantry::portable::DeterministicEvaluationCode::IntegerDivisionByZero,
+                )
+    ));
+    assert!(matches!(
+        cut_state.task(*attached_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Running)
+    ));
+    assert!(matches!(
+        cut_state.task(*sibling_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Running)
+    ));
+    assert!(matches!(
+        cut_state.task(*detached_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Running)
+    ));
+
+    let terminal = drive_to_terminal(&executor, &interpreter, accepted.handle());
+    assert!(terminal.terminal.is_some());
+    let final_prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("final nested journal read failed: {error:?}"));
+    let (_, final_entries) = durable_graph_entries(&final_prefix);
+    let settlement_sequence = |task_id| {
+        final_entries
+            .iter()
+            .find(|(_, evidence)| {
+                evidence.cut() == DurableCommitCutV1::TaskSettlement
+                    && evidence.task_id() == task_id
+            })
+            .map(|(sequence, _)| *sequence)
+            .unwrap_or_else(|| panic!("settlement for task {task_id} is absent"))
+    };
+    let attached_settlement = settlement_sequence(*attached_id);
+    let parent_settlement = settlement_sequence(*parent_id);
+    assert!(cancellation.0 < attached_settlement);
+    assert!(attached_settlement < parent_settlement);
+
+    let recovered_final = recover_concurrent_authoritative_prefix(program, &final_prefix)
+        .unwrap_or_else(|error| panic!("final nested prefix failed recovery: {error:?}"));
+    let final_state = recovered_final.execution().scheduler().state();
+    assert!(matches!(
+        final_state.task(*attached_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Cancelled(_))
+    ));
+    assert!(matches!(
+        final_state.task(*sibling_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Succeeded(_))
+    ));
+    assert!(matches!(
+        final_state.task(*detached_id).map(|task| task.status()),
+        Some(ConcurrentTaskStatusV1::Succeeded(_))
+    ));
+}
+
+#[test]
 fn public_durable_graph_cancellation_commits_before_signalling_and_finishes() {
     let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -3639,8 +3995,9 @@ fn drive_to_terminal(
             )
         })
         .collect::<Vec<_>>();
+    let durable = block_on(interpreter.test_durable_observation(handle.execution_id()));
     panic!(
-        "source-spawn execution did not reach terminal state; latest={latest:?}; tasks={tasks:?}"
+        "source-spawn execution did not reach terminal state; latest={latest:?}; tasks={tasks:?}; durable={durable:?}"
     )
 }
 

@@ -13,6 +13,7 @@ use gantry_core::portable::{
     CancellationReasonCategory, DeliveryOutcome, ExecutionObservationState, IdentityKind,
     JournalOwnerStatus, SinkClass,
 };
+use gantry_host::contracts::HostError;
 use gantry_host::contracts::{
     DeadlineOutcome, DurationMicros, FreshIdentityAllocator, IdentitySource, deadline_race,
 };
@@ -39,7 +40,8 @@ use gantry_runtime::{
     DurableOperationEvidenceV1, DurableTransitionSink, ExecutionFailureProjection, ExecutionHandle,
     ExecutionTransitionError, FinalShutdownEventSettlement, InterpreterLifecycle, LifecycleError,
     MachineOutcome, RecoveredDurableEventsV1, RecoveredDurableStateV1, RequiredDeliveryRecordV1,
-    RequiredEventDeliveryFailureV1, ShutdownCompletionError, ShutdownReport,
+    RequiredEventDeliveryFailureV1, ShutdownCompletionError, ShutdownJournalOwnerRelease,
+    ShutdownJournalOwnerReleaseStatus, ShutdownReport,
     recover_authoritative_prefix_with_retained_program,
 };
 
@@ -157,6 +159,8 @@ pub enum DurableRunFailure {
     Commit(DurableCommitError),
     /// Committed state could not be published into the in-process lifecycle owner.
     Lifecycle(ExecutionTransitionError),
+    /// Executor cancellation or physical supervision failed.
+    Executor(HostError),
     /// A safely contained interpreter invariant prevented further durable progress.
     Internal,
 }
@@ -601,8 +605,10 @@ impl DurableLifecycleCoordinator {
         }
 
         let mut executions = Vec::with_capacity(owned.len());
+        let mut journal_owner_releases = Vec::with_capacity(owned.len());
         for execution in owned.values() {
-            let observation = match deadline_race(
+            let execution_id = execution.execution_id();
+            let (observation, status) = match deadline_race(
                 executor.as_ref(),
                 Box::pin(execution.release_owner_for_shutdown()),
                 durations.drain,
@@ -610,21 +616,49 @@ impl DurableLifecycleCoordinator {
             )
             .await
             {
-                DeadlineOutcome::Completed(observation) => observation,
-                DeadlineOutcome::Cancelled
-                | DeadlineOutcome::TimedOut
-                | DeadlineOutcome::Failed(_) => {
+                DeadlineOutcome::Completed(observation) => {
+                    let status = match observation.owner.clone() {
+                        Some(DurableJournalOwnerState::Released) => {
+                            ShutdownJournalOwnerReleaseStatus::Released
+                        }
+                        Some(DurableJournalOwnerState::ReleaseFailed(error)) => {
+                            ShutdownJournalOwnerReleaseStatus::ReleaseFailed(error)
+                        }
+                        Some(DurableJournalOwnerState::Held) | None => {
+                            ShutdownJournalOwnerReleaseStatus::HeldNotSafe
+                        }
+                    };
+                    (observation, status)
+                }
+                DeadlineOutcome::Cancelled => {
+                    unreachable!("durable shutdown owner-release race has no cancellation signal")
+                }
+                DeadlineOutcome::TimedOut => {
                     orderly = false;
-                    execution.observation()
+                    (
+                        execution.observation(),
+                        ShutdownJournalOwnerReleaseStatus::TimedOut,
+                    )
+                }
+                DeadlineOutcome::Failed(error) => {
+                    orderly = false;
+                    (
+                        execution.observation(),
+                        ShutdownJournalOwnerReleaseStatus::ExecutorFailed(error),
+                    )
                 }
             };
             orderly &= observation.run_failure.is_none()
                 && observation.required_delivery_failures.is_empty()
                 && observation.owner == Some(DurableJournalOwnerState::Released);
             executions.push(observation);
+            journal_owner_releases.push(ShutdownJournalOwnerRelease {
+                execution_id,
+                status,
+            });
         }
         let lifecycle_report = coordinator
-            .complete(orderly, final_event)
+            .complete(orderly, final_event, Arc::from(journal_owner_releases))
             .map_err(DurableShutdownError::Completion)?;
         Ok(Arc::new(DurableShutdownReport {
             lifecycle: lifecycle_report,
@@ -922,7 +956,55 @@ impl DurableOwnedExecution {
             .await
             .map_err(DurableRunFailure::Commit)?;
         let frontier = commits.frontier().ok_or(DurableRunFailure::Internal)?;
-        self.publish_graph_progress(coordinator, frontier, cut)?;
+        self.publish_graph_progress(
+            coordinator,
+            frontier,
+            cut,
+            cut == DurableCommitCutV1::Cancellation,
+        )?;
+        Ok(frontier)
+    }
+
+    /// Commits one task-local cancellation cut without publishing execution cancellation.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn commit_graph_task_cancellation_transaction(
+        &self,
+        coordinator: &ExecutionCoordinator,
+        transaction: DurableGraphTransaction<'_>,
+        predecessor: (ProtocolIdentity, u64),
+        affected_task: ProtocolIdentity,
+    ) -> Result<(ProtocolIdentity, u64), DurableRunFailure> {
+        let root_task = coordinator.snapshot().state().root_task_id();
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableCommitCoordinatorV1::new(
+            &sink,
+            self.execution_id(),
+            root_task,
+            Some(predecessor),
+        )
+        .map_err(DurableRunFailure::Commit)?;
+        commits
+            .set_graph_task_cancellation()
+            .map_err(DurableRunFailure::Commit)?;
+        transaction
+            .commit(
+                &mut commits,
+                DurableCommitCutV1::Cancellation,
+                affected_task,
+            )
+            .await
+            .map_err(DurableRunFailure::Commit)?;
+        let frontier = commits.frontier().ok_or(DurableRunFailure::Internal)?;
+        self.publish_graph_progress(
+            coordinator,
+            frontier,
+            DurableCommitCutV1::Cancellation,
+            false,
+        )?;
         Ok(frontier)
     }
 
@@ -933,10 +1015,11 @@ impl DurableOwnedExecution {
         coordinator: &ExecutionCoordinator,
         frontier: (ProtocolIdentity, u64),
         cut: DurableCommitCutV1,
+        execution_cancellation: bool,
     ) -> Result<(), DurableRunFailure> {
         let snapshot = coordinator.snapshot();
         let foreground = snapshot.state().foreground_outcome().cloned();
-        let committed_cancellation = if cut == DurableCommitCutV1::Cancellation {
+        let committed_cancellation = if execution_cancellation {
             Some(
                 lock_state(&self.state)
                     .graph_cancellation
@@ -1114,6 +1197,34 @@ impl DurableOwnedExecution {
             waiter.wake();
         }
         observation
+    }
+
+    /// Publishes a current-run graph failure while physical work remains supervised.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn fail_live_graph(&self, failure: DurableRunFailure) {
+        let mut state = lock_state(&self.state);
+        if state.run_failure.is_some() {
+            return;
+        }
+        state.graph_failure_pending = Some(failure.clone());
+        state.run_failure = Some(failure.clone());
+        state.generation = state.generation.wrapping_add(1);
+        state.last_observation.run_failure = Some(failure);
+        let operation_waiters = std::mem::take(&mut state.operation_waiters);
+        let graph_waiters = std::mem::take(&mut state.graph_driver_wakers);
+        let observation_waiters = state
+            .observation_waiters
+            .iter()
+            .map(|waiter| waiter.waker.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for waiter in operation_waiters
+            .into_iter()
+            .chain(graph_waiters)
+            .chain(observation_waiters)
+        {
+            waiter.wake();
+        }
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -2771,6 +2882,25 @@ impl DurableOwnedExecution {
     }
 
     pub(crate) async fn release_owner_for_shutdown(&self) -> DurableExecutionObservation {
+        let release_started = {
+            let release = lock_owner_release(&self.owner_release);
+            release.poller_active || release.future.is_some() || release.completion.is_some()
+        };
+        if !release_started {
+            let state = lock_state(&self.state);
+            if state.driver_active || state.operation_in_flight || {
+                #[cfg(all(feature = "concurrent", feature = "durable"))]
+                {
+                    state.graph_active
+                }
+                #[cfg(not(all(feature = "concurrent", feature = "durable")))]
+                {
+                    false
+                }
+            } {
+                return state.last_observation.clone();
+            }
+        }
         let _ = self.release_owner_state_once().await;
         self.observation()
     }

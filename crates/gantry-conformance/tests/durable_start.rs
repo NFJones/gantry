@@ -37,7 +37,8 @@ use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
     AdmissionClass, CancellationReason, DurableExecutionStartV3, DurableRecoverySnapshotV3,
     FinalShutdownEventSettlement, InMemoryJournalStore, InterpreterConfiguration,
-    InterpreterLifecycle, MachineOutcome, MachineStep, RequiredConfiguration, SupervisedTaskDomain,
+    InterpreterLifecycle, MachineOutcome, MachineStep, RequiredConfiguration,
+    ShutdownCompletionError, SupervisedTaskDomain,
     recover_authoritative_prefix_with_retained_program,
 };
 use gantry::source::FrontendLimits;
@@ -757,8 +758,22 @@ fn direct_durable_shutdown_bounds_resistant_operation_and_failed_abort_before_re
         executor.abort_result(0),
         Some(OwnedTaskAbort::Failed(_))
     ));
-    assert_eq!(storage.release_calls(), 1);
-    assert!(matches!(result, Some(Err(_))));
+    assert_eq!(storage.release_calls(), 0);
+    let report = match result {
+        Some(Ok(report)) => report,
+        other => panic!("bounded durable shutdown did not publish a report: {other:?}"),
+    };
+    assert!(!report.lifecycle.orderly);
+    assert!(
+        report
+            .lifecycle
+            .completion_failures
+            .contains(&ShutdownCompletionError::SupervisedTasksPending)
+    );
+    assert_eq!(
+        report.executions[0].owner,
+        Some(gantry::DurableJournalOwnerState::Held)
+    );
 }
 
 #[test]
