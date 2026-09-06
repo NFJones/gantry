@@ -358,7 +358,10 @@ fn shutdown_races_transfer_admission_and_snapshot_first_durations() {
         panic!("terminal waiter did not resolve")
     };
     assert_eq!(snapshot.foreground, Some(outcome.clone()));
-    assert_eq!(snapshot.terminal, Some(outcome));
+    assert_eq!(
+        snapshot.terminal.map(|terminal| terminal.foreground),
+        Some(outcome)
+    );
     assert_eq!(snapshot.cancellation, Some(first_reason));
 
     let report = coordinator

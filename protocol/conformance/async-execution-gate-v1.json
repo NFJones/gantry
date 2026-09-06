@@ -30,7 +30,7 @@
   "artifacts": [
     {
       "path": "crates/gantry-conformance/tests/source_spawn.rs",
-      "sha256": "e2e00592c1a3d80f2895d4474fa22d884762b57397fe9ec99f8e1f28c97ccdd4"
+      "sha256": "ef6ce7ba6355072250c8eec36de2f03be6866366f1f5ff2c2fb3a0e6e1786e70"
     },
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
@@ -82,7 +82,7 @@
     },
     {
       "path": "protocol/conformance/source-spawn-v1.json",
-      "sha256": "d9fb5c4639c3c6bb4b419194a07480d289932885e3c5bbf55e0a741cd208fc1a"
+      "sha256": "8484ad605cd50ea5fe2c5344c7b52a8695a617ba6326159ef720e56686a8c8ac"
     },
     {
       "path": "protocol/conformance/task-driver-v1.json",

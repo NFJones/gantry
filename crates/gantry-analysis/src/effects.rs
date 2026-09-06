@@ -918,8 +918,10 @@ fn apply_expression_ownership(
             return Ok(());
         }
         SyntaxForm::JoinAllExpression => {
-            for record in handles.values_mut() {
-                if record.state == HandleState::Attached {
+            for handle in static_joinall_membership(tree, node)? {
+                if let Some(record) = handles.get_mut(&handle)
+                    && record.state == HandleState::Attached
+                {
                     record.state = HandleState::Joined;
                 }
             }

@@ -1048,7 +1048,10 @@ fn nondurable_action_dispatch_treats_lifecycle_cancellation_cooperatively() {
         .unwrap_or_else(|| panic!("cancelled nondurable execution disappeared"));
     assert!(matches!(
         snapshot.terminal,
-        Some(MachineOutcome::Cancelled(ref reason)) if reason.as_ref() == "cancellation"
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Cancelled(ref reason),
+            ..
+        }) if reason.as_ref() == "cancellation"
     ));
     assert!(
         integration
@@ -1166,8 +1169,10 @@ fn accepted_durable_root_runs_on_the_executor_and_commits_before_observation() {
     assert!(
         matches!(
             observation.terminal,
-            Some(MachineOutcome::Succeeded(ref value))
-                if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
+            Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+                foreground: MachineOutcome::Succeeded(ref value),
+                ..
+            }) if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
         ),
         "unexpected durable observation: {observation:?}"
     );
@@ -1300,7 +1305,10 @@ fn facade_cancellation_of_a_running_durable_root_commits_before_signalling() {
         .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop"
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Cancelled(ref message),
+            ..
+        }) if message.as_ref() == "stop"
     ));
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
@@ -1438,7 +1446,10 @@ fn facade_cancellation_drains_finite_events_before_releasing_durable_owner() {
         .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "drain-events"
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Cancelled(ref message),
+            ..
+        }) if message.as_ref() == "drain-events"
     ));
 
     let repeated = block_on(interpreter.cancel_execution(execution_id, expected_reason))
@@ -1570,7 +1581,10 @@ fn cancellation_progresses_a_pending_dispatch_and_retains_it_to_settlement() {
         .unwrap_or_else(|| panic!("accepted durable execution disappeared"));
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop-pending"
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Cancelled(ref message),
+            ..
+        }) if message.as_ref() == "stop-pending"
     ));
 
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
@@ -1836,7 +1850,10 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
     let observation = &report.cohort[0];
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Cancelled(ref message),
+            ..
+        }) if message.as_ref() == "shutdown"
     ));
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
@@ -2180,7 +2197,10 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
         let observation = &report.cohort[0];
         assert!(matches!(
             observation.terminal,
-            Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
+            Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+                foreground: MachineOutcome::Cancelled(ref message),
+                ..
+            }) if message.as_ref() == "shutdown"
         ));
         let payloads = shutdown_sink.payloads();
         assert_eq!(payloads.len(), 1);
@@ -2399,8 +2419,10 @@ fn resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically
         .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Succeeded(ref value))
-            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Succeeded(ref value),
+            ..
+        }) if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
     ));
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
@@ -2819,8 +2841,10 @@ fn durable_event_dispatch_and_settlement_precede_callback_and_terminal_observati
     };
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Succeeded(ref value))
-            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 67)
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Succeeded(ref value),
+            ..
+        }) if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 67)
     ));
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
@@ -2968,8 +2992,10 @@ fn terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner() {
         .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Succeeded(ref value))
-            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 71)
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Succeeded(ref value),
+            ..
+        }) if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 71)
     ));
 }
 
@@ -3053,8 +3079,10 @@ fn terminal_resume_accepts_without_submitting_a_root_driver() {
         .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Succeeded(ref value))
-            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 73)
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Succeeded(ref value),
+            ..
+        }) if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 73)
     ));
 }
 
@@ -3202,8 +3230,10 @@ fn durable_operation_cuts_commit_before_dispatch_and_source_consumption() {
     assert!(
         matches!(
             observation.terminal,
-            Some(MachineOutcome::Succeeded(ref value))
-                if matches!(value.view(), LogicalValueView::String("done"))
+            Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+                foreground: MachineOutcome::Succeeded(ref value),
+                ..
+            }) if matches!(value.view(), LogicalValueView::String("done"))
         ),
         "unexpected durable operation observation: {observation:?}"
     );
@@ -3381,9 +3411,11 @@ fn preterminal_required_delivery_exhaustion_commits_runtime_failure_precedence()
     assert!(
         matches!(
             observation.terminal,
-            Some(MachineOutcome::Failed(ref failure))
-                if failure.code
-                    == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
+            Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+                foreground: MachineOutcome::Failed(ref failure),
+                ..
+            }) if failure.code
+                == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
         ),
         "unexpected required-delivery outcome: {observation:?}"
     );
@@ -3603,9 +3635,11 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
         .unwrap_or_else(|| panic!("accepted resumed execution disappeared"));
     assert!(matches!(
         observation.terminal,
-        Some(MachineOutcome::Failed(ref failure))
-            if failure.code
-                == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
+        Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+            foreground: MachineOutcome::Failed(ref failure),
+            ..
+        }) if failure.code
+            == RuntimeCode::Operation(RuntimeErrorCategory::RequiredEventDeliveryFailure)
     ));
     assert_eq!(observation.required_delivery_failures.len(), 1);
     let failed = &observation.required_delivery_failures[0];
@@ -3708,8 +3742,10 @@ fn durable_lexical_session_state_commits_before_source_progress() {
     assert!(
         matches!(
             observation.terminal,
-            Some(MachineOutcome::Succeeded(ref value))
-                if matches!(value.view(), LogicalValueView::Unit)
+            Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+                foreground: MachineOutcome::Succeeded(ref value),
+                ..
+            }) if matches!(value.view(), LogicalValueView::Unit)
         ),
         "unexpected durable session observation: {observation:?}"
     );
@@ -3812,8 +3848,10 @@ fn durable_submission_failure_commits_terminal_root_failure_after_acceptance() {
     assert!(
         matches!(
             observation.terminal,
-            Some(MachineOutcome::Failed(ref failure))
-                if failure.code == gantry::runtime::RuntimeCode::RootSubmissionFailure
+            Some(gantry::runtime::ConcurrentTerminalOutcomeV1 {
+                foreground: MachineOutcome::Failed(ref failure),
+                ..
+            }) if failure.code == gantry::runtime::RuntimeCode::RootSubmissionFailure
         ),
         "unexpected durable submission observation: {observation:?}"
     );

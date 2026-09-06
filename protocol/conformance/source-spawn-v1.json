@@ -4,7 +4,7 @@
   "issue": "GNT-ASYNC-SPAWN-001",
   "source_test": {
     "path": "crates/gantry-conformance/tests/source_spawn.rs",
-    "sha256": "e2e00592c1a3d80f2895d4474fa22d884762b57397fe9ec99f8e1f28c97ccdd4"
+    "sha256": "ef6ce7ba6355072250c8eec36de2f03be6866366f1f5ff2c2fb3a0e6e1786e70"
   },
   "requirements": [
     {"requirement":"GNT-3.6","clause":"clause-001","profiles":["concurrent-evaluator","durable-runtime","embedding","evaluator"]},
@@ -37,8 +37,8 @@
     {"id":"task-limit-precheck","evidence":"crates/gantry-conformance/tests/source_spawn.rs#durable_task_limit_precheck_skips_parent_session_and_child_creation"}
   ],
   "exclusions": [
-    "Source JOIN, JOINALL, DETACH, descendant draining, and their complete concurrent-evaluator behavior remain owned by GNT-ASYNC-JOIN-001 and GNT-ASYNC-CANCEL-001.",
-    "The linked source fixtures do not claim successful source JOIN execution; after the child behavior under test, their join site may terminate with the current unsupported task-control invariant.",
+    "Source JOIN, JOINALL, and DETACH evidence is linked separately by protocol/conformance/source-join-v1.json; descendant draining remains owned by GNT-ASYNC-CANCEL-001.",
+    "The linked source fixtures now consume admitted child handles through executable all-settled JOIN semantics without broadening this spawn-focused evidence manifest.",
     "Complete concurrent-evaluator graph cancellation is not inferred from the focused durable cancellation ordering case.",
     "Recovered child reconstruction and fenced executor resubmission remain owned by GNT-ASYNC-REC-001; mixed-prefix resume is only classified as runnable replacement unavailable."
   ]

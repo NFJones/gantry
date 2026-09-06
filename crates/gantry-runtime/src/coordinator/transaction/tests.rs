@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     CanonicalTranscriptV1, DurableTransitionSink, InMemoryJournalStore, MachineLimits, MachineStep,
 };
-use gantry_core::portable::{CancellationReasonCategory, IdentityKind};
+use gantry_core::portable::IdentityKind;
 use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 use gantry_host::contracts::HostFuture;
 use gantry_host::journal::*;
@@ -244,11 +244,118 @@ fn spawn_fixture_with_program() -> (
                 site: StructuralPosition::new(vec![1])
                     .unwrap_or_else(|error| panic!("site: {error}")),
                 ty: TypeDescriptor::UNIT,
-                kind: InstructionKind::Push(LogicalValue::unit()),
+                kind: InstructionKind::Detach {
+                    handle: Arc::from("child"),
+                },
             },
             Instruction {
                 site: StructuralPosition::new(vec![2])
                     .unwrap_or_else(|error| panic!("site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![3])
+                    .unwrap_or_else(|error| panic!("site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Return,
+            },
+        ],
+    };
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(vec![(caller, root)], vec![body])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let limits = MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let machine = Machine::new_with_context(
+        program.clone(),
+        &path,
+        Vec::new(),
+        execution,
+        limits,
+        None,
+        Some(session),
+    )
+    .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let tasks = ConcurrentTaskStateV1::new(execution, machine.task_id(), 10)
+        .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+    let coordinator =
+        ExecutionCoordinator::new_with_budget(tasks, sessions, machine.execution_budget())
+            .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    (coordinator, machine, BTreeMap::new(), program)
+}
+
+/// Creates one root whose successful child is consumed by a source join.
+fn join_fixture_with_program() -> (
+    ExecutionCoordinator,
+    Machine,
+    BTreeMap<ProtocolIdentity, Machine>,
+    Arc<MachineProgram>,
+) {
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [27; 32])
+        .unwrap_or_else(|error| panic!("identity: {error}"));
+    let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [28; 32])
+        .unwrap_or_else(|error| panic!("identity: {error}"));
+    let path = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+    let caller = CanonicalCallableIdentity::free(&path, &[]);
+    let spawn_site =
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("spawn site: {error}"));
+    let body_identity = TaskBodyIdentity::new(caller.clone(), spawn_site.clone());
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::UNIT,
+        Vec::new(),
+        ExecutableTaskContext::v1(),
+        vec![
+            Instruction {
+                site: StructuralPosition::new(vec![0, 0])
+                    .unwrap_or_else(|error| panic!("body site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![0, 1])
+                    .unwrap_or_else(|error| panic!("body site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::TaskComplete,
+            },
+        ],
+    )
+    .unwrap_or_else(|error| panic!("task body: {error:?}"));
+    let root = Workflow {
+        path: path.clone(),
+        parameters: Vec::new(),
+        result: TypeDescriptor::UNIT,
+        effects: EffectSet::default(),
+        instructions: vec![
+            Instruction {
+                site: spawn_site,
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::UNIT)
+                        .unwrap_or_else(|error| panic!("task handle: {error:?}")),
+                    body: body_identity,
+                },
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![1])
+                    .unwrap_or_else(|error| panic!("join site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Join {
+                    handles: vec![Arc::from("child")],
+                },
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![2])
+                    .unwrap_or_else(|error| panic!("return site: {error}")),
                 ty: TypeDescriptor::UNIT,
                 kind: InstructionKind::Return,
             },
@@ -428,6 +535,308 @@ fn successful_commit_installs_machine_and_budget_together() {
             .is_ready()
     );
     assert!(coordinator.snapshot().state().drivers_are_quiescent());
+}
+
+/// A coordinator rebuilt from validated recovery must seed its first graph transaction.
+#[test]
+fn recovered_coordinator_bootstraps_durable_graph_baseline() {
+    let (coordinator, root, children, program) = fixture_with_program();
+    let execution = root.execution_id();
+    let task = root.task_id();
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal = JournalId::new("recovered-coordinator-bootstrap")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let initial = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("initial capture: {error:?}"));
+    ready(commits.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, task, initial.clone()))
+        .unwrap_or_else(|error| panic!("initial commit: {error:?}"));
+
+    let recovered = initial
+        .recover(program.clone())
+        .unwrap_or_else(|error| panic!("checkpoint recovery: {error:?}"));
+    let tasks = recovered.scheduler().state().clone();
+    let sessions = recovered.sessions().clone();
+    let budget = recovered.foreground().execution_budget();
+    let (mut recovered_root, mut recovered_children) = recovered.into_machine_graph();
+    let recovered_coordinator = ExecutionCoordinator::new_with_budget(tasks, sessions, budget)
+        .unwrap_or_else(|error| panic!("recovered coordinator: {error:?}"));
+    let mut stage = recovered_coordinator
+        .stage_graph(&mut recovered_root, &mut recovered_children)
+        .unwrap_or_else(|error| panic!("recovered stage: {error:?}"));
+    stage.update(|root, _, tasks, _| {
+        loop {
+            match root.step() {
+                MachineStep::Transition(crate::MachineLabel::TaskSettled(outcome)) => {
+                    tasks
+                        .settle(task, outcome)
+                        .unwrap_or_else(|error| panic!("recovered settlement: {error:?}"));
+                    break;
+                }
+                MachineStep::Transition(_) => {}
+                other => panic!("recovered root did not settle: {other:?}"),
+            }
+        }
+    });
+    ready(stage.commit(&mut commits, DurableCommitCutV1::TaskSettlement, task))
+        .unwrap_or_else(|error| panic!("recovered commit: {error:?}"));
+    assert_eq!(
+        recovered_coordinator.snapshot().execution_budget(),
+        Some(recovered_root.budget_checkpoint())
+    );
+    recovered_coordinator
+        .capture_checkpoint(&recovered_root, &recovered_children)
+        .unwrap_or_else(|error| panic!("recovered capture: {error:?}"));
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    crate::recover_concurrent_authoritative_prefix(program, &prefix)
+        .unwrap_or_else(|error| panic!("strict recovery: {error:?}"));
+}
+
+/// A physical driver race must not enter the next durable semantic predecessor.
+#[test]
+fn settlement_checkpoint_and_join_continue_from_committed_semantic_baseline() {
+    let (coordinator, mut root, mut children, program) = join_fixture_with_program();
+    let execution = root.execution_id();
+    let root_task = root.task_id();
+    let root_session = coordinator.snapshot().sessions()[0].id;
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal = JournalId::new("settlement-checkpoint-join-race")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, root_task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let initial = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("initial capture: {error:?}"));
+    ready(commits.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, root_task, initial))
+        .unwrap_or_else(|error| panic!("initial commit: {error:?}"));
+
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("creation stage: {error:?}"));
+    let (created, spawn) = stage.update(|root, _, tasks, sessions| {
+        let spawn = match root.step() {
+            MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(spawn)) => spawn,
+            other => panic!("root did not suspend at spawn: {other:?}"),
+        };
+        let created = tasks.create_child(
+            sessions,
+            crate::TaskCreationRequestV1 {
+                parent_task_id: root_task,
+                handle_name: Arc::from(spawn.handle.name()),
+                workflow: spawn.workflow.clone(),
+                spawn_site: spawn.site.clone(),
+                spawn_occurrence: spawn.occurrence,
+                result_type: spawn.handle.result_type().clone(),
+                captures: spawn
+                    .captures
+                    .iter()
+                    .map(|capture| capture.task_capture().clone())
+                    .collect(),
+                inherited_agent: spawn.inherited_agent.clone(),
+                parent_session_id: root_session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        );
+        (created, spawn)
+    });
+    let created = created.unwrap_or_else(|error| panic!("creation: {error:?}"));
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskCreation,
+        created.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("creation commit: {error:?}"));
+
+    let task_path = Arc::from(
+        coordinator
+            .snapshot()
+            .state()
+            .task(created.task_id)
+            .unwrap_or_else(|| panic!("created child missing"))
+            .task_path(),
+    );
+    let child = Machine::new_concurrent_task_body_with_context(
+        program.clone(),
+        &spawn.body,
+        &[],
+        execution,
+        created.task_id,
+        task_path,
+        MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("child limits")),
+        root.execution_budget(),
+        spawn.inherited_agent.clone(),
+        Some(created.base_session_id),
+    )
+    .unwrap_or_else(|error| panic!("child machine: {error:?}"));
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("submission stage: {error:?}"));
+    stage
+        .update(|root, _, tasks, _| {
+            root.complete_spawn(&spawn, created.handle_id)
+                .unwrap_or_else(|error| panic!("spawn completion: {error:?}"));
+            tasks.resolve_submission(created.task_id, Ok(()))
+        })
+        .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    stage
+        .install_child_machine(created.task_id, child)
+        .unwrap_or_else(|error| panic!("child installation: {error:?}"));
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::Checkpoint,
+        created.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("submission commit: {error:?}"));
+
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("join ownership stage: {error:?}"));
+    let ownership = stage.update(|root, _, tasks, _| {
+        assert!(matches!(
+            root.step(),
+            MachineStep::Transition(crate::MachineLabel::Deterministic { ref kind, .. })
+                if kind.as_ref() == "join-suspended"
+        ));
+        let (join, join_all) = root
+            .pending_task_control()
+            .and_then(|pending| pending.join())
+            .unwrap_or_else(|| panic!("join suspension missing"));
+        assert!(!join_all);
+        let names = join
+            .handles
+            .iter()
+            .map(|handle| Arc::from(handle.name()))
+            .collect::<Vec<_>>();
+        let handles = join
+            .handles
+            .iter()
+            .map(|handle| handle.identity())
+            .collect::<Vec<_>>();
+        match tasks.begin_source_join(
+            root_task,
+            join.workflow.clone(),
+            join.site.clone(),
+            gantry_ir::generated::TaskControlSiteKind::Join,
+            &names,
+            &handles,
+        ) {
+            Ok(JoinStartV1::Started(ownership)) => ownership,
+            other => panic!("join ownership failed: {other:?}"),
+        }
+    });
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskOwnership,
+        created.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("join ownership commit: {error:?}"));
+
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("settlement stage: {error:?}"));
+    stage.update(|_, children, tasks, _| {
+        let outcome = loop {
+            match children
+                .get_mut(&created.task_id)
+                .unwrap_or_else(|| panic!("child machine missing"))
+                .step()
+            {
+                MachineStep::Transition(crate::MachineLabel::TaskSettled(outcome)) => {
+                    break outcome;
+                }
+                MachineStep::Transition(_) => {}
+                other => panic!("child did not settle: {other:?}"),
+            }
+        };
+        children.remove(&created.task_id);
+        tasks
+            .settle(created.task_id, outcome)
+            .unwrap_or_else(|error| panic!("semantic settlement: {error:?}"));
+    });
+    coordinator
+        .mark_driver_physically_settled(created.task_id)
+        .unwrap_or_else(|error| panic!("physical settlement race: {error:?}"));
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskSettlement,
+        created.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("settlement commit: {error:?}"));
+    assert_eq!(
+        coordinator
+            .snapshot()
+            .state()
+            .task_record(created.task_id)
+            .map(|record| record.driver_ownership()),
+        Some(TaskDriverOwnershipV1::PhysicallySettled)
+    );
+
+    let stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("causal checkpoint stage: {error:?}"));
+    ready(stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, root_task))
+        .unwrap_or_else(|error| panic!("causal checkpoint commit: {error:?}"));
+
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("join continuation stage: {error:?}"));
+    stage.update(|root, _, tasks, _| {
+        let join = root
+            .pending_task_control()
+            .and_then(|pending| pending.join())
+            .map(|(join, _)| join.clone())
+            .unwrap_or_else(|| panic!("join continuation missing"));
+        let resolution = tasks
+            .resolve_join(&ownership, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("join resolution: {error:?}"));
+        assert_eq!(
+            resolution,
+            JoinResolutionV1::Succeeded(LogicalValue::unit())
+        );
+        root.complete_join(&join, resolution)
+            .unwrap_or_else(|error| panic!("join completion: {error:?}"));
+    });
+    ready(stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, root_task))
+        .unwrap_or_else(|error| panic!("join continuation commit: {error:?}"));
+
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    assert!(matches!(prefix, JournalPrefixV1::Full(_)));
+    let recovered = crate::recover_concurrent_authoritative_prefix(program, &prefix)
+        .unwrap_or_else(|error| panic!("strict recovery: {error:?}"));
+    assert_eq!(
+        recovered.execution().foreground().checkpoint(),
+        root.checkpoint()
+    );
+    assert_eq!(
+        recovered
+            .execution()
+            .scheduler()
+            .state()
+            .task_record(created.task_id)
+            .map(|record| record.driver_ownership()),
+        Some(TaskDriverOwnershipV1::Supervised)
+    );
 }
 
 /// Rejects the event write after accepting the graph's semantic cut.
@@ -632,78 +1041,10 @@ fn child_creation_and_submission_failure_publish_coherent_cuts() {
         child.task_id,
     ))
     .unwrap_or_else(|error| panic!("settlement commit: {error:?}"));
-    let limits = gantry_core::source::SourceLimits::new(1, 64, 64, 1, 1)
-        .unwrap_or_else(|error| panic!("source limits: {error:?}"));
-    let mut builder = gantry_core::source::SourceSnapshotBuilder::new(limits);
-    let source = builder
-        .add_file("main.gnt", b"detach(child)")
-        .unwrap_or_else(|error| panic!("source: {error:?}"));
-    let snapshot = builder.finish();
-    let record = snapshot
-        .get(&source)
-        .unwrap_or_else(|| panic!("missing source"));
-    let span = gantry_core::source::SourceSpan::new(
-        record,
-        gantry_core::source::ByteSpan::new(0, 1).unwrap_or_else(|error| panic!("span: {error:?}")),
-    )
-    .unwrap_or_else(|error| panic!("source span: {error:?}"));
-    let control = gantry_ir::TaskControlSite {
-        id: gantry_ir::StaticSiteId::new(
-            CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}")),
-            StructuralPosition::new(vec![1]).unwrap_or_else(|error| panic!("site: {error}")),
-        ),
-        kind: gantry_ir::generated::TaskControlSiteKind::Detach,
-        handles: vec![Arc::from("child")],
-        source: span,
-    };
-    let before = coordinator.snapshot();
-    let handle = before
-        .state()
-        .task(child.task_id)
-        .unwrap_or_else(|| panic!("missing child"))
-        .handle_id();
-    let mut stage = coordinator
-        .stage_graph(&mut root, &mut children)
-        .unwrap_or_else(|error| panic!("detach stage: {error:?}"));
-    stage
-        .update(|_, _, tasks, _| tasks.detach(task, &control, handle))
-        .unwrap_or_else(|error| panic!("detach: {error:?}"));
-    assert_eq!(coordinator.snapshot(), before);
-    ready(stage.commit(
-        &mut commits,
-        DurableCommitCutV1::TaskOwnership,
-        child.task_id,
-    ))
-    .unwrap_or_else(|error| panic!("detach commit: {error:?}"));
-    let before = coordinator.snapshot();
-    let mut stage = coordinator
-        .stage_graph(&mut root, &mut children)
-        .unwrap_or_else(|error| panic!("cancellation stage: {error:?}"));
-    stage.update(|root, _, tasks, _| {
-        tasks
-            .cancel_execution("stop")
-            .unwrap_or_else(|error| panic!("cancel: {error:?}"));
-        let _ = root.cancel(Arc::from("stop"));
-    });
-    assert_eq!(coordinator.snapshot(), before);
-    commits
-        .set_graph_cancellation(
-            crate::CancellationReason::new(
-                CancellationReasonCategory::Caller,
-                Some(Arc::from("stop")),
-                None,
-                32,
-            )
-            .unwrap_or_else(|error| panic!("cancellation reason: {error:?}")),
-        )
-        .unwrap_or_else(|error| panic!("graph cancellation: {error:?}"));
-    ready(stage.commit(&mut commits, DurableCommitCutV1::Cancellation, task))
-        .unwrap_or_else(|error| panic!("cancellation commit: {error:?}"));
     let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal,
     }))
     .unwrap_or_else(|error| panic!("prefix: {error:?}"));
-    // Recover through the same program retained by the root fixture.
     let recovered = crate::recover_concurrent_authoritative_prefix(program, &prefix)
         .unwrap_or_else(|error| panic!("recovery: {error:?}"));
     assert_eq!(
@@ -740,14 +1081,35 @@ fn multiple_machines_publish_one_budget_and_checkpoint_cut() {
     let execution = root.execution_id();
     let root_id = root.task_id();
     let session = coordinator.snapshot().sessions()[0].id;
-    let suspension = match root.step() {
-        MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(suspension)) => {
-            suspension
-        }
-        other => panic!("root did not suspend at spawn: {other:?}"),
-    };
-    let child = coordinator
-        .create_child(
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let journal =
+        JournalId::new("multi-machine-cut").unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, root_id, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let initial = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("initial capture: {error:?}"));
+    ready(commits.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, root_id, initial))
+        .unwrap_or_else(|error| panic!("initial commit: {error:?}"));
+
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("creation stage: {error:?}"));
+    let (child, suspension) = stage.update(|root, _, tasks, sessions| {
+        let suspension = match root.step() {
+            MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(suspension)) => {
+                suspension
+            }
+            other => panic!("root did not suspend at spawn: {other:?}"),
+        };
+        let child = tasks.create_child(
+            sessions,
             crate::TaskCreationRequestV1 {
                 parent_task_id: root_id,
                 handle_name: Arc::from(suspension.handle.name()),
@@ -764,76 +1126,101 @@ fn multiple_machines_publish_one_budget_and_checkpoint_cut() {
                 parent_session_id: session,
             },
             DEFAULT_VALUE_LIMITS,
-        )
-        .unwrap_or_else(|error| panic!("child: {error:?}"));
-    let snapshot = coordinator.snapshot();
+        );
+        (child, suspension)
+    });
+    let child = child.unwrap_or_else(|error| panic!("child creation: {error:?}"));
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskCreation,
+        child.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("creation commit: {error:?}"));
+
     let task_path = Arc::from(
-        snapshot
+        coordinator
+            .snapshot()
             .state()
             .task(child.task_id)
             .unwrap_or_else(|| panic!("missing child"))
             .task_path(),
     );
-    let limits = MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
-        .unwrap_or_else(|| panic!("limits"));
     let machine = Machine::new_concurrent_task_body_with_context(
         program.clone(),
         &suspension.body,
-        &[],
+        &suspension
+            .captures
+            .iter()
+            .map(|capture| capture.task_capture().clone())
+            .collect::<Vec<_>>(),
         execution,
         child.task_id,
         task_path,
-        limits,
+        MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|| panic!("limits")),
         root.execution_budget(),
         suspension.inherited_agent.clone(),
         Some(child.base_session_id),
     )
     .unwrap_or_else(|error| panic!("child machine: {error:?}"));
-    root.complete_spawn(&suspension, child.handle_id)
-        .unwrap_or_else(|error| panic!("spawn completion: {error:?}"));
-    children.insert(child.task_id, machine);
-    coordinator
-        .resolve_submission(child.task_id, Ok(()))
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("submission stage: {error:?}"));
+    stage
+        .update(|root, _, tasks, _| {
+            root.complete_spawn(&suspension, child.handle_id)
+                .unwrap_or_else(|error| panic!("spawn completion: {error:?}"));
+            tasks.resolve_submission(child.task_id, Ok(()))
+        })
         .unwrap_or_else(|error| panic!("submission: {error:?}"));
+    stage
+        .install_child_machine(child.task_id, machine)
+        .unwrap_or_else(|error| panic!("child installation: {error:?}"));
+    ready(stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, child.task_id))
+        .unwrap_or_else(|error| panic!("submission commit: {error:?}"));
+
     let before = coordinator.snapshot();
     let root_before = root.checkpoint();
     let child_before = children[&child.task_id].checkpoint();
-    let storage = Arc::new(InMemoryJournalStore::new());
-    let journal =
-        JournalId::new("multi-machine-cut").unwrap_or_else(|error| panic!("journal: {error:?}"));
-    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
-        journal_id: journal.clone(),
-        operation: JournalOwnerOperationV1::Start,
-    }))
-    .unwrap_or_else(|error| panic!("owner: {error:?}"));
-    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
-    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, root_id, None)
-        .unwrap_or_else(|error| panic!("commits: {error:?}"));
     let mut stage = coordinator
         .stage_graph(&mut root, &mut children)
-        .unwrap_or_else(|error| panic!("stage: {error:?}"));
-    stage.update(|root, children, _, _| {
-        assert!(matches!(root.step(), MachineStep::Transition(_)));
+        .unwrap_or_else(|error| panic!("progress stage: {error:?}"));
+    stage.update(|root, _, tasks, _| {
         assert!(matches!(
-            children
-                .get_mut(&child.task_id)
-                .unwrap_or_else(|| panic!("missing child"))
-                .step(),
-            MachineStep::Transition(_)
+            root.step(),
+            MachineStep::Transition(crate::MachineLabel::Deterministic { ref kind, .. })
+                if kind.as_ref() == "detach-suspended"
         ));
+        let detach = root
+            .pending_task_control()
+            .and_then(|pending| pending.detach())
+            .cloned()
+            .unwrap_or_else(|| panic!("detach suspension missing"));
+        tasks
+            .detach_source_handle(
+                root_id,
+                detach.workflow.clone(),
+                detach.site.clone(),
+                Arc::from(detach.handle.name()),
+                detach.handle.identity(),
+            )
+            .unwrap_or_else(|error| panic!("source detach: {error:?}"));
     });
     assert_eq!(coordinator.snapshot(), before);
-    ready(stage.commit(&mut commits, DurableCommitCutV1::Checkpoint, root_id))
-        .unwrap_or_else(|error| panic!("commit: {error:?}"));
+    ready(stage.commit(
+        &mut commits,
+        DurableCommitCutV1::TaskOwnership,
+        child.task_id,
+    ))
+    .unwrap_or_else(|error| panic!("commit: {error:?}"));
     assert_ne!(root.checkpoint(), root_before);
-    assert_ne!(children[&child.task_id].checkpoint(), child_before);
+    assert_eq!(children[&child.task_id].checkpoint(), child_before);
     assert_eq!(
         root.budget_checkpoint().revision,
         before
             .execution_budget()
             .unwrap_or_else(|| panic!("missing budget"))
             .revision
-            + 2
     );
     assert_eq!(
         root.budget_checkpoint(),

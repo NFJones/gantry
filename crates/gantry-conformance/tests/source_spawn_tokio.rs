@@ -13,12 +13,22 @@ use gantry::host::contracts::{
     IntegrationPreflight, JitterSource, OperationHook, RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
+use gantry::host::event::{
+    EventDeliveryRequest, EventDeliveryRuntime, EventRetryPolicy, EventSink, RedactionCapabilities,
+    SinkDeliveryPolicy, SinkId,
+};
 use gantry::identity::ProtocolIdentity;
+use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
-    IdentityKind, PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS,
+    DeliveryOutcome, EventKind, HookFailureCategory, IdentityKind, JitterMode,
+    PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS, RuntimeErrorCategory, SinkClass,
+    TerminalOnlyCategory,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
-use gantry::runtime::{AsyncCapacityLimits, InterpreterConfiguration, RequiredConfiguration};
+use gantry::runtime::{
+    AsyncCapacityLimits, InterpreterConfiguration, MachineOutcome, RequiredConfiguration,
+    RuntimeCode,
+};
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::DEFAULT_VALUE_LIMITS;
@@ -63,6 +73,48 @@ impl JitterSource for FixedJitter {
 }
 
 #[derive(Default)]
+struct RecordingSink {
+    events: Mutex<Vec<gantry::event::EventEnvelope>>,
+}
+
+impl RecordingSink {
+    fn events(&self) -> Vec<gantry::event::EventEnvelope> {
+        lock(&self.events).clone()
+    }
+}
+
+impl EventSink for RecordingSink {
+    fn deliver<'a>(
+        &'a self,
+        request: EventDeliveryRequest,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        lock(&self.events).push(request.event);
+        Box::pin(async { Ok(DeliveryOutcome::Success) })
+    }
+}
+
+struct ImmediateDeliveryRuntime;
+
+impl EventDeliveryRuntime for ImmediateDeliveryRuntime {
+    fn deliver_with_timeout<'a>(
+        &'a self,
+        sink: &'a dyn EventSink,
+        request: EventDeliveryRequest,
+        _timeout_us: u64,
+    ) -> HostFuture<'a, Result<DeliveryOutcome, HostError>> {
+        sink.deliver(request)
+    }
+
+    fn sleep<'a>(&'a self, _delay_us: u64) -> HostFuture<'a, Result<(), HostError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn sample_full_jitter(&self, _ceiling_us: u64) -> Result<u64, HostError> {
+        Ok(0)
+    }
+}
+
+#[derive(Default)]
 struct PendingDispatch {
     started: AtomicBool,
     released: AtomicBool,
@@ -90,9 +142,34 @@ impl PendingDispatch {
 
 struct PendingIntegration {
     mapping_response: Arc<[u8]>,
-    output: Arc<[u8]>,
+    outcome: PendingOutcome,
     hook_requests: Mutex<Vec<Vec<u8>>>,
     dispatches: Mutex<Vec<Arc<PendingDispatch>>>,
+}
+
+#[derive(Clone)]
+enum PendingOutcome {
+    Fixed(Arc<[u8]>),
+    EchoArgument,
+    Fail,
+}
+
+impl PendingOutcome {
+    fn resolve(&self, request: &Value) -> HookOutcomeV1 {
+        match self {
+            Self::Fixed(output) => HookOutcomeV1::Completed(Arc::clone(output)),
+            Self::EchoArgument => {
+                let value = &request["operation_request"]["action"]["arguments"][0]["value"];
+                let output = serde_json::to_vec(value)
+                    .unwrap_or_else(|error| panic!("could not encode echoed argument: {error}"));
+                HookOutcomeV1::Completed(output.into())
+            }
+            Self::Fail => HookOutcomeV1::Failed {
+                category: HookFailureCategory::ProviderFailure,
+                message: Arc::from("selected child failed"),
+            },
+        }
+    }
 }
 
 impl PendingIntegration {
@@ -101,7 +178,7 @@ impl PendingIntegration {
             mapping_response: Arc::from(
                 &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
             ),
-            output: Arc::from(&b"null"[..]),
+            outcome: PendingOutcome::Fixed(Arc::from(&b"null"[..])),
             hook_requests: Mutex::new(Vec::new()),
             dispatches: Mutex::new(Vec::new()),
         }
@@ -112,7 +189,29 @@ impl PendingIntegration {
             mapping_response: Arc::from(
                 &br#"{"agent_mapping_revision":"agents-v1","result":"resolved"}"#[..],
             ),
-            output: Arc::from(&br#""done""#[..]),
+            outcome: PendingOutcome::Fixed(Arc::from(&br#""done""#[..])),
+            hook_requests: Mutex::new(Vec::new()),
+            dispatches: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn echoing_actions() -> Self {
+        Self {
+            mapping_response: Arc::from(
+                &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+            ),
+            outcome: PendingOutcome::EchoArgument,
+            hook_requests: Mutex::new(Vec::new()),
+            dispatches: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn failing_actions() -> Self {
+        Self {
+            mapping_response: Arc::from(
+                &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+            ),
+            outcome: PendingOutcome::Fail,
             hook_requests: Mutex::new(Vec::new()),
             dispatches: Mutex::new(Vec::new()),
         }
@@ -176,16 +275,16 @@ impl HookFactory for PendingIntegration {
         lock(&self.hook_requests).push(request.canonical_bytes().to_vec());
         let state = Arc::new(PendingDispatch::default());
         lock(&self.dispatches).push(Arc::clone(&state));
-        let output = Arc::clone(&self.output);
+        let outcome = self.outcome.clone();
         Box::pin(
-            async move { Ok(Box::new(PendingHook { state, output }) as Box<dyn OperationHook>) },
+            async move { Ok(Box::new(PendingHook { state, outcome }) as Box<dyn OperationHook>) },
         )
     }
 }
 
 struct PendingHook {
     state: Arc<PendingDispatch>,
-    output: Arc<[u8]>,
+    outcome: PendingOutcome,
 }
 
 impl OperationHook for PendingHook {
@@ -199,7 +298,7 @@ impl OperationHook for PendingHook {
         Box::pin(std::future::poll_fn(move |context| {
             if self.state.released.load(Ordering::Acquire) {
                 self.state.completed.store(true, Ordering::Release);
-                Poll::Ready(Ok(HookOutcomeV1::Completed(Arc::clone(&self.output))))
+                Poll::Ready(Ok(self.outcome.resolve(&self.state.request())))
             } else {
                 *lock(&self.state.waker) = Some(context.waker().clone());
                 Poll::Pending
@@ -226,6 +325,319 @@ fn current_thread_tokio_nested_spawn_inherits_capture_agent_and_session_context(
 #[test]
 fn multithread_tokio_nested_spawn_inherits_capture_agent_and_session_context() {
     run_nested_spawn_context(multithread_runtime());
+}
+
+#[test]
+fn current_thread_tokio_named_join_preserves_selection_order_after_reverse_completion() {
+    run_ordered_join(current_thread_runtime(), false);
+}
+
+#[test]
+fn multithread_tokio_joinall_preserves_declaration_order_after_reverse_completion() {
+    run_ordered_join(multithread_runtime(), true);
+}
+
+#[test]
+fn current_thread_tokio_empty_joinall_emits_memberless_join_event() {
+    run_empty_joinall_event(current_thread_runtime());
+}
+
+#[test]
+fn multithread_tokio_join_failure_waits_for_all_selected_children() {
+    run_aggregate_join_failure(multithread_runtime());
+}
+
+#[test]
+fn current_thread_tokio_detach_separates_foreground_success_from_terminal_failure() {
+    run_detached_failure(current_thread_runtime());
+}
+
+fn run_ordered_join(runtime: Runtime, join_all: bool) {
+    let join = if join_all {
+        "joinall()"
+    } else {
+        "join(first, second)"
+    };
+    let root = TempDirectory::new(&format!(
+        r#"
+action read_only echo(value: Int) -> Int;
+
+fn main() -> List<Int> {{
+    spawn first -> Int {{ action echo(11) }}
+    spawn second -> Int {{ action echo(22) }}
+    {join}
+}}
+"#,
+    ));
+    let integration = Arc::new(PendingIntegration::echoing_actions());
+    let interpreter = interpreter(&runtime, Arc::clone(&integration));
+
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let accepted = start(&interpreter, &root).await;
+            let handle = accepted.handle().clone();
+            drop(accepted);
+
+            let dispatches = wait_for_started(&integration, 2).await;
+            let first = dispatch_for_argument(&dispatches, 11);
+            let second = dispatch_for_argument(&dispatches, 22);
+            second.release();
+            wait_for_completion(second).await;
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    interpreter.await_foreground(&handle),
+                )
+                .await
+                .is_err(),
+                "join completed before its first selected child settled"
+            );
+            first.release();
+
+            let snapshot = interpreter
+                .await_terminal(&handle)
+                .await
+                .unwrap_or_else(|error| panic!("terminal observation failed: {error:?}"))
+                .unwrap_or_else(|| panic!("ordered join execution disappeared"));
+            let Some(MachineOutcome::Succeeded(ref value)) = snapshot.foreground else {
+                panic!("ordered join did not succeed: {snapshot:?}")
+            };
+            assert_eq!(value.canonical_json().bytes(), br#"[11,22]"#);
+            assert_eq!(
+                snapshot
+                    .terminal
+                    .as_ref()
+                    .map(|terminal| &terminal.foreground),
+                snapshot.foreground.as_ref()
+            );
+        })
+        .await
+        .unwrap_or_else(|_| panic!("ordered join exceeded the 5s deadline"));
+    });
+}
+
+fn run_empty_joinall_event(runtime: Runtime) {
+    let root = TempDirectory::new("fn main() { discard joinall(); }");
+    let integration = Arc::new(PendingIntegration::actions());
+    let sink = Arc::new(RecordingSink::default());
+    let interpreter = interpreter_with_events(&runtime, integration, Arc::clone(&sink));
+
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let accepted = start(&interpreter, &root).await;
+            let handle = accepted.handle().clone();
+            drop(accepted);
+            let snapshot = interpreter
+                .await_terminal(&handle)
+                .await
+                .unwrap_or_else(|error| panic!("terminal observation failed: {error:?}"))
+                .unwrap_or_else(|| panic!("empty joinall execution disappeared"));
+            assert!(matches!(
+                snapshot.foreground,
+                Some(MachineOutcome::Succeeded(_))
+            ));
+
+            let event = single_join_event(&sink);
+            let payload: Value = serde_json::from_slice(event.payload().canonical_bytes())
+                .unwrap_or_else(|error| panic!("Join payload was not JSON: {error}"));
+            assert_eq!(payload["join_form"], "joinall");
+            assert_eq!(payload["joined_task_ids"], serde_json::json!([]));
+            assert_eq!(payload["child_failures"], serde_json::json!([]));
+            assert_eq!(
+                event.causal_ids(),
+                &[event
+                    .task_id()
+                    .unwrap_or_else(|| { panic!("empty joinall event omitted its joining task") })]
+            );
+        })
+        .await
+        .unwrap_or_else(|_| panic!("empty joinall exceeded the 5s deadline"));
+    });
+}
+
+fn run_aggregate_join_failure(runtime: Runtime) {
+    let root = TempDirectory::new(
+        r#"
+action read_only fail(value: Int) -> Int;
+
+fn main() {
+    spawn first -> Int { action fail(11) }
+    spawn second -> Int { action fail(22) }
+    discard join(first, second);
+}
+"#,
+    );
+    let integration = Arc::new(PendingIntegration::failing_actions());
+    let sink = Arc::new(RecordingSink::default());
+    let interpreter =
+        interpreter_with_events(&runtime, Arc::clone(&integration), Arc::clone(&sink));
+
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let accepted = start(&interpreter, &root).await;
+            let handle = accepted.handle().clone();
+            drop(accepted);
+
+            let dispatches = wait_for_started(&integration, 2).await;
+            let first = dispatch_for_argument(&dispatches, 11);
+            let second = dispatch_for_argument(&dispatches, 22);
+            first.release();
+            wait_for_completion(first).await;
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    interpreter.await_foreground(&handle),
+                )
+                .await
+                .is_err(),
+                "join failure was published before every selected child settled"
+            );
+            assert!(
+                sink.events()
+                    .into_iter()
+                    .all(|event| event.kind() != EventKind::Join),
+                "Join event was emitted before every selected child settled"
+            );
+            second.release();
+
+            let snapshot = interpreter
+                .await_terminal(&handle)
+                .await
+                .unwrap_or_else(|error| panic!("terminal observation failed: {error:?}"))
+                .unwrap_or_else(|| panic!("aggregate join failure execution disappeared"));
+            assert!(matches!(
+                snapshot.foreground,
+                Some(MachineOutcome::Failed(ref failure))
+                    if failure.code
+                        == RuntimeCode::Operation(RuntimeErrorCategory::TaskJoinFailure)
+            ));
+            assert_eq!(
+                snapshot
+                    .terminal
+                    .as_ref()
+                    .map(|terminal| &terminal.foreground),
+                snapshot.foreground.as_ref()
+            );
+
+            let event = single_join_event(&sink);
+            let payload: Value = serde_json::from_slice(event.payload().canonical_bytes())
+                .unwrap_or_else(|error| panic!("Join payload was not JSON: {error}"));
+            assert_eq!(payload["join_form"], "join");
+            assert_eq!(payload["settlement_status"], "failed");
+            assert_eq!(payload["joined_task_ids"].as_array().map(Vec::len), Some(2));
+            assert_eq!(payload["child_failures"].as_array().map(Vec::len), Some(2));
+            assert_eq!(event.causal_ids().len(), 3);
+        })
+        .await
+        .unwrap_or_else(|_| panic!("aggregate join failure exceeded the 5s deadline"));
+    });
+}
+
+fn run_detached_failure(runtime: Runtime) {
+    let root = TempDirectory::new(
+        r#"
+action read_only fail(value: Int) -> Int;
+
+fn main() -> Int {
+    spawn background -> Int { action fail(33) }
+    detach(background);
+    7
+}
+"#,
+    );
+    let integration = Arc::new(PendingIntegration::failing_actions());
+    let sink = Arc::new(RecordingSink::default());
+    let interpreter =
+        interpreter_with_events(&runtime, Arc::clone(&integration), Arc::clone(&sink));
+
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let accepted = start(&interpreter, &root).await;
+            let handle = accepted.handle().clone();
+            drop(accepted);
+
+            let dispatch =
+                tokio::time::timeout(Duration::from_secs(1), wait_for_started(&integration, 1))
+                    .await
+                    .unwrap_or_else(|_| panic!("detached child did not start its hook"))
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| panic!("detached child created no dispatch"));
+            let foreground = tokio::time::timeout(
+                Duration::from_secs(1),
+                interpreter.await_foreground(&handle),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("detached child blocked foreground publication"))
+            .unwrap_or_else(|error| panic!("foreground observation failed: {error:?}"))
+            .unwrap_or_else(|| panic!("detached execution disappeared before foreground"));
+            let Some(MachineOutcome::Succeeded(ref value)) = foreground.foreground else {
+                panic!("detached execution foreground did not succeed: {foreground:?}")
+            };
+            assert_eq!(value.canonical_json().bytes(), b"7");
+            assert!(foreground.terminal.is_none());
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_millis(20),
+                    interpreter.await_terminal(&handle),
+                )
+                .await
+                .is_err(),
+                "terminal completed while detached work was still pending"
+            );
+
+            dispatch.release();
+            let terminal =
+                tokio::time::timeout(Duration::from_secs(1), interpreter.await_terminal(&handle))
+                    .await
+                    .unwrap_or_else(|_| {
+                        panic!("failed detached child did not publish terminal state")
+                    })
+                    .unwrap_or_else(|error| panic!("terminal observation failed: {error:?}"))
+                    .unwrap_or_else(|| panic!("detached execution disappeared before terminal"));
+            assert_eq!(terminal.foreground, foreground.foreground);
+            let published = terminal
+                .terminal
+                .as_ref()
+                .unwrap_or_else(|| panic!("detached terminal projection is absent"));
+            assert_eq!(Some(&published.foreground), terminal.foreground.as_ref());
+            assert_eq!(
+                published.category,
+                gantry::runtime::ConcurrentTerminalCategoryV1::TerminalOnly(
+                    TerminalOnlyCategory::DetachedTaskFailure
+                )
+            );
+            let [failure] = published.detached_failures.as_slice() else {
+                panic!(
+                    "expected one retained detached failure, observed {:?}",
+                    published.detached_failures
+                )
+            };
+            assert_eq!(
+                failure.failure.category,
+                RuntimeErrorCategory::ProviderFailure
+            );
+            assert_eq!(failure.failure.code.as_ref(), "provider-failure");
+
+            let terminal_events = sink
+                .events()
+                .into_iter()
+                .filter(|event| event.kind() == EventKind::TerminalExecution)
+                .collect::<Vec<_>>();
+            let [event] = terminal_events.as_slice() else {
+                panic!(
+                    "expected one TerminalExecution event, observed {}",
+                    terminal_events.len()
+                )
+            };
+            let payload: Value = serde_json::from_slice(event.payload().canonical_bytes())
+                .unwrap_or_else(|error| panic!("terminal payload was not JSON: {error}"));
+            assert_eq!(payload["completion_category"], "detached-task-failure");
+            assert_eq!(event.causal_ids().len(), 2);
+        })
+        .await
+        .unwrap_or_else(|_| panic!("detached failure exceeded the 5s deadline"));
+    });
 }
 
 fn run_sibling_overlap(runtime: Runtime) {
@@ -413,6 +825,29 @@ async fn wait_for_completion(dispatch: &PendingDispatch) {
     }
 }
 
+fn dispatch_for_argument(dispatches: &[Arc<PendingDispatch>], argument: i64) -> &PendingDispatch {
+    dispatches
+        .iter()
+        .find(|dispatch| {
+            dispatch.request()["operation_request"]["action"]["arguments"][0]["value"].as_i64()
+                == Some(argument)
+        })
+        .map(Arc::as_ref)
+        .unwrap_or_else(|| panic!("no dispatch recorded argument {argument}"))
+}
+
+fn single_join_event(sink: &RecordingSink) -> gantry::event::EventEnvelope {
+    let events = sink
+        .events()
+        .into_iter()
+        .filter(|event| event.kind() == EventKind::Join)
+        .collect::<Vec<_>>();
+    let [event] = events.as_slice() else {
+        panic!("expected one Join event, observed {}", events.len())
+    };
+    event.clone()
+}
+
 async fn start(interpreter: &Interpreter, root: &TempDirectory) -> gantry::StartExecutionAccepted {
     let selection = selection();
     let root_session = RootSessionSpecification {
@@ -442,6 +877,70 @@ fn interpreter(runtime: &Runtime, integration: Arc<PendingIntegration>) -> Inter
         runtime.handle().clone(),
         Arc::new(FixedJitter),
     ));
+    let configuration = configuration(executor);
+    let preflight: Arc<dyn IntegrationPreflight> = integration.clone();
+    let sessions: Arc<dyn RuntimeSessionService> = integration.clone();
+    let hooks: Arc<dyn HookFactory> = integration;
+    Interpreter::new(
+        configuration,
+        Arc::new(DeterministicUtcClock::new((1_u32..=240).map(timestamp))),
+        preflight,
+        sessions,
+        hooks,
+    )
+}
+
+fn interpreter_with_events(
+    runtime: &Runtime,
+    integration: Arc<PendingIntegration>,
+    sink: Arc<RecordingSink>,
+) -> Interpreter {
+    let retry = EventRetryPolicy::new("async-join-retry-v1", 0, 0, 0, JitterMode::None)
+        .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+    let policy = SinkDeliveryPolicy::new(
+        SinkClass::BestEffort,
+        false,
+        "async-join-redaction-v1",
+        RedactionCapabilities::default(),
+        retry,
+        30,
+    )
+    .unwrap_or_else(|error| panic!("sink policy failed: {error:?}"));
+    let plan = SinkPlan::new(vec![SinkRegistration::new(
+        SinkId::new("async-join-sink")
+            .unwrap_or_else(|error| panic!("sink identity failed: {error:?}")),
+        policy,
+        sink,
+    )])
+    .unwrap_or_else(|error| panic!("sink plan failed: {error:?}"));
+    interpreter_with_plan(runtime, integration, plan)
+}
+
+fn interpreter_with_plan(
+    runtime: &Runtime,
+    integration: Arc<PendingIntegration>,
+    event_delivery: SinkPlan,
+) -> Interpreter {
+    let executor: Arc<dyn ExecutorAdapter> = Arc::new(TokioExecutor::new(
+        runtime.handle().clone(),
+        Arc::new(FixedJitter),
+    ));
+    let configuration = configuration(executor);
+    let preflight: Arc<dyn IntegrationPreflight> = integration.clone();
+    let sessions: Arc<dyn RuntimeSessionService> = integration.clone();
+    let hooks: Arc<dyn HookFactory> = integration;
+    Interpreter::new_with_event_delivery(
+        configuration,
+        Arc::new(DeterministicUtcClock::new((1_u32..=240).map(timestamp))),
+        preflight,
+        sessions,
+        hooks,
+        Arc::new(ImmediateDeliveryRuntime),
+        event_delivery,
+    )
+}
+
+fn configuration(executor: Arc<dyn ExecutorAdapter>) -> InterpreterConfiguration {
     let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
         (1_u8..=240).map(|byte| Ok([byte; 32])),
     ));
@@ -460,22 +959,12 @@ fn interpreter(runtime: &Runtime, integration: Arc<PendingIntegration>) -> Inter
         8,
     )
     .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
-    let configuration = InterpreterConfiguration::new(
+    InterpreterConfiguration::new(
         executor,
         identities,
         required,
         AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
             .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
-    );
-    let preflight: Arc<dyn IntegrationPreflight> = integration.clone();
-    let sessions: Arc<dyn RuntimeSessionService> = integration.clone();
-    let hooks: Arc<dyn HookFactory> = integration;
-    Interpreter::new(
-        configuration,
-        Arc::new(DeterministicUtcClock::new((1_u32..=240).map(timestamp))),
-        preflight,
-        sessions,
-        hooks,
     )
 }
 

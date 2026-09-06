@@ -65,8 +65,8 @@ pub struct DurableExecutionObservation {
     pub state: ExecutionObservationState,
     /// Durable foreground outcome when a foreground-completion cut exists.
     pub foreground: Option<MachineOutcome>,
-    /// Durable terminal outcome only when a terminal-completion cut exists.
-    pub terminal: Option<MachineOutcome>,
+    /// Durable terminal projection only when a terminal-completion cut exists.
+    pub terminal: Option<gantry_runtime::ConcurrentTerminalOutcomeV1>,
     /// First durably committed cancellation reason, when one exists.
     pub cancellation: Option<CancellationReason>,
     /// Required-delivery failures retained separately from the language outcome.
@@ -958,7 +958,13 @@ impl DurableOwnedExecution {
                 .map_err(DurableRunFailure::Lifecycle)?;
         } else if cut == DurableCommitCutV1::TerminalCompletion {
             self.handle
-                .publish_committed_terminal(foreground.clone().ok_or(DurableRunFailure::Internal)?)
+                .publish_committed_terminal(
+                    snapshot
+                        .state()
+                        .terminal_outcome()
+                        .cloned()
+                        .ok_or(DurableRunFailure::Internal)?,
+                )
                 .map_err(DurableRunFailure::Lifecycle)?;
         }
         self.committed_budget
@@ -2896,7 +2902,8 @@ fn observation_from_recovered(
     .flatten();
     let terminal = (recovered.latest_cut() == DurableCommitCutV1::TerminalCompletion)
         .then_some(outcome)
-        .flatten();
+        .flatten()
+        .map(Into::into);
     let state = if run_failure.is_some() {
         ExecutionObservationState::RunFailedNondurably
     } else if terminal.is_some() {
@@ -2933,9 +2940,7 @@ fn observation_from_concurrent(
 ) -> DurableExecutionObservation {
     let state = recovered.execution().scheduler().state();
     let foreground = state.foreground_outcome().cloned();
-    let terminal = state
-        .terminal_outcome()
-        .map(|outcome| outcome.foreground.clone());
+    let terminal = state.terminal_outcome().cloned();
     DurableExecutionObservation {
         journal_id: journal_id.clone(),
         execution_id: execution_start.execution_id(),

@@ -40,7 +40,7 @@ const ASSIGNMENT_SHA256: &str = "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49
 const ARTIFACTS: [(&str, &str); 17] = [
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "e2e00592c1a3d80f2895d4474fa22d884762b57397fe9ec99f8e1f28c97ccdd4",
+        "ef6ce7ba6355072250c8eec36de2f03be6866366f1f5ff2c2fb3a0e6e1786e70",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
@@ -92,7 +92,7 @@ const ARTIFACTS: [(&str, &str); 17] = [
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "d9fb5c4639c3c6bb4b419194a07480d289932885e3c5bbf55e0a741cd208fc1a",
+        "8484ad605cd50ea5fe2c5344c7b52a8695a617ba6326159ef720e56686a8c8ac",
     ),
     (
         "protocol/conformance/task-driver-v1.json",
@@ -415,9 +415,18 @@ fn deterministic_and_tokio_runtimes_produce_the_same_portable_root_outcome() {
     assert_eq!(current_thread.terminal, deterministic.terminal);
     assert_eq!(multi_thread.foreground, deterministic.foreground);
     assert_eq!(multi_thread.terminal, deterministic.terminal);
-    assert_eq!(deterministic.foreground, deterministic.terminal);
+    assert_eq!(
+        deterministic.foreground.as_ref(),
+        deterministic
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground)
+    );
     assert!(matches!(
-        deterministic.terminal,
+        deterministic
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
         Some(MachineOutcome::Succeeded(_))
     ));
 }

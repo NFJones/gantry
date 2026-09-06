@@ -185,7 +185,13 @@ fn owned_driver_is_send_static_and_publishes_semantic_settlement_before_return()
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
             if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 3)
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -210,7 +216,13 @@ fn driver_yields_and_supervision_observes_physical_completion_after_semantic_set
     let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
     assert_eq!(executor.yields(), 4);
     assert!(snapshot.foreground.is_some());
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -243,7 +255,13 @@ fn failed_yield_settles_the_same_task_with_executor_failure() {
             if failure.code
                 == gantry::runtime::RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure)
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -276,7 +294,13 @@ fn cancellation_published_during_yield_wins_before_more_source_progress() {
         Some(gantry::runtime::MachineOutcome::Cancelled(ref reason))
             if reason.as_ref() == "cancellation"
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
     assert_eq!(executor.yields(), 1);
 }
 
@@ -444,7 +468,13 @@ fn accepted_root_uses_prevalidated_state_after_return_payload_changes() {
         Some(gantry::runtime::MachineOutcome::Succeeded(ref value))
             if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 3)
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -486,7 +516,13 @@ fn abnormal_physical_completion_settles_the_unpolled_driver_once() {
             if failure.code
                 == gantry::runtime::RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure)
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 fn accepted(interpreter: &Interpreter, root: &TempDirectory) -> gantry::StartExecutionAccepted {

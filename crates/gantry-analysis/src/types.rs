@@ -5243,6 +5243,14 @@ fn scoped() -> List<Int> {
     spawn second -> Int { 2 }
     joinall()
 }
+fn nested_scope() {
+    spawn outer { return; }
+    if true {
+        spawn inner { return; }
+        discard joinall();
+    }
+    discard join(outer);
+}
 fn empty() { discard joinall(); }
 fn main() {}
 "#,

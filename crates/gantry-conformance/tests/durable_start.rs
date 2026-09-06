@@ -557,9 +557,16 @@ fn durable_cancellation_commits_once_before_terminal_observation_and_release() {
     assert_eq!(terminal.cancellation, Some(reason.clone()));
     assert!(matches!(
         terminal.terminal,
-        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "stop"
+        Some(ref terminal)
+            if matches!(terminal.foreground, MachineOutcome::Cancelled(ref message) if message.as_ref() == "stop")
     ));
-    assert_eq!(terminal.foreground, terminal.terminal);
+    assert_eq!(
+        terminal
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        terminal.foreground.as_ref()
+    );
     assert_eq!(terminal.owner, Some(DurableJournalOwnerState::Released));
     assert!(terminal.required_delivery_failures.is_empty());
     assert!(terminal.run_failure.is_none());
@@ -659,7 +666,8 @@ fn durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent() {
     );
     assert!(matches!(
         report.executions[0].terminal,
-        Some(MachineOutcome::Cancelled(ref message)) if message.as_ref() == "shutdown"
+        Some(ref terminal)
+            if matches!(terminal.foreground, MachineOutcome::Cancelled(ref message) if message.as_ref() == "shutdown")
     ));
     assert_eq!(
         report.executions[0].owner,

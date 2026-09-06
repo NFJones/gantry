@@ -179,7 +179,13 @@ fn immediate_executor_poll_cannot_cross_the_accepted_root_gate() {
         Some(MachineOutcome::Succeeded(ref value))
             if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
     ));
-    assert_eq!(completed.terminal, completed.foreground);
+    assert_eq!(
+        completed
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        completed.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -201,7 +207,13 @@ fn post_acceptance_submission_failure_returns_accepted_and_settles_the_root() {
         Some(MachineOutcome::Failed(ref failure))
             if failure.code == RuntimeCode::RootSubmissionFailure
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]

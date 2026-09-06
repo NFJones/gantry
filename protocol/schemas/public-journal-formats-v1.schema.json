@@ -361,6 +361,45 @@
       },
       "required": ["checkpoint", "cut", "execution_id", "format", "task_id"]
     },
+    "concurrent_ownership_member": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "handle_child": { "$ref": "#/$defs/task_identity" },
+        "handle_name": { "type": "string", "minLength": 1 },
+        "handle_owner": { "$ref": "#/$defs/task_identity" },
+        "task_id": { "$ref": "#/$defs/task_identity" }
+      },
+      "required": ["handle_child", "handle_name", "handle_owner", "task_id"]
+    },
+    "concurrent_ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "control_kind": { "enum": ["detach", "join", "joinall"] },
+        "disposition": { "enum": ["detached", "joined"] },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/concurrent_ownership_member" }
+        },
+        "owner_task_id": { "$ref": "#/$defs/task_identity" },
+        "site": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/unsigned" }
+        },
+        "workflow": { "type": "string", "pattern": "^crate::.+$" }
+      },
+      "required": [
+        "control_kind",
+        "disposition",
+        "members",
+        "owner_task_id",
+        "site",
+        "workflow"
+      ]
+    },
     "concurrent_evidence_v5": {
       "oneOf": [
         {
@@ -373,6 +412,7 @@
             "execution_id": { "$ref": "#/$defs/execution_identity" },
             "format": { "const": "gantry.concurrent-durable-evidence/v5" },
             "operation": { "$ref": "#/$defs/operation_body_v5_prepared" },
+            "ownership": { "type": "null" },
             "record": { "const": "operation" },
             "task_id": { "$ref": "#/$defs/task_identity" }
           },
@@ -383,6 +423,7 @@
             "execution_id",
             "format",
             "operation",
+            "ownership",
             "record",
             "task_id"
           ]
@@ -397,6 +438,7 @@
             "execution_id": { "$ref": "#/$defs/execution_identity" },
             "format": { "const": "gantry.concurrent-durable-evidence/v5" },
             "operation": { "$ref": "#/$defs/operation_body_v5_outcome" },
+            "ownership": { "type": "null" },
             "record": { "const": "operation" },
             "task_id": { "$ref": "#/$defs/task_identity" }
           },
@@ -407,6 +449,7 @@
             "execution_id",
             "format",
             "operation",
+            "ownership",
             "record",
             "task_id"
           ]
@@ -421,6 +464,7 @@
             "execution_id": { "$ref": "#/$defs/execution_identity" },
             "format": { "const": "gantry.concurrent-durable-evidence/v5" },
             "operation": { "$ref": "#/$defs/operation_body_v5_retry" },
+            "ownership": { "type": "null" },
             "record": { "const": "operation" },
             "task_id": { "$ref": "#/$defs/task_identity" }
           },
@@ -431,6 +475,7 @@
             "execution_id",
             "format",
             "operation",
+            "ownership",
             "record",
             "task_id"
           ]
@@ -445,6 +490,7 @@
             "execution_id": { "$ref": "#/$defs/execution_identity" },
             "format": { "const": "gantry.concurrent-durable-evidence/v5" },
             "operation": { "$ref": "#/$defs/operation_body_v5_result" },
+            "ownership": { "type": "null" },
             "record": { "const": "operation" },
             "task_id": { "$ref": "#/$defs/task_identity" }
           },
@@ -455,6 +501,7 @@
             "execution_id",
             "format",
             "operation",
+            "ownership",
             "record",
             "task_id"
           ]
@@ -469,6 +516,7 @@
             "execution_id": { "$ref": "#/$defs/execution_identity" },
             "format": { "const": "gantry.concurrent-durable-evidence/v5" },
             "operation": { "type": "null" },
+            "ownership": { "type": "null" },
             "record": { "const": "submission-resolution" },
             "task_id": { "$ref": "#/$defs/task_identity" }
           },
@@ -479,6 +527,33 @@
             "execution_id",
             "format",
             "operation",
+            "ownership",
+            "record",
+            "task_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": { "$ref": "#/$defs/hex" },
+            "cancellation": { "type": "null" },
+            "cut": { "const": "task-ownership" },
+            "execution_id": { "$ref": "#/$defs/execution_identity" },
+            "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+            "operation": { "type": "null" },
+            "ownership": { "$ref": "#/$defs/concurrent_ownership" },
+            "record": { "const": "ownership" },
+            "task_id": { "$ref": "#/$defs/task_identity" }
+          },
+          "required": [
+            "checkpoint",
+            "cancellation",
+            "cut",
+            "execution_id",
+            "format",
+            "operation",
+            "ownership",
             "record",
             "task_id"
           ]
@@ -493,6 +568,7 @@
             "execution_id": { "$ref": "#/$defs/execution_identity" },
             "format": { "const": "gantry.concurrent-durable-evidence/v5" },
             "operation": { "type": "null" },
+            "ownership": { "type": "null" },
             "record": { "const": "cancellation" },
             "task_id": { "$ref": "#/$defs/task_identity" }
           },
@@ -503,6 +579,7 @@
             "execution_id",
             "format",
             "operation",
+            "ownership",
             "record",
             "task_id"
           ]
@@ -544,6 +621,10 @@
           "type": "array",
           "items": { "$ref": "#/$defs/concurrent_snapshot_evidence" }
         },
+        "ownership_records": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_snapshot_evidence" }
+        },
         "retained_evidence": {
           "type": "array",
           "items": { "$ref": "#/$defs/concurrent_retained_evidence" }
@@ -567,6 +648,7 @@
         "graph_sequence",
         "legacy_graphs",
         "operations",
+        "ownership_records",
         "retained_evidence",
         "start_evidence_id",
         "submission_resolutions"

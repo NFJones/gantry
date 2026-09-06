@@ -378,6 +378,25 @@ pub struct ConcurrentTerminalOutcomeV1 {
     pub detached_failures: Vec<DetachedTaskFailureV1>,
 }
 
+impl From<MachineOutcome> for ConcurrentTerminalOutcomeV1 {
+    fn from(foreground: MachineOutcome) -> Self {
+        let category = match &foreground {
+            MachineOutcome::Failed(failure) => {
+                ConcurrentTerminalCategoryV1::Runtime(machine_failure_category(failure.code))
+            }
+            MachineOutcome::Cancelled(_) => ConcurrentTerminalCategoryV1::Cancellation,
+            MachineOutcome::Succeeded(_) => {
+                ConcurrentTerminalCategoryV1::TerminalOnly(TerminalOnlyCategory::Success)
+            }
+        };
+        Self {
+            category,
+            foreground,
+            detached_failures: Vec::new(),
+        }
+    }
+}
+
 /// Result of one idempotent executor-abort attempt.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TaskAbortResultV1 {
@@ -1441,20 +1460,65 @@ impl ConcurrentTaskStateV1 {
         control: &TaskControlSite,
         handles: &[DynamicTaskHandleIdentity],
     ) -> Result<JoinStartV1, TaskStateError> {
-        if !matches!(
+        self.begin_join_with_metadata(
+            owner_task_id,
+            control.id.clone(),
             control.kind,
+            &control.handles,
+            handles,
+        )
+    }
+
+    /// Atomically consumes one source join or joinall from canonical executable metadata.
+    ///
+    /// The supplied handle names and identities must remain in the exact source or
+    /// declaration order. An empty joinall reduces directly to Unit.
+    pub fn begin_source_join(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        kind: TaskControlSiteKind,
+        handle_names: &[Arc<str>],
+        handles: &[DynamicTaskHandleIdentity],
+    ) -> Result<JoinStartV1, TaskStateError> {
+        self.begin_join_with_metadata(
+            owner_task_id,
+            StaticSiteId::new(workflow, site),
+            kind,
+            handle_names,
+            handles,
+        )
+    }
+
+    /// Implements source and analyzer task-control joins from their shared metadata.
+    fn begin_join_with_metadata(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        control_site: StaticSiteId,
+        control_kind: TaskControlSiteKind,
+        control_handles: &[Arc<str>],
+        handles: &[DynamicTaskHandleIdentity],
+    ) -> Result<JoinStartV1, TaskStateError> {
+        if !matches!(
+            control_kind,
             TaskControlSiteKind::Join | TaskControlSiteKind::JoinAll
         ) {
             return Err(TaskStateError::InvalidTaskControl);
         }
         if handles.is_empty() {
-            if control.kind != TaskControlSiteKind::JoinAll || !control.handles.is_empty() {
+            if control_kind != TaskControlSiteKind::JoinAll || !control_handles.is_empty() {
                 return Err(TaskStateError::InvalidTaskControl);
             }
             return Ok(JoinStartV1::Empty);
         }
 
-        let task_ids = self.validate_control_selection(owner_task_id, control, handles)?;
+        let task_ids = self.validate_control_selection(
+            owner_task_id,
+            &control_site,
+            control_handles,
+            handles,
+        )?;
         let members = task_ids
             .iter()
             .map(|task_id| {
@@ -1477,8 +1541,8 @@ impl ConcurrentTaskStateV1 {
 
         Ok(JoinStartV1::Started(TaskOwnershipChangedV1 {
             owner_task_id,
-            control_site: control.id.clone(),
-            control_kind: control.kind,
+            control_site,
+            control_kind,
             disposition: TaskHandleState::Joined,
             members,
         }))
@@ -1582,10 +1646,51 @@ impl ConcurrentTaskStateV1 {
         control: &TaskControlSite,
         handle: DynamicTaskHandleIdentity,
     ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
-        if control.kind != TaskControlSiteKind::Detach {
+        self.detach_with_metadata(
+            owner_task_id,
+            control.id.clone(),
+            control.kind,
+            &control.handles,
+            handle,
+        )
+    }
+
+    /// Transfers one source handle from canonical executable metadata to detached work.
+    pub fn detach_source_handle(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        handle_name: Arc<str>,
+        handle: DynamicTaskHandleIdentity,
+    ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
+        self.detach_with_metadata(
+            owner_task_id,
+            StaticSiteId::new(workflow, site),
+            TaskControlSiteKind::Detach,
+            std::slice::from_ref(&handle_name),
+            handle,
+        )
+    }
+
+    /// Implements source and analyzer detaches from their shared metadata.
+    fn detach_with_metadata(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        control_site: StaticSiteId,
+        control_kind: TaskControlSiteKind,
+        control_handles: &[Arc<str>],
+        handle: DynamicTaskHandleIdentity,
+    ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
+        if control_kind != TaskControlSiteKind::Detach {
             return Err(TaskStateError::InvalidTaskControl);
         }
-        let task_ids = self.validate_control_selection(owner_task_id, control, &[handle])?;
+        let task_ids = self.validate_control_selection(
+            owner_task_id,
+            &control_site,
+            control_handles,
+            &[handle],
+        )?;
         let task_id = task_ids
             .into_iter()
             .next()
@@ -1597,8 +1702,8 @@ impl ConcurrentTaskStateV1 {
         task.handle_state = TaskHandleState::Detached;
         Ok(TaskOwnershipChangedV1 {
             owner_task_id,
-            control_site: control.id.clone(),
-            control_kind: control.kind,
+            control_site,
+            control_kind,
             disposition: TaskHandleState::Detached,
             members: vec![TaskOwnershipMemberV1 {
                 handle_id: task.handle_id,
@@ -1638,7 +1743,8 @@ impl ConcurrentTaskStateV1 {
     fn validate_control_selection(
         &self,
         owner_task_id: ProtocolIdentity,
-        control: &TaskControlSite,
+        control_site: &StaticSiteId,
+        control_handles: &[Arc<str>],
         handles: &[DynamicTaskHandleIdentity],
     ) -> Result<Vec<ProtocolIdentity>, TaskStateError> {
         if owner_task_id.kind() != IdentityKind::Task
@@ -1646,12 +1752,12 @@ impl ConcurrentTaskStateV1 {
         {
             return Err(TaskStateError::InvalidTaskIdentity);
         }
-        if handles.len() != control.handles.len() {
+        if handles.len() != control_handles.len() {
             return Err(TaskStateError::HandleSelectionMismatch);
         }
         let mut seen = BTreeSet::new();
         let mut task_ids = Vec::with_capacity(handles.len());
-        for (handle, static_name) in handles.iter().zip(&control.handles) {
+        for (handle, static_name) in handles.iter().zip(control_handles) {
             if !seen.insert(*handle) {
                 return Err(TaskStateError::DuplicateHandle);
             }
@@ -1664,7 +1770,7 @@ impl ConcurrentTaskStateV1 {
                 .ok_or(TaskStateError::UnknownTask)?;
             if task.handle_id != *handle
                 || task.handle_name != *static_name
-                || task.workflow != *control.id.workflow()
+                || task.workflow != *control_site.workflow()
             {
                 return Err(TaskStateError::HandleSelectionMismatch);
             }
@@ -1850,6 +1956,20 @@ impl ConcurrentSchedulerV1 {
         self.state.begin_join(owner_task_id, control, handles)
     }
 
+    /// Consumes one source join or joinall from canonical executable metadata.
+    pub fn begin_source_join(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        kind: TaskControlSiteKind,
+        handle_names: &[Arc<str>],
+        handles: &[DynamicTaskHandleIdentity],
+    ) -> Result<JoinStartV1, TaskStateError> {
+        self.state
+            .begin_source_join(owner_task_id, workflow, site, kind, handle_names, handles)
+    }
+
     /// Resolves one already-consumed join from scheduler-owned task state.
     pub fn resolve_join(
         &self,
@@ -1867,6 +1987,19 @@ impl ConcurrentSchedulerV1 {
         handle: DynamicTaskHandleIdentity,
     ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
         self.state.detach(owner_task_id, control, handle)
+    }
+
+    /// Transfers one source handle from canonical executable metadata to detached work.
+    pub fn detach_source_handle(
+        &mut self,
+        owner_task_id: ProtocolIdentity,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        handle_name: Arc<str>,
+        handle: DynamicTaskHandleIdentity,
+    ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
+        self.state
+            .detach_source_handle(owner_task_id, workflow, site, handle_name, handle)
     }
 
     /// Fixes foreground completion after all attached descendants settle.
@@ -2856,6 +2989,60 @@ mod tests {
         assert_eq!(
             state.begin_join(root_task, &empty, &[]),
             Ok(JoinStartV1::Empty)
+        );
+    }
+
+    #[test]
+    fn source_task_control_uses_canonical_metadata_without_source_spans() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(2);
+        let created = state
+            .create_child(
+                &mut sessions,
+                typed_request(
+                    root_task,
+                    root_session,
+                    "background",
+                    0,
+                    TypeDescriptor::UNIT,
+                ),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        state
+            .resolve_submission(created.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
+        let workflow = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("path failed: {error}"));
+        let join_site = StructuralPosition::new(vec![10])
+            .unwrap_or_else(|error| panic!("join site failed: {error}"));
+
+        assert_eq!(
+            state.begin_source_join(
+                root_task,
+                workflow.clone(),
+                join_site,
+                TaskControlSiteKind::JoinAll,
+                &[],
+                &[],
+            ),
+            Ok(JoinStartV1::Empty)
+        );
+
+        let ownership = state
+            .detach_source_handle(
+                root_task,
+                workflow,
+                StructuralPosition::new(vec![11])
+                    .unwrap_or_else(|error| panic!("detach site failed: {error}")),
+                Arc::from("background"),
+                created.handle_id,
+            )
+            .unwrap_or_else(|error| panic!("source detach failed: {error:?}"));
+        assert_eq!(ownership.control_kind(), TaskControlSiteKind::Detach);
+        assert_eq!(ownership.members()[0].handle_id, created.handle_id);
+        assert_eq!(
+            state.task(created.task_id).map(|task| task.handle_state()),
+            Some(TaskHandleState::Detached)
         );
     }
 

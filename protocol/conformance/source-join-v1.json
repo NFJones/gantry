@@ -1,0 +1,75 @@
+{
+  "format": "gantry.source-join-evidence/v1",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "issue": "GNT-ASYNC-JOIN-001",
+  "artifacts": [
+    {
+      "path": "crates/gantry-conformance/tests/source_spawn.rs",
+      "sha256": "ef6ce7ba6355072250c8eec36de2f03be6866366f1f5ff2c2fb3a0e6e1786e70"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/source_spawn_tokio.rs",
+      "sha256": "8ccabb947c0338cae65f6fa118fe0c4e6b348bf47220cb2102e0c9a42bcaa656"
+    }
+  ],
+  "requirements": [
+    {
+      "requirement": "GNT-3-M-TASK-SETTLE",
+      "clause": "clause-001",
+      "profiles": ["concurrent-evaluator", "durable-runtime", "evaluator"]
+    },
+    {
+      "requirement": "GNT-3-D-COMMIT-ORDER",
+      "clause": "clause-001",
+      "profiles": ["durable-runtime"]
+    },
+    {
+      "requirement": "GNT-15.4-owned-work",
+      "clause": "clause-001",
+      "profiles": ["embedding"]
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "source-child-join-completion",
+      "evidence": "crates/gantry-conformance/tests/source_spawn.rs#native_child_submission_keeps_the_gate_closed_and_establishes_session_before_hook"
+    },
+    {
+      "id": "source-child-join-rejection-failure",
+      "evidence": "crates/gantry-conformance/tests/source_spawn.rs#child_executor_rejection_settles_without_submitting_another_driver"
+    },
+    {
+      "id": "source-named-join-all-settled-order",
+      "evidence": "crates/gantry-conformance/tests/source_spawn_tokio.rs#current_thread_tokio_named_join_preserves_selection_order_after_reverse_completion"
+    },
+    {
+      "id": "source-joinall-all-settled-order",
+      "evidence": "crates/gantry-conformance/tests/source_spawn_tokio.rs#multithread_tokio_joinall_preserves_declaration_order_after_reverse_completion"
+    },
+    {
+      "id": "source-empty-joinall-event",
+      "evidence": "crates/gantry-conformance/tests/source_spawn_tokio.rs#current_thread_tokio_empty_joinall_emits_memberless_join_event"
+    },
+    {
+      "id": "source-aggregate-join-failure",
+      "evidence": "crates/gantry-conformance/tests/source_spawn_tokio.rs#multithread_tokio_join_failure_waits_for_all_selected_children"
+    },
+    {
+      "id": "source-detach-foreground-terminal-split",
+      "evidence": "crates/gantry-conformance/tests/source_spawn_tokio.rs#current_thread_tokio_detach_separates_foreground_success_from_terminal_failure"
+    },
+    {
+      "id": "durable-source-join-operation-cuts",
+      "evidence": "crates/gantry-conformance/tests/source_spawn.rs#durable_child_action_commits_ordered_operation_cuts"
+    },
+    {
+      "id": "durable-detached-terminal-recovery",
+      "evidence": "crates/gantry-conformance/tests/source_spawn.rs#durable_detached_failures_survive_full_and_compacted_public_recovery"
+    }
+  ],
+  "exclusions": [
+    "Cancellation or failure of an owner and the resulting descendant cancellation and draining remain owned by GNT-ASYNC-CANCEL-001.",
+    "Recovered task-graph reconstruction, fencing, and runnable child resubmission remain owned by GNT-ASYNC-REC-001.",
+    "The evidence does not broaden the sequential evaluator profile with spawned-task execution; source task control requires the concurrent evaluator and is combined with durability only when both refinements are enabled."
+  ]
+}

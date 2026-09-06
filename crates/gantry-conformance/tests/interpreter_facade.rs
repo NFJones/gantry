@@ -162,7 +162,13 @@ fn public_interpreter_drives_and_observes_one_sequential_execution() {
         panic!("deterministic execution did not succeed")
     };
     assert!(matches!(value.view(), LogicalValueView::Int(value) if value.get() == 3));
-    assert_eq!(completed.terminal, completed.foreground);
+    assert_eq!(
+        completed
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        completed.foreground.as_ref()
+    );
 
     assert_eq!(
         block_on(interpreter.await_foreground(&handle))
@@ -178,7 +184,7 @@ fn public_interpreter_drives_and_observes_one_sequential_execution() {
         .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
     assert!(matches!(
         block_on(interpreter.cancel_execution(execution_id, cancellation)),
-        Ok(CancellationRecord::AlreadyTerminal(snapshot)) if snapshot == completed
+        Ok(CancellationRecord::AlreadyTerminal(snapshot)) if *snapshot == completed
     ));
 
     block_on(executor.wait_until_gated());
@@ -305,7 +311,13 @@ fn public_interpreter_drives_scripted_action_success_and_decline() {
                     gantry::portable::RuntimeErrorCategory::RequiredResultDecline
                 )
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -642,7 +654,13 @@ fn public_interpreter_settles_retry_delay_executor_failure() {
                     gantry::portable::RuntimeErrorCategory::ExecutorFailure
                 )
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]

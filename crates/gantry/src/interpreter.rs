@@ -38,7 +38,7 @@ use gantry_host::contracts::{
 };
 use gantry_host::event::{EventDeliveryRequest, EventDeliveryRuntime, EventSink};
 use gantry_ir::TypeDescriptor;
-use gantry_ir::generated::{OperationSiteKind, TypeKind};
+use gantry_ir::generated::{OperationSiteKind, TaskControlSiteKind, TypeKind};
 use gantry_observe::{
     DeliveryError, DeliveryKernel, EventCompleter, EventCompletionError, SinkPlan,
     SinkSettlementStatus,
@@ -63,8 +63,9 @@ use gantry_runtime::{
 };
 #[cfg(feature = "concurrent")]
 use gantry_runtime::{
-    ConcurrentTaskStatusV1, ExecutionBudget, MachineSpawnSuspension, TaskCreationRequestV1,
-    concurrent_spawn_event,
+    ConcurrentTaskStatusV1, ExecutionBudget, JoinResolutionV1, JoinStartV1, MachineSpawnSuspension,
+    TaskCreationRequestV1, TaskOwnershipChangedV1, concurrent_detach_event, concurrent_join_event,
+    concurrent_spawn_event, concurrent_terminal_event,
 };
 
 #[cfg(feature = "durable")]
@@ -428,6 +429,15 @@ enum DurableGraphControlCommand {
     Complete,
     Fail(DurableRunFailure),
 }
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+enum DurableTaskControlOutcome {
+    Continue,
+    Finished,
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+type DurableStagedTaskControl = (Option<JoinStartV1>, Option<TaskOwnershipChangedV1>);
 
 /// One allocation-bounded wake-driven owner used only when reserved submission rejects.
 #[cfg(all(feature = "concurrent", feature = "durable"))]
@@ -2405,7 +2415,63 @@ impl Interpreter {
                     }
                 }
                 #[cfg(feature = "concurrent")]
-                MachineStep::Transition(MachineLabel::TaskControlSuspended(suspension)) => {
+                MachineStep::Transition(MachineLabel::Deterministic {
+                    kind,
+                    workflow: _,
+                    site: _,
+                }) if kind.as_ref() == "joinall-empty" => {
+                    let event = concurrent_join_event(
+                        operations.execution_id,
+                        task_id,
+                        TaskControlSiteKind::JoinAll,
+                        &[],
+                        "succeeded",
+                        Some(&TypeDescriptor::UNIT),
+                        None,
+                        task_event_sequence,
+                    )
+                    .map_err(|_| DurableRunFailure::Internal);
+                    let Ok(event) = event else {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    };
+                    if let Err(failure) = self
+                        .commit_durable_event(
+                            &owner,
+                            &mut recovered,
+                            operations.activity_id,
+                            task_id,
+                            &mut task_event_sequence,
+                            event,
+                            &mut last_committed,
+                        )
+                        .await
+                    {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                    if coordinator.publish_committed_root(&recovered).is_err() {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    }
+                    if let Err(failure) = owner.publish_driver_progress(&recovered) {
+                        owner.fail_driver(last_committed, failure);
+                        return;
+                    }
+                }
+                #[cfg(feature = "concurrent")]
+                MachineStep::Transition(label @ MachineLabel::TaskControlSuspended(_))
+                | MachineStep::Transition(label @ MachineLabel::Deterministic { .. }) => {
+                    let initial_spawn = match label {
+                        MachineLabel::TaskControlSuspended(suspension) => Some(suspension),
+                        MachineLabel::Deterministic { .. }
+                            if recovered.machine_mut().pending_task_control().is_some() =>
+                        {
+                            None
+                        }
+                        MachineLabel::Deterministic { .. } => continue,
+                        _ => unreachable!("matched one task-control handoff label"),
+                    };
                     let root_supervision = lock_shutdown(&root_supervision)
                         .take()
                         .ok_or(DurableRunFailure::Internal);
@@ -2451,7 +2517,7 @@ impl Interpreter {
                             operations.clone(),
                             task_id,
                             Some(hook),
-                            Some(suspension),
+                            initial_spawn,
                             model_session_occurrence,
                         )
                         .await;
@@ -2583,6 +2649,22 @@ impl Interpreter {
                 .execution_handle()
                 .cancellation_signal()
                 .map_err(DurableRunFailure::Lifecycle)?;
+            let mut staged_join = {
+                let lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
+                let pending = if task_id == lease.foreground.task_id() {
+                    lease.foreground.pending_task_control()
+                } else {
+                    lease
+                        .children
+                        .get(&task_id)
+                        .and_then(Machine::pending_task_control)
+                };
+                pending
+                    .and_then(|control| control.join())
+                    .filter(|(join, all)| *all && join.handles.is_empty())
+                    .map(|_| JoinStartV1::Empty)
+            };
+            let mut staged_detach = None;
             'graph_driver: loop {
                 if let Some(suspension) = initial_spawn.take() {
                     self.submit_durable_source_child(
@@ -2615,6 +2697,130 @@ impl Interpreter {
                         }
                     }
                 };
+                let task_control_pending = if task_id == lease.foreground.task_id() {
+                    lease.foreground.pending_task_control().is_some()
+                } else {
+                    lease
+                        .children
+                        .get(&task_id)
+                        .ok_or(DurableRunFailure::Internal)?
+                        .pending_task_control()
+                        .is_some()
+                };
+                if !task_control_pending {
+                    let predecessor = lease.frontier;
+                    let root_task = coordinator.snapshot().state().root_task_id();
+                    let DurableMachineGraph {
+                        foreground,
+                        children,
+                        ..
+                    } = &mut *lease;
+                    let mut transaction = coordinator
+                        .stage_graph(foreground, children)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    let staged = transaction
+                        .update(
+                            |foreground,
+                             children,
+                             tasks,
+                             _|
+                             -> Result<Option<DurableStagedTaskControl>, TaskStateError> {
+                                let machine = if foreground.task_id() == task_id {
+                                    foreground
+                                } else {
+                                    children
+                                        .get_mut(&task_id)
+                                        .ok_or(TaskStateError::UnknownTask)?
+                                };
+                                let MachineStep::Transition(MachineLabel::Deterministic { .. }) =
+                                    machine.step()
+                                else {
+                                    return Ok(None);
+                                };
+                                if let Some((join, join_all)) = machine
+                                    .pending_task_control()
+                                    .and_then(|pending| pending.join())
+                                {
+                                    let kind = if join_all {
+                                        TaskControlSiteKind::JoinAll
+                                    } else {
+                                        TaskControlSiteKind::Join
+                                    };
+                                    let handle_names = join
+                                        .handles
+                                        .iter()
+                                        .map(|handle| Arc::from(handle.name()))
+                                        .collect::<Vec<_>>();
+                                    let handles = join
+                                        .handles
+                                        .iter()
+                                        .map(|handle| handle.identity())
+                                        .collect::<Vec<_>>();
+                                    let started = tasks.begin_source_join(
+                                        task_id,
+                                        join.workflow.clone(),
+                                        join.site.clone(),
+                                        kind,
+                                        &handle_names,
+                                        &handles,
+                                    )?;
+                                    return Ok(Some((Some(started), None)));
+                                }
+                                if let Some(detach) = machine
+                                    .pending_task_control()
+                                    .and_then(|pending| pending.detach())
+                                {
+                                    let ownership = tasks.detach_source_handle(
+                                        task_id,
+                                        detach.workflow.clone(),
+                                        detach.site.clone(),
+                                        Arc::from(detach.handle.name()),
+                                        detach.handle.identity(),
+                                    )?;
+                                    return Ok(Some((None, Some(ownership))));
+                                }
+                                Ok(None)
+                            },
+                        )
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    if let Some((join, detach)) = staged {
+                        let (cut, affected_task) =
+                            if let Some(JoinStartV1::Started(ownership)) = join.as_ref() {
+                                (
+                                    DurableCommitCutV1::TaskOwnership,
+                                    ownership
+                                        .members()
+                                        .first()
+                                        .map(|member| member.task_id())
+                                        .ok_or(DurableRunFailure::Internal)?,
+                                )
+                            } else if let Some(ownership) = detach.as_ref() {
+                                (
+                                    DurableCommitCutV1::TaskOwnership,
+                                    ownership
+                                        .members()
+                                        .first()
+                                        .map(|member| member.task_id())
+                                        .ok_or(DurableRunFailure::Internal)?,
+                                )
+                            } else {
+                                (DurableCommitCutV1::Checkpoint, root_task)
+                            };
+                        lease.frontier = owner
+                            .commit_graph_transaction(
+                                &coordinator,
+                                transaction,
+                                predecessor,
+                                cut,
+                                affected_task,
+                            )
+                            .await?;
+                        staged_join = join;
+                        staged_detach = detach;
+                        continue;
+                    }
+                    drop(transaction);
+                }
                 let step = if task_id == lease.foreground.task_id() {
                     lease.foreground.step()
                 } else {
@@ -2637,6 +2843,78 @@ impl Interpreter {
                             suspension,
                         )
                         .await?;
+                    }
+                    MachineStep::Transition(MachineLabel::Deterministic { kind, .. })
+                        if kind.as_ref() == "joinall-empty" =>
+                    {
+                        let sequence = lease
+                            .next_event_sequence
+                            .get(&task_id)
+                            .copied()
+                            .unwrap_or(0);
+                        let draft = concurrent_join_event(
+                            operations.execution_id,
+                            task_id,
+                            TaskControlSiteKind::JoinAll,
+                            &[],
+                            "succeeded",
+                            Some(&TypeDescriptor::UNIT),
+                            None,
+                            sequence,
+                        )
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                        let event = self
+                            .complete_graph_event(&operations, task_id, sequence, draft.clone())
+                            .await?;
+                        let predecessor = lease.frontier;
+                        let root_task = coordinator.snapshot().state().root_task_id();
+                        let DurableMachineGraph {
+                            foreground,
+                            children,
+                            ..
+                        } = &mut *lease;
+                        let mut transaction = coordinator
+                            .stage_graph(foreground, children)
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                        transaction
+                            .set_event(
+                                event,
+                                owner.graph_event_plan()?,
+                                draft.protected_payloads.to_vec(),
+                            )
+                            .map_err(DurableRunFailure::Commit)?;
+                        lease.frontier = owner
+                            .commit_graph_transaction(
+                                &coordinator,
+                                transaction,
+                                predecessor,
+                                DurableCommitCutV1::Checkpoint,
+                                root_task,
+                            )
+                            .await?;
+                        lease.next_event_sequence.insert(
+                            task_id,
+                            sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                        );
+                        continue 'graph_driver;
+                    }
+                    MachineStep::Transition(MachineLabel::Deterministic { .. }) => {
+                        match self
+                            .drive_durable_task_control(
+                                &graph,
+                                &owner,
+                                &coordinator,
+                                &operations,
+                                task_id,
+                                lease,
+                                &mut staged_join,
+                                &mut staged_detach,
+                            )
+                            .await?
+                        {
+                            DurableTaskControlOutcome::Continue => continue 'graph_driver,
+                            DurableTaskControlOutcome::Finished => return Ok(()),
+                        }
                     }
                     MachineStep::Transition(MachineLabel::TaskSettled(outcome)) => {
                         let sequence = lease
@@ -2892,6 +3170,302 @@ impl Interpreter {
                     MachineStep::Complete(_) => return Ok(()),
                 }
             }
+        })
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    fn drive_durable_task_control<'a>(
+        &'a self,
+        graph: &'a Arc<SharedDurableMachineGraph>,
+        owner: &'a Arc<crate::DurableOwnedExecution>,
+        coordinator: &'a ExecutionCoordinator,
+        operations: &'a DurableOperationContext,
+        task_id: ProtocolIdentity,
+        lease: DurableMachineGraphLease,
+        staged_join: &'a mut Option<JoinStartV1>,
+        staged_detach: &'a mut Option<TaskOwnershipChangedV1>,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<DurableTaskControlOutcome, DurableRunFailure>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            if let Some((suspension, join_all)) = if task_id == lease.foreground.task_id() {
+                lease.foreground.pending_task_control()
+            } else {
+                lease
+                    .children
+                    .get(&task_id)
+                    .and_then(Machine::pending_task_control)
+            }
+            .and_then(|pending| pending.join())
+            .map(|(join, all)| (join.clone(), all))
+            {
+                let kind = if join_all {
+                    TaskControlSiteKind::JoinAll
+                } else {
+                    TaskControlSiteKind::Join
+                };
+                let started = staged_join.take().ok_or(DurableRunFailure::Internal)?;
+                let joined_task_ids = match &started {
+                    JoinStartV1::Empty => Vec::new(),
+                    JoinStartV1::Started(ownership) => ownership
+                        .members()
+                        .iter()
+                        .map(|member| member.task_id())
+                        .collect::<Vec<_>>(),
+                };
+                drop(lease);
+                let resolution = match started {
+                    JoinStartV1::Empty => JoinResolutionV1::Succeeded(LogicalValue::unit()),
+                    JoinStartV1::Started(ownership) => {
+                        let wait = coordinator
+                            .wait_for_join(
+                                ownership,
+                                self.inner.configuration.required().value_limits,
+                            )
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                        match self
+                            .poll_durable_graph_future(
+                                graph,
+                                owner,
+                                coordinator,
+                                wait,
+                            )
+                            .await?
+                        {
+                            crate::durable_lifecycle::DurableGraphDriverPoll::Completed(
+                                resolution,
+                            ) => resolution.map_err(|_| DurableRunFailure::Internal)?,
+                            crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                                return Ok(DurableTaskControlOutcome::Continue)
+                            }
+                        }
+                    }
+                };
+                let (settlement_status, result_type, failure) = match &resolution {
+                    JoinResolutionV1::Succeeded(_) => {
+                        ("succeeded", Some(&suspension.expected_type), None)
+                    }
+                    JoinResolutionV1::Failed(failure) => ("failed", None, Some(failure)),
+                    JoinResolutionV1::Pending(_) => {
+                        return Err(DurableRunFailure::Internal);
+                    }
+                };
+                let sequence = {
+                    let lease = match self
+                        .poll_durable_graph_future(graph, owner, coordinator, graph.acquire())
+                        .await?
+                    {
+                        crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Some(
+                            lease,
+                        )) => lease,
+                        crate::durable_lifecycle::DurableGraphDriverPoll::Completed(None) => {
+                            return Ok(DurableTaskControlOutcome::Finished);
+                        }
+                        crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                            return Ok(DurableTaskControlOutcome::Continue);
+                        }
+                    };
+                    let sequence = lease
+                        .next_event_sequence
+                        .get(&task_id)
+                        .copied()
+                        .unwrap_or(0);
+                    drop(lease);
+                    sequence
+                };
+                let draft = concurrent_join_event(
+                    operations.execution_id,
+                    task_id,
+                    kind,
+                    &joined_task_ids,
+                    settlement_status,
+                    result_type,
+                    failure,
+                    sequence,
+                )
+                .map_err(|_| DurableRunFailure::Internal)?;
+                let event = self
+                    .complete_graph_event(operations, task_id, sequence, draft.clone())
+                    .await?;
+                let mut lease = match self
+                    .poll_durable_graph_future(graph, owner, coordinator, graph.acquire())
+                    .await?
+                {
+                    crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Some(lease)) => {
+                        lease
+                    }
+                    crate::durable_lifecycle::DurableGraphDriverPoll::Completed(None) => {
+                        return Ok(DurableTaskControlOutcome::Finished);
+                    }
+                    crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                        return Ok(DurableTaskControlOutcome::Continue);
+                    }
+                };
+                let predecessor = lease.frontier;
+                let root_task = coordinator.snapshot().state().root_task_id();
+                let DurableMachineGraph {
+                    foreground,
+                    children,
+                    ..
+                } = &mut *lease;
+                let mut transaction = coordinator
+                    .stage_graph(foreground, children)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                transaction
+                    .set_event(
+                        event,
+                        owner.graph_event_plan()?,
+                        draft.protected_payloads.to_vec(),
+                    )
+                    .map_err(DurableRunFailure::Commit)?;
+                lease.frontier = owner
+                    .commit_graph_transaction(
+                        coordinator,
+                        transaction,
+                        predecessor,
+                        DurableCommitCutV1::Checkpoint,
+                        root_task,
+                    )
+                    .await?;
+                lease.next_event_sequence.insert(
+                    task_id,
+                    sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                );
+
+                let predecessor = lease.frontier;
+                let DurableMachineGraph {
+                    foreground,
+                    children,
+                    ..
+                } = &mut *lease;
+                let mut transaction = coordinator
+                    .stage_graph(foreground, children)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                transaction.update(|foreground, children, _, _| {
+                    let machine = if foreground.task_id() == task_id {
+                        foreground
+                    } else {
+                        children
+                            .get_mut(&task_id)
+                            .ok_or(DurableRunFailure::Internal)?
+                    };
+                    machine
+                        .complete_join(&suspension, resolution)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    Ok::<_, DurableRunFailure>(())
+                })?;
+                lease.frontier = owner
+                    .commit_graph_transaction(
+                        coordinator,
+                        transaction,
+                        predecessor,
+                        DurableCommitCutV1::Checkpoint,
+                        root_task,
+                    )
+                    .await?;
+            } else if let Some(suspension) = if task_id == lease.foreground.task_id() {
+                lease.foreground.pending_task_control()
+            } else {
+                lease
+                    .children
+                    .get(&task_id)
+                    .and_then(Machine::pending_task_control)
+            }
+            .and_then(|pending| pending.detach())
+            .cloned()
+            {
+                let ownership = staged_detach.take().ok_or(DurableRunFailure::Internal)?;
+                let sequence = lease
+                    .next_event_sequence
+                    .get(&task_id)
+                    .copied()
+                    .unwrap_or(0);
+                let draft = concurrent_detach_event(operations.execution_id, &ownership, sequence)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                drop(lease);
+                let event = self
+                    .complete_graph_event(operations, task_id, sequence, draft.clone())
+                    .await?;
+                let mut lease = match self
+                    .poll_durable_graph_future(graph, owner, coordinator, graph.acquire())
+                    .await?
+                {
+                    crate::durable_lifecycle::DurableGraphDriverPoll::Completed(Some(lease)) => {
+                        lease
+                    }
+                    crate::durable_lifecycle::DurableGraphDriverPoll::Completed(None) => {
+                        return Ok(DurableTaskControlOutcome::Finished);
+                    }
+                    crate::durable_lifecycle::DurableGraphDriverPoll::CancellationSettled => {
+                        return Ok(DurableTaskControlOutcome::Continue);
+                    }
+                };
+                let predecessor = lease.frontier;
+                let root_task = coordinator.snapshot().state().root_task_id();
+                let DurableMachineGraph {
+                    foreground,
+                    children,
+                    ..
+                } = &mut *lease;
+                let mut transaction = coordinator
+                    .stage_graph(foreground, children)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                transaction
+                    .set_event(
+                        event,
+                        owner.graph_event_plan()?,
+                        draft.protected_payloads.to_vec(),
+                    )
+                    .map_err(DurableRunFailure::Commit)?;
+                lease.frontier = owner
+                    .commit_graph_transaction(
+                        coordinator,
+                        transaction,
+                        predecessor,
+                        DurableCommitCutV1::Checkpoint,
+                        root_task,
+                    )
+                    .await?;
+                lease.next_event_sequence.insert(
+                    task_id,
+                    sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                );
+
+                let predecessor = lease.frontier;
+                let root_task = coordinator.snapshot().state().root_task_id();
+                let DurableMachineGraph {
+                    foreground,
+                    children,
+                    ..
+                } = &mut *lease;
+                let mut transaction = coordinator
+                    .stage_graph(foreground, children)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                transaction.update(|foreground, children, _, _| {
+                    let machine = if foreground.task_id() == task_id {
+                        foreground
+                    } else {
+                        children
+                            .get_mut(&task_id)
+                            .ok_or(DurableRunFailure::Internal)?
+                    };
+                    machine
+                        .complete_detach(&suspension)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    Ok::<_, DurableRunFailure>(())
+                })?;
+                lease.frontier = owner
+                    .commit_graph_transaction(
+                        coordinator,
+                        transaction,
+                        predecessor,
+                        DurableCommitCutV1::Checkpoint,
+                        root_task,
+                    )
+                    .await?;
+            }
+            Ok(DurableTaskControlOutcome::Continue)
         })
     }
 
@@ -3876,6 +4450,8 @@ impl Interpreter {
                 code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
                 workflow: suspension.workflow.clone(),
                 site: suspension.site.clone(),
+                #[cfg(feature = "concurrent")]
+                join_failure: None,
             });
             let draft = machine_lifecycle_event(
                 &MachineLabel::TaskSettled(outcome),
@@ -5076,14 +5652,9 @@ impl Interpreter {
             .get(&task_id)
             .copied()
             .unwrap_or(0);
-        let draft = machine_lifecycle_event(&label, operations.execution_id, task_id)
-            .ok_or(DurableRunFailure::Internal)?;
-        let event = self
-            .complete_graph_event(operations, task_id, sequence, draft.clone())
-            .await?;
-        let outcome = match label {
+        let outcome = match &label {
             MachineLabel::ForegroundCompletion(outcome)
-            | MachineLabel::TerminalCompletion(outcome) => outcome,
+            | MachineLabel::TerminalCompletion(outcome) => outcome.clone(),
             _ => return Err(DurableRunFailure::Internal),
         };
         let predecessor = lease.frontier;
@@ -5095,13 +5666,27 @@ impl Interpreter {
         let mut transaction = coordinator
             .stage_graph(foreground, children)
             .map_err(|_| DurableRunFailure::Internal)?;
-        transaction
+        let terminal = transaction
             .update(|_, _, tasks, _| match cut {
-                DurableCommitCutV1::ForegroundCompletion => tasks.complete_foreground(outcome),
-                DurableCommitCutV1::TerminalCompletion => tasks.complete_terminal().map(|_| ()),
+                DurableCommitCutV1::ForegroundCompletion => {
+                    tasks.complete_foreground(outcome).map(|()| None)
+                }
+                DurableCommitCutV1::TerminalCompletion => tasks
+                    .complete_terminal()
+                    .map(|terminal| Some(terminal.clone())),
                 _ => Err(TaskStateError::InvalidTransition),
             })
             .map_err(|_| DurableRunFailure::Internal)?;
+        let draft = if let Some(terminal) = terminal {
+            concurrent_terminal_event(operations.execution_id, task_id, &terminal)
+                .map_err(|_| DurableRunFailure::Internal)?
+        } else {
+            machine_lifecycle_event(&label, operations.execution_id, task_id)
+                .ok_or(DurableRunFailure::Internal)?
+        };
+        let event = self
+            .complete_graph_event(operations, task_id, sequence, draft.clone())
+            .await?;
         transaction
             .set_event(
                 event,
@@ -6230,8 +6815,16 @@ impl Interpreter {
             .await?;
             match machine.step() {
                 MachineStep::Transition(label) => {
-                    if let Some(event) =
-                        machine_lifecycle_event(&label, accepted.execution_id, task_id)
+                    #[cfg(feature = "concurrent")]
+                    let defer_terminal_event = matches!(
+                        label,
+                        MachineLabel::TerminalCompletion(_) if execution_foreground
+                    );
+                    #[cfg(not(feature = "concurrent"))]
+                    let defer_terminal_event = false;
+                    if !defer_terminal_event
+                        && let Some(event) =
+                            machine_lifecycle_event(&label, accepted.execution_id, task_id)
                     {
                         let event = events
                             .emit_task_draft(event)
@@ -6277,13 +6870,84 @@ impl Interpreter {
                         MachineLabel::TerminalCompletion(outcome)
                             if execution_foreground && !terminal_fixed =>
                         {
-                            coordinator
-                                .complete_terminal()
-                                .map_err(RunExecutionError::TaskState)?;
-                            self.inner
-                                .lifecycle
-                                .complete_terminal(&accepted.handle, outcome)
-                                .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                            #[cfg(feature = "concurrent")]
+                            {
+                                let terminal = loop {
+                                    match coordinator.complete_terminal() {
+                                        Ok(terminal) => break terminal,
+                                        Err(TaskStateError::DetachedTasksPending) => {
+                                            let detached =
+                                                coordinator.shutdown_cohort().detached_tasks;
+                                            if detached.is_empty() {
+                                                return Err(RunExecutionError::LifecycleTransition);
+                                            }
+                                            for child in detached {
+                                                coordinator
+                                                    .wait_for_task_settlement(child)
+                                                    .map_err(RunExecutionError::TaskState)?
+                                                    .await;
+                                            }
+                                        }
+                                        Err(error) => {
+                                            return Err(RunExecutionError::TaskState(error));
+                                        }
+                                    }
+                                };
+                                let event = if terminal.detached_failures.is_empty() {
+                                    let draft = machine_lifecycle_event(
+                                        &MachineLabel::TerminalCompletion(outcome.clone()),
+                                        accepted.execution_id,
+                                        task_id,
+                                    )
+                                    .ok_or(RunExecutionError::LifecycleTransition)?;
+                                    events.emit_task_draft(draft).await
+                                } else {
+                                    let draft = concurrent_terminal_event(
+                                        accepted.execution_id,
+                                        task_id,
+                                        &terminal,
+                                    )
+                                    .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                                    events.emit_execution_draft(draft).await
+                                }
+                                .map_err(RunExecutionError::Event)?;
+                                if matches!(
+                                event.consequence,
+                                ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                                    | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
+                            ) {
+                                coordinator
+                                    .cancel_task_tree(
+                                        task_id,
+                                        Arc::from("required-event-delivery-failure"),
+                                    )
+                                    .map_err(RunExecutionError::TaskState)?;
+                            }
+                                self.inner
+                                    .lifecycle
+                                    .complete_terminal(&accepted.handle, terminal)
+                                    .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                            }
+                            #[cfg(not(feature = "concurrent"))]
+                            {
+                                coordinator
+                                    .complete_terminal()
+                                    .map_err(RunExecutionError::TaskState)?;
+                                let draft = machine_lifecycle_event(
+                                    &MachineLabel::TerminalCompletion(outcome.clone()),
+                                    accepted.execution_id,
+                                    task_id,
+                                )
+                                .ok_or(RunExecutionError::LifecycleTransition)?;
+                                events
+                                    .emit_task_draft(draft)
+                                    .await
+                                    .map_err(RunExecutionError::Event)?;
+                                self.inner
+                                    .lifecycle
+                                    .complete_terminal(&accepted.handle, outcome)
+                                    .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                            }
                             terminal_fixed = true;
                         }
                         #[cfg(feature = "concurrent")]
@@ -6302,6 +6966,221 @@ impl Interpreter {
                                 suspension,
                             )
                             .await?;
+                        }
+                        #[cfg(feature = "concurrent")]
+                        MachineLabel::Deterministic { ref kind, .. }
+                            if kind.as_ref() == "joinall-empty" =>
+                        {
+                            let draft = concurrent_join_event(
+                                accepted.execution_id,
+                                task_id,
+                                TaskControlSiteKind::JoinAll,
+                                &[],
+                                "succeeded",
+                                Some(&TypeDescriptor::UNIT),
+                                None,
+                                0,
+                            )
+                            .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                            let event = events
+                                .emit_task_draft(draft)
+                                .await
+                                .map_err(RunExecutionError::Event)?;
+                            if matches!(
+                                event.consequence,
+                                ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                                    | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
+                            ) {
+                                coordinator
+                                    .cancel_task_tree(
+                                        task_id,
+                                        Arc::from("required-event-delivery-failure"),
+                                    )
+                                    .map_err(RunExecutionError::TaskState)?;
+                            }
+                            continue;
+                        }
+                        #[cfg(feature = "concurrent")]
+                        MachineLabel::Deterministic { .. } => {
+                            if let Some((suspension, join_all)) = machine
+                                .pending_task_control()
+                                .and_then(|pending| pending.join())
+                                .map(|(join, all)| (join.clone(), all))
+                            {
+                                let handle_names = suspension
+                                    .handles
+                                    .iter()
+                                    .map(|handle| Arc::from(handle.name()))
+                                    .collect::<Vec<_>>();
+                                let handles = suspension
+                                    .handles
+                                    .iter()
+                                    .map(|handle| handle.identity())
+                                    .collect::<Vec<_>>();
+                                let kind = if join_all {
+                                    TaskControlSiteKind::JoinAll
+                                } else {
+                                    TaskControlSiteKind::Join
+                                };
+                                let started = coordinator
+                                    .begin_source_join(
+                                        task_id,
+                                        suspension.workflow.clone(),
+                                        suspension.site.clone(),
+                                        kind,
+                                        &handle_names,
+                                        &handles,
+                                    )
+                                    .map_err(RunExecutionError::TaskState)?;
+                                let (joined_task_ids, resolution) = match started {
+                                    JoinStartV1::Empty => (
+                                        Vec::new(),
+                                        Some(JoinResolutionV1::Succeeded(LogicalValue::unit())),
+                                    ),
+                                    JoinStartV1::Started(ownership) => {
+                                        let joined_task_ids = ownership
+                                            .members()
+                                            .iter()
+                                            .map(|member| member.task_id())
+                                            .collect::<Vec<_>>();
+                                        let mut wait = std::pin::pin!(
+                                            coordinator
+                                                .wait_for_join(
+                                                    ownership,
+                                                    self.inner
+                                                        .configuration
+                                                        .required()
+                                                        .value_limits,
+                                                )
+                                                .map_err(RunExecutionError::TaskState)?
+                                        );
+                                        let cancellation_wait = cancellation.cancelled();
+                                        let mut cancellation_wait =
+                                            std::pin::pin!(cancellation_wait);
+                                        let resolution = std::future::poll_fn(|context| {
+                                            if cancellation_wait.as_mut().poll(context).is_ready() {
+                                                return Poll::Ready(None);
+                                            }
+                                            wait.as_mut().poll(context).map(Some)
+                                        })
+                                        .await
+                                        .transpose()
+                                        .map_err(RunExecutionError::TaskState)?;
+                                        (joined_task_ids, resolution)
+                                    }
+                                };
+                                self.apply_task_cancellation(
+                                    &accepted,
+                                    &coordinator,
+                                    task_id,
+                                    &mut machine,
+                                    &mut events,
+                                )
+                                .await?;
+                                let Some(resolution) = resolution else {
+                                    continue;
+                                };
+                                if cancellation.is_cancelled() || machine.outcome().is_some() {
+                                    continue;
+                                }
+                                let (settlement_status, result_type, failure) = match &resolution {
+                                    JoinResolutionV1::Succeeded(_) => {
+                                        ("succeeded", Some(&suspension.expected_type), None)
+                                    }
+                                    JoinResolutionV1::Failed(failure) => {
+                                        ("failed", None, Some(failure))
+                                    }
+                                    JoinResolutionV1::Pending(_) => {
+                                        return Err(RunExecutionError::LifecycleTransition);
+                                    }
+                                };
+                                let draft = concurrent_join_event(
+                                    accepted.execution_id,
+                                    task_id,
+                                    kind,
+                                    &joined_task_ids,
+                                    settlement_status,
+                                    result_type,
+                                    failure,
+                                    0,
+                                )
+                                .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                                let event = events
+                                    .emit_task_draft(draft)
+                                    .await
+                                    .map_err(RunExecutionError::Event)?;
+                                if matches!(
+                                    event.consequence,
+                                    ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                                        | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
+                                ) {
+                                    coordinator
+                                        .cancel_task_tree(
+                                            task_id,
+                                            Arc::from("required-event-delivery-failure"),
+                                        )
+                                        .map_err(RunExecutionError::TaskState)?;
+                                }
+                                self.apply_task_cancellation(
+                                    &accepted,
+                                    &coordinator,
+                                    task_id,
+                                    &mut machine,
+                                    &mut events,
+                                )
+                                .await?;
+                                if !cancellation.is_cancelled() && machine.outcome().is_none() {
+                                    machine
+                                        .complete_join(&suspension, resolution)
+                                        .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                                }
+                            } else if let Some(suspension) = machine
+                                .pending_task_control()
+                                .and_then(|pending| pending.detach())
+                                .cloned()
+                            {
+                                let ownership = coordinator
+                                    .detach_source_handle(
+                                        task_id,
+                                        suspension.workflow.clone(),
+                                        suspension.site.clone(),
+                                        Arc::from(suspension.handle.name()),
+                                        suspension.handle.identity(),
+                                    )
+                                    .map_err(RunExecutionError::TaskState)?;
+                                let draft =
+                                    concurrent_detach_event(accepted.execution_id, &ownership, 0)
+                                        .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                                let event = events
+                                    .emit_task_draft(draft)
+                                    .await
+                                    .map_err(RunExecutionError::Event)?;
+                                if matches!(
+                                    event.consequence,
+                                    ExecutionDeliveryConsequenceV1::ExecutionCancellationStarted(_)
+                                        | ExecutionDeliveryConsequenceV1::ExecutionCancellationAlreadyActive(_)
+                                ) {
+                                    coordinator
+                                        .cancel_task_tree(
+                                            task_id,
+                                            Arc::from("required-event-delivery-failure"),
+                                        )
+                                        .map_err(RunExecutionError::TaskState)?;
+                                }
+                                self.apply_task_cancellation(
+                                    &accepted,
+                                    &coordinator,
+                                    task_id,
+                                    &mut machine,
+                                    &mut events,
+                                )
+                                .await?;
+                                if !cancellation.is_cancelled() && machine.outcome().is_none() {
+                                    machine
+                                        .complete_detach(&suspension)
+                                        .map_err(|_| RunExecutionError::LifecycleTransition)?;
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -6380,6 +7259,8 @@ impl Interpreter {
                             workflow: workflow.clone(),
                             site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
                                 .map_err(|_| RunExecutionError::LifecycleTransition)?,
+                            #[cfg(feature = "concurrent")]
+                            join_failure: None,
                         };
                         let outcome = MachineOutcome::Failed(failure.clone());
                         coordinator
@@ -6417,6 +7298,8 @@ impl Interpreter {
                             code: RuntimeCode::InternalInvariant,
                             workflow: operation.workflow,
                             site: operation.site,
+                            #[cfg(feature = "concurrent")]
+                            join_failure: None,
                         };
                         self.fix_failed_execution(&accepted, failure)?;
                         return Err(RunExecutionError::MissingOperationMetadata);
@@ -6582,6 +7465,8 @@ impl Interpreter {
             code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
             workflow: workflow.clone(),
             site: site.clone(),
+            #[cfg(feature = "concurrent")]
+            join_failure: None,
         });
         coordinator
             .settle_task(task_id, outcome.clone())
@@ -6648,6 +7533,8 @@ impl Interpreter {
             code: RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
             workflow: suspension.workflow.clone(),
             site: suspension.site.clone(),
+            #[cfg(feature = "concurrent")]
+            join_failure: None,
         });
         machine
             .complete_spawn(suspension, handle_id)
@@ -7031,6 +7918,8 @@ impl Interpreter {
                         code: RuntimeCode::InternalInvariant,
                         workflow: suspension.workflow,
                         site: suspension.site,
+                        #[cfg(feature = "concurrent")]
+                        join_failure: None,
                     });
                     let _ = coordinator.settle_task(created.task_id, fallback);
                     let _ = signal.settle();
@@ -7312,7 +8201,7 @@ impl Interpreter {
                 crate::DurableCancelExecutionResult::AlreadyTerminal(_) => owner
                     .execution_handle()
                     .snapshot()
-                    .map(CancellationRecord::AlreadyTerminal)
+                    .map(|snapshot| CancellationRecord::AlreadyTerminal(Box::new(snapshot)))
                     .map_err(CancelExecutionError::Transition),
                 crate::DurableCancelExecutionResult::NotFound { .. } => {
                     Ok(CancellationRecord::NotFound)
@@ -8263,6 +9152,8 @@ impl Interpreter {
             workflow,
             site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
                 .map_err(|_| RunExecutionError::LifecycleTransition)?,
+            #[cfg(feature = "concurrent")]
+            join_failure: None,
         });
         self.settle_driver_failure(coordinator, task_id, handle, fallback)
     }
@@ -8318,11 +9209,14 @@ impl Interpreter {
         } else if coordinated.state().foreground_outcome() != Some(&outcome) {
             return Err(RunExecutionError::LifecycleTransition);
         }
-        if coordinator.snapshot().state().terminal_outcome().is_none() {
-            coordinator
-                .complete_terminal()
-                .map_err(RunExecutionError::TaskState)?;
-        }
+        let terminal =
+            if let Some(terminal) = coordinator.snapshot().state().terminal_outcome().cloned() {
+                terminal
+            } else {
+                coordinator
+                    .complete_terminal()
+                    .map_err(RunExecutionError::TaskState)?
+            };
 
         let execution = self
             .inner
@@ -8347,7 +9241,7 @@ impl Interpreter {
         if execution.terminal.is_none() {
             self.inner
                 .lifecycle
-                .complete_terminal(handle, outcome)
+                .complete_terminal(handle, terminal)
                 .map_err(|_| RunExecutionError::LifecycleTransition)?;
         }
         Ok(())
@@ -8401,6 +9295,8 @@ impl TaskDriverFailureContext {
             workflow: self.workflow.clone(),
             site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
                 .unwrap_or_else(|_| unreachable!("constant position is valid")),
+            #[cfg(feature = "concurrent")]
+            join_failure: None,
         });
         #[cfg(all(feature = "concurrent", feature = "durable"))]
         if let (Some(graph), Some(owner)) = (&self.durable_graph, &self.durable_owner) {
@@ -8526,6 +9422,8 @@ impl TaskDriver {
                         workflow,
                         site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
                             .map_err(|_| RunExecutionError::LifecycleTransition)?,
+                        #[cfg(feature = "concurrent")]
+                        join_failure: None,
                     });
                     interpreter.settle_child_driver_failure(
                         &failure_coordinator,
@@ -9139,6 +10037,8 @@ fn root_start_failure(workflow: &gantry_ir::CanonicalPath, code: RuntimeCode) ->
         workflow: workflow.clone(),
         site: gantry_ir::StructuralPosition::new(vec![u64::MAX])
             .unwrap_or_else(|_| unreachable!("constant position is valid")),
+        #[cfg(feature = "concurrent")]
+        join_failure: None,
     })
 }
 
@@ -9164,14 +10064,14 @@ fn settle_root_start_failure(
     if foreground != outcome {
         return Err(RunExecutionError::LifecycleTransition);
     }
-    coordinator
+    let terminal = coordinator
         .complete_terminal()
         .map_err(RunExecutionError::TaskState)?;
     lifecycle
         .complete_foreground(&accepted.handle, outcome.clone())
         .map_err(|_| RunExecutionError::LifecycleTransition)?;
     lifecycle
-        .complete_terminal(&accepted.handle, outcome)
+        .complete_terminal(&accepted.handle, terminal)
         .map_err(|_| RunExecutionError::LifecycleTransition)
 }
 

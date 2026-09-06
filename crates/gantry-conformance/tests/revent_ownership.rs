@@ -384,8 +384,8 @@ fn nondurable_root_events_keep_semantic_order_after_start_and_await_observers_dr
         .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
         .unwrap_or_else(|| panic!("accepted execution disappeared with its observers"));
     assert!(matches!(
-        snapshot.terminal,
-        Some(MachineOutcome::Succeeded(ref value))
+        snapshot.terminal.as_ref().map(|terminal| &terminal.foreground),
+        Some(MachineOutcome::Succeeded(value))
             if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
     ));
 
@@ -524,8 +524,8 @@ fn required_exhaustion_after_terminal_preserves_the_fixed_root_outcome() {
         .unwrap_or_else(|| panic!("terminal-exhaustion execution disappeared"));
     assert_eq!(snapshot.execution_id, execution_id);
     assert!(matches!(
-        snapshot.terminal,
-        Some(MachineOutcome::Succeeded(ref value))
+        snapshot.terminal.as_ref().map(|terminal| &terminal.foreground),
+        Some(MachineOutcome::Succeeded(value))
             if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 9)
     ));
     assert_eq!(snapshot.required_delivery_failures.len(), 1);

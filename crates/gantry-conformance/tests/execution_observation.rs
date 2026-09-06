@@ -372,6 +372,7 @@ fn public_execution_event_catalog_is_typed_canonical_and_protected() {
         workflow,
         site: StructuralPosition::new(vec![9])
             .unwrap_or_else(|error| panic!("failure site failed: {error}")),
+        join_failure: None,
     };
     for label in [
         MachineLabel::Cancellation {
@@ -536,7 +537,10 @@ fn public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_s
     assert!(matches!(
         result.consequence,
         ExecutionDeliveryConsequenceV1::PostTerminalBarrier {
-            terminal: MachineOutcome::Succeeded(_),
+            terminal: gantry::runtime::ConcurrentTerminalOutcomeV1 {
+                foreground: MachineOutcome::Succeeded(_),
+                ..
+            },
             ..
         }
     ));
@@ -544,7 +548,10 @@ fn public_required_delivery_failure_is_isolated_nonrecursive_and_post_terminal_s
         .query_execution(terminal_execution)
         .unwrap_or_else(|error| panic!("terminal query failed: {error:?}"))
         .unwrap_or_else(|| panic!("terminal execution was absent"));
-    assert_eq!(snapshot.terminal, Some(terminal));
+    assert_eq!(
+        snapshot.terminal.map(|terminal| terminal.foreground),
+        Some(terminal)
+    );
     assert_eq!(snapshot.required_delivery_failures.len(), 1);
     assert_eq!(terminal_sink.calls(), 1);
 }

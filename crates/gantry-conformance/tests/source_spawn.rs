@@ -31,7 +31,7 @@ use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
     CancellationReasonCategory, DeliveryOutcome, EventKind, ExecutionObservationState,
     IdentityKind, JitterMode, PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS,
-    RuntimeErrorCategory, SinkClass, TaskStatusKind,
+    RuntimeErrorCategory, SinkClass, TaskStatusKind, TerminalOnlyCategory,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
@@ -598,12 +598,19 @@ fn native_child_submission_keeps_the_gate_closed_and_establishes_session_before_
     }));
 
     let snapshot = drive_to_terminal(&executor, &interpreter, &handle);
-    assert!(matches!(
+    assert_eq!(
         snapshot.foreground,
-        Some(gantry::runtime::MachineOutcome::Failed(ref failure))
-            if failure.code == gantry::runtime::RuntimeCode::InternalInvariant
-    ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+        Some(gantry::runtime::MachineOutcome::Succeeded(
+            gantry::value::LogicalValue::unit()
+        ))
+    );
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
     let runtime_calls = integration
         .calls()
         .into_iter()
@@ -803,7 +810,13 @@ fn nondurable_failed_child_abort_is_bounded_and_reports_executor_failure() {
         Some(MachineOutcome::Failed(ref failure))
             if failure.code == RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure)
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -980,7 +993,7 @@ fn durable_cancellation_after_child_session_establishment_constructs_no_hook() {
         state
             .task_record(child_id)
             .map(|record| record.driver_ownership()),
-        Some(TaskDriverOwnershipV1::PhysicallySettled)
+        Some(TaskDriverOwnershipV1::Supervised)
     );
 }
 
@@ -1314,9 +1327,18 @@ fn child_executor_rejection_settles_without_submitting_another_driver() {
     assert!(matches!(
         snapshot.foreground,
         Some(gantry::runtime::MachineOutcome::Failed(ref failure))
-            if failure.code == gantry::runtime::RuntimeCode::InternalInvariant
+            if failure.code
+                == gantry::runtime::RuntimeCode::Operation(
+                    RuntimeErrorCategory::TaskJoinFailure
+                )
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
 }
 
 #[test]
@@ -1410,7 +1432,13 @@ fn cumulative_task_limit_fails_the_spawn_before_session_establishment() {
                 gantry::portable::DeterministicEvaluationCode::TaskCountLimit
             )
     ));
-    assert_eq!(snapshot.terminal, snapshot.foreground);
+    assert_eq!(
+        snapshot
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        snapshot.foreground.as_ref()
+    );
     let task_state = interpreter
         .test_nondurable_task_state(handle.execution_id())
         .unwrap_or_else(|| panic!("nondurable task state is absent"));
@@ -1723,6 +1751,133 @@ fn durable_child_action_commits_ordered_operation_cuts() {
             .state()
             .terminal_outcome()
     );
+}
+
+#[test]
+fn durable_detached_failures_survive_full_and_compacted_public_recovery() {
+    let root = TempDirectory::new(
+        r#"
+fn main() -> Int {
+    spawn first -> Int { 1 / 0 }
+    detach(first);
+    spawn second -> Int { 1 / 0 }
+    detach(second);
+    7
+}
+"#,
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let interpreter = interpreter_with_delivery(
+        Arc::clone(&executor),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("durable-detached-terminal-recovery")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let accepted = durable_accepted(&interpreter, &root, storage.clone(), journal_id.clone());
+    let execution_id = accepted.execution_id();
+    let live = drive_to_terminal(&executor, &interpreter, accepted.handle());
+
+    let terminal = live
+        .terminal
+        .as_ref()
+        .unwrap_or_else(|| panic!("live detached terminal projection is absent"));
+    assert_eq!(Some(&terminal.foreground), live.foreground.as_ref());
+    assert!(matches!(
+        terminal.foreground,
+        MachineOutcome::Succeeded(ref value) if value.canonical_json().bytes() == b"7"
+    ));
+    assert_eq!(
+        terminal.category,
+        gantry::runtime::ConcurrentTerminalCategoryV1::TerminalOnly(
+            TerminalOnlyCategory::DetachedTaskFailure
+        )
+    );
+    assert_eq!(terminal.detached_failures.len(), 2);
+    assert!(
+        terminal
+            .detached_failures
+            .windows(2)
+            .all(|failures| failures[0].task_path < failures[1].task_path)
+    );
+    assert!(terminal.detached_failures.iter().all(|failure| {
+        failure.failure.category == RuntimeErrorCategory::DeterministicEvaluationFailure
+            && failure.failure.code.as_ref() == "integer-division-by-zero"
+    }));
+
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("detached terminal journal read failed: {error:?}"));
+    let full_query = block_on(DurableLifecycleCoordinator::new(storage_adapter).query(
+        DurableQueryExecutionRequest {
+            journal_id: journal_id.clone(),
+            expected_execution_id: Some(execution_id),
+        },
+    ));
+    let DurableQueryExecutionResult::Snapshot(full_observation) = full_query else {
+        panic!("full detached terminal query failed: {full_query:?}")
+    };
+    assert_eq!(full_observation.foreground, live.foreground);
+    assert_eq!(full_observation.terminal, live.terminal);
+
+    let JournalPrefixV1::Full(full) = &prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    let program = DurableExecutionStartV3::retained_program(&full.evidence[0].canonical_body)
+        .unwrap_or_else(|error| panic!("retained program failed to decode: {error:?}"));
+    let compacted = ConcurrentDurableRecoverySnapshotV1::from_full_prefix(&program, full)
+        .unwrap_or_else(|error| panic!("detached terminal compaction failed: {error:?}"));
+    let snapshot_prefix = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+        snapshot_version: CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1,
+        frontier: compacted.frontier(),
+        canonical_snapshot: Arc::from(compacted.canonical_body()),
+        retained_evidence: compacted.retained_evidence().clone(),
+        suffix: Arc::from([]),
+        committed_through: compacted.frontier(),
+    });
+    let snapshot_storage: Arc<dyn JournalStorage> =
+        Arc::new(FixedPrefixJournalStore::new(snapshot_prefix));
+    let compacted_query = block_on(DurableLifecycleCoordinator::new(snapshot_storage).query(
+        DurableQueryExecutionRequest {
+            journal_id,
+            expected_execution_id: Some(execution_id),
+        },
+    ));
+    let DurableQueryExecutionResult::Snapshot(compacted_observation) = compacted_query else {
+        panic!("compacted detached terminal query failed: {compacted_query:?}")
+    };
+    assert_eq!(
+        compacted_observation.foreground,
+        full_observation.foreground
+    );
+    assert_eq!(compacted_observation.terminal, full_observation.terminal);
 }
 
 #[test]
@@ -2976,10 +3131,11 @@ fn durable_graph_journal_failure_drains_before_release_and_failure_publication()
     assert_eq!(storage.release_count(), 1);
     assert!(storage.release_saw_cancelled());
     assert!(storage.release_saw_graph_tasks_settled());
-    assert!(matches!(
-        executor.poll_task(1),
-        Ok(DeterministicTaskPoll::Stopped)
-    ));
+    let child_cleanup = executor.poll_task(1);
+    assert!(
+        matches!(child_cleanup, Ok(DeterministicTaskPoll::Settled(_))),
+        "unexpected child cleanup result: {child_cleanup:?}"
+    );
     let fenced_prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal_id.clone(),
     }))

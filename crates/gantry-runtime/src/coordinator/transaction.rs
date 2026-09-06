@@ -82,11 +82,16 @@ impl ExecutionCoordinator {
             })
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
+        let (tasks, sessions) = if let Some((tasks, sessions)) = &state.durable_graph_baseline {
+            (tasks.clone(), sessions.clone())
+        } else {
+            (state.tasks.clone(), state.sessions.clone())
+        };
         let original_checkpoint = ConcurrentDurableCheckpointV4::capture_coordinated(
             &staged_foreground,
             &staged_children,
-            &state.tasks,
-            &state.sessions,
+            &tasks,
+            &sessions,
             &budget,
         )
         .map_err(|_| TaskStateError::InvalidTaskMachine)?;
@@ -97,8 +102,8 @@ impl ExecutionCoordinator {
             children,
             staged_foreground,
             staged_children,
-            tasks: state.tasks.clone(),
-            sessions: state.sessions.clone(),
+            tasks,
+            sessions,
             budget,
             original_budget,
             original_checkpoint: Box::new(original_checkpoint),
@@ -277,13 +282,14 @@ impl DurableGraphTransaction<'_> {
             {
                 return Err(DurableCommitError::InvalidState);
             }
+            let mut published_tasks = self.tasks.clone();
             // Physical completion can race storage without becoming a semantic
-            // transition. Preserve that monotonic bookkeeping in the installed cut.
+            // transition. Preserve that monotonic bookkeeping only in the live cut.
             for id in task_ids {
                 if state.tasks.task_record(id).is_some_and(|record| {
                     record.driver_ownership() == TaskDriverOwnershipV1::PhysicallySettled
                 }) {
-                    self.tasks
+                    published_tasks
                         .mark_driver_physically_settled(id)
                         .map_err(|_| DurableCommitError::InvalidState)?;
                 }
@@ -294,15 +300,15 @@ impl DurableGraphTransaction<'_> {
                     DurableCommitError::Evidence(crate::DurableEvidenceError::Event(error))
                 })?;
             }
+            let execution_budget = ExecutionBudget::recover_from_checkpoint(committed_budget)
+                .map_err(|_| DurableCommitError::InvalidState)?;
+            state.durable_graph_baseline = Some((self.tasks.clone(), self.sessions.clone()));
             *self.foreground = self.staged_foreground.clone();
             *self.children = self.staged_children.clone();
-            state.tasks = self.tasks.clone();
+            state.tasks = published_tasks;
             state.sessions = self.sessions.clone();
             state.durable_events = events;
-            state.execution_budget = Some(
-                ExecutionBudget::recover_from_checkpoint(committed_budget)
-                    .map_err(|_| DurableCommitError::InvalidState)?,
-            );
+            state.execution_budget = Some(execution_budget);
             state.publication = state.publication.wrapping_add(1);
             state.durable_publication_reserved = false;
             self.installed = true;

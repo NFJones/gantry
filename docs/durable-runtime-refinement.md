@@ -19,9 +19,12 @@ It also preserves child pending outcomes rather than reconstructing them as
 absent. Its `GNTCDP04` bytes and concurrent-durable-evidence/v4 envelopes replace
 the superseded v3 graph formats; no legacy decoder is provided. Recorded driver
 bookkeeping is evidence, not a restored executor capability. The live
-source-spawn evidence now establishes coherent task-creation, operation, and
-settlement commit ordering through those graph envelopes. Fenced task-graph
-reconstruction and executor resubmission remain separate recovery obligations.
+source-spawn evidence establishes coherent task-creation, operation, and
+settlement commit ordering through those graph envelopes. The source-join
+evidence adds live join and detach ownership transfer, all-settled observation,
+and result, failure, and event publication before parent source continuation.
+Fenced task-graph reconstruction and executor resubmission remain separate
+recovery obligations.
 
 `ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
 primitive over borrowed root and child machines. Its private copies share one
@@ -50,9 +53,11 @@ The issue-scoped evidence in `protocol/conformance/durable-coordination-v1.json`
 binds these mechanisms to the frozen DUR-001 requirement assignments. It does
 not restore profile claims. `protocol/conformance/source-spawn-v1.json` binds
 native executor-owned child submission and live concurrent-durable spawn and
-child-operation ordering to the current specification. Source JOIN, JOINALL,
-DETACH, broad task-graph cancellation, fenced process reconstruction, and
-replacement submission remain separate obligations.
+child-operation ordering to the current specification, and
+`protocol/conformance/source-join-v1.json` binds completed source JOIN,
+JOINALL, and DETACH behavior to the frozen JOIN-001 rows. Descendant
+cancellation and failure draining remain `GNT-ASYNC-CANCEL-001`; fenced graph
+reconstruction and replacement submission remain `GNT-ASYNC-REC-001`.
 
 For the generics-and-static-traits amendment, the durable prefix retains the
 canonical analysis artifacts and the distinct closed executable projection
@@ -191,6 +196,13 @@ the durable-runtime projection of `GNT-3-D-PROPERTIES` and the resolved
 lifecycle kernel. Its trace list points to executable recovery, commit-cut,
 event-gap, delivery, cancellation, shutdown, fencing, and compaction cases
 owned by the existing durable implementation suites.
+
+The current-specification source evidence is split between
+`protocol/conformance/source-spawn-v1.json` and
+`protocol/conformance/source-join-v1.json`. The latter records the live
+concurrent-durable ownership and all-settled ordering slice only; it does not
+claim recovered runnable-graph resubmission or descendant cancellation and
+failure draining.
 
 The generics amendment is mapped separately by
 `protocol/conformance/generics-traits-refinements-v1.json`. It links

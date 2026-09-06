@@ -11,7 +11,7 @@ use gantry_ir::{CanonicalPath, MachineProgram, TypeDescriptor};
 use crate::machine::checkpoint_codec::{
     Reader, Writer, machine_checkpoint_uses_successor_wire, read_outcome, write_outcome,
 };
-use crate::machine::value_matches_type;
+use crate::machine::{MachineTaskControlSuspension, value_matches_type};
 use crate::{
     ExecutionBudget, ExecutionBudgetSnapshot, LogicalSessionRegistryCheckpointV1,
     LogicalSessionRegistryV1, Machine, MachineCheckpointV3, MachineOutcome, MachineRecoveryError,
@@ -709,6 +709,7 @@ impl ConcurrentDurableCheckpointV4 {
         }
 
         let mut lexical_handles = BTreeSet::new();
+        let mut pending_consumed_handles = BTreeSet::new();
         for machine in std::iter::once(&self.foreground).chain(self.machines.values()) {
             for (name, handle) in machine.lexical_task_handles() {
                 let identity = handle.identity();
@@ -722,6 +723,39 @@ impl ConcurrentDurableCheckpointV4 {
                     || task.handle_id() != identity
                     || task.result_type() != handle.result_type()
                     || !task.handle_is_visible()
+                {
+                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                }
+            }
+
+            let Some(pending) = machine.pending_task_control_checkpoint() else {
+                continue;
+            };
+            let (handles, disposition) = match pending {
+                MachineTaskControlSuspension::Spawn(_) => continue,
+                MachineTaskControlSuspension::Join(join)
+                | MachineTaskControlSuspension::JoinAll(join) => {
+                    (join.handles.as_slice(), TaskHandleState::Joined)
+                }
+                MachineTaskControlSuspension::Detach(detach) => (
+                    std::slice::from_ref(&detach.handle),
+                    TaskHandleState::Detached,
+                ),
+            };
+            for handle in handles {
+                let identity = handle.identity();
+                let Some(task) = state.task(identity.child()) else {
+                    return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
+                };
+                if !pending_consumed_handles.insert(identity)
+                    || lexical_handles.contains(&identity)
+                    || identity.owner() != machine.task_id()
+                    || task.parent_task_id() != machine.task_id()
+                    || task.handle_name() != handle.name()
+                    || task.handle_id() != identity
+                    || task.result_type() != handle.result_type()
+                    || !task.handle_is_visible()
+                    || task.handle_state() != disposition
                 {
                     return Err(ConcurrentDurableCheckpointError::InvalidCheckpoint);
                 }
@@ -1483,8 +1517,8 @@ mod tests {
     };
     use crate::machine::task_identity_key;
     use crate::{
-        CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1,
-        ConcurrentTaskStatusV1, DynamicTaskHandleIdentity, ExecutionBudget,
+        CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskRecordV1,
+        ConcurrentTaskStateV1, ConcurrentTaskStatusV1, DynamicTaskHandleIdentity, ExecutionBudget,
         LogicalSessionRegistryV1, Machine, MachineLabel, MachineLimits, MachineOutcome,
         MachineStep, RuntimeCode, SessionCreationModeV1, TaskCreationRequestV1, TaskStateError,
         root_task_identity,
@@ -1968,6 +2002,82 @@ mod tests {
     }
 
     #[test]
+    fn pending_consumed_task_controls_recover_with_exact_scheduler_records() {
+        for kind in [
+            TaskControlSiteKind::Join,
+            TaskControlSiteKind::JoinAll,
+            TaskControlSiteKind::Detach,
+        ] {
+            let (fixture, _) = pending_task_control_fixture(kind, None);
+            let checkpoint = ConcurrentDurableCheckpointV5::capture(
+                &fixture.foreground,
+                &fixture.scheduler,
+                &fixture.sessions,
+            )
+            .unwrap_or_else(|error| panic!("pending control capture failed: {error:?}"));
+            let decoded = ConcurrentDurableCheckpointV5::decode(
+                &fixture.program,
+                &checkpoint.canonical_bytes(),
+            )
+            .unwrap_or_else(|error| panic!("pending control decode failed: {error:?}"));
+            assert!(decoded.recover(Arc::clone(&fixture.program)).is_ok());
+        }
+    }
+
+    #[test]
+    fn pending_consumed_handles_reject_scheduler_correspondence_tampering() {
+        let (fixture, created) = pending_task_control_fixture(TaskControlSiteKind::Join, None);
+        let exact = unchecked_checkpoint(&fixture);
+        assert_eq!(exact.clone().validate(), Ok(()));
+
+        let mut name = exact.clone();
+        checkpoint_task_mut(&mut name, created[0].task_id).handle_name = Arc::from("tampered");
+        assert_eq!(
+            name.validate(),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+
+        let mut result_type = exact.clone();
+        checkpoint_task_mut(&mut result_type, created[0].task_id).result_type =
+            TypeDescriptor::STRING;
+        assert_eq!(
+            result_type.validate(),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+
+        let mut joined_disposition = exact;
+        checkpoint_task_mut(&mut joined_disposition, created[0].task_id).handle_state =
+            TaskHandleState::Detached;
+        assert_eq!(
+            joined_disposition.validate(),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+
+        let nonexistent_path = Arc::from([Arc::from("spawn:crate::main:99:0")]);
+        let nonexistent_child = ProtocolIdentity::derive(
+            IdentityKind::Task,
+            &task_identity_key(fresh(IdentityKind::Execution, 1), &nonexistent_path),
+        )
+        .unwrap_or_else(|error| panic!("nonexistent child identity failed: {error}"));
+        let (identity_fixture, _) =
+            pending_task_control_fixture(TaskControlSiteKind::Join, Some(nonexistent_child));
+        assert_eq!(
+            unchecked_checkpoint(&identity_fixture).validate(),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+
+        let (detach_fixture, detached) =
+            pending_task_control_fixture(TaskControlSiteKind::Detach, None);
+        let mut detached_disposition = unchecked_checkpoint(&detach_fixture);
+        checkpoint_task_mut(&mut detached_disposition, detached[0].task_id).handle_state =
+            TaskHandleState::Joined;
+        assert_eq!(
+            detached_disposition.validate(),
+            Err(ConcurrentDurableCheckpointError::InvalidCheckpoint)
+        );
+    }
+
+    #[test]
     fn combined_recovery_restores_one_shared_budget_owner() {
         let mut fixture = spawned_fixture();
         let created = running_child(&mut fixture, 0);
@@ -2365,6 +2475,172 @@ mod tests {
         }
     }
 
+    fn pending_task_control_fixture(
+        kind: TaskControlSiteKind,
+        first_published_child: Option<ProtocolIdentity>,
+    ) -> (Fixture, Vec<crate::TaskCreationV1>) {
+        let program = task_control_program(kind);
+        let execution = fresh(IdentityKind::Execution, 1);
+        let root_task = root_task_identity(execution);
+        let root_session = fresh(IdentityKind::Session, 2);
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+        let foreground = Machine::new_with_context(
+            Arc::clone(&program),
+            &path("crate::main"),
+            Vec::new(),
+            execution,
+            machine_limits(),
+            None,
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
+        let budget = foreground.execution_budget();
+        let state = ConcurrentTaskStateV1::new(execution, root_task, 8)
+            .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+        let scheduler = ConcurrentSchedulerV1::new(state, budget.clone())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
+        let mut fixture = Fixture {
+            program,
+            execution,
+            root_task,
+            root_session,
+            budget,
+            foreground,
+            scheduler,
+            sessions,
+        };
+
+        let mut created = Vec::new();
+        for (index, name) in ["first", "second"].into_iter().enumerate() {
+            let suspension = pending_spawn(&mut fixture.foreground);
+            let created_task = create_task_control_child(&mut fixture, name, index as u64);
+            let handle = if index == 0 {
+                first_published_child.map_or(created_task.handle_id, |child| {
+                    DynamicTaskHandleIdentity::from_parts(fixture.root_task, child)
+                })
+            } else {
+                created_task.handle_id
+            };
+            fixture
+                .foreground
+                .complete_spawn(&suspension, handle)
+                .unwrap_or_else(|error| panic!("spawn completion failed: {error:?}"));
+            created.push(created_task);
+        }
+        assert!(matches!(
+            fixture.foreground.step(),
+            MachineStep::Transition(MachineLabel::Deterministic { .. })
+        ));
+
+        match kind {
+            TaskControlSiteKind::Join | TaskControlSiteKind::JoinAll => {
+                let names = [Arc::from("first"), Arc::from("second")];
+                let handles = [created[0].handle_id, created[1].handle_id];
+                fixture
+                    .scheduler
+                    .state
+                    .begin_source_join(
+                        fixture.root_task,
+                        path("crate::main"),
+                        position(2),
+                        kind,
+                        &names,
+                        &handles,
+                    )
+                    .unwrap_or_else(|error| panic!("join ownership failed: {error:?}"));
+            }
+            TaskControlSiteKind::Detach => {
+                fixture
+                    .scheduler
+                    .state
+                    .detach_source_handle(
+                        fixture.root_task,
+                        path("crate::main"),
+                        position(2),
+                        Arc::from("first"),
+                        created[0].handle_id,
+                    )
+                    .unwrap_or_else(|error| panic!("detach ownership failed: {error:?}"));
+            }
+            TaskControlSiteKind::Spawn => unreachable!("spawn is not a consumed control fixture"),
+        }
+
+        (fixture, created)
+    }
+
+    fn create_task_control_child(
+        fixture: &mut Fixture,
+        handle_name: &str,
+        spawn_index: u64,
+    ) -> crate::TaskCreationV1 {
+        let created = fixture
+            .scheduler
+            .create_child(
+                &mut fixture.sessions,
+                TaskCreationRequestV1 {
+                    parent_task_id: fixture.root_task,
+                    handle_name: Arc::from(handle_name),
+                    workflow: path("crate::main"),
+                    spawn_site: position(spawn_index),
+                    spawn_occurrence: 0,
+                    result_type: TypeDescriptor::UNIT,
+                    captures: Vec::new(),
+                    inherited_agent: None,
+                    parent_session_id: fixture.root_session,
+                },
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        let task_path = Arc::from(
+            fixture
+                .scheduler
+                .state()
+                .task(created.task_id)
+                .unwrap_or_else(|| panic!("created task missing"))
+                .task_path(),
+        );
+        let body = TaskBodyIdentity::new(
+            CanonicalCallableIdentity::free(&path("crate::main"), &[]),
+            position(spawn_index),
+        );
+        let child = Machine::new_concurrent_task_body_with_context(
+            Arc::clone(&fixture.program),
+            &body,
+            &[],
+            fixture.execution,
+            created.task_id,
+            task_path,
+            machine_limits(),
+            fixture.budget.clone(),
+            None,
+            Some(created.base_session_id),
+        )
+        .unwrap_or_else(|error| panic!("child machine failed: {error:?}"));
+        fixture
+            .scheduler
+            .resolve_submission(created.task_id, Ok(child))
+            .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
+        created
+    }
+
+    fn checkpoint_task_mut(
+        checkpoint: &mut ConcurrentDurableCheckpointV4,
+        task_id: ProtocolIdentity,
+    ) -> &mut ConcurrentTaskRecordV1 {
+        checkpoint
+            .state
+            .tasks
+            .iter_mut()
+            .find(|task| task.task_id == task_id)
+            .unwrap_or_else(|| panic!("checkpoint task missing"))
+    }
+
     fn pending_spawn(machine: &mut Machine) -> crate::MachineSpawnSuspension {
         match machine.step() {
             MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn)) => spawn,
@@ -2621,6 +2897,91 @@ mod tests {
         Arc::new(
             MachineProgram::with_task_bodies(vec![(caller, root)], vec![body])
                 .unwrap_or_else(|error| panic!("spawn program failed: {error:?}")),
+        )
+    }
+
+    fn task_control_program(kind: TaskControlSiteKind) -> Arc<MachineProgram> {
+        let root_path = path("crate::main");
+        let caller = CanonicalCallableIdentity::free(&root_path, &[]);
+        let body_identities =
+            [0, 1].map(|index| TaskBodyIdentity::new(caller.clone(), position(index)));
+        let bodies = body_identities
+            .iter()
+            .map(|identity| {
+                ExecutableTaskBody::new(
+                    identity.clone(),
+                    TypeDescriptor::UNIT,
+                    Vec::new(),
+                    ExecutableTaskContext::v1(),
+                    vec![
+                        Instruction {
+                            site: position(0),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Push(LogicalValue::unit()),
+                        },
+                        Instruction {
+                            site: position(1),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::TaskComplete,
+                        },
+                    ],
+                )
+                .unwrap_or_else(|error| panic!("task body failed: {error:?}"))
+            })
+            .collect::<Vec<_>>();
+        let handles = ["first", "second"].map(|name| {
+            ExecutableTaskHandle::new(Arc::from(name), TypeDescriptor::UNIT)
+                .unwrap_or_else(|error| panic!("task handle failed: {error:?}"))
+        });
+        let control = match kind {
+            TaskControlSiteKind::Join => InstructionKind::Join {
+                handles: vec![Arc::from("first"), Arc::from("second")],
+            },
+            TaskControlSiteKind::JoinAll => InstructionKind::JoinAll {
+                handles: vec![Arc::from("first"), Arc::from("second")],
+            },
+            TaskControlSiteKind::Detach => InstructionKind::Detach {
+                handle: Arc::from("first"),
+            },
+            TaskControlSiteKind::Spawn => unreachable!("spawn is not a consumed control fixture"),
+        };
+        let root = Workflow {
+            path: root_path,
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Spawn {
+                        handle: handles[0].clone(),
+                        body: body_identities[0].clone(),
+                    },
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Spawn {
+                        handle: handles[1].clone(),
+                        body: body_identities[1].clone(),
+                    },
+                },
+                Instruction {
+                    site: position(2),
+                    ty: TypeDescriptor::UNIT,
+                    kind: control,
+                },
+                Instruction {
+                    site: position(3),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        };
+        Arc::new(
+            MachineProgram::with_task_bodies(vec![(caller, root)], bodies)
+                .unwrap_or_else(|error| panic!("task-control program failed: {error:?}")),
         )
     }
 

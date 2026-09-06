@@ -20,7 +20,7 @@ use gantry_ir::{ExecutableTaskHandle, TaskBodyIdentity};
 
 use crate::session::SessionCreationModeV1;
 #[cfg(feature = "concurrent")]
-use crate::task::{DynamicTaskHandleIdentity, TaskCaptureV1};
+use crate::task::{DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1, TaskJoinFailureV1};
 
 #[cfg(feature = "durable")]
 pub(crate) mod checkpoint_codec;
@@ -307,6 +307,9 @@ pub struct MachineFailure {
     pub workflow: CanonicalPath,
     /// Canonical structural site active at failure.
     pub site: StructuralPosition,
+    /// Ordered member failures retained for `task-join-failure`.
+    #[cfg(feature = "concurrent")]
+    pub join_failure: Option<TaskJoinFailureV1>,
 }
 
 /// Rejection before a machine can begin execution.
@@ -484,13 +487,113 @@ pub struct MachineSpawnSuspension {
     pub parent_session: Option<ProtocolIdentity>,
 }
 
+/// One consumed lexical task handle supplied to coordinator-owned task control.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MachineTaskControlHandle {
+    name: Arc<str>,
+    handle: MachineTaskHandle,
+}
+
+#[cfg(feature = "concurrent")]
+impl MachineTaskControlHandle {
+    /// Returns the exact consumed lexical handle name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the scheduler-owned dynamic handle identity.
+    #[must_use]
+    pub const fn identity(&self) -> DynamicTaskHandleIdentity {
+        self.handle.identity()
+    }
+
+    /// Returns the statically declared child result type.
+    #[must_use]
+    pub const fn result_type(&self) -> &TypeDescriptor {
+        self.handle.result_type()
+    }
+}
+
+/// Machine-owned all-settled join state awaiting coordinator resolution.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MachineJoinSuspension {
+    /// Canonical workflow containing the source join.
+    pub workflow: CanonicalPath,
+    /// Canonical structural join site.
+    pub site: StructuralPosition,
+    /// Consumed handles in normative source or declaration order.
+    pub handles: Vec<MachineTaskControlHandle>,
+    /// Exact analyzed value type produced by successful completion.
+    pub expected_type: TypeDescriptor,
+}
+
+/// Machine-owned detach state awaiting coordinator ownership transfer.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MachineDetachSuspension {
+    /// Canonical workflow containing the source detach.
+    pub workflow: CanonicalPath,
+    /// Canonical structural detach site.
+    pub site: StructuralPosition,
+    /// Consumed lexical handle transferred to background ownership.
+    pub handle: MachineTaskControlHandle,
+}
+
+/// Complete machine-side suspension exposed to a concurrent coordinator.
+#[cfg(feature = "concurrent")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MachineTaskControlSuspension {
+    /// Child creation and executor submission remain pending.
+    Spawn(MachineSpawnSuspension),
+    /// A named join remains pending.
+    Join(MachineJoinSuspension),
+    /// A declaration-order joinall remains pending.
+    JoinAll(MachineJoinSuspension),
+    /// A detach ownership transfer remains pending.
+    Detach(MachineDetachSuspension),
+}
+
+#[cfg(feature = "concurrent")]
+impl MachineTaskControlSuspension {
+    /// Returns the pending spawn, when this is child creation.
+    #[must_use]
+    pub const fn spawn(&self) -> Option<&MachineSpawnSuspension> {
+        match self {
+            Self::Spawn(spawn) => Some(spawn),
+            Self::Join(_) | Self::JoinAll(_) | Self::Detach(_) => None,
+        }
+    }
+
+    /// Returns the pending join and whether it is a declaration-order joinall.
+    #[must_use]
+    pub const fn join(&self) -> Option<(&MachineJoinSuspension, bool)> {
+        match self {
+            Self::Join(join) => Some((join, false)),
+            Self::JoinAll(join) => Some((join, true)),
+            Self::Spawn(_) | Self::Detach(_) => None,
+        }
+    }
+
+    /// Returns the pending detach, when this is an ownership transfer.
+    #[must_use]
+    pub const fn detach(&self) -> Option<&MachineDetachSuspension> {
+        match self {
+            Self::Detach(detach) => Some(detach),
+            Self::Spawn(_) | Self::Join(_) | Self::JoinAll(_) => None,
+        }
+    }
+}
+
 /// Rejection while completing one suspended source spawn.
 #[cfg(feature = "concurrent")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TaskControlCompletionError {
-    /// No spawn is awaiting completion.
+    /// No task-control operation is awaiting completion.
     NotWaiting,
-    /// The supplied suspension is not the pending spawn.
+    /// The supplied suspension is not the pending task-control operation.
     SuspensionMismatch,
     /// The dynamic handle is owned by another task or names a non-task identity.
     InvalidHandle,
@@ -498,6 +601,14 @@ pub enum TaskControlCompletionError {
     Cancelled,
     /// The lexical handle name is already visible in this scope.
     DuplicateHandle,
+    /// The supplied completion kind does not match the pending suspension.
+    CompletionMismatch,
+    /// At least one joined task has not settled yet.
+    JoinPending,
+    /// A successful join value does not match its analyzed result type.
+    TypeMismatch,
+    /// A successful join value exceeds the captured machine value limits.
+    ValueLimit,
 }
 
 /// One abstract label emitted by the base machine.
@@ -611,7 +722,7 @@ struct PendingOperation {
 #[cfg(feature = "concurrent")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PendingTaskControl {
-    spawn: MachineSpawnSuspension,
+    suspension: MachineTaskControlSuspension,
 }
 
 /// Complete task-local checkpoint for the existing explicit-frame machine.
@@ -734,7 +845,15 @@ impl MachineCheckpointV3 {
     pub(crate) fn pending_spawn_checkpoint(&self) -> Option<&MachineSpawnSuspension> {
         self.pending_task_control
             .as_ref()
-            .map(|pending| &pending.spawn)
+            .and_then(|pending| pending.suspension.spawn())
+    }
+
+    /// Returns the exact pending task-control state for composed checkpoint validation.
+    #[cfg(feature = "concurrent")]
+    pub(crate) fn pending_task_control_checkpoint(&self) -> Option<&MachineTaskControlSuspension> {
+        self.pending_task_control
+            .as_ref()
+            .map(|pending| &pending.suspension)
     }
 
     /// Iterates every recovered lexical task handle retained by this checkpoint.
@@ -759,6 +878,9 @@ impl MachineCheckpointV3 {
         let Some(pending) = expected.pending_task_control.take() else {
             return false;
         };
+        let MachineTaskControlSuspension::Spawn(spawn) = pending.suspension else {
+            return false;
+        };
         if identity.owner() != expected.task_id
             || identity.child().kind() != IdentityKind::Task
             || expected.cancellation.is_some()
@@ -773,10 +895,10 @@ impl MachineCheckpointV3 {
         };
         if scope
             .insert(
-                Arc::from(pending.spawn.handle.name()),
+                Arc::from(spawn.handle.name()),
                 MachineTaskHandle {
                     identity,
-                    result_type: pending.spawn.handle.result_type().clone(),
+                    result_type: spawn.handle.result_type().clone(),
                 },
             )
             .is_some()
@@ -801,10 +923,13 @@ impl MachineCheckpointV3 {
         index: usize,
         value: LogicalValue,
     ) -> bool {
-        let Some(capture) = self
-            .pending_task_control
-            .as_mut()
-            .and_then(|pending| pending.spawn.captures.get_mut(index))
+        let Some(capture) =
+            self.pending_task_control
+                .as_mut()
+                .and_then(|pending| match &mut pending.suspension {
+                    MachineTaskControlSuspension::Spawn(spawn) => spawn.captures.get_mut(index),
+                    _ => None,
+                })
         else {
             return false;
         };
@@ -830,7 +955,10 @@ impl MachineCheckpointV3 {
         let Some(pending) = self.pending_task_control.as_mut() else {
             return false;
         };
-        pending.spawn.inherited_agent = agent;
+        let MachineTaskControlSuspension::Spawn(spawn) = &mut pending.suspension else {
+            return false;
+        };
+        spawn.inherited_agent = agent;
         true
     }
 
@@ -842,7 +970,10 @@ impl MachineCheckpointV3 {
         let Some(pending) = self.pending_task_control.as_mut() else {
             return false;
         };
-        pending.spawn.parent_session = session;
+        let MachineTaskControlSuspension::Spawn(spawn) = &mut pending.suspension else {
+            return false;
+        };
+        spawn.parent_session = session;
         true
     }
 
@@ -851,7 +982,10 @@ impl MachineCheckpointV3 {
         let Some(pending) = self.pending_task_control.as_mut() else {
             return false;
         };
-        pending.spawn.occurrence = occurrence;
+        let MachineTaskControlSuspension::Spawn(spawn) = &mut pending.suspension else {
+            return false;
+        };
+        spawn.occurrence = occurrence;
         true
     }
 
@@ -1364,7 +1498,16 @@ impl Machine {
     pub fn pending_spawn(&self) -> Option<&MachineSpawnSuspension> {
         self.pending_task_control
             .as_ref()
-            .map(|pending| &pending.spawn)
+            .and_then(|pending| pending.suspension.spawn())
+    }
+
+    /// Returns the exact source task-control operation awaiting coordinator work.
+    #[cfg(feature = "concurrent")]
+    #[must_use]
+    pub fn pending_task_control(&self) -> Option<&MachineTaskControlSuspension> {
+        self.pending_task_control
+            .as_ref()
+            .map(|pending| &pending.suspension)
     }
 
     /// Returns the immutable program used to validate a durable graph transition.
@@ -1555,7 +1698,7 @@ impl Machine {
             .pending_task_control
             .as_ref()
             .ok_or(TaskControlCompletionError::NotWaiting)?;
-        if pending.spawn != *suspension {
+        if pending.suspension.spawn() != Some(suspension) {
             return Err(TaskControlCompletionError::SuspensionMismatch);
         }
         if identity.owner() != self.task_id || identity.child().kind() != IdentityKind::Task {
@@ -1601,7 +1744,7 @@ impl Machine {
             .pending_task_control
             .as_ref()
             .ok_or(TaskControlCompletionError::NotWaiting)?;
-        if pending.spawn != *suspension {
+        if pending.suspension.spawn() != Some(suspension) {
             return Err(TaskControlCompletionError::SuspensionMismatch);
         }
         if self.cancellation.is_some() {
@@ -1611,6 +1754,99 @@ impl Machine {
             MachineStep::Transition(label) => Ok(label),
             _ => unreachable!("spawn failure emits one transition"),
         }
+    }
+
+    /// Completes an all-settled join with the scheduler's ordered resolution.
+    #[cfg(feature = "concurrent")]
+    pub fn complete_join(
+        &mut self,
+        suspension: &MachineJoinSuspension,
+        resolution: JoinResolutionV1,
+    ) -> Result<MachineLabel, TaskControlCompletionError> {
+        let pending = self
+            .pending_task_control
+            .as_ref()
+            .ok_or(TaskControlCompletionError::NotWaiting)?;
+        if pending.suspension.join().map(|(join, _)| join) != Some(suspension) {
+            return Err(TaskControlCompletionError::SuspensionMismatch);
+        }
+        if self.cancellation.is_some() {
+            return Err(TaskControlCompletionError::Cancelled);
+        }
+        match resolution {
+            JoinResolutionV1::Pending(_) => Err(TaskControlCompletionError::JoinPending),
+            JoinResolutionV1::Succeeded(value) => {
+                value
+                    .validate(self.limits.value_limits)
+                    .map_err(|_| TaskControlCompletionError::ValueLimit)?;
+                if !value_matches_type(&value, &suspension.expected_type) {
+                    return Err(TaskControlCompletionError::TypeMismatch);
+                }
+                self.values.push(value);
+                self.finish_task_control(
+                    suspension.workflow.clone(),
+                    suspension.site.clone(),
+                    "join-complete",
+                )
+            }
+            JoinResolutionV1::Failed(failure) => {
+                if failure.category != gantry_core::portable::RuntimeErrorCategory::TaskJoinFailure
+                    || failure.failures.is_empty()
+                {
+                    return Err(TaskControlCompletionError::CompletionMismatch);
+                }
+                match self.fail_join(
+                    suspension.workflow.clone(),
+                    suspension.site.clone(),
+                    failure,
+                ) {
+                    MachineStep::Transition(label) => Ok(label),
+                    _ => unreachable!("join failure emits one transition"),
+                }
+            }
+        }
+    }
+
+    /// Completes a detach after scheduler ownership transfer and produces Unit.
+    #[cfg(feature = "concurrent")]
+    pub fn complete_detach(
+        &mut self,
+        suspension: &MachineDetachSuspension,
+    ) -> Result<MachineLabel, TaskControlCompletionError> {
+        let pending = self
+            .pending_task_control
+            .as_ref()
+            .ok_or(TaskControlCompletionError::NotWaiting)?;
+        if pending.suspension.detach() != Some(suspension) {
+            return Err(TaskControlCompletionError::SuspensionMismatch);
+        }
+        if self.cancellation.is_some() {
+            return Err(TaskControlCompletionError::Cancelled);
+        }
+        self.values.push(LogicalValue::unit());
+        self.finish_task_control(
+            suspension.workflow.clone(),
+            suspension.site.clone(),
+            "detach-complete",
+        )
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn finish_task_control(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        kind: &'static str,
+    ) -> Result<MachineLabel, TaskControlCompletionError> {
+        self.advance_pc();
+        self.pending_task_control = None;
+        self.status = MachineStatus::Running;
+        self.consecutive_transitions = 0;
+        Ok(MachineLabel::Deterministic {
+            workflow,
+            site,
+            kind: Arc::from(kind),
+        })
     }
 
     /// Records the first cancellation reason without consuming source state.
@@ -1823,12 +2059,31 @@ impl Machine {
                 }
                 #[cfg(feature = "concurrent")]
                 MachineStatus::WaitingTaskControl => {
-                    let suspension = self
+                    let pending = self
                         .pending_task_control
                         .as_ref()
-                        .map(|pending| pending.spawn.clone())
+                        .map(|pending| pending.suspension.clone())
                         .unwrap_or_else(|| unreachable!("waiting status retains task control"));
-                    return MachineStep::Transition(MachineLabel::TaskControlSuspended(suspension));
+                    return match pending {
+                        MachineTaskControlSuspension::Spawn(spawn) => {
+                            MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn))
+                        }
+                        MachineTaskControlSuspension::Join(join)
+                        | MachineTaskControlSuspension::JoinAll(join) => {
+                            MachineStep::Transition(MachineLabel::Deterministic {
+                                workflow: join.workflow,
+                                site: join.site,
+                                kind: Arc::from("join-suspended"),
+                            })
+                        }
+                        MachineTaskControlSuspension::Detach(detach) => {
+                            MachineStep::Transition(MachineLabel::Deterministic {
+                                workflow: detach.workflow,
+                                site: detach.site,
+                                kind: Arc::from("detach-suspended"),
+                            })
+                        }
+                    };
                 }
                 MachineStatus::YieldRequired => return MachineStep::YieldRequired,
                 MachineStatus::Succeeded | MachineStatus::Failed | MachineStatus::Cancelled => {
@@ -1928,6 +2183,19 @@ impl Machine {
             InstructionKind::Spawn { .. } => {
                 return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
             }
+            #[cfg(feature = "concurrent")]
+            InstructionKind::Join { handles } => {
+                return self.prepare_join(workflow, site, handles, instruction.ty, false);
+            }
+            #[cfg(feature = "concurrent")]
+            InstructionKind::JoinAll { handles } => {
+                return self.prepare_join(workflow, site, handles, instruction.ty, true);
+            }
+            #[cfg(feature = "concurrent")]
+            InstructionKind::Detach { handle } => {
+                return self.prepare_detach(workflow, site, handle);
+            }
+            #[cfg(not(feature = "concurrent"))]
             InstructionKind::Join { .. }
             | InstructionKind::JoinAll { .. }
             | InstructionKind::Detach { .. } => {
@@ -2503,11 +2771,116 @@ impl Machine {
             parent_session: self.session,
         };
         self.pending_task_control = Some(PendingTaskControl {
-            spawn: spawn.clone(),
+            suspension: MachineTaskControlSuspension::Spawn(spawn.clone()),
         });
         self.status = MachineStatus::WaitingTaskControl;
         self.consecutive_transitions = 0;
         MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn))
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn prepare_join(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        names: Vec<Arc<str>>,
+        expected_type: TypeDescriptor,
+        all: bool,
+    ) -> MachineStep {
+        if all && names.is_empty() {
+            if expected_type != TypeDescriptor::UNIT {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            }
+            self.values.push(LogicalValue::unit());
+            self.advance_pc();
+            self.consecutive_transitions = 0;
+            return MachineStep::Transition(MachineLabel::Deterministic {
+                workflow,
+                site,
+                kind: Arc::from("joinall-empty"),
+            });
+        }
+        let Some(handles) = self.consume_task_handles(&names) else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let join = MachineJoinSuspension {
+            workflow: workflow.clone(),
+            site: site.clone(),
+            handles,
+            expected_type,
+        };
+        let suspension = if all {
+            MachineTaskControlSuspension::JoinAll(join)
+        } else {
+            MachineTaskControlSuspension::Join(join)
+        };
+        self.pending_task_control = Some(PendingTaskControl { suspension });
+        self.status = MachineStatus::WaitingTaskControl;
+        self.consecutive_transitions = 0;
+        MachineStep::Transition(MachineLabel::Deterministic {
+            workflow,
+            site,
+            kind: Arc::from("join-suspended"),
+        })
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn prepare_detach(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        name: Arc<str>,
+    ) -> MachineStep {
+        let names = [name];
+        let Some(mut handles) = self.consume_task_handles(&names) else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let Some(handle) = handles.pop() else {
+            return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+        };
+        let detach = MachineDetachSuspension {
+            workflow: workflow.clone(),
+            site: site.clone(),
+            handle,
+        };
+        self.pending_task_control = Some(PendingTaskControl {
+            suspension: MachineTaskControlSuspension::Detach(detach),
+        });
+        self.status = MachineStatus::WaitingTaskControl;
+        self.consecutive_transitions = 0;
+        MachineStep::Transition(MachineLabel::Deterministic {
+            workflow,
+            site,
+            kind: Arc::from("detach-suspended"),
+        })
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn consume_task_handles(
+        &mut self,
+        names: &[Arc<str>],
+    ) -> Option<Vec<MachineTaskControlHandle>> {
+        let handles = names
+            .iter()
+            .map(|name| {
+                self.task_handle(name)
+                    .cloned()
+                    .map(|handle| MachineTaskControlHandle {
+                        name: Arc::clone(name),
+                        handle,
+                    })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let frame = self.frames.last_mut()?;
+        for name in names {
+            let scope = frame
+                .handle_scopes
+                .iter_mut()
+                .rev()
+                .find(|scope| scope.contains_key(name.as_ref()))?;
+            scope.remove(name.as_ref())?;
+        }
+        Some(handles)
     }
 
     #[cfg(feature = "concurrent")]
@@ -2789,7 +3162,30 @@ impl Machine {
             code,
             workflow,
             site,
+            #[cfg(feature = "concurrent")]
+            join_failure: None,
         };
+        self.finish_failure(failure)
+    }
+
+    #[cfg(feature = "concurrent")]
+    fn fail_join(
+        &mut self,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        join_failure: TaskJoinFailureV1,
+    ) -> MachineStep {
+        self.finish_failure(MachineFailure {
+            code: RuntimeCode::Operation(
+                gantry_core::portable::RuntimeErrorCategory::TaskJoinFailure,
+            ),
+            workflow,
+            site,
+            join_failure: Some(join_failure),
+        })
+    }
+
+    fn finish_failure(&mut self, failure: MachineFailure) -> MachineStep {
         self.pending_session_scope = None;
         self.pending_operation = None;
         #[cfg(feature = "concurrent")]
@@ -2981,13 +3377,13 @@ fn validate_machine_checkpoint(
         return Err(MachineRecoveryError::InvalidCheckpoint);
     }
 
-    for (frame_index, frame) in checkpoint.frames.iter().enumerate() {
+    for (_frame_index, frame) in checkpoint.frames.iter().enumerate() {
         let workflow = program
             .workflows()
             .get(frame.workflow)
             .ok_or(MachineRecoveryError::ProgramMismatch)?;
         #[cfg(feature = "concurrent")]
-        let instructions = if frame_index == 0 {
+        let instructions = if _frame_index == 0 {
             task_body.map_or(workflow.instructions.as_slice(), |body| body.instructions())
         } else {
             workflow.instructions.as_slice()
@@ -3123,14 +3519,10 @@ fn validate_machine_checkpoint(
             .pending_task_control
             .as_ref()
             .is_none_or(|pending| {
-                let spawn = &pending.spawn;
                 let Some(frame) = checkpoint.frames.last() else {
                     return false;
                 };
                 let Some(workflow) = program.workflows().get(frame.workflow) else {
-                    return false;
-                };
-                let Some(body) = program.task_body(&spawn.body) else {
                     return false;
                 };
                 let instructions = if checkpoint.frames.len() == 1 {
@@ -3138,56 +3530,17 @@ fn validate_machine_checkpoint(
                 } else {
                     workflow.instructions.as_slice()
                 };
-                let occurrence_key = occurrence_counter_key(
-                    &checkpoint.occurrences,
-                    "spawn",
-                    &spawn.workflow,
-                    &spawn.site,
-                );
-                workflow.path == spawn.workflow
-                    && spawn.handle.result_type() == body.result_type()
-                    && spawn.inherited_agent == checkpoint.agent
-                    && spawn.parent_session == checkpoint.session
-                    && checkpoint.counters.get(&occurrence_key)
-                        == Some(&spawn.occurrence.saturating_add(1))
-                    && instructions.get(frame.pc).is_some_and(|instruction| {
-                        instruction.site == spawn.site
-                            && matches!(
-                                &instruction.kind,
-                                InstructionKind::Spawn { handle, body }
-                                    if handle == &spawn.handle && body == &spawn.body
-                            )
-                    })
-                    && body.captures().len() == spawn.captures.len()
-                    && body
-                        .captures()
-                        .iter()
-                        .zip(&spawn.captures)
-                        .all(|(expected, actual)| {
-                            let actual = actual.task_capture();
-                            let binding = frame
-                                .scopes
-                                .iter()
-                                .rev()
-                                .find_map(|scope| scope.get(expected.name()));
-                            expected.name() == actual.name()
-                                && expected.ty() == actual.ty()
-                                && expected.is_mutable() == actual.is_mutable()
-                                && value_matches_type(actual.value(), expected.ty())
-                                && binding.is_some_and(|binding| {
-                                    binding.ty == *expected.ty()
-                                        && binding.mutable == expected.is_mutable()
-                                        && binding.value == *actual.value()
-                                })
-                                && actual
-                                    .value()
-                                    .validate(checkpoint.limits.value_limits)
-                                    .is_ok()
-                        })
-                    && frame
-                        .handle_scopes
-                        .iter()
-                        .all(|scope| !scope.contains_key(spawn.handle.name()))
+                let Some(instruction) = instructions.get(frame.pc) else {
+                    return false;
+                };
+                validate_pending_task_control(
+                    program,
+                    checkpoint,
+                    frame,
+                    workflow,
+                    instruction,
+                    &pending.suspension,
+                )
             });
     #[cfg(feature = "concurrent")]
     if !pending_task_control_valid {
@@ -3254,6 +3607,114 @@ fn validate_machine_checkpoint(
         return Err(MachineRecoveryError::InvalidCheckpoint);
     }
     Ok(())
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+fn validate_pending_task_control(
+    program: &MachineProgram,
+    checkpoint: &MachineCheckpointV3,
+    frame: &WorkflowFrame,
+    workflow: &gantry_ir::Workflow,
+    instruction: &Instruction,
+    suspension: &MachineTaskControlSuspension,
+) -> bool {
+    let handles_consumed = |handles: &[MachineTaskControlHandle]| {
+        handles.iter().all(|handle| {
+            !handle.name.is_empty()
+                && handle.handle.identity.owner() == checkpoint.task_id
+                && handle.handle.identity.child().kind() == IdentityKind::Task
+                && frame
+                    .handle_scopes
+                    .iter()
+                    .all(|scope| !scope.contains_key(handle.name.as_ref()))
+        })
+    };
+    match suspension {
+        MachineTaskControlSuspension::Spawn(spawn) => {
+            let Some(body) = program.task_body(&spawn.body) else {
+                return false;
+            };
+            let occurrence_key = occurrence_counter_key(
+                &checkpoint.occurrences,
+                "spawn",
+                &spawn.workflow,
+                &spawn.site,
+            );
+            workflow.path == spawn.workflow
+                && spawn.handle.result_type() == body.result_type()
+                && spawn.inherited_agent == checkpoint.agent
+                && spawn.parent_session == checkpoint.session
+                && checkpoint.counters.get(&occurrence_key)
+                    == Some(&spawn.occurrence.saturating_add(1))
+                && instruction.site == spawn.site
+                && matches!(
+                    &instruction.kind,
+                    InstructionKind::Spawn { handle, body }
+                        if handle == &spawn.handle && body == &spawn.body
+                )
+                && body.captures().len() == spawn.captures.len()
+                && body
+                    .captures()
+                    .iter()
+                    .zip(&spawn.captures)
+                    .all(|(expected, actual)| {
+                        let actual = actual.task_capture();
+                        let binding = frame
+                            .scopes
+                            .iter()
+                            .rev()
+                            .find_map(|scope| scope.get(expected.name()));
+                        expected.name() == actual.name()
+                            && expected.ty() == actual.ty()
+                            && expected.is_mutable() == actual.is_mutable()
+                            && value_matches_type(actual.value(), expected.ty())
+                            && binding.is_some_and(|binding| {
+                                binding.ty == *expected.ty()
+                                    && binding.mutable == expected.is_mutable()
+                                    && binding.value == *actual.value()
+                            })
+                            && actual
+                                .value()
+                                .validate(checkpoint.limits.value_limits)
+                                .is_ok()
+                    })
+                && frame
+                    .handle_scopes
+                    .iter()
+                    .all(|scope| !scope.contains_key(spawn.handle.name()))
+        }
+        MachineTaskControlSuspension::Join(join) | MachineTaskControlSuspension::JoinAll(join) => {
+            let names = join
+                .handles
+                .iter()
+                .map(|handle| handle.name.as_ref())
+                .collect::<Vec<_>>();
+            let instruction_names = match (&suspension, &instruction.kind) {
+                (MachineTaskControlSuspension::Join(_), InstructionKind::Join { handles })
+                | (
+                    MachineTaskControlSuspension::JoinAll(_),
+                    InstructionKind::JoinAll { handles },
+                ) => Some(handles),
+                _ => None,
+            };
+            workflow.path == join.workflow
+                && instruction.site == join.site
+                && instruction.ty == join.expected_type
+                && instruction_names.is_some_and(|expected| {
+                    expected.iter().map(AsRef::as_ref).eq(names.iter().copied())
+                })
+                && handles_consumed(&join.handles)
+        }
+        MachineTaskControlSuspension::Detach(detach) => {
+            workflow.path == detach.workflow
+                && instruction.site == detach.site
+                && matches!(
+                    &instruction.kind,
+                    InstructionKind::Detach { handle } if handle.as_ref() == detach.handle.name()
+                )
+                && handles_consumed(std::slice::from_ref(&detach.handle))
+        }
+    }
 }
 
 fn instruction_name(instruction: &InstructionKind) -> Arc<str> {

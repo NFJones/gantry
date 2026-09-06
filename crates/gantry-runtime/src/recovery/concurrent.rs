@@ -5,16 +5,18 @@ use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::{
-    CancellationReasonCategory, IdentityKind, TaskHandleState, TaskStatusKind,
+    CancellationReasonCategory, DeterministicEvaluationCode, HookFailureCategory, IdentityKind,
+    RuntimeErrorCategory, TaskHandleState, TaskStatusKind,
 };
-use gantry_core::source::SourceSpan;
+use gantry_core::value::{LogicalValue, OperationErrorValue};
+use gantry_host::contracts::HookOutcomeV1;
 use gantry_host::journal::{
     BatchLocalEvidenceId, FullJournalPrefixV1, JournalEvidenceEnvelopeV1,
     JournalEvidenceReferenceV1, JournalId, JournalPayloadKey, JournalPrefixV1,
     UnfinalizedEvidenceV1, validate_journal_prefix,
 };
-use gantry_ir::generated::TaskControlSiteKind;
-use gantry_ir::{MachineProgram, StaticSiteId, StructuralPosition, TaskControlSite};
+use gantry_ir::generated::{OperationSiteKind, TaskControlSiteKind};
+use gantry_ir::{CanonicalPath, MachineProgram, StructuralPosition};
 
 use super::{
     CONCURRENT_DURABLE_EVIDENCE_KIND_V4, CONCURRENT_DURABLE_EVIDENCE_KIND_V5,
@@ -24,11 +26,18 @@ use super::{
     push_optional_string, require_exact_fields, string, validate_budget_successor,
     validate_operation_evidence,
 };
+use crate::machine::{
+    MachineDetachSuspension, MachineJoinSuspension, MachineSpawnSuspension,
+    MachineTaskControlSuspension,
+};
 use crate::{
     CancellationCausalIdentity, CancellationReason, ConcurrentDurableCheckpointV4,
-    ConcurrentSchedulerV1, DURABLE_EVENT_DISPATCHED_KIND_V1, DURABLE_EVENT_OCCURRENCE_KIND_V1,
-    DURABLE_EVENT_SETTLED_KIND_V1, DurableEventOccurrenceV1, LogicalSessionRegistryV1, Machine,
-    RecoveredConcurrentDurableExecutionV1, RecoveredDurableEventsV1,
+    ConcurrentSchedulerV1, ConcurrentTaskStatusV1, DURABLE_EVENT_DISPATCHED_KIND_V1,
+    DURABLE_EVENT_OCCURRENCE_KIND_V1, DURABLE_EVENT_SETTLED_KIND_V1, DurableEventOccurrenceV1,
+    JoinResolutionV1, LogicalSessionRegistryV1, Machine, MachineStep, OperationOccurrence,
+    RecoveredConcurrentDurableExecutionV1, RecoveredDurableEventsV1, RuntimeCode,
+    SessionCreationModeV1, SessionEstablishmentV1, TaskJoinFailureV1, TaskJoinMemberFailureKindV1,
+    TaskJoinMemberFailureV1, TaskOwnershipChangedV1,
 };
 
 /// Journal snapshot selector for the version-one concurrent recovery body.
@@ -205,6 +214,8 @@ impl ConcurrentDurableEvidenceV4 {
 pub enum ConcurrentDurableEvidenceRecordV5 {
     /// Operation lifecycle evidence with stable operation and dispatch coordinates.
     Operation,
+    /// One atomic source join, joinall, or detach ownership transfer.
+    Ownership,
     /// Resolution of one named child from submitting-hidden to visible.
     SubmissionResolution,
     /// First typed execution cancellation fixed before task signalling.
@@ -215,6 +226,7 @@ impl ConcurrentDurableEvidenceRecordV5 {
     const fn wire_name(self) -> &'static str {
         match self {
             Self::Operation => "operation",
+            Self::Ownership => "ownership",
             Self::SubmissionResolution => "submission-resolution",
             Self::Cancellation => "cancellation",
         }
@@ -223,10 +235,86 @@ impl ConcurrentDurableEvidenceRecordV5 {
     fn from_wire_name(value: &str) -> Option<Self> {
         match value {
             "operation" => Some(Self::Operation),
+            "ownership" => Some(Self::Ownership),
             "submission-resolution" => Some(Self::SubmissionResolution),
             "cancellation" => Some(Self::Cancellation),
             _ => None,
         }
+    }
+}
+
+/// One ordered member of a version-five ownership transfer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConcurrentDurableOwnershipMemberV5 {
+    handle_name: Arc<str>,
+    handle_owner: ProtocolIdentity,
+    handle_child: ProtocolIdentity,
+    task_id: ProtocolIdentity,
+}
+
+/// Complete source-level coordinates for one atomic ownership transfer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConcurrentDurableOwnershipV5 {
+    owner_task_id: ProtocolIdentity,
+    workflow: CanonicalPath,
+    site: StructuralPosition,
+    control_kind: TaskControlSiteKind,
+    disposition: TaskHandleState,
+    members: Vec<ConcurrentDurableOwnershipMemberV5>,
+}
+
+impl ConcurrentDurableOwnershipV5 {
+    fn from_changed(ownership: &TaskOwnershipChangedV1) -> Result<Self, DurableEvidenceError> {
+        let evidence = Self {
+            owner_task_id: ownership.owner_task_id(),
+            workflow: ownership.control_site().workflow().clone(),
+            site: ownership.control_site().position().clone(),
+            control_kind: ownership.control_kind(),
+            disposition: ownership.disposition(),
+            members: ownership
+                .members()
+                .iter()
+                .map(|member| ConcurrentDurableOwnershipMemberV5 {
+                    handle_name: Arc::from(member.handle_name()),
+                    handle_owner: member.handle_id().owner(),
+                    handle_child: member.handle_id().child(),
+                    task_id: member.task_id(),
+                })
+                .collect(),
+        };
+        evidence.validate()?;
+        Ok(evidence)
+    }
+
+    fn validate(&self) -> Result<(), DurableEvidenceError> {
+        let disposition_matches = matches!(
+            (self.control_kind, self.disposition),
+            (
+                TaskControlSiteKind::Join | TaskControlSiteKind::JoinAll,
+                TaskHandleState::Joined
+            ) | (TaskControlSiteKind::Detach, TaskHandleState::Detached)
+        );
+        if self.owner_task_id.kind() != IdentityKind::Task
+            || self.members.is_empty()
+            || !disposition_matches
+            || (self.control_kind == TaskControlSiteKind::Detach && self.members.len() != 1)
+        {
+            return Err(DurableEvidenceError::InvalidState);
+        }
+        let mut handles = BTreeSet::new();
+        let mut tasks = BTreeSet::new();
+        for member in &self.members {
+            if member.handle_name.is_empty()
+                || member.handle_owner != self.owner_task_id
+                || member.handle_child != member.task_id
+                || member.task_id.kind() != IdentityKind::Task
+                || !handles.insert((member.handle_owner, member.handle_child))
+                || !tasks.insert(member.task_id)
+            {
+                return Err(DurableEvidenceError::InvalidState);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -237,6 +325,7 @@ pub struct ConcurrentDurableEvidenceV5 {
     task_id: ProtocolIdentity,
     record: ConcurrentDurableEvidenceRecordV5,
     operation: Option<DurableOperationEvidenceV1>,
+    ownership: Option<ConcurrentDurableOwnershipV5>,
     cancellation: Option<CancellationReason>,
     checkpoint: ConcurrentDurableCheckpointV4,
 }
@@ -255,7 +344,27 @@ impl ConcurrentDurableEvidenceV5 {
             ConcurrentDurableEvidenceRecordV5::Operation,
             Some(operation),
             None,
+            None,
             checkpoint.into(),
+        )
+    }
+
+    /// Constructs one complete source join, joinall, or detach ownership record.
+    pub fn new_ownership(
+        task_id: ProtocolIdentity,
+        checkpoint: impl Into<ConcurrentDurableCheckpointV4>,
+    ) -> Result<Self, DurableEvidenceError> {
+        let checkpoint = checkpoint.into();
+        let ownership = ownership_from_checkpoint(&checkpoint, task_id)?
+            .ok_or(DurableEvidenceError::InvalidState)?;
+        Self::new(
+            DurableCommitCutV1::TaskOwnership,
+            task_id,
+            ConcurrentDurableEvidenceRecordV5::Ownership,
+            None,
+            Some(ownership),
+            None,
+            checkpoint,
         )
     }
 
@@ -269,6 +378,7 @@ impl ConcurrentDurableEvidenceV5 {
             cut,
             task_id,
             ConcurrentDurableEvidenceRecordV5::SubmissionResolution,
+            None,
             None,
             None,
             checkpoint.into(),
@@ -286,6 +396,7 @@ impl ConcurrentDurableEvidenceV5 {
             task_id,
             ConcurrentDurableEvidenceRecordV5::Cancellation,
             None,
+            None,
             Some(cancellation),
             checkpoint.into(),
         )
@@ -296,6 +407,7 @@ impl ConcurrentDurableEvidenceV5 {
         task_id: ProtocolIdentity,
         record: ConcurrentDurableEvidenceRecordV5,
         operation: Option<DurableOperationEvidenceV1>,
+        ownership: Option<ConcurrentDurableOwnershipV5>,
         cancellation: Option<CancellationReason>,
         checkpoint: ConcurrentDurableCheckpointV4,
     ) -> Result<Self, DurableEvidenceError> {
@@ -304,7 +416,7 @@ impl ConcurrentDurableEvidenceV5 {
         }
         match record {
             ConcurrentDurableEvidenceRecordV5::Operation => {
-                if !cut.requires_operation() || cancellation.is_some() {
+                if !cut.requires_operation() || ownership.is_some() || cancellation.is_some() {
                     return Err(DurableEvidenceError::InvalidOperation);
                 }
                 let task_checkpoint = checkpoint
@@ -312,8 +424,22 @@ impl ConcurrentDurableEvidenceV5 {
                     .ok_or(DurableEvidenceError::InvalidState)?;
                 validate_operation_evidence(cut, operation.as_ref(), task_checkpoint)?;
             }
+            ConcurrentDurableEvidenceRecordV5::Ownership => {
+                if cut != DurableCommitCutV1::TaskOwnership
+                    || operation.is_some()
+                    || cancellation.is_some()
+                    || ownership.as_ref().is_none_or(|ownership| {
+                        ownership.members.first().map(|member| member.task_id) != Some(task_id)
+                            || ownership_from_checkpoint(&checkpoint, task_id).as_ref()
+                                != Ok(&Some(ownership.clone()))
+                    })
+                {
+                    return Err(DurableEvidenceError::InvalidState);
+                }
+            }
             ConcurrentDurableEvidenceRecordV5::SubmissionResolution => {
                 let valid = operation.is_none()
+                    && ownership.is_none()
                     && cancellation.is_none()
                     && task_id != checkpoint.root_task_id()
                     && checkpoint.task_handle_is_visible(task_id)
@@ -334,6 +460,7 @@ impl ConcurrentDurableEvidenceV5 {
             ConcurrentDurableEvidenceRecordV5::Cancellation => {
                 if cut != DurableCommitCutV1::Cancellation
                     || operation.is_some()
+                    || ownership.is_some()
                     || cancellation.is_none()
                     || !checkpoint.task_is_cancelled(task_id)
                 {
@@ -346,6 +473,7 @@ impl ConcurrentDurableEvidenceV5 {
             task_id,
             record,
             operation,
+            ownership,
             cancellation,
             checkpoint,
         })
@@ -373,6 +501,12 @@ impl ConcurrentDurableEvidenceV5 {
     #[must_use]
     pub const fn operation(&self) -> Option<&DurableOperationEvidenceV1> {
         self.operation.as_ref()
+    }
+
+    /// Returns complete source ownership coordinates for an ownership record.
+    #[must_use]
+    pub const fn ownership(&self) -> Option<&ConcurrentDurableOwnershipV5> {
+        self.ownership.as_ref()
     }
 
     /// Returns the first typed execution cancellation for a cancellation record.
@@ -412,6 +546,8 @@ impl ConcurrentDurableEvidenceV5 {
             Some(operation) => push_operation(&mut output, operation),
             None => output.push_str("null"),
         }
+        output.push_str(",\"ownership\":");
+        push_optional_ownership(&mut output, self.ownership.as_ref());
         output.push_str(",\"record\":");
         push_json_string(&mut output, self.record.wire_name());
         output.push_str(",\"task_id\":");
@@ -445,6 +581,7 @@ impl ConcurrentDurableEvidenceV5 {
                 "execution_id",
                 "format",
                 "operation",
+                "ownership",
                 "record",
                 "task_id",
             ],
@@ -470,6 +607,7 @@ impl ConcurrentDurableEvidenceV5 {
         )?)
         .ok_or(DurableEvidenceError::Encoding)?;
         let operation = optional_operation(&document, field(root, "operation")?)?;
+        let ownership = optional_ownership(&document, field(root, "ownership")?)?;
         let cancellation = optional_cancellation(&document, field(root, "cancellation")?)?;
         let bytes = decode_hex(string(&document, field(root, "checkpoint")?)?)?;
         let checkpoint = ConcurrentDurableCheckpointV4::decode_compatible(program, &bytes)
@@ -477,7 +615,15 @@ impl ConcurrentDurableEvidenceV5 {
         if checkpoint.execution_id() != execution_id {
             return Err(DurableEvidenceError::MixedExecution);
         }
-        let evidence = Self::new(cut, task_id, record, operation, cancellation, checkpoint)?;
+        let evidence = Self::new(
+            cut,
+            task_id,
+            record,
+            operation,
+            ownership,
+            cancellation,
+            checkpoint,
+        )?;
         if evidence.canonical_body() != body {
             return Err(DurableEvidenceError::Encoding);
         }
@@ -663,6 +809,7 @@ fn represented_snapshot_evidence(
     graph_evidence_id: ProtocolIdentity,
     legacy_graphs: &[ConcurrentSnapshotLegacyGraphV1],
     operations: &[ConcurrentSnapshotEvidenceV1],
+    ownership_records: &[ConcurrentSnapshotEvidenceV1],
     submission_resolutions: &[ConcurrentSnapshotEvidenceV1],
     cancellation: Option<&ConcurrentSnapshotEvidenceV1>,
     events: &[ConcurrentSnapshotEventV1],
@@ -673,7 +820,11 @@ fn represented_snapshot_evidence(
     for record in legacy_graphs {
         bind_snapshot_evidence(&mut retained, record.evidence_id, record.sequence)?;
     }
-    for record in operations.iter().chain(submission_resolutions) {
+    for record in operations
+        .iter()
+        .chain(ownership_records)
+        .chain(submission_resolutions)
+    {
         bind_snapshot_evidence(&mut retained, record.evidence_id, record.sequence)?;
     }
     if let Some(record) = cancellation {
@@ -694,6 +845,7 @@ fn validate_snapshot_graph_history(
     graph_evidence_id: ProtocolIdentity,
     legacy_graphs: &[ConcurrentSnapshotLegacyGraphV1],
     operations: &[ConcurrentSnapshotEvidenceV1],
+    ownership_records: &[ConcurrentSnapshotEvidenceV1],
     submission_resolutions: &[ConcurrentSnapshotEvidenceV1],
     cancellation: Option<&ConcurrentSnapshotEvidenceV1>,
 ) -> Result<(), DurableEvidenceError> {
@@ -712,7 +864,11 @@ fn validate_snapshot_graph_history(
             return Err(DurableEvidenceError::InvalidCausalOrder);
         }
     }
-    for record in operations.iter().chain(submission_resolutions) {
+    for record in operations
+        .iter()
+        .chain(ownership_records)
+        .chain(submission_resolutions)
+    {
         if history
             .insert(
                 record.sequence,
@@ -833,6 +989,7 @@ pub struct ConcurrentDurableRecoverySnapshotV1 {
     graph_evidence_id: ProtocolIdentity,
     legacy_graphs: Arc<[ConcurrentSnapshotLegacyGraphV1]>,
     operations: Arc<[ConcurrentSnapshotEvidenceV1]>,
+    ownership_records: Arc<[ConcurrentSnapshotEvidenceV1]>,
     submission_resolutions: Arc<[ConcurrentSnapshotEvidenceV1]>,
     cancellation: Option<ConcurrentSnapshotEvidenceV1>,
     events: Arc<[ConcurrentSnapshotEventV1]>,
@@ -858,6 +1015,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
         let mut graph_evidence_id = None;
         let mut legacy_graphs = Vec::new();
         let mut operations = Vec::new();
+        let mut ownership_records = Vec::new();
         let mut submission_resolutions = Vec::new();
         let mut cancellation = None;
         let mut events = Vec::new();
@@ -889,6 +1047,9 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                     match evidence.record() {
                         ConcurrentDurableEvidenceRecordV5::Operation => {
                             operations.push(record);
+                        }
+                        ConcurrentDurableEvidenceRecordV5::Ownership => {
+                            ownership_records.push(record);
                         }
                         ConcurrentDurableEvidenceRecordV5::Cancellation => {
                             cancellation = Some(record);
@@ -923,6 +1084,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             graph_evidence_id,
             &legacy_graphs,
             &operations,
+            &ownership_records,
             &submission_resolutions,
             cancellation.as_ref(),
             &events,
@@ -936,6 +1098,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             graph_evidence_id,
             legacy_graphs.into(),
             operations.into(),
+            ownership_records.into(),
             submission_resolutions.into(),
             cancellation,
             events.into(),
@@ -955,6 +1118,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
         graph_evidence_id: ProtocolIdentity,
         legacy_graphs: Arc<[ConcurrentSnapshotLegacyGraphV1]>,
         operations: Arc<[ConcurrentSnapshotEvidenceV1]>,
+        ownership_records: Arc<[ConcurrentSnapshotEvidenceV1]>,
         submission_resolutions: Arc<[ConcurrentSnapshotEvidenceV1]>,
         cancellation: Option<ConcurrentSnapshotEvidenceV1>,
         events: Arc<[ConcurrentSnapshotEventV1]>,
@@ -978,6 +1142,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             graph_evidence_id,
             &legacy_graphs,
             &operations,
+            &ownership_records,
             &submission_resolutions,
             cancellation.as_ref(),
             &events,
@@ -995,6 +1160,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             graph_evidence_id,
             &legacy_graphs,
             &operations,
+            &ownership_records,
             &submission_resolutions,
             cancellation.as_ref(),
         )?;
@@ -1026,6 +1192,17 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             )?;
             previous_operation_sequence = operation.sequence;
         }
+        let mut previous_ownership_sequence = 0;
+        for ownership in ownership_records.iter() {
+            if ownership.sequence <= previous_ownership_sequence
+                || ownership.sequence > graph_sequence
+                || ownership.evidence.execution_id() != execution_start.execution_id()
+                || ownership.evidence.record() != ConcurrentDurableEvidenceRecordV5::Ownership
+            {
+                return Err(DurableEvidenceError::InvalidCausalOrder);
+            }
+            previous_ownership_sequence = ownership.sequence;
+        }
         let mut previous_submission_sequence = 0;
         for submission in submission_resolutions.iter() {
             if submission.sequence <= previous_submission_sequence
@@ -1053,6 +1230,13 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                         && record.evidence_id == graph_evidence_id
                         && record.evidence == **graph_record
                 }),
+                ConcurrentDurableEvidenceRecordV5::Ownership => {
+                    ownership_records.iter().any(|record| {
+                        record.sequence == graph_sequence
+                            && record.evidence_id == graph_evidence_id
+                            && record.evidence == **graph_record
+                    })
+                }
                 ConcurrentDurableEvidenceRecordV5::SubmissionResolution => {
                     submission_resolutions.iter().any(|record| {
                         record.sequence == graph_sequence
@@ -1148,6 +1332,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             graph_evidence_id,
             legacy_graphs,
             operations,
+            ownership_records,
             submission_resolutions,
             cancellation,
             events,
@@ -1261,6 +1446,13 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             }
             operation.push_canonical_json(&mut output);
         }
+        output.push_str("],\"ownership_records\":[");
+        for (index, ownership) in self.ownership_records.iter().enumerate() {
+            if index != 0 {
+                output.push(',');
+            }
+            ownership.push_canonical_json(&mut output);
+        }
         output.push_str("],\"retained_evidence\":[");
         for (index, (evidence_id, sequence)) in self.retained_evidence.iter().enumerate() {
             if index != 0 {
@@ -1305,6 +1497,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                 "graph_sequence",
                 "legacy_graphs",
                 "operations",
+                "ownership_records",
                 "retained_evidence",
                 "start_evidence_id",
                 "submission_resolutions",
@@ -1361,6 +1554,10 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             .iter()
             .map(|item| decode_snapshot_evidence(&document, *item, program))
             .collect::<Result<Vec<_>, _>>()?;
+        let ownership_records = snapshot_array(&document, field(root, "ownership_records")?)?
+            .iter()
+            .map(|item| decode_snapshot_evidence(&document, *item, program))
+            .collect::<Result<Vec<_>, _>>()?;
         let submission_resolutions =
             snapshot_array(&document, field(root, "submission_resolutions")?)?
                 .iter()
@@ -1402,6 +1599,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
             graph_evidence_id,
             legacy_graphs.into(),
             operations.into(),
+            ownership_records.into(),
             submission_resolutions.into(),
             cancellation,
             events.into(),
@@ -1434,6 +1632,7 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                 "graph_sequence",
                 "legacy_graphs",
                 "operations",
+                "ownership_records",
                 "retained_evidence",
                 "start_evidence_id",
                 "submission_resolutions",
@@ -1541,6 +1740,129 @@ fn decode_snapshot_evidence(
             &decode_hex(string(document, field(record, "body")?)?)?,
         )?,
     })
+}
+
+fn push_optional_ownership(output: &mut String, ownership: Option<&ConcurrentDurableOwnershipV5>) {
+    let Some(ownership) = ownership else {
+        output.push_str("null");
+        return;
+    };
+    output.push_str("{\"control_kind\":");
+    push_json_string(output, ownership.control_kind.wire_name());
+    output.push_str(",\"disposition\":");
+    push_json_string(output, ownership.disposition.wire_name());
+    output.push_str(",\"members\":[");
+    for (index, member) in ownership.members.iter().enumerate() {
+        if index != 0 {
+            output.push(',');
+        }
+        output.push_str("{\"handle_child\":");
+        push_json_string(output, &member.handle_child.to_string());
+        output.push_str(",\"handle_name\":");
+        push_json_string(output, &member.handle_name);
+        output.push_str(",\"handle_owner\":");
+        push_json_string(output, &member.handle_owner.to_string());
+        output.push_str(",\"task_id\":");
+        push_json_string(output, &member.task_id.to_string());
+        output.push('}');
+    }
+    output.push_str("],\"owner_task_id\":");
+    push_json_string(output, &ownership.owner_task_id.to_string());
+    output.push_str(",\"site\":[");
+    for (index, component) in ownership.site.components().iter().enumerate() {
+        if index != 0 {
+            output.push(',');
+        }
+        output.push_str(&component.to_string());
+    }
+    output.push_str("],\"workflow\":");
+    push_json_string(output, ownership.workflow.as_str());
+    output.push('}');
+}
+
+fn optional_ownership(
+    document: &gantry_core::strict_json::StrictJsonDocument,
+    id: gantry_core::strict_json::JsonNodeId,
+) -> Result<Option<ConcurrentDurableOwnershipV5>, DurableEvidenceError> {
+    let Some(node) = document.node(id) else {
+        return Err(DurableEvidenceError::Encoding);
+    };
+    let gantry_core::strict_json::JsonNode::Object(value) = node else {
+        return match node {
+            gantry_core::strict_json::JsonNode::Null => Ok(None),
+            _ => Err(DurableEvidenceError::Encoding),
+        };
+    };
+    require_exact_fields(
+        value,
+        &[
+            "control_kind",
+            "disposition",
+            "members",
+            "owner_task_id",
+            "site",
+            "workflow",
+        ],
+    )?;
+    let control_kind = match string(document, field(value, "control_kind")?)? {
+        "join" => TaskControlSiteKind::Join,
+        "joinall" => TaskControlSiteKind::JoinAll,
+        "detach" => TaskControlSiteKind::Detach,
+        _ => return Err(DurableEvidenceError::Encoding),
+    };
+    let disposition =
+        TaskHandleState::from_wire_name(string(document, field(value, "disposition")?)?)
+            .ok_or(DurableEvidenceError::Encoding)?;
+    let members = snapshot_array(document, field(value, "members")?)?
+        .iter()
+        .map(|id| {
+            let member = object(document, *id)?;
+            require_exact_fields(
+                member,
+                &["handle_child", "handle_name", "handle_owner", "task_id"],
+            )?;
+            Ok(ConcurrentDurableOwnershipMemberV5 {
+                handle_name: Arc::from(string(document, field(member, "handle_name")?)?),
+                handle_owner: snapshot_identity(
+                    document,
+                    field(member, "handle_owner")?,
+                    IdentityKind::Task,
+                )?,
+                handle_child: snapshot_identity(
+                    document,
+                    field(member, "handle_child")?,
+                    IdentityKind::Task,
+                )?,
+                task_id: snapshot_identity(
+                    document,
+                    field(member, "task_id")?,
+                    IdentityKind::Task,
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, DurableEvidenceError>>()?;
+    let site = StructuralPosition::new(
+        snapshot_array(document, field(value, "site")?)?
+            .iter()
+            .map(|id| snapshot_unsigned(document, *id))
+            .collect::<Result<Vec<_>, _>>()?,
+    )
+    .map_err(|_| DurableEvidenceError::Encoding)?;
+    let ownership = ConcurrentDurableOwnershipV5 {
+        owner_task_id: snapshot_identity(
+            document,
+            field(value, "owner_task_id")?,
+            IdentityKind::Task,
+        )?,
+        workflow: CanonicalPath::new(string(document, field(value, "workflow")?)?)
+            .map_err(|_| DurableEvidenceError::Encoding)?,
+        site,
+        control_kind,
+        disposition,
+        members,
+    };
+    ownership.validate()?;
+    Ok(Some(ownership))
 }
 
 fn decode_snapshot_event(
@@ -1834,6 +2156,10 @@ impl DurableCommitCoordinatorV1<'_> {
                 checkpoint,
             )
             .and_then(|evidence| evidence.unfinalized(local_id.clone(), references)),
+            (None, false, None) if cut == DurableCommitCutV1::TaskOwnership => {
+                ConcurrentDurableEvidenceV5::new_ownership(affected_task, checkpoint)
+                    .and_then(|evidence| evidence.unfinalized(local_id.clone(), references))
+            }
             (None, false, None) => ConcurrentDurableEvidenceV4::new(cut, affected_task, checkpoint)
                 .and_then(|evidence| evidence.unfinalized(local_id.clone(), references)),
             _ => Err(DurableEvidenceError::InvalidState),
@@ -2039,6 +2365,11 @@ pub fn recover_concurrent_authoritative_prefix(
                                 &mut committed_results,
                             )?;
                         }
+                        ConcurrentDurableEvidenceRecordV5::Ownership => {
+                            if submission_resolution.is_some() {
+                                return Err(DurableEvidenceError::InvalidState);
+                            }
+                        }
                         ConcurrentDurableEvidenceRecordV5::SubmissionResolution => {
                             if submission_resolution != Some(current.task_id()) {
                                 return Err(DurableEvidenceError::InvalidState);
@@ -2176,7 +2507,10 @@ fn validate_transition(
         return Err(DurableEvidenceError::InvalidState);
     }
     let valid = match current.cut() {
-        DurableCommitCutV1::Checkpoint => previous_tasks == current_tasks,
+        DurableCommitCutV1::Checkpoint => {
+            previous_tasks == current_tasks
+                && validate_checkpoint_transition(program, previous, current)?
+        }
         DurableCommitCutV1::TaskCreation => {
             current.checkpoint().created_task_count()
                 == previous.checkpoint().created_task_count().saturating_add(1)
@@ -2189,7 +2523,7 @@ fn validate_transition(
         DurableCommitCutV1::TaskOwnership => validate_task_ownership_transition(
             program,
             previous.checkpoint(),
-            current.checkpoint(),
+            current,
             current.task_id(),
         )?,
         DurableCommitCutV1::Cancellation => match current {
@@ -2242,18 +2576,767 @@ fn validate_transition(
         .ok_or(DurableEvidenceError::InvalidState)
 }
 
-fn validate_task_ownership_transition(
+fn validate_checkpoint_transition(
+    program: &MachineProgram,
+    previous: &ConcurrentDurableEvidenceBody,
+    current: &ConcurrentDurableEvidenceBody,
+) -> Result<bool, DurableEvidenceError> {
+    let previous_checkpoint = previous.checkpoint();
+    let current_checkpoint = current.checkpoint();
+    let submission_resolution = current_checkpoint
+        .submission_resolution_task(&previous_checkpoint.hidden_submission_task_ids())
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    if let Some(task_id) = submission_resolution {
+        if matches!(
+            current,
+            ConcurrentDurableEvidenceBody::V5(evidence)
+                if evidence.record()
+                    == ConcurrentDurableEvidenceRecordV5::SubmissionResolution
+                    && evidence.task_id() == task_id
+        ) || matches!(current, ConcurrentDurableEvidenceBody::V4(_))
+        {
+            return current_checkpoint
+                .validate_submission_resolution(
+                    previous_checkpoint,
+                    task_id,
+                    Arc::new(program.clone()),
+                )
+                .map(|()| true)
+                .map_err(DurableEvidenceError::ConcurrentCheckpoint);
+        }
+        return Ok(false);
+    }
+    if matches!(current, ConcurrentDurableEvidenceBody::V5(_)) {
+        return Ok(false);
+    }
+
+    let recovered = previous_checkpoint
+        .clone()
+        .recover(Arc::new(program.clone()))
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    if previous_checkpoint == current_checkpoint {
+        return if matches!(
+            previous.cut(),
+            DurableCommitCutV1::TaskOwnership | DurableCommitCutV1::TaskSettlement
+        ) {
+            checkpoint_causal_settlement_ready(&recovered)
+        } else {
+            Ok(false)
+        };
+    }
+    if previous.cut() == DurableCommitCutV1::Checkpoint
+        && replay_task_control_checkpoint(program, previous_checkpoint, current_checkpoint)?
+    {
+        return Ok(true);
+    }
+    replay_machine_checkpoint(program, previous, current_checkpoint)
+}
+
+#[derive(Clone)]
+enum CheckpointMachineBoundary {
+    TaskControl(MachineTaskControlSuspension),
+    Operation(OperationOccurrence),
+}
+
+fn replay_machine_checkpoint(
+    program: &MachineProgram,
+    previous: &ConcurrentDurableEvidenceBody,
+    current: &ConcurrentDurableCheckpointV4,
+) -> Result<bool, DurableEvidenceError> {
+    let previous_checkpoint = previous.checkpoint();
+    let transition_delta = current
+        .execution_budget()
+        .revision
+        .checked_sub(previous_checkpoint.execution_budget().revision)
+        .ok_or(DurableEvidenceError::InvalidExecutionBudget)?;
+    for task_id in previous_checkpoint.task_ids() {
+        let mut boundary = previous_checkpoint
+            .clone()
+            .recover(Arc::new(program.clone()))
+            .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+        let Some(boundary_kind) = advance_to_checkpoint_boundary(
+            &mut boundary,
+            task_id,
+            transition_delta.saturating_add(1),
+        )?
+        else {
+            continue;
+        };
+        let boundary_checkpoint = capture_recovered_checkpoint(&boundary)?;
+        match boundary_kind {
+            CheckpointMachineBoundary::TaskControl(pending) => {
+                if let Some((join, join_all)) = pending.join()
+                    && join_all
+                    && join.handles.is_empty()
+                    && boundary_checkpoint == *current
+                {
+                    return Ok(true);
+                }
+                if let Some(spawn) = pending.spawn()
+                    && replay_spawn_failure_checkpoint(
+                        program,
+                        &boundary_checkpoint,
+                        current,
+                        task_id,
+                        spawn,
+                    )?
+                {
+                    return Ok(true);
+                }
+            }
+            CheckpointMachineBoundary::Operation(operation) => {
+                if replay_operation_session_checkpoint(
+                    program,
+                    &boundary_checkpoint,
+                    current,
+                    task_id,
+                    &operation,
+                )? || replay_operation_failure_checkpoint(
+                    program,
+                    previous,
+                    &boundary_checkpoint,
+                    current,
+                    task_id,
+                    &operation,
+                )? {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn advance_to_checkpoint_boundary(
+    execution: &mut RecoveredConcurrentDurableExecutionV1,
+    task_id: ProtocolIdentity,
+    maximum_steps: u64,
+) -> Result<Option<CheckpointMachineBoundary>, DurableEvidenceError> {
+    for _ in 0..=maximum_steps {
+        let machine =
+            recovered_machine_mut(execution, task_id).ok_or(DurableEvidenceError::InvalidState)?;
+        if let Some(pending) = machine.pending_task_control().cloned() {
+            return Ok(Some(CheckpointMachineBoundary::TaskControl(pending)));
+        }
+        match machine.step() {
+            MachineStep::Transition(crate::MachineLabel::Deterministic { .. }) => {}
+            MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(spawn)) => {
+                return Ok(Some(CheckpointMachineBoundary::TaskControl(
+                    MachineTaskControlSuspension::Spawn(spawn),
+                )));
+            }
+            MachineStep::WaitingOperation(operation) => {
+                return Ok(Some(CheckpointMachineBoundary::Operation(operation)));
+            }
+            MachineStep::YieldRequired => {
+                if !machine.resume_after_yield() {
+                    return Err(DurableEvidenceError::InvalidState);
+                }
+            }
+            MachineStep::WaitingSessionScope(_)
+            | MachineStep::Complete(_)
+            | MachineStep::Transition(_) => return Ok(None),
+        }
+    }
+    Ok(None)
+}
+
+fn capture_recovered_checkpoint(
+    execution: &RecoveredConcurrentDurableExecutionV1,
+) -> Result<ConcurrentDurableCheckpointV4, DurableEvidenceError> {
+    ConcurrentDurableCheckpointV4::capture(
+        execution.foreground(),
+        execution.scheduler(),
+        execution.sessions(),
+    )
+    .map_err(DurableEvidenceError::ConcurrentCheckpoint)
+}
+
+fn replay_spawn_failure_checkpoint(
+    program: &MachineProgram,
+    boundary: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    spawn: &MachineSpawnSuspension,
+) -> Result<bool, DurableEvidenceError> {
+    let recovered = boundary
+        .clone()
+        .recover(Arc::new(program.clone()))
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    let task_limit_reached = recovered
+        .scheduler()
+        .state()
+        .created_task_count()
+        .checked_add(1)
+        .is_none_or(|next| next > recovered.scheduler().state().maximum_task_count());
+    if task_limit_reached
+        && replay_spawn_failure_candidate(
+            program,
+            boundary,
+            current,
+            task_id,
+            spawn,
+            RuntimeCode::Deterministic(DeterministicEvaluationCode::TaskCountLimit),
+        )?
+    {
+        return Ok(true);
+    }
+    let session_setup_can_fail = spawn
+        .parent_session
+        .and_then(|session_id| recovered.sessions().get(session_id))
+        .is_some_and(|session| session.establishment == SessionEstablishmentV1::Separate);
+    session_setup_can_fail
+        .then(|| {
+            replay_spawn_failure_candidate(
+                program,
+                boundary,
+                current,
+                task_id,
+                spawn,
+                RuntimeCode::Operation(RuntimeErrorCategory::LogicalSessionSetup),
+            )
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
+fn replay_spawn_failure_candidate(
+    program: &MachineProgram,
+    boundary: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    spawn: &MachineSpawnSuspension,
+    code: RuntimeCode,
+) -> Result<bool, DurableEvidenceError> {
+    let mut expected = boundary
+        .clone()
+        .recover(Arc::new(program.clone()))
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    recovered_machine_mut(&mut expected, task_id)
+        .ok_or(DurableEvidenceError::InvalidState)?
+        .fail_spawn(spawn, code)
+        .map_err(|_| DurableEvidenceError::InvalidState)?;
+    capture_recovered_checkpoint(&expected).map(|checkpoint| checkpoint == *current)
+}
+
+fn replay_operation_session_checkpoint(
+    program: &MachineProgram,
+    boundary: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    operation: &OperationOccurrence,
+) -> Result<bool, DurableEvidenceError> {
+    let Some(metadata) = operation.metadata.as_ref() else {
+        return Ok(false);
+    };
+    let mode = match metadata.session_mode.as_deref() {
+        Some("new") => SessionCreationModeV1::New,
+        Some("fork") => SessionCreationModeV1::Fork,
+        _ => return Ok(false),
+    };
+    if metadata.kind == OperationSiteKind::Action {
+        return Ok(false);
+    }
+    let current_execution = current
+        .clone()
+        .recover(Arc::new(program.clone()))
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    let boundary_execution = boundary
+        .clone()
+        .recover(Arc::new(program.clone()))
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    let added = current_execution
+        .sessions()
+        .sessions()
+        .filter(|session| boundary_execution.sessions().get(session.id).is_none())
+        .cloned()
+        .collect::<Vec<_>>();
+    let [session] = added.as_slice() else {
+        return Ok(false);
+    };
+    if current_execution.sessions().sessions().count()
+        != boundary_execution
+            .sessions()
+            .sessions()
+            .count()
+            .saturating_add(1)
+        || session.parent != operation.active_session
+        || session.mode != mode
+        || session.establishment != SessionEstablishmentV1::OperationRequest
+        || session.creator_task != Some(task_id)
+        || session.creation_site.as_ref() != Some(&operation.site)
+    {
+        return Ok(false);
+    }
+    let Some(parent) = operation.active_session else {
+        return Ok(false);
+    };
+    let occurrence = session
+        .creation_occurrence
+        .ok_or(DurableEvidenceError::InvalidState)?;
+    let mut expected = boundary_execution;
+    expected
+        .sessions_mut()
+        .create(
+            parent,
+            task_id,
+            operation.site.clone(),
+            occurrence,
+            mode,
+            SessionEstablishmentV1::OperationRequest,
+        )
+        .map_err(|_| DurableEvidenceError::InvalidState)?;
+    capture_recovered_checkpoint(&expected).map(|checkpoint| checkpoint == *current)
+}
+
+fn replay_operation_failure_checkpoint(
+    program: &MachineProgram,
+    previous: &ConcurrentDurableEvidenceBody,
+    boundary: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    operation: &OperationOccurrence,
+) -> Result<bool, DurableEvidenceError> {
+    if rendered_operation_exceeds_limit(boundary, task_id, operation)?
+        && replay_operation_failure_candidate(
+            program,
+            boundary,
+            current,
+            task_id,
+            operation.identity,
+            RuntimeCode::Deterministic(DeterministicEvaluationCode::StringSizeLimit),
+        )?
+    {
+        return Ok(true);
+    }
+    let Some(evidence) = (match previous {
+        ConcurrentDurableEvidenceBody::V5(evidence)
+            if evidence.record() == ConcurrentDurableEvidenceRecordV5::Operation
+                && evidence.task_id() == task_id =>
+        {
+            evidence.operation()
+        }
+        _ => None,
+    }) else {
+        return Ok(false);
+    };
+    if evidence.operation_id != operation.identity {
+        return Ok(false);
+    }
+    match previous.cut() {
+        DurableCommitCutV1::OperationPrepared => {
+            let categories: &[RuntimeErrorCategory] =
+                match operation.metadata.as_ref().map(|metadata| metadata.kind) {
+                    Some(OperationSiteKind::Action) => &[
+                        RuntimeErrorCategory::HookCreation,
+                        RuntimeErrorCategory::HookFailure,
+                    ],
+                    Some(OperationSiteKind::Prompt | OperationSiteKind::Decide) => &[
+                        RuntimeErrorCategory::Cancellation,
+                        RuntimeErrorCategory::LogicalSessionSetup,
+                        RuntimeErrorCategory::HookCreation,
+                        RuntimeErrorCategory::HookFailure,
+                    ],
+                    None => return Ok(false),
+                };
+            for category in categories {
+                if replay_operation_failure_candidate(
+                    program,
+                    boundary,
+                    current,
+                    task_id,
+                    operation.identity,
+                    RuntimeCode::Operation(*category),
+                )? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        DurableCommitCutV1::OperationOutcome => replay_operation_outcome_failure(
+            program, boundary, current, task_id, operation, evidence,
+        ),
+        DurableCommitCutV1::RetryWaiting => replay_operation_failure_candidate(
+            program,
+            boundary,
+            current,
+            task_id,
+            operation.identity,
+            RuntimeCode::Operation(RuntimeErrorCategory::ExecutorFailure),
+        ),
+        _ => Ok(false),
+    }
+}
+
+fn rendered_operation_exceeds_limit(
+    boundary: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    operation: &OperationOccurrence,
+) -> Result<bool, DurableEvidenceError> {
+    let Some(metadata) = operation.metadata.as_ref() else {
+        return Ok(false);
+    };
+    if metadata.kind == OperationSiteKind::Action {
+        return Ok(false);
+    }
+    let interpolation_count = metadata.interpolation_types.len();
+    if metadata.template_segments.len() != interpolation_count.saturating_add(1)
+        || operation.inputs.len() < interpolation_count
+    {
+        return Ok(false);
+    }
+    let maximum = boundary
+        .task_checkpoint(task_id)
+        .ok_or(DurableEvidenceError::InvalidState)?
+        .value_limits()
+        .maximum_string_scalars();
+    let mut scalars = 0_u64;
+    for (index, input) in operation
+        .inputs
+        .iter()
+        .take(interpolation_count)
+        .enumerate()
+    {
+        scalars = scalars.saturating_add(
+            u64::try_from(metadata.template_segments[index].chars().count()).unwrap_or(u64::MAX),
+        );
+        let rendered_scalars = if let Some(value) = input.as_string() {
+            value.chars().count()
+        } else {
+            let canonical = input.canonical_json();
+            let Ok(value) = std::str::from_utf8(canonical.bytes()) else {
+                return Ok(false);
+            };
+            value.chars().count()
+        };
+        scalars = scalars.saturating_add(u64::try_from(rendered_scalars).unwrap_or(u64::MAX));
+    }
+    scalars = scalars.saturating_add(metadata.template_segments.last().map_or(0, |segment| {
+        u64::try_from(segment.chars().count()).unwrap_or(u64::MAX)
+    }));
+    Ok(scalars > maximum)
+}
+
+fn replay_operation_outcome_failure(
+    program: &MachineProgram,
+    boundary: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    operation: &OperationOccurrence,
+    evidence: &DurableOperationEvidenceV1,
+) -> Result<bool, DurableEvidenceError> {
+    let Some(outcome) = evidence.outcome.as_ref() else {
+        return Ok(false);
+    };
+    let action = operation
+        .metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.kind == OperationSiteKind::Action);
+    let (category, error) = match outcome {
+        HookOutcomeV1::Completed(_) => return Ok(false),
+        HookOutcomeV1::Declined(message) if !message.is_empty() => (
+            RuntimeErrorCategory::RequiredResultDecline,
+            Some(OperationErrorValue::Declined(message.to_string())),
+        ),
+        HookOutcomeV1::Declined(_) => (RuntimeErrorCategory::HookFailure, None),
+        HookOutcomeV1::Failed { category, message } if !message.is_empty() => match category {
+            HookFailureCategory::Cancelled => (
+                RuntimeErrorCategory::Cancellation,
+                Some(OperationErrorValue::Cancelled(message.to_string())),
+            ),
+            HookFailureCategory::PolicyDenied => (
+                RuntimeErrorCategory::PolicyDenied,
+                Some(OperationErrorValue::PolicyDenied(message.to_string())),
+            ),
+            HookFailureCategory::ProviderFailure => (
+                RuntimeErrorCategory::ProviderFailure,
+                Some(OperationErrorValue::ProviderFailure(message.to_string())),
+            ),
+            HookFailureCategory::Timeout => (
+                RuntimeErrorCategory::Timeout,
+                Some(OperationErrorValue::Timeout(message.to_string())),
+            ),
+            HookFailureCategory::UnknownOutcome if action => (
+                RuntimeErrorCategory::UnknownActionOutcome,
+                Some(OperationErrorValue::UnknownOutcome {
+                    operation_id: operation.identity.to_string(),
+                    message: message.to_string(),
+                }),
+            ),
+            HookFailureCategory::UnknownOutcome => (RuntimeErrorCategory::HookFailure, None),
+        },
+        HookOutcomeV1::Failed { .. } => (RuntimeErrorCategory::HookFailure, None),
+    };
+    let attempted = operation
+        .metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.attempted);
+    if attempted && let Some(error) = error {
+        return replay_attempt_failure_candidate(
+            program,
+            boundary,
+            current,
+            task_id,
+            operation.identity,
+            error,
+        );
+    }
+    replay_operation_failure_candidate(
+        program,
+        boundary,
+        current,
+        task_id,
+        operation.identity,
+        RuntimeCode::Operation(category),
+    )
+}
+
+fn replay_attempt_failure_candidate(
+    program: &MachineProgram,
+    boundary: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    operation_id: ProtocolIdentity,
+    error: OperationErrorValue,
+) -> Result<bool, DurableEvidenceError> {
+    let limits = boundary
+        .task_checkpoint(task_id)
+        .ok_or(DurableEvidenceError::InvalidState)?
+        .value_limits();
+    let error = LogicalValue::operation_error(error, limits)
+        .and_then(|error| LogicalValue::err(error, limits))
+        .map_err(|_| DurableEvidenceError::InvalidState)?;
+    let mut expected = boundary
+        .clone()
+        .recover(Arc::new(program.clone()))
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    recovered_machine_mut(&mut expected, task_id)
+        .ok_or(DurableEvidenceError::InvalidState)?
+        .complete_operation(operation_id, error)
+        .map_err(|_| DurableEvidenceError::InvalidState)?;
+    capture_recovered_checkpoint(&expected).map(|checkpoint| checkpoint == *current)
+}
+
+fn replay_operation_failure_candidate(
+    program: &MachineProgram,
+    boundary: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+    operation_id: ProtocolIdentity,
+    code: RuntimeCode,
+) -> Result<bool, DurableEvidenceError> {
+    let mut expected = boundary
+        .clone()
+        .recover(Arc::new(program.clone()))
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    recovered_machine_mut(&mut expected, task_id)
+        .ok_or(DurableEvidenceError::InvalidState)?
+        .fail_operation_with_code(operation_id, code)
+        .map_err(|_| DurableEvidenceError::InvalidState)?;
+    capture_recovered_checkpoint(&expected).map(|checkpoint| checkpoint == *current)
+}
+
+fn checkpoint_causal_settlement_ready(
+    execution: &RecoveredConcurrentDurableExecutionV1,
+) -> Result<bool, DurableEvidenceError> {
+    let checkpoint = ConcurrentDurableCheckpointV4::capture(
+        execution.foreground(),
+        execution.scheduler(),
+        execution.sessions(),
+    )
+    .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+    for task_id in checkpoint.task_ids() {
+        let mut candidate = checkpoint
+            .clone()
+            .recover(execution.foreground().program_arc())
+            .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+        let pending = recovered_machine_mut(&mut candidate, task_id)
+            .and_then(|machine| machine.pending_task_control().cloned());
+        let Some(pending) = pending else {
+            continue;
+        };
+        if let Some((join, _)) = pending.join() {
+            if resolved_join(&candidate, task_id, join)?.is_some() {
+                return Ok(true);
+            }
+        } else if let Some(detach) = pending.detach()
+            && detached_handle_matches(&candidate, task_id, detach)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn replay_task_control_checkpoint(
     program: &MachineProgram,
     previous: &ConcurrentDurableCheckpointV4,
     current: &ConcurrentDurableCheckpointV4,
+) -> Result<bool, DurableEvidenceError> {
+    for task_id in previous.task_ids() {
+        let mut expected = previous
+            .clone()
+            .recover(Arc::new(program.clone()))
+            .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+        let pending = recovered_machine_mut(&mut expected, task_id)
+            .and_then(|machine| machine.pending_task_control().cloned());
+        let Some(pending) = pending else {
+            continue;
+        };
+        if let Some((join, _)) = pending.join() {
+            let Some(resolution) = resolved_join(&expected, task_id, join)? else {
+                continue;
+            };
+            recovered_machine_mut(&mut expected, task_id)
+                .ok_or(DurableEvidenceError::InvalidState)?
+                .complete_join(join, resolution)
+                .map_err(|_| DurableEvidenceError::InvalidState)?;
+        } else if let Some(detach) = pending.detach() {
+            if !detached_handle_matches(&expected, task_id, detach) {
+                continue;
+            }
+            recovered_machine_mut(&mut expected, task_id)
+                .ok_or(DurableEvidenceError::InvalidState)?
+                .complete_detach(detach)
+                .map_err(|_| DurableEvidenceError::InvalidState)?;
+        } else {
+            continue;
+        }
+        let expected = ConcurrentDurableCheckpointV4::capture(
+            expected.foreground(),
+            expected.scheduler(),
+            expected.sessions(),
+        )
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+        if expected == *current {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn recovered_machine_mut(
+    execution: &mut RecoveredConcurrentDurableExecutionV1,
+    task_id: ProtocolIdentity,
+) -> Option<&mut Machine> {
+    if task_id == execution.foreground().task_id() {
+        Some(execution.foreground_mut())
+    } else {
+        execution.scheduler_mut().machine_mut(task_id)
+    }
+}
+
+fn detached_handle_matches(
+    execution: &RecoveredConcurrentDurableExecutionV1,
+    owner_task_id: ProtocolIdentity,
+    detach: &MachineDetachSuspension,
+) -> bool {
+    execution
+        .scheduler()
+        .state()
+        .task(detach.handle.identity().child())
+        .is_some_and(|task| {
+            task.parent_task_id() == owner_task_id
+                && task.handle_id() == detach.handle.identity()
+                && task.handle_name() == detach.handle.name()
+                && task.handle_state() == TaskHandleState::Detached
+        })
+}
+
+fn resolved_join(
+    execution: &RecoveredConcurrentDurableExecutionV1,
+    owner_task_id: ProtocolIdentity,
+    join: &MachineJoinSuspension,
+) -> Result<Option<JoinResolutionV1>, DurableEvidenceError> {
+    if join.handles.is_empty() {
+        return Ok(Some(JoinResolutionV1::Succeeded(LogicalValue::unit())));
+    }
+    let mut result_types = Vec::with_capacity(join.handles.len());
+    let mut values = Vec::with_capacity(join.handles.len());
+    let mut failures = Vec::new();
+    for handle in &join.handles {
+        let task = execution
+            .scheduler()
+            .state()
+            .task(handle.identity().child())
+            .ok_or(DurableEvidenceError::InvalidState)?;
+        if task.parent_task_id() != owner_task_id
+            || task.handle_id() != handle.identity()
+            || task.handle_name() != handle.name()
+            || task.handle_state() != TaskHandleState::Joined
+        {
+            return Err(DurableEvidenceError::InvalidState);
+        }
+        match task.status() {
+            ConcurrentTaskStatusV1::Submitting | ConcurrentTaskStatusV1::Running => {
+                return Ok(None);
+            }
+            ConcurrentTaskStatusV1::Succeeded(value) => {
+                result_types.push(task.result_type().clone());
+                values.push(value.clone());
+            }
+            ConcurrentTaskStatusV1::Failed(failure) => {
+                failures.push(TaskJoinMemberFailureV1 {
+                    task_id: task.task_id(),
+                    task_path: Arc::from(task.task_path()),
+                    failure: TaskJoinMemberFailureKindV1::Failed(failure.clone()),
+                });
+            }
+            ConcurrentTaskStatusV1::Cancelled(reason) => {
+                failures.push(TaskJoinMemberFailureV1 {
+                    task_id: task.task_id(),
+                    task_path: Arc::from(task.task_path()),
+                    failure: TaskJoinMemberFailureKindV1::Cancelled(Arc::clone(reason)),
+                });
+            }
+        }
+    }
+    if !failures.is_empty() {
+        return Ok(Some(JoinResolutionV1::Failed(TaskJoinFailureV1 {
+            category: RuntimeErrorCategory::TaskJoinFailure,
+            failures,
+        })));
+    }
+    let all_unit = result_types
+        .iter()
+        .all(|result_type| *result_type == gantry_ir::TypeDescriptor::UNIT);
+    let any_unit = result_types.contains(&gantry_ir::TypeDescriptor::UNIT);
+    let limits = ConcurrentDurableCheckpointV4::capture(
+        execution.foreground(),
+        execution.scheduler(),
+        execution.sessions(),
+    )
+    .map_err(DurableEvidenceError::ConcurrentCheckpoint)?
+    .task_checkpoint(owner_task_id)
+    .ok_or(DurableEvidenceError::InvalidState)?
+    .value_limits();
+    let value = if all_unit {
+        LogicalValue::unit()
+    } else if any_unit {
+        return Err(DurableEvidenceError::InvalidState);
+    } else if values.len() == 1 {
+        values.pop().ok_or(DurableEvidenceError::InvalidState)?
+    } else if result_types.windows(2).all(|pair| pair[0] == pair[1]) {
+        LogicalValue::list(values, limits).map_err(|_| DurableEvidenceError::InvalidState)?
+    } else {
+        LogicalValue::tuple(values, limits).map_err(|_| DurableEvidenceError::InvalidState)?
+    };
+    Ok(Some(JoinResolutionV1::Succeeded(value)))
+}
+
+fn validate_task_ownership_transition(
+    program: &MachineProgram,
+    previous: &ConcurrentDurableCheckpointV4,
+    current: &ConcurrentDurableEvidenceBody,
     task_id: ProtocolIdentity,
 ) -> Result<bool, DurableEvidenceError> {
-    if previous.task_ids() != current.task_ids()
+    let current_checkpoint = current.checkpoint();
+    if previous.task_ids() != current_checkpoint.task_ids()
         || previous.task_handle_state(task_id) != Some(TaskHandleState::Attached)
     {
         return Ok(false);
     }
-    let disposition = current.task_handle_state(task_id);
+    let disposition = current_checkpoint.task_handle_state(task_id);
     if !matches!(
         disposition,
         Some(TaskHandleState::Joined | TaskHandleState::Detached)
@@ -2261,55 +3344,206 @@ fn validate_task_ownership_transition(
         return Ok(false);
     }
 
+    let Some((atomic, ownership)) = replay_source_ownership_transition(program, previous, task_id)?
+    else {
+        return Ok(false);
+    };
+    if atomic != *current_checkpoint {
+        return Ok(false);
+    }
+    Ok(match current {
+        ConcurrentDurableEvidenceBody::V4(_) => true,
+        ConcurrentDurableEvidenceBody::V5(evidence) => {
+            evidence.record() == ConcurrentDurableEvidenceRecordV5::Ownership
+                && evidence.ownership() == Some(&ownership)
+        }
+    })
+}
+
+fn ownership_from_checkpoint(
+    checkpoint: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+) -> Result<Option<ConcurrentDurableOwnershipV5>, DurableEvidenceError> {
+    let owner_task_id = checkpoint.task_ids().into_iter().find(|owner_task_id| {
+        checkpoint
+            .task_checkpoint(*owner_task_id)
+            .and_then(|machine| machine.pending_task_control_checkpoint())
+            .is_some_and(|pending| {
+                pending.join().is_some_and(|(join, _)| {
+                    join.handles
+                        .iter()
+                        .any(|handle| handle.identity().child() == task_id)
+                }) || pending
+                    .detach()
+                    .is_some_and(|detach| detach.handle.identity().child() == task_id)
+            })
+    });
+    let Some(owner_task_id) = owner_task_id else {
+        return Ok(None);
+    };
+    let Some(pending) = checkpoint
+        .task_checkpoint(owner_task_id)
+        .and_then(|machine| machine.pending_task_control_checkpoint())
+    else {
+        return Ok(None);
+    };
+    let (workflow, site, control_kind, disposition, handles) =
+        if let Some((join, join_all)) = pending.join() {
+            (
+                join.workflow.clone(),
+                join.site.clone(),
+                if join_all {
+                    TaskControlSiteKind::JoinAll
+                } else {
+                    TaskControlSiteKind::Join
+                },
+                TaskHandleState::Joined,
+                join.handles.as_slice(),
+            )
+        } else if let Some(detach) = pending.detach() {
+            (
+                detach.workflow.clone(),
+                detach.site.clone(),
+                TaskControlSiteKind::Detach,
+                TaskHandleState::Detached,
+                std::slice::from_ref(&detach.handle),
+            )
+        } else {
+            return Ok(None);
+        };
+    let members = handles
+        .iter()
+        .map(|handle| {
+            if handle.identity().owner() != owner_task_id
+                || checkpoint.task_handle_state(handle.identity().child()) != Some(disposition)
+            {
+                return Err(DurableEvidenceError::InvalidState);
+            }
+            Ok(ConcurrentDurableOwnershipMemberV5 {
+                handle_name: Arc::from(handle.name()),
+                handle_owner: handle.identity().owner(),
+                handle_child: handle.identity().child(),
+                task_id: handle.identity().child(),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let ownership = ConcurrentDurableOwnershipV5 {
+        owner_task_id,
+        workflow,
+        site,
+        control_kind,
+        disposition,
+        members,
+    };
+    ownership.validate()?;
+    Ok(Some(ownership))
+}
+
+fn replay_source_ownership_transition(
+    program: &MachineProgram,
+    previous: &ConcurrentDurableCheckpointV4,
+    task_id: ProtocolIdentity,
+) -> Result<
+    Option<(ConcurrentDurableCheckpointV4, ConcurrentDurableOwnershipV5)>,
+    DurableEvidenceError,
+> {
     let mut expected = previous
         .clone()
         .recover(Arc::new(program.clone()))
         .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
-    let task = expected
+    let owner_task_id = expected
         .scheduler()
         .state()
         .task(task_id)
-        .ok_or(DurableEvidenceError::InvalidState)?;
-    let handle = task.handle_id();
-    let owner_task_id = task.parent_task_id();
-    let handle_name: Arc<str> = Arc::from(task.handle_name());
-    let workflow = task.workflow().clone();
-    let position =
-        StructuralPosition::new(vec![0]).map_err(|_| DurableEvidenceError::InvalidState)?;
-    let source = SourceSpan::from_portable_parts("recovery-transition.gnt", 0, 0)
-        .map_err(|_| DurableEvidenceError::InvalidState)?;
-    let control = TaskControlSite {
-        id: StaticSiteId::new(workflow, position),
-        kind: match disposition {
-            Some(TaskHandleState::Joined) => TaskControlSiteKind::Join,
-            Some(TaskHandleState::Detached) => TaskControlSiteKind::Detach,
-            _ => return Ok(false),
-        },
-        handles: vec![handle_name],
-        source,
+        .ok_or(DurableEvidenceError::InvalidState)?
+        .parent_task_id();
+    let pending = {
+        let owner = if expected.foreground().task_id() == owner_task_id {
+            expected.foreground_mut()
+        } else {
+            expected
+                .scheduler_mut()
+                .machine_mut(owner_task_id)
+                .ok_or(DurableEvidenceError::InvalidState)?
+        };
+        let MachineStep::Transition(crate::MachineLabel::Deterministic { ref kind, .. }) =
+            owner.step()
+        else {
+            return Ok(None);
+        };
+        let Some(pending) = owner.pending_task_control().cloned() else {
+            return Ok(None);
+        };
+        let exact_kind = pending.join().is_some() && kind.as_ref() == "join-suspended"
+            || pending.detach().is_some() && kind.as_ref() == "detach-suspended";
+        if !exact_kind {
+            return Ok(None);
+        }
+        pending
     };
-    match disposition {
-        Some(TaskHandleState::Joined) => {
-            expected
-                .scheduler_mut()
-                .begin_join(owner_task_id, &control, &[handle])
-                .map_err(|_| DurableEvidenceError::InvalidState)?;
+    let ownership = if let Some((join, join_all)) = pending.join() {
+        if join
+            .handles
+            .first()
+            .is_none_or(|handle| handle.identity().child() != task_id)
+        {
+            return Ok(None);
         }
-        Some(TaskHandleState::Detached) => {
-            expected
-                .scheduler_mut()
-                .detach(owner_task_id, &control, handle)
-                .map_err(|_| DurableEvidenceError::InvalidState)?;
+        let kind = if join_all {
+            TaskControlSiteKind::JoinAll
+        } else {
+            TaskControlSiteKind::Join
+        };
+        let handle_names = join
+            .handles
+            .iter()
+            .map(|handle| Arc::from(handle.name()))
+            .collect::<Vec<_>>();
+        let handles = join
+            .handles
+            .iter()
+            .map(|handle| handle.identity())
+            .collect::<Vec<_>>();
+        let started = expected
+            .scheduler_mut()
+            .begin_source_join(
+                owner_task_id,
+                join.workflow.clone(),
+                join.site.clone(),
+                kind,
+                &handle_names,
+                &handles,
+            )
+            .map_err(|_| DurableEvidenceError::InvalidState)?;
+        let crate::JoinStartV1::Started(ownership) = started else {
+            return Ok(None);
+        };
+        ConcurrentDurableOwnershipV5::from_changed(&ownership)?
+    } else if let Some(detach) = pending.detach() {
+        if detach.handle.identity().child() != task_id {
+            return Ok(None);
         }
-        _ => return Ok(false),
-    }
-    let expected = ConcurrentDurableCheckpointV4::capture(
+        let ownership = expected
+            .scheduler_mut()
+            .detach_source_handle(
+                owner_task_id,
+                detach.workflow.clone(),
+                detach.site.clone(),
+                Arc::from(detach.handle.name()),
+                detach.handle.identity(),
+            )
+            .map_err(|_| DurableEvidenceError::InvalidState)?;
+        ConcurrentDurableOwnershipV5::from_changed(&ownership)?
+    } else {
+        return Ok(None);
+    };
+    let checkpoint = ConcurrentDurableCheckpointV4::capture(
         expected.foreground(),
         expected.scheduler(),
         expected.sessions(),
     )
     .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
-    Ok(&expected == current)
+    Ok(Some((checkpoint, ownership)))
 }
 
 fn validate_execution_cancellation_transition(
@@ -2775,12 +4009,6 @@ mod tests {
             resolved_checkpoint.clone(),
         )
         .unwrap_or_else(|error| panic!("resolution evidence failed: {error:?}"));
-        let trailing = ConcurrentDurableEvidenceV4::new(
-            DurableCommitCutV1::Checkpoint,
-            root_task,
-            resolved_checkpoint,
-        )
-        .unwrap_or_else(|error| panic!("trailing evidence failed: {error:?}"));
         assert!(matches!(
             resolved.foreground_mut().step(),
             MachineStep::Transition(_)
@@ -2803,7 +4031,6 @@ mod tests {
         let initial_id = ProtocolIdentity::from_storage_material([14; 32]);
         let hidden_id = ProtocolIdentity::from_storage_material([15; 32]);
         let resolution_id = ProtocolIdentity::from_storage_material([16; 32]);
-        let trailing_id = ProtocolIdentity::from_storage_material([17; 32]);
         let mutated_id = ProtocolIdentity::from_storage_material([18; 32]);
         let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
             journal_id: journal_id.clone(),
@@ -2884,7 +4111,7 @@ mod tests {
                     protected_payloads: Arc::from([]),
                 },
                 JournalEvidenceEnvelopeV1 {
-                    journal_id: journal_id.clone(),
+                    journal_id,
                     sequence: 4,
                     evidence_id: resolution_id,
                     kind: Arc::from(CONCURRENT_DURABLE_EVIDENCE_KIND_V5),
@@ -2892,17 +4119,8 @@ mod tests {
                     references: Arc::from([hidden_id]),
                     protected_payloads: Arc::from([]),
                 },
-                JournalEvidenceEnvelopeV1 {
-                    journal_id,
-                    sequence: 5,
-                    evidence_id: trailing_id,
-                    kind: Arc::from(CONCURRENT_DURABLE_EVIDENCE_KIND_V4),
-                    canonical_body: Arc::from(trailing.canonical_body()),
-                    references: Arc::from([resolution_id]),
-                    protected_payloads: Arc::from([]),
-                },
             ]),
-            committed_through: 5,
+            committed_through: 4,
         };
         let snapshot = ConcurrentDurableRecoverySnapshotV1::from_full_prefix(&program, &full)
             .unwrap_or_else(|error| panic!("snapshot compaction failed: {error:?}"));
@@ -3416,6 +4634,463 @@ mod tests {
     }
 
     #[test]
+    fn task_ownership_accepts_atomic_source_detach_suspension() {
+        let fixture = source_ownership_fixture(
+            InstructionKind::Detach {
+                handle: Arc::from("first"),
+            },
+            TypeDescriptor::UNIT,
+        );
+        let previous = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                fixture.checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("previous evidence failed: {error:?}")),
+        ));
+
+        let mut atomic = fixture
+            .checkpoint
+            .clone()
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
+        assert!(matches!(
+            atomic.foreground_mut().step(),
+            MachineStep::Transition(crate::MachineLabel::Deterministic { ref kind, .. })
+                if kind.as_ref() == "detach-suspended"
+        ));
+        let detach = atomic
+            .foreground()
+            .pending_task_control()
+            .and_then(|pending| pending.detach())
+            .cloned()
+            .unwrap_or_else(|| panic!("detach suspension missing"));
+        assert_eq!(detach.handle.name(), "first");
+        atomic
+            .scheduler_mut()
+            .detach_source_handle(
+                fixture.root_task,
+                detach.workflow.clone(),
+                detach.site.clone(),
+                Arc::from(detach.handle.name()),
+                detach.handle.identity(),
+            )
+            .unwrap_or_else(|error| panic!("source detach failed: {error:?}"));
+        let atomic_checkpoint = ConcurrentDurableCheckpointV4::capture(
+            atomic.foreground(),
+            atomic.scheduler(),
+            atomic.sessions(),
+        )
+        .unwrap_or_else(|error| panic!("atomic detach checkpoint failed: {error:?}"));
+        let atomic = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::TaskOwnership,
+                fixture.first.task_id,
+                atomic_checkpoint,
+            )
+            .unwrap_or_else(|error| panic!("atomic detach evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &previous, &atomic),
+            Ok(())
+        );
+
+        let mut scheduler_only = fixture
+            .checkpoint
+            .clone()
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
+        scheduler_only
+            .scheduler_mut()
+            .detach_source_handle(
+                fixture.root_task,
+                path("crate::main"),
+                position(2),
+                Arc::from("first"),
+                fixture.first.handle_id,
+            )
+            .unwrap_or_else(|error| panic!("scheduler-only detach failed: {error:?}"));
+        let scheduler_only_checkpoint = ConcurrentDurableCheckpointV4::capture(
+            scheduler_only.foreground(),
+            scheduler_only.scheduler(),
+            scheduler_only.sessions(),
+        )
+        .unwrap_or_else(|error| panic!("scheduler-only checkpoint failed: {error:?}"));
+        let scheduler_only = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::TaskOwnership,
+                fixture.first.task_id,
+                scheduler_only_checkpoint,
+            )
+            .unwrap_or_else(|error| panic!("scheduler-only evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &previous, &scheduler_only),
+            Err(DurableEvidenceError::InvalidState)
+        );
+    }
+
+    #[test]
+    fn v5_ownership_round_trips_ordered_members_and_rejects_tampering() {
+        let fixture = source_ownership_fixture(
+            InstructionKind::JoinAll {
+                handles: vec![Arc::from("second"), Arc::from("first")],
+            },
+            TypeDescriptor::list(TypeDescriptor::UNIT),
+        );
+        let previous = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                fixture.checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("previous evidence failed: {error:?}")),
+        ));
+        let (checkpoint, expected_ownership) = super::replay_source_ownership_transition(
+            &fixture.program,
+            &fixture.checkpoint,
+            fixture.second.task_id,
+        )
+        .unwrap_or_else(|error| panic!("ownership replay failed: {error:?}"))
+        .unwrap_or_else(|| panic!("joinall ownership transition missing"));
+        let evidence =
+            ConcurrentDurableEvidenceV5::new_ownership(fixture.second.task_id, checkpoint)
+                .unwrap_or_else(|error| panic!("V5 ownership evidence failed: {error:?}"));
+        assert_eq!(
+            evidence.record(),
+            ConcurrentDurableEvidenceRecordV5::Ownership
+        );
+        assert_eq!(evidence.ownership(), Some(&expected_ownership));
+        assert_eq!(
+            evidence
+                .ownership()
+                .unwrap_or_else(|| panic!("ownership payload missing"))
+                .members
+                .iter()
+                .map(|member| (
+                    member.handle_name.as_ref(),
+                    member.handle_child,
+                    member.task_id
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("second", fixture.second.task_id, fixture.second.task_id),
+                ("first", fixture.first.task_id, fixture.first.task_id),
+            ]
+        );
+        let body = evidence.canonical_body();
+        assert_eq!(
+            ConcurrentDurableEvidenceV5::decode(&fixture.program, &body),
+            Ok(evidence.clone())
+        );
+        let current = super::ConcurrentDurableEvidenceBody::V5(Box::new(evidence));
+        assert_eq!(
+            validate_transition(&fixture.program, &previous, &current),
+            Ok(())
+        );
+
+        let body = String::from_utf8(body)
+            .unwrap_or_else(|error| panic!("ownership body is not UTF-8: {error}"));
+        for tampered in [
+            body.replacen("\"handle_name\":\"second\"", "\"handle_name\":\"first\"", 1),
+            body.replacen(
+                "\"control_kind\":\"joinall\"",
+                "\"control_kind\":\"join\"",
+                1,
+            ),
+            body.replacen(
+                "\"disposition\":\"joined\"",
+                "\"disposition\":\"detached\"",
+                1,
+            ),
+            body.replacen(
+                &format!("\"task_id\":\"{}\"", fixture.second.task_id),
+                &format!("\"task_id\":\"{}\"", fixture.first.task_id),
+                1,
+            ),
+        ] {
+            assert_eq!(
+                ConcurrentDurableEvidenceV5::decode(&fixture.program, tampered.as_bytes()),
+                Err(DurableEvidenceError::InvalidState)
+            );
+        }
+    }
+
+    #[test]
+    fn task_ownership_accepts_full_ordered_source_joinall_selection() {
+        let fixture = source_ownership_fixture(
+            InstructionKind::JoinAll {
+                handles: vec![Arc::from("second"), Arc::from("first")],
+            },
+            TypeDescriptor::list(TypeDescriptor::UNIT),
+        );
+        let previous = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                fixture.checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("previous evidence failed: {error:?}")),
+        ));
+
+        let mut atomic = fixture
+            .checkpoint
+            .clone()
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
+        assert!(matches!(
+            atomic.foreground_mut().step(),
+            MachineStep::Transition(crate::MachineLabel::Deterministic { ref kind, .. })
+                if kind.as_ref() == "join-suspended"
+        ));
+        let (join, all) = atomic
+            .foreground()
+            .pending_task_control()
+            .and_then(|pending| pending.join())
+            .map(|(join, all)| (join.clone(), all))
+            .unwrap_or_else(|| panic!("joinall suspension missing"));
+        assert!(all);
+        assert_eq!(
+            join.handles
+                .iter()
+                .map(|handle| handle.name())
+                .collect::<Vec<_>>(),
+            vec!["second", "first"]
+        );
+        let handle_names = join
+            .handles
+            .iter()
+            .map(|handle| Arc::from(handle.name()))
+            .collect::<Vec<_>>();
+        let handles = join
+            .handles
+            .iter()
+            .map(|handle| handle.identity())
+            .collect::<Vec<_>>();
+        atomic
+            .scheduler_mut()
+            .begin_source_join(
+                fixture.root_task,
+                join.workflow.clone(),
+                join.site.clone(),
+                TaskControlSiteKind::JoinAll,
+                &handle_names,
+                &handles,
+            )
+            .unwrap_or_else(|error| panic!("source joinall failed: {error:?}"));
+        let atomic_checkpoint = ConcurrentDurableCheckpointV4::capture(
+            atomic.foreground(),
+            atomic.scheduler(),
+            atomic.sessions(),
+        )
+        .unwrap_or_else(|error| panic!("atomic joinall checkpoint failed: {error:?}"));
+        assert_eq!(
+            atomic_checkpoint.task_handle_state(fixture.second.task_id),
+            Some(TaskHandleState::Joined)
+        );
+        assert_eq!(
+            atomic_checkpoint.task_handle_state(fixture.first.task_id),
+            Some(TaskHandleState::Joined)
+        );
+        let atomic = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::TaskOwnership,
+                fixture.second.task_id,
+                atomic_checkpoint,
+            )
+            .unwrap_or_else(|error| panic!("atomic joinall evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &previous, &atomic),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn checkpoint_join_failure_requires_causal_settlement_before_continuation() {
+        let fixture = source_ownership_fixture(
+            InstructionKind::JoinAll {
+                handles: vec![Arc::from("second"), Arc::from("first")],
+            },
+            TypeDescriptor::list(TypeDescriptor::UNIT),
+        );
+        let initial = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                fixture.checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("initial evidence failed: {error:?}")),
+        ));
+        let (ownership_checkpoint, _) = super::replay_source_ownership_transition(
+            &fixture.program,
+            &fixture.checkpoint,
+            fixture.second.task_id,
+        )
+        .unwrap_or_else(|error| panic!("ownership replay failed: {error:?}"))
+        .unwrap_or_else(|| panic!("joinall ownership transition missing"));
+        let ownership = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::TaskOwnership,
+                fixture.second.task_id,
+                ownership_checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("ownership evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &initial, &ownership),
+            Ok(())
+        );
+
+        let causal = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                ownership_checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("causal evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &ownership, &causal),
+            Ok(())
+        );
+
+        let mut continued = ownership_checkpoint
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("ownership recovery failed: {error:?}"));
+        let join = continued
+            .foreground()
+            .pending_task_control()
+            .and_then(|pending| pending.join())
+            .map(|(join, _)| join.clone())
+            .unwrap_or_else(|| panic!("joinall suspension missing"));
+        let resolution = super::resolved_join(&continued, fixture.root_task, &join)
+            .unwrap_or_else(|error| panic!("aggregate resolution failed: {error:?}"))
+            .unwrap_or_else(|| panic!("settled aggregate remained pending"));
+        assert!(matches!(
+            &resolution,
+            crate::JoinResolutionV1::Failed(failure)
+                if failure
+                    .failures
+                    .iter()
+                    .map(|member| member.task_id)
+                    .collect::<Vec<_>>()
+                    == vec![fixture.second.task_id, fixture.first.task_id]
+        ));
+        continued
+            .foreground_mut()
+            .complete_join(&join, resolution)
+            .unwrap_or_else(|error| panic!("aggregate failure completion failed: {error:?}"));
+        let continued_checkpoint = ConcurrentDurableCheckpointV4::capture(
+            continued.foreground(),
+            continued.scheduler(),
+            continued.sessions(),
+        )
+        .unwrap_or_else(|error| panic!("continuation checkpoint failed: {error:?}"));
+        let continuation = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                continued_checkpoint,
+            )
+            .unwrap_or_else(|error| panic!("continuation evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &causal, &continuation),
+            Ok(())
+        );
+        assert_eq!(
+            validate_transition(&fixture.program, &ownership, &continuation),
+            Err(DurableEvidenceError::InvalidState)
+        );
+        assert_eq!(
+            validate_transition(&fixture.program, &causal, &causal),
+            Err(DurableEvidenceError::InvalidState)
+        );
+    }
+
+    #[test]
+    fn checkpoint_join_result_requires_causal_settlement_before_continuation() {
+        let fixture = source_ownership_fixture_with_child_success(
+            InstructionKind::JoinAll {
+                handles: vec![Arc::from("second"), Arc::from("first")],
+            },
+            TypeDescriptor::UNIT,
+        );
+        let (ownership_checkpoint, _) = super::replay_source_ownership_transition(
+            &fixture.program,
+            &fixture.checkpoint,
+            fixture.second.task_id,
+        )
+        .unwrap_or_else(|error| panic!("ownership replay failed: {error:?}"))
+        .unwrap_or_else(|| panic!("joinall ownership transition missing"));
+        let ownership = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::TaskOwnership,
+                fixture.second.task_id,
+                ownership_checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("ownership evidence failed: {error:?}")),
+        ));
+        let causal = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                ownership_checkpoint.clone(),
+            )
+            .unwrap_or_else(|error| panic!("causal evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &ownership, &causal),
+            Ok(())
+        );
+
+        let mut continued = ownership_checkpoint
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("ownership recovery failed: {error:?}"));
+        let join = continued
+            .foreground()
+            .pending_task_control()
+            .and_then(|pending| pending.join())
+            .map(|(join, _)| join.clone())
+            .unwrap_or_else(|| panic!("joinall suspension missing"));
+        let resolution = super::resolved_join(&continued, fixture.root_task, &join)
+            .unwrap_or_else(|error| panic!("aggregate resolution failed: {error:?}"))
+            .unwrap_or_else(|| panic!("settled aggregate remained pending"));
+        assert_eq!(
+            resolution,
+            crate::JoinResolutionV1::Succeeded(LogicalValue::unit())
+        );
+        continued
+            .foreground_mut()
+            .complete_join(&join, resolution)
+            .unwrap_or_else(|error| panic!("aggregate result completion failed: {error:?}"));
+        let continued_checkpoint = ConcurrentDurableCheckpointV4::capture(
+            continued.foreground(),
+            continued.scheduler(),
+            continued.sessions(),
+        )
+        .unwrap_or_else(|error| panic!("continuation checkpoint failed: {error:?}"));
+        let continuation = super::ConcurrentDurableEvidenceBody::V4(Box::new(
+            ConcurrentDurableEvidenceV4::new(
+                DurableCommitCutV1::Checkpoint,
+                fixture.root_task,
+                continued_checkpoint,
+            )
+            .unwrap_or_else(|error| panic!("continuation evidence failed: {error:?}")),
+        ));
+        assert_eq!(
+            validate_transition(&fixture.program, &causal, &continuation),
+            Ok(())
+        );
+        assert_eq!(
+            validate_transition(&fixture.program, &ownership, &continuation),
+            Err(DurableEvidenceError::InvalidState)
+        );
+    }
+
+    #[test]
     fn task_ownership_transition_rejects_unrelated_handle_and_state_changes() {
         let program = spawn_program(&["first", "second"]);
         let execution = fresh(IdentityKind::Execution, 33);
@@ -3546,7 +5221,10 @@ mod tests {
                 )
                 .unwrap_or_else(|error| panic!("exact ownership evidence failed: {error:?}")),
             ));
-            assert_eq!(validate_transition(&program, &previous, &exact), Ok(()));
+            assert_eq!(
+                validate_transition(&program, &previous, &exact),
+                Err(DurableEvidenceError::InvalidState)
+            );
         }
 
         let mut extra_handle = previous_checkpoint
@@ -3910,7 +5588,7 @@ mod tests {
             ));
             assert_eq!(
                 validate_transition(&fixture.program, &previous, &exact),
-                Ok(())
+                Err(DurableEvidenceError::InvalidState)
             );
         }
 
@@ -4213,6 +5891,7 @@ mod tests {
                 result_type: None,
                 result_bytes: None,
             }),
+            ownership: None,
             cancellation: None,
             checkpoint: checkpoint.clone(),
         };
@@ -4520,6 +6199,13 @@ mod tests {
     }
 
     fn spawn_program(handles: &[&str]) -> Arc<MachineProgram> {
+        source_task_control_program(handles, None)
+    }
+
+    fn source_task_control_program(
+        handles: &[&str],
+        control: Option<(InstructionKind, TypeDescriptor)>,
+    ) -> Arc<MachineProgram> {
         let root_path = path("crate::main");
         let caller = CanonicalCallableIdentity::free(&root_path, &[]);
         let bodies = handles
@@ -4535,51 +6221,68 @@ mod tests {
                     TypeDescriptor::UNIT,
                     Vec::new(),
                     ExecutableTaskContext::v1(),
-                    vec![Instruction {
-                        site: position(0),
-                        ty: TypeDescriptor::UNIT,
-                        kind: InstructionKind::TaskComplete,
-                    }],
+                    vec![
+                        Instruction {
+                            site: position(0),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Push(LogicalValue::unit()),
+                        },
+                        Instruction {
+                            site: position(1),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::TaskComplete,
+                        },
+                    ],
                 )
                 .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
                 (body_identity, body)
             })
             .collect::<Vec<_>>();
+        let result = control
+            .as_ref()
+            .map_or(TypeDescriptor::UNIT, |(_, ty)| ty.clone());
+        let mut instructions = handles
+            .iter()
+            .zip(&bodies)
+            .enumerate()
+            .map(|(index, (handle, (body_identity, _)))| Instruction {
+                site: position(u64::try_from(index).unwrap_or(u64::MAX)),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from(*handle), TypeDescriptor::UNIT)
+                        .unwrap_or_else(|error| panic!("task handle failed: {error:?}")),
+                    body: body_identity.clone(),
+                },
+            })
+            .collect::<Vec<_>>();
+        if let Some((kind, ty)) = control {
+            instructions.push(Instruction {
+                site: position(u64::try_from(handles.len()).unwrap_or(u64::MAX)),
+                ty,
+                kind,
+            });
+        } else {
+            instructions.push(Instruction {
+                site: position(u64::try_from(handles.len()).unwrap_or(u64::MAX)),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            });
+        }
+        instructions.push(Instruction {
+            site: position(
+                u64::try_from(handles.len())
+                    .unwrap_or(u64::MAX)
+                    .saturating_add(1),
+            ),
+            ty: result.clone(),
+            kind: InstructionKind::Return,
+        });
         let root = Workflow {
             path: root_path,
             parameters: Vec::new(),
-            result: TypeDescriptor::UNIT,
+            result,
             effects: EffectSet::default(),
-            instructions: handles
-                .iter()
-                .zip(&bodies)
-                .enumerate()
-                .map(|(index, (handle, (body_identity, _)))| Instruction {
-                    site: position(u64::try_from(index).unwrap_or(u64::MAX)),
-                    ty: TypeDescriptor::UNIT,
-                    kind: InstructionKind::Spawn {
-                        handle: ExecutableTaskHandle::new(Arc::from(*handle), TypeDescriptor::UNIT)
-                            .unwrap_or_else(|error| panic!("task handle failed: {error:?}")),
-                        body: body_identity.clone(),
-                    },
-                })
-                .chain([
-                    Instruction {
-                        site: position(u64::try_from(handles.len()).unwrap_or(u64::MAX)),
-                        ty: TypeDescriptor::UNIT,
-                        kind: InstructionKind::Push(LogicalValue::unit()),
-                    },
-                    Instruction {
-                        site: position(
-                            u64::try_from(handles.len())
-                                .unwrap_or(u64::MAX)
-                                .saturating_add(1),
-                        ),
-                        ty: TypeDescriptor::UNIT,
-                        kind: InstructionKind::Return,
-                    },
-                ])
-                .collect(),
+            instructions,
         };
         Arc::new(
             MachineProgram::with_task_bodies(
@@ -4588,6 +6291,145 @@ mod tests {
             )
             .unwrap_or_else(|error| panic!("spawn program failed: {error:?}")),
         )
+    }
+
+    struct SourceOwnershipFixture {
+        program: Arc<MachineProgram>,
+        checkpoint: ConcurrentDurableCheckpointV4,
+        root_task: ProtocolIdentity,
+        first: TaskCreationV1,
+        second: TaskCreationV1,
+    }
+
+    fn source_ownership_fixture(
+        control: InstructionKind,
+        result: TypeDescriptor,
+    ) -> SourceOwnershipFixture {
+        source_ownership_fixture_with_status(control, result, false)
+    }
+
+    fn source_ownership_fixture_with_child_success(
+        control: InstructionKind,
+        result: TypeDescriptor,
+    ) -> SourceOwnershipFixture {
+        source_ownership_fixture_with_status(control, result, true)
+    }
+
+    fn source_ownership_fixture_with_status(
+        control: InstructionKind,
+        result: TypeDescriptor,
+        children_succeed: bool,
+    ) -> SourceOwnershipFixture {
+        let program = source_task_control_program(&["first", "second"], Some((control, result)));
+        let execution = fresh(IdentityKind::Execution, 71);
+        let root_task = root_task_identity(execution);
+        let root_session = fresh(IdentityKind::Session, 72);
+        let mut sessions = LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+        let mut foreground = Machine::new_with_context(
+            Arc::clone(&program),
+            &path("crate::main"),
+            Vec::new(),
+            execution,
+            machine_limits(),
+            None,
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
+        let state = ConcurrentTaskStateV1::new(execution, root_task, 8)
+            .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+        let mut scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
+        let mut children = Vec::new();
+        for handle in ["first", "second"] {
+            let suspension = next_spawn(&mut foreground, handle);
+            let child = scheduler
+                .create_child(
+                    &mut sessions,
+                    spawn_request(root_task, root_session, &suspension),
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("{handle} task creation failed: {error:?}"));
+            foreground
+                .complete_spawn(&suspension, child.handle_id)
+                .unwrap_or_else(|error| panic!("{handle} spawn completion failed: {error:?}"));
+            if children_succeed {
+                let task_path: Arc<[Arc<str>]> = Arc::from(
+                    scheduler
+                        .state()
+                        .task(child.task_id)
+                        .unwrap_or_else(|| panic!("{handle} task record missing"))
+                        .task_path(),
+                );
+                let captures = suspension
+                    .captures
+                    .iter()
+                    .map(|capture| capture.task_capture().clone())
+                    .collect::<Vec<_>>();
+                let child_machine = Machine::new_concurrent_task_body_with_context(
+                    Arc::clone(&program),
+                    &suspension.body,
+                    &captures,
+                    execution,
+                    child.task_id,
+                    task_path,
+                    machine_limits(),
+                    foreground.execution_budget(),
+                    suspension.inherited_agent.clone(),
+                    Some(child.base_session_id),
+                )
+                .unwrap_or_else(|error| panic!("{handle} machine failed: {error:?}"));
+                scheduler
+                    .resolve_submission(child.task_id, Ok(child_machine))
+                    .unwrap_or_else(|error| {
+                        panic!("{handle} submission resolution failed: {error:?}")
+                    });
+                for _ in 0..2 {
+                    scheduler
+                        .step_next()
+                        .unwrap_or_else(|error| panic!("{handle} step failed: {error:?}"))
+                        .unwrap_or_else(|| panic!("{handle} was not runnable"));
+                }
+                assert_eq!(
+                    scheduler
+                        .state()
+                        .task(child.task_id)
+                        .map(|task| task.status()),
+                    Some(&crate::ConcurrentTaskStatusV1::Succeeded(
+                        LogicalValue::unit()
+                    ))
+                );
+            } else {
+                scheduler
+                    .resolve_submission(
+                        child.task_id,
+                        Err(HostError {
+                            code: Arc::from("executor-closed"),
+                            protected_diagnostic: None,
+                        }),
+                    )
+                    .unwrap_or_else(|error| {
+                        panic!("{handle} submission resolution failed: {error:?}")
+                    });
+            }
+            children.push(child);
+        }
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions)
+            .unwrap_or_else(|error| panic!("source ownership checkpoint failed: {error:?}"));
+        let first = children.remove(0);
+        let second = children.remove(0);
+        SourceOwnershipFixture {
+            program,
+            checkpoint,
+            root_task,
+            first,
+            second,
+        }
     }
 
     fn nested_spawn_program() -> Arc<MachineProgram> {

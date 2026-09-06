@@ -26,8 +26,8 @@ const PROFILES: [&str; 6] = [
 const ASSIGNMENT_MATRIX_SHA256: &str =
     "d5f62a1af89feded6523b71efc615b9c7d295c9b5e8a099d2f26033c34fa33a4";
 const SOURCE_SPAWN_EXCLUSIONS: [&str; 4] = [
-    "Source JOIN, JOINALL, DETACH, descendant draining, and their complete concurrent-evaluator behavior remain owned by GNT-ASYNC-JOIN-001 and GNT-ASYNC-CANCEL-001.",
-    "The linked source fixtures do not claim successful source JOIN execution; after the child behavior under test, their join site may terminate with the current unsupported task-control invariant.",
+    "Source JOIN, JOINALL, and DETACH evidence is linked separately by protocol/conformance/source-join-v1.json; descendant draining remains owned by GNT-ASYNC-CANCEL-001.",
+    "The linked source fixtures now consume admitted child handles through executable all-settled JOIN semantics without broadening this spawn-focused evidence manifest.",
     "Complete concurrent-evaluator graph cancellation is not inferred from the focused durable cancellation ordering case.",
     "Recovered child reconstruction and fenced executor resubmission remain owned by GNT-ASYNC-REC-001; mixed-prefix resume is only classified as runnable replacement unavailable.",
 ];

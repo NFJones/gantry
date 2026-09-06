@@ -161,8 +161,8 @@ pub struct ExecutionSnapshot {
     pub cancellation: Option<CancellationReason>,
     /// Fixed foreground outcome, when known.
     pub foreground: Option<MachineOutcome>,
-    /// Fixed terminal outcome, when known.
-    pub terminal: Option<MachineOutcome>,
+    /// Fixed terminal projection, including detached failures, when known.
+    pub terminal: Option<crate::ConcurrentTerminalOutcomeV1>,
     /// Required-delivery failures retained separately from language outcomes.
     pub required_delivery_failures: Arc<[RequiredEventDeliveryFailureV1]>,
 }
@@ -186,7 +186,7 @@ pub enum RequiredDeliveryRecordV1 {
     /// Cancellation was already effective when this failure was recorded.
     CancellationAlreadyActive,
     /// The terminal language outcome was already fixed and remains unchanged.
-    PostTerminal(MachineOutcome),
+    PostTerminal(crate::ConcurrentTerminalOutcomeV1),
     /// The same sink/event/attempt failure was already recorded.
     Existing,
 }
@@ -209,7 +209,7 @@ pub enum CancellationRecord {
         signal: CancellationSignal,
     },
     /// The execution had already reached terminal state.
-    AlreadyTerminal(ExecutionSnapshot),
+    AlreadyTerminal(Box<ExecutionSnapshot>),
     /// No accepted execution has this identity.
     NotFound,
 }
@@ -274,9 +274,9 @@ impl ExecutionHandle {
             .get_mut(&self.execution_id)
             .ok_or(ExecutionTransitionError::NotFound)?;
         if execution.terminal.is_some() {
-            return Ok(CancellationRecord::AlreadyTerminal(
+            return Ok(CancellationRecord::AlreadyTerminal(Box::new(
                 execution.snapshot(self.execution_id),
-            ));
+            )));
         }
         if let Some(existing) = &execution.cancellation {
             return Ok(CancellationRecord::Existing {
@@ -303,9 +303,9 @@ impl ExecutionHandle {
     /// Publishes a terminal outcome whose durable evidence already committed.
     pub fn publish_committed_terminal(
         &self,
-        outcome: MachineOutcome,
+        outcome: impl Into<crate::ConcurrentTerminalOutcomeV1>,
     ) -> Result<(), ExecutionTransitionError> {
-        self.publish_committed_outcome(None, Some(outcome))
+        self.publish_committed_outcome(None, Some(outcome.into()))
     }
 
     /// Publishes an operational end to the current durable run without fixing a language outcome.
@@ -348,7 +348,7 @@ impl ExecutionHandle {
     fn publish_committed_outcome(
         &self,
         foreground: Option<MachineOutcome>,
-        terminal: Option<MachineOutcome>,
+        terminal: Option<crate::ConcurrentTerminalOutcomeV1>,
     ) -> Result<(), ExecutionTransitionError> {
         let inner = self
             .inner
@@ -763,9 +763,9 @@ impl InterpreterLifecycle {
             return Ok(CancellationRecord::NotFound);
         };
         if execution.terminal.is_some() {
-            return Ok(CancellationRecord::AlreadyTerminal(
+            return Ok(CancellationRecord::AlreadyTerminal(Box::new(
                 execution.snapshot(execution_id),
-            ));
+            )));
         }
         if let Some(existing) = &execution.cancellation {
             return Ok(CancellationRecord::Existing {
@@ -794,9 +794,9 @@ impl InterpreterLifecycle {
     pub fn complete_terminal(
         &self,
         handle: &ExecutionHandle,
-        outcome: MachineOutcome,
+        outcome: impl Into<crate::ConcurrentTerminalOutcomeV1>,
     ) -> Result<(), ExecutionTransitionError> {
-        self.complete_execution(handle, None, Some(outcome))
+        self.complete_execution(handle, None, Some(outcome.into()))
     }
 
     /// Begins or joins the unique shutdown coordinator and snapshots first-call durations.
@@ -949,7 +949,7 @@ impl InterpreterLifecycle {
         &self,
         handle: &ExecutionHandle,
         foreground: Option<MachineOutcome>,
-        terminal: Option<MachineOutcome>,
+        terminal: Option<crate::ConcurrentTerminalOutcomeV1>,
     ) -> Result<(), ExecutionTransitionError> {
         let Some(inner) = handle.inner.upgrade() else {
             return Err(ExecutionTransitionError::InterpreterDropped);
@@ -1770,7 +1770,7 @@ struct ExecutionRecord {
     cancellation_signal: CancellationSignal,
     cancellation: Option<CancellationReason>,
     foreground: Option<MachineOutcome>,
-    terminal: Option<MachineOutcome>,
+    terminal: Option<crate::ConcurrentTerminalOutcomeV1>,
     run_failed_nondurably: bool,
     required_delivery_failures: Vec<RequiredEventDeliveryFailureV1>,
     waiters: Vec<RegisteredWaiter>,

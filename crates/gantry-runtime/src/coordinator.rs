@@ -19,7 +19,7 @@ use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::TaskStatusKind;
 use gantry_core::value::ValueLimits;
 use gantry_host::contracts::HostError;
-use gantry_ir::{StructuralPosition, TaskControlSite};
+use gantry_ir::{CanonicalPath, StructuralPosition, TaskControlSite};
 
 use crate::{
     ConcurrentShutdownCohortV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
@@ -62,6 +62,9 @@ struct CoordinatorState {
     shutdown_waiters: Vec<RegisteredWaiter>,
     /// Reserved by a durable transaction; retained if its commit is indeterminate.
     durable_publication_reserved: bool,
+    /// Last committed graph task/session semantics, excluding process-local driver drift.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    durable_graph_baseline: Option<(ConcurrentTaskStateV1, LogicalSessionRegistryV1)>,
     /// Complete committed root cut retained independently of its running driver.
     #[cfg(feature = "durable")]
     durable_root: Option<crate::RecoveredDurableStateV1>,
@@ -155,6 +158,8 @@ impl ExecutionCoordinator {
                     terminal_waiters: Vec::new(),
                     shutdown_waiters: Vec::new(),
                     durable_publication_reserved: false,
+                    #[cfg(all(feature = "concurrent", feature = "durable"))]
+                    durable_graph_baseline: None,
                     #[cfg(feature = "durable")]
                     durable_root: None,
                     #[cfg(feature = "durable")]
@@ -548,6 +553,30 @@ impl ExecutionCoordinator {
         Ok(started)
     }
 
+    /// Consumes one source join or joinall from canonical executable metadata.
+    pub fn begin_source_join(
+        &self,
+        owner_task_id: ProtocolIdentity,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        kind: gantry_ir::generated::TaskControlSiteKind,
+        handle_names: &[Arc<str>],
+        handles: &[DynamicTaskHandleIdentity],
+    ) -> Result<JoinStartV1, TaskStateError> {
+        let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
+        let started = state.tasks.begin_source_join(
+            owner_task_id,
+            workflow,
+            site,
+            kind,
+            handle_names,
+            handles,
+        )?;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(started)
+    }
+
     /// Transfers one attached handle to execution-owned detached work.
     pub fn detach(
         &self,
@@ -558,6 +587,25 @@ impl ExecutionCoordinator {
         let mut state = lock(&self.inner.state);
         require_publication_available(&state)?;
         let detached = state.tasks.detach(owner_task_id, control, handle)?;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(detached)
+    }
+
+    /// Transfers one source handle from canonical executable metadata to detached work.
+    pub fn detach_source_handle(
+        &self,
+        owner_task_id: ProtocolIdentity,
+        workflow: CanonicalPath,
+        site: StructuralPosition,
+        handle_name: Arc<str>,
+        handle: DynamicTaskHandleIdentity,
+    ) -> Result<TaskOwnershipChangedV1, TaskStateError> {
+        let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
+        let detached =
+            state
+                .tasks
+                .detach_source_handle(owner_task_id, workflow, site, handle_name, handle)?;
         state.publication = state.publication.wrapping_add(1);
         Ok(detached)
     }

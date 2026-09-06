@@ -14,11 +14,16 @@ recovery, fencing, event replay, and combined concurrent-durable obligations
 remain outside this claim.
 
 The async source-execution adoption is narrower than that full refinement
-argument. `protocol/conformance/source-spawn-v1.json` now establishes native
+argument. `protocol/conformance/source-spawn-v1.json` establishes native
 executor-owned child submission, publication gates, child-session ordering,
-and the live concurrent-durable commit order at source `spawn` edges. It does
-not establish integrated source `join`, `joinall()`, or `detach`, complete
-source task-graph cancellation, or recovered child resubmission.
+and the live concurrent-durable commit order at source `spawn` edges.
+`protocol/conformance/source-join-v1.json` establishes integrated source
+`join`, `joinall()`, and `detach`: all-settled waiting, source/declaration-order
+results, ordered aggregate failure, the empty `joinall()` case, Join event
+causality, and the foreground/terminal split for detached work. Descendant
+cancellation and failure draining remain with `GNT-ASYNC-CANCEL-001`; resumed
+task-graph reconstruction and child resubmission remain with
+`GNT-ASYNC-REC-001`.
 
 For the generics-and-static-traits amendment, every spawned machine already
 contains only closed applied descriptors and direct selected call targets.
@@ -158,9 +163,12 @@ the formal lifecycle and property clauses to the bounded search. Its trace
 list links task creation/submission, ownership transfer, joins, detachment,
 sessions, cancellation, terminal precedence, events, shutdown, Tokio task
 services, and schedule replay to supported public or adapter-contract tests.
-The separate current-specification source-spawn manifest links only the native
-source child and live concurrent-durable ordering slice; it is not evidence of
-complete integrated source JOIN, DETACH, or CANCEL support.
+The separate current-specification source manifests divide the executable
+surface by ownership: `source-spawn-v1.json` links native child submission and
+its live concurrent-durable ordering slice, while `source-join-v1.json` links
+integrated JOIN, JOINALL, and DETACH behavior. Neither manifest claims owner
+failure/cancellation draining (`GNT-ASYNC-CANCEL-001`) or resumed graph
+resubmission (`GNT-ASYNC-REC-001`).
 
 The generics amendment is mapped separately by
 `protocol/conformance/generics-traits-refinements-v1.json`. It links

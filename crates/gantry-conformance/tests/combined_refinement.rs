@@ -18,8 +18,8 @@ use gantry::identity::ProtocolIdentity;
 use gantry::ir::generated::TaskControlSiteKind;
 use gantry::ir::{
     CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody, ExecutableTaskContext,
-    ExecutableTaskHandle, Instruction, InstructionKind, MachineProgram, StaticSiteId,
-    StructuralPosition, TaskBodyIdentity, TaskControlSite, TypeDescriptor, Workflow,
+    ExecutableTaskHandle, Instruction, InstructionKind, MachineProgram, StructuralPosition,
+    TaskBodyIdentity, TypeDescriptor, Workflow,
 };
 use gantry::portable::{
     CancellationReasonCategory, EventKind, IdentityKind, JitterMode, ProtectedReferenceClass,
@@ -34,13 +34,17 @@ use gantry::runtime::{
     MachineLimits, MachineOutcome, MachineStep, SessionCreationModeV1, TaskCreationRequestV1,
     TaskStateError, recover_concurrent_authoritative_prefix, root_task_identity,
 };
-use gantry::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
 #[test]
 fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
-    let program = spawn_program("background");
+    let program = spawn_program(
+        "background",
+        InstructionKind::Detach {
+            handle: Arc::from("background"),
+        },
+    );
     let execution = fresh(IdentityKind::Execution, 1);
     let root_task = root_task_identity(execution);
     let root_session = fresh(IdentityKind::Session, 2);
@@ -171,8 +175,23 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
     .unwrap_or_else(|error| panic!("submission checkpoint failed: {error:?}"));
     assert_eq!(submission.sequence, 3);
 
+    assert!(matches!(
+        foreground.step(),
+        MachineStep::Transition(gantry::runtime::MachineLabel::Deterministic { .. })
+    ));
+    let detach = foreground
+        .pending_task_control()
+        .and_then(|pending| pending.detach())
+        .cloned()
+        .unwrap_or_else(|| panic!("foreground did not suspend at detach"));
     let ownership = scheduler
-        .detach(root_task, &detach_control(), child.handle_id)
+        .detach_source_handle(
+            root_task,
+            detach.workflow,
+            detach.site,
+            Arc::from(detach.handle.name()),
+            detach.handle.identity(),
+        )
         .unwrap_or_else(|error| panic!("detach failed: {error:?}"));
     assert_eq!(ownership.disposition(), TaskHandleState::Detached);
     let ownership_commit = block_on(commits.commit_concurrent_cut(
@@ -438,7 +457,12 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
 
 #[test]
 fn public_combined_join_ownership_and_settlement_recover_once() {
-    let program = spawn_program("joined");
+    let program = spawn_program(
+        "joined",
+        InstructionKind::Join {
+            handles: vec![Arc::from("joined")],
+        },
+    );
     let execution = fresh(IdentityKind::Execution, 21);
     let root_task = root_task_identity(execution);
     let root_session = fresh(IdentityKind::Session, 22);
@@ -539,16 +563,51 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
     ))
     .unwrap_or_else(|error| panic!("submission checkpoint failed: {error:?}"));
 
-    let control = join_control();
+    assert!(matches!(
+        foreground.step(),
+        MachineStep::Transition(gantry::runtime::MachineLabel::Deterministic { .. })
+    ));
+    let join = foreground
+        .pending_task_control()
+        .and_then(|pending| pending.join())
+        .map(|(join, join_all)| {
+            assert!(!join_all);
+            join.clone()
+        })
+        .unwrap_or_else(|| panic!("foreground did not suspend at join"));
+    let handle_names = join
+        .handles
+        .iter()
+        .map(|handle| Arc::from(handle.name()))
+        .collect::<Vec<_>>();
+    let handles = join
+        .handles
+        .iter()
+        .map(|handle| handle.identity())
+        .collect::<Vec<_>>();
     let ownership = match scheduler
-        .begin_join(root_task, &control, &[child.handle_id])
+        .begin_source_join(
+            root_task,
+            join.workflow.clone(),
+            join.site.clone(),
+            TaskControlSiteKind::Join,
+            &handle_names,
+            &handles,
+        )
         .unwrap_or_else(|error| panic!("join ownership failed: {error:?}"))
     {
         JoinStartV1::Started(ownership) => ownership,
         JoinStartV1::Empty => panic!("nonempty join unexpectedly reduced as empty"),
     };
     assert_eq!(
-        scheduler.begin_join(root_task, &control, &[child.handle_id]),
+        scheduler.begin_source_join(
+            root_task,
+            join.workflow,
+            join.site,
+            TaskControlSiteKind::Join,
+            &handle_names,
+            &handles,
+        ),
         Err(TaskStateError::ConsumedHandle)
     );
     block_on(commits.commit_concurrent_cut(
@@ -638,43 +697,7 @@ fn spawn_request(
     }
 }
 
-fn detach_control() -> TaskControlSite {
-    TaskControlSite {
-        id: StaticSiteId::new(path("crate::main"), site(9)),
-        kind: TaskControlSiteKind::Detach,
-        handles: vec![Arc::from("background")],
-        source: source_span(),
-    }
-}
-
-fn join_control() -> TaskControlSite {
-    TaskControlSite {
-        id: StaticSiteId::new(path("crate::main"), site(8)),
-        kind: TaskControlSiteKind::Join,
-        handles: vec![Arc::from("joined")],
-        source: source_span(),
-    }
-}
-
-fn source_span() -> SourceSpan {
-    let limits = SourceLimits::new(1, 64, 64, 1, 1)
-        .unwrap_or_else(|error| panic!("source limits failed: {error:?}"));
-    let mut builder = SourceSnapshotBuilder::new(limits);
-    let id = builder
-        .add_file("main.gnt", b"detach(background)")
-        .unwrap_or_else(|error| panic!("source fixture failed: {error:?}"));
-    let snapshot = builder.finish();
-    let record = snapshot
-        .get(&id)
-        .unwrap_or_else(|| panic!("source record missing"));
-    SourceSpan::new(
-        record,
-        ByteSpan::new(0, 1).unwrap_or_else(|error| panic!("span failed: {error:?}")),
-    )
-    .unwrap_or_else(|error| panic!("source span failed: {error:?}"))
-}
-
-fn spawn_program(handle_name: &str) -> Arc<MachineProgram> {
+fn spawn_program(handle_name: &str, ownership: InstructionKind) -> Arc<MachineProgram> {
     let root_path = path("crate::main");
     let caller = CanonicalCallableIdentity::free(&root_path, &[]);
     let body_identity = TaskBodyIdentity::new(caller.clone(), site(0));
@@ -717,7 +740,7 @@ fn spawn_program(handle_name: &str) -> Arc<MachineProgram> {
             Instruction {
                 site: site(1),
                 ty: TypeDescriptor::UNIT,
-                kind: InstructionKind::Push(LogicalValue::unit()),
+                kind: ownership,
             },
             Instruction {
                 site: site(2),

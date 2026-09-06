@@ -370,7 +370,13 @@ fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
         .unwrap_or_else(|error| panic!("cancelled execution await failed: {error:?}"))
         .unwrap_or_else(|| panic!("cancelled execution disappeared"));
     assert!(execution.foreground.is_some());
-    assert_eq!(execution.terminal, execution.foreground);
+    assert_eq!(
+        execution
+            .terminal
+            .as_ref()
+            .map(|terminal| &terminal.foreground),
+        execution.foreground.as_ref()
+    );
     assert!(executor.is_runnable(1));
     assert!(matches!(
         executor.poll_task(1),

@@ -6,6 +6,8 @@ use std::thread;
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::numeric::GantryInt;
+#[cfg(feature = "concurrent")]
+use gantry_core::portable::RuntimeErrorCategory;
 use gantry_core::portable::{DeterministicEvaluationCode, IdentityKind};
 use gantry_core::value::{
     DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView, ValueLimits, ValuePathSegment,
@@ -22,8 +24,9 @@ use gantry_ir::{
 
 #[cfg(feature = "concurrent")]
 use crate::{
-    DynamicTaskHandleIdentity, ExecutionBudget, TaskCaptureV1, TaskControlCompletionError,
-    root_task_identity,
+    DynamicTaskHandleIdentity, ExecutionBudget, JoinResolutionV1, TaskCaptureV1,
+    TaskControlCompletionError, TaskFailureV1, TaskJoinFailureV1, TaskJoinMemberFailureKindV1,
+    TaskJoinMemberFailureV1, root_task_identity,
 };
 use crate::{
     Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError, MachineLabel,
@@ -135,6 +138,82 @@ fn spawn_program_with_body(
     let program = MachineProgram::with_task_bodies(vec![(caller, root)], vec![body])
         .unwrap_or_else(|error| panic!("invalid fixture spawn program: {error:?}"));
     (Arc::new(program), body_identity)
+}
+
+#[cfg(feature = "concurrent")]
+fn joined_int_program(control: InstructionKind, result: TypeDescriptor) -> Arc<MachineProgram> {
+    let root_path = path("crate::main");
+    let caller = CanonicalCallableIdentity::free(&root_path, &[]);
+    let body_identities = [0, 1].map(|index| TaskBodyIdentity::new(caller.clone(), site(index)));
+    let bodies = body_identities
+        .iter()
+        .enumerate()
+        .map(|(index, identity)| {
+            let value = LogicalValue::integer(
+                GantryInt::new(index as i64 + 1)
+                    .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            );
+            ExecutableTaskBody::new(
+                identity.clone(),
+                TypeDescriptor::INT,
+                Vec::new(),
+                ExecutableTaskContext::v1(),
+                vec![
+                    instruction(0, TypeDescriptor::INT, InstructionKind::Push(value)),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::TaskComplete),
+                ],
+            )
+            .unwrap_or_else(|error| panic!("invalid fixture task body: {error:?}"))
+        })
+        .collect::<Vec<_>>();
+    let handles = ["first", "second"].map(|name| {
+        ExecutableTaskHandle::new(Arc::from(name), TypeDescriptor::INT)
+            .unwrap_or_else(|error| panic!("invalid fixture handle: {error:?}"))
+    });
+    let root = workflow(
+        "crate::main",
+        Vec::new(),
+        result.clone(),
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::UNIT,
+                InstructionKind::Spawn {
+                    handle: handles[0].clone(),
+                    body: body_identities[0].clone(),
+                },
+            ),
+            instruction(
+                1,
+                TypeDescriptor::UNIT,
+                InstructionKind::Spawn {
+                    handle: handles[1].clone(),
+                    body: body_identities[1].clone(),
+                },
+            ),
+            instruction(2, result.clone(), control),
+            instruction(3, result, InstructionKind::Return),
+        ],
+    );
+    Arc::new(
+        MachineProgram::with_task_bodies(vec![(caller, root)], bodies)
+            .unwrap_or_else(|error| panic!("invalid fixture task-control program: {error:?}")),
+    )
+}
+
+#[cfg(feature = "concurrent")]
+fn complete_fixture_spawn(machine: &mut Machine, child_material: u8) {
+    let suspension = match machine.step() {
+        MachineStep::Transition(MachineLabel::TaskControlSuspended(spawn)) => spawn,
+        other => panic!("unexpected spawn step: {other:?}"),
+    };
+    let child = ProtocolIdentity::derive(IdentityKind::Task, &[child_material; 32])
+        .unwrap_or_else(|error| panic!("invalid fixture child identity: {error}"));
+    let handle = DynamicTaskHandleIdentity::from_parts(machine.task_id(), child);
+    machine
+        .complete_spawn(&suspension, handle)
+        .unwrap_or_else(|error| panic!("fixture spawn completion failed: {error:?}"));
 }
 
 fn limits(
@@ -1667,6 +1746,359 @@ fn machine_spawn_suspends_until_handle_publication_and_child_completes() {
     ));
     assert!(
         matches!(drive(&mut root), MachineOutcome::Succeeded(ref value) if value == &LogicalValue::unit())
+    );
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machine_join_consumes_handles_before_waiting_and_completes_in_order() {
+    let result_type = TypeDescriptor::list(TypeDescriptor::INT);
+    let program = joined_int_program(
+        InstructionKind::Join {
+            handles: vec![Arc::from("first"), Arc::from("second")],
+        },
+        result_type,
+    );
+    let machine_limits = limits(32, 1, 1, 1, 32);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut machine = Machine::new_concurrent_root_with_budget_and_context(
+        program,
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("join machine construction failed: {error:?}"));
+    complete_fixture_spawn(&mut machine, 0x51);
+    complete_fixture_spawn(&mut machine, 0x52);
+
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { ref kind, .. })
+            if kind.as_ref() == "join-suspended"
+    ));
+    assert!(machine.task_handle("first").is_none());
+    assert!(machine.task_handle("second").is_none());
+    let join = machine
+        .pending_task_control()
+        .and_then(|suspension| suspension.join())
+        .map(|(join, all)| {
+            assert!(!all);
+            join.clone()
+        })
+        .unwrap_or_else(|| panic!("join suspension missing"));
+    assert_eq!(
+        join.handles
+            .iter()
+            .map(|handle| handle.name())
+            .collect::<Vec<_>>(),
+        vec!["first", "second"]
+    );
+    assert_eq!(
+        machine.complete_join(&join, JoinResolutionV1::Pending(Vec::new())),
+        Err(TaskControlCompletionError::JoinPending)
+    );
+    let values = vec![
+        LogicalValue::integer(
+            GantryInt::new(1).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ),
+        LogicalValue::integer(
+            GantryInt::new(2).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        ),
+    ];
+    let expected = LogicalValue::list(values, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|error| panic!("join result construction failed: {error:?}"));
+    assert!(matches!(
+        machine.complete_join(&join, JoinResolutionV1::Succeeded(expected.clone())),
+        Ok(MachineLabel::Deterministic { ref kind, .. }) if kind.as_ref() == "join-complete"
+    ));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Succeeded(ref value) if value == &expected
+    ));
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machine_empty_joinall_reduces_directly_to_unit_without_pending_task_control() {
+    let empty = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::UNIT,
+                InstructionKind::JoinAll {
+                    handles: Vec::new(),
+                },
+            ),
+            instruction(1, TypeDescriptor::UNIT, InstructionKind::Return),
+        ],
+    );
+    let machine_limits = limits(16, 1, 1, 1, 16);
+    let mut empty_machine = Machine::new_concurrent_root_with_budget_and_context(
+        program(vec![empty]),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        ExecutionBudget::new(execution(), machine_limits),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("empty joinall machine construction failed: {error:?}"));
+    assert!(matches!(
+        empty_machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { ref kind, .. })
+            if kind.as_ref() == "joinall-empty"
+    ));
+    assert!(empty_machine.pending_task_control().is_none());
+    assert!(matches!(
+        drive(&mut empty_machine),
+        MachineOutcome::Succeeded(ref value) if value == &LogicalValue::unit()
+    ));
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machine_detach_completes_with_unit() {
+    let program = joined_int_program(
+        InstructionKind::Detach {
+            handle: Arc::from("first"),
+        },
+        TypeDescriptor::UNIT,
+    );
+    let machine_limits = limits(32, 1, 1, 1, 32);
+    let mut detach_machine = Machine::new_concurrent_root_with_budget_and_context(
+        program,
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        ExecutionBudget::new(execution(), machine_limits),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("detach machine construction failed: {error:?}"));
+    complete_fixture_spawn(&mut detach_machine, 0x61);
+    complete_fixture_spawn(&mut detach_machine, 0x62);
+    assert!(matches!(detach_machine.step(), MachineStep::Transition(_)));
+    let detach = detach_machine
+        .pending_task_control()
+        .and_then(|suspension| suspension.detach())
+        .cloned()
+        .unwrap_or_else(|| panic!("detach suspension missing"));
+    assert_eq!(detach.handle.name(), "first");
+    assert!(detach_machine.task_handle("first").is_none());
+    assert!(detach_machine.task_handle("second").is_some());
+    detach_machine
+        .complete_detach(&detach)
+        .unwrap_or_else(|error| panic!("detach completion failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut detach_machine),
+        MachineOutcome::Succeeded(ref value) if value == &LogicalValue::unit()
+    ));
+}
+
+#[cfg(feature = "concurrent")]
+#[test]
+fn machine_join_failure_becomes_task_join_failure() {
+    let program = joined_int_program(
+        InstructionKind::Join {
+            handles: vec![Arc::from("first"), Arc::from("second")],
+        },
+        TypeDescriptor::list(TypeDescriptor::INT),
+    );
+    let machine_limits = limits(32, 1, 1, 1, 32);
+    let mut machine = Machine::new_concurrent_root_with_budget_and_context(
+        program,
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        ExecutionBudget::new(execution(), machine_limits),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("join machine construction failed: {error:?}"));
+    complete_fixture_spawn(&mut machine, 0x71);
+    complete_fixture_spawn(&mut machine, 0x72);
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    let join = machine
+        .pending_task_control()
+        .and_then(|suspension| suspension.join())
+        .map(|(join, _)| join.clone())
+        .unwrap_or_else(|| panic!("join suspension missing"));
+    let first_task = join.handles[0].identity().child();
+    let second_task = join.handles[1].identity().child();
+    let details = TaskJoinFailureV1 {
+        category: RuntimeErrorCategory::TaskJoinFailure,
+        failures: vec![
+            TaskJoinMemberFailureV1 {
+                task_id: first_task,
+                task_path: Arc::from([Arc::from("first")]),
+                failure: TaskJoinMemberFailureKindV1::Cancelled(Arc::from("first-cancelled")),
+            },
+            TaskJoinMemberFailureV1 {
+                task_id: second_task,
+                task_path: Arc::from([Arc::from("second")]),
+                failure: TaskJoinMemberFailureKindV1::Failed(TaskFailureV1 {
+                    category: RuntimeErrorCategory::ExecutorFailure,
+                    code: Arc::from("second-failed"),
+                    protected_diagnostic: Some(Arc::from("diagnostic:second")),
+                }),
+            },
+        ],
+    };
+    let label = machine
+        .complete_join(&join, JoinResolutionV1::Failed(details.clone()))
+        .unwrap_or_else(|error| panic!("join failure completion failed: {error:?}"));
+    assert!(matches!(
+        label,
+        MachineLabel::Failure(ref failure)
+            if failure.code == RuntimeCode::Operation(RuntimeErrorCategory::TaskJoinFailure)
+                && failure.join_failure.as_ref() == Some(&details)
+    ));
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Failed(ref failure)))
+            if failure.join_failure.as_ref() == Some(&details)
+    ));
+    assert!(matches!(
+        machine.outcome(),
+        Some(MachineOutcome::Failed(failure))
+            if failure.join_failure.as_ref() == Some(&details)
+    ));
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn task_join_failure_details_round_trip_through_checkpoint_and_recovery() {
+    let program = joined_int_program(
+        InstructionKind::Join {
+            handles: vec![Arc::from("first"), Arc::from("second")],
+        },
+        TypeDescriptor::list(TypeDescriptor::INT),
+    );
+    let machine_limits = limits(32, 1, 1, 1, 32);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut machine = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::clone(&program),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("join machine construction failed: {error:?}"));
+    complete_fixture_spawn(&mut machine, 0x91);
+    complete_fixture_spawn(&mut machine, 0x92);
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    let join = machine
+        .pending_task_control()
+        .and_then(|suspension| suspension.join())
+        .map(|(join, _)| join.clone())
+        .unwrap_or_else(|| panic!("join suspension missing"));
+    let details = TaskJoinFailureV1 {
+        category: RuntimeErrorCategory::TaskJoinFailure,
+        failures: join
+            .handles
+            .iter()
+            .enumerate()
+            .map(|(index, handle)| TaskJoinMemberFailureV1 {
+                task_id: handle.identity().child(),
+                task_path: Arc::from([Arc::from(handle.name())]),
+                failure: TaskJoinMemberFailureKindV1::Cancelled(Arc::from(format!(
+                    "cancelled-{index}"
+                ))),
+            })
+            .collect(),
+    };
+    machine
+        .complete_join(&join, JoinResolutionV1::Failed(details.clone()))
+        .unwrap_or_else(|error| panic!("join failure completion failed: {error:?}"));
+
+    let bytes = machine.checkpoint().canonical_bytes();
+    let checkpoint = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("join failure checkpoint decode failed: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), bytes);
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("join failure checkpoint recovery failed: {error:?}"));
+    assert!(matches!(
+        recovered.outcome(),
+        Some(MachineOutcome::Failed(failure))
+            if failure.join_failure.as_ref() == Some(&details)
+    ));
+    assert!(matches!(
+        recovered.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Failed(failure)))
+            if failure.join_failure.as_ref() == Some(&details)
+    ));
+    assert!(matches!(
+        recovered.step(),
+        MachineStep::Transition(MachineLabel::ForegroundCompletion(MachineOutcome::Failed(
+            failure
+        ))) if failure.join_failure.as_ref() == Some(&details)
+    ));
+    assert!(matches!(
+        recovered.step(),
+        MachineStep::Transition(MachineLabel::TerminalCompletion(MachineOutcome::Failed(
+            failure
+        ))) if failure.join_failure.as_ref() == Some(&details)
+    ));
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn generalized_task_control_checkpoint_round_trips_consumed_join() {
+    let program = joined_int_program(
+        InstructionKind::JoinAll {
+            handles: vec![Arc::from("first"), Arc::from("second")],
+        },
+        TypeDescriptor::list(TypeDescriptor::INT),
+    );
+    let machine_limits = limits(32, 1, 1, 1, 32);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let mut machine = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::clone(&program),
+        &path("crate::main"),
+        Vec::new(),
+        execution(),
+        machine_limits,
+        budget.clone(),
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("joinall machine construction failed: {error:?}"));
+    complete_fixture_spawn(&mut machine, 0x81);
+    complete_fixture_spawn(&mut machine, 0x82);
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+
+    let bytes = machine.checkpoint().canonical_bytes();
+    let checkpoint = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("joinall checkpoint decode failed: {error:?}"));
+    let recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("joinall checkpoint recovery failed: {error:?}"));
+    assert!(recovered.task_handle("first").is_none());
+    assert!(recovered.task_handle("second").is_none());
+    let (join, all) = recovered
+        .pending_task_control()
+        .and_then(|suspension| suspension.join())
+        .unwrap_or_else(|| panic!("recovered joinall suspension missing"));
+    assert!(all);
+    assert_eq!(
+        join.handles
+            .iter()
+            .map(|handle| handle.name())
+            .collect::<Vec<_>>(),
+        vec!["first", "second"]
     );
 }
 

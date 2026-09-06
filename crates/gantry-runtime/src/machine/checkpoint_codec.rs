@@ -26,13 +26,23 @@ use super::{
     HandleScope, MachineSpawnSuspension, MachineTaskCapture, MachineTaskHandle, PendingTaskControl,
 };
 #[cfg(feature = "concurrent")]
-use crate::task::{DynamicTaskHandleIdentity, TaskCaptureV1};
+use super::{
+    MachineDetachSuspension, MachineJoinSuspension, MachineTaskControlHandle,
+    MachineTaskControlSuspension,
+};
+#[cfg(feature = "concurrent")]
+use crate::task::{
+    DynamicTaskHandleIdentity, TaskCaptureV1, TaskFailureV1, TaskJoinFailureV1,
+    TaskJoinMemberFailureKindV1, TaskJoinMemberFailureV1,
+};
 
 const MACHINE_MAGIC_V3: &[u8; 8] = b"GNTMCP03";
 const MACHINE_MAGIC_V4: &[u8; 8] = b"GNTMCP04";
 const EXECUTION_BUDGET_MAGIC: &[u8; 8] = b"GNTBGT01";
 #[cfg(feature = "concurrent")]
 const TASK_CONTROL_EXTENSION_MAGIC: &[u8; 8] = b"GNTMTC01";
+#[cfg(feature = "concurrent")]
+const TASK_CONTROL_EXTENSION_MAGIC_V2: &[u8; 8] = b"GNTMTC02";
 
 pub(super) fn encode_execution_budget_snapshot(snapshot: &ExecutionBudgetSnapshot) -> Vec<u8> {
     let mut writer = Writer::default();
@@ -188,7 +198,10 @@ pub(super) fn decode_machine_checkpoint(
     let remaining_loop_iterations = reader.u64()?;
     let consecutive_transitions = reader.u64()?;
     let pending_session_scope = read_pending_session(&mut reader)?;
+    #[cfg(feature = "concurrent")]
     let mut pending_operation = read_pending_operation(&mut reader, program, limits.value_limits)?;
+    #[cfg(not(feature = "concurrent"))]
+    let pending_operation = read_pending_operation(&mut reader, program, limits.value_limits)?;
     let label_count = reader.count()?;
     let mut pending_labels = VecDeque::new();
     for _ in 0..label_count {
@@ -348,7 +361,17 @@ fn read_frame(
 
 #[cfg(feature = "concurrent")]
 fn write_task_control_extension(writer: &mut Writer, checkpoint: &MachineCheckpointV3) {
-    writer.raw(TASK_CONTROL_EXTENSION_MAGIC);
+    let generalized = checkpoint
+        .pending_task_control
+        .as_ref()
+        .is_some_and(|pending| {
+            !matches!(pending.suspension, MachineTaskControlSuspension::Spawn(_))
+        });
+    writer.raw(if generalized {
+        TASK_CONTROL_EXTENSION_MAGIC_V2
+    } else {
+        TASK_CONTROL_EXTENSION_MAGIC
+    });
     writer.boolean(checkpoint.task_body.is_some());
     if let Some(identity) = &checkpoint.task_body {
         write_task_body_identity(writer, identity);
@@ -368,7 +391,11 @@ fn write_task_control_extension(writer: &mut Writer, checkpoint: &MachineCheckpo
     }
     writer.boolean(checkpoint.pending_task_control.is_some());
     if let Some(pending) = &checkpoint.pending_task_control {
-        write_spawn_suspension(writer, &pending.spawn);
+        if generalized {
+            write_task_control_suspension(writer, &pending.suspension);
+        } else if let MachineTaskControlSuspension::Spawn(spawn) = &pending.suspension {
+            write_spawn_suspension(writer, spawn);
+        }
     }
 }
 
@@ -378,9 +405,11 @@ fn read_task_control_extension(
     frames: &mut [WorkflowFrame],
     limits: ValueLimits,
 ) -> Result<(Option<TaskBodyIdentity>, Option<PendingTaskControl>), MachineRecoveryError> {
-    if reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())? != TASK_CONTROL_EXTENSION_MAGIC {
-        return Err(MachineRecoveryError::InvalidEncoding);
-    }
+    let generalized = match reader.raw(TASK_CONTROL_EXTENSION_MAGIC.len())? {
+        magic if magic == TASK_CONTROL_EXTENSION_MAGIC => false,
+        magic if magic == TASK_CONTROL_EXTENSION_MAGIC_V2 => true,
+        _ => return Err(MachineRecoveryError::InvalidEncoding),
+    };
     let task_body = reader
         .boolean()?
         .then(|| read_task_body_identity(reader))
@@ -423,10 +452,123 @@ fn read_task_control_extension(
     }
     let pending_task_control = reader
         .boolean()?
-        .then(|| read_spawn_suspension(reader, limits))
+        .then(|| {
+            if generalized {
+                read_task_control_suspension(reader, limits)
+            } else {
+                read_spawn_suspension(reader, limits).map(MachineTaskControlSuspension::Spawn)
+            }
+        })
         .transpose()?
-        .map(|spawn| PendingTaskControl { spawn });
+        .map(|suspension| PendingTaskControl { suspension });
     Ok((task_body, pending_task_control))
+}
+
+#[cfg(feature = "concurrent")]
+fn write_task_control_suspension(writer: &mut Writer, suspension: &MachineTaskControlSuspension) {
+    match suspension {
+        MachineTaskControlSuspension::Spawn(spawn) => {
+            writer.u8(0);
+            write_spawn_suspension(writer, spawn);
+        }
+        MachineTaskControlSuspension::Join(join) => {
+            writer.u8(1);
+            write_join_suspension(writer, join);
+        }
+        MachineTaskControlSuspension::JoinAll(join) => {
+            writer.u8(2);
+            write_join_suspension(writer, join);
+        }
+        MachineTaskControlSuspension::Detach(detach) => {
+            writer.u8(3);
+            writer.string(detach.workflow.as_str());
+            writer.position(&detach.site);
+            write_task_control_handle(writer, &detach.handle);
+        }
+    }
+}
+
+#[cfg(feature = "concurrent")]
+fn read_task_control_suspension(
+    reader: &mut Reader<'_>,
+    limits: ValueLimits,
+) -> Result<MachineTaskControlSuspension, MachineRecoveryError> {
+    match reader.u8()? {
+        0 => read_spawn_suspension(reader, limits).map(MachineTaskControlSuspension::Spawn),
+        1 => read_join_suspension(reader).map(MachineTaskControlSuspension::Join),
+        2 => read_join_suspension(reader).map(MachineTaskControlSuspension::JoinAll),
+        3 => Ok(MachineTaskControlSuspension::Detach(
+            MachineDetachSuspension {
+                workflow: CanonicalPath::new(&reader.string()?)
+                    .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
+                site: reader.position()?,
+                handle: read_task_control_handle(reader)?,
+            },
+        )),
+        _ => Err(MachineRecoveryError::InvalidEncoding),
+    }
+}
+
+#[cfg(feature = "concurrent")]
+fn write_join_suspension(writer: &mut Writer, join: &MachineJoinSuspension) {
+    writer.string(join.workflow.as_str());
+    writer.position(&join.site);
+    writer.string(&join.expected_type.canonical_string());
+    writer.count(join.handles.len());
+    for handle in &join.handles {
+        write_task_control_handle(writer, handle);
+    }
+}
+
+#[cfg(feature = "concurrent")]
+fn read_join_suspension(
+    reader: &mut Reader<'_>,
+) -> Result<MachineJoinSuspension, MachineRecoveryError> {
+    let workflow =
+        CanonicalPath::new(&reader.string()?).map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    let site = reader.position()?;
+    let expected_type = TypeDescriptor::from_canonical_string(&reader.string()?)
+        .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    let count = reader.count()?;
+    let mut handles = Vec::with_capacity(count);
+    for _ in 0..count {
+        handles.push(read_task_control_handle(reader)?);
+    }
+    Ok(MachineJoinSuspension {
+        workflow,
+        site,
+        handles,
+        expected_type,
+    })
+}
+
+#[cfg(feature = "concurrent")]
+fn write_task_control_handle(writer: &mut Writer, handle: &MachineTaskControlHandle) {
+    writer.string(&handle.name);
+    writer.identity(handle.handle.identity.owner());
+    writer.identity(handle.handle.identity.child());
+    writer.string(&handle.handle.result_type.canonical_string());
+}
+
+#[cfg(feature = "concurrent")]
+fn read_task_control_handle(
+    reader: &mut Reader<'_>,
+) -> Result<MachineTaskControlHandle, MachineRecoveryError> {
+    let name: Arc<str> = Arc::from(reader.string()?);
+    let owner = reader.identity(Some(IdentityKind::Task))?;
+    let child = reader.identity(Some(IdentityKind::Task))?;
+    let result_type = TypeDescriptor::from_canonical_string(&reader.string()?)
+        .map_err(|_| MachineRecoveryError::InvalidEncoding)?;
+    if name.is_empty() {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    Ok(MachineTaskControlHandle {
+        name,
+        handle: MachineTaskHandle {
+            identity: DynamicTaskHandleIdentity::from_parts(owner, child),
+            result_type,
+        },
+    })
 }
 
 #[cfg(feature = "concurrent")]
@@ -731,8 +873,19 @@ pub(crate) fn write_outcome(writer: &mut Writer, outcome: &MachineOutcome, _limi
             writer.value(value);
         }
         MachineOutcome::Failed(failure) => {
-            writer.u8(1);
-            write_failure(writer, failure);
+            #[cfg(feature = "concurrent")]
+            if failure.join_failure.is_some() {
+                writer.u8(3);
+                write_detailed_failure(writer, failure);
+            } else {
+                writer.u8(1);
+                write_failure(writer, failure);
+            }
+            #[cfg(not(feature = "concurrent"))]
+            {
+                writer.u8(1);
+                write_failure(writer, failure);
+            }
         }
         MachineOutcome::Cancelled(reason) => {
             writer.u8(2);
@@ -749,6 +902,8 @@ pub(crate) fn read_outcome(
         0 => Ok(MachineOutcome::Succeeded(reader.value(limits)?)),
         1 => Ok(MachineOutcome::Failed(read_failure(reader)?)),
         2 => Ok(MachineOutcome::Cancelled(Arc::from(reader.string()?))),
+        #[cfg(feature = "concurrent")]
+        3 => Ok(MachineOutcome::Failed(read_detailed_failure(reader)?)),
         _ => Err(MachineRecoveryError::InvalidEncoding),
     }
 }
@@ -765,7 +920,72 @@ fn read_failure(reader: &mut Reader<'_>) -> Result<MachineFailure, MachineRecove
         workflow: CanonicalPath::new(&reader.string()?)
             .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
         site: reader.position()?,
+        #[cfg(feature = "concurrent")]
+        join_failure: None,
     })
+}
+
+#[cfg(feature = "concurrent")]
+fn write_detailed_failure(writer: &mut Writer, failure: &MachineFailure) {
+    write_failure(writer, failure);
+    let details = failure
+        .join_failure
+        .as_ref()
+        .unwrap_or_else(|| unreachable!("detailed failure retains join details"));
+    writer.string(details.category.wire_name());
+    writer.count(details.failures.len());
+    for member in &details.failures {
+        writer.identity(member.task_id);
+        writer.strings(&member.task_path);
+        match &member.failure {
+            TaskJoinMemberFailureKindV1::Failed(failure) => {
+                writer.u8(0);
+                writer.string(failure.category.wire_name());
+                writer.string(&failure.code);
+                writer.optional_string(failure.protected_diagnostic.as_deref());
+            }
+            TaskJoinMemberFailureKindV1::Cancelled(reason) => {
+                writer.u8(1);
+                writer.string(reason);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "concurrent")]
+fn read_detailed_failure(reader: &mut Reader<'_>) -> Result<MachineFailure, MachineRecoveryError> {
+    let mut failure = read_failure(reader)?;
+    let category = RuntimeErrorCategory::from_wire_name(&reader.string()?)
+        .ok_or(MachineRecoveryError::InvalidEncoding)?;
+    let count = reader.count()?;
+    let mut failures = Vec::with_capacity(count);
+    for _ in 0..count {
+        let task_id = reader.identity(Some(IdentityKind::Task))?;
+        let task_path = Arc::from(reader.strings()?);
+        let member_failure = match reader.u8()? {
+            0 => TaskJoinMemberFailureKindV1::Failed(TaskFailureV1 {
+                category: RuntimeErrorCategory::from_wire_name(&reader.string()?)
+                    .ok_or(MachineRecoveryError::InvalidEncoding)?,
+                code: Arc::from(reader.string()?),
+                protected_diagnostic: reader.optional_string()?.map(Arc::from),
+            }),
+            1 => TaskJoinMemberFailureKindV1::Cancelled(Arc::from(reader.string()?)),
+            _ => return Err(MachineRecoveryError::InvalidEncoding),
+        };
+        failures.push(TaskJoinMemberFailureV1 {
+            task_id,
+            task_path,
+            failure: member_failure,
+        });
+    }
+    if failure.code != RuntimeCode::Operation(RuntimeErrorCategory::TaskJoinFailure)
+        || category != RuntimeErrorCategory::TaskJoinFailure
+        || failures.is_empty()
+    {
+        return Err(MachineRecoveryError::InvalidEncoding);
+    }
+    failure.join_failure = Some(TaskJoinFailureV1 { category, failures });
+    Ok(failure)
 }
 
 fn write_runtime_code(writer: &mut Writer, code: RuntimeCode) {
@@ -839,8 +1059,19 @@ fn write_label(writer: &mut Writer, label: &MachineLabel, limits: ValueLimits) {
             writer.string(reason);
         }
         MachineLabel::Failure(failure) => {
-            writer.u8(4);
-            write_failure(writer, failure);
+            #[cfg(feature = "concurrent")]
+            if failure.join_failure.is_some() {
+                writer.u8(9);
+                write_detailed_failure(writer, failure);
+            } else {
+                writer.u8(4);
+                write_failure(writer, failure);
+            }
+            #[cfg(not(feature = "concurrent"))]
+            {
+                writer.u8(4);
+                write_failure(writer, failure);
+            }
         }
         MachineLabel::TaskSettled(outcome) => {
             writer.u8(5);
@@ -883,6 +1114,8 @@ fn read_label(
             reason: Arc::from(reader.string()?),
         }),
         4 => Ok(MachineLabel::Failure(read_failure(reader)?)),
+        #[cfg(feature = "concurrent")]
+        9 => Ok(MachineLabel::Failure(read_detailed_failure(reader)?)),
         5 => Ok(MachineLabel::TaskSettled(read_outcome(reader, limits)?)),
         6 => Ok(MachineLabel::ForegroundCompletion(read_outcome(
             reader, limits,

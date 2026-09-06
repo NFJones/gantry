@@ -1219,8 +1219,8 @@ pub enum ExecutionDeliveryConsequenceV1 {
     PostTerminalBarrier {
         /// Delivery failure reported separately from the language outcome.
         failure: RequiredEventDeliveryFailureV1,
-        /// Existing terminal language outcome, retained without replacement.
-        terminal: MachineOutcome,
+        /// Existing terminal projection, retained without replacement.
+        terminal: crate::ConcurrentTerminalOutcomeV1,
     },
 }
 
@@ -2055,7 +2055,10 @@ mod tests {
         assert!(matches!(
             result.consequence,
             ExecutionDeliveryConsequenceV1::PostTerminalBarrier {
-                terminal: MachineOutcome::Succeeded(_),
+                terminal: ConcurrentTerminalOutcomeV1 {
+                    foreground: MachineOutcome::Succeeded(_),
+                    ..
+                },
                 ..
             }
         ));
@@ -2063,7 +2066,8 @@ mod tests {
             lifecycle
                 .query_execution(execution)
                 .unwrap_or_else(|error| panic!("query failed: {error:?}"))
-                .and_then(|snapshot| snapshot.terminal),
+                .and_then(|snapshot| snapshot.terminal)
+                .map(|terminal| terminal.foreground),
             Some(terminal)
         );
     }
