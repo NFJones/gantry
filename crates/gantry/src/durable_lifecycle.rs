@@ -459,6 +459,87 @@ impl DurableLifecycleCoordinator {
         }))
     }
 
+    /// Owns one already accepted execution from an authoritative concurrent recovery.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub(crate) fn own_recovered_concurrent_start(
+        &self,
+        journal_id: JournalId,
+        ownership_token: JournalOwnershipToken,
+        handle: ExecutionHandle,
+        execution_start: DurableExecutionStartV3,
+        recovered: RecoveredConcurrentDurableStateV1,
+        event_plan: SinkPlan,
+    ) -> Result<Arc<DurableOwnedExecution>, DurableOwnedExecutionOpenError> {
+        let execution_id = execution_start.execution_id();
+        if handle.execution_id() != execution_id
+            || recovered.execution().foreground().execution_id() != execution_id
+        {
+            return Err(DurableOwnedExecutionOpenError::NotFound);
+        }
+        restore_concurrent_lifecycle(&handle, &recovered)
+            .map_err(DurableOwnedExecutionOpenError::Lifecycle)?;
+        let lifecycle = handle
+            .snapshot()
+            .map_err(DurableOwnedExecutionOpenError::Lifecycle)?;
+        let owner = DurableJournalOwnerState::Held;
+        let cancellation = recovered.cancellation_reason().cloned();
+        let observation = DurableExecutionObservation {
+            journal_id: journal_id.clone(),
+            execution_id,
+            state: if lifecycle.terminal.is_some() {
+                ExecutionObservationState::Terminal
+            } else {
+                ExecutionObservationState::NotTerminal
+            },
+            foreground: lifecycle.foreground,
+            terminal: lifecycle.terminal,
+            cancellation: lifecycle.cancellation,
+            required_delivery_failures: lifecycle.required_delivery_failures,
+            owner: Some(owner.clone()),
+            run_failure: None,
+            latest_sequence: recovered.latest_sequence(),
+            latest_evidence_id: recovered.latest_evidence_id(),
+        };
+        let graph_frontier = Some((
+            recovered.latest_evidence_id(),
+            recovered.latest_sequence(),
+            recovered.latest_cut(),
+        ));
+        let committed_budget = recovered.execution().foreground().execution_budget();
+        Ok(Arc::new(DurableOwnedExecution {
+            storage: Arc::clone(&self.storage),
+            event_plan,
+            excluded_graph_event_sinks: Mutex::new(BTreeSet::new()),
+            journal_id,
+            ownership_token,
+            handle,
+            committed_budget,
+            owner_release: Mutex::new(DurableOwnerRelease::default()),
+            state: Arc::new(Mutex::new(DurableOwnedExecutionState {
+                recovered: None,
+                graph_frontier,
+                graph_active: false,
+                graph_failure_pending: None,
+                graph_cancellation_committed: cancellation.is_some(),
+                graph_cancellation: cancellation,
+                graph_cancellation_claimed: false,
+                graph_driver_wakers: Vec::new(),
+                owner,
+                run_failure: None,
+                completed_cancellation: None,
+                operation_in_flight: false,
+                driver_active: false,
+                driver_cancellation: None,
+                driver_waker: None,
+                generation: 0,
+                operation_waiters: Vec::new(),
+                observation_waiters: Vec::new(),
+                last_observation: observation,
+            })),
+        }))
+    }
+
     /// Runs or joins the unique sequential-durable shutdown coordinator.
     ///
     /// Every supplied owner must belong to `lifecycle`. The first call fixes the
@@ -3090,6 +3171,39 @@ fn restore_lifecycle(
     Ok(())
 }
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[allow(dead_code)]
+fn restore_concurrent_lifecycle(
+    handle: &ExecutionHandle,
+    recovered: &RecoveredConcurrentDurableStateV1,
+) -> Result<(), ExecutionTransitionError> {
+    let snapshot = handle.snapshot()?;
+    if snapshot.cancellation.is_none()
+        && let Some(reason) = recovered.cancellation_reason().cloned()
+    {
+        let _ = handle.publish_committed_cancellation(reason)?;
+    }
+    let scheduler = recovered.execution().scheduler().state();
+    if snapshot.foreground.is_none()
+        && let Some(outcome) = scheduler.foreground_outcome().cloned()
+    {
+        handle.publish_committed_foreground(outcome)?;
+    }
+    let snapshot = handle.snapshot()?;
+    if snapshot.terminal.is_none()
+        && let Some(outcome) = scheduler.terminal_outcome().cloned()
+    {
+        handle.publish_committed_terminal(outcome)?;
+    }
+    for failure in required_delivery_failures_from_events(recovered.events())
+        .iter()
+        .cloned()
+    {
+        let _ = handle.record_required_delivery_failure(failure)?;
+    }
+    Ok(())
+}
+
 trait ObservationHandle {
     fn snapshot_for_observation(&self) -> Option<gantry_runtime::ExecutionSnapshot>;
 }
@@ -3460,4 +3574,382 @@ fn prefix_is_empty(prefix: &JournalPrefixV1) -> bool {
         JournalPrefixV1::Full(prefix)
             if prefix.evidence.is_empty() && prefix.committed_through == 0
     )
+}
+
+#[cfg(all(test, feature = "concurrent", feature = "durable"))]
+mod tests {
+    use std::sync::Arc;
+
+    use gantry_core::portable::{CancellationReasonCategory, IdentityKind};
+    use gantry_core::source::FrontendLimits;
+    use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue, ValueLimits};
+    use gantry_host::contracts::{
+        DurationMicros, ExecutorAdapter, HostError, HostFuture, IdentitySource,
+        InclusiveJitterRange,
+    };
+    use gantry_host::journal::{
+        FullJournalPrefixV1, JournalEvidenceEnvelopeV1, JournalOwnershipToken,
+    };
+    use gantry_ir::{
+        CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, StructuralPosition,
+        TypeDescriptor, Workflow,
+    };
+    use gantry_runtime::{
+        AdmissionKind, AsyncCapacityLimits, CancellationReason, CanonicalTranscriptV1,
+        ConcurrentDurableCheckpointV4, ConcurrentDurableEvidenceV4, ConcurrentDurableEvidenceV5,
+        ConcurrentSchedulerV1, ConcurrentTaskStateV1, DurableLogicalEvidenceV3,
+        InMemoryJournalStore, InterpreterConfiguration, Machine, MachineLimits, MachineOutcome,
+        RequiredConfiguration, SessionCreationModeV1, root_task_identity,
+    };
+
+    use super::*;
+
+    struct Services;
+
+    impl IdentitySource for Services {
+        fn fresh_material(&self, _: IdentityKind) -> Result<[u8; 32], HostError> {
+            Ok([1; 32])
+        }
+    }
+
+    impl ExecutorAdapter for Services {
+        fn spawn(
+            &self,
+            task: gantry_host::contracts::OwnedTaskFuture,
+        ) -> Result<Box<dyn gantry_host::contracts::SubmittedTask>, HostError> {
+            gantry_host::contracts::reject_task_submission(task)
+        }
+
+        fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
+            Ok(range.minimum())
+        }
+    }
+
+    #[test]
+    fn recovered_concurrent_owner_restores_committed_graph_state() {
+        let execution = fresh(IdentityKind::Execution, 1);
+        let root_task = root_task_identity(execution);
+        let root_session = fresh(IdentityKind::Session, 2);
+        let program = program();
+        let path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("path failed: {error}"));
+        let mut foreground = Machine::new_with_context(
+            Arc::clone(&program),
+            &path,
+            Vec::new(),
+            execution,
+            MachineLimits::new(32, 4, 4, 8, 16, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|| panic!("machine limits must be positive")),
+            None,
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
+        let sessions = gantry_runtime::LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+        let mut tasks = ConcurrentTaskStateV1::new(execution, root_task, 8)
+            .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+        let initial_scheduler =
+            ConcurrentSchedulerV1::new(tasks.clone(), foreground.execution_budget())
+                .unwrap_or_else(|error| panic!("initial scheduler failed: {error:?}"));
+        let initial_checkpoint =
+            ConcurrentDurableCheckpointV4::capture(&foreground, &initial_scheduler, &sessions)
+                .unwrap_or_else(|error| panic!("initial checkpoint failed: {error:?}"));
+        let initial = ConcurrentDurableEvidenceV4::new(
+            DurableCommitCutV1::Checkpoint,
+            root_task,
+            initial_checkpoint,
+        )
+        .unwrap_or_else(|error| panic!("initial evidence failed: {error:?}"));
+        let logical = DurableLogicalEvidenceV3::new_with_sessions(
+            execution,
+            root_task,
+            DurableCommitCutV1::Checkpoint,
+            None,
+            &foreground,
+            Some(sessions.checkpoint()),
+        )
+        .unwrap_or_else(|error| panic!("logical start state failed: {error:?}"));
+        let execution_start = DurableExecutionStartV3::new(
+            execution,
+            root_task,
+            &program,
+            Arc::<[u8]>::from(&b"{}"[..]),
+            logical,
+        )
+        .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
+
+        let reason = CancellationReason::new(
+            CancellationReasonCategory::Caller,
+            Some(Arc::from("caller-stop")),
+            None,
+            32,
+        )
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+        tasks
+            .cancel_execution("caller-stop")
+            .unwrap_or_else(|error| panic!("task cancellation failed: {error:?}"));
+        let _ = foreground.cancel("caller-stop");
+        let cancellation_scheduler =
+            ConcurrentSchedulerV1::new(tasks.clone(), foreground.execution_budget())
+                .unwrap_or_else(|error| panic!("cancellation scheduler failed: {error:?}"));
+        let cancellation = ConcurrentDurableEvidenceV5::new_cancellation(
+            root_task,
+            reason.clone(),
+            ConcurrentDurableCheckpointV4::capture(&foreground, &cancellation_scheduler, &sessions)
+                .unwrap_or_else(|error| panic!("cancellation checkpoint failed: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("cancellation evidence failed: {error:?}"));
+
+        let outcome = MachineOutcome::Cancelled(Arc::from("caller-stop"));
+        tasks
+            .settle(root_task, outcome.clone())
+            .unwrap_or_else(|error| panic!("root settlement failed: {error:?}"));
+        let settlement = graph_evidence(
+            &foreground,
+            &tasks,
+            &sessions,
+            root_task,
+            DurableCommitCutV1::TaskSettlement,
+        );
+        tasks
+            .complete_foreground(outcome)
+            .unwrap_or_else(|error| panic!("foreground completion failed: {error:?}"));
+        let foreground_completion = graph_evidence(
+            &foreground,
+            &tasks,
+            &sessions,
+            root_task,
+            DurableCommitCutV1::ForegroundCompletion,
+        );
+        tasks
+            .complete_terminal()
+            .unwrap_or_else(|error| panic!("terminal completion failed: {error:?}"));
+        let terminal = graph_evidence(
+            &foreground,
+            &tasks,
+            &sessions,
+            root_task,
+            DurableCommitCutV1::TerminalCompletion,
+        );
+
+        let journal_id = JournalId::new("recovered-concurrent-owner")
+            .unwrap_or_else(|error| panic!("journal id failed: {error:?}"));
+        let evidence_ids = [
+            ProtocolIdentity::from_storage_material([11; 32]),
+            ProtocolIdentity::from_storage_material([12; 32]),
+            ProtocolIdentity::from_storage_material([13; 32]),
+            ProtocolIdentity::from_storage_material([14; 32]),
+            ProtocolIdentity::from_storage_material([15; 32]),
+            ProtocolIdentity::from_storage_material([16; 32]),
+        ];
+        let prefix = JournalPrefixV1::Full(FullJournalPrefixV1 {
+            journal_id: journal_id.clone(),
+            evidence: Arc::from([
+                envelope(
+                    &journal_id,
+                    1,
+                    evidence_ids[0],
+                    "gantry.execution-start/v3",
+                    execution_start.canonical_body(),
+                    &[],
+                ),
+                envelope(
+                    &journal_id,
+                    2,
+                    evidence_ids[1],
+                    CONCURRENT_DURABLE_EVIDENCE_KIND_V4,
+                    initial.canonical_body(),
+                    &[evidence_ids[0]],
+                ),
+                envelope(
+                    &journal_id,
+                    3,
+                    evidence_ids[2],
+                    CONCURRENT_DURABLE_EVIDENCE_KIND_V5,
+                    cancellation.canonical_body(),
+                    &[evidence_ids[1]],
+                ),
+                envelope(
+                    &journal_id,
+                    4,
+                    evidence_ids[3],
+                    CONCURRENT_DURABLE_EVIDENCE_KIND_V4,
+                    settlement.canonical_body(),
+                    &[evidence_ids[2]],
+                ),
+                envelope(
+                    &journal_id,
+                    5,
+                    evidence_ids[4],
+                    CONCURRENT_DURABLE_EVIDENCE_KIND_V4,
+                    foreground_completion.canonical_body(),
+                    &[evidence_ids[3]],
+                ),
+                envelope(
+                    &journal_id,
+                    6,
+                    evidence_ids[5],
+                    CONCURRENT_DURABLE_EVIDENCE_KIND_V4,
+                    terminal.canonical_body(),
+                    &[evidence_ids[4]],
+                ),
+            ]),
+            committed_through: 6,
+        });
+        let recovered = recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
+            .unwrap_or_else(|error| panic!("concurrent recovery failed: {error:?}"));
+        let expected_budget = recovered
+            .execution()
+            .foreground()
+            .execution_budget()
+            .snapshot();
+        let lifecycle = InterpreterLifecycle::new(&configuration());
+        let mut admission = lifecycle
+            .admit(AdmissionKind::NewWork)
+            .unwrap_or_else(|error| panic!("lifecycle admission failed: {error:?}"));
+        let handle = admission
+            .accept_execution(execution)
+            .unwrap_or_else(|error| panic!("execution acceptance failed: {error:?}"));
+        let storage: Arc<dyn JournalStorage> = Arc::new(InMemoryJournalStore::new());
+        let coordinator = DurableLifecycleCoordinator::new(storage);
+        let owned = coordinator
+            .own_recovered_concurrent_start(
+                journal_id,
+                JournalOwnershipToken::new("owner")
+                    .unwrap_or_else(|error| panic!("ownership token failed: {error:?}")),
+                handle.clone(),
+                execution_start,
+                recovered,
+                SinkPlan::default(),
+            )
+            .unwrap_or_else(|error| panic!("recovered ownership failed: {error:?}"));
+
+        let lifecycle = handle
+            .snapshot()
+            .unwrap_or_else(|error| panic!("lifecycle snapshot failed: {error:?}"));
+        assert_eq!(lifecycle.cancellation, Some(reason.clone()));
+        assert_eq!(
+            lifecycle.foreground,
+            Some(MachineOutcome::Cancelled(Arc::from("caller-stop")))
+        );
+        assert_eq!(lifecycle.terminal, tasks.terminal_outcome().cloned());
+        assert_eq!(owned.test_committed_budget(), expected_budget);
+        let observation = owned.observation();
+        assert_eq!(observation.state, ExecutionObservationState::Terminal);
+        assert_eq!(observation.cancellation, Some(reason.clone()));
+        assert_eq!(observation.latest_sequence, 6);
+        assert_eq!(observation.latest_evidence_id, evidence_ids[5]);
+        assert_eq!(observation.owner, Some(DurableJournalOwnerState::Held));
+        let state = lock_state(&owned.state);
+        assert_eq!(
+            state.graph_frontier,
+            Some((evidence_ids[5], 6, DurableCommitCutV1::TerminalCompletion))
+        );
+        assert_eq!(state.graph_cancellation, Some(reason));
+        assert!(state.graph_cancellation_committed);
+        assert!(!state.graph_cancellation_claimed);
+    }
+
+    fn graph_evidence(
+        foreground: &Machine,
+        tasks: &ConcurrentTaskStateV1,
+        sessions: &gantry_runtime::LogicalSessionRegistryV1,
+        root_task: ProtocolIdentity,
+        cut: DurableCommitCutV1,
+    ) -> ConcurrentDurableEvidenceV4 {
+        let scheduler = ConcurrentSchedulerV1::new(tasks.clone(), foreground.execution_budget())
+            .unwrap_or_else(|error| panic!("scheduler failed: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(foreground, &scheduler, sessions)
+            .unwrap_or_else(|error| panic!("checkpoint failed: {error:?}"));
+        ConcurrentDurableEvidenceV4::new(cut, root_task, checkpoint)
+            .unwrap_or_else(|error| panic!("graph evidence failed: {error:?}"))
+    }
+
+    fn envelope(
+        journal_id: &JournalId,
+        sequence: u64,
+        evidence_id: ProtocolIdentity,
+        kind: &'static str,
+        canonical_body: Vec<u8>,
+        references: &[ProtocolIdentity],
+    ) -> JournalEvidenceEnvelopeV1 {
+        JournalEvidenceEnvelopeV1 {
+            journal_id: journal_id.clone(),
+            sequence,
+            evidence_id,
+            kind: Arc::from(kind),
+            canonical_body: Arc::from(canonical_body),
+            references: Arc::from(references),
+            protected_payloads: Arc::from([]),
+        }
+    }
+
+    fn configuration() -> InterpreterConfiguration {
+        let services = Arc::new(Services);
+        let required = RequiredConfiguration::new(
+            FrontendLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8)
+                .unwrap_or_else(|error| panic!("frontend limits failed: {error:?}")),
+            8,
+            8,
+            ValueLimits::new(8, 8, 8, 8).unwrap_or_else(|| panic!("value limits must be positive")),
+            32,
+            4,
+            8,
+            16,
+        )
+        .unwrap_or_else(|error| panic!("required configuration failed: {error:?}"));
+        InterpreterConfiguration::new(
+            services.clone(),
+            services,
+            required,
+            AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
+                .unwrap_or_else(|error| panic!("capacity configuration failed: {error:?}")),
+        )
+    }
+
+    fn program() -> Arc<MachineProgram> {
+        let path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("path failed: {error}"));
+        Arc::new(
+            MachineProgram::new(vec![Workflow {
+                path,
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: StructuralPosition::new(vec![0])
+                            .unwrap_or_else(|error| panic!("site failed: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Push(LogicalValue::unit()),
+                    },
+                    Instruction {
+                        site: StructuralPosition::new(vec![1])
+                            .unwrap_or_else(|error| panic!("site failed: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("program failed: {error:?}")),
+        )
+    }
+
+    fn fresh(kind: IdentityKind, byte: u8) -> ProtocolIdentity {
+        ProtocolIdentity::from_fresh_material(kind, [byte; 32])
+            .unwrap_or_else(|error| panic!("identity failed: {error}"))
+    }
 }

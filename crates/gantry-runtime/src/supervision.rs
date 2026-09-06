@@ -134,6 +134,24 @@ impl TaskSupervisor {
             .try_reserve(AdmissionRequest::single(class, 1))
     }
 
+    /// Atomically reserves a complete same-class task set before submission.
+    pub fn try_reserve_many(
+        &self,
+        class: AdmissionClass,
+        count: u64,
+    ) -> Result<Vec<AdmissionPermit>, AdmissionExhaustion> {
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let reservation = self
+            .inner
+            .admission
+            .try_reserve(AdmissionRequest::single(class, count))?;
+        Ok(reservation
+            .into_single_permits(class)
+            .unwrap_or_else(|_| unreachable!("same-class batch splits into task permits")))
+    }
+
     /// Waits for one ordinary capacity unit without acquiring any other class.
     pub async fn reserve(&self, class: AdmissionClass) -> AdmissionReservation {
         self.inner

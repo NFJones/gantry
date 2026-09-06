@@ -380,6 +380,30 @@ impl ExecutionCoordinator {
         Ok(())
     }
 
+    /// Registers one complete recovered replacement-driver set at one linearization point.
+    pub(crate) fn register_recovered_drivers(
+        &self,
+        task_ids: &[ProtocolIdentity],
+    ) -> Result<(), TaskStateError> {
+        let mut state = lock(&self.inner.state);
+        require_publication_available(&state)?;
+        state.tasks.register_recovered_drivers(task_ids)?;
+        state.publication = state.publication.wrapping_add(1);
+        Ok(())
+    }
+
+    /// Reconstructs already committed task-control staging without mutating ownership.
+    #[cfg(feature = "concurrent")]
+    pub fn recovered_staged_task_control(
+        &self,
+        task_id: ProtocolIdentity,
+        pending: &crate::machine::MachineTaskControlSuspension,
+    ) -> Result<(Option<JoinStartV1>, Option<TaskOwnershipChangedV1>), TaskStateError> {
+        lock(&self.inner.state)
+            .tasks
+            .recovered_staged_task_control(task_id, pending)
+    }
+
     /// Settles an accepted root after exceptional executor submission failure.
     pub fn fail_root_submission(&self, outcome: MachineOutcome) -> Result<(), TaskStateError> {
         let (task_waiters, shutdown_waiters) = {

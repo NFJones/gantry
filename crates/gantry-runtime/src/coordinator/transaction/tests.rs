@@ -886,6 +886,116 @@ impl JournalStorage for EventFailureStore {
 }
 
 #[test]
+fn task_creation_event_failure_recovers_cause_without_reserving_event_identity() {
+    let (coordinator, mut root, mut children, program) = spawn_fixture_with_program();
+    let execution = root.execution_id();
+    let root_task = root.task_id();
+    let root_session = coordinator.snapshot().sessions()[0].id;
+    let storage = Arc::new(EventFailureStore::default());
+    let journal = JournalId::new("task-creation-event-failure")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let owner = ready(storage.acquire_owner(AcquireJournalOwnerV1 {
+        journal_id: journal.clone(),
+        operation: JournalOwnerOperationV1::Start,
+    }))
+    .unwrap_or_else(|error| panic!("owner: {error:?}"));
+    let sink = DurableTransitionSink::new(storage.clone(), journal.clone(), owner.token);
+    let mut commits = DurableCommitCoordinatorV1::new(&sink, execution, root_task, None)
+        .unwrap_or_else(|error| panic!("commits: {error:?}"));
+    let initial = coordinator
+        .capture_checkpoint(&root, &children)
+        .unwrap_or_else(|error| panic!("initial capture: {error:?}"));
+    ready(commits.commit_graph_checkpoint(DurableCommitCutV1::Checkpoint, root_task, initial))
+        .unwrap_or_else(|error| panic!("initial commit: {error:?}"));
+
+    let mut stage = coordinator
+        .stage_graph(&mut root, &mut children)
+        .unwrap_or_else(|error| panic!("creation stage: {error:?}"));
+    let created = stage
+        .update(|root, _, tasks, sessions| {
+            let spawn = match root.step() {
+                MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(spawn)) => spawn,
+                other => panic!("root did not suspend at spawn: {other:?}"),
+            };
+            tasks.create_child(
+                sessions,
+                crate::TaskCreationRequestV1 {
+                    parent_task_id: root_task,
+                    handle_name: Arc::from(spawn.handle.name()),
+                    workflow: spawn.workflow.clone(),
+                    spawn_site: spawn.site.clone(),
+                    spawn_occurrence: spawn.occurrence,
+                    result_type: spawn.handle.result_type().clone(),
+                    captures: spawn
+                        .captures
+                        .iter()
+                        .map(|capture| capture.task_capture().clone())
+                        .collect(),
+                    inherited_agent: spawn.inherited_agent.clone(),
+                    parent_session_id: root_session,
+                },
+                DEFAULT_VALUE_LIMITS,
+            )
+        })
+        .unwrap_or_else(|error| panic!("creation: {error:?}"));
+    let draft = crate::concurrent_spawn_event(execution, &created.transition, 0)
+        .unwrap_or_else(|error| panic!("spawn event draft: {error:?}"));
+    let event_id = ProtocolIdentity::from_fresh_material(IdentityKind::Event, [61; 32])
+        .unwrap_or_else(|error| panic!("event identity: {error}"));
+    let event = gantry_core::event::EventEnvelope::complete(
+        event_id,
+        ProtocolIdentity::from_fresh_material(IdentityKind::Activity, [62; 32])
+            .unwrap_or_else(|error| panic!("activity identity: {error}")),
+        gantry_core::timestamp::UtcTimestamp::from_unix_seconds(0, 42)
+            .unwrap_or_else(|error| panic!("time: {error:?}")),
+        draft.draft,
+    )
+    .unwrap_or_else(|error| panic!("spawn event: {error:?}"));
+    stage
+        .set_event(
+            event,
+            crate::DurableEventPlanV1::default(),
+            draft.protected_payloads.to_vec(),
+        )
+        .unwrap_or_else(|error| panic!("event staging: {error:?}"));
+    assert!(matches!(
+        ready(stage.commit(
+            &mut commits,
+            DurableCommitCutV1::TaskCreation,
+            created.task_id,
+        )),
+        Err(DurableCommitError::Journal(_))
+    ));
+
+    let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal,
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let JournalPrefixV1::Full(full) = &prefix else {
+        panic!("expected full prefix")
+    };
+    // GNT-12.2 makes only the causal transition authoritative: the rejected
+    // occurrence must not reserve its event ID, activity, or timestamp.
+    assert_eq!(full.committed_through, 2);
+    let creation_evidence_id = full.evidence[1].evidence_id;
+    let recovered = crate::recover_concurrent_authoritative_prefix(program, &prefix)
+        .unwrap_or_else(|error| panic!("strict recovery: {error:?}"));
+    assert!(
+        recovered
+            .events()
+            .requires_replacement(creation_evidence_id)
+    );
+    assert!(
+        recovered
+            .events()
+            .event_for_cause(creation_evidence_id)
+            .is_none()
+    );
+    assert!(!recovered.events().events().contains_key(&event_id));
+    assert!(recovered.events().events().is_empty());
+}
+
+#[test]
 fn event_commit_failure_keeps_graph_private_and_fences_publication() {
     let (coordinator, mut root, mut children) = fixture();
     let before = coordinator.snapshot();

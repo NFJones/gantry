@@ -4,7 +4,7 @@
   "issue": "GNT-ASYNC-SPAWN-001",
   "source_test": {
     "path": "crates/gantry-conformance/tests/source_spawn.rs",
-    "sha256": "16c772f159a5d390708f1cf4835fb62fa2e5ee2572b152ff60ca0b027ce46552"
+    "sha256": "176229a667a6617735f8b352982b0e82cca43876f7a79fab1e402b7ee4830129"
   },
   "requirements": [
     {"requirement":"GNT-3.6","clause":"clause-001","profiles":["concurrent-evaluator","durable-runtime","embedding","evaluator"]},

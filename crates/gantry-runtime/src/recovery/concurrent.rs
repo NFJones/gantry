@@ -21,10 +21,10 @@ use gantry_ir::{CanonicalPath, MachineProgram, StructuralPosition};
 use super::{
     CONCURRENT_DURABLE_EVIDENCE_KIND_V4, CONCURRENT_DURABLE_EVIDENCE_KIND_V5,
     DurableCommitCoordinatorV1, DurableCommitCutV1, DurableCommitError, DurableEvidenceCommitV1,
-    DurableEvidenceError, DurableExecutionStartV3, DurableOperationEvidenceV1, decode_hex, field,
-    object, optional_operation, optional_string, push_json_string, push_operation,
-    push_optional_string, require_exact_fields, string, validate_budget_successor,
-    validate_operation_evidence,
+    DurableEvidenceError, DurableExecutionStartV3, DurableOperationEvidenceV1,
+    DurableOperationRecoveryV1, decode_hex, field, object, optional_operation, optional_string,
+    push_json_string, push_operation, push_optional_string, require_exact_fields, string,
+    validate_budget_successor, validate_operation_evidence,
 };
 use crate::machine::{
     MachineDetachSuspension, MachineJoinSuspension, MachineSpawnSuspension,
@@ -2213,6 +2213,7 @@ pub struct RecoveredConcurrentDurableStateV1 {
     execution: RecoveredConcurrentDurableExecutionV1,
     events: RecoveredDurableEventsV1,
     cancellation: Option<CancellationReason>,
+    operation_recoveries: BTreeMap<ProtocolIdentity, DurableOperationRecoveryV1>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
@@ -2235,6 +2236,23 @@ impl RecoveredConcurrentDurableStateV1 {
     #[must_use]
     pub const fn cancellation_reason(&self) -> Option<&CancellationReason> {
         self.cancellation.as_ref()
+    }
+
+    /// Returns the latest applicable operation recovery policy for every task.
+    #[must_use]
+    pub const fn operation_recoveries(
+        &self,
+    ) -> &BTreeMap<ProtocolIdentity, DurableOperationRecoveryV1> {
+        &self.operation_recoveries
+    }
+
+    /// Returns the latest applicable operation recovery policy for one task.
+    #[must_use]
+    pub fn operation_recovery(
+        &self,
+        task_id: ProtocolIdentity,
+    ) -> Option<&DurableOperationRecoveryV1> {
+        self.operation_recoveries.get(&task_id)
     }
 
     /// Returns the latest authoritative journal sequence.
@@ -2290,6 +2308,7 @@ pub fn recover_concurrent_authoritative_prefix(
     let mut committed_outcomes = BTreeSet::new();
     let mut latest_outcomes = BTreeMap::new();
     let mut committed_results = BTreeSet::new();
+    let mut operation_recoveries = BTreeMap::new();
     if let Some(snapshot) = snapshot {
         for operation in snapshot.operations.iter() {
             record_operation_cut(
@@ -2300,6 +2319,7 @@ pub fn recover_concurrent_authoritative_prefix(
                 &mut latest_outcomes,
                 &mut committed_results,
             )?;
+            retain_operation_recovery(&operation.evidence, &mut operation_recoveries)?;
         }
         for event in snapshot.events.iter() {
             events
@@ -2386,6 +2406,7 @@ pub fn recover_concurrent_authoritative_prefix(
                                 &mut latest_outcomes,
                                 &mut committed_results,
                             )?;
+                            retain_operation_recovery(current, &mut operation_recoveries)?;
                         }
                         ConcurrentDurableEvidenceRecordV5::Ownership => {
                             if submission_resolution.is_some() {
@@ -2495,6 +2516,7 @@ pub fn recover_concurrent_authoritative_prefix(
         execution,
         events,
         cancellation,
+        operation_recoveries,
         latest_sequence,
         latest_evidence_id,
         latest_cut,
@@ -2750,6 +2772,9 @@ fn advance_to_checkpoint_boundary(
             MachineStep::WaitingOperation(operation) => {
                 return Ok(Some(CheckpointMachineBoundary::Operation(operation)));
             }
+            MachineStep::Transition(crate::MachineLabel::OperationPrepared(operation)) => {
+                return Ok(Some(CheckpointMachineBoundary::Operation(operation)));
+            }
             MachineStep::YieldRequired => {
                 if !machine.resume_after_yield() {
                     return Err(DurableEvidenceError::InvalidState);
@@ -2766,12 +2791,9 @@ fn advance_to_checkpoint_boundary(
 fn capture_recovered_checkpoint(
     execution: &RecoveredConcurrentDurableExecutionV1,
 ) -> Result<ConcurrentDurableCheckpointV4, DurableEvidenceError> {
-    ConcurrentDurableCheckpointV4::capture(
-        execution.foreground(),
-        execution.scheduler(),
-        execution.sessions(),
-    )
-    .map_err(DurableEvidenceError::ConcurrentCheckpoint)
+    execution
+        .capture_replayed_checkpoint()
+        .map_err(DurableEvidenceError::ConcurrentCheckpoint)
 }
 
 fn replay_spawn_failure_checkpoint(
@@ -3618,6 +3640,94 @@ fn validate_execution_cancellation_transition(
     Ok(expected == *current.checkpoint())
 }
 
+fn retain_operation_recovery(
+    evidence: &ConcurrentDurableEvidenceV5,
+    operation_recoveries: &mut BTreeMap<ProtocolIdentity, DurableOperationRecoveryV1>,
+) -> Result<(), DurableEvidenceError> {
+    let operation = evidence
+        .operation()
+        .ok_or(DurableEvidenceError::InvalidOperation)?;
+    let recovery = match evidence.cut() {
+        DurableCommitCutV1::OperationPrepared => {
+            let dispatch_id = operation
+                .dispatch_id
+                .ok_or(DurableEvidenceError::InvalidOperation)?;
+            if operation.action_recovery == Some(gantry_ir::generated::RecoveryClass::NonIdempotent)
+            {
+                DurableOperationRecoveryV1::UnknownOutcome {
+                    operation_id: operation.operation_id,
+                    dispatch_id,
+                    request_bytes: operation
+                        .request_bytes
+                        .clone()
+                        .ok_or(DurableEvidenceError::InvalidOperation)?,
+                }
+            } else {
+                DurableOperationRecoveryV1::Redispatch {
+                    operation_id: operation.operation_id,
+                    previous_dispatch_id: dispatch_id,
+                    validation_attempt: operation.validation_attempt,
+                    next_recovery_dispatch: operation
+                        .recovery_dispatch
+                        .checked_add(1)
+                        .ok_or(DurableEvidenceError::InvalidOperation)?,
+                    action_recovery: operation.action_recovery,
+                    request_bytes: operation
+                        .request_bytes
+                        .clone()
+                        .ok_or(DurableEvidenceError::InvalidOperation)?,
+                }
+            }
+        }
+        DurableCommitCutV1::OperationOutcome => DurableOperationRecoveryV1::ReuseOutcome {
+            operation_id: operation.operation_id,
+            dispatch_id: operation
+                .dispatch_id
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+            request_bytes: operation
+                .request_bytes
+                .clone()
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+            outcome: operation
+                .outcome
+                .clone()
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+        },
+        DurableCommitCutV1::OperationResult => DurableOperationRecoveryV1::ReuseResult {
+            operation_id: operation.operation_id,
+            result_type: operation
+                .result_type
+                .clone()
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+            result_bytes: operation
+                .result_bytes
+                .clone()
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+        },
+        DurableCommitCutV1::RetryWaiting => DurableOperationRecoveryV1::RetryDelay {
+            operation_id: operation.operation_id,
+            delay_us: operation
+                .retry_delay_us
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+            validation_attempt: operation.validation_attempt,
+            recovery_dispatch: operation.recovery_dispatch,
+            retries_left: operation.retries_left,
+            request_bytes: operation
+                .request_bytes
+                .clone()
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+            outcome: operation
+                .outcome
+                .clone()
+                .ok_or(DurableEvidenceError::InvalidOperation)?,
+            errors: Arc::clone(&operation.retry_errors),
+        },
+        _ => return Err(DurableEvidenceError::InvalidOperation),
+    };
+    operation_recoveries.insert(evidence.task_id(), recovery);
+    Ok(())
+}
+
 fn record_operation_cut(
     evidence: &ConcurrentDurableEvidenceV5,
     prepared_dispatches: &mut BTreeSet<ProtocolIdentity>,
@@ -3689,13 +3799,13 @@ mod tests {
     };
     use gantry_core::source::SourceSpan;
     use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
-    use gantry_host::contracts::HostError;
+    use gantry_host::contracts::{HookOutcomeV1, HostError};
     use gantry_host::journal::{
         AcquireJournalOwnerV1, FullJournalPrefixV1, JournalEvidenceEnvelopeV1, JournalId,
         JournalOwnerOperationV1, JournalPrefixV1, JournalStorage, ReadJournalPrefixV1,
         SnapshotJournalPrefixV1,
     };
-    use gantry_ir::generated::TaskControlSiteKind;
+    use gantry_ir::generated::{RecoveryClass, TaskControlSiteKind};
     use gantry_ir::{
         CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody,
         ExecutableTaskContext, ExecutableTaskHandle, Instruction, InstructionKind, MachineProgram,
@@ -3708,16 +3818,16 @@ mod tests {
         CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1, ConcurrentDurableEvidenceRecordV5,
         ConcurrentDurableEvidenceV4, ConcurrentDurableEvidenceV5,
         ConcurrentDurableRecoverySnapshotV1, DurableCommitCoordinatorV1, DurableCommitCutV1,
-        DurableEvidenceError, DurableOperationEvidenceV1, record_operation_cut,
-        validate_transition,
+        DurableEvidenceError, DurableOperationEvidenceV1, DurableOperationRecoveryV1,
+        record_operation_cut, retain_operation_recovery, validate_transition,
     };
     use crate::{
         CancellationReason, CanonicalTranscriptV1, ConcurrentDurableCheckpointV4,
         ConcurrentSchedulerV1, ConcurrentTaskStateV1, DurableExecutionStartV3,
         DurableLogicalEvidenceV3, DurableTransitionSink, InMemoryJournalStore,
         LogicalSessionRegistryV1, Machine, MachineLimits, MachineStep, SessionCreationModeV1,
-        SessionEstablishmentV1, TaskCreationRequestV1, TaskCreationV1,
-        recover_concurrent_authoritative_prefix, root_task_identity,
+        SessionEstablishmentV1, TaskCreationRequestV1, TaskCreationV1, ValidationErrorCategoryV1,
+        ValidationErrorV1, recover_concurrent_authoritative_prefix, root_task_identity,
     };
 
     #[test]
@@ -5885,6 +5995,381 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_operation_recovery_retains_exact_latest_policy_per_task() {
+        let program = program();
+        let execution = fresh(IdentityKind::Execution, 31);
+        let root_task = root_task_identity(execution);
+        let second_task = ProtocolIdentity::derive(IdentityKind::Task, b"second-task")
+            .unwrap_or_else(|error| panic!("task identity failed: {error}"));
+        let third_task = ProtocolIdentity::derive(IdentityKind::Task, b"third-task")
+            .unwrap_or_else(|error| panic!("task identity failed: {error}"));
+        let fourth_task = ProtocolIdentity::derive(IdentityKind::Task, b"fourth-task")
+            .unwrap_or_else(|error| panic!("task identity failed: {error}"));
+        let checkpoint = checkpoint_evidence(
+            program,
+            execution,
+            root_task,
+            fresh(IdentityKind::Session, 35),
+            machine_limits(),
+        )
+        .checkpoint()
+        .clone();
+        let operation_id = |name: &[u8]| {
+            ProtocolIdentity::derive(IdentityKind::Operation, name)
+                .unwrap_or_else(|error| panic!("operation identity failed: {error}"))
+        };
+        let first_operation = operation_id(b"first-operation");
+        let second_operation = operation_id(b"second-operation");
+        let third_operation = operation_id(b"third-operation");
+        let fourth_operation = operation_id(b"fourth-operation");
+        let first_dispatch = fresh(IdentityKind::Dispatch, 36);
+        let second_dispatch = fresh(IdentityKind::Dispatch, 37);
+        let fourth_dispatch = fresh(IdentityKind::Dispatch, 38);
+        let request = Arc::<[u8]>::from(&b"{}"[..]);
+        let outcome = HookOutcomeV1::Completed(Arc::from(&b"invalid"[..]));
+        let errors = Arc::from([ValidationErrorV1 {
+            category: ValidationErrorCategoryV1::Schema,
+            instance_location: Some(Arc::from("/value")),
+            message: Arc::from("invalid value"),
+            schema_location: Some(Arc::from("/type")),
+        }]);
+        let evidence = |task_id, cut, operation| ConcurrentDurableEvidenceV5 {
+            cut,
+            task_id,
+            record: ConcurrentDurableEvidenceRecordV5::Operation,
+            operation: Some(operation),
+            ownership: None,
+            cancellation: None,
+            checkpoint: checkpoint.clone(),
+        };
+        let mut recoveries = BTreeMap::new();
+
+        retain_operation_recovery(
+            &evidence(
+                root_task,
+                DurableCommitCutV1::OperationPrepared,
+                DurableOperationEvidenceV1 {
+                    operation_id: first_operation,
+                    dispatch_id: Some(first_dispatch),
+                    validation_attempt: 4,
+                    recovery_dispatch: 6,
+                    retry_delay_us: None,
+                    retries_left: Some(3),
+                    action_recovery: Some(RecoveryClass::NonIdempotent),
+                    request_bytes: Some(Arc::clone(&request)),
+                    outcome: None,
+                    retry_errors: Arc::from([]),
+                    result_type: None,
+                    result_bytes: None,
+                },
+            ),
+            &mut recoveries,
+        )
+        .unwrap_or_else(|error| panic!("unknown-outcome projection failed: {error:?}"));
+        assert_eq!(
+            recoveries.get(&root_task),
+            Some(&DurableOperationRecoveryV1::UnknownOutcome {
+                operation_id: first_operation,
+                dispatch_id: first_dispatch,
+                request_bytes: Arc::clone(&request),
+            })
+        );
+
+        retain_operation_recovery(
+            &evidence(
+                root_task,
+                DurableCommitCutV1::OperationOutcome,
+                DurableOperationEvidenceV1 {
+                    operation_id: first_operation,
+                    dispatch_id: Some(first_dispatch),
+                    validation_attempt: 4,
+                    recovery_dispatch: 6,
+                    retry_delay_us: None,
+                    retries_left: Some(3),
+                    action_recovery: Some(RecoveryClass::NonIdempotent),
+                    request_bytes: Some(Arc::clone(&request)),
+                    outcome: Some(outcome.clone()),
+                    retry_errors: Arc::from([]),
+                    result_type: None,
+                    result_bytes: None,
+                },
+            ),
+            &mut recoveries,
+        )
+        .unwrap_or_else(|error| panic!("outcome projection failed: {error:?}"));
+        assert_eq!(
+            recoveries.get(&root_task),
+            Some(&DurableOperationRecoveryV1::ReuseOutcome {
+                operation_id: first_operation,
+                dispatch_id: first_dispatch,
+                request_bytes: Arc::clone(&request),
+                outcome: outcome.clone(),
+            })
+        );
+
+        retain_operation_recovery(
+            &evidence(
+                second_task,
+                DurableCommitCutV1::RetryWaiting,
+                DurableOperationEvidenceV1 {
+                    operation_id: second_operation,
+                    dispatch_id: Some(second_dispatch),
+                    validation_attempt: 5,
+                    recovery_dispatch: 7,
+                    retry_delay_us: Some(19),
+                    retries_left: Some(2),
+                    action_recovery: Some(RecoveryClass::ReadOnly),
+                    request_bytes: Some(Arc::clone(&request)),
+                    outcome: Some(outcome.clone()),
+                    retry_errors: Arc::clone(&errors),
+                    result_type: None,
+                    result_bytes: None,
+                },
+            ),
+            &mut recoveries,
+        )
+        .unwrap_or_else(|error| panic!("retry projection failed: {error:?}"));
+        assert_eq!(
+            recoveries.get(&second_task),
+            Some(&DurableOperationRecoveryV1::RetryDelay {
+                operation_id: second_operation,
+                delay_us: 19,
+                validation_attempt: 5,
+                recovery_dispatch: 7,
+                retries_left: Some(2),
+                request_bytes: Arc::clone(&request),
+                outcome: outcome.clone(),
+                errors: Arc::clone(&errors),
+            })
+        );
+
+        retain_operation_recovery(
+            &evidence(
+                third_task,
+                DurableCommitCutV1::OperationResult,
+                DurableOperationEvidenceV1 {
+                    operation_id: third_operation,
+                    dispatch_id: None,
+                    validation_attempt: 8,
+                    recovery_dispatch: 9,
+                    retry_delay_us: None,
+                    retries_left: Some(1),
+                    action_recovery: None,
+                    request_bytes: None,
+                    outcome: None,
+                    retry_errors: Arc::from([]),
+                    result_type: Some(TypeDescriptor::UNIT),
+                    result_bytes: Some(Arc::from(&b"null"[..])),
+                },
+            ),
+            &mut recoveries,
+        )
+        .unwrap_or_else(|error| panic!("result projection failed: {error:?}"));
+        assert_eq!(
+            recoveries.get(&third_task),
+            Some(&DurableOperationRecoveryV1::ReuseResult {
+                operation_id: third_operation,
+                result_type: TypeDescriptor::UNIT,
+                result_bytes: Arc::from(&b"null"[..]),
+            })
+        );
+
+        retain_operation_recovery(
+            &evidence(
+                fourth_task,
+                DurableCommitCutV1::OperationPrepared,
+                DurableOperationEvidenceV1 {
+                    operation_id: fourth_operation,
+                    dispatch_id: Some(fourth_dispatch),
+                    validation_attempt: 10,
+                    recovery_dispatch: 11,
+                    retry_delay_us: None,
+                    retries_left: None,
+                    action_recovery: Some(RecoveryClass::Idempotent),
+                    request_bytes: Some(Arc::clone(&request)),
+                    outcome: None,
+                    retry_errors: Arc::from([]),
+                    result_type: None,
+                    result_bytes: None,
+                },
+            ),
+            &mut recoveries,
+        )
+        .unwrap_or_else(|error| panic!("redispatch projection failed: {error:?}"));
+        assert_eq!(
+            recoveries.get(&fourth_task),
+            Some(&DurableOperationRecoveryV1::Redispatch {
+                operation_id: fourth_operation,
+                previous_dispatch_id: fourth_dispatch,
+                validation_attempt: 10,
+                next_recovery_dispatch: 12,
+                action_recovery: Some(RecoveryClass::Idempotent),
+                request_bytes: request,
+            })
+        );
+        assert_eq!(recoveries.len(), 4);
+    }
+
+    #[test]
+    fn concurrent_operation_recovery_survives_snapshot_compaction() {
+        let program = operation_program();
+        let execution = fresh(IdentityKind::Execution, 41);
+        let root_task = root_task_identity(execution);
+        let root_session = fresh(IdentityKind::Session, 42);
+        let sessions = LogicalSessionRegistryV1::new(
+            execution,
+            root_session,
+            SessionCreationModeV1::GantryRoot,
+            CanonicalTranscriptV1::empty(),
+        )
+        .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+        let mut foreground = Machine::new_with_context(
+            Arc::clone(&program),
+            &path("crate::main"),
+            Vec::new(),
+            execution,
+            machine_limits(),
+            None,
+            Some(root_session),
+        )
+        .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
+        let state = ConcurrentTaskStateV1::new(execution, root_task, 8)
+            .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+        let scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+            .unwrap_or_else(|error| panic!("scheduler construction failed: {error:?}"));
+        let initial_checkpoint =
+            ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions)
+                .unwrap_or_else(|error| panic!("initial checkpoint failed: {error:?}"));
+        let initial = ConcurrentDurableEvidenceV4::new(
+            DurableCommitCutV1::Checkpoint,
+            root_task,
+            initial_checkpoint,
+        )
+        .unwrap_or_else(|error| panic!("initial evidence failed: {error:?}"));
+        let occurrence = match foreground.step() {
+            MachineStep::Transition(crate::MachineLabel::OperationPrepared(occurrence)) => {
+                occurrence
+            }
+            other => panic!("operation was not prepared: {other:?}"),
+        };
+        let prepared_checkpoint =
+            ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions)
+                .unwrap_or_else(|error| panic!("prepared checkpoint failed: {error:?}"));
+        let dispatch_id = fresh(IdentityKind::Dispatch, 43);
+        let request_bytes = Arc::<[u8]>::from(&b"{}"[..]);
+        let prepared = ConcurrentDurableEvidenceV5::new_operation(
+            DurableCommitCutV1::OperationPrepared,
+            root_task,
+            DurableOperationEvidenceV1 {
+                operation_id: occurrence.identity,
+                dispatch_id: Some(dispatch_id),
+                validation_attempt: 2,
+                recovery_dispatch: 3,
+                retry_delay_us: None,
+                retries_left: Some(1),
+                action_recovery: Some(RecoveryClass::NonIdempotent),
+                request_bytes: Some(Arc::clone(&request_bytes)),
+                outcome: None,
+                retry_errors: Arc::from([]),
+                result_type: None,
+                result_bytes: None,
+            },
+            prepared_checkpoint,
+        )
+        .unwrap_or_else(|error| panic!("prepared evidence failed: {error:?}"));
+        let recovered_initial = initial
+            .checkpoint()
+            .clone()
+            .recover(Arc::clone(&program))
+            .unwrap_or_else(|error| panic!("initial graph recovery failed: {error:?}"));
+        let logical = DurableLogicalEvidenceV3::new_with_sessions(
+            execution,
+            root_task,
+            DurableCommitCutV1::Checkpoint,
+            None,
+            recovered_initial.foreground(),
+            Some(recovered_initial.sessions().checkpoint()),
+        )
+        .unwrap_or_else(|error| panic!("logical start state failed: {error:?}"));
+        let start = DurableExecutionStartV3::new(
+            execution,
+            root_task,
+            &program,
+            Arc::<[u8]>::from(&b"{}"[..]),
+            logical,
+        )
+        .unwrap_or_else(|error| panic!("execution start failed: {error:?}"));
+        let journal_id = JournalId::new("concurrent-operation-recovery")
+            .unwrap_or_else(|error| panic!("journal id failed: {error:?}"));
+        let start_id = ProtocolIdentity::from_storage_material([41; 32]);
+        let initial_id = ProtocolIdentity::from_storage_material([42; 32]);
+        let prepared_id = ProtocolIdentity::from_storage_material([43; 32]);
+        let full = FullJournalPrefixV1 {
+            journal_id: journal_id.clone(),
+            evidence: Arc::from([
+                JournalEvidenceEnvelopeV1 {
+                    journal_id: journal_id.clone(),
+                    sequence: 1,
+                    evidence_id: start_id,
+                    kind: Arc::from("gantry.execution-start/v3"),
+                    canonical_body: Arc::from(start.canonical_body()),
+                    references: Arc::from([]),
+                    protected_payloads: Arc::from([]),
+                },
+                JournalEvidenceEnvelopeV1 {
+                    journal_id: journal_id.clone(),
+                    sequence: 2,
+                    evidence_id: initial_id,
+                    kind: Arc::from(CONCURRENT_DURABLE_EVIDENCE_KIND_V4),
+                    canonical_body: Arc::from(initial.canonical_body()),
+                    references: Arc::from([start_id]),
+                    protected_payloads: Arc::from([]),
+                },
+                JournalEvidenceEnvelopeV1 {
+                    journal_id: journal_id.clone(),
+                    sequence: 3,
+                    evidence_id: prepared_id,
+                    kind: Arc::from(CONCURRENT_DURABLE_EVIDENCE_KIND_V5),
+                    canonical_body: Arc::from(prepared.canonical_body()),
+                    references: Arc::from([initial_id]),
+                    protected_payloads: Arc::from([]),
+                },
+            ]),
+            committed_through: 3,
+        };
+        let expected = DurableOperationRecoveryV1::UnknownOutcome {
+            operation_id: occurrence.identity,
+            dispatch_id,
+            request_bytes,
+        };
+        let recovered = recover_concurrent_authoritative_prefix(
+            Arc::clone(&program),
+            &JournalPrefixV1::Full(full.clone()),
+        )
+        .unwrap_or_else(|error| panic!("full recovery failed: {error:?}"));
+        assert_eq!(recovered.operation_recovery(root_task), Some(&expected));
+        assert_eq!(recovered.operation_recoveries().len(), 1);
+
+        let snapshot = ConcurrentDurableRecoverySnapshotV1::from_full_prefix(&program, &full)
+            .unwrap_or_else(|error| panic!("snapshot compaction failed: {error:?}"));
+        let recovered = recover_concurrent_authoritative_prefix(
+            program,
+            &JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
+                journal_id,
+                snapshot_version: CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1,
+                frontier: snapshot.frontier(),
+                canonical_snapshot: Arc::from(snapshot.canonical_body()),
+                retained_evidence: snapshot.retained_evidence().clone(),
+                suffix: Arc::from([]),
+                committed_through: snapshot.frontier(),
+            }),
+        )
+        .unwrap_or_else(|error| panic!("snapshot recovery failed: {error:?}"));
+        assert_eq!(recovered.operation_recovery(root_task), Some(&expected));
+        assert_eq!(recovered.operation_recoveries().len(), 1);
+    }
+
+    #[test]
     fn operation_result_rejects_outcome_for_superseded_prepared_dispatch() {
         let program = program();
         let execution = fresh(IdentityKind::Execution, 31);
@@ -6225,6 +6710,30 @@ mod tests {
         Arc::new(
             MachineProgram::new(vec![workflow("crate::child"), workflow("crate::main")])
                 .unwrap_or_else(|error| panic!("program failed: {error:?}")),
+        )
+    }
+
+    fn operation_program() -> Arc<MachineProgram> {
+        Arc::new(
+            MachineProgram::new(vec![Workflow {
+                path: path("crate::main"),
+                parameters: Vec::new(),
+                result: TypeDescriptor::UNIT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    Instruction {
+                        site: position(0),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Operation,
+                    },
+                    Instruction {
+                        site: position(1),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    },
+                ],
+            }])
+            .unwrap_or_else(|error| panic!("operation program failed: {error:?}")),
         )
     }
 

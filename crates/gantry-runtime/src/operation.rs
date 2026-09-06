@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use gantry_core::identity::ProtocolIdentity;
 use gantry_core::portable::OperationStateKind;
+#[cfg(feature = "durable")]
+use gantry_core::portable::{HookFailureCategory, IdentityKind};
 use gantry_core::value::{LogicalValue, ValueError};
 use gantry_host::contracts::{
     CancellationToken, EmbeddingVersion, ExecutorAdapter, FreshIdentityAllocator, HookFactory,
@@ -139,6 +141,8 @@ pub enum OperationLifecycleError {
     AttemptNotCatchable,
     /// The retained attempted failure has already been consumed by the machine.
     AttemptResultConsumed,
+    /// Durable operation recovery did not match the reconstructed logical operation.
+    InvalidRecovery,
 }
 
 /// Retained terminal failure for one logical operation lifecycle.
@@ -206,6 +210,217 @@ impl OperationLifecycle {
             captured: Arc::new(captured),
             state: OperationRuntimeState::Absent,
         })
+    }
+
+    /// Reconstructs one lifecycle from the latest authoritative durable operation cut.
+    #[cfg(feature = "durable")]
+    pub fn recover(
+        &mut self,
+        recovery: &crate::DurableOperationRecoveryV1,
+        policy: OperationRetryPolicyV1,
+        allocator: &FreshIdentityAllocator,
+        identity_source: &dyn IdentitySource,
+    ) -> Result<(), OperationLifecycleError> {
+        self.require_state(OperationStateKind::Absent)?;
+        let expected_operation = self.captured.header().operation_id;
+        match recovery {
+            crate::DurableOperationRecoveryV1::None => {
+                self.prepare(allocator, identity_source, 0, 0, &[])?;
+            }
+            crate::DurableOperationRecoveryV1::Redispatch {
+                operation_id,
+                previous_dispatch_id,
+                validation_attempt,
+                next_recovery_dispatch,
+                action_recovery,
+                request_bytes,
+            } => {
+                let previous_recovery_dispatch = next_recovery_dispatch
+                    .checked_sub(1)
+                    .ok_or(OperationLifecycleError::InvalidRecovery)?;
+                self.validate_recovery_request(
+                    *operation_id,
+                    *previous_dispatch_id,
+                    *validation_attempt,
+                    previous_recovery_dispatch,
+                    *action_recovery,
+                    request_bytes,
+                )?;
+                let dispatch_id = allocator
+                    .allocate(identity_source, IdentityKind::Dispatch)
+                    .map_err(HookRequestError::Identity)
+                    .map_err(OperationLifecycleError::Request)?;
+                let request = recovered_dispatch_request(
+                    request_bytes,
+                    *previous_dispatch_id,
+                    dispatch_id,
+                    previous_recovery_dispatch,
+                    *next_recovery_dispatch,
+                )?;
+                self.state = OperationRuntimeState::Prepared {
+                    dispatch: PreparedHookDispatch {
+                        dispatch_id,
+                        request,
+                    },
+                    validation_attempt: *validation_attempt,
+                    recovery_dispatch: *next_recovery_dispatch,
+                    retries_left: Some(
+                        policy
+                            .retry_limit
+                            .checked_sub(*validation_attempt)
+                            .ok_or(OperationLifecycleError::InvalidRecovery)?,
+                    ),
+                    retry_policy: Some(policy),
+                };
+            }
+            crate::DurableOperationRecoveryV1::UnknownOutcome {
+                operation_id,
+                dispatch_id,
+                request_bytes,
+            } => {
+                self.validate_recovery_request_identity(
+                    *operation_id,
+                    *dispatch_id,
+                    request_bytes,
+                )?;
+                if !matches!(
+                    self.captured.as_ref(),
+                    CapturedOperationRequestV1::Action { body, .. }
+                        if body.recovery == gantry_ir::generated::RecoveryClass::NonIdempotent
+                ) {
+                    return Err(OperationLifecycleError::InvalidRecovery);
+                }
+                self.state = OperationRuntimeState::Failed {
+                    dispatch_id: Some(*dispatch_id),
+                    failure: OperationLifecycleFailureV1::Operation(OperationFailureV1::Hook {
+                        category: HookFailureCategory::UnknownOutcome,
+                        message: Arc::from("indeterminate non-idempotent action outcome"),
+                    }),
+                    attempt_consumed: false,
+                };
+            }
+            crate::DurableOperationRecoveryV1::ReuseOutcome {
+                operation_id,
+                dispatch_id,
+                request_bytes,
+                outcome,
+            } => {
+                self.validate_recovery_request_identity(
+                    *operation_id,
+                    *dispatch_id,
+                    request_bytes,
+                )?;
+                let validation_attempt = recovery_request_u64(request_bytes, "validation_attempt")?;
+                let recovery_dispatch = recovery_request_u64(request_bytes, "recovery_dispatch")?;
+                let retries_left = policy
+                    .retry_limit
+                    .checked_sub(validation_attempt)
+                    .ok_or(OperationLifecycleError::InvalidRecovery)?;
+                self.state = OperationRuntimeState::Outcome {
+                    dispatch_id: *dispatch_id,
+                    outcome: outcome.clone(),
+                    validation_attempt,
+                    recovery_dispatch,
+                    retries_left: Some(retries_left),
+                    retry_policy: Some(policy),
+                };
+            }
+            crate::DurableOperationRecoveryV1::ReuseResult {
+                operation_id,
+                result_type,
+                result_bytes: _,
+            } => {
+                if *operation_id != expected_operation
+                    || result_type != &self.captured.header().expected_type
+                {
+                    return Err(OperationLifecycleError::InvalidRecovery);
+                }
+                self.state = OperationRuntimeState::Accepted;
+            }
+            crate::DurableOperationRecoveryV1::RetryDelay {
+                operation_id,
+                delay_us,
+                validation_attempt,
+                recovery_dispatch,
+                retries_left,
+                request_bytes,
+                outcome: _,
+                errors,
+            } => {
+                let dispatch_id = Self::retained_dispatch_id(recovery)?
+                    .ok_or(OperationLifecycleError::InvalidRecovery)?;
+                self.validate_recovery_request(
+                    *operation_id,
+                    dispatch_id,
+                    *validation_attempt,
+                    *recovery_dispatch,
+                    self.captured_action_recovery(),
+                    request_bytes,
+                )?;
+                let retries_left = retries_left.ok_or(OperationLifecycleError::InvalidRecovery)?;
+                if retries_left > policy.retry_limit || errors.is_empty() {
+                    return Err(OperationLifecycleError::InvalidRecovery);
+                }
+                let next_validation_attempt = validation_attempt
+                    .checked_add(1)
+                    .ok_or(OperationLifecycleError::InvalidRecovery)?;
+                let delay = gantry_host::contracts::DurationMicros::new(*delay_us)
+                    .ok_or(OperationLifecycleError::InvalidRecovery)?;
+                self.state = OperationRuntimeState::RetryWaiting {
+                    dispatch_id,
+                    wait: OperationRetryWaitV1 {
+                        errors: Arc::clone(errors),
+                        delay,
+                        next_validation_attempt,
+                        recovery_dispatch: *recovery_dispatch,
+                        retries_left,
+                    },
+                    retry_policy: policy,
+                };
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns a retained physical dispatch identity that must be reserved before recovery.
+    #[cfg(feature = "durable")]
+    pub fn retained_dispatch_id(
+        recovery: &crate::DurableOperationRecoveryV1,
+    ) -> Result<Option<ProtocolIdentity>, OperationLifecycleError> {
+        let direct = match recovery {
+            crate::DurableOperationRecoveryV1::Redispatch {
+                previous_dispatch_id,
+                ..
+            } => Some(*previous_dispatch_id),
+            crate::DurableOperationRecoveryV1::UnknownOutcome { dispatch_id, .. }
+            | crate::DurableOperationRecoveryV1::ReuseOutcome { dispatch_id, .. } => {
+                Some(*dispatch_id)
+            }
+            crate::DurableOperationRecoveryV1::RetryDelay { request_bytes, .. } => {
+                Some(recovery_request_identity(request_bytes, "dispatch_id")?)
+            }
+            crate::DurableOperationRecoveryV1::None
+            | crate::DurableOperationRecoveryV1::ReuseResult { .. } => None,
+        };
+        Ok(direct)
+    }
+
+    /// Returns the committed model session for an unfinished recovered request.
+    ///
+    /// Missing or malformed session identities reject recovery rather than creating
+    /// a different logical session for the same operation.
+    #[cfg(feature = "durable")]
+    pub fn retained_model_session_id(
+        recovery: &crate::DurableOperationRecoveryV1,
+    ) -> Result<Option<ProtocolIdentity>, OperationLifecycleError> {
+        let request = match recovery {
+            crate::DurableOperationRecoveryV1::Redispatch { request_bytes, .. }
+            | crate::DurableOperationRecoveryV1::ReuseOutcome { request_bytes, .. }
+            | crate::DurableOperationRecoveryV1::RetryDelay { request_bytes, .. } => request_bytes,
+            crate::DurableOperationRecoveryV1::None => return Ok(None),
+            _ => return Err(OperationLifecycleError::InvalidRecovery),
+        };
+        recovery_request_identity(request, "active_session_id").map(Some)
     }
 
     /// Returns the immutable semantic request reused by every physical dispatch.
@@ -301,6 +516,20 @@ impl OperationLifecycle {
         }
     }
 
+    /// Returns the retained validation retry budget for the current dispatch state.
+    #[must_use]
+    pub const fn retries_left(&self) -> Option<u64> {
+        match &self.state {
+            OperationRuntimeState::Prepared { retries_left, .. }
+            | OperationRuntimeState::Outcome { retries_left, .. } => *retries_left,
+            OperationRuntimeState::RetryWaiting { wait, .. } => Some(wait.retries_left),
+            OperationRuntimeState::Absent
+            | OperationRuntimeState::Validated { .. }
+            | OperationRuntimeState::Accepted
+            | OperationRuntimeState::Failed { .. } => None,
+        }
+    }
+
     /// Returns the retained integration failure after the operation fails.
     #[must_use]
     pub fn failure(&self) -> Option<&TaskHookError> {
@@ -320,6 +549,50 @@ impl OperationLifecycle {
             OperationRuntimeState::Failed { failure, .. } => Some(failure),
             _ => None,
         }
+    }
+
+    #[cfg(feature = "durable")]
+    fn captured_action_recovery(&self) -> Option<gantry_ir::generated::RecoveryClass> {
+        match self.captured.as_ref() {
+            CapturedOperationRequestV1::Action { body, .. } => Some(body.recovery),
+            CapturedOperationRequestV1::Model { .. } => None,
+        }
+    }
+
+    #[cfg(feature = "durable")]
+    fn validate_recovery_request_identity(
+        &self,
+        operation_id: ProtocolIdentity,
+        dispatch_id: ProtocolIdentity,
+        request_bytes: &[u8],
+    ) -> Result<(), OperationLifecycleError> {
+        if operation_id != self.captured.header().operation_id
+            || recovery_request_identity(request_bytes, "operation_id")? != operation_id
+            || recovery_request_identity(request_bytes, "dispatch_id")? != dispatch_id
+        {
+            return Err(OperationLifecycleError::InvalidRecovery);
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "durable")]
+    fn validate_recovery_request(
+        &self,
+        operation_id: ProtocolIdentity,
+        dispatch_id: ProtocolIdentity,
+        validation_attempt: u64,
+        recovery_dispatch: u64,
+        action_recovery: Option<gantry_ir::generated::RecoveryClass>,
+        request_bytes: &[u8],
+    ) -> Result<(), OperationLifecycleError> {
+        self.validate_recovery_request_identity(operation_id, dispatch_id, request_bytes)?;
+        if recovery_request_u64(request_bytes, "validation_attempt")? != validation_attempt
+            || recovery_request_u64(request_bytes, "recovery_dispatch")? != recovery_dispatch
+            || action_recovery != self.captured_action_recovery()
+        {
+            return Err(OperationLifecycleError::InvalidRecovery);
+        }
+        Ok(())
     }
 
     /// Allocates one fresh physical dispatch after immutable capture succeeds.
@@ -751,6 +1024,81 @@ impl OperationLifecycle {
 
 fn invalid_state(actual: OperationStateKind) -> OperationLifecycleError {
     OperationLifecycleError::InvalidState { actual }
+}
+
+#[cfg(feature = "durable")]
+fn recovery_request_field<'a>(
+    request: &'a [u8],
+    field: &str,
+) -> Result<&'a str, OperationLifecycleError> {
+    let request =
+        std::str::from_utf8(request).map_err(|_| OperationLifecycleError::InvalidRecovery)?;
+    let needle = format!("\"{field}\":");
+    let start = request
+        .find(&needle)
+        .map(|offset| offset + needle.len())
+        .ok_or(OperationLifecycleError::InvalidRecovery)?;
+    Ok(&request[start..])
+}
+
+#[cfg(feature = "durable")]
+fn recovery_request_u64(request: &[u8], field: &str) -> Result<u64, OperationLifecycleError> {
+    let tail = recovery_request_field(request, field)?;
+    let length = tail.bytes().take_while(u8::is_ascii_digit).count();
+    if length == 0 {
+        return Err(OperationLifecycleError::InvalidRecovery);
+    }
+    tail[..length]
+        .parse()
+        .map_err(|_| OperationLifecycleError::InvalidRecovery)
+}
+
+#[cfg(feature = "durable")]
+fn recovery_request_identity(
+    request: &[u8],
+    field: &str,
+) -> Result<ProtocolIdentity, OperationLifecycleError> {
+    let tail = recovery_request_field(request, field)?;
+    let value = tail
+        .strip_prefix('"')
+        .and_then(|tail| tail.split_once('"').map(|(value, _)| value))
+        .ok_or(OperationLifecycleError::InvalidRecovery)?;
+    let kind = match field {
+        "dispatch_id" => IdentityKind::Dispatch,
+        "active_session_id" => IdentityKind::Session,
+        _ => IdentityKind::Operation,
+    };
+    ProtocolIdentity::parse_kind(value, kind).map_err(|_| OperationLifecycleError::InvalidRecovery)
+}
+
+#[cfg(feature = "durable")]
+fn recovered_dispatch_request(
+    request: &[u8],
+    previous_dispatch_id: ProtocolIdentity,
+    dispatch_id: ProtocolIdentity,
+    previous_recovery_dispatch: u64,
+    recovery_dispatch: u64,
+) -> Result<HostRequest, OperationLifecycleError> {
+    let request =
+        std::str::from_utf8(request).map_err(|_| OperationLifecycleError::InvalidRecovery)?;
+    let previous_dispatch = format!("\"dispatch_id\":\"{previous_dispatch_id}\"");
+    let next_dispatch = format!("\"dispatch_id\":\"{dispatch_id}\"");
+    let previous_recovery = format!("\"recovery_dispatch\":{previous_recovery_dispatch}");
+    let next_recovery = format!("\"recovery_dispatch\":{recovery_dispatch}");
+    if request.matches(&previous_dispatch).count() != 1
+        || request.matches(&previous_recovery).count() != 1
+    {
+        return Err(OperationLifecycleError::InvalidRecovery);
+    }
+    let request = request
+        .replacen(&previous_dispatch, &next_dispatch, 1)
+        .replacen(&previous_recovery, &next_recovery, 1);
+    HostRequest::new(
+        EmbeddingVersion::V1,
+        EmbeddingOperation::DispatchOperation,
+        Arc::from(request.into_bytes()),
+    )
+    .map_err(|_| OperationLifecycleError::InvalidRecovery)
 }
 
 fn validate_model_acceptance(
@@ -1585,6 +1933,238 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "durable")]
+    #[test]
+    fn durable_redispatch_retains_validation_attempt_and_increments_recovery_dispatch() {
+        let (_, occurrence) = machine_with_operation();
+        let mut operation = operation_lifecycle(&occurrence);
+        let allocator = FreshIdentityAllocator::default();
+        let services = UniqueServices::default();
+        let previous_dispatch =
+            ProtocolIdentity::from_fresh_material(IdentityKind::Dispatch, [0x71; 32])
+                .unwrap_or_else(|error| panic!("dispatch identity failed: {error}"));
+        allocator
+            .reserve(previous_dispatch)
+            .unwrap_or_else(|error| panic!("dispatch reservation failed: {error:?}"));
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            RetryDefaults::default(),
+            Some(4),
+        )
+        .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        let retained = operation
+            .captured()
+            .prepare_dispatch(&FreshIdentityAllocator::default(), &Services, 0, 7, &[])
+            .unwrap_or_else(|error| panic!("retained request failed: {error:?}"));
+
+        operation
+            .recover(
+                &crate::DurableOperationRecoveryV1::Redispatch {
+                    operation_id: occurrence.identity,
+                    previous_dispatch_id: retained.dispatch_id,
+                    validation_attempt: 0,
+                    next_recovery_dispatch: 8,
+                    action_recovery: Some(RecoveryClass::ReadOnly),
+                    request_bytes: Arc::from(retained.request.canonical_bytes()),
+                },
+                policy,
+                &allocator,
+                &services,
+            )
+            .unwrap_or_else(|error| panic!("redispatch recovery failed: {error:?}"));
+        let (prepared, validation_attempt, recovery_dispatch) = operation
+            .prepared_dispatch()
+            .unwrap_or_else(|| panic!("redispatch was not prepared"));
+        assert_eq!(validation_attempt, 0);
+        assert_eq!(recovery_dispatch, 8);
+        assert_ne!(prepared.dispatch_id, retained.dispatch_id);
+        let request = std::str::from_utf8(prepared.request.canonical_bytes())
+            .unwrap_or_else(|error| panic!("request was not UTF-8: {error}"));
+        assert!(request.contains("\"validation_attempt\":0"));
+        assert!(request.contains("\"recovery_dispatch\":8"));
+    }
+
+    #[cfg(feature = "durable")]
+    #[test]
+    fn durable_reuse_outcome_and_unknown_outcome_do_not_invoke_hook() {
+        let configuration = configuration();
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let creations = Arc::new(AtomicUsize::new(0));
+        let dispatches = Arc::new(AtomicUsize::new(0));
+        let factory = RecordingFactory {
+            creations: Arc::clone(&creations),
+            dispatches: Arc::clone(&dispatches),
+        };
+        let hook = TaskHook::new(
+            &lifecycle,
+            &factory,
+            AdapterPoison::default(),
+            request(EmbeddingOperation::CreateHook),
+        )
+        .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
+        let (_, occurrence) = machine_with_operation();
+        let mut reused = operation_lifecycle(&occurrence);
+        let policy =
+            OperationRetryPolicyV1::for_request(reused.captured(), RetryDefaults::default(), None)
+                .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        let retained = reused
+            .captured()
+            .prepare_dispatch(&FreshIdentityAllocator::default(), &Services, 0, 3, &[])
+            .unwrap_or_else(|error| panic!("retained request failed: {error:?}"));
+        reused
+            .recover(
+                &crate::DurableOperationRecoveryV1::ReuseOutcome {
+                    operation_id: occurrence.identity,
+                    dispatch_id: retained.dispatch_id,
+                    request_bytes: Arc::from(retained.request.canonical_bytes()),
+                    outcome: HookOutcomeV1::Completed(Arc::from(&b"null"[..])),
+                },
+                policy,
+                &FreshIdentityAllocator::default(),
+                &Services,
+            )
+            .unwrap_or_else(|error| panic!("outcome recovery failed: {error:?}"));
+        assert!(matches!(
+            reused.process_outcome(policy, &Services, &CancellationSignal::default()),
+            Ok(ProcessedHookOutcomeV1::Accepted(_))
+        ));
+
+        let attempted_type =
+            TypeDescriptor::result(TypeDescriptor::UNIT, TypeDescriptor::OPERATION_ERROR);
+        let (mut attempted_machine, attempted_occurrence) =
+            machine_with_operation_type(attempted_type);
+        let mut unknown =
+            operation_lifecycle_with_recovery(&attempted_occurrence, RecoveryClass::NonIdempotent);
+        let unknown_policy =
+            OperationRetryPolicyV1::for_request(unknown.captured(), RetryDefaults::default(), None)
+                .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        unknown
+            .recover(
+                &crate::DurableOperationRecoveryV1::UnknownOutcome {
+                    operation_id: attempted_occurrence.identity,
+                    dispatch_id: retained.dispatch_id,
+                    request_bytes: Arc::from(retained.request.canonical_bytes()),
+                },
+                unknown_policy,
+                &FreshIdentityAllocator::default(),
+                &Services,
+            )
+            .unwrap_or_else(|error| panic!("unknown recovery failed: {error:?}"));
+        assert!(
+            unknown
+                .accept_attempt_failure(&mut attempted_machine)
+                .is_ok()
+        );
+        assert_eq!(creations.load(Ordering::Acquire), 0);
+        assert_eq!(dispatches.load(Ordering::Acquire), 0);
+        assert!(!hook.creation_attempted());
+    }
+
+    #[cfg(feature = "durable")]
+    #[test]
+    fn durable_retry_delay_restores_errors_budget_and_dispatch_coordinates() {
+        let (_, occurrence) = machine_with_operation();
+        let mut operation = operation_lifecycle(&occurrence);
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            RetryDefaults::default(),
+            Some(4),
+        )
+        .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        let error = ValidationErrorV1 {
+            category: crate::ValidationErrorCategoryV1::Schema,
+            instance_location: Some(Arc::from("/value")),
+            message: Arc::from("invalid value"),
+            schema_location: Some(Arc::from("/type")),
+        };
+        let retained = operation
+            .captured()
+            .prepare_dispatch(
+                &FreshIdentityAllocator::default(),
+                &Services,
+                2,
+                5,
+                std::slice::from_ref(&error),
+            )
+            .unwrap_or_else(|error| panic!("retained request failed: {error:?}"));
+        operation
+            .recover(
+                &crate::DurableOperationRecoveryV1::RetryDelay {
+                    operation_id: occurrence.identity,
+                    delay_us: 17,
+                    validation_attempt: 2,
+                    recovery_dispatch: 5,
+                    retries_left: Some(1),
+                    request_bytes: Arc::from(retained.request.canonical_bytes()),
+                    outcome: HookOutcomeV1::Completed(Arc::from(&b"true"[..])),
+                    errors: Arc::from([error]),
+                },
+                policy,
+                &FreshIdentityAllocator::default(),
+                &Services,
+            )
+            .unwrap_or_else(|error| panic!("retry recovery failed: {error:?}"));
+        assert_eq!(
+            operation.retry_wait().map(|wait| wait.delay.get()),
+            Some(17)
+        );
+        let allocator = FreshIdentityAllocator::default();
+        let services = UniqueServices::default();
+        assert!(
+            block_on(operation.prepare_after_retry_wait(
+                &services,
+                &CancellationSignal::default(),
+                &allocator,
+                &services,
+            ))
+            .unwrap_or_else(|error| panic!("retry preparation failed: {error:?}"))
+            .is_some()
+        );
+        let (prepared, validation_attempt, recovery_dispatch) = operation
+            .prepared_dispatch()
+            .unwrap_or_else(|| panic!("retry dispatch was not prepared"));
+        assert_eq!((validation_attempt, recovery_dispatch), (3, 5));
+        let request = std::str::from_utf8(prepared.request.canonical_bytes())
+            .unwrap_or_else(|error| panic!("request was not UTF-8: {error}"));
+        assert!(request.contains("\"validation_errors\":"));
+    }
+
+    #[cfg(feature = "durable")]
+    #[test]
+    fn durable_reuse_result_marks_lifecycle_consumed_without_touching_machine() {
+        let (mut machine, occurrence) = machine_with_operation();
+        machine
+            .complete_operation(occurrence.identity, LogicalValue::unit())
+            .unwrap_or_else(|error| panic!("fixture result failed: {error:?}"));
+        let mut operation = operation_lifecycle(&occurrence);
+        let policy = OperationRetryPolicyV1::for_request(
+            operation.captured(),
+            RetryDefaults::default(),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("retry policy failed: {error:?}"));
+        operation
+            .recover(
+                &crate::DurableOperationRecoveryV1::ReuseResult {
+                    operation_id: occurrence.identity,
+                    result_type: TypeDescriptor::UNIT,
+                    result_bytes: Arc::from(&b"null"[..]),
+                },
+                policy,
+                &FreshIdentityAllocator::default(),
+                &Services,
+            )
+            .unwrap_or_else(|error| panic!("result recovery failed: {error:?}"));
+        assert_eq!(operation.state().kind(), OperationStateKind::Accepted);
+        assert_eq!(
+            operation.accept(&mut machine, LogicalValue::unit()),
+            Err(OperationLifecycleError::InvalidState {
+                actual: OperationStateKind::Accepted,
+            })
+        );
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    }
+
     fn machine_with_operation() -> (Machine, crate::OperationOccurrence) {
         machine_with_operation_type(TypeDescriptor::UNIT)
     }
@@ -1636,6 +2216,13 @@ mod tests {
     }
 
     fn operation_lifecycle(occurrence: &crate::OperationOccurrence) -> OperationLifecycle {
+        operation_lifecycle_with_recovery(occurrence, RecoveryClass::ReadOnly)
+    }
+
+    fn operation_lifecycle_with_recovery(
+        occurrence: &crate::OperationOccurrence,
+        recovery: RecoveryClass,
+    ) -> OperationLifecycle {
         let path = CanonicalPath::new("crate::noop")
             .unwrap_or_else(|error| panic!("action path failed: {error}"));
         let captured = CapturedOperationRequestV1::Action {
@@ -1658,13 +2245,8 @@ mod tests {
             },
             body: ActionOperationRequestV1 {
                 path: path.clone(),
-                signature: CanonicalSignature::action(
-                    RecoveryClass::ReadOnly,
-                    &path,
-                    &[],
-                    &TypeDescriptor::UNIT,
-                ),
-                recovery: RecoveryClass::ReadOnly,
+                signature: CanonicalSignature::action(recovery, &path, &[], &TypeDescriptor::UNIT),
+                recovery,
                 mapping_revision: ActionMappingRevision::new("actions-v1")
                     .unwrap_or_else(|error| panic!("mapping revision failed: {error:?}")),
                 arguments: Vec::new(),

@@ -402,6 +402,7 @@ impl JournalStorage for CountingJournalStore {
 struct FailingGraphJournalStore {
     inner: InMemoryJournalStore,
     executor: Arc<DeterministicConcurrentExecutor>,
+    failure_cut: &'static str,
     failed: AtomicBool,
     releases: AtomicU64,
     release_started: AtomicBool,
@@ -417,6 +418,7 @@ impl FailingGraphJournalStore {
         Self {
             inner: InMemoryJournalStore::new(),
             executor,
+            failure_cut: "\"cut\":\"task-settlement\"",
             failed: AtomicBool::new(false),
             releases: AtomicU64::new(0),
             release_started: AtomicBool::new(false),
@@ -475,14 +477,14 @@ impl JournalStorage for FailingGraphJournalStore {
         &'a self,
         request: JournalCommitRequestV1,
     ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
-        let task_settlement = request.batch.evidence.iter().any(|evidence| {
+        let selected_cut = request.batch.evidence.iter().any(|evidence| {
             matches!(
                 evidence.kind.as_ref(),
                 CONCURRENT_DURABLE_EVIDENCE_KIND_V4 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
             ) && std::str::from_utf8(&evidence.canonical_body)
-                .is_ok_and(|body| body.contains("\"cut\":\"task-settlement\""))
+                .is_ok_and(|body| body.contains(self.failure_cut))
         });
-        if task_settlement && !self.failed.swap(true, Ordering::AcqRel) {
+        if selected_cut && !self.failed.swap(true, Ordering::AcqRel) {
             Box::pin(async { Err(JournalError::new(JournalErrorCode::Internal)) })
         } else {
             self.inner.commit(request)
@@ -2168,6 +2170,180 @@ fn durable_child_prompt_uses_ordered_graph_operation_lifecycle() {
 }
 
 #[test]
+fn durable_child_prompt_resume_reuses_committed_outcome_without_hook() {
+    let root = TempDirectory::new(
+        "agents { worker }\ndefault agent = worker;\nfn main() { spawn child -> String { prompt(session = fork) \"child\" -> String } discard join(child); }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"agent_mapping_revision":"agents-v1","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&br#""done""#[..]),
+        ))])],
+    ));
+    let interpreter = interpreter_with_delivery(
+        executor.clone(),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let mut store = FailingGraphJournalStore::new(executor.clone());
+    store.failure_cut = "\"cut\":\"operation-result\"";
+    let storage = Arc::new(store);
+    storage.allow_release();
+    let journal_id = JournalId::new("prompt-outcome-resume")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let accepted = durable_accepted(&interpreter, &root, storage.clone(), journal_id.clone());
+    for _ in 0..1_000 {
+        for task in executor.task_ids() {
+            if executor.is_runnable(task) {
+                let _ = executor.poll_task(task);
+            }
+        }
+        if storage.release_count() > 0 {
+            break;
+        }
+    }
+    assert!(storage.failed.load(Ordering::Acquire));
+    assert_eq!(storage.release_count(), 1);
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let (_, entries) = durable_graph_entries(&prefix);
+    assert!(
+        entries
+            .iter()
+            .any(|(_, entry)| entry.cut() == DurableCommitCutV1::OperationOutcome)
+    );
+    assert!(
+        !entries
+            .iter()
+            .any(|(_, entry)| entry.cut() == DurableCommitCutV1::OperationResult)
+    );
+
+    // Check every committed graph frontier to localize crash-recovery failures.
+    let (program, _) = durable_graph_entries(&prefix);
+    if let JournalPrefixV1::Full(full) = &prefix {
+        for end in 2..=full.evidence.len() {
+            let mut cut = full.clone();
+            cut.evidence = Arc::from(&full.evidence[..end]);
+            cut.committed_through = full.evidence[end - 1].sequence;
+            recover_concurrent_authoritative_prefix(program.clone(), &JournalPrefixV1::Full(cut))
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "prefix through {} ({}): {error:?}",
+                        full.evidence[end - 1].sequence,
+                        full.evidence[end - 1].kind
+                    )
+                });
+        }
+    }
+    // No hook exists in the replacement process: the committed outcome must be reused.
+    let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"agent_mapping_revision":"agents-v1","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let resumed = interpreter_with_delivery(
+        resume_executor.clone(),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let selection = selection();
+    let mut resume = pin!(resumed.resume_durable_execution(
+        storage.clone(),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(accepted.execution_id()),
+            event_delivery: None,
+        }
+    ));
+    let accepted = loop {
+        if let Poll::Ready(result) = resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            break result;
+        }
+        for task in resume_executor.task_ids() {
+            if resume_executor.is_runnable(task) {
+                let _ = resume_executor.poll_task(task);
+            }
+        }
+    };
+    let DurableResumeExecutionResult::Accepted(accepted) = accepted else {
+        panic!("resume rejected: {accepted:?}");
+    };
+    let snapshot = drive_to_terminal(&resume_executor, &resumed, accepted.handle());
+    assert!(
+        matches!(snapshot.foreground, Some(MachineOutcome::Succeeded(_))),
+        "{snapshot:?}"
+    );
+    let (program, _) = durable_graph_entries(&prefix);
+    let before = recover_concurrent_authoritative_prefix(program.clone(), &prefix)
+        .unwrap_or_else(|error| panic!("pre-crash recovery: {error:?}"));
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("resumed prefix: {error:?}"));
+    let after = recover_concurrent_authoritative_prefix(program, &prefix)
+        .unwrap_or_else(|error| panic!("post-resume recovery: {error:?}"));
+    assert_eq!(
+        before
+            .execution()
+            .sessions()
+            .sessions()
+            .map(|session| session.id)
+            .collect::<Vec<_>>(),
+        after
+            .execution()
+            .sessions()
+            .sessions()
+            .map(|session| session.id)
+            .collect::<Vec<_>>(),
+        "resume must reuse the committed operation-local session"
+    );
+}
+
+#[test]
 fn durable_task_limit_precheck_skips_parent_session_and_child_creation() {
     let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
@@ -3267,7 +3443,13 @@ fn public_durable_recovery_recognizes_execution_start_followed_by_graph_evidence
     );
 
     let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
-    let resume_integration = Arc::new(ScriptedIntegration::new([], []));
+    let resume_integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
     let resumed = interpreter_with_delivery(
         Arc::clone(&resume_executor),
         resume_integration,
@@ -3304,22 +3486,12 @@ fn public_durable_recovery_recognizes_execution_start_followed_by_graph_evidence
         Poll::Ready(result) => result,
         Poll::Pending => panic!("completed mixed-prefix resume was not published"),
     };
-    let DurableResumeExecutionResult::RunnableReplacementUnavailable(classification) = resumed
-    else {
-        panic!("mixed-prefix public resume was not classified: {resumed:?}")
+    let DurableResumeExecutionResult::Accepted(accepted) = resumed else {
+        panic!("mixed-prefix public resume did not reconstruct drivers: {resumed:?}")
     };
-    assert_eq!(classification.journal_id, journal_id);
-    assert_eq!(classification.recovery.execution_id, execution_id);
-    assert_eq!(
-        classification.recovery.latest_sequence,
-        observation.latest_sequence
-    );
-    assert_eq!(
-        classification.recovery.latest_evidence_id,
-        observation.latest_evidence_id
-    );
-    assert_eq!(classification.recovery.latest_cut, latest_graph_cut);
-    assert!(classification.release_error.is_none());
+    assert_eq!(accepted.execution_id(), execution_id);
+    assert_eq!(accepted.journal_id(), &journal_id);
+    assert!(resume_executor.task_ids().len() > 1);
     assert_eq!(
         block_on(storage.read_prefix(ReadJournalPrefixV1 {
             journal_id: journal_id.clone(),
@@ -3386,7 +3558,13 @@ fn public_durable_recovery_recognizes_execution_start_followed_by_graph_evidence
     let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
     let resumed = interpreter_with_delivery(
         Arc::clone(&resume_executor),
-        Arc::new(ScriptedIntegration::new([], [])),
+        Arc::new(ScriptedIntegration::new(
+            [ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            )],
+            [],
+        )),
         8,
         65_536,
         SinkPlan::default(),
@@ -3418,22 +3596,12 @@ fn public_durable_recovery_recognizes_execution_start_followed_by_graph_evidence
         Poll::Ready(result) => result,
         Poll::Pending => panic!("compacted graph resume was not published"),
     };
-    let DurableResumeExecutionResult::RunnableReplacementUnavailable(classification) = resumed
-    else {
-        panic!("compacted public resume was not classified: {resumed:?}")
+    let DurableResumeExecutionResult::Accepted(accepted) = resumed else {
+        panic!("compacted public resume did not reconstruct drivers: {resumed:?}")
     };
-    assert_eq!(classification.journal_id, journal_id);
-    assert_eq!(classification.recovery.execution_id, execution_id);
-    assert_eq!(
-        classification.recovery.latest_sequence,
-        observation.latest_sequence
-    );
-    assert_eq!(
-        classification.recovery.latest_evidence_id,
-        observation.latest_evidence_id
-    );
-    assert_eq!(classification.recovery.latest_cut, latest_graph_cut);
-    assert!(classification.release_error.is_none());
+    assert_eq!(accepted.execution_id(), execution_id);
+    assert_eq!(accepted.journal_id(), &journal_id);
+    assert!(resume_executor.task_ids().len() > 1);
     assert_eq!(
         block_on(snapshot_storage.read_prefix(ReadJournalPrefixV1 {
             journal_id: journal_id.clone(),

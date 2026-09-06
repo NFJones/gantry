@@ -472,6 +472,49 @@ impl AdmissionReservation {
         Self { lease: Some(lease) }
     }
 
+    /// Splits one single-class batch into exact single-unit task permits.
+    ///
+    /// This preserves the atomic reservation boundary while allowing each
+    /// independently supervised task to retain its own physical-settlement
+    /// permit. Mixed-class and control-plane reservations are rejected.
+    pub(crate) fn into_single_permits(
+        mut self,
+        class: AdmissionClass,
+    ) -> Result<Vec<AdmissionPermit>, Self> {
+        let Some(lease) = self.lease.as_ref() else {
+            return Err(self);
+        };
+        let count = lease.ordinary[class.index()];
+        if lease.control_plane != 0
+            || count == 0
+            || AdmissionClass::ACQUISITION_ORDER
+                .into_iter()
+                .filter(|candidate| *candidate != class)
+                .any(|candidate| lease.ordinary[candidate.index()] != 0)
+        {
+            return Err(self);
+        }
+        let lease = self
+            .lease
+            .take()
+            .unwrap_or_else(|| unreachable!("validated reservation retains its lease"));
+        let admission = lease.admission;
+        let permits = (0..count)
+            .map(|_| {
+                let mut ordinary = [0; ORDINARY_CLASS_COUNT];
+                ordinary[class.index()] = 1;
+                AdmissionPermit {
+                    lease: Some(AdmissionLease {
+                        admission: admission.clone(),
+                        ordinary,
+                        control_plane: 0,
+                    }),
+                }
+            })
+            .collect();
+        Ok(permits)
+    }
+
     /// Transfers the complete reservation to its submitted-work owner.
     pub fn transfer(mut self) -> AdmissionPermit {
         AdmissionPermit {

@@ -151,7 +151,7 @@ pub use supervision::{
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use task::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5,
-    RecoveredConcurrentDurableExecutionV1,
+    RecoveredConcurrentDriverAdmissionV1, RecoveredConcurrentDurableExecutionV1,
 };
 #[cfg(feature = "concurrent")]
 pub use task::{ConcurrentSchedulerV1, ScheduledMachineStepV1};

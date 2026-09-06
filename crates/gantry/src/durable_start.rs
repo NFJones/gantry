@@ -23,6 +23,9 @@ use gantry_runtime::{
     Machine, OperationAdmission, RecoveredDurableStateV1, SessionCreationModeV1,
 };
 
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+use gantry_runtime::RecoveredConcurrentDurableStateV1;
+
 #[cfg(feature = "concurrent")]
 use crate::durable_lifecycle::concurrent_recovery;
 use crate::durable_lifecycle::{RecoveredDurablePrefix, recover_durable_prefix};
@@ -237,7 +240,7 @@ pub struct DurableResumeExecutionAccepted {
     /// In-process observation and cancellation handle accepted at the resume boundary.
     handle: ExecutionHandle,
     pub(crate) owned: Arc<DurableOwnedExecution>,
-    pub(crate) recovered: RecoveredDurableStateV1,
+    pub(crate) recovered: AcceptedDurableRecovery,
     /// Stable journal target retained by the accepted execution.
     journal_id: JournalId,
     pub(crate) ownership_token: JournalOwnershipToken,
@@ -291,7 +294,24 @@ impl DurableResumeExecutionAccepted {
     #[doc(hidden)]
     #[must_use]
     pub const fn test_recovered(&self) -> &RecoveredDurableStateV1 {
-        &self.recovered
+        match &self.recovered {
+            AcceptedDurableRecovery::Serial(recovered) => recovered,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            AcceptedDurableRecovery::Concurrent(_) => {
+                panic!("concurrent recovery has no serial recovered-state projection")
+            }
+        }
+    }
+
+    /// Returns bounded concurrent recovery state for deterministic protocol fixtures.
+    #[cfg(all(feature = "test-support", feature = "concurrent", feature = "durable"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn test_concurrent_recovery(&self) -> Option<&crate::DurableConcurrentRecovery> {
+        match &self.recovered {
+            AcceptedDurableRecovery::Serial(_) => None,
+            AcceptedDurableRecovery::Concurrent(recovered) => Some(recovered),
+        }
     }
 
     /// Returns the fenced token for deterministic storage-protocol fixtures.
@@ -301,6 +321,14 @@ impl DurableResumeExecutionAccepted {
     pub const fn test_ownership_token(&self) -> &JournalOwnershipToken {
         &self.ownership_token
     }
+}
+
+/// Variant-specific recovery projection retained after lifecycle publication.
+#[derive(Clone, Debug)]
+pub(crate) enum AcceptedDurableRecovery {
+    Serial(Box<RecoveredDurableStateV1>),
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    Concurrent(crate::DurableConcurrentRecovery),
 }
 
 /// Durable resume rejection retaining the primary failure and separate owner-release outcome.
@@ -345,7 +373,7 @@ pub(crate) struct PreparedDurableResume {
     pub(crate) admission: OperationAdmission,
     pub(crate) execution_id: ProtocolIdentity,
     pub(crate) activity_id: ProtocolIdentity,
-    pub(crate) recovered: RecoveredDurableStateV1,
+    pub(crate) recovered: PreparedDurableRecovery,
     pub(crate) journal_id: JournalId,
     pub(crate) ownership_token: JournalOwnershipToken,
     pub(crate) candidate_package_activity: Option<AnalyzePackageResult>,
@@ -354,6 +382,117 @@ pub(crate) struct PreparedDurableResume {
     pub(crate) mapping_revisions: MappingRevisions,
     pub(crate) event_delivery: gantry_observe::SinkPlan,
     pub(crate) pending_revision: Option<DurableExecutionStateV1>,
+}
+
+/// Variant-specific authoritative state retained across the common resume preflight.
+pub(crate) enum PreparedDurableRecovery {
+    Serial(Box<RecoveredDurableStateV1>),
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    Concurrent {
+        execution_start: Box<DurableExecutionStartV3>,
+        recovered: Box<RecoveredConcurrentDurableStateV1>,
+        execution_state: Option<DurableExecutionStateV1>,
+        latest_sequence: u64,
+        latest_evidence_id: ProtocolIdentity,
+    },
+}
+
+impl PreparedDurableRecovery {
+    pub(crate) fn latest_cut(&self) -> DurableCommitCutV1 {
+        match self {
+            Self::Serial(recovered) => recovered.latest_cut(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent { recovered, .. } => recovered.latest_cut(),
+        }
+    }
+
+    pub(crate) fn sessions(&self) -> Option<&LogicalSessionRegistryV1> {
+        match self {
+            Self::Serial(recovered) => recovered.sessions(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent { recovered, .. } => Some(recovered.execution().sessions()),
+        }
+    }
+
+    pub(crate) fn execution_start(&self) -> Option<&DurableExecutionStartV3> {
+        match self {
+            Self::Serial(recovered) => recovered.execution_start(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent {
+                execution_start, ..
+            } => Some(execution_start),
+        }
+    }
+
+    pub(crate) fn execution_state(&self) -> Option<&DurableExecutionStateV1> {
+        match self {
+            Self::Serial(recovered) => recovered.execution_state(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent {
+                execution_state, ..
+            } => execution_state.as_ref(),
+        }
+    }
+
+    pub(crate) fn machine(&self) -> &Machine {
+        match self {
+            Self::Serial(recovered) => recovered.machine(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent { recovered, .. } => recovered.execution().foreground(),
+        }
+    }
+
+    fn latest_sequence(&self) -> u64 {
+        match self {
+            Self::Serial(recovered) => recovered.latest_sequence(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent {
+                latest_sequence, ..
+            } => *latest_sequence,
+        }
+    }
+
+    fn latest_evidence_id(&self) -> ProtocolIdentity {
+        match self {
+            Self::Serial(recovered) => recovered.latest_evidence_id(),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent {
+                latest_evidence_id, ..
+            } => *latest_evidence_id,
+        }
+    }
+
+    fn record_execution_state_commit(
+        &mut self,
+        state: DurableExecutionStateV1,
+        evidence_id: ProtocolIdentity,
+        sequence: u64,
+    ) -> Result<(), DurableEvidenceError> {
+        match self {
+            Self::Serial(recovered) => {
+                recovered.record_execution_state_commit(state, evidence_id, sequence)
+            }
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            Self::Concurrent {
+                recovered,
+                execution_state,
+                latest_sequence,
+                latest_evidence_id,
+                ..
+            } => {
+                if state.execution_id() != recovered.execution().foreground().execution_id()
+                    || evidence_id.kind() != IdentityKind::Evidence
+                    || latest_sequence.checked_add(1) != Some(sequence)
+                {
+                    return Err(DurableEvidenceError::InvalidExecutionState);
+                }
+                *execution_state = Some(state);
+                *latest_sequence = sequence;
+                *latest_evidence_id = evidence_id;
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Durable composition of shared preflight, fenced storage, and lifecycle acceptance.
@@ -768,20 +907,24 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 )
                 .await;
         }
-        #[cfg(all(feature = "concurrent", feature = "durable"))]
-        if let RecoveredDurablePrefix::Concurrent { recovered, .. } = recovered {
-            return self
-                .classify_unavailable_replacement_and_release(
-                    journal_id,
-                    ownership.token,
-                    concurrent_recovery(&recovered),
-                )
-                .await;
-        }
-        let RecoveredDurablePrefix::Serial(recovered) = recovered else {
-            unreachable!("concurrent recovery is classified above")
+        let recovered = match recovered {
+            RecoveredDurablePrefix::Serial(recovered) => PreparedDurableRecovery::Serial(recovered),
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            RecoveredDurablePrefix::Concurrent {
+                execution_start,
+                recovered,
+            } => {
+                let latest_sequence = recovered.latest_sequence();
+                let latest_evidence_id = recovered.latest_evidence_id();
+                PreparedDurableRecovery::Concurrent {
+                    execution_start,
+                    recovered,
+                    execution_state: None,
+                    latest_sequence,
+                    latest_evidence_id,
+                }
+            }
         };
-        let recovered = *recovered;
         let mut admission = match self.start.lifecycle.admit(AdmissionKind::NewWork) {
             Ok(admission) => admission,
             Err(error) => {
@@ -999,7 +1142,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                     .await;
             }
         };
-        handoff(PreparedDurableResume {
+        let prepared = PreparedDurableResume {
             admission,
             execution_id: metadata.execution_id,
             activity_id,
@@ -1012,8 +1155,8 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             mapping_revisions,
             event_delivery,
             pending_revision,
-        })
-        .await
+        };
+        handoff(prepared).await
     }
 
     pub(crate) async fn accept_prepared_resume(
@@ -1064,24 +1207,55 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             Err(_) => return Err(Box::new(prepared)),
         };
         let lifecycle = DurableLifecycleCoordinator::new(Arc::clone(&self.storage));
-        // Preserve the budget observer already attached to the gated driver,
-        // while the accepted test projection remains independent.
-        let accepted_projection = prepared.recovered.clone();
-        let recovered = std::mem::replace(&mut prepared.recovered, accepted_projection);
-        let owned = lifecycle
-            .own_committed_start(
-                prepared.journal_id.clone(),
-                prepared.ownership_token.clone(),
-                handle.clone(),
+        let (owned, recovered) = match prepared.recovered {
+            PreparedDurableRecovery::Serial(mut recovered) => {
+                // Preserve the budget observer already attached to the gated driver,
+                // while the accepted test projection remains independent.
+                let accepted_projection = recovered.clone();
+                let owner_projection = std::mem::replace(&mut recovered, accepted_projection);
+                let owned = lifecycle
+                    .own_committed_start(
+                        prepared.journal_id.clone(),
+                        prepared.ownership_token.clone(),
+                        handle.clone(),
+                        *owner_projection,
+                        prepared.event_delivery,
+                    )
+                    .unwrap_or_else(|_| {
+                        unreachable!("validated recovery restores its lifecycle state")
+                    });
+                (owned, AcceptedDurableRecovery::Serial(recovered))
+            }
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            PreparedDurableRecovery::Concurrent {
+                execution_start,
                 recovered,
-                prepared.event_delivery,
-            )
-            .unwrap_or_else(|_| unreachable!("validated recovery restores its lifecycle state"));
+                ..
+            } => {
+                let accepted_projection = concurrent_recovery(&recovered);
+                let owned = lifecycle
+                    .own_recovered_concurrent_start(
+                        prepared.journal_id.clone(),
+                        prepared.ownership_token.clone(),
+                        handle.clone(),
+                        *execution_start,
+                        *recovered,
+                        prepared.event_delivery,
+                    )
+                    .unwrap_or_else(|_| {
+                        unreachable!("validated graph recovery restores its lifecycle state")
+                    });
+                (
+                    owned,
+                    AcceptedDurableRecovery::Concurrent(accepted_projection),
+                )
+            }
+        };
         Ok(DurableResumeExecutionAccepted {
             execution_id: prepared.execution_id,
             handle,
             owned,
-            recovered: prepared.recovered,
+            recovered,
             journal_id: prepared.journal_id,
             ownership_token: prepared.ownership_token,
             candidate_package_activity: prepared.candidate_package_activity.map(Box::new),
@@ -1149,7 +1323,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         &self,
         journal_id: &JournalId,
         ownership_token: &JournalOwnershipToken,
-        recovered: &mut RecoveredDurableStateV1,
+        recovered: &mut PreparedDurableRecovery,
         revision: DurableExecutionStateV1,
     ) -> Result<(), ResumeRejection> {
         let local_id = BatchLocalEvidenceId::new("execution-state").map_err(|_| {
@@ -1278,29 +1452,6 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             .await
             .err();
         resume_rejected(journal_id, failure, release_error)
-    }
-
-    async fn classify_unavailable_replacement_and_release(
-        &self,
-        journal_id: JournalId,
-        ownership_token: JournalOwnershipToken,
-        recovery: crate::DurableConcurrentRecovery,
-    ) -> DurableResumeExecutionResult {
-        let release_error = self
-            .storage
-            .release_owner(ReleaseJournalOwnerV1 {
-                journal_id: journal_id.clone(),
-                ownership_token,
-            })
-            .await
-            .err();
-        DurableResumeExecutionResult::RunnableReplacementUnavailable(
-            DurableResumeReplacementUnavailable {
-                journal_id,
-                recovery,
-                release_error,
-            },
-        )
     }
 }
 

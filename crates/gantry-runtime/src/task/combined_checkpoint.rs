@@ -863,7 +863,79 @@ pub struct RecoveredConcurrentDurableExecutionV1 {
     sessions: LogicalSessionRegistryV1,
 }
 
+/// Coordinator-backed process-local admission state for replacement task drivers.
+#[derive(Debug)]
+pub struct RecoveredConcurrentDriverAdmissionV1 {
+    coordinator: crate::ExecutionCoordinator,
+    foreground: Machine,
+    children: BTreeMap<ProtocolIdentity, Machine>,
+    unfinished_task_ids: Vec<ProtocolIdentity>,
+}
+
+impl RecoveredConcurrentDriverAdmissionV1 {
+    /// Returns the coordinator containing the unchanged recovered semantics.
+    #[must_use]
+    pub const fn coordinator(&self) -> &crate::ExecutionCoordinator {
+        &self.coordinator
+    }
+
+    /// Returns the recovered foreground machine without changing its suspension.
+    #[must_use]
+    pub const fn foreground(&self) -> &Machine {
+        &self.foreground
+    }
+
+    /// Returns recovered child machines in stable identity-keyed storage.
+    #[must_use]
+    pub const fn children(&self) -> &BTreeMap<ProtocolIdentity, Machine> {
+        &self.children
+    }
+
+    /// Returns unfinished logical tasks in canonical dynamic-task-path order.
+    #[must_use]
+    pub fn unfinished_task_ids(&self) -> &[ProtocolIdentity] {
+        &self.unfinished_task_ids
+    }
+
+    /// Atomically records that every prepared replacement driver was submitted.
+    pub fn register_submitted_drivers(&self) -> Result<(), super::TaskStateError> {
+        self.coordinator
+            .register_recovered_drivers(&self.unfinished_task_ids)
+    }
+
+    /// Consumes admission state into its coordinator and machine owners.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        crate::ExecutionCoordinator,
+        Machine,
+        BTreeMap<ProtocolIdentity, Machine>,
+        Vec<ProtocolIdentity>,
+    ) {
+        (
+            self.coordinator,
+            self.foreground,
+            self.children,
+            self.unfinished_task_ids,
+        )
+    }
+}
+
 impl RecoveredConcurrentDurableExecutionV1 {
+    /// Captures replayed machines without trusting the reference scheduler's old queue.
+    pub(crate) fn capture_replayed_checkpoint(
+        &self,
+    ) -> Result<ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointError> {
+        ConcurrentDurableCheckpointV4::capture_coordinated(
+            &self.foreground,
+            &self.scheduler.machines,
+            &self.scheduler.state,
+            &self.sessions,
+            &self.foreground.execution_budget(),
+        )
+    }
+
     /// Returns the recovered foreground machine.
     #[must_use]
     pub const fn foreground(&self) -> &Machine {
@@ -910,6 +982,36 @@ impl RecoveredConcurrentDurableExecutionV1 {
     #[must_use]
     pub fn into_machine_graph(self) -> (Machine, BTreeMap<ProtocolIdentity, Machine>) {
         (self.foreground, self.scheduler.machines)
+    }
+
+    /// Converts validated recovery into replacement-driver admission state.
+    ///
+    /// This consumes only process-local scheduler ownership. Task semantics,
+    /// sessions, shared budget state, and every machine suspension are moved
+    /// unchanged into the returned coordinator-backed graph.
+    pub fn into_driver_admission(
+        self,
+    ) -> Result<RecoveredConcurrentDriverAdmissionV1, super::TaskStateError> {
+        let Self {
+            foreground,
+            scheduler,
+            sessions,
+        } = self;
+        let ConcurrentSchedulerV1 {
+            mut state,
+            execution_budget,
+            machines,
+            runnable: _,
+        } = scheduler;
+        let unfinished_task_ids = state.prepare_recovered_driver_admission();
+        let coordinator =
+            crate::ExecutionCoordinator::new_with_budget(state, sessions, execution_budget)?;
+        Ok(RecoveredConcurrentDriverAdmissionV1 {
+            coordinator,
+            foreground,
+            children: machines,
+            unfinished_task_ids,
+        })
     }
 }
 
@@ -1514,6 +1616,7 @@ fn read_identity(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use gantry_core::identity::ProtocolIdentity;
@@ -1538,8 +1641,8 @@ mod tests {
         CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskRecordV1,
         ConcurrentTaskStateV1, ConcurrentTaskStatusV1, DynamicTaskHandleIdentity, ExecutionBudget,
         LogicalSessionRegistryV1, Machine, MachineLabel, MachineLimits, MachineOutcome,
-        MachineStep, RuntimeCode, SessionCreationModeV1, TaskCreationRequestV1, TaskStateError,
-        root_task_identity,
+        MachineStep, RuntimeCode, SessionCreationModeV1, TaskCreationRequestV1,
+        TaskDriverOwnershipV1, TaskRecoveryStateV1, TaskStateError, root_task_identity,
     };
 
     #[test]
@@ -2319,6 +2422,182 @@ mod tests {
             .recover(Arc::clone(&fixture.program))
             .unwrap_or_else(|error| panic!("settled-root recovery failed: {error:?}"));
         assert_eq!(recovered.scheduler().state(), fixture.scheduler.state());
+    }
+
+    /// Driver admission changes only process-local ownership bookkeeping.
+    #[test]
+    fn recovered_driver_admission_preserves_graph_semantics_and_order() {
+        let (mut fixture, created) = pending_task_control_fixture(TaskControlSiteKind::Join, None);
+        fixture
+            .scheduler
+            .state
+            .stage_task_outcome(
+                created[1].task_id,
+                MachineOutcome::Succeeded(LogicalValue::unit()),
+            )
+            .unwrap_or_else(|error| panic!("pending outcome failed: {error:?}"));
+        fixture
+            .scheduler
+            .cancel_task_tree(created[0].task_id, Arc::from("recover-cancel"))
+            .unwrap_or_else(|error| panic!("task cancellation failed: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
+        let recovered = checkpoint
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
+        let mut expected_state = recovered.scheduler().state().clone();
+        expected_state.root.driver_ownership = TaskDriverOwnershipV1::AwaitingSubmission;
+        expected_state.root.recovery_state = TaskRecoveryStateV1::Recovered;
+        for task in expected_state.tasks.values_mut() {
+            task.driver_ownership = TaskDriverOwnershipV1::AwaitingSubmission;
+            task.recovery_state = TaskRecoveryStateV1::Recovered;
+        }
+        let expected_sessions = recovered.sessions().sessions().cloned().collect::<Vec<_>>();
+        let expected_budget = recovered.foreground().budget_checkpoint();
+        let expected_foreground = recovered.foreground().checkpoint();
+        let expected_children = recovered
+            .scheduler()
+            .machines
+            .iter()
+            .map(|(task_id, machine)| (*task_id, machine.checkpoint()))
+            .collect::<BTreeMap<_, _>>();
+
+        let admission = recovered
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("driver admission failed: {error:?}"));
+
+        assert_eq!(
+            admission.unfinished_task_ids(),
+            [fixture.root_task, created[0].task_id, created[1].task_id]
+        );
+        let snapshot = admission.coordinator().snapshot();
+        assert_eq!(snapshot.state(), &expected_state);
+        assert_eq!(snapshot.sessions(), expected_sessions);
+        assert_eq!(snapshot.execution_budget(), Some(expected_budget));
+        assert_eq!(admission.foreground().checkpoint(), expected_foreground);
+        assert_eq!(
+            admission
+                .children()
+                .iter()
+                .map(|(task_id, machine)| (*task_id, machine.checkpoint()))
+                .collect::<BTreeMap<_, _>>(),
+            expected_children
+        );
+    }
+
+    /// Settled tasks require no replacement driver after recovery.
+    #[test]
+    fn recovered_driver_admission_keeps_settled_tasks_physical() {
+        let mut fixture = spawned_fixture();
+        let child = running_child(&mut fixture, 0);
+        fixture
+            .scheduler
+            .state
+            .settle(
+                child.task_id,
+                MachineOutcome::Succeeded(LogicalValue::unit()),
+            )
+            .unwrap_or_else(|error| panic!("child settlement failed: {error:?}"));
+        fixture
+            .scheduler
+            .state
+            .mark_driver_physically_settled(child.task_id)
+            .unwrap_or_else(|error| panic!("physical settlement failed: {error:?}"));
+        fixture.scheduler.machines.remove(&child.task_id);
+        fixture
+            .scheduler
+            .runnable
+            .retain(|task_id| *task_id != child.task_id);
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
+        let recovered = checkpoint
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"));
+
+        let admission = recovered
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("driver admission failed: {error:?}"));
+
+        assert_eq!(admission.unfinished_task_ids(), [fixture.root_task]);
+        let snapshot = admission.coordinator().snapshot();
+        let root = snapshot
+            .state()
+            .task_record(fixture.root_task)
+            .unwrap_or_else(|| panic!("root task missing"));
+        assert_eq!(
+            root.driver_ownership(),
+            TaskDriverOwnershipV1::AwaitingSubmission
+        );
+        assert_eq!(root.recovery_state(), TaskRecoveryStateV1::Recovered);
+        let settled = snapshot
+            .state()
+            .task_record(child.task_id)
+            .unwrap_or_else(|| panic!("settled child missing"));
+        assert_eq!(settled.status().kind(), TaskStatusKind::Succeeded);
+        assert_eq!(
+            settled.driver_ownership(),
+            TaskDriverOwnershipV1::PhysicallySettled
+        );
+        assert_eq!(settled.recovery_state(), TaskRecoveryStateV1::Original);
+        assert!(!admission.children().contains_key(&child.task_id));
+    }
+
+    /// A settled foreground root is excluded from replacement-driver admission.
+    #[test]
+    fn recovered_driver_admission_keeps_settled_root_physical() {
+        let mut fixture = fixture();
+        let mut outcome = None;
+        for _ in 0..100 {
+            match fixture.foreground.step() {
+                MachineStep::Transition(MachineLabel::TaskSettled(settled)) => {
+                    outcome = Some(settled);
+                    break;
+                }
+                MachineStep::Transition(_) => {}
+                other => panic!("unexpected root step: {other:?}"),
+            }
+        }
+        fixture
+            .scheduler
+            .state
+            .settle(
+                fixture.root_task,
+                outcome.unwrap_or_else(|| panic!("root did not settle")),
+            )
+            .unwrap_or_else(|error| panic!("root settlement failed: {error:?}"));
+        let checkpoint = ConcurrentDurableCheckpointV4::capture(
+            &fixture.foreground,
+            &fixture.scheduler,
+            &fixture.sessions,
+        )
+        .unwrap_or_else(|error| panic!("checkpoint capture failed: {error:?}"));
+
+        let admission = checkpoint
+            .recover(Arc::clone(&fixture.program))
+            .unwrap_or_else(|error| panic!("checkpoint recovery failed: {error:?}"))
+            .into_driver_admission()
+            .unwrap_or_else(|error| panic!("driver admission failed: {error:?}"));
+
+        assert!(admission.unfinished_task_ids().is_empty());
+        let snapshot = admission.coordinator().snapshot();
+        let root = snapshot
+            .state()
+            .task_record(fixture.root_task)
+            .unwrap_or_else(|| panic!("root task missing"));
+        assert_eq!(root.status().kind(), TaskStatusKind::Succeeded);
+        assert_eq!(
+            root.driver_ownership(),
+            TaskDriverOwnershipV1::PhysicallySettled
+        );
+        assert_eq!(root.recovery_state(), TaskRecoveryStateV1::Original);
     }
 
     /// Pending outcomes are logical state; physical ownership is not settlement.

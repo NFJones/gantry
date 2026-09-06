@@ -41,7 +41,7 @@ mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
     ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5,
-    RecoveredConcurrentDurableExecutionV1,
+    RecoveredConcurrentDriverAdmissionV1, RecoveredConcurrentDurableExecutionV1,
 };
 
 /// One analyzer-selected value binding copied into a child task.
@@ -898,6 +898,81 @@ impl ConcurrentTaskStateV1 {
         self.tasks
             .get(&task_id)
             .map(ExecutionTaskRecordRefV1::Child)
+    }
+
+    /// Reclassifies process-local driver bookkeeping after durable recovery.
+    ///
+    /// Semantic task state is retained exactly. Unfinished tasks become eligible
+    /// for replacement-driver submission, while settled tasks retain physical
+    /// settlement. Returned identities use canonical dynamic-task-path order.
+    #[must_use]
+    pub(crate) fn prepare_recovered_driver_admission(&mut self) -> Vec<ProtocolIdentity> {
+        let root_unfinished = !status_is_settled(&self.root.status);
+        if root_unfinished {
+            self.root.driver_ownership = TaskDriverOwnershipV1::AwaitingSubmission;
+            self.root.recovery_state = TaskRecoveryStateV1::Recovered;
+        } else {
+            self.root.driver_ownership = TaskDriverOwnershipV1::PhysicallySettled;
+        }
+
+        for task in self.tasks.values_mut() {
+            if status_is_settled(&task.status) {
+                task.driver_ownership = TaskDriverOwnershipV1::PhysicallySettled;
+            } else {
+                task.driver_ownership = TaskDriverOwnershipV1::AwaitingSubmission;
+                task.recovery_state = TaskRecoveryStateV1::Recovered;
+            }
+        }
+
+        let mut unfinished = self
+            .tasks
+            .iter()
+            .filter_map(|(task_id, task)| (!status_is_settled(&task.status)).then_some(*task_id))
+            .collect::<Vec<_>>();
+        unfinished
+            .sort_by(|left, right| self.task_paths.get(left).cmp(&self.task_paths.get(right)));
+        if root_unfinished {
+            unfinished.insert(0, self.root_task_id);
+        }
+        unfinished
+    }
+
+    /// Atomically records supervision for one complete recovered driver set.
+    pub(crate) fn register_recovered_drivers(
+        &mut self,
+        task_ids: &[ProtocolIdentity],
+    ) -> Result<(), TaskStateError> {
+        let root_unfinished = !status_is_settled(&self.root.status);
+        let mut expected = self
+            .tasks
+            .iter()
+            .filter_map(|(task_id, task)| (!status_is_settled(&task.status)).then_some(*task_id))
+            .collect::<Vec<_>>();
+        expected.sort_by(|left, right| self.task_paths.get(left).cmp(&self.task_paths.get(right)));
+        if root_unfinished {
+            expected.insert(0, self.root_task_id);
+        }
+        if task_ids != expected
+            || task_ids.iter().any(|task_id| {
+                self.task_record(*task_id).is_none_or(|record| {
+                    record.driver_ownership() != TaskDriverOwnershipV1::AwaitingSubmission
+                        || record.recovery_state() != TaskRecoveryStateV1::Recovered
+                })
+            })
+        {
+            return Err(TaskStateError::InvalidTransition);
+        }
+        for task_id in task_ids {
+            if *task_id == self.root_task_id {
+                self.root.driver_ownership = TaskDriverOwnershipV1::Supervised;
+            } else {
+                self.tasks
+                    .get_mut(task_id)
+                    .ok_or(TaskStateError::UnknownTask)?
+                    .driver_ownership = TaskDriverOwnershipV1::Supervised;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the exact semantic outcome retained when the root settled.
@@ -1801,6 +1876,85 @@ impl ConcurrentTaskStateV1 {
                 task_path: Arc::clone(&task.task_path),
             }],
         })
+    }
+
+    /// Reconstructs an already committed join or detach without consuming it again.
+    #[cfg(feature = "concurrent")]
+    pub(crate) fn recovered_staged_task_control(
+        &self,
+        owner_task_id: ProtocolIdentity,
+        pending: &crate::machine::MachineTaskControlSuspension,
+    ) -> Result<(Option<JoinStartV1>, Option<TaskOwnershipChangedV1>), TaskStateError> {
+        let (workflow, site, kind, disposition, handles) = match pending {
+            crate::machine::MachineTaskControlSuspension::Spawn(_) => {
+                return Ok((None, None));
+            }
+            crate::machine::MachineTaskControlSuspension::Join(join) => (
+                join.workflow.clone(),
+                join.site.clone(),
+                TaskControlSiteKind::Join,
+                TaskHandleState::Joined,
+                join.handles.as_slice(),
+            ),
+            crate::machine::MachineTaskControlSuspension::JoinAll(join) => {
+                if join.handles.is_empty() {
+                    return Ok((Some(JoinStartV1::Empty), None));
+                }
+                (
+                    join.workflow.clone(),
+                    join.site.clone(),
+                    TaskControlSiteKind::JoinAll,
+                    TaskHandleState::Joined,
+                    join.handles.as_slice(),
+                )
+            }
+            crate::machine::MachineTaskControlSuspension::Detach(detach) => (
+                detach.workflow.clone(),
+                detach.site.clone(),
+                TaskControlSiteKind::Detach,
+                TaskHandleState::Detached,
+                std::slice::from_ref(&detach.handle),
+            ),
+        };
+        let control_site = StaticSiteId::new(workflow, site);
+        let members = handles
+            .iter()
+            .map(|handle| {
+                let identity = handle.identity();
+                let task = self
+                    .tasks
+                    .get(&identity.child())
+                    .ok_or(TaskStateError::UnknownTask)?;
+                if identity.owner() != owner_task_id
+                    || task.parent_task_id != owner_task_id
+                    || task.handle_id != identity
+                    || task.handle_name.as_ref() != handle.name()
+                    || task.result_type != *handle.result_type()
+                    || !task.handle_visible
+                    || task.handle_state != disposition
+                {
+                    return Err(TaskStateError::InvalidOwnershipEvidence);
+                }
+                Ok(TaskOwnershipMemberV1 {
+                    handle_id: task.handle_id,
+                    handle_name: Arc::clone(&task.handle_name),
+                    task_id: task.task_id,
+                    task_path: Arc::clone(&task.task_path),
+                })
+            })
+            .collect::<Result<Vec<_>, TaskStateError>>()?;
+        let ownership = TaskOwnershipChangedV1 {
+            owner_task_id,
+            control_site,
+            control_kind: kind,
+            disposition,
+            members,
+        };
+        if disposition == TaskHandleState::Joined {
+            Ok((Some(JoinStartV1::Started(ownership)), None))
+        } else {
+            Ok((None, Some(ownership)))
+        }
     }
 
     /// Cross-checks one exact dynamic path against an analyzer ownership fact.

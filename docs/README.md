@@ -61,6 +61,10 @@ candidate-source resume, compacted and fresh-process reconstruction, and
 pre-execution tamper rejection are documented in
 [`durable-generics-and-traits.md`](durable-generics-and-traits.md).
 
+Executor-backed graph reconstruction, committed operation/session reuse, and
+the remaining recovery qualification boundary are documented in
+[`executor-backed-recovery.md`](executor-backed-recovery.md).
+
 The nondurable sequential evaluator's progress, preservation, cancellation,
 operation-consumption, lifecycle, observation, and terminal-uniqueness
 argument is documented in
