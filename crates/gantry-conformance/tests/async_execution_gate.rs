@@ -37,7 +37,11 @@ use tokio::runtime::{Builder, Runtime};
 const MANIFEST_PATH: &str = "protocol/conformance/async-execution-gate-v1.json";
 const CONTRACT_PATH: &str = "protocol/conformance/async-execution-contract-v1.json";
 const ASSIGNMENT_SHA256: &str = "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49c9f3c0f0d6d889102";
-const ARTIFACTS: [(&str, &str); 15] = [
+const ARTIFACTS: [(&str, &str); 17] = [
+    (
+        "crates/gantry-conformance/tests/source_spawn.rs",
+        "e2e00592c1a3d80f2895d4474fa22d884762b57397fe9ec99f8e1f28c97ccdd4",
+    ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
         "49dd4c0100c63f88c70114b6aed33130d301c4f96b1ae0684cf29701e65ccbd3",
@@ -64,7 +68,7 @@ const ARTIFACTS: [(&str, &str); 15] = [
     ),
     (
         "protocol/conformance/execution-coordinator-v1.json",
-        "133cf11d78140dcb708ba8e1b2042c43e9b2593b11642774715b53498364a15f",
+        "67948d7a44b2169c6cd87156f83e7f9a6075dc2f1119ccd871fb57e7207c82cc",
     ),
     (
         "protocol/conformance/executor-services-v1.json",
@@ -84,11 +88,15 @@ const ARTIFACTS: [(&str, &str); 15] = [
     ),
     (
         "protocol/conformance/runtime-sessions-v1.json",
-        "3c9567563a26cf4f51bc4c268231c555ba6a43dbe4f78927e115a2cff5672758",
+        "a516d67ca23ce2705793266d910bea3030f960b2eca97acf5f8c2e5ff843b107",
+    ),
+    (
+        "protocol/conformance/source-spawn-v1.json",
+        "d9fb5c4639c3c6bb4b419194a07480d289932885e3c5bbf55e0a741cd208fc1a",
     ),
     (
         "protocol/conformance/task-driver-v1.json",
-        "8131fdaba1cbbb12c87ce855f650139dd407f7854580e1088eee895c92fa28b1",
+        "58fa0a634d5096998df068141b7981a96528132cbdc8695d2dd9ed5a76eaaec6",
     ),
     (
         "protocol/conformance/task-supervision-v1.json",

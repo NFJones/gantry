@@ -206,7 +206,12 @@ fn validate_facade_features(metadata: &cargo_metadata::Metadata) -> Result<(), S
         ("default", BTreeSet::from(["evaluator"])),
         (
             "frontend",
-            BTreeSet::from(["dep:gantry-frontend", "dep:gantry-observe"]),
+            // Package activities use the runtime-owned bounded blocking service.
+            BTreeSet::from([
+                "dep:gantry-frontend",
+                "dep:gantry-observe",
+                "dep:gantry-runtime",
+            ]),
         ),
         (
             "analyzer",

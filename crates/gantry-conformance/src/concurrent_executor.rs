@@ -42,7 +42,12 @@ pub enum DeterministicTaskPoll {
 pub struct DeterministicConcurrentExecutor {
     tasks: Mutex<Vec<Arc<Mutex<DeterministicTaskState>>>>,
     fail_next_spawn: AtomicBool,
+    fail_spawn_number: Mutex<Option<u64>>,
+    complete_next_spawn_on_accept: Mutex<Option<OwnedTaskCompletion>>,
+    spawn_attempts: AtomicU64,
     poll_next_spawn_immediately: AtomicBool,
+    controlled_sleeps: AtomicBool,
+    sleeps: Mutex<Vec<(DurationMicros, Arc<DeterministicSleepState>)>>,
     yields: AtomicU64,
     next_yield_failure: Mutex<Option<HostError>>,
     next_yield_cancellation: Mutex<Option<gantry::host::contracts::CancellationSignal>>,
@@ -63,6 +68,20 @@ impl DeterministicConcurrentExecutor {
         self.fail_next_spawn.store(true, Ordering::Release);
     }
 
+    /// Makes the zero-based submission number fail with `executor-failure`.
+    pub fn fail_spawn_number(&self, submission: u64) {
+        *lock(&self.fail_spawn_number) = Some(submission);
+    }
+
+    /// Accepts the next submission with a handle that is already terminal.
+    ///
+    /// The submitted future is dropped without being polled. This models an
+    /// executor that observes an abnormal completion before Gantry publishes
+    /// the corresponding semantic submission transition.
+    pub fn complete_next_spawn_on_accept(&self, completion: OwnedTaskCompletion) {
+        *lock(&self.complete_next_spawn_on_accept) = Some(completion);
+    }
+
     /// Polls the next submitted task once before returning its handle.
     ///
     /// This models executors that may start a future synchronously during
@@ -80,6 +99,31 @@ impl DeterministicConcurrentExecutor {
     /// Makes the next cooperative yield publish one Gantry cancellation signal.
     pub fn cancel_on_next_yield(&self, signal: gantry::host::contracts::CancellationSignal) {
         *lock(&self.next_yield_cancellation) = Some(signal);
+    }
+
+    /// Keeps subsequently requested sleeps pending until explicitly released.
+    pub fn control_sleeps(&self) {
+        self.controlled_sleeps.store(true, Ordering::Release);
+    }
+
+    /// Returns requested sleep durations in creation order.
+    #[must_use]
+    pub fn sleep_durations(&self) -> Vec<DurationMicros> {
+        lock(&self.sleeps)
+            .iter()
+            .map(|(duration, _)| *duration)
+            .collect()
+    }
+
+    /// Releases one controlled sleep and wakes its registered observers.
+    pub fn release_sleep(&self, index: usize) -> Result<(), HostError> {
+        let sleep = lock(&self.sleeps)
+            .get(index)
+            .map(|(_, sleep)| Arc::clone(sleep))
+            .ok_or_else(executor_failure)?;
+        sleep.ready.store(true, Ordering::Release);
+        wake_all(std::mem::take(&mut *lock(&sleep.waiters)));
+        Ok(())
     }
 
     /// Makes the next abort request for one running task fail immutably.
@@ -115,6 +159,34 @@ impl DeterministicConcurrentExecutor {
         Ok(())
     }
 
+    /// Settles one running task with an injected panic of the exact supplied origin.
+    pub fn panic_task(
+        &self,
+        task_id: u64,
+        origin: OwnedTaskPanicOrigin,
+        protected_diagnostic: Option<Arc<str>>,
+    ) -> Result<(), HostError> {
+        let task = self.task(task_id).ok_or_else(executor_failure)?;
+        let (future, waiters) = {
+            let mut state = lock(&task);
+            if !matches!(state.settlement, DeterministicSettlement::Running) {
+                return Err(executor_failure());
+            }
+            state.runnable = false;
+            (state.future.take(), std::mem::take(&mut state.waiters))
+        };
+        let completion = match catch_unwind(AssertUnwindSafe(|| drop(future))) {
+            Ok(()) => OwnedTaskCompletion::Panicked {
+                origin,
+                protected_diagnostic,
+            },
+            Err(payload) => completion_from_panic(payload),
+        };
+        lock(&task).settlement = DeterministicSettlement::Settled(completion);
+        wake_all(waiters);
+        Ok(())
+    }
+
     /// Returns all zero-based harness task identities in creation order.
     #[must_use]
     pub fn task_ids(&self) -> Vec<u64> {
@@ -134,6 +206,13 @@ impl DeterministicConcurrentExecutor {
     #[must_use]
     pub fn wake_count(&self, task_id: u64) -> Option<u64> {
         self.task(task_id).map(|task| lock(&task).wakes)
+    }
+
+    /// Returns the fixed abort result for one task when an abort was observed.
+    #[must_use]
+    pub fn abort_result(&self, task_id: u64) -> Option<OwnedTaskAbort> {
+        self.task(task_id)
+            .and_then(|task| lock(&task).abort_result.clone())
     }
 
     /// Returns the number of cooperative executor yields requested by tasks.
@@ -237,17 +316,30 @@ impl DeterministicConcurrentExecutor {
 
 impl ExecutorAdapter for DeterministicConcurrentExecutor {
     fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
-        if self.fail_next_spawn.swap(false, Ordering::AcqRel) {
+        let submission = self.spawn_attempts.fetch_add(1, Ordering::AcqRel);
+        let task_id = u64::try_from(lock(&self.tasks).len()).map_err(|_| executor_failure())?;
+        let indexed_failure =
+            lock(&self.fail_spawn_number).is_some_and(|candidate| candidate == submission);
+        if indexed_failure {
+            *lock(&self.fail_spawn_number) = None;
+        }
+        if indexed_failure || self.fail_next_spawn.swap(false, Ordering::AcqRel) {
             let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
             return Err(executor_failure());
         }
-        let task_id = u64::try_from(lock(&self.tasks).len()).map_err(|_| executor_failure())?;
+        let immediate_completion = lock(&self.complete_next_spawn_on_accept).take();
+        let (future, settlement, runnable) = if let Some(completion) = immediate_completion {
+            let _ = catch_unwind(AssertUnwindSafe(|| drop(task)));
+            (None, DeterministicSettlement::Settled(completion), false)
+        } else {
+            (Some(task), DeterministicSettlement::Running, true)
+        };
         let state = Arc::new(Mutex::new(DeterministicTaskState {
-            future: Some(task),
-            settlement: DeterministicSettlement::Running,
+            future,
+            settlement,
             abort_result: None,
             fail_abort: false,
-            runnable: true,
+            runnable,
             polls: 0,
             wakes: 0,
             waiters: Vec::new(),
@@ -262,8 +354,20 @@ impl ExecutorAdapter for DeterministicConcurrentExecutor {
         Ok(Box::new(DeterministicSubmittedTask { state }))
     }
 
-    fn sleep<'a>(&'a self, _duration: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
-        Box::pin(async { Ok(()) })
+    fn sleep<'a>(&'a self, duration: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
+        if !self.controlled_sleeps.load(Ordering::Acquire) {
+            return Box::pin(async { Ok(()) });
+        }
+        let state = Arc::new(DeterministicSleepState::default());
+        lock(&self.sleeps).push((duration, Arc::clone(&state)));
+        Box::pin(std::future::poll_fn(move |context| {
+            if state.ready.load(Ordering::Acquire) {
+                Poll::Ready(Ok(()))
+            } else {
+                register_waker(&mut lock(&state.waiters), context.waker());
+                Poll::Pending
+            }
+        }))
     }
 
     fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
@@ -373,6 +477,12 @@ struct DeterministicTaskState {
     polls: u64,
     wakes: u64,
     waiters: Vec<Waker>,
+}
+
+#[derive(Default)]
+struct DeterministicSleepState {
+    ready: AtomicBool,
+    waiters: Mutex<Vec<Waker>>,
 }
 
 enum DeterministicSettlement {

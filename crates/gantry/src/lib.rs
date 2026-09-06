@@ -23,11 +23,11 @@ mod validate;
 
 #[cfg(feature = "durable")]
 pub use durable_lifecycle::{
-    DurableCancelExecutionResult, DurableExecutionObservation, DurableExecutionWait,
-    DurableJournalOwnerState, DurableLifecycleCoordinator, DurableOwnedExecution,
-    DurableOwnedExecutionOpenError, DurableQueryExecutionError, DurableQueryExecutionFailure,
-    DurableQueryExecutionRequest, DurableQueryExecutionResult, DurableRunFailure,
-    DurableShutdownError, DurableShutdownReport,
+    DurableCancelExecutionResult, DurableConcurrentRecovery, DurableExecutionObservation,
+    DurableExecutionWait, DurableJournalOwnerState, DurableLifecycleCoordinator,
+    DurableOwnedExecution, DurableOwnedExecutionOpenError, DurableQueryExecutionError,
+    DurableQueryExecutionFailure, DurableQueryExecutionRequest, DurableQueryExecutionResult,
+    DurableRunFailure, DurableShutdownError, DurableShutdownReport,
 };
 #[cfg(all(feature = "durable", feature = "test-support"))]
 #[doc(hidden)]
@@ -35,9 +35,9 @@ pub use durable_start::DurableStartExecutionCoordinator;
 #[cfg(feature = "durable")]
 pub use durable_start::{
     DurableResumeExecutionAccepted, DurableResumeExecutionFailure, DurableResumeExecutionRequest,
-    DurableResumeExecutionResult, DurableResumeSourceComparison, DurableRetainedArtifacts,
-    DurableStartExecutionAccepted, DurableStartExecutionFailure, DurableStartExecutionRequest,
-    DurableStartExecutionResult,
+    DurableResumeExecutionResult, DurableResumeReplacementUnavailable,
+    DurableResumeSourceComparison, DurableRetainedArtifacts, DurableStartExecutionAccepted,
+    DurableStartExecutionFailure, DurableStartExecutionRequest, DurableStartExecutionResult,
 };
 #[cfg(feature = "analyzer")]
 pub use gantry_analysis as analysis;

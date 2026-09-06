@@ -47,6 +47,8 @@ enum HookState {
 pub enum TaskHookError {
     /// The supplied envelope has the wrong exact version or operation.
     InvalidRequest,
+    /// Task cancellation became effective before physical hook dispatch.
+    Cancelled,
     /// Integration code returned a structured adapter failure.
     Host(HostError),
     /// Integration code panicked while being invoked, polled, or destroyed.
@@ -388,6 +390,7 @@ impl OperationLifecycle {
                 self.outcome()
                     .ok_or_else(|| invalid_state(OperationStateKind::Outcome))
             }
+            Err(TaskHookError::Cancelled) => Err(OperationLifecycleError::Cancelled),
             Err(error) => {
                 self.state = OperationRuntimeState::Failed {
                     dispatch_id: Some(dispatch_id),
@@ -862,7 +865,10 @@ impl<'a> TaskHook<'a> {
         }
         self.dispatch(request, cancellation)
             .await
-            .map_err(TaskHookSessionError::Hook)
+            .map_err(|error| match error {
+                TaskHookError::Cancelled => TaskHookSessionError::Cancelled,
+                error => TaskHookSessionError::Hook(error),
+            })
     }
 
     /// Lazily creates the task hook and performs one serial operation dispatch.
@@ -872,7 +878,13 @@ impl<'a> TaskHook<'a> {
         cancellation: &dyn CancellationToken,
     ) -> Result<HookOutcomeV1, TaskHookError> {
         require_request(&request, EmbeddingOperation::DispatchOperation)?;
-        self.ensure_created().await?;
+        if cancellation.is_cancelled() {
+            return Err(TaskHookError::Cancelled);
+        }
+        self.ensure_created(cancellation).await?;
+        if cancellation.is_cancelled() {
+            return Err(TaskHookError::Cancelled);
+        }
 
         let lifecycle = self.lifecycle;
         let poison = self.hook_poison.clone();
@@ -890,7 +902,10 @@ impl<'a> TaskHook<'a> {
             .map_err(TaskHookError::Host)
     }
 
-    async fn ensure_created(&mut self) -> Result<(), TaskHookError> {
+    async fn ensure_created(
+        &mut self,
+        cancellation: &dyn CancellationToken,
+    ) -> Result<(), TaskHookError> {
         match &self.state {
             HookState::Ready(_) => return Ok(()),
             HookState::Failed(error) => return Err(error.clone()),
@@ -912,6 +927,9 @@ impl<'a> TaskHook<'a> {
                 .and_then(|result| result.map_err(TaskHookError::Host)),
             Err(error) => Err(error),
         };
+        if cancellation.is_cancelled() {
+            return Err(TaskHookError::Cancelled);
+        }
         match result {
             Ok(hook) => {
                 self.state = HookState::Ready(hook);
@@ -953,6 +971,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::Poll;
 
     use gantry_core::portable::{IdentityKind, JitterMode};
     use gantry_core::source::FrontendLimits;
@@ -1072,6 +1091,35 @@ mod tests {
         }
     }
 
+    struct CancellingFactory {
+        creations: Arc<AtomicUsize>,
+        cancellation: CancellationSignal,
+    }
+
+    impl HookFactory for CancellingFactory {
+        fn create_hook<'a>(
+            &'a self,
+            request: HostRequest,
+        ) -> HostFuture<'a, Result<Box<dyn OperationHook>, HostError>> {
+            assert_eq!(request.operation(), EmbeddingOperation::CreateHook);
+            self.creations.fetch_add(1, Ordering::AcqRel);
+            let cancellation = self.cancellation.clone();
+            let mut pending = true;
+            Box::pin(std::future::poll_fn(move |_| {
+                if pending {
+                    pending = false;
+                    assert!(cancellation.cancel());
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(HostError {
+                        code: Arc::from("factory-failure"),
+                        protected_diagnostic: None,
+                    }))
+                }
+            }))
+        }
+    }
+
     struct ScriptedFactory {
         outcomes: Arc<Mutex<VecDeque<HookOutcomeV1>>>,
         requests: Arc<Mutex<Vec<Vec<u8>>>>,
@@ -1173,6 +1221,101 @@ mod tests {
         assert_eq!(result, Err(TaskHookError::InvalidRequest));
         assert!(!hook.creation_attempted());
         assert_eq!(creations.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn cancellation_before_dispatch_does_not_create_a_hook() {
+        let configuration = configuration();
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let creations = Arc::new(AtomicUsize::new(0));
+        let dispatches = Arc::new(AtomicUsize::new(0));
+        let factory = RecordingFactory {
+            creations: Arc::clone(&creations),
+            dispatches: Arc::clone(&dispatches),
+        };
+        let mut hook = TaskHook::new(
+            &lifecycle,
+            &factory,
+            AdapterPoison::default(),
+            request(EmbeddingOperation::CreateHook),
+        )
+        .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
+        let cancellation = CancellationSignal::default();
+        assert!(cancellation.cancel());
+
+        assert_eq!(
+            block_on(hook.dispatch(
+                request(EmbeddingOperation::DispatchOperation),
+                &cancellation,
+            )),
+            Err(TaskHookError::Cancelled)
+        );
+        assert!(!hook.creation_attempted());
+        assert_eq!(creations.load(Ordering::Acquire), 0);
+        assert_eq!(dispatches.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn cancellation_during_factory_creation_wins_over_factory_failure() {
+        let configuration = configuration();
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let creations = Arc::new(AtomicUsize::new(0));
+        let cancellation = CancellationSignal::default();
+        let factory = CancellingFactory {
+            creations: Arc::clone(&creations),
+            cancellation: cancellation.clone(),
+        };
+        let mut hook = TaskHook::new(
+            &lifecycle,
+            &factory,
+            AdapterPoison::default(),
+            request(EmbeddingOperation::CreateHook),
+        )
+        .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
+
+        assert_eq!(
+            block_on(hook.dispatch(
+                request(EmbeddingOperation::DispatchOperation),
+                &cancellation,
+            )),
+            Err(TaskHookError::Cancelled)
+        );
+        assert!(cancellation.is_cancelled());
+        assert_eq!(creations.load(Ordering::Acquire), 1);
+        assert!(!hook.is_ready());
+    }
+
+    #[test]
+    fn cancellation_before_physical_dispatch_skips_a_ready_hook() {
+        let configuration = configuration();
+        let lifecycle = InterpreterLifecycle::new(&configuration);
+        let creations = Arc::new(AtomicUsize::new(0));
+        let dispatches = Arc::new(AtomicUsize::new(0));
+        let factory = RecordingFactory {
+            creations: Arc::clone(&creations),
+            dispatches: Arc::clone(&dispatches),
+        };
+        let mut hook = TaskHook::new(
+            &lifecycle,
+            &factory,
+            AdapterPoison::default(),
+            request(EmbeddingOperation::CreateHook),
+        )
+        .unwrap_or_else(|error| panic!("task hook failed: {error:?}"));
+        let active = CancellationSignal::default();
+        assert!(
+            block_on(hook.dispatch(request(EmbeddingOperation::DispatchOperation), &active,))
+                .is_ok()
+        );
+
+        let cancelled = CancellationSignal::default();
+        assert!(cancelled.cancel());
+        assert_eq!(
+            block_on(hook.dispatch(request(EmbeddingOperation::DispatchOperation), &cancelled,)),
+            Err(TaskHookError::Cancelled)
+        );
+        assert_eq!(creations.load(Ordering::Acquire), 1);
+        assert_eq!(dispatches.load(Ordering::Acquire), 1);
     }
 
     #[test]

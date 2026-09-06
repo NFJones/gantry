@@ -17,12 +17,13 @@ use gantry::host::journal::{
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::generated::TaskControlSiteKind;
 use gantry::ir::{
-    CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, Parameter,
-    StaticSiteId, StructuralPosition, TaskControlSite, TypeDescriptor, Workflow,
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody, ExecutableTaskContext,
+    ExecutableTaskHandle, Instruction, InstructionKind, MachineProgram, StaticSiteId,
+    StructuralPosition, TaskBodyIdentity, TaskControlSite, TypeDescriptor, Workflow,
 };
 use gantry::portable::{
-    EventKind, IdentityKind, JitterMode, ProtectedReferenceClass, SinkClass, TaskHandleState,
-    TaskStatusKind,
+    CancellationReasonCategory, EventKind, IdentityKind, JitterMode, ProtectedReferenceClass,
+    SinkClass, TaskHandleState, TaskStatusKind,
 };
 use gantry::runtime::{
     CanonicalTranscriptV1, ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
@@ -30,8 +31,8 @@ use gantry::runtime::{
     DurableEventBarrierV1, DurableEventCommitCoordinatorV1, DurableEventOccurrenceV1,
     DurableEventPlanV1, DurableSinkObligationV1, DurableTransitionSink, ExecutionBudget,
     InMemoryJournalStore, JoinResolutionV1, JoinStartV1, LogicalSessionRegistryV1, Machine,
-    MachineLimits, MachineOutcome, SessionCreationModeV1, TaskCreationRequestV1, TaskStateError,
-    recover_concurrent_authoritative_prefix, root_task_identity,
+    MachineLimits, MachineOutcome, MachineStep, SessionCreationModeV1, TaskCreationRequestV1,
+    TaskStateError, recover_concurrent_authoritative_prefix, root_task_identity,
 };
 use gantry::source::{ByteSpan, SourceLimits, SourceSnapshotBuilder, SourceSpan};
 use gantry::timestamp::UtcTimestamp;
@@ -39,7 +40,7 @@ use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 
 #[test]
 fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
-    let program = program();
+    let program = spawn_program("background");
     let execution = fresh(IdentityKind::Execution, 1);
     let root_task = root_task_identity(execution);
     let root_session = fresh(IdentityKind::Session, 2);
@@ -56,7 +57,7 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
         Vec::new(),
         execution,
         machine_limits(),
-        None,
+        Some(Arc::from("writer")),
         Some(root_session),
     )
     .unwrap_or_else(|error| panic!("foreground machine failed: {error:?}"));
@@ -89,10 +90,16 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
     .unwrap_or_else(|error| panic!("initial graph commit failed: {error:?}"));
     assert_eq!(initial.sequence, 1);
 
+    let suspension = match foreground.step() {
+        MachineStep::Transition(gantry::runtime::MachineLabel::TaskControlSuspended(
+            suspension,
+        )) => suspension,
+        other => panic!("foreground did not suspend at spawn: {other:?}"),
+    };
     let child = scheduler
         .create_child(
             &mut sessions,
-            creation_request(root_task, root_session),
+            spawn_request(root_task, root_session, &suspension),
             DEFAULT_VALUE_LIMITS,
         )
         .unwrap_or_else(|error| panic!("child creation failed: {error:?}"));
@@ -137,6 +144,9 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
             .unwrap_or_else(|| panic!("created child missing"))
             .task_path(),
     );
+    foreground
+        .complete_spawn(&suspension, child.handle_id)
+        .unwrap_or_else(|error| panic!("spawn completion failed: {error:?}"));
     scheduler
         .resolve_submission(
             child.task_id,
@@ -147,6 +157,7 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
                 child_task_path,
                 child.base_session_id,
                 execution_budget.clone(),
+                &suspension,
             )),
         )
         .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
@@ -269,6 +280,17 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
         [root_task, child.task_id]
     );
     assert!(foreground.cancel("shutdown").is_some());
+    commits
+        .set_graph_cancellation(
+            gantry::runtime::CancellationReason::new(
+                CancellationReasonCategory::Caller,
+                Some(Arc::from("shutdown")),
+                None,
+                32,
+            )
+            .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("graph cancellation setup failed: {error:?}"));
     let cancellation = block_on(commits.commit_concurrent_cut(
         DurableCommitCutV1::Cancellation,
         root_task,
@@ -416,7 +438,7 @@ fn public_combined_crash_cuts_recover_without_repeating_task_transitions() {
 
 #[test]
 fn public_combined_join_ownership_and_settlement_recover_once() {
-    let program = program();
+    let program = spawn_program("joined");
     let execution = fresh(IdentityKind::Execution, 21);
     let root_task = root_task_identity(execution);
     let root_session = fresh(IdentityKind::Session, 22);
@@ -427,7 +449,7 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
         CanonicalTranscriptV1::empty(),
     )
     .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
-    let foreground = Machine::new_with_context(
+    let mut foreground = Machine::new_with_context(
         Arc::clone(&program),
         &path("crate::main"),
         Vec::new(),
@@ -463,20 +485,16 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
     ))
     .unwrap_or_else(|error| panic!("initial graph commit failed: {error:?}"));
 
+    let suspension = match foreground.step() {
+        MachineStep::Transition(gantry::runtime::MachineLabel::TaskControlSuspended(
+            suspension,
+        )) => suspension,
+        other => panic!("foreground did not suspend at spawn: {other:?}"),
+    };
     let child = scheduler
         .create_child(
             &mut sessions,
-            TaskCreationRequestV1 {
-                parent_task_id: root_task,
-                handle_name: Arc::from("joined"),
-                workflow: path("crate::main"),
-                spawn_site: site(0),
-                spawn_occurrence: 0,
-                result_type: TypeDescriptor::UNIT,
-                captures: Vec::new(),
-                inherited_agent: None,
-                parent_session_id: root_session,
-            },
+            spawn_request(root_task, root_session, &suspension),
             DEFAULT_VALUE_LIMITS,
         )
         .unwrap_or_else(|error| panic!("child creation failed: {error:?}"));
@@ -495,6 +513,9 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
             .unwrap_or_else(|| panic!("created child missing"))
             .task_path(),
     );
+    foreground
+        .complete_spawn(&suspension, child.handle_id)
+        .unwrap_or_else(|error| panic!("spawn completion failed: {error:?}"));
     scheduler
         .resolve_submission(
             child.task_id,
@@ -505,6 +526,7 @@ fn public_combined_join_ownership_and_settlement_recover_once() {
                 child_task_path,
                 child.base_session_id,
                 execution_budget.clone(),
+                &suspension,
             )),
         )
         .unwrap_or_else(|error| panic!("submission failed: {error:?}"));
@@ -594,19 +616,24 @@ fn read_prefix(storage: &dyn JournalStorage, journal_id: &JournalId) -> JournalP
     .unwrap_or_else(|error| panic!("prefix read failed: {error:?}"))
 }
 
-fn creation_request(
+fn spawn_request(
     parent_task_id: ProtocolIdentity,
     parent_session_id: ProtocolIdentity,
+    suspension: &gantry::runtime::MachineSpawnSuspension,
 ) -> TaskCreationRequestV1 {
     TaskCreationRequestV1 {
         parent_task_id,
-        handle_name: Arc::from("background"),
-        workflow: path("crate::main"),
-        spawn_site: site(0),
-        spawn_occurrence: 0,
-        result_type: TypeDescriptor::UNIT,
-        captures: Vec::new(),
-        inherited_agent: Some(Arc::from("writer")),
+        handle_name: Arc::from(suspension.handle.name()),
+        workflow: suspension.workflow.clone(),
+        spawn_site: suspension.site.clone(),
+        spawn_occurrence: suspension.occurrence,
+        result_type: suspension.handle.result_type().clone(),
+        captures: suspension
+            .captures
+            .iter()
+            .map(|capture| capture.task_capture().clone())
+            .collect(),
+        inherited_agent: suspension.inherited_agent.clone(),
         parent_session_id,
     }
 }
@@ -647,32 +674,62 @@ fn source_span() -> SourceSpan {
     .unwrap_or_else(|error| panic!("source span failed: {error:?}"))
 }
 
-fn program() -> Arc<MachineProgram> {
-    Arc::new(
-        MachineProgram::new(vec![workflow("crate::child"), workflow("crate::main")])
-            .unwrap_or_else(|error| panic!("program failed: {error:?}")),
+fn spawn_program(handle_name: &str) -> Arc<MachineProgram> {
+    let root_path = path("crate::main");
+    let caller = CanonicalCallableIdentity::free(&root_path, &[]);
+    let body_identity = TaskBodyIdentity::new(caller.clone(), site(0));
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::UNIT,
+        Vec::new(),
+        ExecutableTaskContext::v1(),
+        vec![
+            Instruction {
+                site: StructuralPosition::new(vec![0, 0])
+                    .unwrap_or_else(|error| panic!("task body site failed: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![0, 1])
+                    .unwrap_or_else(|error| panic!("task body site failed: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::TaskComplete,
+            },
+        ],
     )
-}
-
-fn workflow(name: &str) -> Workflow {
-    Workflow {
-        path: path(name),
-        parameters: Vec::<Parameter>::new(),
+    .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+    let root = Workflow {
+        path: root_path,
+        parameters: Vec::new(),
         result: TypeDescriptor::UNIT,
         effects: EffectSet::default(),
         instructions: vec![
             Instruction {
                 site: site(0),
                 ty: TypeDescriptor::UNIT,
-                kind: InstructionKind::Push(LogicalValue::unit()),
+                kind: InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from(handle_name), TypeDescriptor::UNIT)
+                        .unwrap_or_else(|error| panic!("task handle failed: {error:?}")),
+                    body: body_identity,
+                },
             },
             Instruction {
                 site: site(1),
                 ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: site(2),
+                ty: TypeDescriptor::UNIT,
                 kind: InstructionKind::Return,
             },
         ],
-    }
+    };
+    Arc::new(
+        MachineProgram::with_task_bodies(vec![(caller, root)], vec![body])
+            .unwrap_or_else(|error| panic!("spawn program failed: {error:?}")),
+    )
 }
 
 fn child_machine(
@@ -682,17 +739,23 @@ fn child_machine(
     task_path: Arc<[Arc<str>]>,
     session: ProtocolIdentity,
     execution_budget: ExecutionBudget,
+    suspension: &gantry::runtime::MachineSpawnSuspension,
 ) -> Machine {
-    Machine::new_concurrent_task_with_context(
+    let captures = suspension
+        .captures
+        .iter()
+        .map(|capture| capture.task_capture().clone())
+        .collect::<Vec<_>>();
+    Machine::new_concurrent_task_body_with_context(
         program,
-        &path("crate::child"),
-        Vec::new(),
+        &suspension.body,
+        &captures,
         execution,
         task_id,
         task_path,
         machine_limits(),
         execution_budget,
-        None,
+        suspension.inherited_agent.clone(),
         Some(session),
     )
     .unwrap_or_else(|error| panic!("child machine failed: {error:?}"))

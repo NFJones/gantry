@@ -6,7 +6,9 @@ mod execution_start;
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use concurrent::{
-    ConcurrentDurableEvidenceV4, RecoveredConcurrentDurableStateV1,
+    CONCURRENT_DURABLE_RECOVERY_SNAPSHOT_FORMAT_V1, CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1,
+    ConcurrentDurableEvidenceRecordV5, ConcurrentDurableEvidenceV4, ConcurrentDurableEvidenceV5,
+    ConcurrentDurableRecoverySnapshotV1, RecoveredConcurrentDurableStateV1,
     recover_concurrent_authoritative_prefix,
 };
 pub use execution_start::{
@@ -44,6 +46,10 @@ use crate::{
 /// Version-four evidence kind for complete concurrent-durable graph checkpoints.
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V4: &str = "gantry.concurrent-durable-evidence/v4";
+
+/// Version-five evidence kind for discriminated concurrent-durable graph records.
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+pub const CONCURRENT_DURABLE_EVIDENCE_KIND_V5: &str = "gantry.concurrent-durable-evidence/v5";
 
 /// Exact semantic boundary represented by one durable logical evidence body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -166,6 +172,8 @@ pub struct DurableCommitCoordinatorV1<'a> {
     task_id: ProtocolIdentity,
     predecessor: Option<(ProtocolIdentity, u64)>,
     next_local_id: u64,
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    graph_cancellation: Option<CancellationReason>,
 }
 
 impl<'a> DurableCommitCoordinatorV1<'a> {
@@ -190,7 +198,31 @@ impl<'a> DurableCommitCoordinatorV1<'a> {
             task_id,
             predecessor,
             next_local_id: 0,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            graph_cancellation: None,
         })
+    }
+
+    /// Returns the latest journal coordinate accepted by this serial committer.
+    ///
+    /// Graph owners use this after a transaction because its optional event
+    /// occurrence can advance beyond the semantic-cut receipt returned by the
+    /// transaction itself.
+    #[must_use]
+    pub const fn frontier(&self) -> Option<(ProtocolIdentity, u64)> {
+        self.predecessor
+    }
+
+    /// Supplies the typed reason for the next concurrent cancellation cut.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub fn set_graph_cancellation(
+        &mut self,
+        reason: CancellationReason,
+    ) -> Result<(), DurableCommitError> {
+        if self.graph_cancellation.replace(reason).is_some() {
+            return Err(DurableCommitError::InvalidState);
+        }
+        Ok(())
     }
 
     /// Atomically commits one validated cut before its dependent external boundary.
@@ -970,7 +1002,7 @@ impl PrefixProjection {
     }
 }
 
-pub(super) fn validate_budget_successor(
+pub(crate) fn validate_budget_successor(
     previous: &ExecutionBudgetSnapshot,
     current: &ExecutionBudgetSnapshot,
 ) -> Result<(), DurableEvidenceError> {
@@ -1091,6 +1123,67 @@ pub struct DurableLogicalEvidenceV3 {
     sessions: Option<LogicalSessionRegistryCheckpointV1>,
 }
 
+pub(super) fn validate_operation_evidence(
+    cut: DurableCommitCutV1,
+    operation: Option<&DurableOperationEvidenceV1>,
+    checkpoint: &MachineCheckpointV3,
+) -> Result<(), DurableEvidenceError> {
+    if cut.requires_operation() != operation.is_some() {
+        return Err(DurableEvidenceError::InvalidState);
+    }
+    let Some(operation) = operation else {
+        return Ok(());
+    };
+    if operation.operation_id.kind() != IdentityKind::Operation
+        || operation
+            .dispatch_id
+            .is_some_and(|dispatch| dispatch.kind() != IdentityKind::Dispatch)
+        || (cut == DurableCommitCutV1::OperationResult && operation.dispatch_id.is_some())
+        || (cut != DurableCommitCutV1::OperationResult && operation.dispatch_id.is_none())
+        || (cut == DurableCommitCutV1::RetryWaiting) != operation.retry_delay_us.is_some()
+    {
+        return Err(DurableEvidenceError::InvalidOperation);
+    }
+    let request_expected = !matches!(cut, DurableCommitCutV1::OperationResult);
+    let outcome_expected = matches!(
+        cut,
+        DurableCommitCutV1::OperationOutcome | DurableCommitCutV1::RetryWaiting
+    );
+    let retry_errors_expected = cut == DurableCommitCutV1::RetryWaiting;
+    let result_expected = cut == DurableCommitCutV1::OperationResult;
+    if request_expected != operation.request_bytes.is_some()
+        || outcome_expected != operation.outcome.is_some()
+        || retry_errors_expected == operation.retry_errors.is_empty()
+        || result_expected != operation.result_type.is_some()
+        || result_expected != operation.result_bytes.is_some()
+        || operation
+            .request_bytes
+            .as_deref()
+            .is_some_and(|bytes| !is_canonical_json(bytes))
+        || operation
+            .result_bytes
+            .as_deref()
+            .is_some_and(|bytes| !is_canonical_json(bytes))
+        || operation
+            .retry_errors
+            .iter()
+            .any(|error| error.message.is_empty())
+    {
+        return Err(DurableEvidenceError::InvalidOperation);
+    }
+    let pending = checkpoint.pending_operation();
+    if cut == DurableCommitCutV1::OperationResult {
+        if pending.is_some_and(|pending| pending.identity == operation.operation_id) {
+            return Err(DurableEvidenceError::InvalidState);
+        }
+    } else if checkpoint.status() != MachineStatus::WaitingOperation
+        || pending.map(|pending| pending.identity) != Some(operation.operation_id)
+    {
+        return Err(DurableEvidenceError::InvalidState);
+    }
+    Ok(())
+}
+
 impl DurableLogicalEvidenceV3 {
     /// Captures one validated commit-cut record over complete machine state.
     pub fn new(
@@ -1144,62 +1237,10 @@ impl DurableLogicalEvidenceV3 {
             || sessions
                 .as_ref()
                 .is_some_and(|sessions| sessions.execution_id() != execution_id)
-            || cut.requires_operation() != operation.is_some()
         {
             return Err(DurableEvidenceError::InvalidState);
         }
-        if let Some(operation) = &operation
-            && (operation.operation_id.kind() != IdentityKind::Operation
-                || operation
-                    .dispatch_id
-                    .is_some_and(|dispatch| dispatch.kind() != IdentityKind::Dispatch)
-                || (cut == DurableCommitCutV1::OperationResult && operation.dispatch_id.is_some())
-                || (cut != DurableCommitCutV1::OperationResult && operation.dispatch_id.is_none())
-                || (cut == DurableCommitCutV1::RetryWaiting) != operation.retry_delay_us.is_some())
-        {
-            return Err(DurableEvidenceError::InvalidOperation);
-        }
-        if let Some(operation) = &operation {
-            let request_expected = !matches!(cut, DurableCommitCutV1::OperationResult);
-            let outcome_expected = matches!(
-                cut,
-                DurableCommitCutV1::OperationOutcome | DurableCommitCutV1::RetryWaiting
-            );
-            let retry_errors_expected = cut == DurableCommitCutV1::RetryWaiting;
-            let result_expected = cut == DurableCommitCutV1::OperationResult;
-            if request_expected != operation.request_bytes.is_some()
-                || outcome_expected != operation.outcome.is_some()
-                || retry_errors_expected == operation.retry_errors.is_empty()
-                || result_expected != operation.result_type.is_some()
-                || result_expected != operation.result_bytes.is_some()
-                || operation
-                    .request_bytes
-                    .as_deref()
-                    .is_some_and(|bytes| !is_canonical_json(bytes))
-                || operation
-                    .result_bytes
-                    .as_deref()
-                    .is_some_and(|bytes| !is_canonical_json(bytes))
-                || operation
-                    .retry_errors
-                    .iter()
-                    .any(|error| error.message.is_empty())
-            {
-                return Err(DurableEvidenceError::InvalidOperation);
-            }
-        }
-        if let Some(operation) = &operation {
-            let pending = checkpoint.pending_operation();
-            if cut == DurableCommitCutV1::OperationResult {
-                if pending.is_some_and(|pending| pending.identity == operation.operation_id) {
-                    return Err(DurableEvidenceError::InvalidState);
-                }
-            } else if checkpoint.status() != MachineStatus::WaitingOperation
-                || pending.map(|pending| pending.identity) != Some(operation.operation_id)
-            {
-                return Err(DurableEvidenceError::InvalidState);
-            }
-        }
+        validate_operation_evidence(cut, operation.as_ref(), &checkpoint)?;
         if cut == DurableCommitCutV1::Cancellation
             && checkpoint.cancellation_reason().is_none()
             && !matches!(checkpoint.status(), MachineStatus::Cancelled)
@@ -1428,6 +1469,8 @@ pub enum DurableEvidenceError {
     MissingRecoveryState,
     /// One envelope uses a logical evidence kind not owned by this projection.
     UnsupportedEvidenceKind,
+    /// A legacy concurrent cancellation record lacks its typed cancellation reason.
+    UnsupportedConcurrentCancellation,
     /// Evidence references do not form a causally ordered predecessor chain.
     InvalidCausalOrder,
     /// One prefix mixes execution or task identities.
@@ -1440,7 +1483,7 @@ pub enum DurableEvidenceError {
     RepeatedCancellation,
 }
 
-fn optional_operation(
+pub(super) fn optional_operation(
     document: &StrictJsonDocument,
     id: JsonNodeId,
 ) -> Result<Option<DurableOperationEvidenceV1>, DurableEvidenceError> {
@@ -1681,7 +1724,7 @@ fn decode_nibble(value: u8) -> Result<u8, DurableEvidenceError> {
     }
 }
 
-fn push_operation(output: &mut String, operation: &DurableOperationEvidenceV1) {
+pub(super) fn push_operation(output: &mut String, operation: &DurableOperationEvidenceV1) {
     output.push_str("{\"action_recovery\":");
     push_optional_string(
         output,

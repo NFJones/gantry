@@ -40,7 +40,7 @@ use crate::{
 mod combined_checkpoint;
 #[cfg(all(feature = "concurrent", feature = "durable"))]
 pub use combined_checkpoint::{
-    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4,
+    ConcurrentDurableCheckpointError, ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5,
     RecoveredConcurrentDurableExecutionV1,
 };
 
@@ -112,6 +112,10 @@ pub struct DynamicTaskHandleIdentity {
 }
 
 impl DynamicTaskHandleIdentity {
+    pub(crate) const fn from_parts(owner: ProtocolIdentity, child: ProtocolIdentity) -> Self {
+        Self { owner, child }
+    }
+
     /// Returns the Gantry task that exclusively owns this handle.
     #[must_use]
     pub const fn owner(self) -> ProtocolIdentity {
@@ -1260,7 +1264,7 @@ impl ConcurrentTaskStateV1 {
         &mut self,
         task_id: ProtocolIdentity,
         result: Result<(), HostError>,
-    ) -> Result<(), TaskStateError> {
+    ) -> Result<TaskStatusKind, TaskStateError> {
         let submitted = result.is_ok();
         let task = self
             .tasks
@@ -1272,25 +1276,48 @@ impl ConcurrentTaskStateV1 {
         if self.submitting_by_parent.remove(&task.parent_task_id) != Some(task_id) {
             return Err(TaskStateError::InvalidTransition);
         }
-        task.status = match result {
-            Ok(()) => self
-                .cancellation_reasons
-                .get(&task_id)
-                .map_or(ConcurrentTaskStatusV1::Running, |reason| {
-                    ConcurrentTaskStatusV1::Cancelled(Arc::clone(reason))
+        let cancellation = self.cancellation_reasons.get(&task_id).cloned();
+        let (status, disposition) = match (cancellation, result) {
+            (Some(reason), _) => (
+                ConcurrentTaskStatusV1::Cancelled(reason),
+                TaskStatusKind::Cancelled,
+            ),
+            (None, Ok(())) => (ConcurrentTaskStatusV1::Running, TaskStatusKind::Running),
+            (None, Err(error)) => (
+                ConcurrentTaskStatusV1::Failed(TaskFailureV1 {
+                    category: RuntimeErrorCategory::ExecutorFailure,
+                    code: error.code,
+                    protected_diagnostic: error.protected_diagnostic,
                 }),
-            Err(error) => ConcurrentTaskStatusV1::Failed(TaskFailureV1 {
-                category: RuntimeErrorCategory::ExecutorFailure,
-                code: error.code,
-                protected_diagnostic: error.protected_diagnostic,
-            }),
+                TaskStatusKind::Failed,
+            ),
         };
+        task.status = status;
         task.driver_ownership = if submitted {
             TaskDriverOwnershipV1::Supervised
         } else {
             TaskDriverOwnershipV1::PhysicallySettled
         };
         task.handle_visible = true;
+        Ok(disposition)
+    }
+
+    /// Settles a cancelled child for which no executor future was submitted.
+    pub fn resolve_unsubmitted_cancellation(
+        &mut self,
+        task_id: ProtocolIdentity,
+    ) -> Result<(), TaskStateError> {
+        let task = self
+            .tasks
+            .get(&task_id)
+            .ok_or(TaskStateError::UnknownTask)?;
+        if !matches!(task.status, ConcurrentTaskStatusV1::Submitting)
+            || !self.cancellation_reasons.contains_key(&task_id)
+        {
+            return Err(TaskStateError::InvalidTransition);
+        }
+        self.resolve_submission(task_id, Ok(()))?;
+        self.mark_driver_physically_settled(task_id)?;
         Ok(())
     }
 
@@ -1857,7 +1884,7 @@ impl ConcurrentSchedulerV1 {
         &mut self,
         task_id: ProtocolIdentity,
         result: Result<Machine, HostError>,
-    ) -> Result<(), TaskStateError> {
+    ) -> Result<TaskStatusKind, TaskStateError> {
         match result {
             Ok(machine) => {
                 let machine_budget = machine.execution_budget();
@@ -1877,18 +1904,15 @@ impl ConcurrentSchedulerV1 {
                 if !machine.has_concurrent_task_context(task_id, &task_path) {
                     return Err(TaskStateError::InvalidTaskMachine);
                 }
-                self.state.resolve_submission(task_id, Ok(()))?;
-                if matches!(
-                    self.state.task(task_id).map(ConcurrentTaskRecordV1::status),
-                    Some(ConcurrentTaskStatusV1::Running)
-                ) {
+                let disposition = self.state.resolve_submission(task_id, Ok(()))?;
+                if disposition == TaskStatusKind::Running {
                     self.machines.insert(task_id, machine);
                     self.runnable.push_back(task_id);
                 }
+                Ok(disposition)
             }
-            Err(error) => self.state.resolve_submission(task_id, Err(error))?,
+            Err(error) => self.state.resolve_submission(task_id, Err(error)),
         }
-        Ok(())
     }
 
     /// Records execution cancellation and signals every live shared-machine task.
@@ -2119,6 +2143,7 @@ fn status_is_settled(status: &ConcurrentTaskStatusV1) -> bool {
 fn machine_failure_category(code: crate::RuntimeCode) -> RuntimeErrorCategory {
     match code {
         crate::RuntimeCode::Operation(category) => category,
+        crate::RuntimeCode::IntegrationPanic => RuntimeErrorCategory::HookFailure,
         crate::RuntimeCode::RootSubmissionFailure => RuntimeErrorCategory::ExecutorFailure,
         crate::RuntimeCode::UnsupportedEffect | crate::RuntimeCode::InternalInvariant => {
             RuntimeErrorCategory::InternalInvariantFailure
@@ -2167,7 +2192,8 @@ mod tests {
     use super::{
         ConcurrentSchedulerV1, ConcurrentTaskStateV1, ConcurrentTaskStatusV1,
         ConcurrentTerminalCategoryV1, JoinResolutionV1, JoinStartV1, TaskAbortResultV1,
-        TaskCaptureV1, TaskCreationRequestV1, TaskJoinMemberFailureKindV1, TaskStateError,
+        TaskCaptureV1, TaskCreationRequestV1, TaskDriverOwnershipV1, TaskJoinMemberFailureKindV1,
+        TaskStateError,
     };
     use crate::{
         CanonicalTranscriptV1, ExecutionBudget, ExecutionCoordinator, Instruction, InstructionKind,
@@ -2302,6 +2328,52 @@ mod tests {
         assert_eq!(
             state.resolve_submission(created.task_id, Ok(())),
             Err(TaskStateError::InvalidTransition)
+        );
+    }
+
+    #[test]
+    fn cancellation_wins_successful_submission_resolution_before_gate_release() {
+        let (mut state, mut sessions, root_task, root_session) = fixture(2);
+        let created = state
+            .create_child(
+                &mut sessions,
+                request(root_task, root_session, 0, Vec::new()),
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("task creation failed: {error:?}"));
+        state
+            .cancel_execution("cancel-before-resolution")
+            .unwrap_or_else(|error| panic!("cancellation failed: {error:?}"));
+
+        let disposition = state
+            .resolve_submission(created.task_id, Ok(()))
+            .unwrap_or_else(|error| panic!("submission resolution failed: {error:?}"));
+
+        assert_eq!(disposition, TaskStatusKind::Cancelled);
+        assert!(!state.parent_is_suspended(root_task));
+        let record = state
+            .task(created.task_id)
+            .unwrap_or_else(|| panic!("cancelled child missing"));
+        assert!(record.handle_is_visible());
+        assert!(matches!(
+            record.status(),
+            ConcurrentTaskStatusV1::Cancelled(reason)
+                if reason.as_ref() == "cancel-before-resolution"
+        ));
+        assert_eq!(
+            state
+                .task_record(created.task_id)
+                .map(|record| record.driver_ownership()),
+            Some(TaskDriverOwnershipV1::Supervised)
+        );
+        state
+            .mark_driver_physically_settled(created.task_id)
+            .unwrap_or_else(|error| panic!("physical settlement failed: {error:?}"));
+        assert_eq!(
+            state
+                .task_record(created.task_id)
+                .map(|record| record.driver_ownership()),
+            Some(TaskDriverOwnershipV1::PhysicallySettled)
         );
     }
 

@@ -4,13 +4,14 @@ use super::*;
 use crate::{
     CanonicalTranscriptV1, DurableTransitionSink, InMemoryJournalStore, MachineLimits, MachineStep,
 };
-use gantry_core::portable::IdentityKind;
+use gantry_core::portable::{CancellationReasonCategory, IdentityKind};
 use gantry_core::value::{DEFAULT_VALUE_LIMITS, LogicalValue};
 use gantry_host::contracts::HostFuture;
 use gantry_host::journal::*;
 use gantry_ir::{
-    CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, TypeDescriptor,
-    Workflow,
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody, ExecutableTaskContext,
+    ExecutableTaskHandle, Instruction, InstructionKind, MachineProgram, TaskBodyIdentity,
+    TypeDescriptor, Workflow,
 };
 
 /// Probes publication from inside a wake callback to catch lock-held notification.
@@ -172,6 +173,103 @@ fn fixture_with_program() -> (
         .unwrap_or_else(|| panic!("limits"));
     let machine = Machine::new(program.clone(), &path, Vec::new(), execution, limits)
         .unwrap_or_else(|error| panic!("machine: {error:?}"));
+    let tasks = ConcurrentTaskStateV1::new(execution, machine.task_id(), 10)
+        .unwrap_or_else(|error| panic!("tasks: {error:?}"));
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("sessions: {error:?}"));
+    let coordinator =
+        ExecutionCoordinator::new_with_budget(tasks, sessions, machine.execution_budget())
+            .unwrap_or_else(|error| panic!("coordinator: {error:?}"));
+    (coordinator, machine, BTreeMap::new(), program)
+}
+
+/// Creates one root whose child can be published through a real lexical spawn.
+fn spawn_fixture_with_program() -> (
+    ExecutionCoordinator,
+    Machine,
+    BTreeMap<ProtocolIdentity, Machine>,
+    Arc<MachineProgram>,
+) {
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [17; 32])
+        .unwrap_or_else(|error| panic!("identity: {error}"));
+    let session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [18; 32])
+        .unwrap_or_else(|error| panic!("identity: {error}"));
+    let path = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+    let caller = CanonicalCallableIdentity::free(&path, &[]);
+    let spawn_site =
+        StructuralPosition::new(vec![0]).unwrap_or_else(|error| panic!("spawn site: {error}"));
+    let body_identity = TaskBodyIdentity::new(caller.clone(), spawn_site.clone());
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::UNIT,
+        Vec::new(),
+        ExecutableTaskContext::v1(),
+        vec![
+            Instruction {
+                site: StructuralPosition::new(vec![0, 0])
+                    .unwrap_or_else(|error| panic!("body site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![0, 1])
+                    .unwrap_or_else(|error| panic!("body site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::TaskComplete,
+            },
+        ],
+    )
+    .unwrap_or_else(|error| panic!("task body: {error:?}"));
+    let root = Workflow {
+        path: path.clone(),
+        parameters: Vec::new(),
+        result: TypeDescriptor::UNIT,
+        effects: EffectSet::default(),
+        instructions: vec![
+            Instruction {
+                site: spawn_site,
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::UNIT)
+                        .unwrap_or_else(|error| panic!("task handle: {error:?}")),
+                    body: body_identity,
+                },
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![1])
+                    .unwrap_or_else(|error| panic!("site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: StructuralPosition::new(vec![2])
+                    .unwrap_or_else(|error| panic!("site: {error}")),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Return,
+            },
+        ],
+    };
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(vec![(caller, root)], vec![body])
+            .unwrap_or_else(|error| panic!("program: {error:?}")),
+    );
+    let limits = MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| panic!("limits"));
+    let machine = Machine::new_with_context(
+        program.clone(),
+        &path,
+        Vec::new(),
+        execution,
+        limits,
+        None,
+        Some(session),
+    )
+    .unwrap_or_else(|error| panic!("machine: {error:?}"));
     let tasks = ConcurrentTaskStateV1::new(execution, machine.task_id(), 10)
         .unwrap_or_else(|error| panic!("tasks: {error:?}"));
     let sessions = LogicalSessionRegistryV1::new(
@@ -448,7 +546,7 @@ struct PendingStore;
 /// Child creation and failed submission retain one identity across journal cuts.
 #[test]
 fn child_creation_and_submission_failure_publish_coherent_cuts() {
-    let (coordinator, mut root, mut children, program) = fixture_with_program();
+    let (coordinator, mut root, mut children, program) = spawn_fixture_with_program();
     let execution = root.execution_id();
     let task = root.task_id();
     let session = coordinator.snapshot().sessions()[0].id;
@@ -472,27 +570,35 @@ fn child_creation_and_submission_failure_publish_coherent_cuts() {
     let mut stage = coordinator
         .stage_graph(&mut root, &mut children)
         .unwrap_or_else(|error| panic!("stage: {error:?}"));
-    let child = stage
-        .update(|_, _, tasks, sessions| {
-            tasks.create_child(
-                sessions,
-                crate::TaskCreationRequestV1 {
-                    parent_task_id: task,
-                    handle_name: Arc::from("child"),
-                    workflow: CanonicalPath::new("crate::main")
-                        .unwrap_or_else(|error| panic!("path: {error}")),
-                    spawn_site: StructuralPosition::new(vec![0])
-                        .unwrap_or_else(|error| panic!("site: {error}")),
-                    spawn_occurrence: 0,
-                    result_type: TypeDescriptor::UNIT,
-                    captures: Vec::new(),
-                    inherited_agent: None,
-                    parent_session_id: session,
-                },
-                DEFAULT_VALUE_LIMITS,
-            )
-        })
-        .unwrap_or_else(|error| panic!("creation: {error:?}"));
+    let (child, suspension) = stage.update(|root, _, tasks, sessions| {
+        let suspension = match root.step() {
+            MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(suspension)) => {
+                suspension
+            }
+            other => panic!("root did not suspend at spawn: {other:?}"),
+        };
+        let child = tasks.create_child(
+            sessions,
+            crate::TaskCreationRequestV1 {
+                parent_task_id: task,
+                handle_name: Arc::from(suspension.handle.name()),
+                workflow: suspension.workflow.clone(),
+                spawn_site: suspension.site.clone(),
+                spawn_occurrence: suspension.occurrence,
+                result_type: suspension.handle.result_type().clone(),
+                captures: suspension
+                    .captures
+                    .iter()
+                    .map(|capture| capture.task_capture().clone())
+                    .collect(),
+                inherited_agent: suspension.inherited_agent.clone(),
+                parent_session_id: session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        );
+        (child, suspension)
+    });
+    let child = child.unwrap_or_else(|error| panic!("creation: {error:?}"));
     assert_eq!(coordinator.snapshot(), before);
     ready(stage.commit(
         &mut commits,
@@ -507,7 +613,9 @@ fn child_creation_and_submission_failure_publish_coherent_cuts() {
         .stage_graph(&mut root, &mut children)
         .unwrap_or_else(|error| panic!("stage: {error:?}"));
     stage
-        .update(|_, _, tasks, _| {
+        .update(|root, _, tasks, _| {
+            root.complete_spawn(&suspension, child.handle_id)
+                .unwrap_or_else(|error| panic!("spawn completion: {error:?}"));
             tasks.resolve_submission(
                 child.task_id,
                 Err(HostError {
@@ -578,6 +686,17 @@ fn child_creation_and_submission_failure_publish_coherent_cuts() {
         let _ = root.cancel(Arc::from("stop"));
     });
     assert_eq!(coordinator.snapshot(), before);
+    commits
+        .set_graph_cancellation(
+            crate::CancellationReason::new(
+                CancellationReasonCategory::Caller,
+                Some(Arc::from("stop")),
+                None,
+                32,
+            )
+            .unwrap_or_else(|error| panic!("cancellation reason: {error:?}")),
+        )
+        .unwrap_or_else(|error| panic!("graph cancellation: {error:?}"));
     ready(stage.commit(&mut commits, DurableCommitCutV1::Cancellation, task))
         .unwrap_or_else(|error| panic!("cancellation commit: {error:?}"));
     let prefix = ready(storage.read_prefix(ReadJournalPrefixV1 {
@@ -617,23 +736,31 @@ fn rejected_cut_releases_publication_before_submission() {
 /// Root and child progress must charge one private budget and publish one cut.
 #[test]
 fn multiple_machines_publish_one_budget_and_checkpoint_cut() {
-    let (coordinator, mut root, mut children, program) = fixture_with_program();
+    let (coordinator, mut root, mut children, program) = spawn_fixture_with_program();
     let execution = root.execution_id();
     let root_id = root.task_id();
     let session = coordinator.snapshot().sessions()[0].id;
-    let path = CanonicalPath::new("crate::main").unwrap_or_else(|error| panic!("path: {error}"));
+    let suspension = match root.step() {
+        MachineStep::Transition(crate::MachineLabel::TaskControlSuspended(suspension)) => {
+            suspension
+        }
+        other => panic!("root did not suspend at spawn: {other:?}"),
+    };
     let child = coordinator
         .create_child(
             crate::TaskCreationRequestV1 {
                 parent_task_id: root_id,
-                handle_name: Arc::from("child"),
-                workflow: path.clone(),
-                spawn_site: StructuralPosition::new(vec![0])
-                    .unwrap_or_else(|error| panic!("site: {error}")),
-                spawn_occurrence: 0,
-                result_type: TypeDescriptor::UNIT,
-                captures: Vec::new(),
-                inherited_agent: None,
+                handle_name: Arc::from(suspension.handle.name()),
+                workflow: suspension.workflow.clone(),
+                spawn_site: suspension.site.clone(),
+                spawn_occurrence: suspension.occurrence,
+                result_type: suspension.handle.result_type().clone(),
+                captures: suspension
+                    .captures
+                    .iter()
+                    .map(|capture| capture.task_capture().clone())
+                    .collect(),
+                inherited_agent: suspension.inherited_agent.clone(),
                 parent_session_id: session,
             },
             DEFAULT_VALUE_LIMITS,
@@ -649,19 +776,21 @@ fn multiple_machines_publish_one_budget_and_checkpoint_cut() {
     );
     let limits = MachineLimits::new(100, 10, 10, 10, 100, DEFAULT_VALUE_LIMITS)
         .unwrap_or_else(|| panic!("limits"));
-    let machine = Machine::new_concurrent_task_with_context(
+    let machine = Machine::new_concurrent_task_body_with_context(
         program.clone(),
-        &path,
-        Vec::new(),
+        &suspension.body,
+        &[],
         execution,
         child.task_id,
         task_path,
         limits,
         root.execution_budget(),
-        None,
+        suspension.inherited_agent.clone(),
         Some(child.base_session_id),
     )
     .unwrap_or_else(|error| panic!("child machine: {error:?}"));
+    root.complete_spawn(&suspension, child.handle_id)
+        .unwrap_or_else(|error| panic!("spawn completion: {error:?}"));
     children.insert(child.task_id, machine);
     coordinator
         .resolve_submission(child.task_id, Ok(()))

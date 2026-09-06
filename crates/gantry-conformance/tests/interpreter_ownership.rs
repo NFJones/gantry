@@ -5,14 +5,16 @@ use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
 
 use gantry::host::contracts::{
-    CancellationToken, ExecutorAdapter, HookFactory, HostError, HostFuture, HostRequest,
-    HostResponse, IdentitySource, IntegrationPreflight, OperationHook, RuntimeSessionService,
+    BlockingWorkCapacities, BlockingWorkService, BlockingWorkSubmitError, CancellationToken,
+    DurationMicros, ExecutorAdapter, HookFactory, HostError, HostFuture, HostRequest, HostResponse,
+    IdentitySource, IntegrationPreflight, OperationHook, OwnedBlockingJob, OwnedTaskAbort,
+    RuntimeSessionService, SubmittedBlockingJob,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::identity::ProtocolIdentity;
@@ -20,11 +22,14 @@ use gantry::portable::{
     IdentityKind, PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS,
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
-use gantry::runtime::{InterpreterConfiguration, RequiredConfiguration};
+use gantry::runtime::{
+    BoundedBlockingWorkService, FinalShutdownEventFailure, FinalShutdownEventSettlement,
+    InterpreterConfiguration, RequiredConfiguration, ShutdownCompletionError,
+};
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::DEFAULT_VALUE_LIMITS;
-use gantry::{Interpreter, StartExecutionRequest, StartExecutionResult};
+use gantry::{Interpreter, ShutdownError, StartExecutionRequest, StartExecutionResult};
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
 };
@@ -125,6 +130,28 @@ impl Drop for PendingResponse {
 
 struct PendingIntegration {
     response_dropped: Arc<AtomicBool>,
+}
+
+struct RetainedBlockingService {
+    inner: BoundedBlockingWorkService,
+    _retention: Arc<()>,
+}
+
+impl BlockingWorkService for RetainedBlockingService {
+    fn capacities(&self) -> BlockingWorkCapacities {
+        self.inner.capacities()
+    }
+
+    fn submit(
+        &self,
+        job: OwnedBlockingJob,
+    ) -> Result<Arc<dyn SubmittedBlockingJob>, BlockingWorkSubmitError> {
+        self.inner.submit(job)
+    }
+
+    fn shutdown<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
+        self.inner.shutdown()
+    }
 }
 
 impl IntegrationPreflight for PendingIntegration {
@@ -293,6 +320,7 @@ fn last_external_facade_runs_unclean_cleanup_with_internal_activity_references()
 fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
     let root = TempDirectory::new("fn main() -> Int { 7 }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
     let integration = Arc::new(ScriptedIntegration::new([], []));
     let interpreter = interpreter(
         Arc::clone(&executor),
@@ -327,6 +355,11 @@ fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
     assert!(!cancellation.is_cancelled());
 
     assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(!cancellation.is_cancelled());
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("grace timer release failed: {error:?}"));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
     assert!(cancellation.is_cancelled());
     assert!(executor.is_runnable(0));
     assert!(matches!(
@@ -351,6 +384,199 @@ fn dropped_shutdown_waiter_does_not_abandon_the_unique_coordinator() {
     assert!(Arc::ptr_eq(&report, &repeated));
     assert!(report.orderly);
     assert_eq!(report.cohort.len(), 1);
+}
+
+#[test]
+fn natural_completion_during_shutdown_grace_avoids_cancellation() {
+    let root = TempDirectory::new("fn main() -> Int { 11 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let interpreter = interpreter_with_shutdown_timings(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+        17,
+        23,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: None,
+            root_session: None,
+            event_delivery: None,
+        }))
+    else {
+        panic!("valid grace fixture was rejected")
+    };
+    let cancellation = accepted
+        .handle()
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+    drop(accepted);
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(poll_once(shutdown.as_mut()).is_pending());
+    assert_eq!(executor.task_ids(), [0, 1]);
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert_eq!(executor.sleep_durations(), [duration(17)]);
+    assert!(!cancellation.is_cancelled());
+
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    let report = match poll_once(shutdown.as_mut()) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("graceful shutdown did not publish its report: {other:?}"),
+    };
+    assert!(!cancellation.is_cancelled());
+    assert_eq!(executor.sleep_durations(), [duration(17)]);
+    assert!(report.cohort[0].cancellation.is_none());
+}
+
+#[test]
+fn cancellation_completion_during_shutdown_drain_avoids_abort() {
+    let root = TempDirectory::new("fn main() -> Int { 13 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let interpreter = interpreter_with_shutdown_timings(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+        17,
+        23,
+    );
+    let selection = selection();
+    let StartExecutionResult::Accepted(accepted) =
+        block_on(interpreter.start_execution(StartExecutionRequest {
+            package_root: &root.0,
+            protocol_selection: &selection,
+            required_peers: &[],
+            entry_input: None,
+            root_session: None,
+            event_delivery: None,
+        }))
+    else {
+        panic!("valid drain fixture was rejected")
+    };
+    let cancellation = accepted
+        .handle()
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+    drop(accepted);
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(poll_once(shutdown.as_mut()).is_pending());
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(!cancellation.is_cancelled());
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("grace timer release failed: {error:?}"));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(cancellation.is_cancelled());
+    assert_eq!(
+        executor.sleep_durations(),
+        [duration(17), duration(23), duration(23)]
+    );
+
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert_eq!(executor.abort_result(0), None);
+    let report = match poll_once(shutdown.as_mut()) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("drained shutdown did not publish its report: {other:?}"),
+    };
+    assert!(report.cohort[0].cancellation.is_some());
+}
+
+#[test]
+fn cancellation_resistant_work_receives_abort_and_shutdown_returns_boundedly() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let response_dropped = Arc::new(AtomicBool::new(false));
+    let integration = Arc::new(PendingIntegration {
+        response_dropped: Arc::clone(&response_dropped),
+    });
+    let interpreter = interpreter_with_shutdown_timings(
+        Arc::clone(&executor),
+        integration.clone(),
+        integration.clone(),
+        integration,
+        17,
+        23,
+    );
+    let selection = selection();
+    let mut start = Box::pin(interpreter.start_execution(StartExecutionRequest {
+        package_root: &root.0,
+        protocol_selection: &selection,
+        required_peers: &[],
+        entry_input: None,
+        root_session: None,
+        event_delivery: None,
+    }));
+    while executor.task_ids().is_empty() {
+        assert!(poll_once(start.as_mut()).is_pending());
+    }
+    drop(start);
+    executor
+        .fail_abort(0)
+        .unwrap_or_else(|error| panic!("abort resistance injection failed: {error:?}"));
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(poll_once(shutdown.as_mut()).is_pending());
+    assert_eq!(executor.task_ids(), [0, 1]);
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("grace timer release failed: {error:?}"));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    executor
+        .release_sleep(2)
+        .unwrap_or_else(|error| panic!("drain timer release failed: {error:?}"));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(matches!(
+        executor.abort_result(0),
+        Some(OwnedTaskAbort::Failed(_))
+    ));
+    assert_eq!(
+        executor.sleep_durations(),
+        [duration(17), duration(23), duration(23), duration(23)]
+    );
+    executor
+        .release_sleep(3)
+        .unwrap_or_else(|error| panic!("completion timer release failed: {error:?}"));
+    assert!(matches!(
+        executor.poll_task(1),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(matches!(
+        poll_once(shutdown.as_mut()),
+        Poll::Ready(Err(ShutdownError::Completion(
+            ShutdownCompletionError::OwnedActivitiesPending
+                | ShutdownCompletionError::SupervisedTasksPending
+        )))
+    ));
+    assert!(!response_dropped.load(Ordering::Acquire));
 }
 
 #[test]
@@ -406,6 +632,100 @@ fn owned_shutdown_retains_services_after_last_external_facade() {
     assert!(weak.upgrade().is_none());
 }
 
+#[test]
+fn blocking_shutdown_timeout_bounds_report_but_retains_service_to_physical_settlement() {
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let (started_sender, started_receiver) = mpsc::sync_channel(1);
+    let (release_sender, release_receiver) = mpsc::sync_channel(1);
+    let service_retention = Arc::new(());
+    let service_weak = Arc::downgrade(&service_retention);
+    let blocking = RetainedBlockingService {
+        inner: BoundedBlockingWorkService::new(8, 8)
+            .unwrap_or_else(|error| panic!("blocking service construction failed: {error}")),
+        _retention: service_retention,
+    };
+    let blocking_job = blocking
+        .submit(Box::new(move || {
+            let _ = started_sender.send(());
+            let _ = release_receiver.recv();
+        }))
+        .unwrap_or_else(|error| panic!("blocking job submission failed: {error:?}"));
+    started_receiver
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap_or_else(|error| panic!("blocking job did not start: {error}"));
+
+    let executor_adapter: Arc<dyn ExecutorAdapter> = executor.clone();
+    let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
+        (1_u8..=96).map(|byte| Ok([byte; 32])),
+    ));
+    let configuration = configuration(executor_adapter, identities)
+        .with_graceful_shutdown_timeout_us(17)
+        .unwrap_or_else(|error| panic!("grace configuration failed: {error}"))
+        .with_post_cancellation_drain_us(23)
+        .unwrap_or_else(|error| panic!("drain configuration failed: {error}"))
+        .with_blocking_work_service(Box::new(blocking))
+        .unwrap_or_else(|error| panic!("blocking service configuration failed: {error}"));
+    let integration = Arc::new(ScriptedIntegration::new([], []));
+    let integration_weak = Arc::downgrade(&integration);
+    let interpreter = Interpreter::new(
+        configuration,
+        Arc::new(DeterministicUtcClock::new((1_u32..=96).map(timestamp))),
+        integration.clone(),
+        integration.clone(),
+        integration.clone(),
+    );
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(poll_once(shutdown.as_mut()).is_pending());
+    assert_eq!(executor.task_ids(), [0]);
+    assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+    assert_eq!(executor.sleep_durations(), [duration(17), duration(23)]);
+    executor
+        .release_sleep(1)
+        .unwrap_or_else(|error| panic!("blocking shutdown deadline release failed: {error:?}"));
+    assert_eq!(executor.poll_task(0), Ok(DeterministicTaskPoll::Pending));
+    let report = match poll_once(shutdown.as_mut()) {
+        Poll::Ready(Ok(report)) => report,
+        other => panic!("blocking shutdown did not publish a bounded report: {other:?}"),
+    };
+    assert!(!report.orderly);
+    assert_eq!(
+        report.final_event,
+        FinalShutdownEventSettlement::Failed(FinalShutdownEventFailure::Internal)
+    );
+
+    drop(shutdown);
+    drop(interpreter);
+    drop(integration);
+    drop(blocking_job);
+    assert!(integration_weak.upgrade().is_some());
+    assert!(service_weak.upgrade().is_some());
+
+    release_sender
+        .send(())
+        .unwrap_or_else(|error| panic!("blocking job release failed: {error}"));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match executor
+            .poll_task(0)
+            .unwrap_or_else(|error| panic!("shutdown task poll failed: {error:?}"))
+        {
+            DeterministicTaskPoll::Settled(_) => break,
+            DeterministicTaskPoll::Pending | DeterministicTaskPoll::NotRunnable => {
+                assert!(
+                    Instant::now() < deadline,
+                    "retained blocking shutdown did not settle"
+                );
+                std::thread::yield_now();
+            }
+            other => panic!("retained blocking shutdown settled abnormally: {other:?}"),
+        }
+    }
+    assert!(integration_weak.upgrade().is_none());
+    assert!(service_weak.upgrade().is_none());
+}
+
 fn interpreter(
     executor: Arc<DeterministicConcurrentExecutor>,
     preflight: Arc<dyn IntegrationPreflight>,
@@ -424,6 +744,27 @@ fn interpreter(
         sessions,
         hooks,
     )
+}
+
+fn interpreter_with_shutdown_timings(
+    executor: Arc<DeterministicConcurrentExecutor>,
+    preflight: Arc<dyn IntegrationPreflight>,
+    sessions: Arc<dyn RuntimeSessionService>,
+    hooks: Arc<dyn HookFactory>,
+    graceful_us: u64,
+    drain_us: u64,
+) -> Interpreter {
+    let executor: Arc<dyn ExecutorAdapter> = executor;
+    let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
+        (1_u8..=96).map(|byte| Ok([byte; 32])),
+    ));
+    let configuration = configuration(executor, identities)
+        .with_graceful_shutdown_timeout_us(graceful_us)
+        .unwrap_or_else(|error| panic!("grace configuration failed: {error}"))
+        .with_post_cancellation_drain_us(drain_us)
+        .unwrap_or_else(|error| panic!("drain configuration failed: {error}"));
+    let clock = Arc::new(DeterministicUtcClock::new((1_u32..=96).map(timestamp)));
+    Interpreter::new(configuration, clock, preflight, sessions, hooks)
 }
 
 fn configuration(
@@ -452,6 +793,10 @@ fn configuration(
         gantry::runtime::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)
             .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
     )
+}
+
+fn duration(microseconds: u64) -> DurationMicros {
+    DurationMicros::new(microseconds).unwrap_or_else(|| unreachable!("test durations are portable"))
 }
 
 fn selection() -> ProtocolSelection {

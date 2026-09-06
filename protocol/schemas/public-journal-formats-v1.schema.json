@@ -5,6 +5,8 @@
   "oneOf": [
     { "$ref": "#/$defs/cancellation" },
     { "$ref": "#/$defs/concurrent_evidence" },
+    { "$ref": "#/$defs/concurrent_evidence_v5" },
+    { "$ref": "#/$defs/concurrent_recovery_snapshot" },
     { "$ref": "#/$defs/event_dispatched" },
     { "$ref": "#/$defs/event_occurrence" },
     { "$ref": "#/$defs/event_settled" },
@@ -25,7 +27,11 @@
     },
     "identity": {
       "type": "string",
-      "pattern": "^[a-z][a-z-]*:[0-9a-f]{64}$"
+      "pattern": "^(?:activity|delivery-attempt|dispatch|event|evidence|execution|operation|session|task):[0-9a-f]{64}$"
+    },
+    "activity_identity": {
+      "type": "string",
+      "pattern": "^activity:[0-9a-f]{64}$"
     },
     "execution_identity": {
       "type": "string",
@@ -34,6 +40,18 @@
     "task_identity": {
       "type": "string",
       "pattern": "^task:[0-9a-f]{64}$"
+    },
+    "operation_identity": {
+      "type": "string",
+      "pattern": "^operation:[0-9a-f]{64}$"
+    },
+    "session_identity": {
+      "type": "string",
+      "pattern": "^session:[0-9a-f]{64}$"
+    },
+    "dispatch_identity": {
+      "type": "string",
+      "pattern": "^dispatch:[0-9a-f]{64}$"
     },
     "event_identity": {
       "type": "string",
@@ -68,38 +86,243 @@
     "operation": {
       "oneOf": [
         { "type": "null" },
+        { "$ref": "#/$defs/operation_body" }
+      ]
+    },
+    "operation_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action_recovery": { "$ref": "#/$defs/nullable_string" },
+        "dispatch_id": { "$ref": "#/$defs/nullable_string" },
+        "operation_id": { "$ref": "#/$defs/identity" },
+        "outcome": {},
+        "recovery_dispatch": { "$ref": "#/$defs/unsigned" },
+        "request_bytes": { "$ref": "#/$defs/nullable_hex" },
+        "result_bytes": { "$ref": "#/$defs/nullable_hex" },
+        "result_type": { "$ref": "#/$defs/nullable_string" },
+        "retries_left": { "$ref": "#/$defs/nullable_unsigned" },
+        "retry_delay_us": { "$ref": "#/$defs/nullable_unsigned" },
+        "retry_errors": { "type": "array" },
+        "validation_attempt": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": [
+        "action_recovery",
+        "dispatch_id",
+        "operation_id",
+        "outcome",
+        "recovery_dispatch",
+        "request_bytes",
+        "result_bytes",
+        "result_type",
+        "retries_left",
+        "retry_delay_us",
+        "retry_errors",
+        "validation_attempt"
+      ]
+    },
+    "action_recovery": {
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["idempotent", "non_idempotent", "read_only"] }
+      ]
+    },
+    "hook_outcome": {
+      "oneOf": [
         {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "action_recovery": { "$ref": "#/$defs/nullable_string" },
-            "dispatch_id": { "$ref": "#/$defs/nullable_string" },
-            "operation_id": { "$ref": "#/$defs/identity" },
-            "outcome": {},
-            "recovery_dispatch": { "$ref": "#/$defs/unsigned" },
-            "request_bytes": { "$ref": "#/$defs/nullable_hex" },
-            "result_bytes": { "$ref": "#/$defs/nullable_hex" },
-            "result_type": { "$ref": "#/$defs/nullable_string" },
-            "retries_left": { "$ref": "#/$defs/nullable_unsigned" },
-            "retry_delay_us": { "$ref": "#/$defs/nullable_unsigned" },
-            "retry_errors": { "type": "array" },
-            "validation_attempt": { "$ref": "#/$defs/unsigned" }
+            "category": { "type": "null" },
+            "kind": { "const": "completed" },
+            "payload": { "$ref": "#/$defs/hex" }
           },
-          "required": [
-            "action_recovery",
-            "dispatch_id",
-            "operation_id",
-            "outcome",
-            "recovery_dispatch",
-            "request_bytes",
-            "result_bytes",
-            "result_type",
-            "retries_left",
-            "retry_delay_us",
-            "retry_errors",
-            "validation_attempt"
-          ]
+          "required": ["category", "kind", "payload"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "category": { "type": "null" },
+            "kind": { "const": "declined" },
+            "payload": { "type": "string" }
+          },
+          "required": ["category", "kind", "payload"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "enum": [
+                "cancelled",
+                "policy-denied",
+                "provider-failure",
+                "timeout",
+                "unknown-outcome"
+              ]
+            },
+            "kind": { "const": "failed" },
+            "payload": { "type": "string" }
+          },
+          "required": ["category", "kind", "payload"]
         }
+      ]
+    },
+    "retry_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "json-duplicate-key",
+            "json-syntax",
+            "json-unicode",
+            "resource-limit",
+            "schema",
+            "utf8"
+          ]
+        },
+        "instance_location": {
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "schema_location": {
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        }
+      },
+      "required": ["category", "instance_location", "message", "schema_location"]
+    },
+    "operation_body_v5_prepared": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action_recovery": { "$ref": "#/$defs/action_recovery" },
+        "dispatch_id": { "$ref": "#/$defs/dispatch_identity" },
+        "operation_id": { "$ref": "#/$defs/operation_identity" },
+        "outcome": { "type": "null" },
+        "recovery_dispatch": { "$ref": "#/$defs/unsigned" },
+        "request_bytes": { "$ref": "#/$defs/hex" },
+        "result_bytes": { "type": "null" },
+        "result_type": { "type": "null" },
+        "retries_left": { "$ref": "#/$defs/nullable_unsigned" },
+        "retry_delay_us": { "type": "null" },
+        "retry_errors": { "type": "array", "maxItems": 0 },
+        "validation_attempt": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": [
+        "action_recovery",
+        "dispatch_id",
+        "operation_id",
+        "outcome",
+        "recovery_dispatch",
+        "request_bytes",
+        "result_bytes",
+        "result_type",
+        "retries_left",
+        "retry_delay_us",
+        "retry_errors",
+        "validation_attempt"
+      ]
+    },
+    "operation_body_v5_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action_recovery": { "$ref": "#/$defs/action_recovery" },
+        "dispatch_id": { "$ref": "#/$defs/dispatch_identity" },
+        "operation_id": { "$ref": "#/$defs/operation_identity" },
+        "outcome": { "$ref": "#/$defs/hook_outcome" },
+        "recovery_dispatch": { "$ref": "#/$defs/unsigned" },
+        "request_bytes": { "$ref": "#/$defs/hex" },
+        "result_bytes": { "type": "null" },
+        "result_type": { "type": "null" },
+        "retries_left": { "$ref": "#/$defs/nullable_unsigned" },
+        "retry_delay_us": { "type": "null" },
+        "retry_errors": { "type": "array", "maxItems": 0 },
+        "validation_attempt": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": [
+        "action_recovery",
+        "dispatch_id",
+        "operation_id",
+        "outcome",
+        "recovery_dispatch",
+        "request_bytes",
+        "result_bytes",
+        "result_type",
+        "retries_left",
+        "retry_delay_us",
+        "retry_errors",
+        "validation_attempt"
+      ]
+    },
+    "operation_body_v5_retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action_recovery": { "$ref": "#/$defs/action_recovery" },
+        "dispatch_id": { "$ref": "#/$defs/dispatch_identity" },
+        "operation_id": { "$ref": "#/$defs/operation_identity" },
+        "outcome": { "$ref": "#/$defs/hook_outcome" },
+        "recovery_dispatch": { "$ref": "#/$defs/unsigned" },
+        "request_bytes": { "$ref": "#/$defs/hex" },
+        "result_bytes": { "type": "null" },
+        "result_type": { "type": "null" },
+        "retries_left": { "$ref": "#/$defs/nullable_unsigned" },
+        "retry_delay_us": { "$ref": "#/$defs/unsigned" },
+        "retry_errors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/retry_error" }
+        },
+        "validation_attempt": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": [
+        "action_recovery",
+        "dispatch_id",
+        "operation_id",
+        "outcome",
+        "recovery_dispatch",
+        "request_bytes",
+        "result_bytes",
+        "result_type",
+        "retries_left",
+        "retry_delay_us",
+        "retry_errors",
+        "validation_attempt"
+      ]
+    },
+    "operation_body_v5_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action_recovery": { "$ref": "#/$defs/action_recovery" },
+        "dispatch_id": { "type": "null" },
+        "operation_id": { "$ref": "#/$defs/operation_identity" },
+        "outcome": { "type": "null" },
+        "recovery_dispatch": { "$ref": "#/$defs/unsigned" },
+        "request_bytes": { "type": "null" },
+        "result_bytes": { "$ref": "#/$defs/hex" },
+        "result_type": { "type": "string", "minLength": 1 },
+        "retries_left": { "$ref": "#/$defs/nullable_unsigned" },
+        "retry_delay_us": { "type": "null" },
+        "retry_errors": { "type": "array", "maxItems": 0 },
+        "validation_attempt": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": [
+        "action_recovery",
+        "dispatch_id",
+        "operation_id",
+        "outcome",
+        "recovery_dispatch",
+        "request_bytes",
+        "result_bytes",
+        "result_type",
+        "retries_left",
+        "retry_delay_us",
+        "retry_errors",
+        "validation_attempt"
       ]
     },
     "logical_evidence": {
@@ -138,6 +361,277 @@
       },
       "required": ["checkpoint", "cut", "execution_id", "format", "task_id"]
     },
+    "concurrent_evidence_v5": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": { "$ref": "#/$defs/hex" },
+            "cancellation": { "type": "null" },
+            "cut": { "const": "operation-prepared" },
+            "execution_id": { "$ref": "#/$defs/execution_identity" },
+            "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+            "operation": { "$ref": "#/$defs/operation_body_v5_prepared" },
+            "record": { "const": "operation" },
+            "task_id": { "$ref": "#/$defs/task_identity" }
+          },
+          "required": [
+            "checkpoint",
+            "cancellation",
+            "cut",
+            "execution_id",
+            "format",
+            "operation",
+            "record",
+            "task_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": { "$ref": "#/$defs/hex" },
+            "cancellation": { "type": "null" },
+            "cut": { "const": "operation-outcome" },
+            "execution_id": { "$ref": "#/$defs/execution_identity" },
+            "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+            "operation": { "$ref": "#/$defs/operation_body_v5_outcome" },
+            "record": { "const": "operation" },
+            "task_id": { "$ref": "#/$defs/task_identity" }
+          },
+          "required": [
+            "checkpoint",
+            "cancellation",
+            "cut",
+            "execution_id",
+            "format",
+            "operation",
+            "record",
+            "task_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": { "$ref": "#/$defs/hex" },
+            "cancellation": { "type": "null" },
+            "cut": { "const": "retry-waiting" },
+            "execution_id": { "$ref": "#/$defs/execution_identity" },
+            "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+            "operation": { "$ref": "#/$defs/operation_body_v5_retry" },
+            "record": { "const": "operation" },
+            "task_id": { "$ref": "#/$defs/task_identity" }
+          },
+          "required": [
+            "checkpoint",
+            "cancellation",
+            "cut",
+            "execution_id",
+            "format",
+            "operation",
+            "record",
+            "task_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": { "$ref": "#/$defs/hex" },
+            "cancellation": { "type": "null" },
+            "cut": { "const": "operation-result" },
+            "execution_id": { "$ref": "#/$defs/execution_identity" },
+            "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+            "operation": { "$ref": "#/$defs/operation_body_v5_result" },
+            "record": { "const": "operation" },
+            "task_id": { "$ref": "#/$defs/task_identity" }
+          },
+          "required": [
+            "checkpoint",
+            "cancellation",
+            "cut",
+            "execution_id",
+            "format",
+            "operation",
+            "record",
+            "task_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": { "$ref": "#/$defs/hex" },
+            "cancellation": { "type": "null" },
+            "cut": { "enum": ["checkpoint", "task-settlement"] },
+            "execution_id": { "$ref": "#/$defs/execution_identity" },
+            "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+            "operation": { "type": "null" },
+            "record": { "const": "submission-resolution" },
+            "task_id": { "$ref": "#/$defs/task_identity" }
+          },
+          "required": [
+            "checkpoint",
+            "cancellation",
+            "cut",
+            "execution_id",
+            "format",
+            "operation",
+            "record",
+            "task_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": { "$ref": "#/$defs/hex" },
+            "cancellation": { "$ref": "#/$defs/concurrent_cancellation_body" },
+            "cut": { "const": "cancellation" },
+            "execution_id": { "$ref": "#/$defs/execution_identity" },
+            "format": { "const": "gantry.concurrent-durable-evidence/v5" },
+            "operation": { "type": "null" },
+            "record": { "const": "cancellation" },
+            "task_id": { "$ref": "#/$defs/task_identity" }
+          },
+          "required": [
+            "checkpoint",
+            "cancellation",
+            "cut",
+            "execution_id",
+            "format",
+            "operation",
+            "record",
+            "task_id"
+          ]
+        }
+      ]
+    },
+    "concurrent_recovery_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cancellation": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/concurrent_snapshot_evidence" }
+          ]
+        },
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_snapshot_event" }
+        },
+        "execution_start": { "$ref": "#/$defs/hex" },
+        "format": { "const": "gantry.concurrent-recovery-snapshot/v1" },
+        "frontier": { "$ref": "#/$defs/unsigned" },
+        "frontier_evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "graph": { "$ref": "#/$defs/hex" },
+        "graph_evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "graph_kind": {
+          "enum": [
+            "gantry.concurrent-durable-evidence/v4",
+            "gantry.concurrent-durable-evidence/v5"
+          ]
+        },
+        "graph_sequence": { "$ref": "#/$defs/unsigned" },
+        "legacy_graphs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_snapshot_evidence" }
+        },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_snapshot_evidence" }
+        },
+        "retained_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_retained_evidence" }
+        },
+        "start_evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "submission_resolutions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/concurrent_snapshot_evidence" }
+        }
+      },
+      "required": [
+        "cancellation",
+        "events",
+        "execution_start",
+        "format",
+        "frontier",
+        "frontier_evidence_id",
+        "graph",
+        "graph_evidence_id",
+        "graph_kind",
+        "graph_sequence",
+        "legacy_graphs",
+        "operations",
+        "retained_evidence",
+        "start_evidence_id",
+        "submission_resolutions"
+      ]
+    },
+    "concurrent_snapshot_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body": { "$ref": "#/$defs/hex" },
+        "evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "sequence": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": ["body", "evidence_id", "sequence"]
+    },
+    "concurrent_snapshot_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body": { "$ref": "#/$defs/hex" },
+        "evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "kind": {
+          "enum": [
+            "gantry.event-delivery-dispatched/v1",
+            "gantry.event-delivery-settled/v1",
+            "gantry.event-occurrence/v1"
+          ]
+        },
+        "payloads": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "references": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence_identity" }
+        },
+        "sequence": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": ["body", "evidence_id", "kind", "payloads", "references", "sequence"]
+    },
+    "concurrent_retained_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": { "$ref": "#/$defs/evidence_identity" },
+        "sequence": { "$ref": "#/$defs/unsigned" }
+      },
+      "required": ["evidence_id", "sequence"]
+    },
+    "concurrent_cancellation": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/concurrent_cancellation_body" }
+      ]
+    },
+    "concurrent_cancellation_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "causal_identity": { "$ref": "#/$defs/causal_identity" },
+        "category": { "enum": ["caller", "deadline", "runtime", "shutdown"] },
+        "message": { "$ref": "#/$defs/nullable_string" }
+      },
+      "required": ["causal_identity", "category", "message"]
+    },
     "causal_identity": {
       "oneOf": [
         { "type": "null" },
@@ -145,8 +639,17 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "identity": { "$ref": "#/$defs/identity" },
-            "kind": { "enum": ["operation", "task"] }
+            "identity": { "$ref": "#/$defs/operation_identity" },
+            "kind": { "const": "operation" }
+          },
+          "required": ["identity", "kind"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity": { "$ref": "#/$defs/task_identity" },
+            "kind": { "const": "task" }
           },
           "required": ["identity", "kind"]
         }
@@ -157,7 +660,7 @@
       "additionalProperties": false,
       "properties": {
         "causal_identity": { "$ref": "#/$defs/causal_identity" },
-        "category": { "type": "string", "minLength": 1 },
+        "category": { "enum": ["caller", "deadline", "runtime", "shutdown"] },
         "format": { "const": "gantry.cancellation/v3" },
         "message": { "$ref": "#/$defs/nullable_string" },
         "state": { "$ref": "#/$defs/hex" }

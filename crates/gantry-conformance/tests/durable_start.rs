@@ -13,7 +13,7 @@ use std::task::{Context, Poll, Waker};
 use gantry::host::contracts::{
     CancellationToken, EmbeddingVersion, ExecutorAdapter, FreshIdentityAllocator, HostError,
     HostFuture, HostRequest, HostResponse, IdentitySource, InclusiveJitterRange,
-    IntegrationPreflight, JournalStorage, UtcClock,
+    IntegrationPreflight, JournalStorage, OwnedTaskAbort, OwnedTaskResult, UtcClock,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::host::event::{
@@ -35,9 +35,9 @@ use gantry::portable::{
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    CancellationReason, DurableExecutionStartV3, DurableRecoverySnapshotV3,
+    AdmissionClass, CancellationReason, DurableExecutionStartV3, DurableRecoverySnapshotV3,
     FinalShutdownEventSettlement, InMemoryJournalStore, InterpreterConfiguration,
-    InterpreterLifecycle, MachineOutcome, MachineStep, RequiredConfiguration,
+    InterpreterLifecycle, MachineOutcome, MachineStep, RequiredConfiguration, SupervisedTaskDomain,
     recover_authoritative_prefix_with_retained_program,
 };
 use gantry::source::FrontendLimits;
@@ -51,6 +51,7 @@ use gantry::{
     DurableStartExecutionRequest, DurableStartExecutionResult, StartExecutionCoordinator,
     StartExecutionRequest,
 };
+use gantry_conformance::concurrent_executor::DeterministicConcurrentExecutor;
 use serde::Deserialize;
 
 const DURABLE_START_EVIDENCE: &str = "crates/gantry-conformance/tests/durable_start.rs#durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries";
@@ -683,6 +684,73 @@ fn durable_shutdown_cancels_sequential_work_releases_once_and_is_idempotent() {
         read_prefix(storage.as_ref(), &journal_id),
         read_prefix(storage.as_ref(), &journal_id)
     );
+}
+
+#[test]
+fn direct_durable_shutdown_bounds_resistant_operation_and_failed_abort_before_release() {
+    let storage = Arc::new(InstrumentedJournalStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let services = Arc::new(Services::default());
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let executor_adapter: Arc<dyn ExecutorAdapter> = executor.clone();
+    let configuration = test_configuration_with_executor(Arc::clone(&services), executor_adapter)
+        .with_graceful_shutdown_timeout_us(17)
+        .unwrap_or_else(|error| panic!("grace configuration failed: {error}"))
+        .with_post_cancellation_drain_us(23)
+        .unwrap_or_else(|error| panic!("drain configuration failed: {error}"));
+    let (interpreter_lifecycle, lifecycle, owned, _, _, _) =
+        start_owned_lifecycle_with_configuration(
+            "durable-lifecycle-resistant-shutdown",
+            Arc::clone(&storage_adapter),
+            services,
+            configuration,
+        );
+    owned.test_hold_driver_operation();
+
+    let supervisor = interpreter_lifecycle.task_supervisor();
+    let reservation = supervisor
+        .try_reserve(AdmissionClass::RootTask)
+        .unwrap_or_else(|error| panic!("resistant task reservation failed: {error}"));
+    let registration = supervisor.prepare(SupervisedTaskDomain::Root, None);
+    let resistant = supervisor
+        .submit(
+            registration,
+            Box::pin(std::future::pending::<OwnedTaskResult>()),
+            reservation.transfer(),
+        )
+        .unwrap_or_else(|error| panic!("resistant task submission failed: {error:?}"));
+    resistant.relinquish();
+    executor
+        .fail_abort(0)
+        .unwrap_or_else(|error| panic!("failed-abort injection failed: {error:?}"));
+
+    let owned_executions = [owned];
+    let mut shutdown = Box::pin(lifecycle.shutdown(
+        &interpreter_lifecycle,
+        &owned_executions,
+        None,
+        None,
+        FinalShutdownEventSettlement::Settled,
+    ));
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(shutdown.as_mut().poll(&mut context).is_pending());
+    let mut result = None;
+    for timer in 0..3 {
+        executor
+            .release_sleep(timer)
+            .unwrap_or_else(|error| panic!("shutdown timer {timer} release failed: {error:?}"));
+        if let Poll::Ready(completed) = shutdown.as_mut().poll(&mut context) {
+            result = Some(completed);
+            break;
+        }
+    }
+    assert!(matches!(
+        executor.abort_result(0),
+        Some(OwnedTaskAbort::Failed(_))
+    ));
+    assert_eq!(storage.release_calls(), 1);
+    assert!(matches!(result, Some(Err(_))));
 }
 
 #[test]
@@ -1618,6 +1686,9 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         event_delivery: None,
     })) {
         DurableResumeExecutionResult::Accepted(accepted) => accepted,
+        DurableResumeExecutionResult::RunnableReplacementUnavailable(classification) => {
+            panic!("serial source-free resume required graph replacement: {classification:?}")
+        }
         DurableResumeExecutionResult::Rejected(failure) => {
             panic!("source-free generic resume was rejected: {failure:?}")
         }
@@ -1708,6 +1779,9 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         event_delivery: None,
     })) {
         DurableResumeExecutionResult::Accepted(accepted) => accepted,
+        DurableResumeExecutionResult::RunnableReplacementUnavailable(classification) => {
+            panic!("serial candidate resume required graph replacement: {classification:?}")
+        }
         DurableResumeExecutionResult::Rejected(failure) => {
             panic!("candidate generic resume was rejected: {failure:?}")
         }
@@ -2006,11 +2080,27 @@ fn start_owned_lifecycle(
     gantry::host::contracts::CancellationSignal,
     JournalId,
 ) {
+    let services = Arc::new(Services::default());
+    let configuration = test_configuration(Arc::clone(&services));
+    start_owned_lifecycle_with_configuration(journal_name, storage, services, configuration)
+}
+
+fn start_owned_lifecycle_with_configuration(
+    journal_name: &str,
+    storage: Arc<dyn JournalStorage>,
+    services: Arc<Services>,
+    configuration: InterpreterConfiguration,
+) -> (
+    InterpreterLifecycle,
+    DurableLifecycleCoordinator,
+    Arc<gantry::DurableOwnedExecution>,
+    gantry::identity::ProtocolIdentity,
+    gantry::host::contracts::CancellationSignal,
+    JournalId,
+) {
     let root = TempDirectory::new(
         b"agents { worker } default agent = worker; action read_only inspect(value: Int) -> Int; fn main() {}",
     );
-    let services = Arc::new(Services::default());
-    let configuration = test_configuration(Arc::clone(&services));
     let selection = selection();
     let journal_id = JournalId::new(journal_name)
         .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
@@ -2107,6 +2197,28 @@ fn test_configuration_with_policy(
     yield_quantum: u64,
     maximum_constructed_type_depth: u64,
 ) -> InterpreterConfiguration {
+    let executor: Arc<dyn ExecutorAdapter> = services.clone();
+    test_configuration_with_policy_and_executor(
+        services,
+        executor,
+        yield_quantum,
+        maximum_constructed_type_depth,
+    )
+}
+
+fn test_configuration_with_executor(
+    services: Arc<Services>,
+    executor: Arc<dyn ExecutorAdapter>,
+) -> InterpreterConfiguration {
+    test_configuration_with_policy_and_executor(services, executor, 1_000, 256)
+}
+
+fn test_configuration_with_policy_and_executor(
+    services: Arc<Services>,
+    executor: Arc<dyn ExecutorAdapter>,
+    yield_quantum: u64,
+    maximum_constructed_type_depth: u64,
+) -> InterpreterConfiguration {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32,
@@ -2134,7 +2246,7 @@ fn test_configuration_with_policy(
     )
     .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
     InterpreterConfiguration::new(
-        services.clone(),
+        executor,
         services,
         required,
         gantry::runtime::AsyncCapacityLimits::new(8, 8, 8, 8, 8, 8, 8, 8, 8)

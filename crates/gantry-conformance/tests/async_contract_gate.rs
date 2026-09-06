@@ -10,6 +10,11 @@ use sha2::{Digest, Sha256};
 
 const CONTRACT_PATH: &str = "protocol/conformance/async-execution-contract-v1.json";
 const REVIEW_PATH: &str = "protocol/requirements/reviewed-v1.json";
+const ASYNC_EVIDENCE_GATE_PATH: &str = "protocol/conformance/async-execution-gate-v1.json";
+const INVENTORY_PATH: &str = "protocol/conformance/manifest-v1.json";
+const SOURCE_SPAWN_ISSUE: &str = "GNT-ASYNC-SPAWN-001";
+const SOURCE_SPAWN_PATH: &str = "protocol/conformance/source-spawn-v1.json";
+const SOURCE_SPAWN_TEST_PATH: &str = "crates/gantry-conformance/tests/source_spawn.rs";
 const PROFILES: [&str; 6] = [
     "analyzer",
     "concurrent-evaluator",
@@ -20,6 +25,12 @@ const PROFILES: [&str; 6] = [
 ];
 const ASSIGNMENT_MATRIX_SHA256: &str =
     "d5f62a1af89feded6523b71efc615b9c7d295c9b5e8a099d2f26033c34fa33a4";
+const SOURCE_SPAWN_EXCLUSIONS: [&str; 4] = [
+    "Source JOIN, JOINALL, DETACH, descendant draining, and their complete concurrent-evaluator behavior remain owned by GNT-ASYNC-JOIN-001 and GNT-ASYNC-CANCEL-001.",
+    "The linked source fixtures do not claim successful source JOIN execution; after the child behavior under test, their join site may terminate with the current unsupported task-control invariant.",
+    "Complete concurrent-evaluator graph cancellation is not inferred from the focused durable cancellation ordering case.",
+    "Recovered child reconstruction and fenced executor resubmission remain owned by GNT-ASYNC-REC-001; mixed-prefix resume is only classified as runnable replacement unavailable.",
+];
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,7 +57,7 @@ struct Prerequisite {
     subject: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct FileDigest {
     path: String,
@@ -71,6 +82,65 @@ struct Assignment {
     clause: String,
     profiles: Vec<String>,
     evidence_owners: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct SourceSpawnManifest {
+    format: String,
+    specification_sha256: String,
+    issue: String,
+    source_test: FileDigest,
+    requirements: Vec<SourceSpawnRequirement>,
+    capabilities: Vec<SourceSpawnCapability>,
+    exclusions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct SourceSpawnRequirement {
+    requirement: String,
+    clause: String,
+    profiles: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct SourceSpawnCapability {
+    id: String,
+    evidence: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct AsyncEvidenceGateInventory {
+    format: String,
+    gate: String,
+    status: String,
+    specification_sha256: String,
+    artifacts: Vec<FileDigest>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ConformanceInventory {
+    format: String,
+    specification_sha256: String,
+    manifests: Vec<ManifestInventoryEntry>,
+    gates: Vec<GateInventoryEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ManifestInventoryEntry {
+    format: String,
+    path: String,
+    sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct GateInventoryEntry {
+    gate: String,
+    path: String,
+    sha256: String,
+    status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +251,213 @@ fn async_contract_gate_rejects_stale_incomplete_duplicate_or_overclaimed_records
     ));
 }
 
+#[test]
+fn source_spawn_closure_rejects_structural_content_anchor_and_digest_mutations() {
+    let root = workspace_root();
+    let contract: ContractGate = read_json(&root.join(CONTRACT_PATH));
+    let source: SourceSpawnManifest = read_json(&root.join(SOURCE_SPAWN_PATH));
+    let gate: AsyncEvidenceGateInventory = read_json(&root.join(ASYNC_EVIDENCE_GATE_PATH));
+    let inventory: ConformanceInventory = read_json(&root.join(INVENTORY_PATH));
+    let specification_sha256 = sha256(&read(&root.join("SPEC.md")).unwrap_or_else(|error| {
+        panic!("could not read specification for source-spawn regression: {error}")
+    }));
+
+    assert_eq!(
+        validate_source_spawn_closure(
+            &root,
+            &contract,
+            &specification_sha256,
+            &source,
+            &gate,
+            &inventory,
+        ),
+        Ok(())
+    );
+
+    let mut unknown: serde_json::Value = read_json(&root.join(SOURCE_SPAWN_PATH));
+    unknown
+        .as_object_mut()
+        .unwrap_or_else(|| panic!("source-spawn manifest is not an object"))
+        .insert("unexpected".to_owned(), serde_json::Value::Bool(true));
+    let error = match serde_json::from_value::<SourceSpawnManifest>(unknown) {
+        Ok(_) => panic!("source-spawn manifest accepted an unknown field"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("unknown field `unexpected`"));
+
+    let mut reordered_requirement = source.clone();
+    reordered_requirement.requirements.swap(0, 1);
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &reordered_requirement,
+        &gate,
+        &inventory,
+        "requirements differ",
+    );
+
+    let mut changed_requirement = source.clone();
+    changed_requirement.requirements[0].profiles.pop();
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &changed_requirement,
+        &gate,
+        &inventory,
+        "requirements differ",
+    );
+
+    let mut reordered_capability = source.clone();
+    reordered_capability.capabilities.swap(0, 1);
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &reordered_capability,
+        &gate,
+        &inventory,
+        "capabilities differ",
+    );
+
+    let mut changed_capability = source.clone();
+    changed_capability.capabilities[0].id = "changed-capability".to_owned();
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &changed_capability,
+        &gate,
+        &inventory,
+        "capabilities differ",
+    );
+
+    let mut reordered_exclusion = source.clone();
+    reordered_exclusion.exclusions.swap(0, 1);
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &reordered_exclusion,
+        &gate,
+        &inventory,
+        "exclusions differ",
+    );
+
+    let mut changed_exclusion = source.clone();
+    changed_exclusion.exclusions[0].push_str(" changed");
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &changed_exclusion,
+        &gate,
+        &inventory,
+        "exclusions differ",
+    );
+
+    let mut dangling_anchor = source.clone();
+    dangling_anchor.capabilities[0].evidence =
+        "crates/gantry-conformance/tests/source_spawn.rs#missing_source_spawn_symbol".to_owned();
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &dangling_anchor,
+        &gate,
+        &inventory,
+        "evidence symbol does not exist",
+    );
+
+    let mut unregistered_source_test = read(&root.join(SOURCE_SPAWN_TEST_PATH))
+        .unwrap_or_else(|error| panic!("could not read source-spawn test regression: {error}"));
+    let registration = b"#[test]\nfn nondurable_cancellation_after_child_session_establishment_constructs_no_hook(";
+    let registration_offset = unregistered_source_test
+        .windows(registration.len())
+        .position(|window| window == registration)
+        .unwrap_or_else(|| panic!("registered source-spawn test is absent"));
+    unregistered_source_test[registration_offset..registration_offset + b"#[test]\n".len()]
+        .fill(b' ');
+    let mut unregistered_source = source.clone();
+    unregistered_source.source_test.sha256 = sha256(&unregistered_source_test);
+    assert!(matches!(
+        validate_source_spawn_closure_with_source_test(
+            &root,
+            &contract,
+            &specification_sha256,
+            &unregistered_source,
+            &gate,
+            &inventory,
+            &unregistered_source_test,
+        ),
+        Err(message) if message.contains("evidence symbol is not a registered test")
+    ));
+
+    let mut mutated_source_test = read(&root.join(SOURCE_SPAWN_TEST_PATH))
+        .unwrap_or_else(|error| panic!("could not read source-spawn test regression: {error}"));
+    let declaration = b"fn child_executor_rejection_settles_without_submitting_another_driver(";
+    assert!(
+        mutated_source_test
+            .windows(declaration.len())
+            .any(|window| window == declaration),
+        "source-spawn test declaration is absent before body mutation"
+    );
+    let body_marker = b"    executor.fail_next_spawn();";
+    let body_offset = mutated_source_test
+        .windows(body_marker.len())
+        .position(|window| window == body_marker)
+        .unwrap_or_else(|| panic!("source-spawn test body marker is absent"));
+    mutated_source_test[body_offset] = b'\t';
+    assert!(
+        mutated_source_test
+            .windows(declaration.len())
+            .any(|window| window == declaration),
+        "source-spawn test declaration changed during body mutation"
+    );
+    assert!(matches!(
+        validate_source_spawn_closure_with_source_test(
+            &root,
+            &contract,
+            &specification_sha256,
+            &source,
+            &gate,
+            &inventory,
+            &mutated_source_test,
+        ),
+        Err(message) if message.contains("source test digest differs")
+    ));
+
+    let mut stale_specification = source.clone();
+    stale_specification.specification_sha256 = "0".repeat(64);
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &stale_specification,
+        &gate,
+        &inventory,
+        "specification digest differs",
+    );
+
+    let mut stale_inventory = inventory.clone();
+    stale_inventory
+        .manifests
+        .iter_mut()
+        .find(|entry| entry.path == SOURCE_SPAWN_PATH)
+        .unwrap_or_else(|| panic!("source-spawn inventory entry is absent"))
+        .sha256 = "0".repeat(64);
+    assert_source_spawn_error(
+        &root,
+        &contract,
+        &specification_sha256,
+        &source,
+        &gate,
+        &stale_inventory,
+        "aggregate manifest digest differs",
+    );
+}
+
 fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String> {
     if contract.format != "gantry.async-execution-contract-gate/v1"
         || contract.issue != "GNT-ASYNC-GATE-000"
@@ -224,6 +501,24 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
     if downstream.is_empty() || downstream.contains(&contract.issue) {
         return Err("staged adoption downstream issue set is invalid".to_owned());
     }
+    let mut evidence_owners = downstream.clone();
+    let source_spawn: SourceSpawnManifest = read_json_result(&root.join(SOURCE_SPAWN_PATH))?;
+    let async_gate: AsyncEvidenceGateInventory =
+        read_json_result(&root.join(ASYNC_EVIDENCE_GATE_PATH))?;
+    let inventory: ConformanceInventory = read_json_result(&root.join(INVENTORY_PATH))?;
+    validate_source_spawn_closure(
+        root,
+        contract,
+        &specification_sha256,
+        &source_spawn,
+        &async_gate,
+        &inventory,
+    )?;
+    if !evidence_owners.insert(SOURCE_SPAWN_ISSUE.to_owned()) {
+        return Err(format!(
+            "closed evidence owner {SOURCE_SPAWN_ISSUE} is duplicated"
+        ));
+    }
 
     validate_prerequisites(root, &contract.prerequisites)?;
     let artifact_paths = validate_artifacts(root, &contract.contract_artifacts)?;
@@ -236,9 +531,9 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
         &contract.decisions,
         &requirement_ids,
         &artifact_paths,
-        &downstream,
+        &evidence_owners,
     )?;
-    validate_assignments(&contract.requirement_assignments, &review, &downstream)?;
+    validate_assignments(&contract.requirement_assignments, &review, &evidence_owners)?;
 
     if contract.compatibility_impacts.len() < 8
         || !sorted_unique(&contract.compatibility_impacts)
@@ -317,6 +612,361 @@ fn validate_artifacts(root: &Path, artifacts: &[FileDigest]) -> Result<BTreeSet<
         paths.insert(artifact.path.clone());
     }
     Ok(paths)
+}
+
+fn validate_source_spawn_closure(
+    root: &Path,
+    contract: &ContractGate,
+    specification_sha256: &str,
+    source: &SourceSpawnManifest,
+    gate: &AsyncEvidenceGateInventory,
+    inventory: &ConformanceInventory,
+) -> Result<(), String> {
+    let source_test = read(&root.join(SOURCE_SPAWN_TEST_PATH))?;
+    validate_source_spawn_closure_with_source_test(
+        root,
+        contract,
+        specification_sha256,
+        source,
+        gate,
+        inventory,
+        &source_test,
+    )
+}
+
+fn validate_source_spawn_closure_with_source_test(
+    root: &Path,
+    contract: &ContractGate,
+    specification_sha256: &str,
+    source: &SourceSpawnManifest,
+    gate: &AsyncEvidenceGateInventory,
+    inventory: &ConformanceInventory,
+    source_test: &[u8],
+) -> Result<(), String> {
+    if source.format != "gantry.source-spawn-evidence/v1" || source.issue != SOURCE_SPAWN_ISSUE {
+        return Err("source-spawn manifest identity differs".to_owned());
+    }
+    if source.specification_sha256 != specification_sha256 {
+        return Err("source-spawn specification digest differs".to_owned());
+    }
+    if source.source_test.path != SOURCE_SPAWN_TEST_PATH
+        || source.source_test.sha256 != sha256(source_test)
+    {
+        return Err("source-spawn source test digest differs".to_owned());
+    }
+
+    let expected_requirements = expected_source_spawn_requirements();
+    if source.requirements != expected_requirements {
+        return Err("source-spawn requirements differ from the exact contract".to_owned());
+    }
+    let owned_requirements = contract
+        .requirement_assignments
+        .iter()
+        .filter(|assignment| {
+            assignment
+                .evidence_owners
+                .iter()
+                .any(|owner| owner == SOURCE_SPAWN_ISSUE)
+        })
+        .map(|assignment| SourceSpawnRequirement {
+            requirement: assignment.requirement.clone(),
+            clause: assignment.clause.clone(),
+            profiles: assignment.profiles.clone(),
+        })
+        .collect::<Vec<_>>();
+    if owned_requirements != source.requirements {
+        return Err("source-spawn evidence ownership differs from the async contract".to_owned());
+    }
+
+    for capability in &source.capabilities {
+        validate_evidence_anchor(&capability.evidence, source_test)?;
+    }
+    if source.capabilities != expected_source_spawn_capabilities() {
+        return Err("source-spawn capabilities differ from the exact contract".to_owned());
+    }
+    if source.exclusions
+        != SOURCE_SPAWN_EXCLUSIONS
+            .iter()
+            .map(|exclusion| (*exclusion).to_owned())
+            .collect::<Vec<_>>()
+    {
+        return Err("source-spawn exclusions differ from the exact contract".to_owned());
+    }
+
+    let source_digest = sha256(&read(&root.join(SOURCE_SPAWN_PATH))?);
+    if gate.format != "gantry.async-execution-evidence-gate/v1"
+        || gate.gate != "GNT-ASYNC-GATE-100"
+        || gate.status != "verified"
+        || gate.specification_sha256 != specification_sha256
+    {
+        return Err("source-spawn authentication gate identity differs".to_owned());
+    }
+    validate_digest_entry(
+        gate.artifacts
+            .iter()
+            .map(|entry| (entry.path.as_str(), entry.sha256.as_str())),
+        SOURCE_SPAWN_PATH,
+        &source_digest,
+        "async evidence gate",
+    )?;
+
+    if inventory.format != "gantry.conformance-manifest/v1"
+        || inventory.specification_sha256 != specification_sha256
+    {
+        return Err("source-spawn aggregate manifest identity differs".to_owned());
+    }
+    let source_inventory = inventory
+        .manifests
+        .iter()
+        .filter(|entry| entry.path == SOURCE_SPAWN_PATH)
+        .collect::<Vec<_>>();
+    if source_inventory.len() != 1
+        || source_inventory[0].format != source.format
+        || source_inventory[0].sha256 != source_digest
+    {
+        return Err("source-spawn aggregate manifest digest differs".to_owned());
+    }
+
+    let gate_digest = sha256(&read(&root.join(ASYNC_EVIDENCE_GATE_PATH))?);
+    validate_digest_entry(
+        inventory
+            .manifests
+            .iter()
+            .filter(|entry| entry.format == gate.format)
+            .map(|entry| (entry.path.as_str(), entry.sha256.as_str())),
+        ASYNC_EVIDENCE_GATE_PATH,
+        &gate_digest,
+        "aggregate manifest gate inventory",
+    )?;
+    let gate_inventory = inventory
+        .gates
+        .iter()
+        .filter(|entry| entry.gate == gate.gate)
+        .collect::<Vec<_>>();
+    if gate_inventory.len() != 1
+        || gate_inventory[0].path != ASYNC_EVIDENCE_GATE_PATH
+        || gate_inventory[0].sha256 != gate_digest
+        || gate_inventory[0].status != gate.status
+    {
+        return Err("source-spawn aggregate gate digest differs".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_digest_entry<'a>(
+    entries: impl Iterator<Item = (&'a str, &'a str)>,
+    expected_path: &str,
+    expected_digest: &str,
+    owner: &str,
+) -> Result<(), String> {
+    let matching = entries
+        .filter(|(path, _)| *path == expected_path)
+        .collect::<Vec<_>>();
+    if matching.len() != 1 || matching[0].1 != expected_digest {
+        return Err(format!("source-spawn {owner} digest differs"));
+    }
+    Ok(())
+}
+
+fn validate_evidence_anchor(evidence: &str, source_test: &[u8]) -> Result<(), String> {
+    let (path, symbol) = evidence
+        .split_once('#')
+        .ok_or_else(|| format!("source-spawn evidence anchor is malformed: {evidence}"))?;
+    if path != SOURCE_SPAWN_TEST_PATH || symbol.is_empty() || symbol.contains('#') {
+        return Err(format!(
+            "source-spawn evidence anchor is malformed: {evidence}"
+        ));
+    }
+    let source = std::str::from_utf8(source_test)
+        .map_err(|_| format!("source-spawn evidence file is not UTF-8: {path}"))?;
+    let declaration = format!("fn {symbol}(");
+    let mut found_declaration = false;
+    let mut registered = false;
+    let mut has_test_attribute = false;
+    for line in source.lines() {
+        let line = line.trim();
+        if line == "#[test]" {
+            has_test_attribute = true;
+            continue;
+        }
+        if line.is_empty() || line.starts_with("#[") {
+            continue;
+        }
+        if line.starts_with(&declaration) {
+            found_declaration = true;
+            registered = has_test_attribute;
+            break;
+        }
+        has_test_attribute = false;
+    }
+    if !found_declaration {
+        return Err(format!(
+            "source-spawn evidence symbol does not exist: {evidence}"
+        ));
+    }
+    if !registered {
+        return Err(format!(
+            "source-spawn evidence symbol is not a registered test: {evidence}"
+        ));
+    }
+    Ok(())
+}
+
+fn expected_source_spawn_requirements() -> Vec<SourceSpawnRequirement> {
+    [
+        (
+            "GNT-3.6",
+            "clause-001",
+            &[
+                "concurrent-evaluator",
+                "durable-runtime",
+                "embedding",
+                "evaluator",
+            ][..],
+        ),
+        ("GNT-3-M-SPAWN", "clause-001", &["concurrent-evaluator"][..]),
+        (
+            "GNT-3-D-COMMIT-ORDER",
+            "clause-001",
+            &["durable-runtime"][..],
+        ),
+        (
+            "GNT-7.17",
+            "clause-003",
+            &[
+                "concurrent-evaluator",
+                "durable-runtime",
+                "embedding",
+                "evaluator",
+            ][..],
+        ),
+        (
+            "GNT-15.2-runtime-sessions",
+            "clause-001",
+            &["embedding"][..],
+        ),
+        ("GNT-15.4", "clause-001", &["embedding"][..]),
+        ("GNT-15.4-owned-work", "clause-001", &["embedding"][..]),
+    ]
+    .into_iter()
+    .map(|(requirement, clause, profiles)| SourceSpawnRequirement {
+        requirement: requirement.to_owned(),
+        clause: clause.to_owned(),
+        profiles: profiles
+            .iter()
+            .map(|profile| (*profile).to_owned())
+            .collect(),
+    })
+    .collect()
+}
+
+fn expected_source_spawn_capabilities() -> Vec<SourceSpawnCapability> {
+    [
+        (
+            "child-session-before-hook",
+            "native_child_submission_keeps_the_gate_closed_and_establishes_session_before_hook",
+        ),
+        (
+            "durable-child-creation-order",
+            "durable_child_creation_and_success_publish_before_immediate_child_polling",
+        ),
+        (
+            "durable-child-operation-order",
+            "durable_child_action_commits_ordered_operation_cuts",
+        ),
+        (
+            "durable-child-submission-failure-order",
+            "durable_child_submission_failure_settles_the_created_identity_before_parent_progress",
+        ),
+        (
+            "durable-cancellation-after-child-session-establishment",
+            "durable_cancellation_after_child_session_establishment_constructs_no_hook",
+        ),
+        (
+            "durable-cancellation-immediately-after-child-submit",
+            "durable_cancellation_immediately_after_child_submit_stops_the_closed_gate",
+        ),
+        (
+            "durable-cancellation-immediately-before-child-submit",
+            "durable_cancellation_immediately_before_child_submit_settles_without_executor_driver",
+        ),
+        (
+            "durable-execution-wide-cancellation",
+            "public_durable_graph_cancellation_commits_before_signalling_and_finishes",
+        ),
+        (
+            "durable-graph-failure-teardown",
+            "durable_graph_journal_failure_drains_before_release_and_failure_publication",
+        ),
+        (
+            "durable-graph-finalizer-bounded-drain",
+            "durable_graph_finalizer_bounds_pending_completion_after_failed_abort",
+        ),
+        (
+            "durable-panic-provenance",
+            "durable_abnormal_child_completion_preserves_panic_origin",
+        ),
+        (
+            "native-executor-child-submission",
+            "native_child_submission_keeps_the_gate_closed_and_establishes_session_before_hook",
+        ),
+        (
+            "nondurable-cancellation-after-child-session-establishment",
+            "nondurable_cancellation_after_child_session_establishment_constructs_no_hook",
+        ),
+        (
+            "nondurable-cancellation-after-child-resolution",
+            "nondurable_cancellation_after_child_resolution_precedes_released_child_work",
+        ),
+        (
+            "nondurable-cancellation-immediately-before-child-submit",
+            "nondurable_cancellation_immediately_before_child_submit_settles_without_a_driver",
+        ),
+        (
+            "parent-session-precheck",
+            "durable_parent_session_failure_is_task_local_and_creates_no_child",
+        ),
+        (
+            "required-spawn-event-barrier",
+            "durable_required_spawn_event_settles_before_child_submission",
+        ),
+        (
+            "submission-rejection-settlement",
+            "child_executor_rejection_settles_without_submitting_another_driver",
+        ),
+        (
+            "task-limit-precheck",
+            "durable_task_limit_precheck_skips_parent_session_and_child_creation",
+        ),
+    ]
+    .into_iter()
+    .map(|(id, symbol)| SourceSpawnCapability {
+        id: id.to_owned(),
+        evidence: format!("crates/gantry-conformance/tests/source_spawn.rs#{symbol}"),
+    })
+    .collect()
+}
+
+fn assert_source_spawn_error(
+    root: &Path,
+    contract: &ContractGate,
+    specification_sha256: &str,
+    source: &SourceSpawnManifest,
+    gate: &AsyncEvidenceGateInventory,
+    inventory: &ConformanceInventory,
+    expected: &str,
+) {
+    assert!(matches!(
+        validate_source_spawn_closure(
+            root,
+            contract,
+            specification_sha256,
+            source,
+            gate,
+            inventory,
+        ),
+        Err(message) if message.contains(expected)
+    ));
 }
 
 fn validate_decisions(

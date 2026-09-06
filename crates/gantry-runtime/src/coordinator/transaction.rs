@@ -6,9 +6,11 @@
 //! semantic publication because the journal result may be indeterminate.
 
 use super::*;
+use crate::recovery::validate_budget_successor;
 use crate::{
     ConcurrentDurableCheckpointV4, DurableCommitCoordinatorV1, DurableCommitCutV1,
-    DurableCommitError, DurableEvidenceCommitV1, Machine, TaskDriverOwnershipV1,
+    DurableCommitError, DurableEvidenceCommitV1, DurableOperationEvidenceV1, Machine,
+    TaskDriverOwnershipV1,
 };
 
 #[cfg(test)]
@@ -29,6 +31,7 @@ pub struct DurableGraphTransaction<'a> {
     sessions: LogicalSessionRegistryV1,
     budget: ExecutionBudget,
     original_budget: ExecutionBudgetSnapshot,
+    original_checkpoint: Box<ConcurrentDurableCheckpointV4>,
     commit_started: bool,
     installed: bool,
     event: Option<(
@@ -36,6 +39,7 @@ pub struct DurableGraphTransaction<'a> {
         crate::DurableEventPlanV1,
         Vec<gantry_host::event::ProtectedPayload>,
     )>,
+    operation: Option<DurableOperationEvidenceV1>,
 }
 
 impl ExecutionCoordinator {
@@ -50,20 +54,21 @@ impl ExecutionCoordinator {
     ) -> Result<DurableGraphTransaction<'a>, TaskStateError> {
         let mut state = lock(&self.inner.state);
         require_publication_available(&state)?;
-        let original = state
+        let original_budget = state
             .execution_budget
             .as_ref()
+            .map(ExecutionBudget::snapshot)
             .ok_or(TaskStateError::InvalidTaskMachine)?;
-        let checkpoint = ConcurrentDurableCheckpointV4::capture_coordinated(
-            foreground,
-            children,
-            &state.tasks,
-            &state.sessions,
-            original,
-        )
-        .map_err(|_| TaskStateError::InvalidTaskMachine)?;
-        let original_budget = checkpoint.execution_budget();
-        let budget = ExecutionBudget::recover_from_checkpoint(original_budget)
+        let successor_budget = foreground.budget_checkpoint();
+        validate_budget_successor(&original_budget, &successor_budget)
+            .map_err(|_| TaskStateError::InvalidTaskMachine)?;
+        if children
+            .values()
+            .any(|machine| machine.budget_checkpoint() != successor_budget)
+        {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
+        let budget = ExecutionBudget::recover_from_checkpoint(successor_budget)
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
         let staged_foreground = foreground
             .clone_with_staged_budget(budget.clone())
@@ -77,6 +82,14 @@ impl ExecutionCoordinator {
             })
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map_err(|_| TaskStateError::InvalidTaskMachine)?;
+        let original_checkpoint = ConcurrentDurableCheckpointV4::capture_coordinated(
+            &staged_foreground,
+            &staged_children,
+            &state.tasks,
+            &state.sessions,
+            &budget,
+        )
+        .map_err(|_| TaskStateError::InvalidTaskMachine)?;
         state.durable_publication_reserved = true;
         Ok(DurableGraphTransaction {
             coordinator: self,
@@ -88,9 +101,11 @@ impl ExecutionCoordinator {
             sessions: state.sessions.clone(),
             budget,
             original_budget,
+            original_checkpoint: Box::new(original_checkpoint),
             commit_started: false,
             installed: false,
             event: None,
+            operation: None,
         })
     }
 }
@@ -110,6 +125,45 @@ impl DurableGraphTransaction<'_> {
             return Err(DurableCommitError::InvalidState);
         }
         self.event = Some((event, plan, payloads));
+        Ok(())
+    }
+
+    /// Attaches operation coordinates to an operation-related graph cut.
+    pub fn set_operation(
+        &mut self,
+        operation: DurableOperationEvidenceV1,
+    ) -> Result<(), DurableCommitError> {
+        if self.operation.is_some() {
+            return Err(DurableCommitError::InvalidState);
+        }
+        self.operation = Some(operation);
+        Ok(())
+    }
+
+    /// Installs one newly submitted child on this transaction's private budget.
+    ///
+    /// Callers first resolve the staged task from `submitting` to `running` in
+    /// `update`, then add the corresponding machine before committing the same
+    /// checkpoint. The original child machine is never published directly.
+    pub fn install_child_machine(
+        &mut self,
+        task_id: ProtocolIdentity,
+        machine: Machine,
+    ) -> Result<(), TaskStateError> {
+        let task_path = self
+            .tasks
+            .task(task_id)
+            .filter(|task| matches!(task.status(), ConcurrentTaskStatusV1::Running))
+            .map(|task| task.task_path().to_vec())
+            .ok_or(TaskStateError::InvalidTaskMachine)?;
+        let machine = machine
+            .clone_with_staged_budget(self.budget.clone())
+            .map_err(|_| TaskStateError::InvalidTaskMachine)?;
+        if !machine.has_concurrent_task_context(task_id, &task_path)
+            || self.staged_children.insert(task_id, machine).is_some()
+        {
+            return Err(TaskStateError::InvalidTaskMachine);
+        }
         Ok(())
     }
 
@@ -151,9 +205,35 @@ impl DurableGraphTransaction<'_> {
             &self.sessions,
             &self.budget,
         )
-        .map_err(|_| DurableCommitError::InvalidState)?;
+        .map_err(|error| {
+            DurableCommitError::Evidence(crate::DurableEvidenceError::ConcurrentCheckpoint(error))
+        })?;
         let committed_budget = checkpoint.execution_budget();
         let task_ids = checkpoint.task_ids();
+        let submission_resolution = if self.operation.is_none() {
+            checkpoint
+                .submission_resolution_task(&self.original_checkpoint.hidden_submission_task_ids())
+                .map_err(|error| {
+                    DurableCommitError::Evidence(crate::DurableEvidenceError::ConcurrentCheckpoint(
+                        error,
+                    ))
+                })?
+        } else {
+            None
+        };
+        if let Some(task_id) = submission_resolution {
+            checkpoint
+                .validate_submission_resolution(
+                    &self.original_checkpoint,
+                    task_id,
+                    self.staged_foreground.program_arc(),
+                )
+                .map_err(|error| {
+                    DurableCommitError::Evidence(crate::DurableEvidenceError::ConcurrentCheckpoint(
+                        error,
+                    ))
+                })?;
+        }
         {
             let state = lock(&self.coordinator.inner.state);
             if state
@@ -166,9 +246,16 @@ impl DurableGraphTransaction<'_> {
             }
         }
         let receipt = commits
-            .commit_graph_checkpoint_with_submission(cut, affected_task, checkpoint, || {
-                self.commit_started = true;
-            })
+            .commit_graph_checkpoint_with_record_submission(
+                cut,
+                submission_resolution.unwrap_or(affected_task),
+                self.operation.take(),
+                submission_resolution.is_some(),
+                checkpoint,
+                || {
+                    self.commit_started = true;
+                },
+            )
             .await?;
         let event_envelope = if let Some((event, plan, payloads)) = self.event.take() {
             Some(
@@ -212,7 +299,10 @@ impl DurableGraphTransaction<'_> {
             state.tasks = self.tasks.clone();
             state.sessions = self.sessions.clone();
             state.durable_events = events;
-            state.execution_budget = Some(self.budget.clone());
+            state.execution_budget = Some(
+                ExecutionBudget::recover_from_checkpoint(committed_budget)
+                    .map_err(|_| DurableCommitError::InvalidState)?,
+            );
             state.publication = state.publication.wrapping_add(1);
             state.durable_publication_reserved = false;
             self.installed = true;

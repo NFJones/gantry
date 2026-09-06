@@ -21,6 +21,19 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "format": { "const": "combined-checkpoint/v5" },
+        "magic": { "const": "GNTCDP05" },
+        "fixture_hex": {
+          "type": "string",
+          "pattern": "^474e544344503035(?:[0-9a-f]{2})+$"
+        }
+      },
+      "required": ["format", "magic", "fixture_hex"]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
         "format": { "const": "execution-budget-checkpoint/v1" },
         "magic": { "const": "GNTBGT01" },
         "fixture_hex": {
@@ -39,6 +52,19 @@
         "fixture_hex": {
           "type": "string",
           "pattern": "^474e544d43503033(?:[0-9a-f]{2})+$"
+        }
+      },
+      "required": ["format", "magic", "fixture_hex"]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "const": "machine-checkpoint/v4" },
+        "magic": { "const": "GNTMCP04" },
+        "fixture_hex": {
+          "type": "string",
+          "pattern": "^474e544d43503034(?:[0-9a-f]{2})+$"
         }
       },
       "required": ["format", "magic", "fixture_hex"]

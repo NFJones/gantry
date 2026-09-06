@@ -5,8 +5,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 
 use gantry::host::contracts::{
     CancellationToken, ExecutorAdapter, HookFactory, HookOutcomeV1, HostError, HostFuture,
@@ -42,7 +43,7 @@ use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValueView};
 use gantry::{
     DurableHandoffTestGate, DurableResumeExecutionRequest, DurableResumeExecutionResult,
     DurableStartExecutionRequest, DurableStartExecutionResult, Interpreter, StartExecutionRequest,
-    caller_cancellation_reason,
+    StartExecutionResult, caller_cancellation_reason,
 };
 use gantry_conformance::concurrent_executor::{
     DeterministicConcurrentExecutor, DeterministicTaskPoll,
@@ -175,6 +176,144 @@ impl JournalStorage for FailAfterStartStore {
     ) -> HostFuture<'a, Result<(), JournalError>> {
         self.releases.fetch_add(1, Ordering::AcqRel);
         self.inner.release_owner(request)
+    }
+}
+
+#[derive(Default)]
+struct GatedOwnerReleaseStore {
+    inner: InMemoryJournalStore,
+    releases: AtomicU64,
+    release_started: AtomicBool,
+    release_released: AtomicBool,
+    release_waker: Mutex<Option<Waker>>,
+    completion_pause: Mutex<OwnerReleaseCompletionPause>,
+    completion_pause_changed: Condvar,
+}
+
+#[derive(Default)]
+struct OwnerReleaseCompletionPause {
+    enabled: bool,
+    observed: bool,
+    allowed: bool,
+}
+
+impl GatedOwnerReleaseStore {
+    fn release_count(&self) -> u64 {
+        self.releases.load(Ordering::Acquire)
+    }
+
+    fn release_started(&self) -> bool {
+        self.release_started.load(Ordering::Acquire)
+    }
+
+    fn pause_before_release_completion(&self) {
+        self.completion_pause
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .enabled = true;
+    }
+
+    fn wait_until_release_completion_is_observed(&self) {
+        let pause = self
+            .completion_pause
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (pause, timeout) = self
+            .completion_pause_changed
+            .wait_timeout_while(pause, Duration::from_secs(1), |pause| !pause.observed)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(
+            pause.observed,
+            "release future never observed its completion"
+        );
+        assert!(!timeout.timed_out(), "release completion pause timed out");
+    }
+
+    fn allow_release_completion(&self) {
+        self.completion_pause
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .allowed = true;
+        self.completion_pause_changed.notify_all();
+    }
+
+    fn release_owner_gate(&self) {
+        self.release_released.store(true, Ordering::Release);
+        if let Some(waker) = self
+            .release_waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+}
+
+impl JournalStorage for GatedOwnerReleaseStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        self.inner.commit(request)
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.releases.fetch_add(1, Ordering::AcqRel);
+        self.release_started.store(true, Ordering::Release);
+        Box::pin(async move {
+            std::future::poll_fn(|context| {
+                if self.release_released.load(Ordering::Acquire) {
+                    let mut pause = self
+                        .completion_pause
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if pause.enabled {
+                        pause.observed = true;
+                        self.completion_pause_changed.notify_all();
+                        while !pause.allowed {
+                            pause = self
+                                .completion_pause_changed
+                                .wait(pause)
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        }
+                    }
+                    return Poll::Ready(());
+                }
+                *self
+                    .release_waker
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                    Some(context.waker().clone());
+                Poll::Pending
+            })
+            .await;
+            self.inner.release_owner(request).await
+        })
     }
 }
 
@@ -716,6 +855,7 @@ impl PendingHookState {
 struct PendingHookIntegration {
     scripted: ScriptedIntegration,
     state: Arc<PendingHookState>,
+    cancel_on_create: Mutex<Option<gantry::host::contracts::CancellationSignal>>,
 }
 
 impl PendingHookIntegration {
@@ -729,7 +869,78 @@ impl PendingHookIntegration {
                 [],
             ),
             state,
+            cancel_on_create: Mutex::new(None),
         }
+    }
+
+    fn new_graph(state: Arc<PendingHookState>) -> Self {
+        Self {
+            scripted: ScriptedIntegration::new(
+                [
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::ResolveMappings,
+                        &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::ResolveSessions,
+                        &br#"{"result":"resolved"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::EstablishSession,
+                        &br#"{"result":"established"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::EstablishSession,
+                        &br#"{"result":"established"}"#[..],
+                    ),
+                ],
+                [],
+            ),
+            state,
+            cancel_on_create: Mutex::new(None),
+        }
+    }
+
+    fn new_model_graph(state: Arc<PendingHookState>) -> Self {
+        Self {
+            scripted: ScriptedIntegration::new(
+                [
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::ResolveMappings,
+                        &br#"{"agent_mapping_revision":"agents-v1","result":"resolved"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::ResolveSessions,
+                        &br#"{"result":"resolved"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::EstablishSession,
+                        &br#"{"result":"established"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::EstablishSession,
+                        &br#"{"result":"established"}"#[..],
+                    ),
+                    ScriptedPreflight::success(
+                        EmbeddingOperation::EstablishSession,
+                        &br#"{"result":"established"}"#[..],
+                    ),
+                ],
+                [],
+            ),
+            state,
+            cancel_on_create: Mutex::new(None),
+        }
+    }
+
+    fn cancel_during_hook_creation(
+        &self,
+        cancellation: gantry::host::contracts::CancellationSignal,
+    ) {
+        *self
+            .cancel_on_create
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(cancellation);
     }
 }
 
@@ -753,6 +964,14 @@ impl HookFactory for PendingHookIntegration {
         &'a self,
         _request: HostRequest,
     ) -> HostFuture<'a, Result<Box<dyn OperationHook>, HostError>> {
+        if let Some(cancellation) = self
+            .cancel_on_create
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            cancellation.cancel();
+        }
         let state = Arc::clone(&self.state);
         Box::pin(async move { Ok(Box::new(PendingHook { state }) as Box<dyn OperationHook>) })
     }
@@ -790,6 +1009,54 @@ impl OperationHook for PendingHook {
             Poll::Pending
         }))
     }
+}
+
+#[test]
+fn nondurable_action_dispatch_treats_lifecycle_cancellation_cooperatively() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(PendingHookIntegration::new(Arc::clone(&hook_state)));
+    let interpreter = interpreter_with_integration(Arc::clone(&executor), Arc::clone(&integration));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_execution(StartExecutionRequest {
+        package_root: &root.0,
+        protocol_selection: &selection,
+        required_peers: &[],
+        entry_input: None,
+        root_session: None,
+        event_delivery: None,
+    })) {
+        StartExecutionResult::Accepted(accepted) => accepted,
+        StartExecutionResult::Rejected(failure) => {
+            panic!("nondurable cancellation fixture was rejected: {failure:?}")
+        }
+    };
+    integration.cancel_during_hook_creation(
+        accepted
+            .handle()
+            .cancellation_signal()
+            .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}")),
+    );
+
+    settle_task(&executor, 0);
+    let snapshot = interpreter
+        .query_execution(accepted.execution_id())
+        .unwrap_or_else(|error| panic!("execution query failed: {error:?}"))
+        .unwrap_or_else(|| panic!("cancelled nondurable execution disappeared"));
+    assert!(matches!(
+        snapshot.terminal,
+        Some(MachineOutcome::Cancelled(ref reason)) if reason.as_ref() == "cancellation"
+    ));
+    assert!(
+        integration
+            .scripted
+            .calls()
+            .iter()
+            .all(|call| { call.operation != EmbeddingOperation::DispatchOperation })
+    );
 }
 
 #[test]
@@ -1334,11 +1601,161 @@ fn cancellation_progresses_a_pending_dispatch_and_retains_it_to_settlement() {
 }
 
 #[test]
+fn graph_cancellation_retains_a_pending_dispatch_to_settlement() {
+    assert_graph_cancellation_retains_pending_dispatch_to_settlement(
+        "action read_only lookup() -> String;\nfn main() { spawn child -> String { action lookup() } discard join(child); }",
+        "automatic-durable-graph-pending-dispatch-cancellation",
+        PendingHookIntegration::new_graph,
+    );
+}
+
+#[test]
+fn graph_cancellation_retains_a_pending_model_dispatch_to_settlement() {
+    assert_graph_cancellation_retains_pending_dispatch_to_settlement(
+        "agents { worker }\ndefault agent = worker;\nfn main() { spawn child -> String { prompt \"child\" -> String } discard join(child); }",
+        "automatic-durable-graph-pending-model-dispatch-cancellation",
+        PendingHookIntegration::new_model_graph,
+    );
+}
+
+fn assert_graph_cancellation_retains_pending_dispatch_to_settlement(
+    source: &str,
+    journal_name: &str,
+    integration: fn(Arc<PendingHookState>) -> PendingHookIntegration,
+) {
+    let root = TempDirectory::new(source);
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(integration(Arc::clone(&hook_state)));
+    let interpreter = interpreter_with_integration(Arc::clone(&executor), integration);
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new(journal_name)
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("pending graph-dispatch fixture was rejected: {failure:?}")
+        }
+    };
+    let execution_id = accepted.execution_id();
+    let signal = accepted
+        .handle()
+        .cancellation_signal()
+        .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Pending | DeterministicTaskPoll::Settled(_))
+    ));
+    assert_eq!(executor.task_ids(), [0, 1]);
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(hook_state.dispatch_started.load(Ordering::Acquire));
+
+    let reason = caller_cancellation_reason(Some(Arc::from("stop-graph-dispatch")), 64)
+        .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let mut cancellation = Box::pin(interpreter.cancel_execution(execution_id, reason.clone()));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    assert!(executor.is_runnable(0));
+    assert!(matches!(
+        executor.poll_task(0),
+        Ok(DeterministicTaskPoll::Pending | DeterministicTaskPoll::Settled(_))
+    ));
+    assert!(executor.is_runnable(1));
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    assert!(signal.is_cancelled());
+    assert!(hook_state.cancellation_observed.load(Ordering::Acquire));
+    assert!(!hook_state.settled.load(Ordering::Acquire));
+    assert!(
+        cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending(),
+        "graph cancellation completed before the dispatched hook settled"
+    );
+
+    hook_state.release();
+    let mut record = None;
+    for _ in 0..128 {
+        for task_id in executor.task_ids() {
+            if executor.is_runnable(task_id) {
+                let _ = executor
+                    .poll_task(task_id)
+                    .unwrap_or_else(|error| panic!("task {task_id} poll failed: {error:?}"));
+            }
+        }
+        if let Poll::Ready(result) = cancellation
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            record =
+                Some(result.unwrap_or_else(|error| panic!("graph cancellation failed: {error:?}")));
+            break;
+        }
+    }
+    assert!(hook_state.settled.load(Ordering::Acquire));
+    assert!(matches!(
+        record,
+        Some(CancellationRecord::Accepted { reason: ref effective, .. }) if effective == &reason
+    ));
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
+    let JournalPrefixV1::Full(full) = prefix else {
+        panic!("in-memory journal returned a compacted prefix")
+    };
+    let cancellation_sequence = full
+        .evidence
+        .iter()
+        .find(|entry| {
+            String::from_utf8_lossy(&entry.canonical_body).contains("\"cut\":\"cancellation\"")
+        })
+        .map(|entry| entry.sequence)
+        .unwrap_or_else(|| panic!("graph cancellation cut is absent"));
+    let post_cancellation_operation_cut = full.evidence.iter().find(|entry| {
+        if entry.sequence <= cancellation_sequence {
+            return false;
+        }
+        let body = String::from_utf8_lossy(&entry.canonical_body);
+        [
+            "\"cut\":\"operation-outcome\"",
+            "\"cut\":\"operation-result\"",
+            "\"cut\":\"retry-waiting\"",
+        ]
+        .iter()
+        .any(|cut| body.contains(cut))
+    });
+    assert!(
+        post_cancellation_operation_cut.is_none(),
+        "late dispatch completion produced a semantic operation cut after cancellation: {post_cancellation_operation_cut:?}"
+    );
+}
+
+#[test]
 fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
     let root = TempDirectory::new(
         "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
     );
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
     let integration = Arc::new(ScriptedIntegration::new(
         [ScriptedPreflight::success(
             EmbeddingOperation::ResolveMappings,
@@ -1383,6 +1800,7 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
         "root should be running with its operation-prepared commit in flight"
     );
 
+    let grace_timer = executor.sleep_durations().len();
     let mut shutdown = Box::pin(interpreter.shutdown());
     assert!(
         shutdown
@@ -1391,6 +1809,10 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
             .is_pending()
     );
     assert_eq!(executor.task_ids(), [0, 1]);
+    assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
+    executor
+        .release_sleep(grace_timer)
+        .unwrap_or_else(|error| panic!("grace timer release failed: {error:?}"));
     assert_eq!(executor.poll_task(1), Ok(DeterministicTaskPoll::Pending));
     assert!(
         !signal.is_cancelled(),
@@ -1429,9 +1851,220 @@ fn facade_shutdown_cancels_a_running_durable_root_only_after_commit() {
 }
 
 #[test]
+fn facade_durable_shutdown_bounds_resistant_work_releases_owner_and_suppresses_final_event() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(PendingHookIntegration::new(Arc::clone(&hook_state)));
+    let shutdown_sink = Arc::new(ShutdownPayloadSink::default());
+    let interpreter = interpreter_with_durable_delivery(
+        Arc::clone(&executor),
+        integration,
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(shutdown_sink.clone()),
+    );
+    let storage = Arc::new(ObservedJournalStore::with_settlement_gate(u64::MAX));
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-resistant-facade-shutdown")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let _accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id,
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("resistant durable shutdown fixture was rejected: {failure:?}")
+        }
+    };
+    let root_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("durable start submitted no root task"));
+    poll_task_until(&executor, root_task, || {
+        hook_state.dispatch_started.load(Ordering::Acquire)
+    });
+    executor
+        .fail_abort(root_task)
+        .unwrap_or_else(|error| panic!("failed-abort injection failed: {error:?}"));
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(shutdown.as_mut().poll(&mut context).is_pending());
+    let shutdown_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("shutdown submitted no coordinator task"));
+    assert_eq!(
+        executor.poll_task(shutdown_task),
+        Ok(DeterministicTaskPoll::Pending)
+    );
+    for timer in 0..3 {
+        executor
+            .release_sleep(timer)
+            .unwrap_or_else(|error| panic!("shutdown timer {timer} release failed: {error:?}"));
+        let _ = executor
+            .poll_task(shutdown_task)
+            .unwrap_or_else(|error| panic!("shutdown task poll failed: {error:?}"));
+    }
+    assert!(matches!(
+        executor.abort_result(root_task),
+        Some(gantry::host::contracts::OwnedTaskAbort::Failed(_))
+    ));
+    assert_eq!(storage.release_count(), 1);
+    assert!(shutdown_sink.payloads().is_empty());
+    assert!(!hook_state.settled.load(Ordering::Acquire));
+    assert!(matches!(
+        shutdown.as_mut().poll(&mut context),
+        Poll::Ready(Err(_))
+    ));
+}
+
+#[test]
+fn durable_owner_release_survives_shutdown_deadline_and_settles_exactly_once() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let hook_state = Arc::new(PendingHookState::default());
+    let integration = Arc::new(PendingHookIntegration::new(Arc::clone(&hook_state)));
+    let interpreter = interpreter_with_integration(Arc::clone(&executor), integration);
+    let storage = Arc::new(GatedOwnerReleaseStore::default());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-gated-owner-release")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let accepted = match block_on(interpreter.start_durable_execution(
+        storage_adapter,
+        DurableStartExecutionRequest {
+            journal_id,
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("gated owner-release fixture was rejected: {failure:?}")
+        }
+    };
+    let root_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("durable start submitted no root task"));
+    poll_task_until(&executor, root_task, || {
+        hook_state.dispatch_started.load(Ordering::Acquire)
+    });
+    executor
+        .fail_abort(root_task)
+        .unwrap_or_else(|error| panic!("failed-abort injection failed: {error:?}"));
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(shutdown.as_mut().poll(&mut context).is_pending());
+    let shutdown_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("shutdown submitted no coordinator task"));
+    assert_eq!(
+        executor.poll_task(shutdown_task),
+        Ok(DeterministicTaskPoll::Pending)
+    );
+    for timer in 0..4 {
+        executor
+            .release_sleep(timer)
+            .unwrap_or_else(|error| panic!("shutdown timer {timer} release failed: {error:?}"));
+        let _ = executor
+            .poll_task(shutdown_task)
+            .unwrap_or_else(|error| panic!("shutdown task poll failed: {error:?}"));
+    }
+    assert!(storage.release_started());
+    assert_eq!(storage.release_count(), 1);
+    assert!(matches!(
+        shutdown.as_mut().poll(&mut context),
+        Poll::Ready(Err(_))
+    ));
+
+    storage.pause_before_release_completion();
+    std::thread::scope(|scope| {
+        let first = scope.spawn(|| block_on(accepted.test_release_owner_for_shutdown()));
+        storage.release_owner_gate();
+        storage.wait_until_release_completion_is_observed();
+
+        let (registered, registration) = mpsc::sync_channel(1);
+        let second_accepted = &accepted;
+        let second = scope.spawn(move || {
+            let mut release = Box::pin(second_accepted.test_release_owner_for_shutdown());
+            match release
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                Poll::Ready(observation) => {
+                    registered
+                        .send(false)
+                        .unwrap_or_else(|_| panic!("registration observer disappeared"));
+                    observation
+                }
+                Poll::Pending => {
+                    registered
+                        .send(true)
+                        .unwrap_or_else(|_| panic!("registration observer disappeared"));
+                    block_on(release)
+                }
+            }
+        });
+        let registered_while_host_polling = registration.recv_timeout(Duration::from_millis(100));
+        storage.allow_release_completion();
+
+        let first_observation = first
+            .join()
+            .unwrap_or_else(|_| panic!("first owner-release caller panicked"));
+        let second_observation = second
+            .join()
+            .unwrap_or_else(|_| panic!("second owner-release caller panicked"));
+        assert_eq!(
+            first_observation.owner,
+            Some(gantry::DurableJournalOwnerState::Released)
+        );
+        assert_eq!(
+            second_observation.owner,
+            Some(gantry::DurableJournalOwnerState::Released),
+            "all callers must share the immutable first release result"
+        );
+        assert_eq!(
+            registered_while_host_polling,
+            Ok(true),
+            "a concurrent caller could not register while the host release future was polled"
+        );
+    });
+    assert_eq!(storage.release_count(), 1);
+}
+
+#[test]
 fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
     let root = TempDirectory::new("fn main() -> Int { 42 }");
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
     let shutdown_sink = Arc::new(ShutdownPayloadSink::default());
     let interpreter = interpreter_with_durable_delivery(
         Arc::clone(&executor),
@@ -1470,6 +2103,7 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
         let signal = handle
             .cancellation_signal()
             .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+        let grace_timer = executor.sleep_durations().len();
         let mut shutdown = Box::pin(interpreter.shutdown());
         assert!(
             shutdown
@@ -1505,9 +2139,17 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
             .last()
             .unwrap_or_else(|| panic!("accepted durable start submitted no root task"));
         assert!(
-            executor.is_runnable(shutdown_task_id),
-            "owner publication did not wake shutdown"
+            !executor.is_runnable(shutdown_task_id),
+            "owner publication bypassed the controlled graceful deadline"
         );
+        assert!(
+            !signal.is_cancelled(),
+            "shutdown signalled durable cancellation before its journal commit"
+        );
+
+        executor
+            .release_sleep(grace_timer)
+            .unwrap_or_else(|error| panic!("grace timer release failed: {error:?}"));
         assert_eq!(
             executor.poll_task(shutdown_task_id),
             Ok(DeterministicTaskPoll::Pending)
@@ -1546,6 +2188,104 @@ fn shutdown_waits_for_durable_owner_published_after_lifecycle_acceptance() {
             .unwrap_or_else(|error| panic!("shutdown payload did not decode: {error}"));
         assert_eq!(payload["executions_at_start"], 1);
         assert_eq!(payload["admitted_after_start_count"], 0);
+    });
+}
+
+#[test]
+fn durable_publication_after_shutdown_deadline_is_cancelled_without_root_submission() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let shutdown_sink = Arc::new(ShutdownPayloadSink::default());
+    let interpreter = interpreter_with_durable_delivery(
+        Arc::clone(&executor),
+        Arc::new(ScriptedIntegration::new([], [])),
+        1,
+        Arc::new(ImmediateDurableDeliveryRuntime),
+        durable_plan(shutdown_sink.clone()),
+    );
+    let gate = Arc::new(DurableHandoffTestGate::default());
+    interpreter.install_durable_handoff_test_gate(Arc::clone(&gate));
+    let storage = Arc::new(ObservedJournalStore::with_settlement_gate(u64::MAX));
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-late-shutdown-handoff")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+
+    std::thread::scope(|scope| {
+        let starting_interpreter = interpreter.clone();
+        let start = scope.spawn(move || {
+            block_on(starting_interpreter.start_durable_execution(
+                storage_adapter,
+                DurableStartExecutionRequest {
+                    journal_id,
+                    start: StartExecutionRequest {
+                        package_root: &root.0,
+                        protocol_selection: &selection,
+                        required_peers: &[],
+                        entry_input: None,
+                        root_session: None,
+                        event_delivery: None,
+                    },
+                },
+            ))
+        });
+        let handle = gate.wait_until_accepted();
+        let signal = handle
+            .cancellation_signal()
+            .unwrap_or_else(|error| panic!("cancellation signal failed: {error:?}"));
+        let mut shutdown = Box::pin(interpreter.shutdown());
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(shutdown.as_mut().poll(&mut context).is_pending());
+        let shutdown_task = *executor
+            .task_ids()
+            .last()
+            .unwrap_or_else(|| panic!("shutdown submitted no owned task"));
+        assert_eq!(
+            executor.poll_task(shutdown_task),
+            Ok(DeterministicTaskPoll::Pending)
+        );
+        for timer in 0..3 {
+            executor
+                .release_sleep(timer)
+                .unwrap_or_else(|error| panic!("shutdown timer {timer} release failed: {error:?}"));
+            let _ = executor
+                .poll_task(shutdown_task)
+                .unwrap_or_else(|error| panic!("shutdown task poll failed: {error:?}"));
+        }
+        assert!(matches!(
+            shutdown.as_mut().poll(&mut context),
+            Poll::Ready(Err(_))
+        ));
+        assert!(shutdown_sink.payloads().is_empty());
+        assert!(!signal.is_cancelled());
+        let tasks_before_publication = executor.task_ids();
+
+        gate.release();
+        let accepted = match start
+            .join()
+            .unwrap_or_else(|_| panic!("durable start thread panicked"))
+        {
+            DurableStartExecutionResult::Accepted(accepted) => accepted,
+            DurableStartExecutionResult::Rejected(failure) => {
+                panic!("late durable handoff fixture was rejected: {failure:?}")
+            }
+        };
+        assert_eq!(
+            executor.task_ids(),
+            tasks_before_publication,
+            "post-shutdown publication submitted an ordinary root"
+        );
+        settle_task(&executor, shutdown_task);
+        assert!(signal.is_cancelled());
+        assert_eq!(storage.release_count(), 1);
+        let observation = block_on(accepted.test_release_owner_for_shutdown());
+        assert_eq!(
+            observation.owner,
+            Some(gantry::DurableJournalOwnerState::Released)
+        );
+        assert_eq!(storage.release_count(), 1);
+        assert!(shutdown_sink.payloads().is_empty());
     });
 }
 
@@ -1644,6 +2384,9 @@ fn resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("atomic resume was rejected: {failure:?}")
         }
@@ -1754,6 +2497,9 @@ fn resume_executor_rejection_rolls_back_and_releases_the_owner_once() {
         Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
             panic!("executor-rejected resume was accepted")
         }
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Pending => panic!("completed rejection was not published"),
     };
     assert_eq!(
@@ -1865,6 +2611,9 @@ fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefi
         Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
             panic!("commit-failed resume was accepted")
         }
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Pending => panic!("completed rollback was not published"),
     };
     assert_eq!(
@@ -2204,6 +2953,9 @@ fn terminal_delivery_only_resume_submits_no_root_or_hook_and_releases_owner() {
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial terminal resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("delivery-only terminal resume was rejected: {failure:?}")
         }
@@ -2287,6 +3039,9 @@ fn terminal_resume_accepts_without_submitting_a_root_driver() {
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial terminal resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("terminal resume was rejected: {failure:?}")
         }
@@ -2378,6 +3133,9 @@ fn resume_runnable_capacity_refusal_releases_owner_without_mutating_the_prefix()
         Poll::Ready(DurableResumeExecutionResult::Accepted(_)) => {
             panic!("capacity-refused resume was accepted")
         }
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial resume required graph replacement: {classification:?}"),
         Poll::Pending => panic!("capacity refusal was not published"),
     };
     assert_eq!(
@@ -2811,6 +3569,9 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
         .poll(&mut Context::from_waker(Waker::noop()))
     {
         Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+        Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            classification,
+        )) => panic!("serial REVENT resume required graph replacement: {classification:?}"),
         Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
             panic!("post-commit REVENT resume was rejected: {failure:?}")
         }
@@ -2821,6 +3582,11 @@ fn resume_reconstructs_committed_required_delivery_failure_before_source_progres
                 .poll(&mut Context::from_waker(Waker::noop()))
             {
                 Poll::Ready(DurableResumeExecutionResult::Accepted(accepted)) => accepted,
+                Poll::Ready(DurableResumeExecutionResult::RunnableReplacementUnavailable(
+                    classification,
+                )) => {
+                    panic!("serial REVENT resume required graph replacement: {classification:?}")
+                }
                 Poll::Ready(DurableResumeExecutionResult::Rejected(failure)) => {
                     panic!("post-commit REVENT resume was rejected: {failure:?}")
                 }

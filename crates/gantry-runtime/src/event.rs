@@ -722,6 +722,8 @@ pub fn machine_lifecycle_event(
         MachineLabel::Deterministic { .. }
         | MachineLabel::OperationPrepared(_)
         | MachineLabel::OperationResult { .. } => return None,
+        #[cfg(feature = "concurrent")]
+        MachineLabel::TaskControlSuspended(_) => return None,
     };
     Some(ExecutionEventDraftV1 {
         draft: EventDraft::new(kind, event_payload(payload)).with_causal_ids(causal),
@@ -1042,6 +1044,7 @@ fn failure_payload(failure: &MachineFailure) -> String {
 fn runtime_category(code: RuntimeCode) -> &'static str {
     match code {
         RuntimeCode::Operation(category) => category.wire_name(),
+        RuntimeCode::IntegrationPanic => "hook-failure",
         RuntimeCode::RootSubmissionFailure => "executor-failure",
         RuntimeCode::InternalInvariant | RuntimeCode::UnsupportedEffect => {
             "internal-invariant-failure"
@@ -1323,6 +1326,27 @@ impl<'a> ExecutionEventPipeline<'a> {
     ) -> Result<ExecutionEventOutcomeV1, ExecutionEventError> {
         self.emit_task_event(event.draft, &event.protected_payloads)
             .await
+    }
+
+    /// Completes and settles one event for an explicitly coordinated child task.
+    ///
+    /// The caller owns that child's sequence because this pipeline continues to
+    /// track only its bound task's sequence.
+    pub async fn emit_task_draft_for(
+        &mut self,
+        task_id: ProtocolIdentity,
+        task_sequence: u64,
+        event: ExecutionEventDraftV1,
+    ) -> Result<ExecutionEventOutcomeV1, ExecutionEventError> {
+        self.require_enabled_event(event.draft.kind())?;
+        let protected_payloads = Arc::clone(&event.protected_payloads);
+        let draft = event
+            .draft
+            .with_execution_id(self.execution_id)
+            .and_then(|draft| draft.with_task(task_id, task_sequence))
+            .map_err(ExecutionEventError::Contract)?;
+        let event = self.complete(draft).await?;
+        self.deliver(event, &protected_payloads).await
     }
 
     /// Completes and settles one typed execution event and its protected side bundle.

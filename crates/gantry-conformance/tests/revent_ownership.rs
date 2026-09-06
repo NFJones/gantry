@@ -601,6 +601,74 @@ fn shutdown_emits_one_final_event_and_reports_its_actual_settlement() {
 }
 
 #[test]
+fn shutdown_event_reports_confirmed_executor_aborts() {
+    let root = TempDirectory::new("fn main() -> Int { 17 }");
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let sink = Arc::new(RecordingSink::new([(
+        Some(EventKind::Shutdown),
+        DeliveryOutcome::Success,
+    )]));
+    let interpreter = interpreter_with_delivery_polling(
+        Arc::clone(&executor),
+        Arc::new(ImmediateDeliveryRuntime::default()),
+        plan(SinkClass::Required, sink.clone()),
+        false,
+    );
+    let selection = selection();
+    let mut start = Box::pin(interpreter.start_execution(request(&root, &selection, None)));
+    let accepted = loop {
+        match poll_once(start.as_mut()) {
+            Poll::Ready(StartExecutionResult::Accepted(accepted)) => break accepted,
+            Poll::Ready(StartExecutionResult::Rejected(failure)) => {
+                panic!("valid shutdown-abort fixture was rejected: {failure:?}")
+            }
+            Poll::Pending => {
+                for task_id in executor.task_ids() {
+                    if executor.is_runnable(task_id) {
+                        let _ = executor.poll_task(task_id);
+                    }
+                }
+            }
+        }
+    };
+    drop(accepted);
+
+    let mut shutdown = Box::pin(interpreter.shutdown());
+    assert!(poll_once(shutdown.as_mut()).is_pending());
+    assert_eq!(executor.task_ids(), [0, 1, 2]);
+    assert_eq!(executor.poll_task(2), Ok(DeterministicTaskPoll::Pending));
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("grace timer release failed: {error:?}"));
+    assert_eq!(executor.poll_task(2), Ok(DeterministicTaskPoll::Pending));
+    executor
+        .release_sleep(2)
+        .unwrap_or_else(|error| panic!("drain timer release failed: {error:?}"));
+    assert!(matches!(
+        executor.poll_task(2),
+        Ok(DeterministicTaskPoll::Settled(_))
+    ));
+    let report = match poll_once(shutdown.as_mut()) {
+        Poll::Ready(Ok(report)) => report,
+        Poll::Ready(Err(error)) => panic!("shutdown abort fixture failed: {error:?}"),
+        Poll::Pending => panic!("shutdown abort fixture did not publish its report"),
+    };
+    assert!(report.orderly);
+    let events = sink.events();
+    let shutdown_event = events
+        .iter()
+        .find(|event| event.kind() == EventKind::Shutdown)
+        .unwrap_or_else(|| panic!("shutdown event was not delivered: {events:?}"));
+    let payload = std::str::from_utf8(shutdown_event.payload().canonical_bytes())
+        .unwrap_or_else(|error| panic!("shutdown payload was not UTF-8: {error}"));
+    assert!(
+        payload.contains("\"aborted_count\":1"),
+        "payload: {payload}"
+    );
+}
+
+#[test]
 fn shutdown_identity_failure_is_not_reported_as_sink_exhaustion() {
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let executor_adapter: Arc<dyn ExecutorAdapter> = executor.clone();

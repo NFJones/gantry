@@ -21,9 +21,11 @@ use gantry_runtime::{
     AdmissionKind, DurableCommitCutV1, DurableEvidenceError, DurableExecutionStartV3,
     DurableExecutionStateV1, DurableLogicalEvidenceV3, ExecutionHandle, LogicalSessionRegistryV1,
     Machine, OperationAdmission, RecoveredDurableStateV1, SessionCreationModeV1,
-    recover_authoritative_prefix_with_retained_program,
 };
 
+#[cfg(feature = "concurrent")]
+use crate::durable_lifecycle::concurrent_recovery;
+use crate::durable_lifecycle::{RecoveredDurablePrefix, recover_durable_prefix};
 use crate::interpreter::{decode_logical_value, root_task_identity};
 use crate::start::{
     PreparedExecutionStart, StartExecutionCoordinator, decode_mapping_revisions, require_resolved,
@@ -94,6 +96,13 @@ impl DurableStartExecutionAccepted {
     #[must_use]
     pub fn test_retained_projection(&self) -> Option<RecoveredDurableStateV1> {
         self.owned.test_retained_projection()
+    }
+
+    /// Retries bounded owner-release observation for cancellation-safety assertions.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub async fn test_release_owner_for_shutdown(&self) -> crate::DurableExecutionObservation {
+        self.owned.release_owner_for_shutdown().await
     }
 
     /// Reads the budget shared with the root coordinator for durability assertions.
@@ -309,11 +318,24 @@ pub struct DurableResumeExecutionFailure {
     pub release_error: Option<JournalError>,
 }
 
+/// Recognized concurrent recovery whose process-local task drivers cannot yet be replaced.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DurableResumeReplacementUnavailable {
+    /// Stable journal target supplied by the embedder.
+    pub journal_id: JournalId,
+    /// Recovered graph frontier proving that the authoritative format was accepted.
+    pub recovery: crate::DurableConcurrentRecovery,
+    /// Owner-release failure retained separately from the bounded classification.
+    pub release_error: Option<JournalError>,
+}
+
 /// Durable resume union whose accepted variant exists only after all pre-acceptance work settles.
 #[derive(Clone, Debug)]
 pub enum DurableResumeExecutionResult {
     /// Existing recovered interpretation was accepted into this interpreter lifecycle.
     Accepted(Box<DurableResumeExecutionAccepted>),
+    /// A valid concurrent graph was recovered, but replacement task submission is unavailable.
+    RunnableReplacementUnavailable(DurableResumeReplacementUnavailable),
     /// Resume was rejected without mutating the authoritative journal prefix.
     Rejected(DurableResumeExecutionFailure),
 }
@@ -643,7 +665,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                     .await;
             }
         };
-        let (_, recovered) = match recover_authoritative_prefix_with_retained_program(&prefix) {
+        let recovered = match recover_durable_prefix(&prefix) {
             Ok(recovered) => recovered,
             Err(DurableEvidenceError::Checkpoint(_)) => {
                 return self
@@ -746,6 +768,20 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 )
                 .await;
         }
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        if let RecoveredDurablePrefix::Concurrent { recovered, .. } = recovered {
+            return self
+                .classify_unavailable_replacement_and_release(
+                    journal_id,
+                    ownership.token,
+                    concurrent_recovery(&recovered),
+                )
+                .await;
+        }
+        let RecoveredDurablePrefix::Serial(recovered) = recovered else {
+            unreachable!("concurrent recovery is classified above")
+        };
+        let recovered = *recovered;
         let mut admission = match self.start.lifecycle.admit(AdmissionKind::NewWork) {
             Ok(admission) => admission,
             Err(error) => {
@@ -1242,6 +1278,29 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             .await
             .err();
         resume_rejected(journal_id, failure, release_error)
+    }
+
+    async fn classify_unavailable_replacement_and_release(
+        &self,
+        journal_id: JournalId,
+        ownership_token: JournalOwnershipToken,
+        recovery: crate::DurableConcurrentRecovery,
+    ) -> DurableResumeExecutionResult {
+        let release_error = self
+            .storage
+            .release_owner(ReleaseJournalOwnerV1 {
+                journal_id: journal_id.clone(),
+                ownership_token,
+            })
+            .await
+            .err();
+        DurableResumeExecutionResult::RunnableReplacementUnavailable(
+            DurableResumeReplacementUnavailable {
+                journal_id,
+                recovery,
+                release_error,
+            },
+        )
     }
 }
 
@@ -1919,6 +1978,19 @@ fn build_execution_start(
         .map_err(|_| start_failure(StartFailureCategory::Internal, "entry-reconstruction"))?
         .unwrap_or_default();
     let initial_agent = analysis.structure().default_agent().map(Arc::from);
+    #[cfg(feature = "concurrent")]
+    let machine = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::new(program.clone()),
+        &entry.path,
+        arguments,
+        prepared.execution_id,
+        configuration.machine_limits(),
+        gantry_runtime::ExecutionBudget::new(prepared.execution_id, configuration.machine_limits()),
+        initial_agent,
+        Some(prepared.root_session.id),
+    )
+    .map_err(|_| start_failure(StartFailureCategory::Internal, "machine-build"))?;
+    #[cfg(not(feature = "concurrent"))]
     let machine = Machine::new_with_context(
         Arc::new(program.clone()),
         &entry.path,

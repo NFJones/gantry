@@ -572,8 +572,17 @@ impl SchemaValidator {
                 &schema_path,
                 &mut errors,
             )?;
+            self.check_enum(
+                instance_document,
+                instance_id,
+                schema,
+                &instance_path,
+                &schema_path,
+                &mut errors,
+            )?;
             self.check_number(instance, schema, &instance_path, &schema_path, &mut errors)?;
             self.check_string(instance, schema, &instance_path, &schema_path, &mut errors)?;
+            self.check_pattern(instance, schema, &instance_path, &schema_path, &mut errors)?;
             self.check_array(
                 instance_document,
                 instance,
@@ -631,6 +640,72 @@ impl SchemaValidator {
                 join_pointer(schema_path, "const"),
                 "instance does not equal the required constant",
             ));
+        }
+        Ok(())
+    }
+
+    fn check_enum(
+        &self,
+        instance_document: &StrictJsonDocument,
+        instance_id: JsonNodeId,
+        schema: &[(Arc<str>, JsonNodeId)],
+        instance_path: &Arc<str>,
+        schema_path: &Arc<str>,
+        errors: &mut Vec<ValidationError>,
+    ) -> Result<(), SchemaError> {
+        let Some(enum_id) = member(schema, "enum") else {
+            return Ok(());
+        };
+        let values = array(&self.schema, enum_id).ok_or_else(|| SchemaError::InvalidSchema {
+            location: join_pointer(schema_path, "enum"),
+        })?;
+        let mut matched = false;
+        for value in values {
+            if nodes_equal(&self.schema, *value, instance_document, instance_id)? {
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            errors.push(validation_error(
+                instance_path.clone(),
+                join_pointer(schema_path, "enum"),
+                "instance is not one of the allowed values",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_pattern(
+        &self,
+        instance: &JsonNode,
+        schema: &[(Arc<str>, JsonNodeId)],
+        instance_path: &Arc<str>,
+        schema_path: &Arc<str>,
+        errors: &mut Vec<ValidationError>,
+    ) -> Result<(), SchemaError> {
+        let JsonNode::String(value) = instance else {
+            return Ok(());
+        };
+        let Some(pattern_id) = member(schema, "pattern") else {
+            return Ok(());
+        };
+        let pattern =
+            string(&self.schema, pattern_id).ok_or_else(|| SchemaError::InvalidSchema {
+                location: join_pointer(schema_path, "pattern"),
+            })?;
+        match matches_admitted_pattern(value, pattern) {
+            Some(true) => {}
+            Some(false) => errors.push(validation_error(
+                instance_path.clone(),
+                join_pointer(schema_path, "pattern"),
+                "string does not match the required pattern",
+            )),
+            None => {
+                return Err(SchemaError::InvalidSchema {
+                    location: join_pointer(schema_path, "pattern"),
+                });
+            }
         }
         Ok(())
     }
@@ -959,6 +1034,189 @@ fn type_matches(instance: &JsonNode, expected: &str) -> bool {
     }
 }
 
+fn matches_admitted_pattern(value: &str, pattern: &str) -> Option<bool> {
+    let ascii = value.as_bytes();
+    let lower = |byte: &u8| byte.is_ascii_lowercase();
+    let lower_alphanumeric = |byte: &u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    let lower_hex = |byte: &u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte);
+    let grouped = |separator: u8, alphabet: fn(&u8) -> bool| {
+        !ascii.is_empty()
+            && ascii
+                .split(|byte| *byte == separator)
+                .all(|part| !part.is_empty() && part.iter().all(alphabet))
+    };
+    match pattern {
+        "^(0|[1-9][0-9]*)$" | "^(?:0|[1-9][0-9]*)$" => Some(
+            ascii == b"0"
+                || ascii
+                    .first()
+                    .is_some_and(|first| (b'1'..=b'9').contains(first))
+                    && ascii[1..].iter().all(u8::is_ascii_digit),
+        ),
+        "^(?:[0-9a-f]{2})*$" => Some(ascii.len().is_multiple_of(2) && ascii.iter().all(lower_hex)),
+        "^(?:activity|delivery-attempt|dispatch|event|evidence|execution|operation|session|task):[0-9a-f]{64}$" =>
+        {
+            let Some((kind, digest)) = value.split_once(':') else {
+                return Some(false);
+            };
+            Some(
+                matches!(
+                    kind,
+                    "activity"
+                        | "delivery-attempt"
+                        | "dispatch"
+                        | "event"
+                        | "evidence"
+                        | "execution"
+                        | "operation"
+                        | "session"
+                        | "task"
+                ) && digest.len() == 64
+                    && digest.as_bytes().iter().all(lower_hex),
+            )
+        }
+        "^[0-9a-f]{64}$" => Some(ascii.len() == 64 && ascii.iter().all(lower_hex)),
+        "^activity:[0-9a-f]{64}$"
+        | "^delivery-attempt:[0-9a-f]{64}$"
+        | "^dispatch:[0-9a-f]{64}$"
+        | "^event:[0-9a-f]{64}$"
+        | "^evidence:[0-9a-f]{64}$"
+        | "^execution:[0-9a-f]{64}$"
+        | "^operation:[0-9a-f]{64}$"
+        | "^session:[0-9a-f]{64}$"
+        | "^task:[0-9a-f]{64}$" => {
+            let prefix = pattern.strip_prefix('^')?.split('[').next()?;
+            Some(value.strip_prefix(prefix).is_some_and(|digest| {
+                digest.len() == 64 && digest.as_bytes().iter().all(lower_hex)
+            }))
+        }
+        "^474e544247543031(?:[0-9a-f]{2})+$"
+        | "^474e544344503034(?:[0-9a-f]{2})+$"
+        | "^474e544344503035(?:[0-9a-f]{2})+$"
+        | "^474e544d43503033(?:[0-9a-f]{2})+$"
+        | "^474e544d43503034(?:[0-9a-f]{2})+$"
+        | "^474e545353503031(?:[0-9a-f]{2})+$" => {
+            let prefix = pattern.strip_prefix('^')?.split("(?:").next()?;
+            Some(value.strip_prefix(prefix).is_some_and(|suffix| {
+                !suffix.is_empty()
+                    && suffix.len().is_multiple_of(2)
+                    && suffix.as_bytes().iter().all(lower_hex)
+            }))
+        }
+        "^GNT-[A-Za-z0-9.-]+$" => Some(value.strip_prefix("GNT-").is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+        })),
+        "^[A-Z][A-Za-z0-9]*$" => Some(
+            ascii.first().is_some_and(u8::is_ascii_uppercase)
+                && ascii[1..].iter().all(u8::is_ascii_alphanumeric),
+        ),
+        "^[^/].*\\.gnt$" => Some(
+            !value.starts_with('/')
+                && value.ends_with(".gnt")
+                && value.chars().count() >= 5
+                && !value.contains('\n'),
+        ),
+        "^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$" => {
+            let allowed = |byte: &u8| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"!#$&^_.+-".contains(byte)
+            };
+            let mut parts = ascii.split(|byte| *byte == b'/');
+            let left = parts.next();
+            let right = parts.next();
+            Some(
+                parts.next().is_none()
+                    && left.is_some_and(|part| !part.is_empty() && part.iter().all(allowed))
+                    && right.is_some_and(|part| !part.is_empty() && part.iter().all(allowed)),
+            )
+        }
+        "^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$" => Some(
+            ascii.len() == 1 && ascii.iter().all(lower_alphanumeric)
+                || ascii.len() >= 2
+                    && ascii.first().is_some_and(lower_alphanumeric)
+                    && ascii.last().is_some_and(lower_alphanumeric)
+                    && ascii
+                        .iter()
+                        .all(|byte| lower_alphanumeric(byte) || matches!(byte, b'_' | b'-')),
+        ),
+        "^[a-z0-9]+(?:-[a-z0-9]+)*$" => Some(grouped(b'-', lower_alphanumeric)),
+        "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" => Some(
+            !ascii.is_empty()
+                && ascii
+                    .split(|byte| matches!(byte, b'.' | b'-'))
+                    .all(|part| !part.is_empty() && part.iter().all(lower_alphanumeric)),
+        ),
+        "^[a-z](?:[a-z_-]*[a-z])?$" => Some(
+            ascii.len() == 1 && ascii.iter().all(lower)
+                || ascii.len() >= 2
+                    && ascii.first().is_some_and(lower)
+                    && ascii.last().is_some_and(lower)
+                    && ascii
+                        .iter()
+                        .all(|byte| lower(byte) || matches!(byte, b'_' | b'-')),
+        ),
+        "^[a-z]+(?:-[a-z]+)*$" => Some(grouped(b'-', lower)),
+        "^[a-z][a-z0-9-]*$" => Some(
+            ascii.first().is_some_and(lower)
+                && ascii
+                    .iter()
+                    .skip(1)
+                    .all(|byte| lower_alphanumeric(byte) || *byte == b'-'),
+        ),
+        "^[a-z][a-z0-9_]*$" => Some(
+            ascii.first().is_some_and(lower)
+                && ascii
+                    .iter()
+                    .skip(1)
+                    .all(|byte| lower_alphanumeric(byte) || *byte == b'_'),
+        ),
+        "^crate::.+$" => Some(
+            value
+                .strip_prefix("crate::")
+                .is_some_and(|suffix| !suffix.is_empty() && !suffix.contains('\n')),
+        ),
+        "^maximum_[a-z_]+$" => Some(value.strip_prefix("maximum_").is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        })),
+        "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{6}Z$" => {
+            Some(matches_timestamp_pattern(ascii))
+        }
+        _ => None,
+    }
+}
+
+fn matches_timestamp_pattern(value: &[u8]) -> bool {
+    value.len() == 27
+        && value[0..4].iter().all(u8::is_ascii_digit)
+        && value[4] == b'-'
+        && decimal_pair(value, 5).is_some_and(|month| (1..=12).contains(&month))
+        && value[7] == b'-'
+        && decimal_pair(value, 8).is_some_and(|day| day <= 31)
+        && value[10] == b'T'
+        && decimal_pair(value, 11).is_some_and(|hour| hour <= 23)
+        && value[13] == b':'
+        && decimal_pair(value, 14).is_some_and(|minute| minute <= 59)
+        && value[16] == b':'
+        && decimal_pair(value, 17).is_some_and(|second| second <= 59)
+        && value[19] == b'.'
+        && value[20..26].iter().all(u8::is_ascii_digit)
+        && value[26] == b'Z'
+}
+
+fn decimal_pair(value: &[u8], offset: usize) -> Option<u8> {
+    let tens = *value.get(offset)?;
+    let ones = *value.get(offset.checked_add(1)?)?;
+    if !tens.is_ascii_digit() || !ones.is_ascii_digit() {
+        return None;
+    }
+    Some((tens - b'0') * 10 + (ones - b'0'))
+}
+
 fn nodes_equal(
     left_document: &StrictJsonDocument,
     left: JsonNodeId,
@@ -1195,6 +1453,33 @@ mod tests {
                 .unwrap_or_else(|error| panic!("validation failed: {error:?}"))
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn enum_and_admitted_patterns_reject_nonmembers() {
+        let schema = br##"{
+            "type":"object",
+            "properties":{
+                "category":{"enum":["caller","shutdown"]},
+                "identity":{"type":"string","pattern":"^operation:[0-9a-f]{64}$"}
+            },
+            "required":["category","identity"],
+            "additionalProperties":false
+        }"##;
+        let validator = SchemaValidator::compile(&schema[..], limits())
+            .unwrap_or_else(|error| panic!("schema failed: {error:?}"));
+        let valid = document(
+            br#"{"category":"caller","identity":"operation:0101010101010101010101010101010101010101010101010101010101010101"}"#,
+        );
+        assert_eq!(validator.validate(&valid), Ok(Vec::new()));
+
+        let invalid = document(
+            br#"{"category":"operator","identity":"dispatch:0101010101010101010101010101010101010101010101010101010101010101"}"#,
+        );
+        let errors = validator
+            .validate(&invalid)
+            .unwrap_or_else(|error| panic!("validation failed operationally: {error:?}"));
+        assert_eq!(errors.len(), 2);
     }
 
     #[test]

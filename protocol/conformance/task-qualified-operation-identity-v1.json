@@ -18,7 +18,7 @@
   ],
   "exclusions": [
     "GNT-3-M-STATE clause-002 includes coordinator and durable state obligations beyond task-qualified operation identity and remains assigned to downstream issues.",
-    "GNT-3-M-SPAWN clause-001 source scheduling, gate release, session establishment, and handle publication remain owned by GNT-ASYNC-SPAWN-001.",
+    "GNT-3-M-SPAWN clause-001 source scheduling, gate release, session establishment, and handle publication are linked by protocol/conformance/source-spawn-v1.json.",
     "GNT-11.7 complete task-graph reconstruction and resume-time executor resubmission remain owned by GNT-ASYNC-REC-001.",
     "Closed generic spawned-body identity remains owned by GNT-ASYNC-IR-001 and GNT-ASYNC-LOWER-001."
   ]

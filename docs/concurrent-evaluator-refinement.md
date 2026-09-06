@@ -13,6 +13,13 @@ The argument is profile-scoped to `concurrent-evaluator`. Durable commit,
 recovery, fencing, event replay, and combined concurrent-durable obligations
 remain outside this claim.
 
+The async source-execution adoption is narrower than that full refinement
+argument. `protocol/conformance/source-spawn-v1.json` now establishes native
+executor-owned child submission, publication gates, child-session ordering,
+and the live concurrent-durable commit order at source `spawn` edges. It does
+not establish integrated source `join`, `joinall()`, or `detach`, complete
+source task-graph cancellation, or recovered child resubmission.
+
 For the generics-and-static-traits amendment, every spawned machine already
 contains only closed applied descriptors and direct selected call targets.
 The concurrent refinement covers copying those values through captures and
@@ -98,6 +105,14 @@ unsettled; confirmed stop removes the future and permits one cancelled
 settlement. Late wakes after stop cannot make the task runnable or mutate its
 settlement.
 
+**Durable recovery projection.** Concurrent journal snapshot version seven
+uses `gantry.concurrent-recovery-snapshot/v1` as a canonical compaction base.
+It retains the accepted execution start and program, latest version-four or
+version-five graph checkpoint, typed cancellation, event-delivery obligations,
+operation-cut history, retained causal identities, and the represented
+frontier. Recovery validates a contiguous suffix against that state; public
+query, open, and resume use the same concurrent projection as full prefixes.
+
 **Foreground, terminal, and shutdown uniqueness.** Foreground and terminal
 coordinates are optional monotonic fields fixed at most once. Detached failure
 cannot rewrite foreground state but participates in terminal precedence.
@@ -143,6 +158,9 @@ the formal lifecycle and property clauses to the bounded search. Its trace
 list links task creation/submission, ownership transfer, joins, detachment,
 sessions, cancellation, terminal precedence, events, shutdown, Tokio task
 services, and schedule replay to supported public or adapter-contract tests.
+The separate current-specification source-spawn manifest links only the native
+source child and live concurrent-durable ordering slice; it is not evidence of
+complete integrated source JOIN, DETACH, or CANCEL support.
 
 The generics amendment is mapped separately by
 `protocol/conformance/generics-traits-refinements-v1.json`. It links

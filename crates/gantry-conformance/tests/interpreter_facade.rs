@@ -5,10 +5,13 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::task::{Context, Poll, Waker};
 
-use gantry::host::contracts::{ExecutorAdapter, HookOutcomeV1, HostError, IdentitySource};
+use gantry::host::contracts::{
+    CancellationSignal, DurationMicros, ExecutorAdapter, HookOutcomeV1, HostError, HostFuture,
+    IdentitySource, InclusiveJitterRange, OwnedTaskFuture, SubmittedTask,
+};
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::portable::{
     CancellationReasonCategory, PORTABLE_SPECIFICATION_REVISION, PROTOCOL_FAMILY_DEFINITIONS,
@@ -51,16 +54,73 @@ impl Drop for TempDirectory {
     }
 }
 
+/// Executor fixture that holds the first task after semantic completion but
+/// before its submitted-task handle becomes physically settled.
+struct CompletionGateExecutor {
+    inner: DeterministicExecutor,
+    gate_first_task: AtomicBool,
+    at_gate: CancellationSignal,
+    release: CancellationSignal,
+}
+
+impl CompletionGateExecutor {
+    fn new() -> Self {
+        Self {
+            inner: DeterministicExecutor::new([], []),
+            gate_first_task: AtomicBool::new(true),
+            at_gate: CancellationSignal::default(),
+            release: CancellationSignal::default(),
+        }
+    }
+
+    async fn wait_until_gated(&self) {
+        self.at_gate.cancelled().await;
+    }
+
+    fn release(&self) {
+        let _ = self.release.cancel();
+    }
+}
+
+impl ExecutorAdapter for CompletionGateExecutor {
+    fn spawn(&self, task: OwnedTaskFuture) -> Result<Box<dyn SubmittedTask>, HostError> {
+        if self.gate_first_task.swap(false, Ordering::AcqRel) {
+            let at_gate = self.at_gate.clone();
+            let release = self.release.clone();
+            self.inner.spawn(Box::pin(async move {
+                let result = task.await;
+                let _ = at_gate.cancel();
+                release.cancelled().await;
+                result
+            }))
+        } else {
+            self.inner.spawn(task)
+        }
+    }
+
+    fn sleep<'a>(&'a self, _: DurationMicros) -> HostFuture<'a, Result<(), HostError>> {
+        Box::pin(std::future::pending())
+    }
+
+    fn yield_now<'a>(&'a self) -> HostFuture<'a, Result<(), HostError>> {
+        self.inner.yield_now()
+    }
+
+    fn sample_inclusive(&self, range: InclusiveJitterRange) -> Result<u64, HostError> {
+        self.inner.sample_inclusive(range)
+    }
+}
+
 #[test]
 fn public_interpreter_drives_and_observes_one_sequential_execution() {
     let root = TempDirectory::new("fn main() -> Int { 1 + 2 }");
     let identities = Arc::new(DeterministicIdentitySource::new(
         (1_u8..=16).map(|byte| Ok([byte; 32])),
     ));
-    let executor = Arc::new(DeterministicExecutor::new([], []));
+    let executor = Arc::new(CompletionGateExecutor::new());
     let clock = execution_clock(1);
     let integration = Arc::new(ScriptedIntegration::new([], []));
-    let configuration = configuration(executor, identities);
+    let configuration = configuration(executor.clone(), identities);
     let interpreter = Interpreter::new(
         configuration,
         clock,
@@ -121,8 +181,12 @@ fn public_interpreter_drives_and_observes_one_sequential_execution() {
         Ok(CancellationRecord::AlreadyTerminal(snapshot)) if snapshot == completed
     ));
 
-    let first_shutdown = block_on(interpreter.shutdown())
-        .unwrap_or_else(|error| panic!("shutdown failed: {error:?}"));
+    block_on(executor.wait_until_gated());
+    let mut first_shutdown = pin!(interpreter.shutdown());
+    assert!(poll_once(first_shutdown.as_mut()).is_pending());
+    executor.release();
+    let first_shutdown =
+        block_on(first_shutdown).unwrap_or_else(|error| panic!("shutdown failed: {error:?}"));
     let repeated_shutdown = block_on(interpreter.shutdown())
         .unwrap_or_else(|error| panic!("repeated shutdown failed: {error:?}"));
     assert!(Arc::ptr_eq(&first_shutdown, &repeated_shutdown));
@@ -590,10 +654,9 @@ fn caller_cancellation_reason_is_typed_and_bounded() {
 }
 
 fn configuration(
-    executor: Arc<DeterministicExecutor>,
+    executor: Arc<dyn ExecutorAdapter>,
     identities: Arc<DeterministicIdentitySource>,
 ) -> InterpreterConfiguration {
-    let executor: Arc<dyn ExecutorAdapter> = executor;
     let identities: Arc<dyn IdentitySource> = identities;
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
@@ -673,4 +736,10 @@ fn block_on<F: Future>(future: F) -> F::Output {
             Poll::Pending => std::thread::yield_now(),
         }
     }
+}
+
+fn poll_once<F: Future>(mut future: std::pin::Pin<&mut F>) -> Poll<F::Output> {
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    future.as_mut().poll(&mut context)
 }

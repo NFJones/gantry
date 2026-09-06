@@ -6,21 +6,27 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gantry::event::{EventDraft, EventEnvelope, EventPayload};
+use gantry::host::contracts::HostError;
 use gantry::host::event::SinkId;
+use gantry::host::journal::{FullJournalPrefixV1, JournalEvidenceEnvelopeV1, JournalId};
 use gantry::identity::ProtocolIdentity;
 use gantry::ir::{
-    CanonicalPath, EffectSet, Instruction, InstructionKind, MachineProgram, Parameter,
-    StructuralPosition, TypeDescriptor, Workflow,
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody, ExecutableTaskContext,
+    ExecutableTaskHandle, Instruction, InstructionKind, MachineProgram, Parameter,
+    StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow,
 };
 use gantry::portable::{CancellationReasonCategory, DeliveryOutcome, EventKind, IdentityKind};
 use gantry::runtime::{
     CancellationCausalIdentity, CancellationReason, CanonicalTranscriptV1,
-    ConcurrentDurableCheckpointV4, ConcurrentDurableEvidenceV4, ConcurrentSchedulerV1,
+    ConcurrentDurableCheckpointV4, ConcurrentDurableCheckpointV5, ConcurrentDurableEvidenceV4,
+    ConcurrentDurableEvidenceV5, ConcurrentDurableRecoverySnapshotV1, ConcurrentSchedulerV1,
     ConcurrentTaskStateV1, DurableCancellationEvidenceV3, DurableCommitCutV1,
     DurableEventDispatchedV1, DurableEventOccurrenceV1, DurableEventPlanV1, DurableEventSettledV1,
     DurableExecutionStartV3, DurableExecutionStateV1, DurableLogicalEvidenceV3,
-    DurableRecoverySnapshotV3, ExecutionBudgetSnapshot, LogicalSessionRegistryCheckpointV1,
-    LogicalSessionRegistryV1, Machine, MachineCheckpointV3, MachineLimits, SessionCreationModeV1,
+    DurableOperationEvidenceV1, DurableRecoverySnapshotV3, ExecutionBudget,
+    ExecutionBudgetSnapshot, LogicalSessionRegistryCheckpointV1, LogicalSessionRegistryV1, Machine,
+    MachineCheckpointV3, MachineCheckpointV4, MachineLabel, MachineLimits, MachineStep,
+    SessionCreationModeV1, TaskCreationRequestV1,
 };
 use gantry::schema::SchemaValidator;
 use gantry::strict_json::{JsonLimits, StrictJsonDocument};
@@ -208,6 +214,16 @@ fn published_public_formats_match_exact_bytes_and_reject_mutations() {
             .unwrap_or_else(|| panic!("missing negative target bytes {}", case.target));
         assert_schema_rejects(&root, fixture, bytes, &case.mutation);
     }
+
+    let v5_fixture = catalog
+        .formats
+        .iter()
+        .find(|fixture| fixture.format == "gantry.concurrent-durable-evidence/v5")
+        .unwrap_or_else(|| panic!("missing v5 concurrent evidence fixture"));
+    let v5_bytes = fixtures
+        .get(&v5_fixture.format)
+        .unwrap_or_else(|| panic!("missing v5 concurrent evidence bytes"));
+    assert_v5_branch_schema_rejections(&root, v5_fixture, v5_bytes);
 }
 
 fn assert_schema_accepts(root: &Path, fixture: &FormatFixture, bytes: &[u8]) {
@@ -272,6 +288,323 @@ fn assert_schema_rejects(root: &Path, fixture: &FormatFixture, bytes: &[u8], mut
     );
 }
 
+fn assert_v5_branch_schema_rejections(root: &Path, fixture: &FormatFixture, bytes: &[u8]) {
+    let schema = fs::read(root.join(&fixture.schema))
+        .unwrap_or_else(|error| panic!("could not read {}: {error}", fixture.schema));
+    let schema_json: serde_json::Value = serde_json::from_slice(&schema)
+        .unwrap_or_else(|error| panic!("could not decode {}: {error}", fixture.schema));
+    assert_v5_operation_identity_schema(&schema_json);
+    let validator = SchemaValidator::compile(schema, json_limits(2_000_000))
+        .unwrap_or_else(|error| panic!("could not compile {}: {error:?}", fixture.schema));
+    let original: serde_json::Value = serde_json::from_slice(bytes)
+        .unwrap_or_else(|error| panic!("could not decode v5 fixture: {error}"));
+    let context = fixture_context(&fixture.format);
+
+    for (name, record, cut) in [
+        (
+            "cancellation-without-reason",
+            "cancellation",
+            "cancellation",
+        ),
+        (
+            "operation-without-operation",
+            "operation",
+            "operation-prepared",
+        ),
+    ] {
+        let mut instance = original.clone();
+        let object = instance
+            .as_object_mut()
+            .unwrap_or_else(|| panic!("v5 fixture is not an object"));
+        object.insert("cut".to_owned(), serde_json::Value::String(cut.to_owned()));
+        object.insert(
+            "record".to_owned(),
+            serde_json::Value::String(record.to_owned()),
+        );
+        assert_v5_rejected(
+            &validator,
+            &context.program,
+            &fixture.schema,
+            instance,
+            name,
+            true,
+        );
+    }
+
+    let (operation_program, operation_bytes) = v5_operation_fixture();
+    let operation: serde_json::Value = serde_json::from_slice(&operation_bytes)
+        .unwrap_or_else(|error| panic!("could not decode valid v5 operation fixture: {error}"));
+    let document = StrictJsonDocument::decode(operation_bytes.as_slice(), json_limits(2_000_000))
+        .unwrap_or_else(|error| panic!("could not decode valid v5 operation: {error:?}"));
+    assert_eq!(
+        validator.validate(&document),
+        Ok(Vec::new()),
+        "schema rejected valid v5 operation"
+    );
+    assert!(ConcurrentDurableEvidenceV5::decode(&operation_program, &operation_bytes).is_ok());
+
+    for (name, field, value, schema_rejection_required) in [
+        (
+            "operation-wrong-identity-kind",
+            "operation_id",
+            serde_json::Value::String(fresh(IdentityKind::Dispatch, 10).to_string()),
+            true,
+        ),
+        (
+            "dispatch-wrong-identity-kind",
+            "dispatch_id",
+            serde_json::Value::String(fresh(IdentityKind::Execution, 11).to_string()),
+            true,
+        ),
+        (
+            "non-result-operation-without-dispatch",
+            "dispatch_id",
+            serde_json::Value::Null,
+            true,
+        ),
+        (
+            "prepared-operation-with-outcome",
+            "outcome",
+            serde_json::json!({"category": null, "kind": "completed", "payload": "6e756c6c"}),
+            true,
+        ),
+        (
+            "prepared-operation-with-retry-delay",
+            "retry_delay_us",
+            serde_json::json!(1),
+            true,
+        ),
+        (
+            "prepared-operation-with-result-type",
+            "result_type",
+            serde_json::json!("Unit"),
+            true,
+        ),
+        (
+            "prepared-operation-with-result-bytes",
+            "result_bytes",
+            serde_json::json!("6e756c6c"),
+            true,
+        ),
+        (
+            "operation-invalid-recovery-class",
+            "action_recovery",
+            serde_json::json!("repeatable"),
+            true,
+        ),
+        (
+            "operation-numeric-above-portable-bound",
+            "validation_attempt",
+            serde_json::json!(9_007_199_254_740_992_u64),
+            true,
+        ),
+    ] {
+        let mut instance = operation.clone();
+        let operation = instance
+            .as_object_mut()
+            .and_then(|object| object.get_mut("operation"))
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap_or_else(|| panic!("v5 operation fixture has no operation object"));
+        operation.insert(field.to_owned(), value);
+        assert_v5_rejected(
+            &validator,
+            &operation_program,
+            &fixture.schema,
+            instance,
+            name,
+            schema_rejection_required,
+        );
+    }
+
+    let (cancellation_program, cancellation_bytes) = v5_cancellation_fixture();
+    let cancellation_document =
+        StrictJsonDocument::decode(cancellation_bytes.as_slice(), json_limits(2_000_000))
+            .unwrap_or_else(|error| panic!("could not decode valid v5 cancellation: {error:?}"));
+    assert_eq!(
+        validator.validate(&cancellation_document),
+        Ok(Vec::new()),
+        "schema rejected valid v5 cancellation"
+    );
+    assert!(
+        ConcurrentDurableEvidenceV5::decode(&cancellation_program, &cancellation_bytes).is_ok()
+    );
+    let cancellation_original: serde_json::Value = serde_json::from_slice(&cancellation_bytes)
+        .unwrap_or_else(|error| panic!("could not decode v5 cancellation fixture: {error}"));
+
+    for (name, mutate) in [
+        (
+            "cancellation-unknown-category",
+            ("category", serde_json::json!("operator")),
+        ),
+        (
+            "cancellation-causal-kind-mismatch",
+            (
+                "causal_identity",
+                serde_json::json!({
+                    "identity": ProtocolIdentity::derive(
+                        IdentityKind::Operation,
+                        b"public-format-causal-operation",
+                    )
+                    .unwrap_or_else(|error| panic!("operation identity failed: {error}"))
+                    .to_string(),
+                    "kind": "task"
+                }),
+            ),
+        ),
+    ] {
+        let mut instance = cancellation_original.clone();
+        let cancellation = instance
+            .as_object_mut()
+            .and_then(|object| object.get_mut("cancellation"))
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap_or_else(|| panic!("v5 cancellation fixture has no cancellation object"));
+        cancellation.insert(mutate.0.to_owned(), mutate.1);
+        assert_v5_rejected(
+            &validator,
+            &cancellation_program,
+            &fixture.schema,
+            instance,
+            name,
+            true,
+        );
+    }
+}
+
+fn assert_v5_operation_identity_schema(schema: &serde_json::Value) {
+    let definitions = schema
+        .get("$defs")
+        .unwrap_or_else(|| panic!("journal schema has no definitions"));
+    assert_eq!(
+        definitions["operation_identity"]["pattern"],
+        "^operation:[0-9a-f]{64}$"
+    );
+    assert_eq!(
+        definitions["dispatch_identity"]["pattern"],
+        "^dispatch:[0-9a-f]{64}$"
+    );
+    assert_eq!(
+        definitions["operation_body_v5_prepared"]["properties"]["operation_id"]["$ref"],
+        "#/$defs/operation_identity"
+    );
+    assert_eq!(
+        definitions["operation_body_v5_prepared"]["properties"]["dispatch_id"]["$ref"],
+        "#/$defs/dispatch_identity"
+    );
+    assert_eq!(
+        definitions["operation_body_v5_result"]["properties"]["operation_id"]["$ref"],
+        "#/$defs/operation_identity"
+    );
+    assert_eq!(
+        definitions["operation_body_v5_result"]["properties"]["dispatch_id"]["type"],
+        "null"
+    );
+}
+
+fn assert_v5_rejected(
+    validator: &SchemaValidator,
+    program: &MachineProgram,
+    schema: &str,
+    instance: serde_json::Value,
+    name: &str,
+    schema_rejection_required: bool,
+) {
+    let encoded = serde_json::to_vec(&instance)
+        .unwrap_or_else(|error| panic!("could not encode {name}: {error}"));
+    let document = StrictJsonDocument::decode(encoded.as_slice(), json_limits(2_000_000))
+        .unwrap_or_else(|error| panic!("could not decode {name}: {error:?}"));
+    let errors = validator
+        .validate(&document)
+        .unwrap_or_else(|error| panic!("invalid schema {schema}: {error:?}"));
+    if schema_rejection_required {
+        assert!(!errors.is_empty(), "schema accepted v5 {name}");
+    }
+    assert!(
+        ConcurrentDurableEvidenceV5::decode(program, &encoded).is_err(),
+        "decoder accepted v5 {name}"
+    );
+}
+
+fn v5_operation_fixture() -> (Arc<MachineProgram>, Vec<u8>) {
+    let execution = fresh(IdentityKind::Execution, 12);
+    let root_task = gantry::runtime::root_task_identity(execution);
+    let root_session = fresh(IdentityKind::Session, 13);
+    let program = operation_program();
+    let mut foreground = machine(Arc::clone(&program), execution, root_session);
+    let operation_id = match foreground.step() {
+        MachineStep::Transition(MachineLabel::OperationPrepared(operation)) => operation.identity,
+        other => panic!("operation fixture did not prepare: {other:?}"),
+    };
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("operation session registry failed: {error:?}"));
+    let state = ConcurrentTaskStateV1::new(execution, root_task, 4)
+        .unwrap_or_else(|error| panic!("operation task state failed: {error:?}"));
+    let scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+        .unwrap_or_else(|error| panic!("operation scheduler failed: {error:?}"));
+    let checkpoint = ConcurrentDurableCheckpointV5::capture(&foreground, &scheduler, &sessions)
+        .unwrap_or_else(|error| panic!("operation checkpoint failed: {error:?}"));
+    let evidence = ConcurrentDurableEvidenceV5::new_operation(
+        DurableCommitCutV1::OperationPrepared,
+        root_task,
+        DurableOperationEvidenceV1 {
+            operation_id,
+            dispatch_id: Some(fresh(IdentityKind::Dispatch, 14)),
+            validation_attempt: 0,
+            recovery_dispatch: 0,
+            retry_delay_us: None,
+            retries_left: Some(2),
+            action_recovery: None,
+            request_bytes: Some(Arc::from(&b"{}"[..])),
+            outcome: None,
+            retry_errors: Arc::from([]),
+            result_type: None,
+            result_bytes: None,
+        },
+        checkpoint,
+    )
+    .unwrap_or_else(|error| panic!("operation evidence failed: {error:?}"));
+    (program, evidence.canonical_body())
+}
+
+fn v5_cancellation_fixture() -> (Arc<MachineProgram>, Vec<u8>) {
+    let execution = fresh(IdentityKind::Execution, 16);
+    let root_task = gantry::runtime::root_task_identity(execution);
+    let root_session = fresh(IdentityKind::Session, 17);
+    let program = program();
+    let mut foreground = machine(Arc::clone(&program), execution, root_session);
+    let sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("cancellation session registry failed: {error:?}"));
+    let state = ConcurrentTaskStateV1::new(execution, root_task, 4)
+        .unwrap_or_else(|error| panic!("cancellation task state failed: {error:?}"));
+    let mut scheduler = ConcurrentSchedulerV1::new(state, foreground.execution_budget())
+        .unwrap_or_else(|error| panic!("cancellation scheduler failed: {error:?}"));
+    scheduler
+        .cancel_execution("caller-stop")
+        .unwrap_or_else(|error| panic!("cancellation graph transition failed: {error:?}"));
+    assert!(foreground.cancel("caller-stop").is_some());
+    let checkpoint = ConcurrentDurableCheckpointV5::capture(&foreground, &scheduler, &sessions)
+        .unwrap_or_else(|error| panic!("cancellation checkpoint failed: {error:?}"));
+    let reason = CancellationReason::new(
+        CancellationReasonCategory::Caller,
+        Some(Arc::from("caller-stop")),
+        Some(CancellationCausalIdentity::Task(root_task)),
+        64,
+    )
+    .unwrap_or_else(|error| panic!("cancellation reason failed: {error:?}"));
+    let evidence = ConcurrentDurableEvidenceV5::new_cancellation(root_task, reason, checkpoint)
+        .unwrap_or_else(|error| panic!("cancellation evidence failed: {error:?}"));
+    (program, evidence.canonical_body())
+}
+
 fn schema_instance(fixture: &FormatFixture, bytes: &[u8]) -> Vec<u8> {
     if fixture.encoding == "canonical-binary" {
         serde_json::to_vec(&serde_json::json!({
@@ -319,6 +652,52 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
     let combined_checkpoint =
         ConcurrentDurableCheckpointV4::capture(&foreground, &scheduler, &sessions)
             .unwrap_or_else(|error| panic!("combined checkpoint failed: {error:?}"));
+    let successor_program = successor_program();
+    let successor_limits = MachineLimits::new(32, 4, 4, 8, 16, DEFAULT_VALUE_LIMITS)
+        .unwrap_or_else(|| unreachable!("positive successor machine limits"));
+    let successor_budget = ExecutionBudget::new(execution, successor_limits);
+    let mut successor_foreground = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::clone(&successor_program),
+        &path("crate::main"),
+        Vec::new(),
+        execution,
+        successor_limits,
+        successor_budget,
+        None,
+        Some(root_session),
+    )
+    .unwrap_or_else(|error| panic!("successor foreground failed: {error:?}"));
+    assert!(matches!(
+        successor_foreground.step(),
+        MachineStep::Transition(MachineLabel::TaskControlSuspended(_))
+    ));
+    let successor_sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("successor session registry failed: {error:?}"));
+    let successor_state = ConcurrentTaskStateV1::new(execution, root_task, 4)
+        .unwrap_or_else(|error| panic!("successor task state failed: {error:?}"));
+    let successor_scheduler =
+        ConcurrentSchedulerV1::new(successor_state, successor_foreground.execution_budget())
+            .unwrap_or_else(|error| panic!("successor scheduler failed: {error:?}"));
+    let successor_machine_checkpoint = successor_foreground.checkpoint();
+    let successor_combined_checkpoint = ConcurrentDurableCheckpointV5::capture(
+        &successor_foreground,
+        &successor_scheduler,
+        &successor_sessions,
+    )
+    .unwrap_or_else(|error| panic!("successor combined checkpoint failed: {error:?}"));
+    assert_eq!(
+        successor_machine_checkpoint.canonical_bytes().get(..8),
+        Some(b"GNTMCP04".as_slice())
+    );
+    assert_eq!(
+        successor_combined_checkpoint.canonical_bytes().get(..8),
+        Some(b"GNTCDP05".as_slice())
+    );
     let logical = DurableLogicalEvidenceV3::new_with_sessions(
         execution,
         root_task,
@@ -355,6 +734,103 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
         combined_checkpoint.clone(),
     )
     .unwrap_or_else(|error| panic!("combined evidence failed: {error:?}"));
+    let concurrent_journal = JournalId::new("public-concurrent-recovery-snapshot")
+        .unwrap_or_else(|error| panic!("concurrent journal ID failed: {error:?}"));
+    let start_evidence_id = ProtocolIdentity::from_storage_material([7; 32]);
+    let graph_evidence_id = ProtocolIdentity::from_storage_material([8; 32]);
+    let concurrent_full = FullJournalPrefixV1 {
+        journal_id: concurrent_journal.clone(),
+        evidence: Arc::from([
+            JournalEvidenceEnvelopeV1 {
+                journal_id: concurrent_journal.clone(),
+                sequence: 1,
+                evidence_id: start_evidence_id,
+                kind: Arc::from("gantry.execution-start/v3"),
+                canonical_body: Arc::from(execution_start.canonical_body()),
+                references: Arc::from([]),
+                protected_payloads: Arc::from([]),
+            },
+            JournalEvidenceEnvelopeV1 {
+                journal_id: concurrent_journal,
+                sequence: 2,
+                evidence_id: graph_evidence_id,
+                kind: Arc::from("gantry.concurrent-durable-evidence/v4"),
+                canonical_body: Arc::from(combined.canonical_body()),
+                references: Arc::from([start_evidence_id]),
+                protected_payloads: Arc::from([]),
+            },
+        ]),
+        committed_through: 2,
+    };
+    let concurrent_recovery =
+        ConcurrentDurableRecoverySnapshotV1::from_full_prefix(&program, &concurrent_full)
+            .unwrap_or_else(|error| panic!("concurrent recovery snapshot failed: {error:?}"));
+    let v5_program = Arc::clone(&successor_program);
+    let v5_budget = ExecutionBudget::new(execution, successor_limits);
+    let mut v5_foreground = Machine::new_concurrent_root_with_budget_and_context(
+        Arc::clone(&v5_program),
+        &path("crate::main"),
+        Vec::new(),
+        execution,
+        successor_limits,
+        v5_budget,
+        None,
+        Some(root_session),
+    )
+    .unwrap_or_else(|error| panic!("v5 foreground failed: {error:?}"));
+    let suspension = match v5_foreground.step() {
+        MachineStep::Transition(MachineLabel::TaskControlSuspended(suspension)) => suspension,
+        other => panic!("v5 foreground did not suspend at spawn: {other:?}"),
+    };
+    let mut v5_sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("v5 session registry failed: {error:?}"));
+    let v5_state = ConcurrentTaskStateV1::new(execution, root_task, 4)
+        .unwrap_or_else(|error| panic!("v5 task state failed: {error:?}"));
+    let mut v5_scheduler = ConcurrentSchedulerV1::new(v5_state, v5_foreground.execution_budget())
+        .unwrap_or_else(|error| panic!("v5 scheduler failed: {error:?}"));
+    let child = v5_scheduler
+        .create_child(
+            &mut v5_sessions,
+            TaskCreationRequestV1 {
+                parent_task_id: root_task,
+                handle_name: Arc::from("child"),
+                workflow: path("crate::main"),
+                spawn_site: position(0),
+                spawn_occurrence: 0,
+                result_type: TypeDescriptor::UNIT,
+                captures: Vec::new(),
+                inherited_agent: None,
+                parent_session_id: root_session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("v5 child creation failed: {error:?}"));
+    v5_foreground
+        .complete_spawn(&suspension, child.handle_id)
+        .unwrap_or_else(|error| panic!("v5 spawn completion failed: {error:?}"));
+    v5_scheduler
+        .resolve_submission(
+            child.task_id,
+            Err(HostError {
+                code: Arc::from("executor-closed"),
+                protected_diagnostic: None,
+            }),
+        )
+        .unwrap_or_else(|error| panic!("v5 submission failure failed: {error:?}"));
+    let v5_checkpoint =
+        ConcurrentDurableCheckpointV4::capture(&v5_foreground, &v5_scheduler, &v5_sessions)
+            .unwrap_or_else(|error| panic!("v5 checkpoint failed: {error:?}"));
+    let combined_v5 = ConcurrentDurableEvidenceV5::new_submission_resolution(
+        DurableCommitCutV1::TaskSettlement,
+        child.task_id,
+        v5_checkpoint,
+    )
+    .unwrap_or_else(|error| panic!("v5 evidence failed: {error:?}"));
 
     let mut cancelled_machine = machine(Arc::clone(&program), execution, root_session);
     assert!(cancelled_machine.cancel("caller-stop").is_some());
@@ -420,6 +896,10 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
             combined_checkpoint.canonical_bytes(),
         ),
         (
+            "combined-checkpoint/v5".to_owned(),
+            successor_combined_checkpoint.canonical_bytes(),
+        ),
+        (
             "execution-budget-checkpoint/v1".to_owned(),
             budget_checkpoint.canonical_bytes(),
         ),
@@ -430,6 +910,14 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
         (
             "gantry.concurrent-durable-evidence/v4".to_owned(),
             combined.canonical_body(),
+        ),
+        (
+            "gantry.concurrent-durable-evidence/v5".to_owned(),
+            combined_v5.canonical_body(),
+        ),
+        (
+            "gantry.concurrent-recovery-snapshot/v1".to_owned(),
+            concurrent_recovery.canonical_body(),
         ),
         (
             "gantry.event-delivery-dispatched/v1".to_owned(),
@@ -464,6 +952,10 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
             machine_checkpoint.canonical_bytes(),
         ),
         (
+            "machine-checkpoint/v4".to_owned(),
+            successor_machine_checkpoint.canonical_bytes(),
+        ),
+        (
             "session-checkpoint/v1".to_owned(),
             session_checkpoint.canonical_bytes(),
         ),
@@ -471,13 +963,16 @@ fn fixture_bytes() -> BTreeMap<String, Vec<u8>> {
 }
 
 fn assert_format_decodes(format: &str, bytes: &[u8]) {
-    let context = fixture_context();
+    let context = fixture_context(format);
     match format {
         "canonical-transcript/v1" => {
             assert!(CanonicalTranscriptV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_ok())
         }
         "combined-checkpoint/v4" => {
             assert!(ConcurrentDurableCheckpointV4::decode(&context.program, bytes).is_ok())
+        }
+        "combined-checkpoint/v5" => {
+            assert!(ConcurrentDurableCheckpointV5::decode(&context.program, bytes).is_ok())
         }
         "execution-budget-checkpoint/v1" => {
             assert!(ExecutionBudgetSnapshot::decode(bytes).is_ok())
@@ -487,6 +982,12 @@ fn assert_format_decodes(format: &str, bytes: &[u8]) {
         }
         "gantry.concurrent-durable-evidence/v4" => {
             assert!(ConcurrentDurableEvidenceV4::decode(&context.program, bytes).is_ok())
+        }
+        "gantry.concurrent-durable-evidence/v5" => {
+            assert!(ConcurrentDurableEvidenceV5::decode(&context.program, bytes).is_ok())
+        }
+        "gantry.concurrent-recovery-snapshot/v1" => {
+            assert!(ConcurrentDurableRecoverySnapshotV1::decode(&context.program, bytes).is_ok())
         }
         "gantry.event-delivery-dispatched/v1" => {
             assert!(DurableEventDispatchedV1::decode(bytes).is_ok())
@@ -508,6 +1009,9 @@ fn assert_format_decodes(format: &str, bytes: &[u8]) {
         "machine-checkpoint/v3" => {
             assert!(MachineCheckpointV3::decode(&context.program, bytes).is_ok())
         }
+        "machine-checkpoint/v4" => {
+            assert!(MachineCheckpointV4::decode(&context.program, bytes).is_ok())
+        }
         "session-checkpoint/v1" => {
             assert!(LogicalSessionRegistryCheckpointV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_ok())
         }
@@ -516,7 +1020,7 @@ fn assert_format_decodes(format: &str, bytes: &[u8]) {
 }
 
 fn assert_format_rejects(format: &str, bytes: &[u8]) {
-    let context = fixture_context();
+    let context = fixture_context(format);
     let rejected = match format {
         "canonical-transcript/v1" => {
             CanonicalTranscriptV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_err()
@@ -524,12 +1028,21 @@ fn assert_format_rejects(format: &str, bytes: &[u8]) {
         "combined-checkpoint/v4" => {
             ConcurrentDurableCheckpointV4::decode(&context.program, bytes).is_err()
         }
+        "combined-checkpoint/v5" => {
+            ConcurrentDurableCheckpointV5::decode(&context.program, bytes).is_err()
+        }
         "execution-budget-checkpoint/v1" => ExecutionBudgetSnapshot::decode(bytes).is_err(),
         "gantry.cancellation/v3" => {
             DurableCancellationEvidenceV3::decode(&context.program, bytes).is_err()
         }
         "gantry.concurrent-durable-evidence/v4" => {
             ConcurrentDurableEvidenceV4::decode(&context.program, bytes).is_err()
+        }
+        "gantry.concurrent-durable-evidence/v5" => {
+            ConcurrentDurableEvidenceV5::decode(&context.program, bytes).is_err()
+        }
+        "gantry.concurrent-recovery-snapshot/v1" => {
+            ConcurrentDurableRecoverySnapshotV1::decode(&context.program, bytes).is_err()
         }
         "gantry.event-delivery-dispatched/v1" => DurableEventDispatchedV1::decode(bytes).is_err(),
         "gantry.event-delivery-settled/v1" => DurableEventSettledV1::decode(bytes).is_err(),
@@ -545,6 +1058,7 @@ fn assert_format_rejects(format: &str, bytes: &[u8]) {
             DurableRecoverySnapshotV3::decode(&context.program, bytes).is_err()
         }
         "machine-checkpoint/v3" => MachineCheckpointV3::decode(&context.program, bytes).is_err(),
+        "machine-checkpoint/v4" => MachineCheckpointV4::decode(&context.program, bytes).is_err(),
         "session-checkpoint/v1" => {
             LogicalSessionRegistryCheckpointV1::decode(bytes, DEFAULT_VALUE_LIMITS).is_err()
         }
@@ -557,8 +1071,21 @@ struct FixtureContext {
     program: Arc<MachineProgram>,
 }
 
-fn fixture_context() -> FixtureContext {
-    FixtureContext { program: program() }
+fn fixture_context(format: &str) -> FixtureContext {
+    FixtureContext {
+        program: if matches!(
+            format,
+            "combined-checkpoint/v5"
+                | "machine-checkpoint/v4"
+                | "gantry.concurrent-durable-evidence/v5"
+        ) {
+            successor_program()
+        } else if format == "gantry.concurrent-durable-evidence/v5-operation" {
+            operation_program()
+        } else {
+            program()
+        },
+    }
 }
 
 fn program() -> Arc<MachineProgram> {
@@ -582,6 +1109,86 @@ fn program() -> Arc<MachineProgram> {
             ],
         }])
         .unwrap_or_else(|error| panic!("program failed: {error:?}")),
+    )
+}
+
+fn operation_program() -> Arc<MachineProgram> {
+    Arc::new(
+        MachineProgram::new(vec![Workflow {
+            path: path("crate::main"),
+            parameters: Vec::new(),
+            result: TypeDescriptor::UNIT,
+            effects: EffectSet::default(),
+            instructions: vec![
+                Instruction {
+                    site: position(0),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Operation,
+                },
+                Instruction {
+                    site: position(1),
+                    ty: TypeDescriptor::UNIT,
+                    kind: InstructionKind::Return,
+                },
+            ],
+        }])
+        .unwrap_or_else(|error| panic!("operation program failed: {error:?}")),
+    )
+}
+
+fn successor_program() -> Arc<MachineProgram> {
+    let root_path = path("crate::main");
+    let callable = CanonicalCallableIdentity::free(&root_path, &[]);
+    let body_identity = TaskBodyIdentity::new(callable.clone(), position(0));
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::UNIT,
+        Vec::new(),
+        ExecutableTaskContext::v1(),
+        vec![
+            Instruction {
+                site: position(0),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: position(1),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::TaskComplete,
+            },
+        ],
+    )
+    .unwrap_or_else(|error| panic!("successor task body failed: {error:?}"));
+    let root = Workflow {
+        path: root_path,
+        parameters: Vec::new(),
+        result: TypeDescriptor::UNIT,
+        effects: EffectSet::default(),
+        instructions: vec![
+            Instruction {
+                site: position(0),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::UNIT)
+                        .unwrap_or_else(|error| panic!("successor handle failed: {error:?}")),
+                    body: body_identity,
+                },
+            },
+            Instruction {
+                site: position(1),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Push(LogicalValue::unit()),
+            },
+            Instruction {
+                site: position(2),
+                ty: TypeDescriptor::UNIT,
+                kind: InstructionKind::Return,
+            },
+        ],
+    };
+    Arc::new(
+        MachineProgram::with_task_bodies(vec![(callable, root)], vec![body])
+            .unwrap_or_else(|error| panic!("successor program failed: {error:?}")),
     )
 }
 
