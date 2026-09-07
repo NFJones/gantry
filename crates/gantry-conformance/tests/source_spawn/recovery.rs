@@ -7,6 +7,15 @@ mod rollback;
 use rollback::assert_recovered_submission_rollback;
 
 #[test]
+fn missing_dispatch_event_is_repaired_before_redispatch() {
+    recover_missing_operation_event(
+        "\"kind\":\"operation-dispatch\"",
+        DurableCommitCutV1::OperationPrepared,
+        EventKind::OperationDispatch,
+    );
+}
+
+#[test]
 fn missing_operation_result_event_is_replaced_before_source_consumption() {
     recover_missing_operation_event(
         "\"kind\":\"operation-result\"",
@@ -169,7 +178,13 @@ fn recover_missing_operation_event_outcome(
                 &br#"{"result":"resolved"}"#[..],
             ),
         ],
-        [],
+        if kind == EventKind::OperationDispatch {
+            vec![ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+                Arc::from(&b"7"[..]),
+            ))])]
+        } else {
+            vec![]
+        },
     ));
     let resumed = interpreter_with_identity_source(
         executor.clone(),

@@ -93,6 +93,12 @@ before replacement drivers progress. The cancellation crash regression checks
 the cancelled outcome, causal ordering, and event retention through compaction.
 This does not qualify missing task-local cancellation events.
 
+For an indeterminate operation, recovery restores a missing dispatch occurrence
+from the original committed request before physical redispatch. Its event keeps
+the original dispatch coordinates; any permitted replacement dispatch receives
+a fresh dispatch identity. The public dispatch-gap regression verifies that the
+replacement event is the next journal entry before redispatch proceeds.
+
 Replacement of other missing causal events remains unfinished in
 GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count

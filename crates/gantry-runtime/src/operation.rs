@@ -429,6 +429,57 @@ impl OperationLifecycle {
         &self.captured
     }
 
+    /// Reconstructs an indeterminate dispatch event from its committed request.
+    /// No fresh dispatch identity is allocated and no hook is invoked.
+    #[cfg(feature = "durable")]
+    pub fn recovered_dispatch_event(
+        &self,
+        recovery: &crate::DurableOperationRecoveryV1,
+    ) -> Result<Option<(ProtocolIdentity, crate::ExecutionEventDraftV1)>, OperationLifecycleError>
+    {
+        let (operation_id, dispatch_id, request_bytes) = match recovery {
+            crate::DurableOperationRecoveryV1::Redispatch {
+                operation_id,
+                previous_dispatch_id,
+                request_bytes,
+                ..
+            } => (*operation_id, *previous_dispatch_id, request_bytes),
+            crate::DurableOperationRecoveryV1::UnknownOutcome {
+                operation_id,
+                dispatch_id,
+                request_bytes,
+            } => (*operation_id, *dispatch_id, request_bytes),
+            _ => return Ok(None),
+        };
+        let validation_attempt = recovery_request_u64(request_bytes, "validation_attempt")?;
+        let recovery_dispatch = recovery_request_u64(request_bytes, "recovery_dispatch")?;
+        self.validate_recovery_request(
+            operation_id,
+            dispatch_id,
+            validation_attempt,
+            recovery_dispatch,
+            self.captured_action_recovery(),
+            request_bytes,
+        )?;
+        let request = HostRequest::new(
+            EmbeddingVersion::V1,
+            EmbeddingOperation::DispatchOperation,
+            Arc::clone(request_bytes),
+        )
+        .map_err(|_| OperationLifecycleError::InvalidRecovery)?;
+        let draft = crate::operation_dispatch_event(
+            self.captured(),
+            &PreparedHookDispatch {
+                dispatch_id,
+                request,
+            },
+            validation_attempt,
+            recovery_dispatch,
+        )
+        .map_err(|_| OperationLifecycleError::InvalidRecovery)?;
+        Ok(Some((dispatch_id, draft)))
+    }
+
     /// Returns the exact public lifecycle projection.
     #[must_use]
     pub fn state(&self) -> OperationLifecycleState {

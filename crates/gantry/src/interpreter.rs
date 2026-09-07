@@ -6825,6 +6825,16 @@ impl Interpreter {
                 self.inner.configuration.identity_source(),
             )
             .map_err(|_| DurableRunFailure::Internal)?;
+        Box::pin(self.repair_recovered_operation_dispatch(
+            graph,
+            owner,
+            coordinator,
+            context,
+            task_id,
+            &operation,
+            &recovery,
+        ))
+        .await?;
         if matches!(recovery, DurableOperationRecoveryV1::UnknownOutcome { .. }) {
             let Some(mut lease) = self
                 .acquire_durable_graph_lease(graph, owner, coordinator)
@@ -7464,6 +7474,16 @@ impl Interpreter {
                 self.inner.configuration.identity_source(),
             )
             .map_err(|_| DurableRunFailure::Internal)?;
+        Box::pin(self.repair_recovered_operation_dispatch(
+            graph,
+            owner,
+            coordinator,
+            context,
+            task_id,
+            &operation,
+            &recovery,
+        ))
+        .await?;
         if matches!(recovery, DurableOperationRecoveryV1::RetryDelay { .. }) {
             let prepared = match self
                 .poll_durable_graph_future(
@@ -7922,6 +7942,50 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn repair_recovered_operation_dispatch(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        context: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        operation: &OperationLifecycle,
+        recovery: &DurableOperationRecoveryV1,
+    ) -> Result<(), DurableRunFailure> {
+        let Some((dispatch, draft)) = operation
+            .recovered_dispatch_event(recovery)
+            .map_err(|_| DurableRunFailure::Internal)?
+        else {
+            return Ok(());
+        };
+        let mut lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
+        let sequence = lease
+            .next_event_sequence
+            .get(&task_id)
+            .copied()
+            .unwrap_or(0);
+        let event = self.complete_graph_event(context, task_id, sequence, draft.clone());
+        let (frontier, repaired) = owner
+            .repair_recovered_graph_event(
+                Arc::clone(&graph.program),
+                coordinator,
+                |recovered| recovered.operation_dispatch_cause(dispatch),
+                event,
+                &draft.protected_payloads,
+            )
+            .await?;
+        lease.frontier = frontier;
+        if repaired {
+            lease.next_event_sequence.insert(
+                task_id,
+                sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+            );
+        }
+        Ok(())
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]
