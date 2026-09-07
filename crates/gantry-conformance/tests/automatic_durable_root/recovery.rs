@@ -4,27 +4,32 @@ use super::*;
 
 #[test]
 fn committed_serial_outcome_resumes_without_hook_and_repairs_completion() {
-    recover_serial_outcome(false, false, false);
+    recover_serial_outcome(false, false, false, false);
 }
 
 #[test]
 fn serial_completion_retains_outcome_cause_across_resume_revision() {
-    recover_serial_outcome(true, false, false);
+    recover_serial_outcome(true, false, false, false);
 }
 
 #[test]
 fn serial_model_outcome_reuses_forked_session_without_hook() {
-    recover_serial_outcome(false, true, false);
+    recover_serial_outcome(false, true, false, false);
 }
 
 #[test]
 fn serial_result_event_is_repaired_before_source_progress() {
-    recover_serial_outcome(false, false, true);
+    recover_serial_outcome(false, false, true, false);
 }
 
 #[test]
 fn serial_model_result_repair_preserves_accepted_transcript() {
-    recover_serial_outcome(false, true, true);
+    recover_serial_outcome(false, true, true, false);
+}
+
+#[test]
+fn compacted_serial_result_retains_cause_through_event_repair() {
+    recover_serial_outcome(false, false, true, true);
 }
 
 #[test]
@@ -485,8 +490,99 @@ fn serial_retry_wait_is_replayed_before_replacement_dispatch() {
     );
 }
 
+struct CompactingSerialStore {
+    inner: Arc<ObservedJournalStore>,
+    frontier_cut: &'static str,
+}
+
+impl JournalStorage for CompactingSerialStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        Box::pin(async move {
+            let prefix = self.inner.read_prefix(request).await?;
+            let JournalPrefixV1::Full(full) = prefix else {
+                return Ok(prefix);
+            };
+            let Some(frontier_index) = full.evidence.iter().rposition(|entry| {
+                entry.kind.as_ref() == "gantry.logical-evidence/v3"
+                    && std::str::from_utf8(&entry.canonical_body)
+                        .is_ok_and(|body| body.contains(self.frontier_cut))
+            }) else {
+                return Ok(JournalPrefixV1::Full(full));
+            };
+            let start = full
+                .evidence
+                .first()
+                .and_then(|entry| {
+                    let program = gantry::runtime::DurableExecutionStartV3::retained_program(
+                        &entry.canonical_body,
+                    )
+                    .ok()?;
+                    gantry::runtime::DurableExecutionStartV3::decode(
+                        &program,
+                        &entry.canonical_body,
+                    )
+                    .ok()
+                })
+                .ok_or_else(|| JournalError::new(JournalErrorCode::Internal))?;
+            let program = start
+                .program()
+                .map_err(|_| JournalError::new(JournalErrorCode::Internal))?;
+            let frontier = &full.evidence[frontier_index];
+            let state = DurableLogicalEvidenceV3::decode(&program, &frontier.canonical_body)
+                .map_err(|_| JournalError::new(JournalErrorCode::Internal))?;
+            let snapshot = gantry::runtime::DurableRecoverySnapshotV3::new(start, state)
+                .map_err(|_| JournalError::new(JournalErrorCode::Internal))?;
+            Ok(JournalPrefixV1::Snapshot(
+                gantry::host::journal::SnapshotJournalPrefixV1 {
+                    journal_id: full.journal_id,
+                    snapshot_version: 6,
+                    frontier: frontier.sequence,
+                    canonical_snapshot: Arc::from(snapshot.canonical_body()),
+                    retained_evidence: full.evidence[..=frontier_index]
+                        .iter()
+                        .map(|entry| (entry.evidence_id, entry.sequence))
+                        .collect(),
+                    suffix: Arc::from(full.evidence[frontier_index + 1..].to_vec()),
+                    committed_through: full.committed_through,
+                },
+            ))
+        })
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        self.inner.commit(request)
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.inner.release_owner(request)
+    }
+}
+
 /// A policy record may advance the journal tip without replacing the outcome cause.
-fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool) {
+fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool, compacted: bool) {
     let root = TempDirectory::new(if model {
         "agents { worker }\ndefault agent = worker;\nfn main() -> String { prompt(session = fork) \"hello\" -> String }"
     } else {
@@ -520,7 +616,15 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool) {
     } else {
         "\"cut\":\"operation-outcome\""
     });
-    let storage = Arc::new(store);
+    let observed = Arc::new(store);
+    let storage: Arc<dyn JournalStorage> = if compacted {
+        Arc::new(CompactingSerialStore {
+            inner: Arc::clone(&observed),
+            frontier_cut: "\"cut\":\"operation-result\"",
+        })
+    } else {
+        observed.clone()
+    };
     let journal_id = JournalId::new("serial-outcome-recovery")
         .unwrap_or_else(|error| panic!("journal: {error:?}"));
     let selection = selection();
@@ -545,7 +649,7 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool) {
         .last()
         .unwrap_or_else(|| panic!("no root"));
     poll_task_until(&executor, root_task, || {
-        storage.post_commit_settlement_started()
+        observed.post_commit_settlement_started()
     });
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
         journal_id: journal_id.clone(),
@@ -568,7 +672,7 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool) {
     executor
         .fail_task(root_task)
         .unwrap_or_else(|error| panic!("crash: {error:?}"));
-    storage.release_post_commit_settlement();
+    observed.release_post_commit_settlement();
     block_on(storage.release_owner(ReleaseJournalOwnerV1 {
         journal_id: journal_id.clone(),
         ownership_token: started.test_ownership_token().clone(),
