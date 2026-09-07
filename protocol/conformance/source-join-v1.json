@@ -5,7 +5,7 @@
   "artifacts": [
     {
       "path": "crates/gantry-conformance/tests/source_spawn.rs",
-      "sha256": "489d5f99c12b805f81d2743a2a5b26549dd7a924f1e47bf28933b4da006c9e14"
+      "sha256": "44f19d38c8bb7c50c936e6f1a3945345af9e5a5e746658434d93230b793690ef"
     },
     {
       "path": "crates/gantry-conformance/tests/source_spawn_tokio.rs",

@@ -2011,18 +2011,14 @@ impl DurableCommitCoordinatorV1<'_> {
         plan: crate::DurableEventPlanV1,
         payloads: &[gantry_host::event::ProtectedPayload],
     ) -> Result<gantry_host::journal::JournalEvidenceEnvelopeV1, DurableCommitError> {
-        if self.predecessor != Some((cause.evidence_id, cause.sequence))
-            || event.execution_id() != Some(self.execution_id)
-        {
+        let predecessor = self.predecessor.ok_or(DurableCommitError::InvalidState)?;
+        if predecessor.1 < cause.sequence || event.execution_id() != Some(self.execution_id) {
             return Err(DurableCommitError::InvalidState);
         }
         let occurrence = DurableEventOccurrenceV1::new(cause.evidence_id, event, plan)
             .map_err(|error| DurableCommitError::Evidence(DurableEvidenceError::Event(error)))?;
-        let mut events = crate::DurableEventCommitCoordinatorV1::new(
-            self.sink,
-            (cause.evidence_id, cause.sequence),
-        )
-        .map_err(map_graph_event_error)?;
+        let mut events = crate::DurableEventCommitCoordinatorV1::new(self.sink, predecessor)
+            .map_err(map_graph_event_error)?;
         let receipt = events
             .commit_occurrence(&occurrence, payloads)
             .await
@@ -2034,7 +2030,11 @@ impl DurableCommitCoordinatorV1<'_> {
             evidence_id: receipt.evidence_id,
             kind: Arc::from(DURABLE_EVENT_OCCURRENCE_KIND_V1),
             canonical_body: Arc::from(occurrence.canonical_body()),
-            references: Arc::from([cause.evidence_id]),
+            references: if predecessor.0 == cause.evidence_id {
+                Arc::from([cause.evidence_id])
+            } else {
+                Arc::from([predecessor.0, cause.evidence_id])
+            },
             protected_payloads: payloads
                 .iter()
                 .map(|payload| {

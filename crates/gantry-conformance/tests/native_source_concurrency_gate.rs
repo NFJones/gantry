@@ -78,7 +78,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "489d5f99c12b805f81d2743a2a5b26549dd7a924f1e47bf28933b4da006c9e14",
+        "44f19d38c8bb7c50c936e6f1a3945345af9e5a5e746658434d93230b793690ef",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn_tokio.rs",
@@ -86,7 +86,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "a4b45a5e2f2863d19a83a29b33c640b1bf3be96e51f81783cdf9940ad0885a4e",
+        "5f3409b14718ddde4f76e3666dc93d1584de1a36da3a8972f2433d00cf5dd7c6",
     ),
     (
         "protocol/conformance/async-coordinator-model-v1.json",
@@ -114,11 +114,11 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         JOIN_MANIFEST_PATH,
-        "4eca1d54bfa029e5c144e32cc64b575aa03148069d9c86a8536e051e51f8dbc8",
+        "2b6b4c95be32df488fad2f0c96ac5674863764aaa3d58c400c01dd8811e52b0d",
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "8d69980111c5e81efa44bc1e6115c3c2ac1ff95a91023d253bda88ca20042ad4",
+        "ebc0a89d1c34c343521bd01ac3ae0a9f2abbcf703adc4d07c76d0520b6a17ce3",
     ),
     (
         "protocol/conformance/tokio-executor-v1.json",

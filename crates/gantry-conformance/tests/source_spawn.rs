@@ -3179,6 +3179,39 @@ fn public_durable_graph_cancellation_commits_before_signalling_and_finishes() {
     assert!(cancellation_sequence < cancellation_event_sequence);
     assert!(cancellation_event_sequence < first_settlement);
 
+    let cancellation_events = full
+        .evidence
+        .iter()
+        .filter_map(|entry| {
+            (entry.kind.as_ref() == DURABLE_EVENT_OCCURRENCE_KIND_V1)
+                .then(|| DurableEventOccurrenceV1::decode(&entry.canonical_body).ok())
+                .flatten()
+        })
+        .filter(|occurrence| occurrence.event().kind() == EventKind::Cancellation)
+        .collect::<Vec<_>>();
+    for task in graph_entries
+        .iter()
+        .find(|(sequence, _)| *sequence == cancellation_sequence)
+        .unwrap_or_else(|| panic!("cancellation checkpoint missing"))
+        .1
+        .checkpoint()
+        .task_ids()
+    {
+        assert_eq!(
+            cancellation_events
+                .iter()
+                .filter(|occurrence| {
+                    let event = occurrence.event();
+                    event.task_id() == Some(task)
+                        && std::str::from_utf8(event.payload().canonical_bytes())
+                            .is_ok_and(|payload| payload.contains("\"target_kind\":\"task\""))
+                })
+                .count(),
+            1,
+            "missing live task cancellation event for {task}"
+        );
+    }
+
     let cancellation = graph_entries
         .iter()
         .find(|(sequence, _)| *sequence == cancellation_sequence)

@@ -96,7 +96,10 @@ cancelled machines in committed cuts. Each task label has a distinct occurrence
 key within its cause, separate from the execution request; duplicate labels for
 the same task remain rejected. The public cancellation fixture checks both root
 and child labels, and a runtime regression verifies duplicate rejection.
-Live task-target emission outside recovery still needs separate qualification.
+Live execution-wide cancellation stages its execution occurrence and each newly
+emitted task cancellation occurrence in the same graph transaction. All event
+commits precede graph publication and cancellation signalling. Descendant-only
+cancellation still needs separate qualification.
 
 For an indeterminate operation, recovery restores a missing dispatch occurrence
 from the original committed request before physical redispatch. Its event keeps

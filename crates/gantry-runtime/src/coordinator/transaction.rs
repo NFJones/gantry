@@ -34,7 +34,7 @@ pub struct DurableGraphTransaction<'a> {
     original_checkpoint: Box<ConcurrentDurableCheckpointV4>,
     commit_started: bool,
     installed: bool,
-    event: Option<(
+    events: Vec<(
         gantry_core::event::EventEnvelope,
         crate::DurableEventPlanV1,
         Vec<gantry_host::event::ProtectedPayload>,
@@ -109,7 +109,7 @@ impl ExecutionCoordinator {
             original_checkpoint: Box::new(original_checkpoint),
             commit_started: false,
             installed: false,
-            event: None,
+            events: Vec::new(),
             operation: None,
         })
     }
@@ -118,18 +118,59 @@ impl ExecutionCoordinator {
 impl DurableGraphTransaction<'_> {
     /// Freezes the causal event and delivery policy before journal submission.
     ///
-    /// One semantic cut has at most one event occurrence. Delivery itself stays
-    /// with the existing execution-owned event worker after publication.
+    /// Sets the primary occurrence. Distinct task cancellation labels may be
+    /// appended; all occurrences commit before graph publication.
     pub fn set_event(
         &mut self,
         event: gantry_core::event::EventEnvelope,
         plan: crate::DurableEventPlanV1,
         payloads: Vec<gantry_host::event::ProtectedPayload>,
     ) -> Result<(), DurableCommitError> {
-        if self.event.is_some() || event.execution_id() != Some(self.tasks.execution_id()) {
+        if !self.events.is_empty() || event.execution_id() != Some(self.tasks.execution_id()) {
             return Err(DurableCommitError::InvalidState);
         }
-        self.event = Some((event, plan, payloads));
+        self.events.push((event, plan, payloads));
+        Ok(())
+    }
+
+    /// Appends one newly emitted task cancellation label to the same causal cut.
+    /// Duplicate targets and labels not represented by the staged machines reject.
+    pub fn add_task_cancellation_event(
+        &mut self,
+        event: gantry_core::event::EventEnvelope,
+        plan: crate::DurableEventPlanV1,
+    ) -> Result<(), DurableCommitError> {
+        let task = event.task_id().ok_or(DurableCommitError::InvalidState)?;
+        let machine = if task == self.staged_foreground.task_id() {
+            Some(&self.staged_foreground)
+        } else {
+            self.staged_children.get(&task)
+        }
+        .ok_or(DurableCommitError::InvalidState)?;
+        let checkpoint = machine.checkpoint();
+        if event.execution_id() != Some(self.tasks.execution_id())
+            || event.kind() != gantry_core::portable::EventKind::Cancellation
+            || !event.protected_references().is_empty()
+            || checkpoint.cancellation_reason().is_none()
+            || !self
+                .original_checkpoint
+                .task_checkpoint(task)
+                .is_some_and(|old| old.cancellation_reason().is_none())
+        {
+            return Err(DurableCommitError::InvalidState);
+        }
+        // Use the occurrence index's strict target validation, not string matching.
+        let cause = ProtocolIdentity::from_storage_material([0; 32]);
+        let key = crate::durable_event::occurrence_key(cause, &event)
+            .map_err(|_| DurableCommitError::InvalidState)?;
+        if key.1 != Some(task)
+            || self.events.iter().any(|(existing, _, _)| {
+                crate::durable_event::occurrence_key(cause, existing).ok() == Some(key)
+            })
+        {
+            return Err(DurableCommitError::InvalidState);
+        }
+        self.events.push((event, plan, Vec::new()));
         Ok(())
     }
 
@@ -262,15 +303,14 @@ impl DurableGraphTransaction<'_> {
                 },
             )
             .await?;
-        let event_envelope = if let Some((event, plan, payloads)) = self.event.take() {
-            Some(
+        let mut event_envelopes = Vec::with_capacity(self.events.len());
+        for (event, plan, payloads) in std::mem::take(&mut self.events) {
+            event_envelopes.push(
                 commits
                     .commit_graph_event(&receipt, event, plan, &payloads)
                     .await?,
-            )
-        } else {
-            None
-        };
+            );
+        }
         let waiters = {
             let mut state = lock(&self.coordinator.inner.state);
             if state
@@ -295,7 +335,7 @@ impl DurableGraphTransaction<'_> {
                 }
             }
             let mut events = state.durable_events.clone();
-            if let Some(envelope) = &event_envelope {
+            for envelope in &event_envelopes {
                 events.apply_envelope(envelope).map_err(|error| {
                     DurableCommitError::Evidence(crate::DurableEvidenceError::Event(error))
                 })?;

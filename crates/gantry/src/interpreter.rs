@@ -5567,7 +5567,7 @@ impl Interpreter {
             .clone()
             .unwrap_or_else(|| Arc::from(reason.category.wire_name()));
         let predecessor = lease.frontier;
-        let next_event_sequence = lease.next_event_sequence.clone();
+        let mut next_event_sequence = lease.next_event_sequence.clone();
         let operations = lease.shared.operations.clone();
         let DurableMachineGraph {
             foreground,
@@ -5577,17 +5577,23 @@ impl Interpreter {
         let mut transaction = coordinator
             .stage_graph(foreground, children)
             .map_err(|_| DurableRunFailure::Internal)?;
-        let affected = transaction
+        let (affected, cancelled_tasks) = transaction
             .update(|foreground, children, tasks, _| {
                 let affected = tasks.cancel_execution(Arc::clone(&reason_text))?;
+                let mut cancelled_tasks = Vec::new();
                 for task_id in &affected {
-                    if *task_id == foreground.task_id() {
-                        let _ = foreground.cancel(Arc::clone(&reason_text));
+                    let label = if *task_id == foreground.task_id() {
+                        foreground.cancel(Arc::clone(&reason_text))
                     } else if let Some(machine) = children.get_mut(task_id) {
-                        let _ = machine.cancel(Arc::clone(&reason_text));
+                        machine.cancel(Arc::clone(&reason_text))
+                    } else {
+                        None
+                    };
+                    if label.is_some() {
+                        cancelled_tasks.push(*task_id);
                     }
                 }
-                Ok::<_, TaskStateError>(affected)
+                Ok::<_, TaskStateError>((affected, cancelled_tasks))
             })
             .map_err(|_| DurableRunFailure::Internal)?;
         let Some(affected_task) = affected.first().copied() else {
@@ -5625,6 +5631,31 @@ impl Interpreter {
                 draft.protected_payloads.to_vec(),
             )
             .map_err(DurableRunFailure::Commit)?;
+        next_event_sequence.insert(
+            affected_task,
+            sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+        );
+        for task in cancelled_tasks {
+            let sequence = next_event_sequence.get(&task).copied().unwrap_or(0);
+            let draft = gantry_runtime::concurrent_task_cancellation_event(
+                operations.execution_id,
+                task,
+                &reason_text,
+                false,
+                sequence,
+            )
+            .map_err(|_| DurableRunFailure::Internal)?;
+            let event = self
+                .complete_graph_event(&operations, task, sequence, draft)
+                .await?;
+            transaction
+                .add_task_cancellation_event(event, owner.graph_event_plan()?)
+                .map_err(DurableRunFailure::Commit)?;
+            next_event_sequence.insert(
+                task,
+                sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+            );
+        }
         lease.frontier = owner
             .commit_graph_transaction(
                 coordinator,
@@ -5634,10 +5665,7 @@ impl Interpreter {
                 affected_task,
             )
             .await?;
-        lease.next_event_sequence.insert(
-            affected_task,
-            sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
-        );
+        lease.next_event_sequence = next_event_sequence;
         Ok(())
     }
 

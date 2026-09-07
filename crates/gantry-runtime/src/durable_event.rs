@@ -46,7 +46,7 @@ pub struct DurableEventCommitV1 {
 }
 
 /// Identifies a cancellation label separately from the execution request in its cut.
-fn occurrence_key(
+pub(crate) fn occurrence_key(
     cause: ProtocolIdentity,
     event: &EventEnvelope,
 ) -> Result<(ProtocolIdentity, Option<ProtocolIdentity>), DurableEventEvidenceError> {
