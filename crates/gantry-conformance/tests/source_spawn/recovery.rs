@@ -408,6 +408,16 @@ fn missing_failed_child_completion_retains_original_failure() {
     );
 }
 
+#[test]
+fn missing_failed_join_event_retains_member_failure_details() {
+    recover_missing_operation_event_outcome(
+        "\"kind\":\"join\"",
+        DurableCommitCutV1::Checkpoint,
+        EventKind::Join,
+        true,
+    );
+}
+
 /// Covers both successful and failed committed child settlements.
 fn recover_missing_operation_event_outcome(
     failure_cut: &'static str,
@@ -476,6 +486,11 @@ fn recover_missing_operation_event_outcome(
     .unwrap_or_else(|error| panic!("prefix: {error:?}"));
     let (program, entries) = durable_graph_entries(&prefix);
     assert_eq!(entries.last().map(|(_, entry)| entry.cut()), Some(cut));
+    let child = entries
+        .iter()
+        .find(|(_, entry)| entry.cut() == DurableCommitCutV1::TaskCreation)
+        .map(|(_, entry)| entry.task_id())
+        .unwrap_or_else(|| panic!("child creation is absent"));
     let JournalPrefixV1::Full(full) = &prefix else {
         panic!("expected full prefix")
     };
@@ -586,6 +601,26 @@ fn recover_missing_operation_event_outcome(
         .unwrap_or_else(|| panic!("result was consumed without its event"));
     assert_eq!(event.occurrence().event().kind(), kind);
     assert_eq!(event.occurrence_sequence(), full.committed_through + 1);
+    if failed && kind == EventKind::Join {
+        let payload: serde_json::Value =
+            serde_json::from_slice(event.occurrence().event().payload().canonical_bytes())
+                .unwrap_or_else(|error| panic!("repaired join payload was not JSON: {error}"));
+        assert_eq!(payload["settlement_status"], "failed");
+        assert_eq!(
+            payload["joined_task_ids"],
+            serde_json::json!([child.to_string()])
+        );
+        let failures = payload["child_failures"]
+            .as_array()
+            .unwrap_or_else(|| panic!("repaired join payload has no child failures: {payload}"));
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0]["task_id"], child.to_string());
+        assert_eq!(failures[0]["category"], "required-result-decline");
+        assert_eq!(
+            failures[0]["failure_reference"],
+            format!("task:{child}:failure:required-result-decline")
+        );
+    }
     if let Some(observer) = publication_observer {
         assert!(
             observer
