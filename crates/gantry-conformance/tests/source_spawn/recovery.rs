@@ -233,16 +233,22 @@ fn recover_missing_operation_event_outcome(
 
 #[test]
 fn missing_spawn_event_is_replaced_before_recovered_child_progress() {
-    recover_missing_control_event(false);
+    recover_missing_control_event(EventKind::Spawn);
 }
 
 #[test]
 fn missing_detach_event_is_replaced_before_source_continuation() {
-    recover_missing_control_event(true);
+    recover_missing_control_event(EventKind::Detach);
+}
+
+#[test]
+fn missing_cancellation_event_is_replaced_before_recovered_progress() {
+    recover_missing_control_event(EventKind::Cancellation);
 }
 
 /// Reuses the source-control crash harness for creation and ownership events.
-fn recover_missing_control_event(detach: bool) {
+fn recover_missing_control_event(kind: EventKind) {
+    let detach = kind == EventKind::Detach;
     let root = TempDirectory::new(if detach {
         "fn main() { spawn child -> Int { 7 } detach(child); }"
     } else {
@@ -270,16 +276,32 @@ fn recover_missing_control_event(detach: bool) {
         SinkPlan::default(),
     );
     let mut store = FailingGraphJournalStore::new(executor.clone());
-    store.failure_cut = if detach {
-        "\"kind\":\"detach\""
-    } else {
-        "\"kind\":\"spawn\""
+    store.failure_cut = match kind {
+        EventKind::Detach => "\"kind\":\"detach\"",
+        EventKind::Cancellation => "\"kind\":\"cancellation\"",
+        _ => "\"kind\":\"spawn\"",
     };
     let storage = Arc::new(store);
     storage.allow_release();
     let journal_id =
         JournalId::new("missing-spawn-event").unwrap_or_else(|error| panic!("journal: {error:?}"));
     let accepted = durable_accepted(&interpreter, &root, storage.clone(), journal_id.clone());
+    let reason = caller_cancellation_reason(Some(Arc::from("recovered-cancellation")), 64)
+        .unwrap_or_else(|error| panic!("cancellation reason: {error:?}"));
+    let mut cancellation =
+        Box::pin(interpreter.cancel_execution(accepted.execution_id(), reason.clone()));
+    if kind == EventKind::Cancellation {
+        assert!(matches!(
+            executor.poll_task(0),
+            Ok(DeterministicTaskPoll::Pending)
+        ));
+        assert!(
+            cancellation
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+    }
     for _ in 0..1_000 {
         for task in executor.task_ids() {
             if executor.is_runnable(task) {
@@ -359,10 +381,18 @@ fn recover_missing_control_event(detach: bool) {
         panic!("resume: {result:?}")
     };
     let snapshot = drive_to_terminal(&executor, &resumed, accepted.handle());
-    assert!(
-        matches!(snapshot.foreground, Some(MachineOutcome::Succeeded(_))),
-        "{snapshot:?}"
-    );
+    if kind == EventKind::Cancellation {
+        assert_eq!(snapshot.cancellation, Some(reason));
+        assert!(
+            matches!(snapshot.foreground, Some(MachineOutcome::Cancelled(_))),
+            "{snapshot:?}"
+        );
+    } else {
+        assert!(
+            matches!(snapshot.foreground, Some(MachineOutcome::Succeeded(_))),
+            "{snapshot:?}"
+        );
+    }
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("resumed prefix: {error:?}"));
     let recovered = recover_concurrent_authoritative_prefix(program.clone(), &prefix)
@@ -371,14 +401,7 @@ fn recover_missing_control_event(detach: bool) {
         .events()
         .event_for_cause(cause)
         .unwrap_or_else(|| panic!("committed child {child} has no replacement spawn event"));
-    assert_eq!(
-        event.occurrence().event().kind(),
-        if detach {
-            EventKind::Detach
-        } else {
-            EventKind::Spawn
-        }
-    );
+    assert_eq!(event.occurrence().event().kind(), kind);
     assert_eq!(event.occurrence_sequence(), full.committed_through + 1);
     let JournalPrefixV1::Full(after) = &prefix else {
         panic!("expected full resumed prefix")

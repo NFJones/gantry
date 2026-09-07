@@ -87,6 +87,12 @@ absent from that predecessor are still rejected rather than fabricated.
 Restart fixtures use distinct identity streams so ordinary recovery is tested
 separately from the allocator's bounded collision-failure policy.
 
+Typed execution-wide cancellation records also participate in prepublication
+event repair. Recovery preserves the committed reason and restores its event
+before replacement drivers progress. The cancellation crash regression checks
+the cancelled outcome, causal ordering, and event retention through compaction.
+This does not qualify missing task-local cancellation events.
+
 Replacement of other missing causal events remains unfinished in
 GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count

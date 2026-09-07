@@ -2255,6 +2255,18 @@ impl RecoveredConcurrentDurableStateV1 {
                 .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
             let state = execution.scheduler().state();
             let draft = match cut {
+                DurableCommitCutV1::Cancellation => crate::machine_lifecycle_event(
+                    &crate::MachineLabel::Cancellation {
+                        reason: Arc::from(
+                            state
+                                .execution_cancellation_reason()
+                                .ok_or(DurableEvidenceError::InvalidState)?,
+                        ),
+                    },
+                    state.execution_id(),
+                    *task,
+                )
+                .ok_or(DurableEvidenceError::InvalidState)?,
                 DurableCommitCutV1::TerminalCompletion => crate::concurrent_terminal_event(
                     state.execution_id(),
                     *task,
@@ -2778,7 +2790,8 @@ pub fn recover_concurrent_authoritative_prefix(
                 DurableCommitCutV1::TaskSettlement
                     | DurableCommitCutV1::ForegroundCompletion
                     | DurableCommitCutV1::TerminalCompletion
-            )
+            ) || matches!(record, ConcurrentDurableEvidenceBody::V5(evidence)
+                if evidence.record() == ConcurrentDurableEvidenceRecordV5::Cancellation)
         })
         .map(|(cause, record)| {
             (
