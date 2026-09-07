@@ -1,0 +1,28 @@
+struct ParallelResult {
+    child_value: Int,
+    labels: List<String>,
+}
+
+fn main() -> ParallelResult {
+    let mut seed: Int = 7;
+
+    spawn incremented -> Int {
+        seed += 1;
+        seed
+    }
+
+    seed = 20;
+    let child_value: Int = join(incremented);
+
+    spawn label -> String { "parallel" }
+    spawn marker -> String { "execution" }
+    let labels: List<String> = joinall();
+
+    spawn audit {
+        let observed: Int = seed;
+        discard observed;
+    }
+    detach(audit);
+
+    ParallelResult { child_value, labels }
+}

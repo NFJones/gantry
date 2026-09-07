@@ -68,6 +68,12 @@ the trait call to one selected concrete workflow. See the
 [`generics-and-traits` guide](docs/generics-and-traits.md) for inference,
 traits, limits, diagnostics, concurrency, and durable recovery.
 
+For task-focused source, see the
+[`parallel-execution` guide](docs/parallel-execution.md) and its
+[`hook-free example`](examples/parallel-execution/main.gnt). They cover
+`spawn`, named and lexical joins, detachment, capture and session isolation,
+execution ownership, operational limits, observation, and durable resume.
+
 The following complete package researches a topic through a harness action,
 asks a research agent to draft a brief, and lets an editor revise it when a
 model judgment calls for revision:
@@ -168,6 +174,9 @@ Run `just help` to list all development commands.
   documentation.
 - [`docs/generics-and-traits.md`](docs/generics-and-traits.md) is the source
   author guide for parametric declarations and static trait selection.
+- [`docs/parallel-execution.md`](docs/parallel-execution.md) is the source
+  author guide for structured parallel work, background ownership, executor
+  policy, observation, and durable resume.
 - [`AGENTS.md`](AGENTS.md) describes repository workflow and contribution
   requirements.
 

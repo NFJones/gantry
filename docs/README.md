@@ -37,6 +37,13 @@ The complete source-author guide, executable package, diagnostic examples,
 resource-policy summary, and deliberate feature exclusions are documented in
 [`generics-and-traits.md`](generics-and-traits.md).
 
+The source-author guide to `spawn`, named `join`, lexical `joinall()`, explicit
+`detach`, copied captures, forked child sessions, foreground and terminal
+observation, executor ownership and limits, CLI worker policy, and durable
+resume is documented in [`parallel-execution.md`](parallel-execution.md). Its
+hook-free analyzable package is
+[`examples/parallel-execution/main.gnt`](../examples/parallel-execution/main.gnt).
+
 The implemented analyzer boundary for generic binders, exact local inference,
 regular recursion, sealed structural capabilities, and generic-analysis limits
 is documented in
