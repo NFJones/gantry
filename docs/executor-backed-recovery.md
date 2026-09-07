@@ -80,8 +80,10 @@ committed before resume returns.
 The same prepublication repair restores missing foreground and task-completion
 events in committed causal order while replacement drivers remain gated.
 Successful and cancelled child outcomes and exact retained root outcomes can
-be reconstructed. Missing child-failure details are rejected rather than
-fabricated; recovery of those failure-event gaps remains unqualified.
+be reconstructed. Failed-child completion events reuse the exact outcome from
+the committed pre-settlement machine, checked against the settled failure code.
+The failed-child crash regression covers a declined operation. Failure details
+absent from that predecessor are still rejected rather than fabricated.
 Restart fixtures use distinct identity streams so ordinary recovery is tested
 separately from the allocator's bounded collision-failure policy.
 

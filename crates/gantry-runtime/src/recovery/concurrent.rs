@@ -2218,6 +2218,7 @@ pub struct RecoveredConcurrentDurableStateV1 {
     operation_result_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     operation_outcome_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     task_control_event_checkpoints: Vec<(ProtocolIdentity, ConcurrentDurableCheckpointV4)>,
+    settlement_predecessor_outcomes: BTreeMap<ProtocolIdentity, crate::MachineOutcome>,
     lifecycle_event_checkpoints: Vec<(
         ProtocolIdentity,
         DurableCommitCutV1,
@@ -2286,6 +2287,20 @@ impl RecoveredConcurrentDurableStateV1 {
                             }
                             ConcurrentTaskStatusV1::Cancelled(reason) => {
                                 crate::MachineOutcome::Cancelled(Arc::clone(reason))
+                            }
+                            ConcurrentTaskStatusV1::Failed(failure) => {
+                                let outcome = self
+                                    .settlement_predecessor_outcomes
+                                    .get(cause)
+                                    .ok_or(DurableEvidenceError::InvalidState)?;
+                                match outcome {
+                                    crate::MachineOutcome::Failed(original)
+                                        if original.code.wire_name() == failure.code.as_ref() =>
+                                    {
+                                        outcome.clone()
+                                    }
+                                    _ => return Err(DurableEvidenceError::InvalidState),
+                                }
                             }
                             _ => return Err(DurableEvidenceError::InvalidState),
                         }
@@ -2739,6 +2754,22 @@ pub fn recover_concurrent_authoritative_prefix(
         }
     }
     let history = graph_history.values().collect::<Vec<_>>();
+    let settlement_predecessor_outcomes = history
+        .windows(2)
+        .filter_map(|pair| {
+            let (_, previous) = pair[0];
+            let (cause, current) = pair[1];
+            if current.cut() != DurableCommitCutV1::TaskSettlement {
+                return None;
+            }
+            previous
+                .checkpoint()
+                .task_checkpoint(current.task_id())
+                .and_then(|machine| machine.outcome())
+                .cloned()
+                .map(|outcome| (*cause, outcome))
+        })
+        .collect();
     let lifecycle_event_checkpoints = history
         .iter()
         .filter(|(_, record)| {
@@ -2784,6 +2815,7 @@ pub fn recover_concurrent_authoritative_prefix(
         operation_result_causes,
         operation_outcome_causes,
         task_control_event_checkpoints,
+        settlement_predecessor_outcomes,
         lifecycle_event_checkpoints,
         terminal_cause,
         latest_sequence,

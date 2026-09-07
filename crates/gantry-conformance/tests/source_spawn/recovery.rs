@@ -63,6 +63,26 @@ fn recover_missing_operation_event(
     cut: DurableCommitCutV1,
     kind: EventKind,
 ) {
+    recover_missing_operation_event_outcome(failure_cut, cut, kind, false);
+}
+
+#[test]
+fn missing_failed_child_completion_retains_original_failure() {
+    recover_missing_operation_event_outcome(
+        "\"kind\":\"task-completion\"",
+        DurableCommitCutV1::TaskSettlement,
+        EventKind::TaskCompletion,
+        true,
+    );
+}
+
+/// Covers both successful and failed committed child settlements.
+fn recover_missing_operation_event_outcome(
+    failure_cut: &'static str,
+    cut: DurableCommitCutV1,
+    kind: EventKind,
+    failed: bool,
+) {
     let root = TempDirectory::new(
         "action read_only inspect() -> Int;\nfn main() { spawn child -> Int { action inspect() } discard join(child); }",
     );
@@ -86,9 +106,11 @@ fn recover_missing_operation_event(
                 &br#"{"result":"established"}"#[..],
             ),
         ],
-        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
-            Arc::from(&b"7"[..]),
-        ))])],
+        [ScriptedHook::created([Ok(if failed {
+            HookOutcomeV1::Declined(Arc::from("declined-child"))
+        } else {
+            HookOutcomeV1::Completed(Arc::from(&b"7"[..]))
+        })])],
     ));
     let interpreter = interpreter_with_delivery(
         executor.clone(),
@@ -186,10 +208,17 @@ fn recover_missing_operation_event(
         panic!("resume: {result:?}")
     };
     let snapshot = drive_to_terminal(&executor, &resumed, accepted.handle());
-    assert!(
-        matches!(snapshot.foreground, Some(MachineOutcome::Succeeded(_))),
-        "{snapshot:?}"
-    );
+    if failed {
+        assert!(
+            matches!(snapshot.foreground, Some(MachineOutcome::Failed(_))),
+            "{snapshot:?}"
+        );
+    } else {
+        assert!(
+            matches!(snapshot.foreground, Some(MachineOutcome::Succeeded(_))),
+            "{snapshot:?}"
+        );
+    }
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("resumed prefix: {error:?}"));
     let recovered = recover_concurrent_authoritative_prefix(program, &prefix)
