@@ -52,6 +52,12 @@ Existing occurrences are reused without allocating replacement metadata.
 The public `source_spawn/recovery.rs` regression checks this ordering and
 retention of the original creation cause through compaction.
 
+For a recovered committed operation result, the driver repairs a missing
+operation-result occurrence before taking its first machine step. It reconstructs
+the event from the retained result type and normalized bytes without invoking
+the hook again. The public result-gap regression rejects the original event
+commit and checks that its replacement is the next committed journal entry.
+
 Replacement of other missing causal events remains unfinished in
 GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count

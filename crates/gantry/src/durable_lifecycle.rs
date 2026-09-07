@@ -1708,25 +1708,24 @@ impl DurableOwnedExecution {
         self.publish_graph_event_progress(coordinator, recovered)
     }
 
-    /// Repairs a missing spawn occurrence while the caller holds the graph lease.
+    /// Repairs a missing causal occurrence while the caller holds the graph lease.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
-    pub(crate) async fn repair_recovered_spawn_event<F>(
+    pub(crate) async fn repair_recovered_graph_event<F, C>(
         &self,
         program: Arc<gantry_ir::MachineProgram>,
         coordinator: &ExecutionCoordinator,
-        child: ProtocolIdentity,
+        cause: C,
         event: F,
         payloads: &[ProtectedPayload],
     ) -> Result<((ProtocolIdentity, u64), bool), DurableRunFailure>
     where
         F: Future<Output = Result<gantry_core::event::EventEnvelope, DurableRunFailure>>,
+        C: FnOnce(&RecoveredConcurrentDurableStateV1) -> Option<ProtocolIdentity>,
     {
         let recovered = self
             .recover_graph_authoritative(Arc::clone(&program))
             .await?;
-        let cause = recovered
-            .task_creation_cause(child)
-            .ok_or(DurableRunFailure::Internal)?;
+        let cause = cause(&recovered).ok_or(DurableRunFailure::Internal)?;
         if recovered.events().event_for_cause(cause).is_some() {
             return Ok((
                 (recovered.latest_evidence_id(), recovered.latest_sequence()),

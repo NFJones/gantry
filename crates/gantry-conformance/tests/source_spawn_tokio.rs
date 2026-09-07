@@ -1368,6 +1368,11 @@ fn main() {
                     .map(|terminal| &terminal.foreground),
                 snapshot.foreground.as_ref()
             );
+            // Terminal observation waits for required delivery, not this
+            // best-effort sink. The enclosing timeout bounds delivery waiting.
+            while !sink.events().iter().any(|event| event.kind() == EventKind::TerminalExecution) {
+                tokio::task::yield_now().await;
+            }
             let events = sink.events();
             let child_completion = events
                 .iter()

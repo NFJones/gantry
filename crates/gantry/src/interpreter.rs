@@ -1338,6 +1338,14 @@ impl SharedDurableMachineGraph {
         true
     }
 
+    /// Reads recovery state without consuming the driver's pending handoff.
+    fn operation_recovery(&self, task_id: ProtocolIdentity) -> Option<DurableOperationRecoveryV1> {
+        lock_shutdown(&self.state)
+            .operation_recoveries
+            .get(&task_id)
+            .cloned()
+    }
+
     fn take_operation_recovery(
         &self,
         task_id: ProtocolIdentity,
@@ -2871,10 +2879,10 @@ impl Interpreter {
                             );
                             let (frontier, repaired) = runtime
                                 .owner
-                                .repair_recovered_spawn_event(
+                                .repair_recovered_graph_event(
                                     Arc::clone(&runtime.program),
                                     &runtime.coordinator,
-                                    task_id,
+                                    |recovered| recovered.task_creation_cause(task_id),
                                     event,
                                     &draft.protected_payloads,
                                 )
@@ -4301,6 +4309,52 @@ impl Interpreter {
         replay_recovered_task_control: bool,
     ) -> Pin<Box<dyn Future<Output = Result<(), DurableRunFailure>> + Send + 'a>> {
         Box::pin(async move {
+            if replay_recovered_task_control
+                && let Some(DurableOperationRecoveryV1::ReuseResult {
+                    operation_id,
+                    result_type,
+                    result_bytes,
+                }) = graph.operation_recovery(task_id)
+            {
+                let mut lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
+                let value = decode_logical_value(
+                    &result_bytes,
+                    &result_type,
+                    self.inner.configuration.required().value_limits,
+                    operations.declared_value_shapes.as_ref(),
+                )
+                .map_err(|_| DurableRunFailure::Internal)?;
+                let (kind, normalized) = match result_type.kind() {
+                    TypeKind::Unit => (OperationResultEventKindV1::Unit, None),
+                    TypeKind::Decision => (OperationResultEventKindV1::Decision, Some(&value)),
+                    _ => (OperationResultEventKindV1::Value, Some(&value)),
+                };
+                let draft = operation_result_event(operation_id, &result_type, kind, normalized)
+                    .map_err(|_| DurableRunFailure::Internal)?;
+                let sequence = lease
+                    .next_event_sequence
+                    .get(&task_id)
+                    .copied()
+                    .unwrap_or(0);
+                let event =
+                    self.complete_graph_event(&operations, task_id, sequence, draft.clone());
+                let (frontier, repaired) = owner
+                    .repair_recovered_graph_event(
+                        Arc::clone(&program),
+                        &coordinator,
+                        |recovered| recovered.operation_result_cause(operation_id),
+                        event,
+                        &draft.protected_payloads,
+                    )
+                    .await?;
+                lease.frontier = frontier;
+                if repaired {
+                    lease.next_event_sequence.insert(
+                        task_id,
+                        sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                    );
+                }
+            }
             let execution_cancellation = owner
                 .execution_handle()
                 .cancellation_signal()
