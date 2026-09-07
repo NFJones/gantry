@@ -99,7 +99,9 @@ and child labels, and a runtime regression verifies duplicate rejection.
 Live execution-wide cancellation stages its execution occurrence and each newly
 emitted task cancellation occurrence in the same graph transaction. All event
 commits precede graph publication and cancellation signalling. Descendant-only
-cancellation still needs separate qualification.
+cancellation also stages newly emitted task labels before publishing its cut;
+the parent-failure regression checks that the attached child's cancellation
+event precedes child settlement without cancelling detached work.
 
 For an indeterminate operation, recovery restores a missing dispatch occurrence
 from the original committed request before physical redispatch. Its event keeps

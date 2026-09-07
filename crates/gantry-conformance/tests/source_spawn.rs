@@ -2823,6 +2823,21 @@ fn main() {
     let recovered = recover_concurrent_authoritative_prefix(Arc::clone(&program), &prefix)
         .unwrap_or_else(|error| panic!("parent-failure prefix failed recovery: {error:?}"));
     assert!(recovered.cancellation_reason().is_none());
+    let JournalPrefixV1::Full(committed) = &prefix else {
+        panic!("expected full cancellation prefix");
+    };
+    let cause = committed
+        .evidence
+        .iter()
+        .find(|entry| entry.sequence == cancellation.0)
+        .unwrap_or_else(|| panic!("missing cancellation cause"))
+        .evidence_id;
+    let event = recovered
+        .events()
+        .task_cancellation_for_cause(cause, attached_id)
+        .unwrap_or_else(|| panic!("missing descendant cancellation event"));
+    assert!(cancellation.0 < event.occurrence_sequence());
+    assert!(event.occurrence_sequence() < attached_settlement.0);
     let state = recovered.execution().scheduler().state();
     assert!(matches!(
         state.task(attached_id).map(|task| task.status()),
