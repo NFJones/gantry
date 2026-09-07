@@ -1195,11 +1195,12 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         .await
     }
 
-    /// Repairs terminal event evidence before the recovered lifecycle becomes visible.
+    /// Repairs causal event evidence before the recovered lifecycle becomes visible.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
-    pub(crate) async fn repair_prepared_terminal_event<F>(
+    pub(crate) async fn repair_prepared_event<F>(
         &self,
         prepared: &mut PreparedDurableResume,
+        cause: ProtocolIdentity,
         event: F,
         payloads: &[gantry_host::event::ProtectedPayload],
     ) -> Result<(), ResumeRejection>
@@ -1209,7 +1210,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         let failure = || {
             ResumeRejection::new(
                 ResumeStartFailureCategory::Internal,
-                "terminal-event-recovery-failure",
+                "lifecycle-event-recovery-failure",
             )
         };
         let PreparedDurableRecovery::Concurrent {
@@ -1221,7 +1222,6 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         else {
             return Err(failure());
         };
-        let cause = recovered.terminal_cause().ok_or_else(failure)?;
         if recovered.events().event_for_cause(cause).is_some() {
             return Ok(());
         }
@@ -1552,7 +1552,7 @@ pub(crate) struct ResumeRejection {
 }
 
 impl ResumeRejection {
-    fn new(category: ResumeStartFailureCategory, code: impl Into<Arc<str>>) -> Self {
+    pub(crate) fn new(category: ResumeStartFailureCategory, code: impl Into<Arc<str>>) -> Self {
         Self {
             category,
             code: code.into(),

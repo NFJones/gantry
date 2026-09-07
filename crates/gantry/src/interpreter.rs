@@ -2514,7 +2514,7 @@ impl Interpreter {
             admission,
             program,
             operations,
-            next_event_sequence,
+            mut next_event_sequence,
             operation_recoveries,
             initial_delivery_pending,
             terminal,
@@ -2658,34 +2658,14 @@ impl Interpreter {
         };
 
         if terminal && drivers.is_empty() {
-            let state = admission.coordinator().snapshot();
-            let terminal_outcome = state
-                .state()
-                .terminal_outcome()
-                .unwrap_or_else(|| unreachable!("terminal recovery retains its outcome"));
-            let root_task = state.state().root_task_id();
-            let draft =
-                match concurrent_terminal_event(prepared.execution_id, root_task, terminal_outcome)
-                {
-                    Ok(draft) => draft,
-                    Err(_) => {
-                        return durable
-                            .reject_prepared_resume(
-                                prepared,
-                                ResumeStartFailureCategory::Internal,
-                                "invalid-terminal-event",
-                            )
-                            .await;
-                    }
-                };
-            let event = self.complete_graph_event(
-                &operations,
-                root_task,
-                next_event_sequence.get(&root_task).copied().unwrap_or(0),
-                draft.clone(),
-            );
-            if let Err(failure) = durable
-                .repair_prepared_terminal_event(&mut prepared, event, &draft.protected_payloads)
+            if let Err(failure) = self
+                .repair_prepared_lifecycle_events(
+                    durable,
+                    &mut prepared,
+                    admission.coordinator(),
+                    &operations,
+                    &mut next_event_sequence,
+                )
                 .await
             {
                 return durable.reject_prepared_resume_with(prepared, failure).await;
@@ -3109,7 +3089,20 @@ impl Interpreter {
                 )
                 .await;
         }
-        if let Err(failure) = durable.commit_prepared_resume_revision(&mut prepared).await {
+        let repaired = self
+            .repair_prepared_lifecycle_events(
+                durable,
+                &mut prepared,
+                admission.coordinator(),
+                &operations,
+                &mut next_event_sequence,
+            )
+            .await;
+        let prepared_commit = match repaired {
+            Ok(()) => durable.commit_prepared_resume_revision(&mut prepared).await,
+            Err(failure) => Err(failure),
+        };
+        if let Err(failure) = prepared_commit {
             let mut submitted = submitted_tasks
                 .into_iter()
                 .map(|(_, task, signal)| (task, signal))
@@ -3124,6 +3117,13 @@ impl Interpreter {
             .await;
             return durable.reject_prepared_resume_with(prepared, failure).await;
         }
+        let initial_delivery_pending = match &prepared.recovered {
+            PreparedDurableRecovery::Concurrent { recovered, .. } => {
+                initial_delivery_pending
+                    || recovered_events_have_pending_delivery(recovered.events())
+            }
+            PreparedDurableRecovery::Serial(_) => unreachable!("concurrent recovery"),
+        };
         let frontier = match &prepared.recovered {
             PreparedDurableRecovery::Concurrent {
                 latest_evidence_id,
@@ -3197,6 +3197,45 @@ impl Interpreter {
         control_task.relinquish();
         gate.release();
         DurableResumeExecutionResult::Accepted(Box::new(accepted))
+    }
+
+    /// Repairs committed lifecycle causes before releasing replacement task gates.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn repair_prepared_lifecycle_events(
+        &self,
+        durable: &DurableStartExecutionCoordinator<'_>,
+        prepared: &mut PreparedDurableResume,
+        coordinator: &ExecutionCoordinator,
+        operations: &DurableOperationContext,
+        sequences: &mut BTreeMap<ProtocolIdentity, u64>,
+    ) -> Result<(), crate::durable_start::ResumeRejection> {
+        let failure = || {
+            crate::durable_start::ResumeRejection::new(
+                ResumeStartFailureCategory::Internal,
+                "lifecycle-event-recovery-failure",
+            )
+        };
+        let drafts = match &prepared.recovered {
+            PreparedDurableRecovery::Concurrent { recovered, .. } => recovered
+                .missing_lifecycle_events()
+                .map_err(|_| failure())?,
+            PreparedDurableRecovery::Serial(_) => return Err(failure()),
+        };
+        for (cause, task, draft) in drafts {
+            let sequence = sequences.get(&task).copied().unwrap_or(0);
+            let next = sequence.checked_add(1).ok_or_else(failure)?;
+            let event = self.complete_graph_event(operations, task, sequence, draft.clone());
+            durable
+                .repair_prepared_event(prepared, cause, event, &draft.protected_payloads)
+                .await?;
+            sequences.insert(task, next);
+        }
+        if let PreparedDurableRecovery::Concurrent { recovered, .. } = &prepared.recovered {
+            coordinator
+                .publish_committed_events(recovered.events().clone())
+                .map_err(|_| failure())?;
+        }
+        Ok(())
     }
 
     #[cfg(feature = "durable")]

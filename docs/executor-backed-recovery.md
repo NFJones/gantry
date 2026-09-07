@@ -77,6 +77,14 @@ then refreshes the recovered delivery obligations without submitting another
 language task. The terminal-gap regression checks that the replacement is
 committed before resume returns.
 
+The same prepublication repair restores missing foreground and task-completion
+events in committed causal order while replacement drivers remain gated.
+Successful and cancelled child outcomes and exact retained root outcomes can
+be reconstructed. Missing child-failure details are rejected rather than
+fabricated; recovery of those failure-event gaps remains unqualified.
+Restart fixtures use distinct identity streams so ordinary recovery is tested
+separately from the allocator's bounded collision-failure policy.
+
 Replacement of other missing causal events remains unfinished in
 GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count

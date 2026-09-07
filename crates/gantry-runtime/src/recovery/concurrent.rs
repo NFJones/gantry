@@ -2218,6 +2218,12 @@ pub struct RecoveredConcurrentDurableStateV1 {
     operation_result_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     operation_outcome_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     task_control_event_checkpoints: Vec<(ProtocolIdentity, ConcurrentDurableCheckpointV4)>,
+    lifecycle_event_checkpoints: Vec<(
+        ProtocolIdentity,
+        DurableCommitCutV1,
+        ProtocolIdentity,
+        ConcurrentDurableCheckpointV4,
+    )>,
     terminal_cause: Option<ProtocolIdentity>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
@@ -2225,6 +2231,79 @@ pub struct RecoveredConcurrentDurableStateV1 {
 }
 
 impl RecoveredConcurrentDurableStateV1 {
+    /// Reconstructs missing lifecycle drafts in committed causal order.
+    /// Child failure details absent from retained state are never fabricated.
+    pub fn missing_lifecycle_events(
+        &self,
+    ) -> Result<
+        Vec<(
+            ProtocolIdentity,
+            ProtocolIdentity,
+            crate::ExecutionEventDraftV1,
+        )>,
+        DurableEvidenceError,
+    > {
+        let mut drafts = Vec::new();
+        for (cause, cut, task, checkpoint) in &self.lifecycle_event_checkpoints {
+            if self.events.event_for_cause(*cause).is_some() {
+                continue;
+            }
+            let execution = checkpoint
+                .clone()
+                .recover(self.execution.foreground().program_arc())
+                .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+            let state = execution.scheduler().state();
+            let draft = match cut {
+                DurableCommitCutV1::TerminalCompletion => crate::concurrent_terminal_event(
+                    state.execution_id(),
+                    *task,
+                    state
+                        .terminal_outcome()
+                        .ok_or(DurableEvidenceError::InvalidState)?,
+                )
+                .map_err(|_| DurableEvidenceError::InvalidState)?,
+                DurableCommitCutV1::ForegroundCompletion => crate::machine_lifecycle_event(
+                    &crate::MachineLabel::ForegroundCompletion(
+                        state
+                            .foreground_outcome()
+                            .cloned()
+                            .ok_or(DurableEvidenceError::InvalidState)?,
+                    ),
+                    state.execution_id(),
+                    *task,
+                )
+                .ok_or(DurableEvidenceError::InvalidState)?,
+                DurableCommitCutV1::TaskSettlement => {
+                    let record = state
+                        .task_record(*task)
+                        .ok_or(DurableEvidenceError::InvalidState)?;
+                    let outcome = if let Some(outcome) = record.settled_outcome() {
+                        outcome.clone()
+                    } else {
+                        match record.status() {
+                            ConcurrentTaskStatusV1::Succeeded(value) => {
+                                crate::MachineOutcome::Succeeded(value.clone())
+                            }
+                            ConcurrentTaskStatusV1::Cancelled(reason) => {
+                                crate::MachineOutcome::Cancelled(Arc::clone(reason))
+                            }
+                            _ => return Err(DurableEvidenceError::InvalidState),
+                        }
+                    };
+                    crate::machine_lifecycle_event(
+                        &crate::MachineLabel::TaskSettled(outcome),
+                        state.execution_id(),
+                        *task,
+                    )
+                    .ok_or(DurableEvidenceError::InvalidState)?
+                }
+                _ => return Err(DurableEvidenceError::InvalidState),
+            };
+            drafts.push((*cause, *task, draft));
+        }
+        Ok(drafts)
+    }
+
     /// Returns the unique committed terminal transition, independently of event delivery.
     #[must_use]
     pub const fn terminal_cause(&self) -> Option<ProtocolIdentity> {
@@ -2660,6 +2739,25 @@ pub fn recover_concurrent_authoritative_prefix(
         }
     }
     let history = graph_history.values().collect::<Vec<_>>();
+    let lifecycle_event_checkpoints = history
+        .iter()
+        .filter(|(_, record)| {
+            matches!(
+                record.cut(),
+                DurableCommitCutV1::TaskSettlement
+                    | DurableCommitCutV1::ForegroundCompletion
+                    | DurableCommitCutV1::TerminalCompletion
+            )
+        })
+        .map(|(cause, record)| {
+            (
+                *cause,
+                record.cut(),
+                record.task_id(),
+                record.checkpoint().clone(),
+            )
+        })
+        .collect();
     let terminal_cause = history.iter().find_map(|(cause, record)| {
         (record.cut() == DurableCommitCutV1::TerminalCompletion).then_some(*cause)
     });
@@ -2686,6 +2784,7 @@ pub fn recover_concurrent_authoritative_prefix(
         operation_result_causes,
         operation_outcome_causes,
         task_control_event_checkpoints,
+        lifecycle_event_checkpoints,
         terminal_cause,
         latest_sequence,
         latest_evidence_id,

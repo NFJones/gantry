@@ -20,7 +20,7 @@ const ARTIFACTS: [(&str, &str); 4] = [
     ),
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "ec52af1ef85612ca258730582f0ff0287550d55aab313fe8cdcefd9d25831bee",
+        "e400d546ab8f2545044f6a201b3cd98c9d3c950abc51e46e727bcfb3ce099ac0",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn_tokio.rs",

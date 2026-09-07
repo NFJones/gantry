@@ -39,6 +39,25 @@ fn missing_terminal_event_is_replaced_before_resume_returns() {
 }
 
 /// Interrupts event commitment and requires its repair without another hook call.
+#[test]
+fn missing_foreground_event_is_replaced_before_resume_observation() {
+    recover_missing_operation_event(
+        "\"kind\":\"foreground-completion\"",
+        DurableCommitCutV1::ForegroundCompletion,
+        EventKind::ForegroundCompletion,
+    );
+}
+
+#[test]
+fn missing_task_completion_event_is_replaced_before_join_observation() {
+    recover_missing_operation_event(
+        "\"kind\":\"task-completion\"",
+        DurableCommitCutV1::TaskSettlement,
+        EventKind::TaskCompletion,
+    );
+}
+
+/// Interrupts event commitment and requires its repair without another hook call.
 fn recover_missing_operation_event(
     failure_cut: &'static str,
     cut: DurableCommitCutV1,
@@ -126,12 +145,16 @@ fn recover_missing_operation_event(
         ],
         [],
     ));
-    let resumed = interpreter_with_delivery(
+    let resumed = interpreter_with_identity_source(
         executor.clone(),
+        integration.clone(),
         integration,
         8,
         65_536,
         SinkPlan::default(),
+        Arc::new(DeterministicIdentitySource::new(
+            (193_u8..=255).map(|byte| Ok([byte; 32])),
+        )),
     );
     let selection = selection();
     let mut resume = pin!(resumed.resume_durable_execution(

@@ -4136,6 +4136,27 @@ fn interpreter_with_session_service(
     let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
         (1_u8..=192).map(|byte| Ok([byte; 32])),
     ));
+    interpreter_with_identity_source(
+        executor,
+        integration,
+        runtime_sessions,
+        source_child_capacity,
+        maximum_tasks_per_execution,
+        event_delivery,
+        identities,
+    )
+}
+
+/// Allows restart fixtures to use a distinct process identity stream.
+fn interpreter_with_identity_source(
+    executor: Arc<dyn ExecutorAdapter>,
+    integration: Arc<ScriptedIntegration>,
+    runtime_sessions: Arc<dyn RuntimeSessionService>,
+    source_child_capacity: u64,
+    maximum_tasks_per_execution: u64,
+    event_delivery: SinkPlan,
+    identities: Arc<dyn IdentitySource>,
+) -> Interpreter {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
