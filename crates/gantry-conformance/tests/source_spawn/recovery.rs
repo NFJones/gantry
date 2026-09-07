@@ -197,6 +197,25 @@ fn recover_missing_operation_event_outcome(
             (193_u8..=255).map(|byte| Ok([byte; 32])),
         )),
     );
+    // Pause after lifecycle acceptance, while graph installation is incomplete.
+    // Registry consumers must wait rather than receive an inactive owner.
+    let publication_observer = if kind == EventKind::OperationResult {
+        let gate = Arc::new(gantry::DurableHandoffTestGate::default());
+        resumed.install_durable_handoff_test_gate(gate.clone());
+        let observer = resumed.clone();
+        Some(std::thread::spawn(move || {
+            let handle = gate.wait_until_accepted();
+            let mut observation = pin!(observer.test_durable_observation(handle.execution_id()));
+            let pending = observation
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending();
+            gate.release();
+            pending
+        }))
+    } else {
+        None
+    };
     let selection = selection();
     let mut resume = pin!(resumed.resume_durable_execution(
         storage.clone(),
@@ -248,6 +267,14 @@ fn recover_missing_operation_event_outcome(
         .unwrap_or_else(|| panic!("result was consumed without its event"));
     assert_eq!(event.occurrence().event().kind(), kind);
     assert_eq!(event.occurrence_sequence(), full.committed_through + 1);
+    if let Some(observer) = publication_observer {
+        assert!(
+            observer
+                .join()
+                .unwrap_or_else(|_| panic!("publication observer panicked")),
+            "recovered owner became visible before graph installation"
+        );
+    }
 }
 
 #[test]

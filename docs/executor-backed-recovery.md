@@ -6,6 +6,13 @@ Callers observe the returned execution handle; they do not drive recovered
 machines themselves. The journal owner is acquired before replacement work is
 prepared, and submitted drivers remain gated until the resume handoff completes.
 
+Concurrent resume keeps the interpreter's durable-owner registry entry pending
+until the graph runtime is installed, graph ownership is active, and completion
+observation and control ownership are transferred. Registry consumers wait during
+that interval rather than receiving an inactive owner. The public result-gap
+regression pauses this handoff and checks that owner lookup remains pending;
+replacement gates open only after the ready owner is published.
+
 Logical task and source-handle identities are retained. Executor handles are
 process-local and are not checkpointed. A replacement driver is another physical
 submission for the existing logical task, not a second task-creation event or

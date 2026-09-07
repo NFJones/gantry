@@ -3143,8 +3143,14 @@ impl Interpreter {
                 unreachable!("reserved concurrent resume identity remains publishable")
             }
         };
-        self.register_durable_execution(Arc::clone(&accepted.owned));
         let (coordinator, foreground, children, unfinished_task_ids) = admission.into_parts();
+        #[cfg(feature = "test-support")]
+        {
+            let gate = lock_shutdown(&self.inner.durable_handoff_test_gate).clone();
+            if let Some(gate) = gate {
+                gate.pause(accepted.handle().clone());
+            }
+        }
         let root_task_id = coordinator.snapshot().state().root_task_id();
         let drive_recovered_root = !terminal && !unfinished_task_ids.contains(&root_task_id);
         let mut task_signals = Vec::with_capacity(submitted_tasks.len());
@@ -3195,6 +3201,8 @@ impl Interpreter {
         }
         let _ = control_signal.arm_completion_observation();
         control_task.relinquish();
+        // Registry consumers must never observe an owner without its graph runtime.
+        self.register_durable_execution(Arc::clone(&accepted.owned));
         gate.release();
         DurableResumeExecutionResult::Accepted(Box::new(accepted))
     }
