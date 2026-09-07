@@ -2218,12 +2218,19 @@ pub struct RecoveredConcurrentDurableStateV1 {
     operation_result_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     operation_outcome_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     task_control_event_checkpoints: Vec<(ProtocolIdentity, ConcurrentDurableCheckpointV4)>,
+    terminal_cause: Option<ProtocolIdentity>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
 }
 
 impl RecoveredConcurrentDurableStateV1 {
+    /// Returns the unique committed terminal transition, independently of event delivery.
+    #[must_use]
+    pub const fn terminal_cause(&self) -> Option<ProtocolIdentity> {
+        self.terminal_cause
+    }
+
     /// Finds the original no-op event checkpoint for this exact pending control.
     /// Missing events with multiple eligible owners are rejected rather than guessed.
     pub fn task_control_event_cause(
@@ -2653,6 +2660,9 @@ pub fn recover_concurrent_authoritative_prefix(
         }
     }
     let history = graph_history.values().collect::<Vec<_>>();
+    let terminal_cause = history.iter().find_map(|(cause, record)| {
+        (record.cut() == DurableCommitCutV1::TerminalCompletion).then_some(*cause)
+    });
     let task_control_event_checkpoints = history
         .windows(2)
         .filter_map(|pair| {
@@ -2676,6 +2686,7 @@ pub fn recover_concurrent_authoritative_prefix(
         operation_result_causes,
         operation_outcome_causes,
         task_control_event_checkpoints,
+        terminal_cause,
         latest_sequence,
         latest_evidence_id,
         latest_cut,

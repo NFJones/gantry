@@ -1195,6 +1195,78 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         .await
     }
 
+    /// Repairs terminal event evidence before the recovered lifecycle becomes visible.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn repair_prepared_terminal_event<F>(
+        &self,
+        prepared: &mut PreparedDurableResume,
+        event: F,
+        payloads: &[gantry_host::event::ProtectedPayload],
+    ) -> Result<(), ResumeRejection>
+    where
+        F: Future<Output = Result<gantry_core::event::EventEnvelope, crate::DurableRunFailure>>,
+    {
+        let failure = || {
+            ResumeRejection::new(
+                ResumeStartFailureCategory::Internal,
+                "terminal-event-recovery-failure",
+            )
+        };
+        let PreparedDurableRecovery::Concurrent {
+            recovered,
+            latest_sequence,
+            latest_evidence_id,
+            ..
+        } = &mut prepared.recovered
+        else {
+            return Err(failure());
+        };
+        let cause = recovered.terminal_cause().ok_or_else(failure)?;
+        if recovered.events().event_for_cause(cause).is_some() {
+            return Ok(());
+        }
+        let plan = gantry_runtime::DurableEventPlanV1::from_sink_plan(&prepared.event_delivery)
+            .map_err(|_| failure())?;
+        let occurrence = gantry_runtime::DurableEventOccurrenceV1::new(
+            cause,
+            event.await.map_err(|_| failure())?,
+            plan,
+        )
+        .map_err(|_| failure())?;
+        let sink = gantry_runtime::DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            prepared.journal_id.clone(),
+            prepared.ownership_token.clone(),
+        );
+        let mut commits = gantry_runtime::DurableEventCommitCoordinatorV1::from_recovered(
+            &sink,
+            (*latest_evidence_id, *latest_sequence),
+            recovered.events(),
+        )
+        .map_err(|_| failure())?;
+        commits
+            .commit_occurrence(&occurrence, payloads)
+            .await
+            .map_err(|_| failure())?;
+        let prefix = self
+            .storage
+            .read_prefix(ReadJournalPrefixV1 {
+                journal_id: prepared.journal_id.clone(),
+            })
+            .await
+            .map_err(|_| failure())?;
+        let RecoveredDurablePrefix::Concurrent {
+            recovered: updated, ..
+        } = recover_durable_prefix(&prefix).map_err(|_| failure())?
+        else {
+            return Err(failure());
+        };
+        *latest_sequence = updated.latest_sequence();
+        *latest_evidence_id = updated.latest_evidence_id();
+        *recovered = updated;
+        Ok(())
+    }
+
     pub(crate) fn publish_prepared_resume(
         &self,
         mut prepared: PreparedDurableResume,

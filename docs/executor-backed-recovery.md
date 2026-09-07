@@ -71,6 +71,12 @@ owners is rejected rather than attributed by guessing. The join-gap and
 detach-gap regressions check replacement before source continuation and strict
 recovery of the resulting journal; detach coverage also checks compaction.
 
+Already-terminal graph resume repairs a missing terminal-execution occurrence
+under journal ownership before publishing the recovered lifecycle state. It
+then refreshes the recovered delivery obligations without submitting another
+language task. The terminal-gap regression checks that the replacement is
+committed before resume returns.
+
 Replacement of other missing causal events remains unfinished in
 GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count

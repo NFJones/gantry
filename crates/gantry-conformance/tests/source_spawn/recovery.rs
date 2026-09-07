@@ -29,6 +29,15 @@ fn missing_join_event_is_replaced_before_source_continuation() {
     );
 }
 
+#[test]
+fn missing_terminal_event_is_replaced_before_resume_returns() {
+    recover_missing_operation_event(
+        "\"kind\":\"terminal-execution\"",
+        DurableCommitCutV1::TerminalCompletion,
+        EventKind::TerminalExecution,
+    );
+}
+
 /// Interrupts event commitment and requires its repair without another hook call.
 fn recover_missing_operation_event(
     failure_cut: &'static str,

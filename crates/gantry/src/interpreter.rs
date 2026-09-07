@@ -2658,6 +2658,50 @@ impl Interpreter {
         };
 
         if terminal && drivers.is_empty() {
+            let state = admission.coordinator().snapshot();
+            let terminal_outcome = state
+                .state()
+                .terminal_outcome()
+                .unwrap_or_else(|| unreachable!("terminal recovery retains its outcome"));
+            let root_task = state.state().root_task_id();
+            let draft =
+                match concurrent_terminal_event(prepared.execution_id, root_task, terminal_outcome)
+                {
+                    Ok(draft) => draft,
+                    Err(_) => {
+                        return durable
+                            .reject_prepared_resume(
+                                prepared,
+                                ResumeStartFailureCategory::Internal,
+                                "invalid-terminal-event",
+                            )
+                            .await;
+                    }
+                };
+            let event = self.complete_graph_event(
+                &operations,
+                root_task,
+                next_event_sequence.get(&root_task).copied().unwrap_or(0),
+                draft.clone(),
+            );
+            if let Err(failure) = durable
+                .repair_prepared_terminal_event(&mut prepared, event, &draft.protected_payloads)
+                .await
+            {
+                return durable.reject_prepared_resume_with(prepared, failure).await;
+            }
+            let initial_delivery_pending = match &prepared.recovered {
+                PreparedDurableRecovery::Concurrent { recovered, .. } => {
+                    admission
+                        .coordinator()
+                        .publish_committed_events(recovered.events().clone())
+                        .unwrap_or_else(|_| {
+                            unreachable!("unpublished recovery has no competing writer")
+                        });
+                    recovered_events_have_pending_delivery(recovered.events())
+                }
+                PreparedDurableRecovery::Serial(_) => unreachable!("concurrent recovery"),
+            };
             if let Err(failure) = durable.commit_prepared_resume_revision(&mut prepared).await {
                 return durable.reject_prepared_resume_with(prepared, failure).await;
             }
