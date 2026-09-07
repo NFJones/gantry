@@ -9,7 +9,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/source_spawn_tokio.rs",
-      "sha256": "82d3d455f817b1f8bb98868035a4b5cc08b2503c1697b9bd4ce3c90cb49b6830"
+      "sha256": "d07c3c7c8ea16515bb3e69404eb55ca9eef2c2c2ffc203b0d2c76c3c48f325d3"
     }
   ],
   "requirements": [

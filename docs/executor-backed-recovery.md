@@ -143,8 +143,16 @@ the original dispatch coordinates; any permitted replacement dispatch receives
 a fresh dispatch identity. The public dispatch-gap regression verifies that the
 replacement event is the next journal entry before redispatch proceeds.
 
-Replacement of other missing causal events remains unfinished in
-GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
-admission rollback, stale-owner, terminal-delivery, and changed-worker-count
-qualification. The async publication and release claims remain blocked; passing
-the current workspace suite does not close those acceptance criteria.
+The REC-001 qualification also covers failed-join detail reconstruction,
+malformed post-commit receipts, bounded rollback after failed replacement abort,
+and all-or-nothing recovered-driver admission. A live stale owner blocked before
+publication cannot commit after resume acquires a distinct replacement token.
+Caller-owned Tokio runtimes may change between current-thread, two-worker, and
+four-worker policies while the recovered execution, task, operation, and budget
+coordinates remain stable. `protocol/conformance/async-recovery-v1.json` freezes
+the issue's eleven assigned requirement rows and links the focused evidence.
+
+Cross-profile aggregation, formal refinement, publication assembly, and release
+adoption remain downstream work. Recovery does not claim exactly-once physical
+executor submission; fencing and committed evidence provide exactly-once logical
+transitions while unfinished logical tasks may receive replacement submissions.

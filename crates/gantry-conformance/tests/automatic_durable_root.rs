@@ -21,8 +21,9 @@ use gantry::host::event::{
 };
 use gantry::host::journal::{
     AcquireJournalOwnerV1, JournalCommitReceiptV1, JournalCommitRequestV1, JournalError,
-    JournalErrorCode, JournalId, JournalOwnershipV1, JournalPrefixV1, ReadJournalPrefixV1,
-    ReleaseJournalOwnerV1, ResolveJournalPayloadV1, ResolvedJournalPayloadV1,
+    JournalErrorCode, JournalId, JournalOwnerOperationV1, JournalOwnershipToken,
+    JournalOwnershipV1, JournalPrefixV1, ReadJournalPrefixV1, ReleaseJournalOwnerV1,
+    ResolveJournalPayloadV1, ResolvedJournalPayloadV1,
 };
 use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
@@ -222,6 +223,123 @@ impl JournalStorage for FailAfterStartStore {
         request: ReleaseJournalOwnerV1,
     ) -> HostFuture<'a, Result<(), JournalError>> {
         self.releases.fetch_add(1, Ordering::AcqRel);
+        self.inner.release_owner(request)
+    }
+}
+
+struct FencingTakeoverStore {
+    inner: InMemoryJournalStore,
+    start_token: Mutex<Option<JournalOwnershipToken>>,
+    commits: AtomicU64,
+    stale_commit_started: AtomicBool,
+    stale_commit_released: AtomicBool,
+    stale_commit_waker: Mutex<Option<Waker>>,
+}
+
+impl FencingTakeoverStore {
+    fn new() -> Self {
+        Self {
+            inner: InMemoryJournalStore::new(),
+            start_token: Mutex::new(None),
+            commits: AtomicU64::new(0),
+            stale_commit_started: AtomicBool::new(false),
+            stale_commit_released: AtomicBool::new(false),
+            stale_commit_waker: Mutex::new(None),
+        }
+    }
+
+    fn stale_commit_started(&self) -> bool {
+        self.stale_commit_started.load(Ordering::Acquire)
+    }
+
+    fn release_stale_commit(&self) {
+        self.stale_commit_released.store(true, Ordering::Release);
+        if let Some(waker) = self
+            .stale_commit_waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
+    }
+}
+
+impl JournalStorage for FencingTakeoverStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        Box::pin(async move {
+            if request.operation == JournalOwnerOperationV1::Resume {
+                let old_token = self
+                    .start_token
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .take()
+                    .ok_or_else(|| JournalError::new(JournalErrorCode::Internal))?;
+                self.inner
+                    .release_owner(ReleaseJournalOwnerV1 {
+                        journal_id: request.journal_id.clone(),
+                        ownership_token: old_token,
+                    })
+                    .await?;
+            }
+            let ownership = self.inner.acquire_owner(request.clone()).await?;
+            if request.operation == JournalOwnerOperationV1::Start {
+                *self
+                    .start_token
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                    Some(ownership.token.clone());
+            }
+            Ok(ownership)
+        })
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        let commit_number = self.commits.fetch_add(1, Ordering::AcqRel);
+        Box::pin(async move {
+            if commit_number == 1 {
+                self.stale_commit_started.store(true, Ordering::Release);
+                std::future::poll_fn(|context| {
+                    if self.stale_commit_released.load(Ordering::Acquire) {
+                        return Poll::Ready(());
+                    }
+                    *self
+                        .stale_commit_waker
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some(context.waker().clone());
+                    Poll::Pending
+                })
+                .await;
+            }
+            self.inner.commit(request).await
+        })
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
         self.inner.release_owner(request)
     }
 }
@@ -3095,6 +3213,116 @@ fn resumed_root_stays_gated_until_atomic_acceptance_then_completes_automatically
         .unwrap_or_else(|error| panic!("journal read failed: {error:?}"));
     let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
         .unwrap_or_else(|error| panic!("resumed prefix did not recover: {error:?}"));
+    assert_eq!(
+        recovered.latest_cut(),
+        DurableCommitCutV1::TerminalCompletion
+    );
+}
+
+#[test]
+fn fenced_resume_rejects_a_live_superseded_root_publish() {
+    let root = TempDirectory::new("fn main() -> Int { 42 }");
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveSessions,
+            &br#"{"result":"resolved"}"#[..],
+        )],
+        [],
+    ));
+    let old_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let old = interpreter_with_integration(Arc::clone(&old_executor), integration.clone());
+    let storage = Arc::new(FencingTakeoverStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("automatic-durable-fenced-takeover")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let started = match block_on(old.start_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) {
+        DurableStartExecutionResult::Accepted(accepted) => accepted,
+        DurableStartExecutionResult::Rejected(failure) => {
+            panic!("fencing fixture start was rejected: {failure:?}")
+        }
+    };
+    poll_task_until(&old_executor, 0, || storage.stale_commit_started());
+    let prefix_before_resume = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("pre-resume journal read failed: {error:?}"));
+
+    let replacement_executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let replacement = interpreter_with_integration_and_identity_start(
+        Arc::clone(&replacement_executor),
+        integration,
+        97,
+    );
+    let mut resume = pin!(replacement.resume_durable_execution(
+        Arc::clone(&storage_adapter),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(started.execution_id()),
+            event_delivery: None,
+        },
+    ));
+    let accepted = loop {
+        if let Poll::Ready(result) = resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            let DurableResumeExecutionResult::Accepted(accepted) = result else {
+                panic!("replacement resume was rejected: {result:?}")
+            };
+            break accepted;
+        }
+        for task in replacement_executor.task_ids() {
+            if replacement_executor.is_runnable(task) {
+                let _ = replacement_executor.poll_task(task);
+            }
+        }
+    };
+    assert_ne!(
+        accepted.test_ownership_token(),
+        started.test_ownership_token()
+    );
+    settle_task(&replacement_executor, 1);
+    let terminal = block_on(replacement.await_terminal(accepted.handle()))
+        .unwrap_or_else(|error| panic!("replacement terminal await failed: {error:?}"))
+        .unwrap_or_else(|| panic!("replacement execution disappeared"));
+    assert!(matches!(
+        terminal.foreground,
+        Some(MachineOutcome::Succeeded(ref value))
+            if matches!(value.view(), LogicalValueView::Int(value) if value.get() == 42)
+    ));
+    let replacement_prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("replacement journal read failed: {error:?}"));
+    assert_ne!(replacement_prefix, prefix_before_resume);
+
+    storage.release_stale_commit();
+    settle_task(&old_executor, 0);
+    assert_eq!(
+        block_on(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: journal_id.clone(),
+        }))
+        .unwrap_or_else(|error| panic!("post-stale journal read failed: {error:?}")),
+        replacement_prefix
+    );
+    let (_, recovered) = recover_authoritative_prefix_with_retained_program(&replacement_prefix)
+        .unwrap_or_else(|error| panic!("replacement prefix did not recover: {error:?}"));
     assert_eq!(
         recovered.latest_cut(),
         DurableCommitCutV1::TerminalCompletion

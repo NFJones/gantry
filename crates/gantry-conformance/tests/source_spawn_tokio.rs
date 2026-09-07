@@ -10,13 +10,14 @@ use std::time::Duration;
 use gantry::host::contracts::{
     CancellationToken, EmbeddingVersion, ExecutorAdapter, HookFactory, HookOutcomeV1, HostError,
     HostFuture, HostRequest, HostResponse, IdentitySource, InclusiveJitterRange,
-    IntegrationPreflight, JitterSource, OperationHook, RuntimeSessionService,
+    IntegrationPreflight, JitterSource, JournalStorage, OperationHook, RuntimeSessionService,
 };
 use gantry::host::embedding::EmbeddingOperation;
 use gantry::host::event::{
     EventDeliveryRequest, EventDeliveryRuntime, EventRetryPolicy, EventSink, RedactionCapabilities,
     SinkDeliveryPolicy, SinkId,
 };
+use gantry::host::journal::{JournalId, ReadJournalPrefixV1, ReleaseJournalOwnerV1};
 use gantry::identity::ProtocolIdentity;
 use gantry::observe::{SinkPlan, SinkRegistration};
 use gantry::portable::{
@@ -26,15 +27,16 @@ use gantry::portable::{
 };
 use gantry::protocol::{ProtocolSelection, ProtocolVersion, SelectedProtocol};
 use gantry::runtime::{
-    AsyncCapacityLimits, CancellationRecord, InterpreterConfiguration, MachineOutcome,
-    RequiredConfiguration, RuntimeCode,
+    AsyncCapacityLimits, CancellationRecord, InMemoryJournalStore, InterpreterConfiguration,
+    MachineOutcome, RequiredConfiguration, RuntimeCode,
 };
 use gantry::source::FrontendLimits;
 use gantry::timestamp::UtcTimestamp;
 use gantry::value::DEFAULT_VALUE_LIMITS;
 use gantry::{
-    Interpreter, RootSessionSpecification, StartExecutionRequest, StartExecutionResult,
-    caller_cancellation_reason, root_task_identity,
+    DurableResumeExecutionRequest, DurableResumeExecutionResult, DurableStartExecutionRequest,
+    DurableStartExecutionResult, Interpreter, RootSessionSpecification, StartExecutionRequest,
+    StartExecutionResult, caller_cancellation_reason, root_task_identity,
 };
 use gantry_adapter_tokio::TokioExecutor;
 use gantry_conformance::services::{DeterministicIdentitySource, DeterministicUtcClock};
@@ -381,6 +383,152 @@ fn current_thread_tokio_overlaps_sibling_hooks_with_shared_site_capture_isolatio
 #[test]
 fn multithread_tokio_overlaps_sibling_hooks_with_shared_site_capture_isolation() {
     run_sibling_overlap(multithread_runtime());
+}
+
+#[test]
+fn durable_resume_preserves_identities_and_budgets_across_worker_count_changes() {
+    let current_to_two = run_durable_resume_worker_change(
+        current_thread_runtime(),
+        multithread_runtime_with_workers(2),
+    );
+    let two_to_current = run_durable_resume_worker_change(
+        multithread_runtime_with_workers(2),
+        current_thread_runtime(),
+    );
+    let two_to_four = run_durable_resume_worker_change(
+        multithread_runtime_with_workers(2),
+        multithread_runtime_with_workers(4),
+    );
+    assert_eq!(current_to_two, two_to_current);
+    assert_eq!(two_to_current, two_to_four);
+}
+
+fn run_durable_resume_worker_change(
+    start_runtime: Runtime,
+    resume_runtime: Runtime,
+) -> (
+    ProtocolIdentity,
+    ProtocolIdentity,
+    gantry::runtime::ExecutionBudgetSnapshot,
+) {
+    let root = TempDirectory::new(
+        "action read_only echo(value: Int) -> Int;\nfn main() -> Int { action echo(42) }",
+    );
+    let storage = Arc::new(InMemoryJournalStore::new());
+    let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
+    let journal_id = JournalId::new("tokio-worker-change-resume")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let selection = selection();
+    let initial_integration = Arc::new(PendingIntegration::echoing_actions());
+    let initial = interpreter_with_identity_start(&start_runtime, initial_integration.clone(), 1);
+    let started = start_runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let result = initial
+                .start_durable_execution(
+                    storage_adapter.clone(),
+                    DurableStartExecutionRequest {
+                        journal_id: journal_id.clone(),
+                        start: StartExecutionRequest {
+                            package_root: &root.0,
+                            protocol_selection: &selection,
+                            required_peers: &[],
+                            entry_input: None,
+                            root_session: None,
+                            event_delivery: None,
+                        },
+                    },
+                )
+                .await;
+            let started = match result {
+                DurableStartExecutionResult::Accepted(started) => started,
+                DurableStartExecutionResult::Rejected(failure) => {
+                    panic!("worker-change start was rejected: {failure:?}")
+                }
+            };
+            let dispatch = wait_for_started(&initial_integration, 1)
+                .await
+                .pop()
+                .unwrap_or_else(|| panic!("initial dispatch is absent"));
+            let request = dispatch.request();
+            let operation_id = request["operation_request"]["operation_id"]
+                .as_str()
+                .unwrap_or_else(|| panic!("initial operation identity is absent"))
+                .to_owned();
+            (started, operation_id)
+        })
+        .await
+        .unwrap_or_else(|_| panic!("worker-change start timed out"))
+    });
+    let (started, initial_operation_id) = started;
+    let execution_id = started.execution_id();
+    let task_id = root_task_identity(execution_id);
+    start_runtime.block_on(async {
+        storage
+            .release_owner(ReleaseJournalOwnerV1 {
+                journal_id: journal_id.clone(),
+                ownership_token: started.test_ownership_token().clone(),
+            })
+            .await
+            .unwrap_or_else(|error| panic!("initial owner release failed: {error:?}"));
+    });
+
+    let resumed_integration = Arc::new(PendingIntegration::echoing_actions());
+    let resumed =
+        interpreter_with_identity_start(&resume_runtime, resumed_integration.clone(), 129);
+    resume_runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let result = resumed
+                .resume_durable_execution(
+                    storage_adapter,
+                    DurableResumeExecutionRequest {
+                        journal_id: journal_id.clone(),
+                        protocol_selection: &selection,
+                        candidate_package_root: None,
+                        expected_execution_id: Some(execution_id),
+                        event_delivery: None,
+                    },
+                )
+                .await;
+            let DurableResumeExecutionResult::Accepted(accepted) = result else {
+                panic!("worker-change resume was rejected: {result:?}")
+            };
+            assert_eq!(accepted.execution_id(), execution_id);
+            assert_eq!(accepted.test_recovered().machine().task_id(), task_id);
+            let dispatch = wait_for_started(&resumed_integration, 1)
+                .await
+                .pop()
+                .unwrap_or_else(|| panic!("replacement dispatch is absent"));
+            let request = dispatch.request();
+            assert_eq!(
+                request["operation_request"]["operation_id"].as_str(),
+                Some(initial_operation_id.as_str())
+            );
+            dispatch.release();
+            let terminal = resumed
+                .await_terminal(accepted.handle())
+                .await
+                .unwrap_or_else(|error| panic!("worker-change terminal await failed: {error:?}"))
+                .unwrap_or_else(|| panic!("worker-change execution disappeared"));
+            assert!(matches!(
+                terminal.foreground,
+                Some(MachineOutcome::Succeeded(ref value))
+                    if value.canonical_json().bytes() == b"42"
+            ));
+        })
+        .await
+        .unwrap_or_else(|_| panic!("worker-change resume timed out"));
+    });
+    let prefix = start_runtime
+        .block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("worker-change prefix read failed: {error:?}"));
+    let (_, recovered) =
+        gantry::runtime::recover_authoritative_prefix_with_retained_program(&prefix)
+            .unwrap_or_else(|error| panic!("worker-change prefix recovery failed: {error:?}"));
+    (
+        recovered.machine().execution_id(),
+        recovered.machine().task_id(),
+        recovered.machine().budget_checkpoint(),
+    )
 }
 
 #[test]
@@ -1759,11 +1907,19 @@ async fn start(interpreter: &Interpreter, root: &TempDirectory) -> gantry::Start
 }
 
 fn interpreter(runtime: &Runtime, integration: Arc<PendingIntegration>) -> Interpreter {
+    interpreter_with_identity_start(runtime, integration, 1)
+}
+
+fn interpreter_with_identity_start(
+    runtime: &Runtime,
+    integration: Arc<PendingIntegration>,
+    identity_start: u8,
+) -> Interpreter {
     let executor: Arc<dyn ExecutorAdapter> = Arc::new(TokioExecutor::new(
         runtime.handle().clone(),
         Arc::new(FixedJitter),
     ));
-    let configuration = configuration(executor);
+    let configuration = configuration_with_identity_start(executor, identity_start);
     let preflight: Arc<dyn IntegrationPreflight> = integration.clone();
     let sessions: Arc<dyn RuntimeSessionService> = integration.clone();
     let hooks: Arc<dyn HookFactory> = integration;
@@ -1827,8 +1983,17 @@ fn interpreter_with_plan(
 }
 
 fn configuration(executor: Arc<dyn ExecutorAdapter>) -> InterpreterConfiguration {
+    configuration_with_identity_start(executor, 1)
+}
+
+fn configuration_with_identity_start(
+    executor: Arc<dyn ExecutorAdapter>,
+    identity_start: u8,
+) -> InterpreterConfiguration {
     let identities: Arc<dyn IdentitySource> = Arc::new(DeterministicIdentitySource::new(
-        (1_u8..=240).map(|byte| Ok([byte; 32])),
+        std::iter::successors(Some(identity_start), |byte| byte.checked_add(1))
+            .take(112)
+            .map(|byte| Ok([byte; 32])),
     ));
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
@@ -1883,8 +2048,12 @@ fn current_thread_runtime() -> Runtime {
 }
 
 fn multithread_runtime() -> Runtime {
+    multithread_runtime_with_workers(2)
+}
+
+fn multithread_runtime_with_workers(worker_threads: usize) -> Runtime {
     Builder::new_multi_thread()
-        .worker_threads(2)
+        .worker_threads(worker_threads)
         .enable_time()
         .build()
         .unwrap_or_else(|error| panic!("multi-thread runtime construction failed: {error}"))
