@@ -45,12 +45,36 @@ pub struct DurableEventCommitV1 {
     pub sequence: u64,
 }
 
+/// Identifies a cancellation label separately from the execution request in its cut.
+fn occurrence_key(
+    cause: ProtocolIdentity,
+    event: &EventEnvelope,
+) -> Result<(ProtocolIdentity, Option<ProtocolIdentity>), DurableEventEvidenceError> {
+    if event.kind() != EventKind::Cancellation {
+        return Ok((cause, None));
+    }
+    let document = decode_document(event.payload().canonical_bytes())?;
+    let payload = object(&document, document.root())?;
+    if string(&document, field(payload, "target_kind")?)? != "task" {
+        return Ok((cause, None));
+    }
+    let target = identity(
+        &document,
+        field(payload, "target")?,
+        Some(IdentityKind::Task),
+    )?;
+    if event.task_id() != Some(target) {
+        return Err(DurableEventEvidenceError::InvalidCausalEvidence);
+    }
+    Ok((cause, Some(target)))
+}
+
 /// Serial event-evidence commit boundary for one fenced durable execution.
 pub struct DurableEventCommitCoordinatorV1<'a> {
     sink: &'a DurableTransitionSink,
     predecessor: (ProtocolIdentity, u64),
     next_local_id: u64,
-    committed_causes: BTreeSet<ProtocolIdentity>,
+    committed_causes: BTreeSet<(ProtocolIdentity, Option<ProtocolIdentity>)>,
     terminated: Option<JournalError>,
 }
 
@@ -96,10 +120,9 @@ impl<'a> DurableEventCommitCoordinatorV1<'a> {
         payloads: &[ProtectedPayload],
     ) -> Result<DurableEventCommitV1, DurableEventCommitError> {
         self.require_writable()?;
-        if self
-            .committed_causes
-            .contains(&occurrence.causal_evidence_id())
-        {
+        let key = occurrence_key(occurrence.causal_evidence_id(), occurrence.event())
+            .map_err(DurableEventCommitError::Evidence)?;
+        if self.committed_causes.contains(&key) {
             return Err(DurableEventCommitError::DuplicateOccurrence);
         }
         let local_id = self.next_local_id("event-occurrence")?;
@@ -108,8 +131,7 @@ impl<'a> DurableEventCommitCoordinatorV1<'a> {
             .unfinalized(local_id.clone(), references, payloads)
             .map_err(DurableEventCommitError::Evidence)?;
         let commit = self.commit(local_id, body, payloads).await?;
-        self.committed_causes
-            .insert(occurrence.causal_evidence_id());
+        self.committed_causes.insert(key);
         Ok(commit)
     }
 
@@ -883,7 +905,7 @@ impl DurableEventRetentionV1 {
 pub struct RecoveredDurableEventsV1 {
     events: BTreeMap<ProtocolIdentity, RecoveredDurableEventV1>,
     occurrence_evidence: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
-    causal_occurrences: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
+    causal_occurrences: BTreeMap<(ProtocolIdentity, Option<ProtocolIdentity>), ProtocolIdentity>,
     dispatch_evidence: BTreeMap<ProtocolIdentity, (ProtocolIdentity, SinkId, ProtocolIdentity)>,
     attempt_ids: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     event_evidence: BTreeSet<ProtocolIdentity>,
@@ -904,15 +926,40 @@ impl RecoveredDurableEventsV1 {
         causal_evidence_id: ProtocolIdentity,
     ) -> Option<&RecoveredDurableEventV1> {
         self.causal_occurrences
-            .get(&causal_evidence_id)
+            .get(&(causal_evidence_id, None))
             .and_then(|event_id| self.events.get(event_id))
+    }
+
+    /// Finds the distinct cancellation label for a task within a committed cut.
+    #[must_use]
+    pub fn task_cancellation_for_cause(
+        &self,
+        cause: ProtocolIdentity,
+        task: ProtocolIdentity,
+    ) -> Option<&RecoveredDurableEventV1> {
+        self.causal_occurrences
+            .get(&(cause, Some(task)))
+            .and_then(|event_id| self.events.get(event_id))
+    }
+
+    /// Matches an occurrence without using its fresh event identity or timestamp.
+    pub fn contains_occurrence(
+        &self,
+        cause: ProtocolIdentity,
+        event: &EventEnvelope,
+    ) -> Result<bool, DurableEventEvidenceError> {
+        Ok(self
+            .causal_occurrences
+            .contains_key(&occurrence_key(cause, event)?))
     }
 
     /// Reports whether recovery must create the sole replacement for a causal gap.
     #[must_use]
     pub fn requires_replacement(&self, causal_evidence_id: ProtocolIdentity) -> bool {
         causal_evidence_id.kind() == IdentityKind::Evidence
-            && !self.causal_occurrences.contains_key(&causal_evidence_id)
+            && !self
+                .causal_occurrences
+                .contains_key(&(causal_evidence_id, None))
     }
 
     /// Projects the required-sink barrier through an inclusive occurrence sequence.
@@ -1001,6 +1048,7 @@ impl RecoveredDurableEventsV1 {
     ) -> Result<(), DurableEventEvidenceError> {
         let occurrence = DurableEventOccurrenceV1::decode(&envelope.canonical_body)?;
         let event_id = occurrence.event().event_id();
+        let key = occurrence_key(occurrence.causal_evidence_id(), occurrence.event())?;
         let expected_payloads = occurrence
             .event()
             .protected_references()
@@ -1015,9 +1063,7 @@ impl RecoveredDurableEventsV1 {
         if expected_payloads != actual_payloads
             || self.events.contains_key(&event_id)
             || self.occurrence_evidence.contains_key(&envelope.evidence_id)
-            || self
-                .causal_occurrences
-                .contains_key(&occurrence.causal_evidence_id())
+            || self.causal_occurrences.contains_key(&key)
         {
             return Err(DurableEventEvidenceError::InvalidDeliveryHistory);
         }
@@ -1034,8 +1080,7 @@ impl RecoveredDurableEventsV1 {
             .collect();
         self.occurrence_evidence
             .insert(envelope.evidence_id, event_id);
-        self.causal_occurrences
-            .insert(occurrence.causal_evidence_id(), event_id);
+        self.causal_occurrences.insert(key, event_id);
         self.payload_keys
             .extend(envelope.protected_payloads.iter().cloned());
         self.events.insert(
@@ -2471,6 +2516,67 @@ mod tests {
                     && failure.event_id == event_id
                     && failure.attempt_id == attempt_id
         ));
+    }
+
+    #[test]
+    #[cfg(feature = "concurrent")]
+    fn cancellation_occurrences_distinguish_tasks_and_reject_duplicate_labels() {
+        let execution = fresh(IdentityKind::Execution, 51);
+        let first = ProtocolIdentity::derive(IdentityKind::Task, b"first-cancelled-task")
+            .unwrap_or_else(|error| panic!("task: {error:?}"));
+        let second = ProtocolIdentity::derive(IdentityKind::Task, b"second-cancelled-task")
+            .unwrap_or_else(|error| panic!("task: {error:?}"));
+        let cause = evidence_id(51);
+        let occurrence = |task, byte| {
+            let draft =
+                crate::concurrent_task_cancellation_event(execution, task, "stop", false, 0)
+                    .unwrap_or_else(|error| panic!("draft: {error:?}"));
+            let event = EventEnvelope::complete(
+                fresh(IdentityKind::Event, byte),
+                fresh(IdentityKind::Activity, 52),
+                timestamp(),
+                draft.draft,
+            )
+            .unwrap_or_else(|error| panic!("event: {error:?}"));
+            DurableEventOccurrenceV1::new(cause, event, DurableEventPlanV1::default())
+                .unwrap_or_else(|error| panic!("occurrence: {error:?}"))
+        };
+        let mut recovered = RecoveredDurableEventsV1::default();
+        for (task, byte) in [(first, 53), (second, 54)] {
+            recovered
+                .apply_envelope(&envelope(
+                    u64::from(byte),
+                    evidence_id(byte),
+                    DURABLE_EVENT_OCCURRENCE_KIND_V1,
+                    occurrence(task, byte).canonical_body(),
+                    &[cause],
+                    &[],
+                ))
+                .unwrap_or_else(|error| panic!("distinct cancellation: {error:?}"));
+        }
+        assert!(
+            recovered
+                .task_cancellation_for_cause(cause, first)
+                .is_some()
+        );
+        assert!(
+            recovered
+                .task_cancellation_for_cause(cause, second)
+                .is_some()
+        );
+        let before = recovered.clone();
+        assert_eq!(
+            recovered.apply_envelope(&envelope(
+                55,
+                evidence_id(55),
+                DURABLE_EVENT_OCCURRENCE_KIND_V1,
+                occurrence(first, 55).canonical_body(),
+                &[cause],
+                &[],
+            )),
+            Err(DurableEventEvidenceError::InvalidDeliveryHistory)
+        );
+        assert_eq!(recovered, before);
     }
 
     fn event(reference: ProtectedReference) -> EventEnvelope {

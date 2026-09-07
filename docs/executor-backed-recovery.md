@@ -91,7 +91,12 @@ Typed execution-wide cancellation records also participate in prepublication
 event repair. Recovery preserves the committed reason and restores its event
 before replacement drivers progress. The cancellation crash regression checks
 the cancelled outcome, causal ordering, and event retention through compaction.
-This does not qualify missing task-local cancellation events.
+Recovery also restores task-target cancellation labels identified by newly
+cancelled machines in committed cuts. Each task label has a distinct occurrence
+key within its cause, separate from the execution request; duplicate labels for
+the same task remain rejected. The public cancellation fixture checks both root
+and child labels, and a runtime regression verifies duplicate rejection.
+Live task-target emission outside recovery still needs separate qualification.
 
 For an indeterminate operation, recovery restores a missing dispatch occurrence
 from the original committed request before physical redispatch. Its event keeps

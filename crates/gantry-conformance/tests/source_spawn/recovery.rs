@@ -437,6 +437,26 @@ fn recover_missing_control_event(kind: EventKind) {
     let JournalPrefixV1::Full(after) = &prefix else {
         panic!("expected full resumed prefix")
     };
+    if kind == EventKind::Cancellation {
+        for task in [recovered.execution().foreground().task_id(), child] {
+            let target_events = recovered
+                .events()
+                .events()
+                .values()
+                .filter(|record| {
+                    let event = record.occurrence().event();
+                    event.kind() == EventKind::Cancellation
+                        && event.task_id() == Some(task)
+                        && std::str::from_utf8(event.payload().canonical_bytes())
+                            .is_ok_and(|payload| payload.contains("\"target_kind\":\"task\""))
+                })
+                .count();
+            assert_eq!(
+                target_events, 1,
+                "missing task-target cancellation for {task}"
+            );
+        }
+    }
     let resolution = after
         .evidence
         .iter()

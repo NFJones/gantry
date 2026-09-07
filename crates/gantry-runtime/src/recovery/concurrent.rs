@@ -2220,6 +2220,8 @@ pub struct RecoveredConcurrentDurableStateV1 {
     operation_dispatch_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     task_control_event_checkpoints: Vec<(ProtocolIdentity, ConcurrentDurableCheckpointV4)>,
     settlement_predecessor_outcomes: BTreeMap<ProtocolIdentity, crate::MachineOutcome>,
+    task_cancellation_causes: Vec<(ProtocolIdentity, ProtocolIdentity, Arc<str>)>,
+    cause_sequences: BTreeMap<ProtocolIdentity, u64>,
     lifecycle_event_checkpoints: Vec<(
         ProtocolIdentity,
         DurableCommitCutV1,
@@ -2329,6 +2331,26 @@ impl RecoveredConcurrentDurableStateV1 {
             };
             drafts.push((*cause, *task, draft));
         }
+        for (cause, task, reason) in &self.task_cancellation_causes {
+            if self
+                .events
+                .task_cancellation_for_cause(*cause, *task)
+                .is_some()
+            {
+                continue;
+            }
+            let draft = crate::concurrent_task_cancellation_event(
+                self.execution.foreground().execution_id(),
+                *task,
+                reason,
+                false,
+                0,
+            )
+            .map_err(|_| DurableEvidenceError::InvalidState)?;
+            drafts.push((*cause, *task, draft));
+        }
+        // Stable sorting keeps the execution request before its task labels.
+        drafts.sort_by_key(|(cause, _, _)| self.cause_sequences.get(cause).copied());
         Ok(drafts)
     }
 
@@ -2789,6 +2811,33 @@ pub fn recover_concurrent_authoritative_prefix(
         }
     }
     let history = graph_history.values().collect::<Vec<_>>();
+    let cause_sequences = graph_history
+        .iter()
+        .map(|(sequence, (cause, _))| (*cause, *sequence))
+        .collect();
+    let mut task_cancellation_causes = Vec::new();
+    for pair in history.windows(2) {
+        let (_, previous) = pair[0];
+        let (cause, current) = pair[1];
+        if current.cut() != DurableCommitCutV1::Cancellation {
+            continue;
+        }
+        for task in current.checkpoint().task_ids() {
+            let Some(machine) = current.checkpoint().task_checkpoint(task) else {
+                continue;
+            };
+            let Some(reason) = machine.cancellation_reason() else {
+                continue;
+            };
+            if previous
+                .checkpoint()
+                .task_checkpoint(task)
+                .is_some_and(|machine| machine.cancellation_reason().is_none())
+            {
+                task_cancellation_causes.push((*cause, task, Arc::from(reason)));
+            }
+        }
+    }
     let settlement_predecessor_outcomes = history
         .windows(2)
         .filter_map(|pair| {
@@ -2853,6 +2902,8 @@ pub fn recover_concurrent_authoritative_prefix(
         operation_dispatch_causes,
         task_control_event_checkpoints,
         settlement_predecessor_outcomes,
+        task_cancellation_causes,
+        cause_sequences,
         lifecycle_event_checkpoints,
         terminal_cause,
         latest_sequence,

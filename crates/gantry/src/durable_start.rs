@@ -1222,17 +1222,18 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         else {
             return Err(failure());
         };
-        if recovered.events().event_for_cause(cause).is_some() {
+        let event = event.await.map_err(|_| failure())?;
+        if recovered
+            .events()
+            .contains_occurrence(cause, &event)
+            .map_err(|_| failure())?
+        {
             return Ok(());
         }
         let plan = gantry_runtime::DurableEventPlanV1::from_sink_plan(&prepared.event_delivery)
             .map_err(|_| failure())?;
-        let occurrence = gantry_runtime::DurableEventOccurrenceV1::new(
-            cause,
-            event.await.map_err(|_| failure())?,
-            plan,
-        )
-        .map_err(|_| failure())?;
+        let occurrence = gantry_runtime::DurableEventOccurrenceV1::new(cause, event, plan)
+            .map_err(|_| failure())?;
         let sink = gantry_runtime::DurableTransitionSink::new(
             Arc::clone(&self.storage),
             prepared.journal_id.clone(),
