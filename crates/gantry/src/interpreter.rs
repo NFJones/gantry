@@ -2441,7 +2441,13 @@ impl Interpreter {
             }
         };
         if let Err(failure) = durable.commit_prepared_resume_revision(&mut prepared).await {
-            rollback_submitted_resume(submitted, gate).await;
+            rollback_submitted_resume(
+                submitted,
+                gate,
+                self.inner.configuration.executor(),
+                self.inner.configuration.post_cancellation_drain(),
+            )
+            .await;
             return durable.reject_prepared_resume_with(prepared, failure).await;
         }
         self.mark_durable_execution(prepared.execution_id);
@@ -13037,10 +13043,15 @@ impl Future for TaskDriver {
 struct SubmittedChildRollbackFailure;
 
 #[cfg(feature = "durable")]
-async fn rollback_submitted_resume(task: SupervisedTask, gate: Arc<RootStartGate>) {
+async fn rollback_submitted_resume(
+    task: SupervisedTask,
+    gate: Arc<RootStartGate>,
+    executor: &dyn ExecutorAdapter,
+    timeout: DurationMicros,
+) {
     gate.cancel();
     let _ = task.request_abort();
-    let _ = task.completion().await;
+    let _ = deadline_race(executor, Box::pin(task.completion()), timeout, None).await;
 }
 
 #[cfg(all(feature = "concurrent", feature = "durable"))]

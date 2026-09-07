@@ -132,11 +132,38 @@ struct FailAfterStartStore {
     inner: InMemoryJournalStore,
     commits: AtomicU64,
     releases: AtomicU64,
+    gate_failure: AtomicBool,
+    failure_started: AtomicBool,
+    failure_released: AtomicBool,
+    failure_waker: Mutex<Option<Waker>>,
 }
 
 impl FailAfterStartStore {
+    fn with_failure_gate() -> Self {
+        Self {
+            gate_failure: AtomicBool::new(true),
+            ..Self::default()
+        }
+    }
+
     fn release_count(&self) -> u64 {
         self.releases.load(Ordering::Acquire)
+    }
+
+    fn failure_started(&self) -> bool {
+        self.failure_started.load(Ordering::Acquire)
+    }
+
+    fn release_failure(&self) {
+        self.failure_released.store(true, Ordering::Release);
+        if let Some(waker) = self
+            .failure_waker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            waker.wake();
+        }
     }
 }
 
@@ -162,7 +189,24 @@ impl JournalStorage for FailAfterStartStore {
         if self.commits.fetch_add(1, Ordering::AcqRel) == 0 {
             self.inner.commit(request)
         } else {
-            Box::pin(async { Err(JournalError::new(JournalErrorCode::Internal)) })
+            Box::pin(async move {
+                if self.gate_failure.load(Ordering::Acquire) {
+                    self.failure_started.store(true, Ordering::Release);
+                    std::future::poll_fn(|context| {
+                        if self.failure_released.load(Ordering::Acquire) {
+                            return Poll::Ready(());
+                        }
+                        *self
+                            .failure_waker
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                            Some(context.waker().clone());
+                        Poll::Pending
+                    })
+                    .await;
+                }
+                Err(JournalError::new(JournalErrorCode::Internal))
+            })
         }
     }
 
@@ -3164,6 +3208,15 @@ fn resume_executor_rejection_rolls_back_and_releases_the_owner_once() {
 
 #[test]
 fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefix() {
+    resume_revision_commit_failure(false);
+}
+
+#[test]
+fn resume_revision_commit_failure_times_out_abort_resistant_rollback() {
+    resume_revision_commit_failure(true);
+}
+
+fn resume_revision_commit_failure(timeout_rollback: bool) {
     let root = TempDirectory::new(
         "action read_only lookup() -> String;\nfn main() -> String { action lookup() }",
     );
@@ -3176,10 +3229,18 @@ fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefi
     ));
     let initial_executor = Arc::new(DeterministicConcurrentExecutor::default());
     let initial = interpreter_with_integration(Arc::clone(&initial_executor), initial_integration);
-    let storage = Arc::new(FailAfterStartStore::default());
+    let storage = Arc::new(if timeout_rollback {
+        FailAfterStartStore::with_failure_gate()
+    } else {
+        FailAfterStartStore::default()
+    });
     let storage_adapter: Arc<dyn JournalStorage> = storage.clone();
-    let journal_id = JournalId::new("automatic-durable-resume-commit-rollback")
-        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let journal_id = JournalId::new(if timeout_rollback {
+        "automatic-durable-resume-commit-rollback-timeout"
+    } else {
+        "automatic-durable-resume-commit-rollback"
+    })
+    .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
     let selection = selection();
     let started = match block_on(initial.start_durable_execution(
         Arc::clone(&storage_adapter),
@@ -3225,10 +3286,16 @@ fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefi
         [],
     ));
     let resume_executor = Arc::new(DeterministicConcurrentExecutor::default());
-    let resumed = interpreter_with_integration_and_identity_start(
+    if timeout_rollback {
+        resume_executor.control_sleeps();
+    }
+    let resumed = interpreter_with_capacities(
         Arc::clone(&resume_executor),
         resume_integration,
         97,
+        8,
+        8,
+        if timeout_rollback { 17 } else { 5_000_000 },
     );
     let mut resume = pin!(resumed.resume_durable_execution(
         Arc::clone(&storage_adapter),
@@ -3246,7 +3313,25 @@ fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefi
             .poll(&mut Context::from_waker(Waker::noop()))
             .is_pending()
     );
-    settle_task(&resume_executor, 0);
+    if timeout_rollback {
+        poll_task_until(&resume_executor, 0, || storage.failure_started());
+        resume_executor
+            .fail_abort(1)
+            .unwrap_or_else(|error| panic!("abort failure injection failed: {error:?}"));
+        storage.release_failure();
+        assert_eq!(
+            resume_executor.poll_task(0),
+            Ok(DeterministicTaskPoll::Pending)
+        );
+        assert_eq!(resume_executor.sleep_durations().len(), 1);
+        assert_eq!(resume_executor.sleep_durations()[0].get(), 17);
+        resume_executor
+            .release_sleep(0)
+            .unwrap_or_else(|error| panic!("rollback timer release failed: {error:?}"));
+        settle_task(&resume_executor, 0);
+    } else {
+        settle_task(&resume_executor, 0);
+    }
 
     let rejected = match resume
         .as_mut()
@@ -3267,10 +3352,21 @@ fn resume_revision_commit_failure_stops_the_gated_driver_and_preserves_the_prefi
     );
     assert!(rejected.release_error.is_none());
     assert_eq!(resume_executor.task_ids(), [0, 1]);
-    assert_eq!(
-        resume_executor.poll_task(1),
-        Ok(DeterministicTaskPoll::Stopped)
-    );
+    if timeout_rollback {
+        assert!(matches!(
+            resume_executor.abort_result(1),
+            Some(gantry::host::contracts::OwnedTaskAbort::Failed(_))
+        ));
+        assert!(matches!(
+            resume_executor.poll_task(1),
+            Ok(DeterministicTaskPoll::Settled(_))
+        ));
+    } else {
+        assert_eq!(
+            resume_executor.poll_task(1),
+            Ok(DeterministicTaskPoll::Stopped)
+        );
+    }
     assert_eq!(storage.release_count(), 2);
     assert_eq!(
         block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
@@ -4586,7 +4682,7 @@ fn interpreter_with_integration_and_identity_start<I>(
 where
     I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
 {
-    interpreter_with_capacities(executor, integration, identity_start, 8, 8)
+    interpreter_with_capacities(executor, integration, identity_start, 8, 8, 5_000_000)
 }
 
 fn interpreter_with_durable_delivery<I>(
@@ -4666,6 +4762,7 @@ fn interpreter_with_capacities<I>(
     identity_start: u8,
     resume_runnable_tasks: u64,
     public_activities: u64,
+    post_cancellation_drain_us: u64,
 ) -> Interpreter
 where
     I: IntegrationPreflight + RuntimeSessionService + HookFactory + 'static,
@@ -4707,7 +4804,9 @@ where
             8,
         )
         .unwrap_or_else(|error| panic!("capacity configuration failed: {error}")),
-    );
+    )
+    .with_post_cancellation_drain_us(post_cancellation_drain_us)
+    .unwrap_or_else(|error| panic!("drain configuration failed: {error}"));
     Interpreter::new(
         configuration,
         Arc::new(DeterministicUtcClock::new((1_u32..=96).map(timestamp))),
