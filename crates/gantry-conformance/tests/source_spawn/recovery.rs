@@ -356,7 +356,7 @@ fn recover_missing_control_event(kind: EventKind) {
     assert!(before.events().event_for_cause(cause).is_none());
 
     if kind == EventKind::Spawn {
-        for submission in 1..=3 {
+        for submission in [None, Some(1), Some(2), Some(3)] {
             assert_recovered_submission_rollback(
                 storage.clone(),
                 &journal_id,

@@ -2,16 +2,18 @@
 
 use super::*;
 
-/// Rejects root, child, or control submission after preflight owns the resume.
+/// Rejects capacity or a selected submission after preflight owns the resume.
 pub(super) fn assert_recovered_submission_rollback(
     storage: Arc<dyn JournalStorage>,
     journal_id: &JournalId,
     execution_id: ProtocolIdentity,
     prefix: &JournalPrefixV1,
-    submission: u64,
+    submission: Option<u64>,
 ) {
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
-    executor.fail_spawn_number(submission);
+    if let Some(submission) = submission {
+        executor.fail_spawn_number(submission);
+    }
     let integration = Arc::new(ScriptedIntegration::new(
         [ScriptedPreflight::success(
             EmbeddingOperation::ResolveSessions,
@@ -19,11 +21,23 @@ pub(super) fn assert_recovered_submission_rollback(
         )],
         [],
     ));
-    let interpreter = interpreter_with_identity_source(
+    let capacities = AsyncCapacityLimits::new(
+        8,
+        8,
+        if submission.is_some() { 8 } else { 1 },
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+    )
+    .unwrap_or_else(|error| panic!("capacity: {error:?}"));
+    let interpreter = interpreter_with_capacity_limits(
         executor.clone(),
         integration.clone(),
         integration.clone(),
-        8,
+        capacities,
         65_536,
         SinkPlan::default(),
         Arc::new(DeterministicIdentitySource::new(
@@ -57,8 +71,16 @@ pub(super) fn assert_recovered_submission_rollback(
         }
     }
     let Some(DurableResumeExecutionResult::Rejected(failure)) = result else {
-        panic!("submission {submission} was not rejected: {result:?}");
+        panic!("admission {submission:?} was not rejected: {result:?}");
     };
+    if submission.is_none() {
+        assert_eq!(failure.code.as_ref(), "resume-runnable-task-capacity");
+        assert_eq!(
+            executor.task_ids(),
+            [0],
+            "capacity rejection submitted a replacement driver"
+        );
+    }
     assert!(failure.release_error.is_none(), "{failure:?}");
     assert!(
         interpreter

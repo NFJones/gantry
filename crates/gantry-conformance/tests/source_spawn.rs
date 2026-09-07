@@ -4157,6 +4157,29 @@ fn interpreter_with_identity_source(
     event_delivery: SinkPlan,
     identities: Arc<dyn IdentitySource>,
 ) -> Interpreter {
+    let capacities = AsyncCapacityLimits::new(8, source_child_capacity, 8, 8, 8, 8, 8, 8, 8)
+        .unwrap_or_else(|error| panic!("capacity configuration failed: {error}"));
+    interpreter_with_capacity_limits(
+        executor,
+        integration,
+        runtime_sessions,
+        capacities,
+        maximum_tasks_per_execution,
+        event_delivery,
+        identities,
+    )
+}
+
+/// Allows recovery fixtures to test whole-graph capacity refusal before submission.
+fn interpreter_with_capacity_limits(
+    executor: Arc<dyn ExecutorAdapter>,
+    integration: Arc<ScriptedIntegration>,
+    runtime_sessions: Arc<dyn RuntimeSessionService>,
+    capacities: AsyncCapacityLimits,
+    maximum_tasks_per_execution: u64,
+    event_delivery: SinkPlan,
+    identities: Arc<dyn IdentitySource>,
+) -> Interpreter {
     let required = RequiredConfiguration::new(
         FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
@@ -4172,8 +4195,6 @@ fn interpreter_with_identity_source(
         8,
     )
     .unwrap_or_else(|error| panic!("required configuration failed: {error}"));
-    let capacities = AsyncCapacityLimits::new(8, source_child_capacity, 8, 8, 8, 8, 8, 8, 8)
-        .unwrap_or_else(|error| panic!("capacity configuration failed: {error}"));
     let configuration = InterpreterConfiguration::new(executor, identities, required, capacities)
         .with_maximum_tasks_per_execution(maximum_tasks_per_execution)
         .unwrap_or_else(|error| panic!("task-limit configuration failed: {error}"));
