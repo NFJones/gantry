@@ -388,7 +388,7 @@ struct ObservedJournalStore {
     post_commit_settlement_released: AtomicBool,
     post_commit_settlement_waker: Mutex<Option<Waker>>,
     releases: AtomicU64,
-    outcome_gate: bool,
+    operation_gate: Option<&'static str>,
 }
 
 impl ObservedJournalStore {
@@ -406,7 +406,7 @@ impl ObservedJournalStore {
             post_commit_settlement_released: AtomicBool::new(false),
             post_commit_settlement_waker: Mutex::new(None),
             releases: AtomicU64::new(0),
-            outcome_gate: false,
+            operation_gate: None,
         }
     }
 
@@ -490,10 +490,9 @@ impl JournalStorage for ObservedJournalStore {
             .map(|evidence| (evidence.kind.to_string(), evidence.canonical_body.to_vec()))
             .collect::<Vec<_>>();
         let is_settlement = committed.iter().any(|(kind, body)| {
-            if self.outcome_gate {
+            if let Some(cut) = self.operation_gate {
                 kind == "gantry.logical-evidence/v3"
-                    && std::str::from_utf8(body)
-                        .is_ok_and(|body| body.contains("\"cut\":\"operation-outcome\""))
+                    && std::str::from_utf8(body).is_ok_and(|body| body.contains(cut))
             } else {
                 kind == DURABLE_EVENT_SETTLED_KIND_V1
             }

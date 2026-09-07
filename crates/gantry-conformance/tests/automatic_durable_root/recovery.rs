@@ -4,21 +4,31 @@ use super::*;
 
 #[test]
 fn committed_serial_outcome_resumes_without_hook_and_repairs_completion() {
-    recover_serial_outcome(false, false);
+    recover_serial_outcome(false, false, false);
 }
 
 #[test]
 fn serial_completion_retains_outcome_cause_across_resume_revision() {
-    recover_serial_outcome(true, false);
+    recover_serial_outcome(true, false, false);
 }
 
 #[test]
 fn serial_model_outcome_reuses_forked_session_without_hook() {
-    recover_serial_outcome(false, true);
+    recover_serial_outcome(false, true, false);
+}
+
+#[test]
+fn serial_result_event_is_repaired_before_source_progress() {
+    recover_serial_outcome(false, false, true);
+}
+
+#[test]
+fn serial_model_result_repair_preserves_accepted_transcript() {
+    recover_serial_outcome(false, true, true);
 }
 
 /// A policy record may advance the journal tip without replacing the outcome cause.
-fn recover_serial_outcome(revise_mapping: bool, model: bool) {
+fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool) {
     let root = TempDirectory::new(if model {
         "agents { worker }\ndefault agent = worker;\nfn main() -> String { prompt(session = fork) \"hello\" -> String }"
     } else {
@@ -47,7 +57,11 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool) {
     ));
     let initial = interpreter_with_integration(executor.clone(), integration);
     let mut store = ObservedJournalStore::with_post_commit_settlement_gate(1);
-    store.outcome_gate = true;
+    store.operation_gate = Some(if result_cut {
+        "\"cut\":\"operation-result\""
+    } else {
+        "\"cut\":\"operation-outcome\""
+    });
     let storage = Arc::new(store);
     let journal_id = JournalId::new("serial-outcome-recovery")
         .unwrap_or_else(|error| panic!("journal: {error:?}"));
@@ -81,7 +95,14 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool) {
     .unwrap_or_else(|error| panic!("prefix: {error:?}"));
     let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
         .unwrap_or_else(|error| panic!("recovery: {error:?}"));
-    assert_eq!(recovered.latest_cut(), DurableCommitCutV1::OperationOutcome);
+    assert_eq!(
+        recovered.latest_cut(),
+        if result_cut {
+            DurableCommitCutV1::OperationResult
+        } else {
+            DurableCommitCutV1::OperationOutcome
+        }
+    );
     let cause = recovered.latest_evidence_id();
     let sequence = recovered.latest_sequence();
     let retained_sessions = recovered.sessions().cloned();
@@ -207,7 +228,11 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool) {
         .unwrap_or_else(|| panic!("missing completion"));
     assert_eq!(
         event.occurrence().event().kind(),
-        EventKind::OperationCompletion
+        if result_cut {
+            EventKind::OperationResult
+        } else {
+            EventKind::OperationCompletion
+        }
     );
     assert_eq!(
         event.occurrence_sequence(),

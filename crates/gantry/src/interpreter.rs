@@ -4020,7 +4020,63 @@ impl Interpreter {
         )
         .unwrap_or_else(|_| unreachable!("committed durable start retains hook context"));
         let mut model_session_occurrence = 0_u64;
-        let mut task_event_sequence = 0_u64;
+        let mut task_event_sequence = match recovered_task_event_sequences(recovered.events()) {
+            Ok(sequences) => sequences.get(&task_id).copied().unwrap_or(0),
+            Err(_) => {
+                owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                return;
+            }
+        };
+        if let DurableOperationRecoveryV1::ReuseResult {
+            operation_id,
+            result_type,
+            result_bytes,
+        } = recovered.operation_recovery().clone()
+        {
+            let cause = recovered.semantic_evidence_id();
+            if recovered.events().event_for_cause(cause).is_none() {
+                let value = match decode_logical_value(
+                    &result_bytes,
+                    &result_type,
+                    self.inner.configuration.required().value_limits,
+                    operations.declared_value_shapes.as_ref(),
+                ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                        return;
+                    }
+                };
+                let (kind, normalized) = match result_type.kind() {
+                    TypeKind::Unit => (OperationResultEventKindV1::Unit, None),
+                    TypeKind::Decision => (OperationResultEventKindV1::Decision, Some(&value)),
+                    _ => (OperationResultEventKindV1::Value, Some(&value)),
+                };
+                let event =
+                    match operation_result_event(operation_id, &result_type, kind, normalized) {
+                        Ok(event) => event,
+                        Err(_) => {
+                            owner.fail_driver(last_committed, DurableRunFailure::Internal);
+                            return;
+                        }
+                    };
+                if let Err(failure) = self
+                    .commit_durable_event(
+                        &owner,
+                        &mut recovered,
+                        operations.activity_id,
+                        task_id,
+                        &mut task_event_sequence,
+                        event,
+                        &mut last_committed,
+                    )
+                    .await
+                {
+                    owner.fail_driver(last_committed, failure);
+                    return;
+                }
+            }
+        }
         loop {
             if let Some(reason) = owner.take_driver_cancellation() {
                 if let Err(failure) = owner
@@ -13108,7 +13164,7 @@ fn recovered_concurrent_task_drivers(
         .collect()
 }
 
-#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[cfg(feature = "durable")]
 fn recovered_task_event_sequences(
     events: &RecoveredDurableEventsV1,
 ) -> Result<BTreeMap<ProtocolIdentity, u64>, &'static str> {
