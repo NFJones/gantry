@@ -980,7 +980,7 @@ impl DurableOwnedExecution {
     }
 
     /// Reads the committed budget frontier for journal-prefix conformance checks.
-    #[cfg(feature = "test-support")]
+    #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     #[must_use]
     pub fn test_committed_budget(&self) -> gantry_runtime::ExecutionBudgetSnapshot {
