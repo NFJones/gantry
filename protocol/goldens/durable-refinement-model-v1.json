@@ -3,6 +3,9 @@
   "maximum_depth": 15,
   "explored_state_count": 3724,
   "terminal_state_count": 2772,
+  "recovered_graph_maximum_depth": 18,
+  "recovered_graph_explored_state_count": 56,
+  "recovered_graph_terminal_state_count": 4,
   "obligations": [
     "cancellation-nonconsumption",
     "causally-closed-prefix-recovery",
@@ -20,11 +23,24 @@
     "no-recovery-generic-analysis",
     "fail-closed-generic-artifacts"
   ],
+  "recovered_graph_obligations": [
+    "coherent-reconstruction-before-submission",
+    "complete-runnable-set-registration-behind-closed-gates",
+    "exactly-once-logical-creation",
+    "exactly-once-logical-foreground",
+    "exactly-once-logical-ownership",
+    "exactly-once-logical-result",
+    "exactly-once-logical-settlement",
+    "exactly-once-logical-terminal",
+    "owner-epoch-fencing",
+    "replacement-physical-submissions"
+  ],
   "assumptions": [
     "The analyzed package is well typed and recovery reconstructs the shared explicit-frame Machine.",
     "Journal reads expose one causally closed authoritative prefix and fenced owners reject superseded commits.",
+    "The recovered-graph slice has one root and one child; fair executor service and eventual host settlement are assumptions rather than consequences of the finite search.",
     "Host outcomes and delivery results are nondeterministic; genuinely pending host work has no wall-clock completion guarantee.",
-    "The search is bounded to one execution, task, operation, delivery, owner, and the declared maximum trace depth; it is not an unbounded proof."
+    "The sequential search is bounded to one execution, task, operation, delivery, owner, and its declared depth; the orthogonal recovered-graph search is bounded to one root, one child, two owner epochs, at most two replacement submissions per task, and its declared depth; each search is not an unbounded proof."
   ],
   "counterexamples": [
     { "id": "accept-before-outcome", "trace": ["prepare-read-only"], "rejected_action": "accept-result", "invariant": "commit-before-observation" },
@@ -42,6 +58,18 @@
     { "id": "settle-cancelled-before-commit", "trace": [], "rejected_action": "settle-cancelled", "invariant": "commit-before-observation" },
     { "id": "source-after-cancellation", "trace": ["commit-cancellation"], "rejected_action": "prepare-read-only", "invariant": "cancellation-nonconsumption" },
     { "id": "tampered-artifact-commit", "trace": [], "rejected_action": "commit-tampered-generic-artifact", "invariant": "fail-closed-generic-artifacts" }
+  ],
+  "recovered_graph_counterexamples": [
+    { "id": "duplicate-child-creation", "trace": ["commit-child-creation"], "rejected_action": "commit-child-creation", "invariant": "exactly-once-logical-creation" },
+    { "id": "duplicate-child-ownership", "trace": ["commit-child-creation", "commit-child-ownership"], "rejected_action": "commit-child-ownership", "invariant": "exactly-once-logical-ownership" },
+    { "id": "duplicate-child-result", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner", "reconstruct-root", "reconstruct-child", "admit-recovered-graph", "submit-replacement-root", "submit-replacement-child", "register-root", "register-child", "open-gates", "commit-child-settlement", "commit-child-result"], "rejected_action": "commit-child-result", "invariant": "exactly-once-logical-result" },
+    { "id": "duplicate-child-settlement", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner", "reconstruct-root", "reconstruct-child", "admit-recovered-graph", "submit-replacement-root", "submit-replacement-child", "register-root", "register-child", "open-gates", "commit-child-settlement"], "rejected_action": "commit-child-settlement", "invariant": "exactly-once-logical-settlement" },
+    { "id": "duplicate-foreground", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner", "reconstruct-root", "reconstruct-child", "admit-recovered-graph", "submit-replacement-root", "submit-replacement-child", "register-root", "register-child", "open-gates", "commit-child-settlement", "commit-child-result", "commit-root-settlement", "commit-foreground"], "rejected_action": "commit-foreground", "invariant": "exactly-once-logical-foreground" },
+    { "id": "duplicate-root-settlement", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner", "reconstruct-root", "reconstruct-child", "admit-recovered-graph", "submit-replacement-root", "submit-replacement-child", "register-root", "register-child", "open-gates", "commit-child-settlement", "commit-child-result", "commit-root-settlement"], "rejected_action": "commit-root-settlement", "invariant": "exactly-once-logical-settlement" },
+    { "id": "duplicate-terminal", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner", "reconstruct-root", "reconstruct-child", "admit-recovered-graph", "submit-replacement-root", "submit-replacement-child", "register-root", "register-child", "open-gates", "commit-child-settlement", "commit-child-result", "commit-root-settlement", "commit-foreground", "commit-terminal"], "rejected_action": "commit-terminal", "invariant": "exactly-once-logical-terminal" },
+    { "id": "gate-open-before-full-registration", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner", "reconstruct-root", "reconstruct-child", "admit-recovered-graph", "submit-replacement-root", "submit-replacement-child", "register-root"], "rejected_action": "open-gates", "invariant": "complete-runnable-set-registration-behind-closed-gates" },
+    { "id": "incomplete-reconstruction-admission", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner", "reconstruct-root"], "rejected_action": "admit-recovered-graph", "invariant": "coherent-reconstruction-before-submission" },
+    { "id": "stale-owner-publish", "trace": ["commit-child-creation", "commit-child-ownership", "acquire-replacement-owner"], "rejected_action": "publish-from-stale-owner", "invariant": "owner-epoch-fencing" }
   ]
 }
 

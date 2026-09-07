@@ -24,6 +24,18 @@ const OBLIGATIONS: [&str; 15] = [
     "no-recovery-generic-analysis",
     "fail-closed-generic-artifacts",
 ];
+const RECOVERED_GRAPH_OBLIGATIONS: [&str; 10] = [
+    "coherent-reconstruction-before-submission",
+    "complete-runnable-set-registration-behind-closed-gates",
+    "exactly-once-logical-creation",
+    "exactly-once-logical-foreground",
+    "exactly-once-logical-ownership",
+    "exactly-once-logical-result",
+    "exactly-once-logical-settlement",
+    "exactly-once-logical-terminal",
+    "owner-epoch-fencing",
+    "replacement-physical-submissions",
+];
 const ACTIONS: [Action; 25] = [
     Action::AcceptResult,
     Action::BeginShutdown,
@@ -79,13 +91,26 @@ struct DurableModel {
     maximum_depth: usize,
     explored_state_count: usize,
     terminal_state_count: usize,
+    recovered_graph_maximum_depth: usize,
+    recovered_graph_explored_state_count: usize,
+    recovered_graph_terminal_state_count: usize,
     obligations: Vec<String>,
+    recovered_graph_obligations: Vec<String>,
     assumptions: Vec<String>,
     counterexamples: Vec<Counterexample>,
+    recovered_graph_counterexamples: Vec<RecoveredGraphCounterexample>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Counterexample {
+    id: String,
+    trace: Vec<String>,
+    rejected_action: String,
+    invariant: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecoveredGraphCounterexample {
     id: String,
     trace: Vec<String>,
     rejected_action: String,
@@ -178,6 +203,49 @@ enum Outcome {
 enum Representation {
     Full,
     Snapshot,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct RecoveredGraphState {
+    owner_epoch: u8,
+    child_creation_commits: u8,
+    child_ownership_commits: u8,
+    root_reconstructed: bool,
+    child_reconstructed: bool,
+    admitted: bool,
+    root_physical_submissions: u8,
+    child_physical_submissions: u8,
+    root_registered: bool,
+    child_registered: bool,
+    gates_open: bool,
+    child_settlement_commits: u8,
+    child_result_commits: u8,
+    root_settlement_commits: u8,
+    foreground_commits: u8,
+    terminal_commits: u8,
+}
+
+impl RecoveredGraphState {
+    const fn initial() -> Self {
+        Self {
+            owner_epoch: 1,
+            child_creation_commits: 0,
+            child_ownership_commits: 0,
+            root_reconstructed: false,
+            child_reconstructed: false,
+            admitted: false,
+            root_physical_submissions: 0,
+            child_physical_submissions: 0,
+            root_registered: false,
+            child_registered: false,
+            gates_open: false,
+            child_settlement_commits: 0,
+            child_result_commits: 0,
+            root_settlement_commits: 0,
+            foreground_commits: 0,
+            terminal_commits: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -295,6 +363,71 @@ enum Action {
     RewriteRecoveredCallTarget,
 }
 
+const RECOVERED_GRAPH_ACTIONS: [RecoveredGraphAction; 16] = [
+    RecoveredGraphAction::AcquireReplacementOwner,
+    RecoveredGraphAction::AdmitRecoveredGraph,
+    RecoveredGraphAction::CommitChildCreation,
+    RecoveredGraphAction::CommitChildOwnership,
+    RecoveredGraphAction::CommitChildResult,
+    RecoveredGraphAction::CommitChildSettlement,
+    RecoveredGraphAction::CommitForeground,
+    RecoveredGraphAction::CommitRootSettlement,
+    RecoveredGraphAction::CommitTerminal,
+    RecoveredGraphAction::OpenGates,
+    RecoveredGraphAction::ReconstructChild,
+    RecoveredGraphAction::ReconstructRoot,
+    RecoveredGraphAction::RegisterChild,
+    RecoveredGraphAction::RegisterRoot,
+    RecoveredGraphAction::SubmitReplacementChild,
+    RecoveredGraphAction::SubmitReplacementRoot,
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RecoveredGraphAction {
+    AcquireReplacementOwner,
+    AdmitRecoveredGraph,
+    CommitChildCreation,
+    CommitChildOwnership,
+    CommitChildResult,
+    CommitChildSettlement,
+    CommitForeground,
+    CommitRootSettlement,
+    CommitTerminal,
+    OpenGates,
+    PublishFromStaleOwner,
+    ReconstructChild,
+    ReconstructRoot,
+    RegisterChild,
+    RegisterRoot,
+    SubmitReplacementChild,
+    SubmitReplacementRoot,
+}
+
+impl RecoveredGraphAction {
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "acquire-replacement-owner" => Self::AcquireReplacementOwner,
+            "admit-recovered-graph" => Self::AdmitRecoveredGraph,
+            "commit-child-creation" => Self::CommitChildCreation,
+            "commit-child-ownership" => Self::CommitChildOwnership,
+            "commit-child-result" => Self::CommitChildResult,
+            "commit-child-settlement" => Self::CommitChildSettlement,
+            "commit-foreground" => Self::CommitForeground,
+            "commit-root-settlement" => Self::CommitRootSettlement,
+            "commit-terminal" => Self::CommitTerminal,
+            "open-gates" => Self::OpenGates,
+            "publish-from-stale-owner" => Self::PublishFromStaleOwner,
+            "reconstruct-child" => Self::ReconstructChild,
+            "reconstruct-root" => Self::ReconstructRoot,
+            "register-child" => Self::RegisterChild,
+            "register-root" => Self::RegisterRoot,
+            "submit-replacement-child" => Self::SubmitReplacementChild,
+            "submit-replacement-root" => Self::SubmitReplacementRoot,
+            _ => return None,
+        })
+    }
+}
+
 impl Action {
     fn parse(value: &str) -> Option<Self> {
         Some(match value {
@@ -339,6 +472,10 @@ fn bounded_durable_refinement_model_and_counterexamples_replay() {
         read_json(&root.join("protocol/goldens/durable-refinement-model-v1.json"));
     assert_eq!(model.format, "gantry.durable-refinement-model/v1");
     assert_eq!(model.obligations, OBLIGATIONS);
+    assert_eq!(
+        model.recovered_graph_obligations,
+        RECOVERED_GRAPH_OBLIGATIONS
+    );
     assert!(
         model
             .assumptions
@@ -382,6 +519,40 @@ fn bounded_durable_refinement_model_and_counterexamples_replay() {
         model.terminal_state_count
     );
 
+    let mut recovered_visited = BTreeSet::from([RecoveredGraphState::initial()]);
+    let mut recovered_pending = VecDeque::from([(RecoveredGraphState::initial(), 0_usize)]);
+    while let Some((state, depth)) = recovered_pending.pop_front() {
+        assert_recovered_graph_invariants(state);
+        if depth == model.recovered_graph_maximum_depth {
+            continue;
+        }
+        for action in RECOVERED_GRAPH_ACTIONS {
+            let Some(next) = apply_recovered_graph(state, action) else {
+                continue;
+            };
+            assert_recovered_graph_invariants(next);
+            if recovered_visited.insert(next) {
+                recovered_pending.push_back((next, depth.saturating_add(1)));
+            }
+        }
+    }
+    assert_eq!(
+        recovered_visited.len(),
+        model.recovered_graph_explored_state_count
+    );
+    assert_eq!(
+        recovered_visited
+            .iter()
+            .filter(|state| state.terminal_commits == 1)
+            .count(),
+        model.recovered_graph_terminal_state_count
+    );
+    assert!(recovered_visited.iter().any(|state| {
+        state.root_physical_submissions == 2
+            && state.child_physical_submissions == 2
+            && state.gates_open
+    }));
+
     let ids = model
         .counterexamples
         .iter()
@@ -401,6 +572,43 @@ fn bounded_durable_refinement_model_and_counterexamples_replay() {
             .unwrap_or_else(|| panic!("unknown rejected action in {}", case.id));
         assert!(apply(state, rejected).is_none(), "{}", case.id);
         assert_invariants(state);
+    }
+
+    let recovered_ids = model
+        .recovered_graph_counterexamples
+        .iter()
+        .map(|case| case.id.as_str())
+        .collect::<Vec<_>>();
+    assert_sorted_unique(&recovered_ids);
+    for case in &model.recovered_graph_counterexamples {
+        assert!(
+            model
+                .recovered_graph_obligations
+                .iter()
+                .any(|obligation| obligation == &case.invariant),
+            "{}",
+            case.id
+        );
+        let mut state = RecoveredGraphState::initial();
+        for action in &case.trace {
+            let action = RecoveredGraphAction::parse(action).unwrap_or_else(|| {
+                panic!("unknown recovered-graph action in {}: {action}", case.id)
+            });
+            state = apply_recovered_graph(state, action).unwrap_or_else(|| {
+                panic!(
+                    "invalid recovered-graph replay prefix in {}: {action:?}",
+                    case.id
+                )
+            });
+        }
+        let rejected = RecoveredGraphAction::parse(&case.rejected_action)
+            .unwrap_or_else(|| panic!("unknown recovered-graph rejected action in {}", case.id));
+        assert!(
+            apply_recovered_graph(state, rejected).is_none(),
+            "{}",
+            case.id
+        );
+        assert_recovered_graph_invariants(state);
     }
 }
 
@@ -622,6 +830,119 @@ fn apply(mut state: ModelState, action: Action) -> Option<ModelState> {
     Some(state)
 }
 
+fn apply_recovered_graph(
+    mut state: RecoveredGraphState,
+    action: RecoveredGraphAction,
+) -> Option<RecoveredGraphState> {
+    match action {
+        RecoveredGraphAction::CommitChildCreation if state.child_creation_commits == 0 => {
+            state.child_creation_commits = 1;
+        }
+        RecoveredGraphAction::CommitChildOwnership
+            if state.child_creation_commits == 1 && state.child_ownership_commits == 0 =>
+        {
+            state.child_ownership_commits = 1;
+        }
+        RecoveredGraphAction::AcquireReplacementOwner
+            if state.owner_epoch == 1 && state.child_ownership_commits == 1 =>
+        {
+            state.owner_epoch = 2;
+        }
+        RecoveredGraphAction::ReconstructRoot
+            if state.owner_epoch == 2 && !state.root_reconstructed && !state.admitted =>
+        {
+            state.root_reconstructed = true;
+        }
+        RecoveredGraphAction::ReconstructChild
+            if state.owner_epoch == 2 && !state.child_reconstructed && !state.admitted =>
+        {
+            state.child_reconstructed = true;
+        }
+        RecoveredGraphAction::AdmitRecoveredGraph
+            if state.owner_epoch == 2
+                && state.root_reconstructed
+                && state.child_reconstructed
+                && !state.admitted =>
+        {
+            state.admitted = true;
+        }
+        RecoveredGraphAction::SubmitReplacementRoot
+            if state.admitted && !state.gates_open && state.root_physical_submissions < 2 =>
+        {
+            state.root_physical_submissions += 1;
+        }
+        RecoveredGraphAction::SubmitReplacementChild
+            if state.admitted && !state.gates_open && state.child_physical_submissions < 2 =>
+        {
+            state.child_physical_submissions += 1;
+        }
+        RecoveredGraphAction::RegisterRoot
+            if !state.gates_open
+                && state.root_physical_submissions > 0
+                && !state.root_registered =>
+        {
+            state.root_registered = true;
+        }
+        RecoveredGraphAction::RegisterChild
+            if !state.gates_open
+                && state.child_physical_submissions > 0
+                && !state.child_registered =>
+        {
+            state.child_registered = true;
+        }
+        RecoveredGraphAction::OpenGates
+            if state.admitted
+                && state.root_registered
+                && state.child_registered
+                && !state.gates_open =>
+        {
+            state.gates_open = true;
+        }
+        RecoveredGraphAction::CommitChildSettlement
+            if current_owner_can_publish(state)
+                && state.child_settlement_commits == 0
+                && state.root_settlement_commits == 0 =>
+        {
+            state.child_settlement_commits = 1;
+        }
+        RecoveredGraphAction::CommitChildResult
+            if current_owner_can_publish(state)
+                && state.child_settlement_commits == 1
+                && state.child_result_commits == 0 =>
+        {
+            state.child_result_commits = 1;
+        }
+        RecoveredGraphAction::CommitRootSettlement
+            if current_owner_can_publish(state)
+                && state.child_result_commits == 1
+                && state.root_settlement_commits == 0 =>
+        {
+            state.root_settlement_commits = 1;
+        }
+        RecoveredGraphAction::CommitForeground
+            if current_owner_can_publish(state)
+                && state.root_settlement_commits == 1
+                && state.foreground_commits == 0 =>
+        {
+            state.foreground_commits = 1;
+        }
+        RecoveredGraphAction::CommitTerminal
+            if current_owner_can_publish(state)
+                && state.foreground_commits == 1
+                && state.terminal_commits == 0 =>
+        {
+            state.terminal_commits = 1;
+        }
+        RecoveredGraphAction::PublishFromStaleOwner => return None,
+        _ => return None,
+    }
+    Some(state)
+}
+
+fn current_owner_can_publish(state: RecoveredGraphState) -> bool {
+    state.owner_epoch == 2 && state.gates_open
+}
+
 fn source_action_allowed(state: ModelState) -> bool {
     state.task == TaskState::Running && !state.cancelled && state.terminal.is_none()
 }
@@ -700,6 +1021,60 @@ fn assert_invariants(state: ModelState) {
     if state.phase == InterpreterPhase::Terminated {
         assert!(state.terminal.is_some());
         assert_ne!(state.owner, OwnerState::Held);
+    }
+}
+
+fn assert_recovered_graph_invariants(state: RecoveredGraphState) {
+    assert!((1..=2).contains(&state.owner_epoch));
+    for logical_commits in [
+        state.child_creation_commits,
+        state.child_ownership_commits,
+        state.child_settlement_commits,
+        state.child_result_commits,
+        state.root_settlement_commits,
+        state.foreground_commits,
+        state.terminal_commits,
+    ] {
+        assert!(logical_commits <= 1);
+    }
+    assert!(state.root_physical_submissions <= 2);
+    assert!(state.child_physical_submissions <= 2);
+    if state.child_ownership_commits == 1 {
+        assert_eq!(state.child_creation_commits, 1);
+    }
+    if state.owner_epoch == 2 {
+        assert_eq!(state.child_ownership_commits, 1);
+    }
+    if state.admitted {
+        assert!(state.root_reconstructed && state.child_reconstructed);
+    }
+    if state.root_physical_submissions > 0 || state.child_physical_submissions > 0 {
+        assert_eq!(state.owner_epoch, 2);
+        assert!(state.admitted && state.root_reconstructed && state.child_reconstructed);
+    }
+    if state.root_registered {
+        assert!(state.admitted && state.root_physical_submissions > 0);
+    }
+    if state.child_registered {
+        assert!(state.admitted && state.child_physical_submissions > 0);
+    }
+    if state.gates_open {
+        assert!(state.root_registered && state.child_registered);
+    }
+    if state.child_settlement_commits == 1 {
+        assert!(current_owner_can_publish(state));
+    }
+    if state.child_result_commits == 1 {
+        assert_eq!(state.child_settlement_commits, 1);
+    }
+    if state.root_settlement_commits == 1 {
+        assert_eq!(state.child_result_commits, 1);
+    }
+    if state.foreground_commits == 1 {
+        assert_eq!(state.root_settlement_commits, 1);
+    }
+    if state.terminal_commits == 1 {
+        assert_eq!(state.foreground_commits, 1);
     }
 }
 

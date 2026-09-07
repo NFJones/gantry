@@ -7,11 +7,14 @@ durability refines the same explicit-frame machine used by the nondurable
 evaluator. It covers authoritative committed prefixes, semantic commit points,
 crash recovery, checkpoints and compaction, operation and event-delivery
 indeterminacy, recorded retry delays, cancellation, foreground and terminal
-completion, delivery barriers, journal-owner release, and shutdown.
+completion, delivery barriers, journal-owner release, and shutdown. An
+orthogonal bounded slice covers fenced recovery of one root with one child.
 
 The argument is profile-scoped to `durable-runtime` without the concurrent
 refinement. Physical SQLite tables and write behavior are not semantic inputs.
-Combined concurrent-durable task-graph recovery remains outside this claim.
+The recovered-graph claim is limited to the one-root/one-child topology and the
+finite transition and submission bounds stated below; it is not a general
+concurrent refinement.
 
 The separate combined-checkpoint/v4 codec retains first-class root status,
 pending and settled outcomes, and root/child driver-ownership bookkeeping.
@@ -23,8 +26,9 @@ source-spawn evidence establishes coherent task-creation, operation, and
 settlement commit ordering through those graph envelopes. The source-join
 evidence adds live join and detach ownership transfer, all-settled observation,
 and result, failure, and event publication before parent source continuation.
-Fenced task-graph reconstruction and executor resubmission remain separate
-recovery obligations.
+For the bounded recovered graph, a replacement owner reconstructs both tasks
+coherently before admission, submits and registers the complete runnable set
+behind closed gates, and only then opens those gates for logical publication.
 
 `ExecutionCoordinator::stage_graph` provides an exclusive quiescent transaction
 primitive over borrowed root and child machines. Its private copies share one
@@ -62,9 +66,9 @@ settlement, sibling and detached-task isolation, nondurable executor drain,
 dropped cancellation ownership, submitted-unpolled and failed-abort handling,
 bounded abort of cancellation-resistant durable dispatch, retained journal
 ownership while physical work remains live, and cancellation/shutdown owner
-handoff. Fenced graph reconstruction and
-replacement submission remain `GNT-ASYNC-REC-001`; this evidence does not
-restore a durable-runtime profile publication claim.
+handoff. `GNT-ASYNC-REC-001` supplies the concrete recovered-graph evidence used
+by this bounded refinement slice. The slice does not by itself publish a
+broader concurrent-durable profile claim.
 
 For the generics-and-static-traits amendment, the durable prefix retains the
 canonical analysis artifacts and the distinct closed executable projection
@@ -80,13 +84,17 @@ the public recovery projection. A crash may occur before or after each modeled
 semantic commit point. Uncommitted physical tails are absent from that prefix.
 Fenced acquisition ensures a superseded owner cannot extend it.
 
-The checked model is bounded to one accepted execution, one root task, one
-logical operation, one event delivery, one immutable language outcome, one
-required-delivery barrier, one journal owner, and the maximum trace depth in
-`protocol/goldens/durable-refinement-model-v1.json`. Host outcomes and delivery
-results are nondeterministic choices. Genuinely pending host work is not a
-wall-clock termination claim. The search is not an unbounded proof over every
-program, prefix length, operation, event, checkpoint, crash, or adapter.
+The sequential checked model is bounded to one accepted execution, one root
+task, one logical operation, one event delivery, one immutable language
+outcome, one required-delivery barrier, one journal owner, and its maximum
+trace depth in `protocol/goldens/durable-refinement-model-v1.json`. The
+orthogonal recovered-graph model is bounded to one root, one child, two owner
+epochs, at most two replacement physical submissions per task, and its own
+declared depth. Host outcomes and delivery results are nondeterministic choices.
+Fair executor service and eventual host-future settlement are assumptions, not
+consequences of the finite search. Genuinely pending host work is not a
+wall-clock termination claim. Each search is not an unbounded proof over every
+program, graph, prefix length, operation, event, checkpoint, crash, or adapter.
 
 The amended model carries immutable identities for one retained closed generic
 descriptor, selected trait-call target, concrete effect summary, operation
@@ -119,6 +127,15 @@ source analysis.
 - Required-delivery barrier and journal-owner status remain separate from the
   fixed foreground and terminal language outcomes. Release invalidates the
   owner after terminal and finite delivery obligations settle.
+- A recovered one-root/one-child prefix records child creation and ownership
+  once. A distinct replacement owner epoch fences the superseded owner before
+  reconstructed state can be admitted. Both root and child must be reconstructed
+  coherently before either replacement submission, and both runnable entries
+  must be registered while their gates remain closed before either can run.
+  The replacement owner may make another physical submission for unfinished
+  work within the model bound, but committed child settlement and result, root
+  settlement, foreground, and terminal transitions remain single logical
+  transitions. This is not an exactly-once physical executor-submission claim.
 - Each terminal event has one committed logical occurrence, and each sink has
   at most one committed settled delivery for it. Retry attempts precede that
   settlement; recovery never redelivers a settled occurrence. Foreground waits
@@ -167,6 +184,19 @@ outcome precedes validation; accepted result precedes consumption;
 cancellation precedes signalling and settlement; event occurrence precedes
 delivery; task settlement precedes foreground and terminal completion; and
 terminal completion plus delivery settlement precede owner release.
+
+**Fenced recovered-graph admission.** The recovered slice has no admission
+transition until root and child reconstruction are both complete under the
+replacement owner epoch. Physical root and child submissions precede their
+registrations, registration occurs behind closed gates, and the gate-opening
+transition requires the complete runnable set. A stale-owner publication has
+no transition after replacement ownership is acquired.
+
+**Logical uniqueness under physical replacement.** Child creation and
+ownership, child and root settlement, child result, foreground, and terminal
+coordinates each admit one logical commit. The physical-submission counters are
+separate coordinates and may exceed one for unfinished work, so the simulation
+does not equate executor submissions with logical creation or completion.
 
 **Crash classification and retry reuse.** Recovery classification is a pure
 function of committed state. Prepared read-only work redispatches, prepared
@@ -241,9 +271,11 @@ owned by the existing durable implementation suites.
 The current-specification source evidence is split between
 `protocol/conformance/source-spawn-v1.json` and
 `protocol/conformance/source-join-v1.json`. The latter records the live
-concurrent-durable ownership and all-settled ordering slice only; it does not
-claim recovered runnable-graph resubmission or descendant cancellation and
-failure draining. The latter behavior is instead frozen by the owner-specific
+concurrent-durable ownership and all-settled ordering slice. The bounded
+recovered runnable-graph argument here additionally relies on the fenced
+reconstruction, all-or-nothing admission, and replacement-submission evidence
+in `protocol/conformance/async-recovery-v1.json`. Descendant cancellation and
+failure draining remain frozen by the owner-specific
 `protocol/conformance/async-cancellation-v1.json` evidence without broadening
 the source-spawn/source-join manifests or publishing a conformance profile.
 
@@ -277,4 +309,11 @@ projection, or tampered-artifact commit has no transition from an admitted
 model state. Preservation of the immutable generic coordinates is checked at
 every modeled crash cut, and the linked public negative cases reject such
 inputs before they can affect the authoritative prefix.
+
+The orthogonal recovered-graph replays reject stale-owner publication,
+admission from an incomplete root/child reconstruction, gate opening before
+both submitted tasks are registered, and duplicate logical creation,
+ownership, settlement, result, foreground, and terminal commits. Multiple
+bounded physical replacement submissions remain permitted and therefore are
+not replayed as logical-uniqueness violations.
 
