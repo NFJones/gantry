@@ -4953,7 +4953,7 @@ impl Interpreter {
                             )
                             .await?;
                         } else {
-                            self.drive_durable_graph_model_operation(
+                            Box::pin(self.drive_durable_graph_model_operation(
                                 &graph,
                                 &owner,
                                 &coordinator,
@@ -4964,7 +4964,7 @@ impl Interpreter {
                                 &operation,
                                 model_session_occurrence,
                                 recovery,
-                            )
+                            ))
                             .await?;
                             model_session_occurrence = model_session_occurrence.saturating_add(1);
                         }
@@ -6781,6 +6781,15 @@ impl Interpreter {
             let action_recovery = Some(action.recovery);
             let (dispatch_id, request_bytes, validation_attempt, recovery_dispatch, outcome) =
                 if let Some(request_bytes) = reused_outcome_request.take() {
+                    self.repair_recovered_operation_completion(
+                        graph,
+                        owner,
+                        coordinator,
+                        context,
+                        task_id,
+                        &operation,
+                    )
+                    .await?;
                     let (dispatch_id, outcome, validation_attempt, recovery_dispatch) = operation
                         .outcome_context()
                         .ok_or(DurableRunFailure::Internal)?;
@@ -7382,6 +7391,15 @@ impl Interpreter {
         loop {
             let (dispatch_id, request_bytes, validation_attempt, recovery_dispatch, outcome) =
                 if let Some(request_bytes) = reused_outcome_request.take() {
+                    Box::pin(self.repair_recovered_operation_completion(
+                        graph,
+                        owner,
+                        coordinator,
+                        context,
+                        task_id,
+                        &operation,
+                    ))
+                    .await?;
                     let (dispatch_id, outcome, validation_attempt, recovery_dispatch) = operation
                         .outcome_context()
                         .ok_or(DurableRunFailure::Internal)?;
@@ -7786,6 +7804,54 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn repair_recovered_operation_completion(
+        &self,
+        graph: &Arc<SharedDurableMachineGraph>,
+        owner: &crate::DurableOwnedExecution,
+        coordinator: &ExecutionCoordinator,
+        context: &DurableOperationContext,
+        task_id: ProtocolIdentity,
+        operation: &OperationLifecycle,
+    ) -> Result<(), DurableRunFailure> {
+        let (dispatch, outcome, validation_attempt, recovery_dispatch) = operation
+            .outcome_context()
+            .ok_or(DurableRunFailure::Internal)?;
+        let draft = operation_completion_event(
+            operation.captured(),
+            dispatch,
+            validation_attempt,
+            recovery_dispatch,
+            outcome,
+        )
+        .map_err(|_| DurableRunFailure::Internal)?;
+        let mut lease = graph.acquire().await.ok_or(DurableRunFailure::Internal)?;
+        let sequence = lease
+            .next_event_sequence
+            .get(&task_id)
+            .copied()
+            .unwrap_or(0);
+        let event = self.complete_graph_event(context, task_id, sequence, draft.clone());
+        let (frontier, repaired) = owner
+            .repair_recovered_graph_event(
+                Arc::clone(&graph.program),
+                coordinator,
+                |recovered| recovered.operation_outcome_cause(dispatch),
+                event,
+                &draft.protected_payloads,
+            )
+            .await?;
+        lease.frontier = frontier;
+        if repaired {
+            lease.next_event_sequence.insert(
+                task_id,
+                sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+            );
+        }
+        Ok(())
     }
 
     #[cfg(all(feature = "concurrent", feature = "durable"))]

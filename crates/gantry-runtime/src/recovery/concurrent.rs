@@ -2216,12 +2216,19 @@ pub struct RecoveredConcurrentDurableStateV1 {
     operation_recoveries: BTreeMap<ProtocolIdentity, DurableOperationRecoveryV1>,
     task_creation_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     operation_result_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
+    operation_outcome_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
 }
 
 impl RecoveredConcurrentDurableStateV1 {
+    /// Returns the committed outcome cause for one physical dispatch.
+    #[must_use]
+    pub fn operation_outcome_cause(&self, dispatch: ProtocolIdentity) -> Option<ProtocolIdentity> {
+        self.operation_outcome_causes.get(&dispatch).copied()
+    }
+
     /// Returns the committed result cause for a logical operation.
     #[must_use]
     pub fn operation_result_cause(&self, operation: ProtocolIdentity) -> Option<ProtocolIdentity> {
@@ -2325,6 +2332,7 @@ pub fn recover_concurrent_authoritative_prefix(
     let mut operation_recoveries = BTreeMap::new();
     let mut task_creation_causes = BTreeMap::new();
     let mut operation_result_causes = BTreeMap::new();
+    let mut operation_outcome_causes = BTreeMap::new();
     if let Some(snapshot) = snapshot {
         for record in snapshot.legacy_graphs.iter() {
             if record.evidence.cut() == DurableCommitCutV1::TaskCreation {
@@ -2341,6 +2349,14 @@ pub fn recover_concurrent_authoritative_prefix(
                 &mut committed_results,
             )?;
             retain_operation_recovery(&operation.evidence, &mut operation_recoveries)?;
+            if operation.evidence.cut() == DurableCommitCutV1::OperationOutcome {
+                let dispatch = operation
+                    .evidence
+                    .operation()
+                    .and_then(|record| record.dispatch_id)
+                    .ok_or(DurableEvidenceError::InvalidOperation)?;
+                operation_outcome_causes.insert(dispatch, operation.evidence_id);
+            }
             if operation.evidence.cut() == DurableCommitCutV1::OperationResult {
                 let result = operation
                     .evidence
@@ -2435,6 +2451,13 @@ pub fn recover_concurrent_authoritative_prefix(
                                 &mut committed_results,
                             )?;
                             retain_operation_recovery(current, &mut operation_recoveries)?;
+                            if current.cut() == DurableCommitCutV1::OperationOutcome {
+                                let dispatch = current
+                                    .operation()
+                                    .and_then(|record| record.dispatch_id)
+                                    .ok_or(DurableEvidenceError::InvalidOperation)?;
+                                operation_outcome_causes.insert(dispatch, envelope.evidence_id);
+                            }
                             if current.cut() == DurableCommitCutV1::OperationResult {
                                 let result = current
                                     .operation()
@@ -2557,6 +2580,7 @@ pub fn recover_concurrent_authoritative_prefix(
         operation_recoveries,
         task_creation_causes,
         operation_result_causes,
+        operation_outcome_causes,
         latest_sequence,
         latest_evidence_id,
         latest_cut,

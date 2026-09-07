@@ -58,6 +58,12 @@ the event from the retained result type and normalized bytes without invoking
 the hook again. The public result-gap regression rejects the original event
 commit and checks that its replacement is the next committed journal entry.
 
+For a retained hook outcome, action and model drivers repair a missing
+operation-completion occurrence before processing that outcome. The original
+dispatch identity and attempt coordinates remain unchanged, and recovery does
+not invoke the hook again. The completion-gap regression checks that the
+replacement precedes subsequent result commitment.
+
 Replacement of other missing causal events remains unfinished in
 GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count

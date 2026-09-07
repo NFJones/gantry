@@ -4,6 +4,28 @@ use super::*;
 
 #[test]
 fn missing_operation_result_event_is_replaced_before_source_consumption() {
+    recover_missing_operation_event(
+        "\"kind\":\"operation-result\"",
+        DurableCommitCutV1::OperationResult,
+        EventKind::OperationResult,
+    );
+}
+
+#[test]
+fn missing_operation_completion_event_is_replaced_before_outcome_processing() {
+    recover_missing_operation_event(
+        "\"kind\":\"operation-completion\"",
+        DurableCommitCutV1::OperationOutcome,
+        EventKind::OperationCompletion,
+    );
+}
+
+/// Interrupts event commitment and requires its repair without another hook call.
+fn recover_missing_operation_event(
+    failure_cut: &'static str,
+    cut: DurableCommitCutV1,
+    kind: EventKind,
+) {
     let root = TempDirectory::new(
         "action read_only inspect() -> Int;\nfn main() { spawn child -> Int { action inspect() } discard join(child); }",
     );
@@ -39,7 +61,7 @@ fn missing_operation_result_event_is_replaced_before_source_consumption() {
         SinkPlan::default(),
     );
     let mut store = FailingGraphJournalStore::new(executor.clone());
-    store.failure_cut = "\"kind\":\"operation-result\"";
+    store.failure_cut = failure_cut;
     let storage = Arc::new(store);
     storage.allow_release();
     let journal_id =
@@ -62,10 +84,7 @@ fn missing_operation_result_event_is_replaced_before_source_consumption() {
     }))
     .unwrap_or_else(|error| panic!("prefix: {error:?}"));
     let (program, entries) = durable_graph_entries(&prefix);
-    assert_eq!(
-        entries.last().map(|(_, entry)| entry.cut()),
-        Some(DurableCommitCutV1::OperationResult)
-    );
+    assert_eq!(entries.last().map(|(_, entry)| entry.cut()), Some(cut));
     let JournalPrefixV1::Full(full) = &prefix else {
         panic!("expected full prefix")
     };
@@ -138,10 +157,7 @@ fn missing_operation_result_event_is_replaced_before_source_consumption() {
         .events()
         .event_for_cause(cause)
         .unwrap_or_else(|| panic!("result was consumed without its event"));
-    assert_eq!(
-        event.occurrence().event().kind(),
-        EventKind::OperationResult
-    );
+    assert_eq!(event.occurrence().event().kind(), kind);
     assert_eq!(event.occurrence_sequence(), full.committed_through + 1);
 }
 
