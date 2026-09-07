@@ -64,6 +64,13 @@ dispatch identity and attempt coordinates remain unchanged, and recovery does
 not invoke the hook again. The completion-gap regression checks that the
 replacement precedes subsequent result commitment.
 
+Recovered joins reuse the original event checkpoint rather than appending a
+second no-op checkpoint. Recovery matches the exact pending control and uses
+committed event ownership when available. A missing event with multiple eligible
+owners is rejected rather than attributed by guessing. The join-gap regression
+checks replacement before source continuation and strict recovery of the
+resulting journal.
+
 Replacement of other missing causal events remains unfinished in
 GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count

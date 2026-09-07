@@ -1708,6 +1708,22 @@ impl DurableOwnedExecution {
         self.publish_graph_event_progress(coordinator, recovered)
     }
 
+    /// Locates a retained event checkpoint for the machine's exact pending control.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn recovered_task_control_event_cause(
+        &self,
+        program: Arc<gantry_ir::MachineProgram>,
+        machine: &gantry_runtime::Machine,
+    ) -> Result<Option<ProtocolIdentity>, DurableRunFailure> {
+        let Some(pending) = machine.pending_task_control() else {
+            return Ok(None);
+        };
+        self.recover_graph_authoritative(program)
+            .await?
+            .task_control_event_cause(machine.task_id(), pending)
+            .map_err(|error| DurableRunFailure::Commit(DurableCommitError::Evidence(error)))
+    }
+
     /// Repairs a missing causal occurrence while the caller holds the graph lease.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     pub(crate) async fn repair_recovered_graph_event<F, C>(

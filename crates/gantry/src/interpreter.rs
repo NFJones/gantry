@@ -4656,6 +4656,7 @@ impl Interpreter {
                                 lease,
                                 &mut staged_join,
                                 &mut staged_detach,
+                                replay_recovered_task_control,
                             )
                             .await?
                         {
@@ -4990,6 +4991,7 @@ impl Interpreter {
         lease: DurableMachineGraphLease,
         staged_join: &'a mut Option<JoinStartV1>,
         staged_detach: &'a mut Option<TaskOwnershipChangedV1>,
+        replay_recovered_task_control: bool,
     ) -> Pin<
         Box<dyn Future<Output = Result<DurableTaskControlOutcome, DurableRunFailure>> + Send + 'a>,
     > {
@@ -5090,9 +5092,7 @@ impl Interpreter {
                     sequence,
                 )
                 .map_err(|_| DurableRunFailure::Internal)?;
-                let event = self
-                    .complete_graph_event(operations, task_id, sequence, draft.clone())
-                    .await?;
+                let event = self.complete_graph_event(operations, task_id, sequence, draft.clone());
                 let mut lease = match self
                     .poll_durable_graph_future(graph, owner, coordinator, graph.acquire())
                     .await?
@@ -5107,36 +5107,61 @@ impl Interpreter {
                         return Ok(DurableTaskControlOutcome::Continue);
                     }
                 };
-                let predecessor = lease.frontier;
                 let root_task = coordinator.snapshot().state().root_task_id();
-                let DurableMachineGraph {
-                    foreground,
-                    children,
-                    ..
-                } = &mut *lease;
-                let mut transaction = coordinator
-                    .stage_graph(foreground, children)
-                    .map_err(|_| DurableRunFailure::Internal)?;
-                transaction
-                    .set_event(
-                        event,
-                        owner.graph_event_plan()?,
-                        draft.protected_payloads.to_vec(),
-                    )
-                    .map_err(DurableRunFailure::Commit)?;
-                lease.frontier = owner
-                    .commit_graph_transaction(
-                        coordinator,
-                        transaction,
-                        predecessor,
-                        DurableCommitCutV1::Checkpoint,
-                        root_task,
-                    )
-                    .await?;
-                lease.next_event_sequence.insert(
-                    task_id,
-                    sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
-                );
+                let recovered_cause = if replay_recovered_task_control {
+                    let machine = Self::durable_graph_machine_mut(&mut lease, task_id)?;
+                    owner
+                        .recovered_task_control_event_cause(Arc::clone(&graph.program), machine)
+                        .await?
+                } else {
+                    None
+                };
+                let created_event = if let Some(cause) = recovered_cause {
+                    let (frontier, repaired) = owner
+                        .repair_recovered_graph_event(
+                            Arc::clone(&graph.program),
+                            coordinator,
+                            |_| Some(cause),
+                            event,
+                            &draft.protected_payloads,
+                        )
+                        .await?;
+                    lease.frontier = frontier;
+                    repaired
+                } else {
+                    let predecessor = lease.frontier;
+                    let DurableMachineGraph {
+                        foreground,
+                        children,
+                        ..
+                    } = &mut *lease;
+                    let mut transaction = coordinator
+                        .stage_graph(foreground, children)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    transaction
+                        .set_event(
+                            event.await?,
+                            owner.graph_event_plan()?,
+                            draft.protected_payloads.to_vec(),
+                        )
+                        .map_err(DurableRunFailure::Commit)?;
+                    lease.frontier = owner
+                        .commit_graph_transaction(
+                            coordinator,
+                            transaction,
+                            predecessor,
+                            DurableCommitCutV1::Checkpoint,
+                            root_task,
+                        )
+                        .await?;
+                    true
+                };
+                if created_event {
+                    lease.next_event_sequence.insert(
+                        task_id,
+                        sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                    );
+                }
 
                 let predecessor = lease.frontier;
                 let DurableMachineGraph {

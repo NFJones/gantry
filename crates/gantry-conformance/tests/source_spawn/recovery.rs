@@ -20,6 +20,15 @@ fn missing_operation_completion_event_is_replaced_before_outcome_processing() {
     );
 }
 
+#[test]
+fn missing_join_event_is_replaced_before_source_continuation() {
+    recover_missing_operation_event(
+        "\"kind\":\"join\"",
+        DurableCommitCutV1::Checkpoint,
+        EventKind::Join,
+    );
+}
+
 /// Interrupts event commitment and requires its repair without another hook call.
 fn recover_missing_operation_event(
     failure_cut: &'static str,

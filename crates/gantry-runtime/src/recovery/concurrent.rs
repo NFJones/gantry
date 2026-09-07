@@ -2217,12 +2217,65 @@ pub struct RecoveredConcurrentDurableStateV1 {
     task_creation_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     operation_result_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     operation_outcome_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
+    task_control_event_checkpoints: Vec<(ProtocolIdentity, ConcurrentDurableCheckpointV4)>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
 }
 
 impl RecoveredConcurrentDurableStateV1 {
+    /// Finds the original no-op event checkpoint for this exact pending control.
+    /// Missing events with multiple eligible owners are rejected rather than guessed.
+    pub fn task_control_event_cause(
+        &self,
+        task: ProtocolIdentity,
+        pending: &MachineTaskControlSuspension,
+    ) -> Result<Option<ProtocolIdentity>, DurableEvidenceError> {
+        for (cause, checkpoint) in self.task_control_event_checkpoints.iter().rev() {
+            if checkpoint
+                .task_checkpoint(task)
+                .and_then(|machine| machine.pending_task_control_checkpoint())
+                != Some(pending)
+            {
+                continue;
+            }
+            if let Some(event) = self.events.event_for_cause(*cause) {
+                if event.occurrence().event().task_id() == Some(task) {
+                    return Ok(Some(*cause));
+                }
+                continue;
+            }
+            let execution = checkpoint
+                .clone()
+                .recover(self.execution.foreground().program_arc())
+                .map_err(DurableEvidenceError::ConcurrentCheckpoint)?;
+            let mut owners = Vec::new();
+            for id in checkpoint.task_ids() {
+                let Some(control) = checkpoint
+                    .task_checkpoint(id)
+                    .and_then(|machine| machine.pending_task_control_checkpoint())
+                else {
+                    continue;
+                };
+                let ready = if let Some((join, _)) = control.join() {
+                    resolved_join(&execution, id, join)?.is_some()
+                } else {
+                    control
+                        .detach()
+                        .is_some_and(|detach| detached_handle_matches(&execution, id, detach))
+                };
+                if ready {
+                    owners.push(id);
+                }
+            }
+            if owners == [task] {
+                return Ok(Some(*cause));
+            }
+            return Err(DurableEvidenceError::InvalidState);
+        }
+        Ok(None)
+    }
+
     /// Returns the committed outcome cause for one physical dispatch.
     #[must_use]
     pub fn operation_outcome_cause(&self, dispatch: ProtocolIdentity) -> Option<ProtocolIdentity> {
@@ -2333,7 +2386,32 @@ pub fn recover_concurrent_authoritative_prefix(
     let mut task_creation_causes = BTreeMap::new();
     let mut operation_result_causes = BTreeMap::new();
     let mut operation_outcome_causes = BTreeMap::new();
+    let mut graph_history = BTreeMap::new();
     if let Some(snapshot) = snapshot {
+        for record in snapshot.legacy_graphs.iter() {
+            graph_history.insert(
+                record.sequence,
+                (
+                    record.evidence_id,
+                    ConcurrentDurableEvidenceBody::V4(Box::new(record.evidence.clone())),
+                ),
+            );
+        }
+        for record in snapshot
+            .operations
+            .iter()
+            .chain(snapshot.ownership_records.iter())
+            .chain(snapshot.submission_resolutions.iter())
+            .chain(snapshot.cancellation.iter())
+        {
+            graph_history.insert(
+                record.sequence,
+                (
+                    record.evidence_id,
+                    ConcurrentDurableEvidenceBody::V5(Box::new(record.evidence.clone())),
+                ),
+            );
+        }
         for record in snapshot.legacy_graphs.iter() {
             if record.evidence.cut() == DurableCommitCutV1::TaskCreation {
                 task_creation_causes.insert(record.evidence.task_id(), record.evidence_id);
@@ -2522,6 +2600,7 @@ pub fn recover_concurrent_authoritative_prefix(
             if evidence.cut() == DurableCommitCutV1::TaskCreation {
                 task_creation_causes.insert(evidence.task_id(), envelope.evidence_id);
             }
+            graph_history.insert(envelope.sequence, (envelope.evidence_id, evidence.clone()));
             latest_graph = Some(evidence);
         } else if matches!(
             envelope.kind.as_ref(),
@@ -2573,6 +2652,21 @@ pub fn recover_concurrent_authoritative_prefix(
             return Err(DurableEvidenceError::InvalidState);
         }
     }
+    let history = graph_history.values().collect::<Vec<_>>();
+    let task_control_event_checkpoints = history
+        .windows(2)
+        .filter_map(|pair| {
+            let (_, previous) = pair[0];
+            let (cause, current) = pair[1];
+            (current.cut() == DurableCommitCutV1::Checkpoint
+                && previous.checkpoint() == current.checkpoint()
+                && matches!(
+                    previous.cut(),
+                    DurableCommitCutV1::TaskOwnership | DurableCommitCutV1::TaskSettlement
+                ))
+            .then(|| (*cause, current.checkpoint().clone()))
+        })
+        .collect();
     Ok(RecoveredConcurrentDurableStateV1 {
         execution,
         events,
@@ -2581,6 +2675,7 @@ pub fn recover_concurrent_authoritative_prefix(
         task_creation_causes,
         operation_result_causes,
         operation_outcome_causes,
+        task_control_event_checkpoints,
         latest_sequence,
         latest_evidence_id,
         latest_cut,
