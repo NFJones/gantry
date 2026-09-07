@@ -45,9 +45,15 @@ An uncommitted event draft cannot reserve its previous identity.
 
 The runtime regression
 `task_creation_event_failure_recovers_cause_without_reserving_event_identity`
-checks detection of this causal gap. It does **not** establish end-to-end
-replacement-event creation by resumed graph drivers. That integration remains
-unfinished in GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
+checks detection of this causal gap. For a child still awaiting submission,
+the recovered driver repairs a missing spawn occurrence through the fenced
+event owner before publishing submission resolution or releasing its parent.
+Existing occurrences are reused without allocating replacement metadata.
+The public `source_spawn/recovery.rs` regression checks this ordering and
+retention of the original creation cause through compaction.
+
+Replacement of other missing causal events remains unfinished in
+GNT-ASYNC-REC-001, alongside complete crash-edge, whole-graph
 admission rollback, stale-owner, terminal-delivery, and changed-worker-count
 qualification. The async publication and release claims remain blocked; passing
 the current workspace suite does not close those acceptance criteria.

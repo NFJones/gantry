@@ -2852,6 +2852,40 @@ impl Interpreter {
                                 .acquire()
                                 .await
                                 .ok_or(DurableRunFailure::Internal)?;
+                            let sequence = lease
+                                .next_event_sequence
+                                .get(&submission.parent_task_id)
+                                .copied()
+                                .unwrap_or(0);
+                            let draft = concurrent_spawn_event(
+                                runtime.operations.execution_id,
+                                &submission.created.transition,
+                                sequence,
+                            )
+                            .map_err(|_| DurableRunFailure::Internal)?;
+                            let event = interpreter.complete_graph_event(
+                                &runtime.operations,
+                                submission.parent_task_id,
+                                sequence,
+                                draft.clone(),
+                            );
+                            let (frontier, repaired) = runtime
+                                .owner
+                                .repair_recovered_spawn_event(
+                                    Arc::clone(&runtime.program),
+                                    &runtime.coordinator,
+                                    task_id,
+                                    event,
+                                    &draft.protected_payloads,
+                                )
+                                .await?;
+                            lease.frontier = frontier;
+                            if repaired {
+                                lease.next_event_sequence.insert(
+                                    submission.parent_task_id,
+                                    sequence.checked_add(1).ok_or(DurableRunFailure::Internal)?,
+                                );
+                            }
                             let cancelled = interpreter
                                 .commit_durable_child_submission_resolution(
                                     &mut lease,

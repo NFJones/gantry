@@ -1708,6 +1708,57 @@ impl DurableOwnedExecution {
         self.publish_graph_event_progress(coordinator, recovered)
     }
 
+    /// Repairs a missing spawn occurrence while the caller holds the graph lease.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) async fn repair_recovered_spawn_event<F>(
+        &self,
+        program: Arc<gantry_ir::MachineProgram>,
+        coordinator: &ExecutionCoordinator,
+        child: ProtocolIdentity,
+        event: F,
+        payloads: &[ProtectedPayload],
+    ) -> Result<((ProtocolIdentity, u64), bool), DurableRunFailure>
+    where
+        F: Future<Output = Result<gantry_core::event::EventEnvelope, DurableRunFailure>>,
+    {
+        let recovered = self
+            .recover_graph_authoritative(Arc::clone(&program))
+            .await?;
+        let cause = recovered
+            .task_creation_cause(child)
+            .ok_or(DurableRunFailure::Internal)?;
+        if recovered.events().event_for_cause(cause).is_some() {
+            return Ok((
+                (recovered.latest_evidence_id(), recovered.latest_sequence()),
+                false,
+            ));
+        }
+        let occurrence =
+            DurableEventOccurrenceV1::new(cause, event.await?, self.graph_event_plan()?)
+                .map_err(|_| DurableRunFailure::Internal)?;
+        let sink = DurableTransitionSink::new(
+            Arc::clone(&self.storage),
+            self.journal_id.clone(),
+            self.ownership_token.clone(),
+        );
+        let mut commits = DurableEventCommitCoordinatorV1::from_recovered(
+            &sink,
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
+            recovered.events(),
+        )
+        .map_err(map_event_commit_failure)?;
+        commits
+            .commit_occurrence(&occurrence, payloads)
+            .await
+            .map_err(map_event_commit_failure)?;
+        let recovered = self.recover_graph_authoritative(program).await?;
+        self.publish_graph_event_progress(coordinator, &recovered)?;
+        Ok((
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
+            true,
+        ))
+    }
+
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     async fn recover_graph_authoritative(
         &self,

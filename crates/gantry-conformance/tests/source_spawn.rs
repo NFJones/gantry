@@ -63,6 +63,9 @@ use gantry_conformance::services::{DeterministicIdentitySource, DeterministicUtc
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
+#[path = "source_spawn/recovery.rs"]
+mod recovery;
+
 struct TempDirectory(PathBuf);
 
 type EventDeliveryObserver = Arc<dyn Fn(&EventEnvelope) + Send + Sync>;
@@ -480,7 +483,9 @@ impl JournalStorage for FailingGraphJournalStore {
         let selected_cut = request.batch.evidence.iter().any(|evidence| {
             matches!(
                 evidence.kind.as_ref(),
-                CONCURRENT_DURABLE_EVIDENCE_KIND_V4 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+                CONCURRENT_DURABLE_EVIDENCE_KIND_V4
+                    | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+                    | DURABLE_EVENT_OCCURRENCE_KIND_V1
             ) && std::str::from_utf8(&evidence.canonical_body)
                 .is_ok_and(|body| body.contains(self.failure_cut))
         });

@@ -30,11 +30,11 @@
   "artifacts": [
     {
       "path": "crates/gantry-conformance/tests/source_spawn.rs",
-      "sha256": "176229a667a6617735f8b352982b0e82cca43876f7a79fab1e402b7ee4830129"
+      "sha256": "ec52af1ef85612ca258730582f0ff0287550d55aab313fe8cdcefd9d25831bee"
     },
     {
       "path": "protocol/conformance/async-cancellation-v1.json",
-      "sha256": "7f12f8c1b974d4f2d070617eef6273e6c4c843aa6bd51c317dfa6c4ca7cf7805"
+      "sha256": "9c903b76d80f9c19a13093dee2d1c37a32dfa6100c76bdfd1e29010cfbf64c15"
     },
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
@@ -90,7 +90,7 @@
     },
     {
       "path": "protocol/conformance/source-spawn-v1.json",
-      "sha256": "296f9657cdd35e0b5392098e2fb2405586969cd34921d4ce9c85d583f2b36186"
+      "sha256": "90544756df9ed00a8bedbfe290d14c6889f1cc07979456af37734270c95abe8b"
     },
     {
       "path": "protocol/conformance/task-driver-v1.json",

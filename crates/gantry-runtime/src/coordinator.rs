@@ -380,6 +380,14 @@ impl ExecutionCoordinator {
         Ok(())
     }
 
+    /// Preserves the committed cut before resetting process-local driver ownership.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pub(crate) fn prepare_recovered_driver_admission(&self) -> Vec<ProtocolIdentity> {
+        let mut state = lock(&self.inner.state);
+        state.durable_graph_baseline = Some((state.tasks.clone(), state.sessions.clone()));
+        state.tasks.prepare_recovered_driver_admission()
+    }
+
     /// Registers one complete recovered replacement-driver set at one linearization point.
     pub(crate) fn register_recovered_drivers(
         &self,

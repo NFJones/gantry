@@ -2214,12 +2214,19 @@ pub struct RecoveredConcurrentDurableStateV1 {
     events: RecoveredDurableEventsV1,
     cancellation: Option<CancellationReason>,
     operation_recoveries: BTreeMap<ProtocolIdentity, DurableOperationRecoveryV1>,
+    task_creation_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
 }
 
 impl RecoveredConcurrentDurableStateV1 {
+    /// Returns the committed creation cause for a child without recreating its identity.
+    #[must_use]
+    pub fn task_creation_cause(&self, task_id: ProtocolIdentity) -> Option<ProtocolIdentity> {
+        self.task_creation_causes.get(&task_id).copied()
+    }
+
     /// Returns the recovered existing foreground machine, scheduler, and sessions.
     #[must_use]
     pub const fn execution(&self) -> &RecoveredConcurrentDurableExecutionV1 {
@@ -2309,7 +2316,13 @@ pub fn recover_concurrent_authoritative_prefix(
     let mut latest_outcomes = BTreeMap::new();
     let mut committed_results = BTreeSet::new();
     let mut operation_recoveries = BTreeMap::new();
+    let mut task_creation_causes = BTreeMap::new();
     if let Some(snapshot) = snapshot {
+        for record in snapshot.legacy_graphs.iter() {
+            if record.evidence.cut() == DurableCommitCutV1::TaskCreation {
+                task_creation_causes.insert(record.evidence.task_id(), record.evidence_id);
+            }
+        }
         for operation in snapshot.operations.iter() {
             record_operation_cut(
                 &operation.evidence,
@@ -2461,6 +2474,9 @@ pub fn recover_concurrent_authoritative_prefix(
                     return Err(DurableEvidenceError::InvalidState);
                 }
             }
+            if evidence.cut() == DurableCommitCutV1::TaskCreation {
+                task_creation_causes.insert(evidence.task_id(), envelope.evidence_id);
+            }
             latest_graph = Some(evidence);
         } else if matches!(
             envelope.kind.as_ref(),
@@ -2517,6 +2533,7 @@ pub fn recover_concurrent_authoritative_prefix(
         events,
         cancellation,
         operation_recoveries,
+        task_creation_causes,
         latest_sequence,
         latest_evidence_id,
         latest_cut,

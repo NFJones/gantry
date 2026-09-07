@@ -998,14 +998,14 @@ impl RecoveredConcurrentDurableExecutionV1 {
             sessions,
         } = self;
         let ConcurrentSchedulerV1 {
-            mut state,
+            state,
             execution_budget,
             machines,
             runnable: _,
         } = scheduler;
-        let unfinished_task_ids = state.prepare_recovered_driver_admission();
         let coordinator =
             crate::ExecutionCoordinator::new_with_budget(state, sessions, execution_budget)?;
+        let unfinished_task_ids = coordinator.prepare_recovered_driver_admission();
         Ok(RecoveredConcurrentDriverAdmissionV1 {
             coordinator,
             foreground,

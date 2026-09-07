@@ -40,11 +40,11 @@ const ASSIGNMENT_SHA256: &str = "23ee16c35e5981c680c97d8a8fa0d7ce33485f90bb7da49
 const ARTIFACTS: [(&str, &str); 19] = [
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
-        "176229a667a6617735f8b352982b0e82cca43876f7a79fab1e402b7ee4830129",
+        "ec52af1ef85612ca258730582f0ff0287550d55aab313fe8cdcefd9d25831bee",
     ),
     (
         "protocol/conformance/async-cancellation-v1.json",
-        "7f12f8c1b974d4f2d070617eef6273e6c4c843aa6bd51c317dfa6c4ca7cf7805",
+        "9c903b76d80f9c19a13093dee2d1c37a32dfa6100c76bdfd1e29010cfbf64c15",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
@@ -100,7 +100,7 @@ const ARTIFACTS: [(&str, &str); 19] = [
     ),
     (
         "protocol/conformance/source-spawn-v1.json",
-        "296f9657cdd35e0b5392098e2fb2405586969cd34921d4ce9c85d583f2b36186",
+        "90544756df9ed00a8bedbfe290d14c6889f1cc07979456af37734270c95abe8b",
     ),
     (
         "protocol/conformance/task-driver-v1.json",
