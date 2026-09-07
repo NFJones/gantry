@@ -8564,7 +8564,8 @@ impl Interpreter {
             metadata.retry_limit,
         )
         .map_err(|_| DurableRunFailure::Internal)?;
-        let mut reused_outcome_request = match recovered.operation_recovery() {
+        let recovery = recovered.operation_recovery().clone();
+        let mut reused_outcome_request = match &recovery {
             DurableOperationRecoveryV1::ReuseOutcome {
                 operation_id,
                 request_bytes,
@@ -8572,16 +8573,7 @@ impl Interpreter {
             } if *operation_id == occurrence.identity => Some(Arc::clone(request_bytes)),
             _ => None,
         };
-        if reused_outcome_request.is_some() {
-            operation
-                .recover(
-                    recovered.operation_recovery(),
-                    policy,
-                    &self.inner.allocator,
-                    self.inner.configuration.identity_source(),
-                )
-                .map_err(|_| DurableRunFailure::Internal)?;
-        } else {
+        if matches!(recovery, DurableOperationRecoveryV1::None) {
             operation
                 .prepare(
                     &self.inner.allocator,
@@ -8591,6 +8583,58 @@ impl Interpreter {
                     &[],
                 )
                 .map_err(|_| DurableRunFailure::Internal)?;
+        } else {
+            operation
+                .recover(
+                    &recovery,
+                    policy,
+                    &self.inner.allocator,
+                    self.inner.configuration.identity_source(),
+                )
+                .map_err(|_| DurableRunFailure::Internal)?;
+        }
+        if let Some((_, dispatch_event)) = operation
+            .recovered_dispatch_event(&recovery)
+            .map_err(|_| DurableRunFailure::Internal)?
+            && recovered
+                .events()
+                .event_for_cause(recovered.semantic_evidence_id())
+                .is_none()
+        {
+            self.commit_durable_event(
+                owner,
+                recovered,
+                context.activity_id,
+                root_task_identity(context.execution_id),
+                task_event_sequence,
+                dispatch_event,
+                last_committed,
+            )
+            .await?;
+        }
+        if matches!(recovery, DurableOperationRecoveryV1::UnknownOutcome { .. }) {
+            if metadata.attempted {
+                operation
+                    .accept_attempt_failure(recovered.machine_mut())
+                    .map_err(|_| DurableRunFailure::Internal)?;
+            } else {
+                let failure = operation
+                    .lifecycle_failure()
+                    .and_then(|failure| match failure {
+                        OperationLifecycleFailureV1::Operation(failure) => Some(failure),
+                        _ => None,
+                    })
+                    .ok_or(DurableRunFailure::Internal)?;
+                recovered
+                    .machine_mut()
+                    .fail_operation(occurrence.identity, failure.runtime_category())
+                    .map_err(|_| DurableRunFailure::Internal)?;
+            }
+            owner
+                .commit_driver_cut(recovered, DurableCommitCutV1::Checkpoint, None)
+                .await?;
+            *last_committed = recovered.clone();
+            return Ok(());
         }
         let mut retries_left = operation.retries_left();
         loop {
