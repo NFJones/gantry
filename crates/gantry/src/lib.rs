@@ -83,7 +83,7 @@ pub use interpreter::{
 };
 pub use profile::{
     ConformanceProfile, PROFILE_CLAIMS_ENABLED, PROFILE_DEFINITIONS,
-    PROFILE_SPECIFICATION_REVISION, PROFILE_SUPERSEDED_SPECIFICATION_REVISION, ProfileDefinition,
+    PROFILE_SPECIFICATION_REVISION, ProfileDefinition,
 };
 #[cfg(all(feature = "evaluator", feature = "test-support"))]
 #[doc(hidden)]

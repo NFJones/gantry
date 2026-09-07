@@ -128,16 +128,28 @@ fn checked_in_shared_execution_budget_evidence_is_narrow_and_current() {
             .map(|review| (review.profile.as_str(), review.state.as_str()))
             .collect::<Vec<_>>(),
         [
-            ("concurrent-evaluator", "planned"),
-            ("durable-runtime", "planned"),
-            ("evaluator", "planned"),
+            ("concurrent-evaluator", "covered"),
+            ("durable-runtime", "covered"),
+            ("evaluator", "covered"),
         ]
     );
-    assert!(
-        state_clause
-            .profile_reviews
-            .iter()
-            .all(|review| review.evidence.is_empty())
+    assert_eq!(
+        state_clause.profile_reviews[0].evidence,
+        [
+            "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay"
+        ]
+    );
+    assert_eq!(
+        state_clause.profile_reviews[1].evidence,
+        [
+            "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+        ]
+    );
+    assert_eq!(
+        state_clause.profile_reviews[2].evidence,
+        [
+            "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+        ]
     );
 }
 

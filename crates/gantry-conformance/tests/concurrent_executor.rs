@@ -299,10 +299,7 @@ fn reviewed_concurrent_generic_evidence_is_closed() {
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(manifest.advertises_profiles, ["concurrent-evaluator"]);
     assert_eq!(manifest.exclusions.len(), 3);
-    assert_eq!(
-        gantry::advertised_profiles().contains(&gantry::ConformanceProfile::ConcurrentEvaluator),
-        evidence_is_current
-    );
+    assert!(gantry::advertised_profiles().is_empty());
 
     for entry in manifest.entries {
         assert_anchor_exists(&root, &entry.evidence);
@@ -331,7 +328,12 @@ fn reviewed_concurrent_generic_evidence_is_closed() {
                 )
             });
         assert_eq!(profile.state, "covered");
-        assert_eq!(profile.evidence, [entry.evidence]);
+        assert!(
+            profile
+                .evidence
+                .iter()
+                .any(|evidence| evidence == &entry.evidence)
+        );
     }
 }
 

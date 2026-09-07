@@ -153,7 +153,6 @@ struct AdoptionGate {
     amended_profiles: Vec<String>,
     advertises_profiles: Vec<String>,
     blocked_by: Vec<String>,
-    superseded_publication_revision: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -493,15 +492,15 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
         || adoption.specification_sha256 != specification_sha256
         || adoption.amended_profiles != contract.amended_profiles
         || !adoption.advertises_profiles.is_empty()
-        || adoption.superseded_publication_revision.is_empty()
+        || adoption.blocked_by != ["GNT-ASYNC-REL-001"]
     {
         return Err("staged adoption gate is inconsistent with the contract gate".to_owned());
     }
-    let downstream = adoption.blocked_by.into_iter().collect::<BTreeSet<_>>();
-    if downstream.is_empty() || downstream.contains(&contract.issue) {
-        return Err("staged adoption downstream issue set is invalid".to_owned());
-    }
-    let mut evidence_owners = downstream.clone();
+    let evidence_owners = contract
+        .requirement_assignments
+        .iter()
+        .flat_map(|assignment| assignment.evidence_owners.iter().cloned())
+        .collect::<BTreeSet<_>>();
     let source_spawn: SourceSpawnManifest = read_json_result(&root.join(SOURCE_SPAWN_PATH))?;
     let async_gate: AsyncEvidenceGateInventory =
         read_json_result(&root.join(ASYNC_EVIDENCE_GATE_PATH))?;
@@ -514,11 +513,6 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
         &async_gate,
         &inventory,
     )?;
-    if !evidence_owners.insert(SOURCE_SPAWN_ISSUE.to_owned()) {
-        return Err(format!(
-            "closed evidence owner {SOURCE_SPAWN_ISSUE} is duplicated"
-        ));
-    }
 
     validate_prerequisites(root, &contract.prerequisites)?;
     let artifact_paths = validate_artifacts(root, &contract.contract_artifacts)?;
@@ -1026,7 +1020,7 @@ fn validate_decisions(
 fn validate_assignments(
     assignments: &[Assignment],
     review: &RequirementReview,
-    downstream: &BTreeSet<String>,
+    evidence_owners: &BTreeSet<String>,
 ) -> Result<(), String> {
     let mut reviewed = BTreeMap::<(String, String, String), String>::new();
     let mut remaining_planned = BTreeSet::new();
@@ -1061,7 +1055,7 @@ fn validate_assignments(
             ));
         }
         for owner in &assignment.evidence_owners {
-            if !downstream.contains(owner) {
+            if !evidence_owners.contains(owner) {
                 return Err(format!("unknown evidence owner {owner}"));
             }
             owners.insert(owner.clone());
@@ -1103,8 +1097,8 @@ fn validate_assignments(
     if !remaining_planned.is_subset(&assigned) {
         return Err("planned requirement coverage differs from the frozen matrix".to_owned());
     }
-    if owners != *downstream {
-        return Err("downstream issue ownership differs from the frozen matrix".to_owned());
+    if owners != *evidence_owners {
+        return Err("evidence ownership differs from the frozen matrix".to_owned());
     }
     Ok(())
 }

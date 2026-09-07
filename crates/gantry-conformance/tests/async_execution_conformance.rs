@@ -16,35 +16,35 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "3892895c41d1f8290e97da09ce32260c51a1d74d",
         "Isolate package work behind bounded blocking admission.",
         "protocol/conformance/blocking-work-v1.json",
-        "15f4a000e47b3eb9ab3d1fd3c853ed2218fbfdb61afd47dc647fa8bd83d3cd2f",
+        "53aa466472776275bbc00db9dd40078e8c6b3d98eea29fa14f99ceba5bfb85cd",
     ),
     (
         "GNT-ASYNC-CLI-001",
         "98d91f33e6206688a5354dc7d5260dbc1afaf5d6",
         "Adopt multithread CLI runtime policy",
         "protocol/conformance/cli-runtime-policy-v1.json",
-        "747faf4ed4771b7ff7d3e7a36f3a7465864630cac45e1b832b6f25bc17184ac7",
+        "a971200f33bdf1f3c69e4757c322b68273e912531c1522941ea40a21317453cc",
     ),
     (
         "GNT-ASYNC-GATE-200",
         "a6915ef212b9e245da00fd383f79bc81f05c3556",
         "Close the native source concurrency evidence gate.",
         "protocol/conformance/native-source-concurrency-gate-v1.json",
-        "84da855f3227a9a76d91df94c99b19de1832c29f051e61bc5875d9922580dddb",
+        "7e5ae464ff796633e5444968ea308671df1d0acaef7f2198d73645611267d385",
     ),
     (
         "GNT-ASYNC-PROOF-001",
         "ca413e8e23f714e33d72511a74f02a2eeccc4032",
         "Compose async execution refinements",
         "protocol/conformance/async-execution-refinement-v1.json",
-        "18a3730462d701ee12d9c7e80b3eac0a4d4ff95a823f7b8ce256f715fee612ff",
+        "a3d871f8284aec131292b6e32922ddaeb20903fbb05fbb6f9b205408d067323e",
     ),
     (
         "GNT-ASYNC-REC-001",
         "d5d34c22107d8f16739b21baf6a0f6f773de276a",
         "Qualify executor-backed recovery",
         "protocol/conformance/async-recovery-v1.json",
-        "6c840ee6333e15816048a3a50cf1f889ca778167ae53f8d71bb28e899409e54b",
+        "ed4e026f9e29d6f1f17d9c3e826d478224bf587d2f887da9bef46937518673b1",
     ),
 ];
 const ARTIFACTS: [(&str, &str); 8] = [
@@ -54,19 +54,19 @@ const ARTIFACTS: [(&str, &str); 8] = [
     ),
     (
         "protocol/catalogs/profiles-v1.json",
-        "a867acbedfa91aae24401533ebf5b4bf4a9e067701032025f6cf924eaa1479e4",
+        "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219",
     ),
     (
         "protocol/conformance/async-execution-adoption-v1.json",
-        "a0a82cee9e5da59eaac09d457c720fd9149de9dedc84957a5b77baeca825e4f6",
+        "3672ef54c3ebb6c79d5ea92b41afa0c04c01deda32f4bfef4e6c8c71561895f4",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "49dd4c0100c63f88c70114b6aed33130d301c4f96b1ae0684cf29701e65ccbd3",
+        "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606",
     ),
     (
         "protocol/conformance/async-execution-gate-v1.json",
-        "b45a1b70aa0b8bd4d80acf7fc5fda4a5d429525124ce478bdcf3bb5208704ecb",
+        "19e866bc355240fb4c5cfa4602a65d2032b7a265e3dac4a8a186fc31c0bc2742",
     ),
     (
         "protocol/goldens/concurrent-refinement-model-v1.json",
@@ -358,7 +358,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         || !manifest
             .exclusions
             .iter()
-            .any(|gap| gap.contains("GNT-ASYNC-PUB-001"))
+            .any(|gap| gap.contains("GNT-ASYNC-PUB-001") && gap.contains("complete"))
         || !manifest
             .exclusions
             .iter()
@@ -556,20 +556,12 @@ fn validate_adoption(root: &Path, evidence: &AdoptionEvidence) -> Result<(), Str
     let profiles: ProfileCatalog = read_json(&root.join("protocol/catalogs/profiles-v1.json"));
     if evidence.path != "protocol/conformance/async-execution-adoption-v1.json"
         || evidence.status != "blocked"
-        || evidence.required_blockers
-            != [
-                "GNT-ASYNC-CONF-001",
-                "GNT-ASYNC-PUB-001",
-                "GNT-ASYNC-REL-001",
-            ]
+        || evidence.required_blockers != ["GNT-ASYNC-REL-001"]
         || evidence.claims_enabled
         || !evidence.advertises_profiles.is_empty()
         || adoption.status != evidence.status
         || adoption.advertises_profiles != evidence.advertises_profiles
-        || evidence
-            .required_blockers
-            .iter()
-            .any(|blocker| !adoption.blocked_by.contains(blocker))
+        || adoption.blocked_by != evidence.required_blockers
         || profiles.claims_enabled
         || gantry::PROFILE_CLAIMS_ENABLED
         || !gantry::advertised_profiles().is_empty()

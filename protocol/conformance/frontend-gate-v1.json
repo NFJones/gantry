@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
+    "sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03"
   },
   "profile": "frontend",
   "prerequisites": [
@@ -57,23 +57,23 @@
   "artifacts": [
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "e70e1d812e9ba93671078945149e652a8ccf1f0d2d23990e196e465a8e9f8cd3"
+      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
     },
     {
       "path": "protocol/conformance/frontend-lexical-v1.json",
-      "sha256": "760d5f6eafcfd438c0dae7c2f517b3443c65ba34e127566ce7d67045fd0fddb7"
+      "sha256": "ca51afbd98a7a9403c4822ae4bfdf10ac86c9de6c10bdd9a3b6d0d761dce3e31"
     },
     {
       "path": "protocol/conformance/frontend-package-v1.json",
-      "sha256": "638ed5606c69cfe33523e834c394ab33bb5170debb383cb45fc836cb0172a8c1"
+      "sha256": "2b7e37c77e5a36e5be74fc205cfdbe403cef1f86f15017ded652505ead05b0fa"
     },
     {
       "path": "protocol/conformance/frontend-parser-v1.json",
-      "sha256": "0cfb4221b4306b68d1d9c102b64df0ccc213f5513776a70ad5070c0652a1a442"
+      "sha256": "e3b0bf800d874ceb6022afc0d556f892bbb2edf440a1250d8cbbc08941862b67"
     },
     {
       "path": "protocol/conformance/source-substrate-gate-v1.json",
-      "sha256": "a95a6e0ef6fd4f215b981587f00ba3dbc06bd3fba518cda0a39cb26e9314be4f"
+      "sha256": "c89da3d004efc983b9ac6183e3b8a3909568be3c39a1bb4eda6cdc6dd4bea868"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "4e17c937543e456b9aff164ab28c5bc640bf5a643718382a9c586eb1dc2093aa"
+      "sha256": "eb891d6d916a52a100aa4e9be987d7bf4b785e6cb770f215a00a92ba7d1add09"
     },
     {
       "path": "protocol/goldens/source-substrate-vectors-v1.json",
@@ -97,15 +97,15 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
+      "sha256": "38c59eab320fe76424d103a3c7ccde9ba59817be7c63c94e5a8025aa49ba8058"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
+      "sha256": "fb3f2d171155779037cd346a67c161ed94914361fb56b88361e73eb466cad160"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "5e8bc20e5a515338ba969ef56913445ea5e0c5f3f6f0fab9a7475712958575dc"
+      "sha256": "80fc85b0f18e50317a6f07345295ae24067dea1c8709dd06050f5c45c63f52b3"
     },
     {
       "path": "protocol/schemas/activity-observation-v1.schema.json",
@@ -130,9 +130,7 @@
     "profiles": [
       "frontend"
     ],
-    "advertises_profiles": [
-      "frontend"
-    ],
+    "advertises_profiles": [],
     "excludes_profiles": [
       "analyzer",
       "concurrent-evaluator",

@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
+    "sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03"
   },
   "profile": "analyzer",
   "prerequisites": [
@@ -42,11 +42,11 @@
   "artifacts": [
     {
       "path": "crates/gantry-analysis/src/bodies.rs",
-      "sha256": "0bc5d623f93495bc8099a213d2346c6d94f0606230b427fc364d0ad04adbc780"
+      "sha256": "2f2b8fb664379f75fcecaabc2b3882418000c60095af3c70befc260f788ddedd"
     },
     {
       "path": "crates/gantry-analysis/src/effects.rs",
-      "sha256": "4cd8bcd6b16c8b7497b54c93ced33c9a29271cbfcb398b674fceb65861bc5f17"
+      "sha256": "d095d222cd2601bac7b6c17f65c6d99a4fd45268fb41ed14bdb740a40f315532"
     },
     {
       "path": "crates/gantry-analysis/src/generics.rs",
@@ -62,11 +62,11 @@
     },
     {
       "path": "crates/gantry-analysis/src/types.rs",
-      "sha256": "076fec6dd3b9af19b5bb5af5b81277ae12329c315c2a37f79a5e564b82f6faa3"
+      "sha256": "a8d14203d935bda346cb5b51eb1eaabee96ddb81876b189b9579fe6be953d525"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
-      "sha256": "2d4573f05aa934c2c90834a7009151ea40e0ae24b05ec8166bdccde82d7f8978"
+      "sha256": "f51202555e980710d8dbf82a60239347e73d589d2146d664ab93abf641e8b087"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
@@ -78,11 +78,11 @@
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_validity_model.rs",
-      "sha256": "e401102e7ce75f2b08604d0073de1e28ab1f8502122068decf5a026be2891d4d"
+      "sha256": "fbbe7cc1b2676774f4e143187b19a30a0311b17c617649618bc1aec5c5f2e3ba"
     },
     {
       "path": "crates/gantry-conformance/tests/external_facade_matrix.rs",
-      "sha256": "5a402f5bcf1c13c43420264a45151ac90de16e28249dfb7f0ff4c83fc5add7b1"
+      "sha256": "39785c2a3cf8f65b6d7d63ff246285ee3cc8420fbcad3460bd2180ada8b7190d"
     },
     {
       "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
@@ -90,7 +90,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
-      "sha256": "ef1d2793782ef3f8324321c1acd88f75677c748b3821980b95fbb6c3a4ea35ae"
+      "sha256": "58d9fa6c149a449816558e1c02c559e5add8d11a434ae3321670b058f06a7808"
     },
     {
       "path": "crates/gantry-conformance/tests/ir_contracts.rs",
@@ -102,15 +102,15 @@
     },
     {
       "path": "crates/gantry-conformance/tests/validate_package.rs",
-      "sha256": "a418302978fcabe4924a74e6d3df6abcf2f9e5ac440a6c9412a6c5b164104189"
+      "sha256": "ecbcced12476874c7796d7c142aa39fa3f329be5ee00fce76c7f2450d0ba853a"
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "b5659ea418e9bc717d21e9819db83ec8410fb9a6bc790c6f2b706b84a8e41555"
+      "sha256": "df7c0f554bae0bdebc85ea7e42f01ba0f41484652b3c8598621a00cf15865b7d"
     },
     {
       "path": "crates/gantry/src/validate.rs",
-      "sha256": "144b7045a7b481806c3c7792f3642cbeb3cb13d76cac44456ce66afa4dfe2d32"
+      "sha256": "f08a2cd188a63d76f4353bf064f4d78f909a6011b3854ae1bb142aee178cc464"
     },
     {
       "path": "docs/analyzer-generics-and-traits.md",
@@ -118,27 +118,27 @@
     },
     {
       "path": "docs/analyzer-package-validity.md",
-      "sha256": "2e07ec0f3eb9da03cdae8e551c50e5ae7e4425ad98e5b1b55688ec9f9f9a6085"
+      "sha256": "cd58665c1dae25069ce22197f6b65241edda19a3ac7e23901fe0828dafc6a9b3"
     },
     {
       "path": "protocol/catalogs/ir-contracts-v1.json",
-      "sha256": "bde2088d7fd8e7513d01e068c82e79d4987ec7b3d2d6ff4f070439983e804f84"
+      "sha256": "395e092229bac9e6b3222dcf018399d55ee4b7c0703d3a609f804f5725c2e3a2"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "e70e1d812e9ba93671078945149e652a8ccf1f0d2d23990e196e465a8e9f8cd3"
+      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
     },
     {
       "path": "protocol/conformance/analyzer-validity-v1.json",
-      "sha256": "5304b30713b6043aade5e7d11030915ddbc425fbc488bfa367df218fe0583292"
+      "sha256": "5eabdbd729b832ffcca0779f16dbcf978eeecec5b811537c920f0a6c64133de9"
     },
     {
       "path": "protocol/conformance/generics-traits-frontend-v1.json",
-      "sha256": "0902c52a1cd992c7903f39dc207fb6ff935aa7205b615559ecab736737b8243f"
+      "sha256": "9ee103f919decfc1c096648bedc702b8b91f0e4c01be68dec0d0d3c6428627c5"
     },
     {
       "path": "protocol/conformance/generics-traits-ir-v1.json",
-      "sha256": "95d9765f3282480960d41219692e45e796b125a52260c14c9857323da7106605"
+      "sha256": "ec04e9711a7333751740980607b0fb71513a479bb402d43a19225c978f0bb8da"
     },
     {
       "path": "protocol/goldens/analyzer-validity-model-v1.json",
@@ -146,15 +146,15 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
+      "sha256": "38c59eab320fe76424d103a3c7ccde9ba59817be7c63c94e5a8025aa49ba8058"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
+      "sha256": "fb3f2d171155779037cd346a67c161ed94914361fb56b88361e73eb466cad160"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "5e8bc20e5a515338ba969ef56913445ea5e0c5f3f6f0fab9a7475712958575dc"
+      "sha256": "80fc85b0f18e50317a6f07345295ae24067dea1c8709dd06050f5c45c63f52b3"
     },
     {
       "path": "protocol/schemas/canonical-ir-v1.schema.json",
@@ -174,9 +174,9 @@
     }
   ],
   "review_summary": {
-    "applicable_clause_count": 291,
+    "applicable_clause_count": 292,
     "covered_count": 224,
-    "not_applicable_count": 67
+    "not_applicable_count": 68
   },
   "section14_excerpt_count": 51,
   "claim": {
@@ -184,10 +184,7 @@
       "analyzer",
       "frontend"
     ],
-    "advertises_profiles": [
-      "analyzer",
-      "frontend"
-    ],
+    "advertises_profiles": [],
     "excludes_profiles": [
       "concurrent-evaluator",
       "durable-runtime",

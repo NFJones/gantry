@@ -97,15 +97,15 @@ supply-chain, and fuzz matrices.
 The executor-backed execution amendment in this revision replaces the
 preceding pre-adoption execution and embedding draft in place. It changes
 normative embedding, lifecycle, journal, recovery, and configuration
-contracts without retaining the superseded manual-driving model. Until the
-corresponding generated protocol artifacts, requirement mappings, goldens,
-and publication index are regenerated and verified together, the checked-in
-publication set describes the preceding revision and MUST NOT be advertised
-as implementing this amended specification. Exact-version immutability in
-Section 15.8 applies to the complete executor-backed publication set and later
-sets, not to the superseded pre-async draft bytes. This staged repository
-state is suitable for contract development, not an embedding-interoperability
-or profile claim.
+contracts without retaining the superseded manual-driving model. The complete
+publication set in this revision contains the corresponding protocol
+artifacts, requirement mappings, goldens, conformance evidence, and canonical
+index. It is the sole executor-backed v1 baseline. Publication assembly does
+not enable a profile or deployment claim:
+`GNT-ASYNC-REL-001` remains the sole release-qualification and final adoption
+owner. Exact-version immutability in Section 15.8 applies to this complete
+executor-backed publication set and later sets, not to the superseded
+pre-async draft bytes.
 
 The parametric-generics and static-traits amendment in this revision replaces
 the preceding pre-adoption draft language in place. It does not define a

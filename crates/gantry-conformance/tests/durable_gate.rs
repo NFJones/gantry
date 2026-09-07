@@ -5,7 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -176,7 +175,7 @@ fn checked_in_durable_profile_gate_is_current() {
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert!(validate_manifest(&root, &manifest).is_err());
+    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
@@ -219,12 +218,12 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         "frontend",
     ];
     if manifest.claim.profiles != claimed
-        || manifest.claim.advertises_profiles != claimed
+        || !manifest.claim.advertises_profiles.is_empty()
         || manifest.claim.excludes_profiles != ["concurrent-evaluator"]
         || manifest.claim.excludes_capabilities != ["combined-concurrent-durable"]
         || !gantry::compiled_features().durable
-        || !gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().contains(&ConformanceProfile::DurableRuntime)
+        || gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().is_empty()
     {
         return Err("durable claim is invalid or overstates combined behavior".to_owned());
     }
@@ -430,8 +429,8 @@ fn validate_semantic_evidence(
         || refinement.profile != PROFILE
         || refinement.argument != summary.argument
         || refinement.model != summary.model
-        || refinement.trace_evidence.len() != 11
-        || refinement.evidence_manifests.len() != 3
+        || refinement.trace_evidence.len() != 13
+        || refinement.evidence_manifests.len() != 4
         || refinement.exclusions.len() != 4
     {
         return Err("durable refinement manifest is incomplete".to_owned());
@@ -452,7 +451,7 @@ fn validate_semantic_evidence(
     if !refinement
         .exclusions
         .iter()
-        .any(|exclusion| exclusion.contains("Concurrent"))
+        .any(|exclusion| exclusion.contains("concurrent"))
         || !refinement
             .exclusions
             .iter()
@@ -492,7 +491,7 @@ fn validate_semantic_evidence(
         || model.terminal_state_count != summary.terminal_state_count
         || model.counterexamples.len() != summary.counterexample_count
         || actual_obligations != expected_obligations
-        || model.assumptions.len() != 4
+        || model.assumptions.len() != 5
     {
         return Err("durable bounded model summary differs".to_owned());
     }

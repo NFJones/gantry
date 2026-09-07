@@ -124,10 +124,10 @@ concurrent-evaluator, durable-runtime, and embedding profiles describe which
 parts of the contract an implementation or integration provides. This lets a
 deployment make precise capability claims without changing source meaning.
 
-The amended language publication advertises all six profiles for the qualified
-Linux implementation release. The release record keeps macOS validation and
-stable-media power-loss behavior explicitly qualified rather than inferring
-untested platform guarantees.
+The executor-backed language publication is assembled for all six profiles,
+but profile claims remain disabled until `GNT-ASYNC-REL-001` completes final
+release qualification and adoption. The assembled baseline does not claim a
+hosted macOS release environment or stable-media power-loss qualification.
 
 ## Getting started
 
@@ -177,6 +177,8 @@ Run `just help` to list all development commands.
 - [`docs/parallel-execution.md`](docs/parallel-execution.md) is the source
   author guide for structured parallel work, background ownership, executor
   policy, observation, and durable resume.
+- [`docs/async-execution-release.md`](docs/async-execution-release.md) records
+  the executor-backed publication boundary and migration from manual driving.
 - [`AGENTS.md`](AGENTS.md) describes repository workflow and contribution
   requirements.
 

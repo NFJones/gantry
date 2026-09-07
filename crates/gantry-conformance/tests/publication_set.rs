@@ -151,7 +151,6 @@ struct AsyncAdoption {
     amended_profiles: Vec<String>,
     advertises_profiles: Vec<String>,
     blocked_by: Vec<String>,
-    superseded_publication_revision: String,
 }
 
 #[test]
@@ -167,7 +166,7 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     );
     assert_eq!(adoption.amended_profiles.len(), 6);
     assert!(adoption.advertises_profiles.is_empty());
-    assert!(!adoption.blocked_by.is_empty());
+    assert_eq!(adoption.blocked_by, ["GNT-ASYNC-REL-001"]);
     assert!(!adoption.blocked_by.contains(&adoption.gate));
     assert!(gantry::advertised_profiles().is_empty());
     let index_bytes = read(&root.join(INDEX_PATH));
@@ -183,7 +182,7 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     );
     assert_eq!(
         index.publication_revision,
-        adoption.superseded_publication_revision
+        format!("gantry-v1-{}", sha256(&read(&root.join("SPEC.md"))))
     );
     assert_eq!(
         index
@@ -206,10 +205,7 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     let mut protocol_owners = BTreeMap::<String, String>::new();
     let mut uris = BTreeSet::new();
     let mut resolved = BTreeMap::<String, (String, Vec<u8>)>::new();
-    let specification_sha256 = index
-        .publication_revision
-        .strip_prefix("gantry-v1-")
-        .unwrap_or_else(|| panic!("publication revision has no Gantry v1 prefix"));
+    let specification_sha256 = sha256(&read(&root.join("SPEC.md")));
     let publication_set_identity = sha256(&index_bytes);
     for artifact in &index.artifacts {
         assert!(
@@ -262,7 +258,7 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
         if artifact.id == "gantry.spec" {
             assert_eq!(artifact.media_type, "text/markdown");
             assert_eq!(sha256(&bytes), specification_sha256);
-            assert_ne!(bytes, read(&root.join("SPEC.md")));
+            assert_eq!(bytes, read(&root.join("SPEC.md")));
         } else {
             assert_eq!(artifact.media_type, "application/json");
             assert_canonical_and_schema_valid(&root, ARTIFACT_SCHEMA_PATH, &bytes);
@@ -295,9 +291,7 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
                 let content = file.content.as_bytes();
                 assert_eq!(file.byte_length, content.len().to_string(), "{}", file.path);
                 assert_eq!(file.sha256, sha256(content), "{}", file.path);
-                if gantry::PROFILE_CLAIMS_ENABLED {
-                    assert_eq!(content, read(&root.join(&file.path)), "{}", file.path);
-                }
+                assert_eq!(content, read(&root.join(&file.path)), "{}", file.path);
             }
             assert!(
                 !bytes
@@ -464,6 +458,7 @@ fn assert_required_bundle_members(root: &Path, resolved: &BTreeMap<String, (Stri
             [
                 "protocol/conformance/corpus-index-v1.json",
                 "protocol/conformance/manifest-v1.json",
+                "docs/async-execution-release.md",
                 "protocol/goldens/publication-index-v1.canonical.json",
                 "protocol/goldens/publication-index-v1.negatives.json",
                 "protocol/schemas/conformance-corpus-index-v1.schema.json",

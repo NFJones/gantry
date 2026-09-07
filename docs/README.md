@@ -80,6 +80,11 @@ The `gantry run` multithread Tokio default, positive `--workers` option, runtime
 ownership, and shutdown behavior are documented in
 [`cli-runtime-policy.md`](cli-runtime-policy.md).
 
+The assembled executor-backed publication baseline, embedding migration from
+manual root driving, durable compatibility boundary, and release
+qualifications are documented in
+[`async-execution-release.md`](async-execution-release.md).
+
 The nondurable sequential evaluator's progress, preservation, cancellation,
 operation-consumption, lifecycle, observation, and terminal-uniqueness
 argument is documented in

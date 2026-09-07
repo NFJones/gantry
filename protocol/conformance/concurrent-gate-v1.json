@@ -4,7 +4,7 @@
   "status": "verified",
   "specification": {
     "path": "SPEC.md",
-    "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
+    "sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03"
   },
   "prerequisites": [
     {
@@ -41,11 +41,11 @@
   "artifacts": [
     {
       "path": "SPEC.md",
-      "sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
+      "sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_gate.rs",
-      "sha256": "cd20a1e30afd913565e6700429dd1c91a5cf88c62581e26c71e5149d49836b6a"
+      "sha256": "f143ca96261e27197d8a837bd485a0469cd48ff61899a004d187961e34df4eda"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
@@ -53,55 +53,63 @@
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_lifecycle.rs",
-      "sha256": "cc2a95db91aa76c4944cbc6d7fa36060f9e54b131209e821f88f59bf6c9cff39"
+      "sha256": "4c439e0cb609007c93b04c5f22e6c3032b6ea3454e460a89cea90f60817b8637"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_refinement_model.rs",
-      "sha256": "91190de5723ee3556ba5547f7b159b2a611f6529769d6a4017ae6238b68b417e"
+      "sha256": "93c97cc206f7744e24a18d939248d26109f08d107bf1ba0a24999cc55f60e83d"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_task_state.rs",
-      "sha256": "5c06d498d989eff34301ddfae13c4701b065646c0ed03c76e94c3f97b56f588a"
+      "sha256": "7c25b2035419ba3dcc1940cb0b92182861872c09929f96526d4c44c4ecb74439"
+    },
+    {
+      "path": "crates/gantry-conformance/tests/source_spawn.rs",
+      "sha256": "85cd772a6fce8d79c15b8fa46ec07b33803aa6988f424b8cb99a6f4a7d873ed0"
     },
     {
       "path": "crates/gantry/src/lib.rs",
-      "sha256": "b5659ea418e9bc717d21e9819db83ec8410fb9a6bc790c6f2b706b84a8e41555"
+      "sha256": "df7c0f554bae0bdebc85ea7e42f01ba0f41484652b3c8598621a00cf15865b7d"
     },
     {
       "path": "docs/concurrent-evaluator-refinement.md",
-      "sha256": "6af5185f1a2f6a6216e6db244465d3385bcf6b0eaa5737309b84a97b523b92f0"
+      "sha256": "7b87c8b42141d9c6d654fd9e7615c719fad08450fda924ff8bdd1125b2e9f800"
     },
     {
       "path": "protocol/catalogs/embedding-contracts-v1.json",
-      "sha256": "f68251ac91d567b0f6fc37679ba412f80f5bfd5a524d1050b7a7aaa748ea3b23"
+      "sha256": "5f4f30a5c5f50b11c92ce4b087b686b8771571dc3d3c83fc5424ce8a140baa46"
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "e70e1d812e9ba93671078945149e652a8ccf1f0d2d23990e196e465a8e9f8cd3"
+      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
     },
     {
       "path": "protocol/conformance/concurrent-executor-v1.json",
-      "sha256": "56adfbf7225781874e571299088983e9f83a823886e706e1a99cb76437e34b29"
+      "sha256": "75b5059742c6062dc8ce37b155e77de2cd26bad0f42438d8660881180fc6607a"
     },
     {
       "path": "protocol/conformance/concurrent-handle-ownership-v1.json",
-      "sha256": "fd040d96be748fe97cadc6bbc09b84e2aa3c2c6a1e642110d4f166d18bbc78c1"
+      "sha256": "ad9be98e8b2af122a7908feff9714b6711107cb46bcca0c3db706250c348c2c9"
     },
     {
       "path": "protocol/conformance/concurrent-lifecycle-v1.json",
-      "sha256": "c5a5ecf1766eee17519a5cbd149ab89b2830f428b3e6e7566d23fcea230edbc9"
+      "sha256": "52d858c942735fb5555ad33ed1ad5c91288e6605bbbd98fb4154c0d05aa77e44"
     },
     {
       "path": "protocol/conformance/concurrent-refinement-v1.json",
-      "sha256": "d3d24d673455e102a6a97941064b509df72c3877a09cab0ee9275ea6eea0ea10"
+      "sha256": "354ba113660d1089daf450a60baf0aecf2361c4b4d92e8471ed157348e9a96c3"
     },
     {
       "path": "protocol/conformance/concurrent-task-state-v1.json",
-      "sha256": "547c54694afd1759def605c9cb08de76951aac30d8c9623ee263df9060a6b6e3"
+      "sha256": "dbf4d5cb44a8d66d85df783259dae03f233e8d6f94f1b0bc884474ff9ef511e0"
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "b8867b6e3ab351b2ea71f39f8813206713e03d46b5b587ac34b7fe470d71ba82"
+      "sha256": "287ca0f2995ab78ce36977b60dbfd429000b7c9d7d0b76a474fc6dd2584ddd62"
+    },
+    {
+      "path": "protocol/conformance/source-spawn-v1.json",
+      "sha256": "e81b367b17fc1787690d72d49313618b40f42d4bc63a09ddded09a87ac343d2e"
     },
     {
       "path": "protocol/goldens/concurrent-executor-model-v1.json",
@@ -113,7 +121,7 @@
     },
     {
       "path": "protocol/goldens/concurrent-refinement-model-v1.json",
-      "sha256": "0e6fd42c9f1e50e6a33a90b5e55b2b7c10f78efdf74fabec3e8d0fbc667eb429"
+      "sha256": "b1dece7db1454e50db4ac3f55ed770c2ff511b4ed5a66f31f96c190d5c6adb27"
     },
     {
       "path": "protocol/publication/artifacts-v1.json",
@@ -121,24 +129,24 @@
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
+      "sha256": "38c59eab320fe76424d103a3c7ccde9ba59817be7c63c94e5a8025aa49ba8058"
     },
     {
       "path": "protocol/requirements/reviewed-v1.json",
-      "sha256": "ca5ca89232674f750c0fbc4825b37285c91c30cd4774ae60bace9c25f85610a5"
+      "sha256": "fb3f2d171155779037cd346a67c161ed94914361fb56b88361e73eb466cad160"
     },
     {
       "path": "protocol/requirements/section14-v1.json",
-      "sha256": "5e8bc20e5a515338ba969ef56913445ea5e0c5f3f6f0fab9a7475712958575dc"
+      "sha256": "80fc85b0f18e50317a6f07345295ae24067dea1c8709dd06050f5c45c63f52b3"
     }
   ],
   "review_summary": {
     "profile": "concurrent-evaluator",
-    "applicable_clause_count": 329,
-    "covered_count": 323,
+    "applicable_clause_count": 330,
+    "covered_count": 324,
     "not_applicable_count": 6
   },
-  "evidence_anchor_count": 84,
+  "evidence_anchor_count": 88,
   "section14_excerpt_count": 51,
   "semantic_evidence": {
     "manifest": "protocol/conformance/concurrent-refinement-v1.json",
@@ -170,13 +178,7 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [
-      "analyzer",
-      "concurrent-evaluator",
-      "embedding",
-      "evaluator",
-      "frontend"
-    ],
+    "advertises_profiles": [],
     "excludes_profiles": [
       "durable-runtime"
     ],

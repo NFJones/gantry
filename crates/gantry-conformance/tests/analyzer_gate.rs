@@ -160,7 +160,7 @@ fn checked_in_analyzer_profile_gate_is_current() {
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert!(validate_manifest(&root, &manifest).is_err());
+    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         return Err("analyzer gate identity or status is invalid".to_owned());
     }
     if manifest.claim.profiles != ["analyzer", "frontend"]
-        || manifest.claim.advertises_profiles != manifest.claim.profiles
+        || !manifest.claim.advertises_profiles.is_empty()
         || manifest.claim.excludes_profiles
             != [
                 "concurrent-evaluator",
@@ -201,8 +201,8 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
                 "embedding",
                 "evaluator",
             ]
-        || !gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertises_any_profile()
+        || gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().is_empty()
     {
         return Err("analyzer claim is invalid or overstates a later profile".to_owned());
     }

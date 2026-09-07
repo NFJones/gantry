@@ -1,6 +1,6 @@
 {
   "format": "gantry.async-source-lowering-evidence/v1",
-  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "specification_sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",
   "issue": "GNT-ASYNC-LOWER-001",
   "implementation": {
     "commit": "b91ac8143ecf9847d927126e6ea05b03426bfb9c",
@@ -29,11 +29,11 @@
     },
     {
       "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-      "sha256": "0cd9d65d7ae53e180456e19f51f1efe14ca42d66eaf9d309b15ab762cf46b9c4"
+      "sha256": "54d6905c7573ee300dc23f6330d8084867d00638e0e48584aab4a066c9a39761"
     },
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "49dd4c0100c63f88c70114b6aed33130d301c4f96b1ae0684cf29701e65ccbd3"
+      "sha256": "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606"
     }
   ],
   "capabilities": [

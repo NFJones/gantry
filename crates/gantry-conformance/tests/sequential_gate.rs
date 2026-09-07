@@ -5,7 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use gantry::ConformanceProfile;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -160,7 +159,7 @@ fn checked_in_sequential_profile_gate_is_current() {
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
     ));
-    assert!(validate_manifest(&root, &manifest).is_err());
+    assert_eq!(validate_manifest(&root, &manifest), Ok(()));
 }
 
 #[test]
@@ -196,11 +195,11 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         return Err("sequential gate identity or status is invalid".to_owned());
     }
     if manifest.claim.profiles != ["analyzer", "embedding", "evaluator", "frontend"]
-        || manifest.claim.advertises_profiles != manifest.claim.profiles
+        || !manifest.claim.advertises_profiles.is_empty()
         || manifest.claim.excludes_profiles != ["concurrent-evaluator", "durable-runtime"]
         || manifest.claim.excludes_capabilities != ["journal", "resume"]
-        || !gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().contains(&ConformanceProfile::Evaluator)
+        || gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().is_empty()
     {
         return Err("sequential claim is invalid or overstates a later profile".to_owned());
     }

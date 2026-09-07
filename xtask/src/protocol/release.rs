@@ -45,7 +45,6 @@ struct AdoptionGate {
     amended_profiles: Vec<String>,
     advertises_profiles: Vec<String>,
     blocked_by: Vec<String>,
-    superseded_publication_revision: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -264,18 +263,7 @@ fn publication_ready(root: &Path) -> Result<bool, String> {
                 "blocked language-adoption gate is incomplete or overclaims profiles".to_owned(),
             );
         }
-        let index: Value = read_json(root, INDEX_PATH)?;
-        let revision = index
-            .get("publication_revision")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "superseded publication index has no revision".to_owned())?;
-        if revision != adoption.superseded_publication_revision {
-            return Err("blocked adoption found an unexpected publication revision".to_owned());
-        }
-        if adoption.blocked_by == ["GNT-ASYNC-REL-001"] {
-            return Ok(true);
-        }
-        return Ok(false);
+        return Ok(adoption.blocked_by == ["GNT-ASYNC-REL-001"]);
     }
     if adoption.status != "verified"
         || !adoption.blocked_by.is_empty()
@@ -453,6 +441,7 @@ fn source_ownership(root: &Path) -> Result<BTreeMap<&'static str, Vec<String>>, 
     }
     for path in [
         "docs/analyzer-package-validity.md",
+        "docs/async-execution-release.md",
         "docs/concurrent-evaluator-refinement.md",
         "docs/durable-runtime-refinement.md",
         "docs/sequential-evaluator-refinement.md",
