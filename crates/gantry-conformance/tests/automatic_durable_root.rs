@@ -52,6 +52,9 @@ use gantry_conformance::scripted::{ScriptedHook, ScriptedIntegration, ScriptedPr
 use gantry_conformance::services::{DeterministicIdentitySource, DeterministicUtcClock};
 use serde::Deserialize;
 
+#[path = "automatic_durable_root/recovery.rs"]
+mod recovery;
+
 const AUTOMATIC_PROGRESS_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#accepted_durable_root_runs_on_the_executor_and_commits_before_observation";
 const COMMIT_FAILURE_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_commit_failure_reports_run_failure_and_preserves_sequence_one";
 const OPERATION_EVIDENCE: &str = "crates/gantry-conformance/tests/automatic_durable_root.rs#durable_operation_cuts_commit_before_dispatch_and_source_consumption";
@@ -385,6 +388,7 @@ struct ObservedJournalStore {
     post_commit_settlement_released: AtomicBool,
     post_commit_settlement_waker: Mutex<Option<Waker>>,
     releases: AtomicU64,
+    outcome_gate: bool,
 }
 
 impl ObservedJournalStore {
@@ -402,6 +406,7 @@ impl ObservedJournalStore {
             post_commit_settlement_released: AtomicBool::new(false),
             post_commit_settlement_waker: Mutex::new(None),
             releases: AtomicU64::new(0),
+            outcome_gate: false,
         }
     }
 
@@ -484,9 +489,15 @@ impl JournalStorage for ObservedJournalStore {
             .iter()
             .map(|evidence| (evidence.kind.to_string(), evidence.canonical_body.to_vec()))
             .collect::<Vec<_>>();
-        let is_settlement = committed
-            .iter()
-            .any(|(kind, _)| kind == DURABLE_EVENT_SETTLED_KIND_V1);
+        let is_settlement = committed.iter().any(|(kind, body)| {
+            if self.outcome_gate {
+                kind == "gantry.logical-evidence/v3"
+                    && std::str::from_utf8(body)
+                        .is_ok_and(|body| body.contains("\"cut\":\"operation-outcome\""))
+            } else {
+                kind == DURABLE_EVENT_SETTLED_KIND_V1
+            }
+        });
         let gate = is_settlement
             && self.settled_commits.fetch_add(1, Ordering::AcqRel) + 1
                 == self.settlement_gate_ordinal;
