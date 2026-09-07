@@ -4,32 +4,37 @@ use super::*;
 
 #[test]
 fn committed_serial_outcome_resumes_without_hook_and_repairs_completion() {
-    recover_serial_outcome(false, false, false, false);
+    recover_serial_outcome(false, false, false, false, false);
 }
 
 #[test]
 fn serial_completion_retains_outcome_cause_across_resume_revision() {
-    recover_serial_outcome(true, false, false, false);
+    recover_serial_outcome(true, false, false, false, false);
 }
 
 #[test]
 fn serial_model_outcome_reuses_forked_session_without_hook() {
-    recover_serial_outcome(false, true, false, false);
+    recover_serial_outcome(false, true, false, false, false);
 }
 
 #[test]
 fn serial_result_event_is_repaired_before_source_progress() {
-    recover_serial_outcome(false, false, true, false);
+    recover_serial_outcome(false, false, true, false, false);
 }
 
 #[test]
 fn serial_model_result_repair_preserves_accepted_transcript() {
-    recover_serial_outcome(false, true, true, false);
+    recover_serial_outcome(false, true, true, false, false);
 }
 
 #[test]
 fn compacted_serial_result_retains_cause_through_event_repair() {
-    recover_serial_outcome(false, false, true, true);
+    recover_serial_outcome(false, false, true, true, false);
+}
+
+#[test]
+fn malformed_postcommit_repair_receipt_remains_recoverable() {
+    recover_serial_outcome(false, false, true, false, true);
 }
 
 #[test]
@@ -581,8 +586,75 @@ impl JournalStorage for CompactingSerialStore {
     }
 }
 
+struct MalformedPostCommitReceiptStore {
+    inner: Arc<ObservedJournalStore>,
+    corrupt_next_receipt: AtomicBool,
+}
+
+impl MalformedPostCommitReceiptStore {
+    fn new(inner: Arc<ObservedJournalStore>) -> Self {
+        Self {
+            inner,
+            corrupt_next_receipt: AtomicBool::new(false),
+        }
+    }
+
+    fn corrupt_next_receipt(&self) {
+        self.corrupt_next_receipt.store(true, Ordering::Release);
+    }
+}
+
+impl JournalStorage for MalformedPostCommitReceiptStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.inner.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.inner.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        Box::pin(async move {
+            let mut receipt = self.inner.commit(request).await?;
+            if self.corrupt_next_receipt.swap(false, Ordering::AcqRel) {
+                receipt.first_sequence = receipt.first_sequence.saturating_add(1);
+            }
+            Ok(receipt)
+        })
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.inner.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.inner.release_owner(request)
+    }
+}
+
 /// A policy record may advance the journal tip without replacing the outcome cause.
-fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool, compacted: bool) {
+fn recover_serial_outcome(
+    revise_mapping: bool,
+    model: bool,
+    result_cut: bool,
+    compacted: bool,
+    malformed_postcommit_receipt: bool,
+) {
     let root = TempDirectory::new(if model {
         "agents { worker }\ndefault agent = worker;\nfn main() -> String { prompt(session = fork) \"hello\" -> String }"
     } else {
@@ -617,11 +689,14 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool, c
         "\"cut\":\"operation-outcome\""
     });
     let observed = Arc::new(store);
+    let malformed = Arc::new(MalformedPostCommitReceiptStore::new(Arc::clone(&observed)));
     let storage: Arc<dyn JournalStorage> = if compacted {
         Arc::new(CompactingSerialStore {
             inner: Arc::clone(&observed),
             frontier_cut: "\"cut\":\"operation-result\"",
         })
+    } else if malformed_postcommit_receipt {
+        malformed.clone()
     } else {
         observed.clone()
     };
@@ -679,6 +754,94 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool, c
     }))
     .unwrap_or_else(|error| panic!("release: {error:?}"));
 
+    if malformed_postcommit_receipt {
+        malformed.corrupt_next_receipt();
+        let executor = Arc::new(DeterministicConcurrentExecutor::default());
+        let integration = Arc::new(ScriptedIntegration::new(
+            [
+                ScriptedPreflight::success(
+                    EmbeddingOperation::ResolveMappings,
+                    &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+                ),
+                ScriptedPreflight::success(
+                    EmbeddingOperation::ResolveSessions,
+                    &br#"{"result":"resolved"}"#[..],
+                ),
+            ],
+            [],
+        ));
+        let rejected = interpreter_with_integration_and_identity_start(
+            executor.clone(),
+            integration.clone(),
+            97,
+        );
+        let mut resume = pin!(rejected.resume_durable_execution(
+            storage.clone(),
+            DurableResumeExecutionRequest {
+                journal_id: journal_id.clone(),
+                protocol_selection: &selection,
+                candidate_package_root: None,
+                expected_execution_id: Some(started.execution_id()),
+                event_delivery: None,
+            }
+        ));
+        let mut result = None;
+        for _ in 0..1_000 {
+            if let Poll::Ready(value) = resume
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                result = Some(value);
+                break;
+            }
+            for task in executor.task_ids() {
+                if executor.is_runnable(task) {
+                    let _ = executor.poll_task(task);
+                }
+            }
+        }
+        let Some(DurableResumeExecutionResult::Accepted(accepted)) = result else {
+            panic!("malformed receipt resume: {result:?}")
+        };
+        for _ in 0..1_000 {
+            for task in executor.task_ids() {
+                if executor.is_runnable(task) {
+                    let _ = executor.poll_task(task);
+                }
+            }
+        }
+        let observation = block_on(rejected.test_durable_observation(accepted.execution_id()))
+            .unwrap_or_else(|| panic!("missing malformed receipt execution"));
+        assert!(
+            matches!(
+                observation.run_failure,
+                Some(gantry::DurableRunFailure::Internal)
+            ),
+            "{observation:?}"
+        );
+        assert!(integration.calls().iter().all(|call| !matches!(
+            call.operation,
+            EmbeddingOperation::CreateHook | EmbeddingOperation::DispatchOperation
+        )));
+        let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: journal_id.clone(),
+        }))
+        .unwrap_or_else(|error| panic!("postcommit prefix: {error:?}"));
+        let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+            .unwrap_or_else(|error| panic!("postcommit recovery: {error:?}"));
+        let event = recovered
+            .events()
+            .event_for_cause(cause)
+            .unwrap_or_else(|| panic!("missing postcommit repair"));
+        assert_eq!(event.occurrence_sequence(), sequence + 1);
+        block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+            journal_id: journal_id.clone(),
+            ownership_token: accepted.test_ownership_token().clone(),
+        }))
+        .unwrap_or_else(|error| panic!("malformed receipt release: {error:?}"));
+        assert_eq!(observed.release_count(), 2);
+    }
+
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let integration = Arc::new(ScriptedIntegration::new(
         [
@@ -699,8 +862,16 @@ fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool, c
         ],
         [],
     ));
-    let resumed =
-        interpreter_with_integration_and_identity_start(executor.clone(), integration.clone(), 97);
+    let identity_start = if malformed_postcommit_receipt {
+        129
+    } else {
+        97
+    };
+    let resumed = interpreter_with_integration_and_identity_start(
+        executor.clone(),
+        integration.clone(),
+        identity_start,
+    );
     let mut resume = pin!(resumed.resume_durable_execution(
         storage.clone(),
         DurableResumeExecutionRequest {
