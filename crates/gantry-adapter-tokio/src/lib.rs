@@ -1,7 +1,15 @@
 //! Tokio implementation of Gantry's base executor-neutral services.
 //!
 //! The adapter retains a caller-owned runtime handle and never constructs or
-//! shuts down a Tokio runtime. Tokio types remain confined to this leaf crate.
+//! shuts down a Tokio runtime. Both current-thread and multithread runtimes are
+//! supported. The caller must keep driving and retain the runtime until Gantry
+//! has completed orderly interpreter shutdown; timer services must be enabled
+//! for Gantry sleeps and deadlines. Tokio types remain confined to this leaf
+//! crate.
+//!
+//! Submitted-task completion translates normal return, requested stop, panic,
+//! and executor loss into immutable executor-neutral outcomes. It does not
+//! define Gantry task settlement or source scheduling order.
 
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -35,7 +43,10 @@ impl std::fmt::Debug for TokioExecutor {
 }
 
 impl TokioExecutor {
-    /// Binds the adapter to an existing runtime and injected jitter source.
+    /// Binds the adapter to an existing caller-owned runtime and jitter source.
+    ///
+    /// The handle may refer to a current-thread or multithread Tokio runtime.
+    /// Gantry retains the handle but never drives or shuts down that runtime.
     #[must_use]
     pub fn new(handle: Handle, jitter: Arc<dyn JitterSource>) -> Self {
         Self { handle, jitter }

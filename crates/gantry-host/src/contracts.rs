@@ -3,6 +3,13 @@
 //! These interfaces own transport and asynchronous ownership shape only.
 //! Canonical JSON Schemas under `protocol/` remain the wire authority; Rust
 //! layouts and trait method names do not define portable envelope bytes.
+//!
+//! Every evaluator embedding provides an [`ExecutorAdapter`]. Gantry transfers
+//! accepted roots, resumed work, source children, and bounded control-plane
+//! activities as owned `Send + 'static` futures and supervises their physical
+//! completion separately from semantic language settlement. The embedder owns
+//! runtime construction, liveness, and shutdown; executor-specific types do not
+//! cross this contract.
 
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -572,7 +579,15 @@ pub trait OperationHook: Send {
     ) -> HostFuture<'a, Result<HookOutcomeV1, HostError>>;
 }
 
-/// Base executor-neutral runtime services used by every evaluator.
+/// Base executor-neutral runtime services required by every evaluator.
+///
+/// `spawn` is a synchronous, nonblocking admission boundary. A successful
+/// return transfers complete ownership of one task; a failure must safely
+/// consume it. Continuously runnable Gantry tasks must eventually be polled,
+/// explicit yields must make other runnable work eligible, and ready timer or
+/// completion futures must eventually be observable. This weak-fairness
+/// contract does not define sibling order, equal CPU allocation, maximum
+/// latency, or completion of genuinely pending integration work.
 pub trait ExecutorAdapter: Send + Sync {
     /// Synchronously admits and submits one owned `Send + 'static` task future.
     ///
@@ -750,7 +765,10 @@ pub fn deadline_race<'a, T: Send + 'a>(
 ///
 /// Completion observation and an admitted abort are must-settle operations for
 /// Gantry's supervising owner. Dropping one observation future does not stop the
-/// submitted task or change its immutable physical completion.
+/// submitted task or change its immutable physical completion. Physical
+/// completion is distinct from Gantry semantic settlement; supervision and its
+/// admission permit remain owned until completion is observed or a bounded
+/// rollback path settles them.
 pub trait SubmittedTask: Send + Sync {
     /// Observes the same immutable physical completion for every caller.
     fn completion<'a>(&'a self) -> HostFuture<'a, OwnedTaskCompletion>;

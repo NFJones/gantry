@@ -48,6 +48,9 @@ pub struct DurableStartExecutionRequest<'a> {
 }
 
 /// Accepted durable execution after sequence one became authoritative.
+///
+/// Continuing root work is internally owned and may progress before this value
+/// is observed. The handle is solely an observation and control capability.
 pub struct DurableStartExecutionAccepted {
     pub(crate) start: StartExecutionAccepted,
     pub(crate) owned: Arc<DurableOwnedExecution>,
@@ -233,6 +236,10 @@ impl DurableRetainedArtifacts {
 }
 
 /// Accepted recovered execution after compatibility and dependency preflight settled.
+///
+/// Fencing, reconstruction, complete runnable-set admission, submission, and
+/// registration precede acceptance. The handle observes internally owned
+/// replacement work; terminal recovery may require no source driver.
 #[derive(Clone, Debug)]
 pub struct DurableResumeExecutionAccepted {
     /// Stable accepted execution identity recovered from sequence one.

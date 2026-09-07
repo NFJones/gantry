@@ -108,7 +108,11 @@ pub struct StartExecutionRequest<'a> {
     pub event_delivery: Option<&'a SinkPlan>,
 }
 
-/// Accepted nondurable execution state before or during internally owned `main` evaluation.
+/// Accepted nondurable execution and its observation/control capability.
+///
+/// Acceptance transfers `main` to internally owned executor work before this
+/// value is returned. The execution may therefore have progressed or settled
+/// when the caller first inspects it; no caller-driven machine is exposed.
 #[derive(Clone)]
 pub struct StartExecutionAccepted {
     /// Fresh execution identity accepted only at the final boundary.

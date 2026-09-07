@@ -99,7 +99,17 @@ use crate::{
     DurableStartExecutionResult,
 };
 
-/// Supported nondurable interpreter facade over injected host integrations.
+/// Executor-neutral interpreter facade over injected host integrations.
+///
+/// The configured executor owns physical polling while Gantry owns every
+/// accepted root, resumed driver, source child, and control-plane task through
+/// semantic and physical settlement. Clones are public facade owners; dropping
+/// the last clone without first awaiting [`Self::shutdown`] begins bounded
+/// unclean cleanup, rejects new work, signals cancellation, and requests abort
+/// without waiting or claiming that cleanup completed.
+///
+/// Start and resume operations return observation/control capabilities. There
+/// is no supported API for manually polling the underlying machine.
 pub struct Interpreter {
     inner: Arc<InterpreterInner>,
     external_owner: bool,
@@ -1863,6 +1873,11 @@ impl std::fmt::Debug for Interpreter {
 
 impl Interpreter {
     /// Constructs one running interpreter from explicit executor-neutral integrations.
+    ///
+    /// The configuration supplies the mandatory executor and bounded admission
+    /// policy. Gantry does not construct, drive, or shut down the executor's
+    /// runtime; the embedder must keep that runtime alive until orderly
+    /// [`Self::shutdown`] completes.
     #[must_use]
     pub fn new(
         configuration: InterpreterConfiguration,
@@ -1886,6 +1901,10 @@ impl Interpreter {
     }
 
     /// Constructs one interpreter with explicit event-delivery services and a default sink plan.
+    ///
+    /// Service references are retained for accepted work and shutdown even when
+    /// a caller drops an individual start, observation, or cancellation future.
+    /// Prefer [`Self::shutdown`] before releasing the last facade clone.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_event_delivery(
@@ -1951,6 +1970,14 @@ impl Interpreter {
     }
 
     /// Runs preflight, publishes accepted state, and submits the root to the configured executor.
+    ///
+    /// Predictable setup and root-capacity exhaustion reject before acceptance.
+    /// Once accepted state is published, the gated root is registered with
+    /// supervision before source progress is released. The returned handle is
+    /// for observation and control; the root may already have progressed or
+    /// settled when the caller observes this result. Exceptional executor
+    /// rejection after acceptance settles that same execution as an executor
+    /// failure rather than retroactively rejecting the start.
     pub async fn start_execution(
         &self,
         request: StartExecutionRequest<'_>,
@@ -2066,6 +2093,12 @@ impl Interpreter {
     }
 
     /// Commits durable acceptance, publishes owned state, and submits the root automatically.
+    ///
+    /// Sequence-one evidence and journal ownership become authoritative before
+    /// acceptance. The root then follows the same gated registration and
+    /// automatic-progress contract as [`Self::start_execution`]. Dropping this
+    /// caller stops only result observation; accepted journal and driver
+    /// ownership remain internal.
     #[cfg(feature = "durable")]
     pub async fn start_durable_execution(
         &self,
@@ -2224,6 +2257,14 @@ impl Interpreter {
     }
 
     /// Reconstructs and atomically admits one existing durable execution.
+    ///
+    /// Recovery acquires fencing, validates compatibility, reconstructs the
+    /// complete unfinished graph, reserves the runnable set, submits it behind
+    /// closed gates, and registers every driver before accepting resume. Any
+    /// pre-acceptance failure rolls that work back without publishing semantic
+    /// progress. An already terminal execution is accepted for observation
+    /// without creating a source driver. Physical replacement submissions may
+    /// repeat, but logical identities and transitions do not.
     #[cfg(feature = "durable")]
     pub async fn resume_durable_execution(
         &self,
@@ -11160,7 +11201,10 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Returns one point-in-time snapshot for an accepted execution identity.
+    /// Returns one linearizable point-in-time snapshot for an accepted execution identity.
+    ///
+    /// The snapshot may advance immediately after return; use the independent
+    /// foreground or terminal waits when a completion coordinate is required.
     pub fn query_execution(
         &self,
         execution_id: ProtocolIdentity,
@@ -11314,6 +11358,10 @@ impl Interpreter {
     }
 
     /// Waits independently for the foreground coordinate of one in-process handle.
+    ///
+    /// Foreground completion includes the root and required attached-descendant
+    /// cleanup, but does not wait for execution-owned detached tasks. Dropping
+    /// this future stops only this wait and does not cancel the execution.
     pub async fn await_foreground(
         &self,
         handle: &ExecutionHandle,
@@ -11326,6 +11374,10 @@ impl Interpreter {
     }
 
     /// Waits independently for the terminal coordinate of one in-process handle.
+    ///
+    /// Terminal completion additionally accounts for detached work and final
+    /// execution obligations. Dropping this future stops only this wait and
+    /// does not cancel the execution.
     pub async fn await_terminal(
         &self,
         handle: &ExecutionHandle,
@@ -11338,6 +11390,12 @@ impl Interpreter {
     }
 
     /// Records the first effective cancellation reason and waits for terminal settlement.
+    ///
+    /// Cancellation is scoped to the named execution, preserves the first
+    /// effective reason, and does not affect unrelated executions. Durable
+    /// cancellation commits before signalling task drivers. Dropping this
+    /// caller stops only observation of the caller-independent cancellation
+    /// and descendant-drain work.
     pub async fn cancel_execution(
         &self,
         execution_id: ProtocolIdentity,
@@ -11691,7 +11749,11 @@ impl Interpreter {
     ///
     /// Once this future is first polled, dropping it stops only this caller's
     /// observation. The unique coordinator remains supervised until physical
-    /// completion, and every caller observes the same immutable result.
+    /// completion, and every caller observes the same immutable result. It
+    /// rejects new work, cancels and drains owned execution cohorts, accounts
+    /// for submitted physical tasks and finite delivery/blocking ownership, and
+    /// uses reserved control-plane capacity. Await this orderly path before
+    /// dropping the embedder-owned executor runtime.
     pub async fn shutdown(&self) -> Result<Arc<ShutdownReport>, ShutdownError> {
         if self
             .inner

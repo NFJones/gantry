@@ -203,7 +203,15 @@ impl RequiredConfiguration {
     }
 }
 
-/// Positive operational capacities excluded from durable execution identity.
+/// Positive operational capacities excluded from portable and durable identity.
+///
+/// These bounds limit physical ownership classes rather than source semantics.
+/// Root and public-activity exhaustion may reject before acceptance; durable
+/// resume reserves its complete reconstructed runnable set atomically; source
+/// children use nonblocking admission; and the control-plane reserve is not
+/// available to ordinary work, preserving bounded cancellation, reaping, and
+/// shutdown progress under saturation. Worker count is a separate embedding
+/// policy and does not change these semantic or identity boundaries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AsyncCapacityLimits {
     /// Root drivers across executions.

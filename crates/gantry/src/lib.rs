@@ -4,6 +4,25 @@
 //! implementation layers are compiled, while profile advertisement includes
 //! only layers whose conformance gates have closed.
 //!
+//! With the `evaluator` feature, embedders construct an `Interpreter` from
+//! executor-neutral host services. Every accepted start, durable start, or
+//! durable resume transfers continuing work to Gantry-owned executor tasks;
+//! callers receive observation and control handles, not a `Machine` to poll.
+//! Accepted work may progress or settle before the start result is observed.
+//! Use query, foreground/terminal waits, cancellation, and orderly shutdown to
+//! observe and control it. Dropping a waiter stops only that observation.
+//!
+//! The embedder owns the executor runtime. Gantry requires the complete
+//! [`host::contracts::ExecutorAdapter`] service but neither constructs nor
+//! shuts down a runtime. Continuously runnable tasks must eventually be polled,
+//! and ready adapter futures must eventually be observable; no sibling order,
+//! equal CPU share, or bounded scheduling latency is promised.
+//!
+//! There is no compatibility mode that restores caller-driven machine polling.
+//! Migrate such callers to accepted execution handles and explicit observation,
+//! cancellation, and shutdown. See `docs/parallel-execution.md` for source task
+//! control and `docs/cli-runtime-policy.md` for the reference CLI runtime policy.
+//!
 //! Generic and trait analysis is available through [`AnalyzePackageResult`].
 //! Source authors can use the repository's `docs/generics-and-traits.md` guide;
 //! runtime and durable APIs consume only analyzer-produced closed descriptors
