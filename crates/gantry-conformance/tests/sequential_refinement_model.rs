@@ -89,9 +89,19 @@ struct SequentialModel {
     maximum_depth: usize,
     explored_state_count: usize,
     terminal_state_count: usize,
+    owned_root_driver: OwnedRootDriverModel,
     obligations: Vec<String>,
     assumptions: Vec<String>,
     host_wait_states: Vec<String>,
+    counterexamples: Vec<Counterexample>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OwnedRootDriverModel {
+    maximum_depth: usize,
+    explored_state_count: usize,
+    terminal_state_count: usize,
+    physical_outcomes: Vec<String>,
     counterexamples: Vec<Counterexample>,
 }
 
@@ -165,6 +175,98 @@ enum Outcome {
     Succeeded,
     Failed,
     Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum PhysicalOutcome {
+    Completed,
+    Stopped,
+    Failed,
+    Panicked,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct RootDriverState {
+    accepted: bool,
+    capacity_reserved: bool,
+    submitted: bool,
+    registered: bool,
+    gate_open: bool,
+    progressed: bool,
+    semantic: Option<Outcome>,
+    physical: Option<PhysicalOutcome>,
+    permit_released: bool,
+    observer_present: bool,
+}
+
+impl RootDriverState {
+    const fn initial() -> Self {
+        Self {
+            accepted: true,
+            capacity_reserved: false,
+            submitted: false,
+            registered: false,
+            gate_open: false,
+            progressed: false,
+            semantic: None,
+            physical: None,
+            permit_released: false,
+            observer_present: true,
+        }
+    }
+}
+
+const ROOT_DRIVER_ACTIONS: [RootDriverAction; 12] = [
+    RootDriverAction::ReserveCapacity,
+    RootDriverAction::Submit,
+    RootDriverAction::Register,
+    RootDriverAction::OpenGate,
+    RootDriverAction::Progress,
+    RootDriverAction::SettleSucceeded,
+    RootDriverAction::SettleFailed,
+    RootDriverAction::ObserveCompleted,
+    RootDriverAction::ObserveStopped,
+    RootDriverAction::ObserveFailed,
+    RootDriverAction::ObservePanicked,
+    RootDriverAction::ReleasePermit,
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RootDriverAction {
+    ReserveCapacity,
+    Submit,
+    Register,
+    OpenGate,
+    Progress,
+    SettleSucceeded,
+    SettleFailed,
+    ObserveCompleted,
+    ObserveStopped,
+    ObserveFailed,
+    ObservePanicked,
+    ReleasePermit,
+    DropObserver,
+}
+
+impl RootDriverAction {
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "reserve-capacity" => Self::ReserveCapacity,
+            "submit-driver" => Self::Submit,
+            "register-driver" => Self::Register,
+            "open-gate" => Self::OpenGate,
+            "driver-progress" => Self::Progress,
+            "semantic-settle-succeeded" => Self::SettleSucceeded,
+            "semantic-settle-failed" => Self::SettleFailed,
+            "observe-physical-completed" => Self::ObserveCompleted,
+            "observe-physical-stopped" => Self::ObserveStopped,
+            "observe-physical-failed" => Self::ObserveFailed,
+            "observe-physical-panicked" => Self::ObservePanicked,
+            "release-permit" => Self::ReleasePermit,
+            "drop-observer" => Self::DropObserver,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -319,6 +421,38 @@ fn bounded_sequential_refinement_model_and_counterexamples_replay() {
         model.terminal_state_count
     );
 
+    let driver_model = &model.owned_root_driver;
+    assert_eq!(
+        driver_model.physical_outcomes,
+        ["completed", "failed", "panicked", "stopped"]
+    );
+    let mut driver_visited = BTreeSet::from([RootDriverState::initial()]);
+    let mut driver_pending = VecDeque::from([(RootDriverState::initial(), 0_usize)]);
+    while let Some((state, depth)) = driver_pending.pop_front() {
+        assert_root_driver_invariants(state);
+        if depth == driver_model.maximum_depth {
+            continue;
+        }
+        for action in ROOT_DRIVER_ACTIONS {
+            let Some(next) = apply_root_driver(state, action) else {
+                continue;
+            };
+            assert_root_driver_invariants(next);
+            if driver_visited.insert(next) {
+                driver_pending.push_back((next, depth.saturating_add(1)));
+            }
+        }
+    }
+    assert_eq!(driver_visited.len(), driver_model.explored_state_count);
+    assert_eq!(
+        driver_visited
+            .iter()
+            .filter(|state| state.permit_released)
+            .count(),
+        driver_model.terminal_state_count
+    );
+    replay_root_driver_counterexamples(driver_model);
+
     let ids = model
         .counterexamples
         .iter()
@@ -379,6 +513,8 @@ fn written_sequential_argument_links_current_reviewed_evidence() {
     assert!(argument.contains("not an unbounded proof"));
     assert!(argument.contains("genuinely pending"));
     assert!(argument.contains("no unconditional termination"));
+    assert!(argument.contains("no source-language child task"));
+    assert!(argument.contains("one internally owned root driver"));
     assert!(root.join(&manifest.model).is_file());
 
     validate_evidence_anchor(&root, &manifest.model_evidence);
@@ -614,6 +750,104 @@ fn assert_invariants(state: ModelState) {
     }
     if state.phase == InterpreterPhase::Terminated {
         assert!(state.terminal.is_some());
+    }
+}
+
+fn apply_root_driver(
+    mut state: RootDriverState,
+    action: RootDriverAction,
+) -> Option<RootDriverState> {
+    match action {
+        RootDriverAction::ReserveCapacity if state.accepted && !state.capacity_reserved => {
+            state.capacity_reserved = true;
+        }
+        RootDriverAction::Submit if state.capacity_reserved && !state.submitted => {
+            state.submitted = true;
+        }
+        RootDriverAction::Register if state.submitted && !state.registered => {
+            state.registered = true;
+        }
+        RootDriverAction::OpenGate if state.registered && !state.gate_open => {
+            state.gate_open = true;
+        }
+        RootDriverAction::Progress
+            if state.registered
+                && state.gate_open
+                && !state.progressed
+                && state.semantic.is_none()
+                && state.physical.is_none() =>
+        {
+            state.progressed = true;
+        }
+        RootDriverAction::SettleSucceeded
+            if state.progressed && state.semantic.is_none() && state.physical.is_none() =>
+        {
+            state.semantic = Some(Outcome::Succeeded);
+        }
+        RootDriverAction::SettleFailed
+            if state.progressed && state.semantic.is_none() && state.physical.is_none() =>
+        {
+            state.semantic = Some(Outcome::Failed);
+        }
+        RootDriverAction::ObserveCompleted
+            if state.semantic.is_some() && state.physical.is_none() =>
+        {
+            state.physical = Some(PhysicalOutcome::Completed);
+        }
+        RootDriverAction::ObserveStopped if state.submitted && state.physical.is_none() => {
+            state.physical = Some(PhysicalOutcome::Stopped);
+        }
+        RootDriverAction::ObserveFailed if state.submitted && state.physical.is_none() => {
+            state.physical = Some(PhysicalOutcome::Failed);
+        }
+        RootDriverAction::ObservePanicked if state.submitted && state.physical.is_none() => {
+            state.physical = Some(PhysicalOutcome::Panicked);
+        }
+        RootDriverAction::ReleasePermit if state.physical.is_some() && !state.permit_released => {
+            state.permit_released = true;
+        }
+        RootDriverAction::DropObserver if state.observer_present => {
+            state.observer_present = false;
+        }
+        _ => return None,
+    }
+    Some(state)
+}
+
+fn assert_root_driver_invariants(state: RootDriverState) {
+    assert!(state.accepted);
+    assert!(!state.submitted || state.capacity_reserved);
+    assert!(!state.registered || state.submitted);
+    assert!(!state.gate_open || state.registered);
+    assert!(!state.progressed || state.gate_open);
+    assert!(state.physical != Some(PhysicalOutcome::Completed) || state.semantic.is_some());
+    assert!(!state.permit_released || state.physical.is_some());
+}
+
+fn replay_root_driver_counterexamples(model: &OwnedRootDriverModel) {
+    let ids = model
+        .counterexamples
+        .iter()
+        .map(|case| case.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
+    for case in &model.counterexamples {
+        assert!(!case.invariant.is_empty());
+        let mut state = RootDriverState::initial();
+        for action in &case.trace {
+            let action = RootDriverAction::parse(action)
+                .unwrap_or_else(|| panic!("unknown root-driver action in {}: {action}", case.id));
+            state = apply_root_driver(state, action).unwrap_or_else(|| {
+                panic!(
+                    "invalid root-driver replay prefix in {}: {action:?}",
+                    case.id
+                )
+            });
+        }
+        let rejected = RootDriverAction::parse(&case.rejected_action)
+            .unwrap_or_else(|| panic!("unknown rejected root-driver action in {}", case.id));
+        assert!(apply_root_driver(state, rejected).is_none(), "{}", case.id);
+        assert_root_driver_invariants(state);
     }
 }
 

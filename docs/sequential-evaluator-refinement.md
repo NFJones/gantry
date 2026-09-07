@@ -15,14 +15,17 @@ observation, required-delivery failure isolation, and shutdown coordination.
 It covers the embedding role only where that role composes these same public
 lifecycle and executor contracts.
 
-The base evaluator has no spawned task and therefore no dynamic task handle.
-The handle-ownership property is vacuous in this profile: no `task-created` or
-`task-ownership-changed` transition is reachable. Concurrent scheduling,
-join/detach ownership, durable commit cuts, recovery, resume, and journal-owner
-state are excluded and remain obligations of later profile arguments.
-The reviewed `M-Spawn`, `M-Detach`, and join-resolution clauses are therefore
-explicitly not applicable to the base evaluator; root settlement remains
-applicable and is covered directly.
+The base evaluator has no source-language child task and therefore no dynamic
+source task handle. Source handle ownership is vacuous in this profile: no
+source `task-created` or `task-ownership-changed` transition is reachable. An
+accepted root is nevertheless advanced by one internally owned root driver,
+submitted to the executor and supervised through distinct semantic and
+physical settlement. Concurrent source-child scheduling, join/detach
+ownership, durable commit cuts, recovery, resume, and journal-owner state are
+excluded and remain obligations of later profile arguments. The reviewed
+`M-Spawn`, `M-Detach`, and join-resolution clauses are therefore explicitly
+not applicable to the base evaluator; root settlement and internal driver
+ownership remain applicable and are covered directly.
 
 The bounded model strengthens this written argument but is not an unbounded proof.
 This issue supplies evidence for later gate verification; it does not
@@ -54,14 +57,21 @@ journal action of its own.
   nondurable semantic model. Structured executor, adapter, budget, and runtime
   failures remain in scope.
 
-The checked model starts with both `Unit` and `Int` result types. It explores
-all unique states reachable within the recorded maximum trace depth over
-deterministic work, operation preparation/outcome/acceptance/retry/failure,
+The checked machine model starts with both `Unit` and `Int` result types. It
+explores all unique states reachable within the recorded maximum trace depth
+over deterministic work, operation preparation/outcome/acceptance/retry/failure,
 cancellation, task settlement, foreground and terminal completion, required
-barrier failure, and shutdown. The exact state and terminal-state counts are
-recorded in `protocol/goldens/sequential-evaluator-model-v1.json`. The finite
-depth, one-operation abstraction, and two representative result types are
-explicit bounds; no unconditional termination or all-program proof is claimed.
+barrier failure, and shutdown. A small orthogonal model separately explores
+the owned-root-driver lifecycle; it is not multiplied into the machine BFS.
+That model covers acceptance, capacity reservation, executor submission,
+supervisor registration, gate opening, source progress, semantic settlement,
+physical settlement, and permit release. Its physical outcomes remain distinct
+as completed, stopped, failed, or panicked. The exact counts for both state
+spaces are recorded in
+`protocol/goldens/sequential-evaluator-model-v1.json`. The finite depths,
+one-operation and one-driver abstractions, and two representative result types
+are explicit bounds; no unconditional termination or all-program proof is
+claimed.
 
 The amended model also carries one representative closed generic descriptor,
 one direct statically selected trait-call target, one exact concrete effect
@@ -95,6 +105,13 @@ evaluator:
   are owned by `InterpreterLifecycle`; admission and rejection linearize under
   one lifecycle lock, while query and waiter registration are source-machine
   stuttering steps;
+- the accepted sequential root reserves one capacity unit before executor
+  submission, is registered with supervision before its gate opens, and may
+  advance source work only after registration and gate release;
+- semantic root settlement is fixed once by the driver, while supervision
+  observes one immutable physical completion (`Completed`, `Stopped`,
+  `Failed`, or `Panicked`) and retains the capacity permit until that physical
+  settlement;
 - required-delivery failure is retained beside, not in place of, foreground
   and terminal language outcomes; and
 - shutdown uses the same cancellation and settlement coordinates. The first
@@ -167,6 +184,18 @@ change; repeated shutdown calls share its report. In the base evaluator the
 root settlement fixes foreground and terminal to the same language outcome.
 The model permits neither terminal completion before foreground nor a second
 foreground, terminal, shutdown-begin, or shutdown-finish transition.
+
+**Owned root-driver closure.** Acceptance transfers the root to an internal
+owner before observer-facing start returns. Capacity is reserved before
+submission; submission precedes supervisor registration; and registration
+precedes gate release and source progress. Dropping a start or await observer
+changes none of those ownership coordinates. Semantic settlement is immutable
+but does not release capacity: the submitted handle remains supervised until
+one immutable physical completion is observed, after which the permit may be
+released exactly once. Completed return, executor-confirmed stop, executor
+failure, and contained panic remain distinct physical outcomes; abnormal
+physical settlement may precede semantic settlement and is routed through the
+owned failure path rather than being rewritten as normal completion.
 
 ## Generics and static-trait refinement
 
@@ -242,15 +271,18 @@ this issue and every exact public conformance-test anchor used by the argument.
 
 ## Counterexample replay
 
-The model fixture records invalid traces for admission after shutdown,
+The model fixture records invalid machine traces for admission after shutdown,
 reaccepting or redispatching an accepted operation, validating after
 cancellation, source progress after cancellation, duplicate foreground or
 terminal completion, terminal completion before foreground, barrier-driven
-refinalization, and shutdown completion before execution terminal state. Each
-trace must reach its reviewed prefix and reject the named next action. A future
-implementation or model change that admits one of these traces must update the
-argument and reviewed requirement evidence rather than silently weakening the
-property.
+refinalization, and shutdown completion before execution terminal state. Its
+orthogonal root-driver traces reject progress before registration or gate
+release, permit release before physical settlement, duplicate physical
+observation, semantic outcome rewrite, and a dropped observer releasing
+submitted-but-unpolled work. Each trace must reach its reviewed prefix and
+reject the named next action. A future implementation or model change that
+admits one of these traces must update the argument and reviewed requirement
+evidence rather than silently weakening the property.
 
 An attempted runtime trait-selection step, direct-target rewrite, or open
 generic boundary has no transition from an admitted model state. The bounded

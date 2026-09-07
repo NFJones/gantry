@@ -3,6 +3,50 @@
   "maximum_depth": 12,
   "explored_state_count": 836,
   "terminal_state_count": 276,
+  "owned_root_driver": {
+    "maximum_depth": 8,
+    "explored_state_count": 48,
+    "terminal_state_count": 20,
+    "physical_outcomes": ["completed", "failed", "panicked", "stopped"],
+    "counterexamples": [
+      {
+        "id": "dropped-observer-cannot-release-submitted-unpolled-work",
+        "trace": ["reserve-capacity", "submit-driver", "drop-observer"],
+        "rejected_action": "release-permit",
+        "invariant": "permit-release-after-physical-settlement"
+      },
+      {
+        "id": "duplicate-physical-observation",
+        "trace": ["reserve-capacity", "submit-driver", "observe-physical-stopped"],
+        "rejected_action": "observe-physical-stopped",
+        "invariant": "physical-settlement-uniqueness"
+      },
+      {
+        "id": "permit-release-before-physical-settlement",
+        "trace": ["reserve-capacity", "submit-driver", "register-driver", "open-gate", "driver-progress", "semantic-settle-succeeded"],
+        "rejected_action": "release-permit",
+        "invariant": "permit-release-after-physical-settlement"
+      },
+      {
+        "id": "progress-before-gate",
+        "trace": ["reserve-capacity", "submit-driver", "register-driver"],
+        "rejected_action": "driver-progress",
+        "invariant": "progress-after-registration-and-gate"
+      },
+      {
+        "id": "progress-before-registration",
+        "trace": ["reserve-capacity", "submit-driver"],
+        "rejected_action": "driver-progress",
+        "invariant": "progress-after-registration-and-gate"
+      },
+      {
+        "id": "semantic-rewrite",
+        "trace": ["reserve-capacity", "submit-driver", "register-driver", "open-gate", "driver-progress", "semantic-settle-succeeded"],
+        "rejected_action": "semantic-settle-failed",
+        "invariant": "semantic-settlement-uniqueness"
+      }
+    ]
+  },
   "obligations": [
     "enabled-machine-progress",
     "type-and-store-preservation",
