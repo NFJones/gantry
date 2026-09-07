@@ -4,25 +4,43 @@ use super::*;
 
 #[test]
 fn committed_serial_outcome_resumes_without_hook_and_repairs_completion() {
-    recover_serial_outcome(false);
+    recover_serial_outcome(false, false);
 }
 
 #[test]
 fn serial_completion_retains_outcome_cause_across_resume_revision() {
-    recover_serial_outcome(true);
+    recover_serial_outcome(true, false);
+}
+
+#[test]
+fn serial_model_outcome_reuses_forked_session_without_hook() {
+    recover_serial_outcome(false, true);
 }
 
 /// A policy record may advance the journal tip without replacing the outcome cause.
-fn recover_serial_outcome(revise_mapping: bool) {
-    let root = TempDirectory::new(
-        "action read_only lookup(value: Int) -> String;\nfn main() -> String { action lookup(7) }",
-    );
+fn recover_serial_outcome(revise_mapping: bool, model: bool) {
+    let root = TempDirectory::new(if model {
+        "agents { worker }\ndefault agent = worker;\nfn main() -> String { prompt(session = fork) \"hello\" -> String }"
+    } else {
+        "action read_only lookup(value: Int) -> String;\nfn main() -> String { action lookup(7) }"
+    });
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let mut preflight = vec![ScriptedPreflight::success(
+        EmbeddingOperation::ResolveMappings,
+        if model {
+            &br#"{"agent_mapping_revision":"agents-v1","result":"resolved"}"#[..]
+        } else {
+            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..]
+        },
+    )];
+    if model {
+        preflight.push(ScriptedPreflight::success(
+            EmbeddingOperation::EstablishSession,
+            &br#"{"result":"established"}"#[..],
+        ));
+    }
     let integration = Arc::new(ScriptedIntegration::new(
-        [ScriptedPreflight::success(
-            EmbeddingOperation::ResolveMappings,
-            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
-        )],
+        preflight,
         [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
             Arc::from(&br#""done""#[..]),
         ))])],
@@ -66,6 +84,7 @@ fn recover_serial_outcome(revise_mapping: bool) {
     assert_eq!(recovered.latest_cut(), DurableCommitCutV1::OperationOutcome);
     let cause = recovered.latest_evidence_id();
     let sequence = recovered.latest_sequence();
+    let retained_sessions = recovered.sessions().cloned();
     assert!(recovered.events().event_for_cause(cause).is_none());
     executor
         .fail_task(root_task)
@@ -82,7 +101,9 @@ fn recover_serial_outcome(revise_mapping: bool) {
         [
             ScriptedPreflight::success(
                 EmbeddingOperation::ResolveMappings,
-                if revise_mapping {
+                if model {
+                    &br#"{"agent_mapping_revision":"agents-v1","result":"resolved"}"#[..]
+                } else if revise_mapping {
                     &br#"{"action_mapping_revision":"actions-v2","result":"resolved"}"#[..]
                 } else {
                     &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..]
@@ -143,12 +164,43 @@ fn recover_serial_outcome(revise_mapping: bool) {
     );
     assert!(integration.calls().iter().all(|call| !matches!(
         call.operation,
-        EmbeddingOperation::CreateHook | EmbeddingOperation::DispatchOperation
+        EmbeddingOperation::CreateHook
+            | EmbeddingOperation::DispatchOperation
+            | EmbeddingOperation::EstablishSession
     )));
     let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
         .unwrap_or_else(|error| panic!("final prefix: {error:?}"));
     let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
         .unwrap_or_else(|error| panic!("final recovery: {error:?}"));
+    if model {
+        let before = retained_sessions
+            .as_ref()
+            .unwrap_or_else(|| panic!("missing retained sessions"));
+        let after = recovered
+            .sessions()
+            .unwrap_or_else(|| panic!("missing recovered sessions"));
+        assert_eq!(after.sessions().count(), before.sessions().count());
+        for original in before.sessions() {
+            let current = after
+                .get(original.id)
+                .unwrap_or_else(|| panic!("lost session"));
+            let mut metadata = current.clone();
+            metadata.transcript = original.transcript.clone();
+            assert_eq!(&metadata, original);
+            if original.parent.is_some() {
+                let transcript: serde_json::Value =
+                    serde_json::from_slice(current.transcript.bytes())
+                        .unwrap_or_else(|error| panic!("transcript: {error:?}"));
+                let turns = transcript["turns"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("missing turns"));
+                assert_eq!(turns.len(), 1);
+                assert_eq!(turns[0]["accepted_result"]["value"], "done");
+            } else {
+                assert_eq!(current.transcript, original.transcript);
+            }
+        }
+    }
     let event = recovered
         .events()
         .event_for_cause(cause)

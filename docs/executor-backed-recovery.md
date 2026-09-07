@@ -63,8 +63,11 @@ interrupts execution immediately after the outcome commit, resumes without a
 hook, and checks completion-event repair before successful result consumption.
 Serial recovery tracks the semantic cause separately from the journal tip;
 the changed-mapping regression verifies that a resume policy revision does not
-retarget the repaired completion event. Serial model recovery, other operation
-cuts, and compacted semantic-cause retention still need qualification.
+retarget the repaired completion event. Serial model outcome recovery also reuses
+the retained operation-local session. The forked-prompt regression checks no new
+hook or session establishment, unchanged session creation metadata, and exactly
+one accepted transcript turn. Other operation cuts and compacted semantic-cause
+retention still need qualification.
 
 ## Event identity and current qualification boundary
 
