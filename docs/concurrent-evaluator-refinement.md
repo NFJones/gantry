@@ -9,9 +9,12 @@ all-settled joins, detachment, spawned sessions, cancellation, split
 foreground and terminal completion, executor abort, and shutdown. It does not
 define another evaluator or another source-language transition system.
 
-The argument is profile-scoped to `concurrent-evaluator`. Durable commit,
-recovery, fencing, event replay, and combined concurrent-durable obligations
-remain outside this claim.
+The original bounded state search remains profile-scoped to
+`concurrent-evaluator`; it does not by itself prove durable commit, recovery,
+fencing, or event replay. The composed async refinement in
+`async-execution-refinement.md` now relates this search to the completed
+concurrent-durable and recovery evidence without turning the finite search into
+an unbounded proof.
 
 The async source-execution adoption is narrower than that full refinement
 argument. `protocol/conformance/source-spawn-v1.json` establishes native
@@ -28,7 +31,10 @@ dropped cancellation control owner, distinguishes confirmed and failed abort,
 uses the existing graph controller to bound cancellation-resistant durable
 dispatch, retains durable ownership across failed physical abort, and reuses
 one owner across cancellation/shutdown handoff. Resumed task-graph
-reconstruction and child resubmission remain with `GNT-ASYNC-REC-001`. This
+reconstruction and child resubmission are established by
+`protocol/conformance/async-recovery-v1.json`: replacement work is admitted and
+registered behind closed gates after fencing, while logical identities and
+transitions remain stable even though physical submission may repeat. This
 additional evidence does not advertise or publish a profile.
 
 For the generics-and-static-traits amendment, every spawned machine already
@@ -208,9 +214,11 @@ integrated JOIN, JOINALL, and DETACH behavior. Neither manifest claims owner
 failure/cancellation draining: `async-cancellation-v1.json` binds that separate
 owner's exact frozen requirement rows to deterministic durable isolation,
 Tokio descendant-drain, dropped-owner, submitted-unpolled abort, abort-failure,
-and shutdown-handoff regressions. Resumed graph resubmission remains with
-`GNT-ASYNC-REC-001`, and no profile publication claim follows from these
-evidence links.
+and shutdown-handoff regressions. `async-recovery-v1.json` binds fenced graph
+reconstruction, complete replacement admission, stale-owner rejection, and
+worker-policy-independent resume. Their composition is recorded by
+`async-execution-refinement-v1.json`; no profile publication claim follows from
+these evidence links.
 
 The generics amendment is mapped separately by
 `protocol/conformance/generics-traits-refinements-v1.json`. It links

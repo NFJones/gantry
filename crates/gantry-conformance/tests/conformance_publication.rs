@@ -339,7 +339,7 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         );
     }
 
-    assert_eq!(manifest.proofs.len(), 10);
+    assert_eq!(manifest.proofs.len(), 11);
     assert!(
         manifest
             .proofs

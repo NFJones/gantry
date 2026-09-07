@@ -65,6 +65,10 @@ Executor-backed graph reconstruction, committed operation/session reuse, and
 the remaining recovery qualification boundary are documented in
 [`executor-backed-recovery.md`](executor-backed-recovery.md).
 
+The composed sequential, concurrent, and durable executor-backed refinement,
+including its finite model bounds and physical-submission exclusions, is
+documented in [`async-execution-refinement.md`](async-execution-refinement.md).
+
 The `gantry run` multithread Tokio default, positive `--workers` option, runtime
 ownership, and shutdown behavior are documented in
 [`cli-runtime-policy.md`](cli-runtime-policy.md).
