@@ -172,7 +172,21 @@ fn recover_missing_operation_event(
 
 #[test]
 fn missing_spawn_event_is_replaced_before_recovered_child_progress() {
-    let root = TempDirectory::new("fn main() { spawn child -> Int { 7 } discard join(child); }");
+    recover_missing_control_event(false);
+}
+
+#[test]
+fn missing_detach_event_is_replaced_before_source_continuation() {
+    recover_missing_control_event(true);
+}
+
+/// Reuses the source-control crash harness for creation and ownership events.
+fn recover_missing_control_event(detach: bool) {
+    let root = TempDirectory::new(if detach {
+        "fn main() { spawn child -> Int { 7 } detach(child); }"
+    } else {
+        "fn main() { spawn child -> Int { 7 } discard join(child); }"
+    });
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let integration = Arc::new(ScriptedIntegration::new(
         [
@@ -195,7 +209,11 @@ fn missing_spawn_event_is_replaced_before_recovered_child_progress() {
         SinkPlan::default(),
     );
     let mut store = FailingGraphJournalStore::new(executor.clone());
-    store.failure_cut = "\"kind\":\"spawn\"";
+    store.failure_cut = if detach {
+        "\"kind\":\"detach\""
+    } else {
+        "\"kind\":\"spawn\""
+    };
     let storage = Arc::new(store);
     storage.allow_release();
     let journal_id =
@@ -292,7 +310,14 @@ fn missing_spawn_event_is_replaced_before_recovered_child_progress() {
         .events()
         .event_for_cause(cause)
         .unwrap_or_else(|| panic!("committed child {child} has no replacement spawn event"));
-    assert_eq!(event.occurrence().event().kind(), EventKind::Spawn);
+    assert_eq!(
+        event.occurrence().event().kind(),
+        if detach {
+            EventKind::Detach
+        } else {
+            EventKind::Spawn
+        }
+    );
     assert_eq!(event.occurrence_sequence(), full.committed_through + 1);
     let JournalPrefixV1::Full(after) = &prefix else {
         panic!("expected full resumed prefix")
@@ -302,7 +327,10 @@ fn missing_spawn_event_is_replaced_before_recovered_child_progress() {
         .iter()
         .find(|entry| {
             entry.sequence > full.committed_through
-                && entry.kind.as_ref() == CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+                && matches!(
+                    entry.kind.as_ref(),
+                    CONCURRENT_DURABLE_EVIDENCE_KIND_V4 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
+                )
         })
         .unwrap_or_else(|| panic!("missing submission resolution"));
     assert!(event.occurrence_sequence() < resolution.sequence);
@@ -321,6 +349,9 @@ fn missing_spawn_event_is_replaced_before_recovered_child_progress() {
         }),
     )
     .unwrap_or_else(|error| panic!("compacted recovery: {error:?}"));
-    assert_eq!(compacted.task_creation_cause(child), Some(cause));
+    assert_eq!(
+        compacted.task_creation_cause(child),
+        before.task_creation_cause(child)
+    );
     assert_eq!(compacted.events().event_for_cause(cause), Some(event));
 }
