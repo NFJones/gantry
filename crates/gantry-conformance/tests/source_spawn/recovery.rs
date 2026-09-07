@@ -350,6 +350,43 @@ fn rejected_resume_preserves_prefix_when_lifecycle_repair_precedes_revision() {
     );
     assert_eq!(appended[1].kind.as_ref(), "gantry.execution-state/v1");
     assert_eq!(appended[1].references.as_ref(), &[appended[0].evidence_id]);
+    let program = Arc::new(
+        DurableExecutionStartV3::retained_program(&after.evidence[0].canonical_body)
+            .unwrap_or_else(|error| panic!("retained program: {error:?}")),
+    );
+    let recovered = recover_concurrent_authoritative_prefix(
+        program.clone(),
+        &JournalPrefixV1::Full(after.clone()),
+    )
+    .unwrap_or_else(|error| panic!("committed resume revision must recover: {error:?}"));
+    assert_eq!(recovered.latest_sequence(), after.committed_through);
+    assert_eq!(
+        recovered
+            .execution_state()
+            .and_then(|state| state.action_mapping_revision()),
+        Some("actions-v2")
+    );
+    let compacted = ConcurrentDurableRecoverySnapshotV1::from_full_prefix(&program, after)
+        .unwrap_or_else(|error| panic!("revision compaction: {error:?}"));
+    let snapshot = JournalPrefixV1::Snapshot(SnapshotJournalPrefixV1 {
+        journal_id: after.journal_id.clone(),
+        snapshot_version: CONCURRENT_DURABLE_SNAPSHOT_VERSION_V1,
+        frontier: compacted.frontier(),
+        canonical_snapshot: compacted.canonical_body().into(),
+        retained_evidence: compacted.retained_evidence().clone(),
+        suffix: Arc::from([]),
+        committed_through: compacted.frontier(),
+    });
+    let compacted_recovery = recover_concurrent_authoritative_prefix(program, &snapshot)
+        .unwrap_or_else(|error| panic!("compacted revision recovery: {error:?}"));
+    assert_eq!(
+        compacted_recovery.execution_state(),
+        recovered.execution_state()
+    );
+    assert_eq!(
+        compacted_recovery.latest_sequence(),
+        recovered.latest_sequence()
+    );
 }
 
 /// Interrupts event commitment and requires its repair without another hook call.

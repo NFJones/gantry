@@ -492,6 +492,7 @@ impl PreparedDurableRecovery {
                 {
                     return Err(DurableEvidenceError::InvalidExecutionState);
                 }
+                recovered.record_execution_state_commit(state.clone(), evidence_id, sequence)?;
                 *execution_state = Some(state);
                 *latest_sequence = sequence;
                 *latest_evidence_id = evidence_id;
@@ -922,10 +923,11 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             } => {
                 let latest_sequence = recovered.latest_sequence();
                 let latest_evidence_id = recovered.latest_evidence_id();
+                let execution_state = recovered.execution_state().cloned();
                 PreparedDurableRecovery::Concurrent {
                     execution_start,
                     recovered,
-                    execution_state: None,
+                    execution_state,
                     latest_sequence,
                     latest_evidence_id,
                 }

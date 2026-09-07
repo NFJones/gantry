@@ -21,10 +21,10 @@ use gantry_ir::{CanonicalPath, MachineProgram, StructuralPosition};
 use super::{
     CONCURRENT_DURABLE_EVIDENCE_KIND_V4, CONCURRENT_DURABLE_EVIDENCE_KIND_V5,
     DurableCommitCoordinatorV1, DurableCommitCutV1, DurableCommitError, DurableEvidenceCommitV1,
-    DurableEvidenceError, DurableExecutionStartV3, DurableOperationEvidenceV1,
-    DurableOperationRecoveryV1, decode_hex, field, object, optional_operation, optional_string,
-    push_json_string, push_operation, push_optional_string, require_exact_fields, string,
-    validate_budget_successor, validate_operation_evidence,
+    DurableEvidenceError, DurableExecutionStartV3, DurableExecutionStateV1,
+    DurableOperationEvidenceV1, DurableOperationRecoveryV1, decode_hex, field, object,
+    optional_operation, optional_string, push_json_string, push_operation, push_optional_string,
+    require_exact_fields, string, validate_budget_successor, validate_operation_evidence,
 };
 use crate::machine::{
     MachineDetachSuspension, MachineJoinSuspension, MachineSpawnSuspension,
@@ -697,6 +697,7 @@ impl ConcurrentSnapshotEventV1 {
             DURABLE_EVENT_OCCURRENCE_KIND_V1
                 | DURABLE_EVENT_DISPATCHED_KIND_V1
                 | DURABLE_EVENT_SETTLED_KIND_V1
+                | "gantry.execution-state/v1"
         ) {
             return Err(DurableEvidenceError::UnsupportedEvidenceKind);
         }
@@ -1065,7 +1066,8 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                 }
                 DURABLE_EVENT_OCCURRENCE_KIND_V1
                 | DURABLE_EVENT_DISPATCHED_KIND_V1
-                | DURABLE_EVENT_SETTLED_KIND_V1 => {
+                | DURABLE_EVENT_SETTLED_KIND_V1
+                | "gantry.execution-state/v1" => {
                     events.push(ConcurrentSnapshotEventV1::from_envelope(envelope)?);
                 }
                 _ => return Err(DurableEvidenceError::UnsupportedEvidenceKind),
@@ -1280,9 +1282,18 @@ impl ConcurrentDurableRecoverySnapshotV1 {
                     return Err(DurableEvidenceError::MixedExecution);
                 }
             }
-            recovered_events
-                .apply_envelope(&event.envelope(&validation_journal))
-                .map_err(DurableEvidenceError::Event)?;
+            if event.kind.as_ref() == "gantry.execution-state/v1" {
+                let revision = DurableExecutionStateV1::decode(&event.canonical_body)?;
+                if revision.execution_id() != execution_start.execution_id()
+                    || !event.protected_payloads.is_empty()
+                {
+                    return Err(DurableEvidenceError::InvalidExecutionState);
+                }
+            } else {
+                recovered_events
+                    .apply_envelope(&event.envelope(&validation_journal))
+                    .map_err(DurableEvidenceError::Event)?;
+            }
             previous_event_sequence = event.sequence;
         }
         let represented_frontier = events
@@ -1889,6 +1900,7 @@ fn decode_snapshot_event(
         DURABLE_EVENT_OCCURRENCE_KIND_V1
             | DURABLE_EVENT_DISPATCHED_KIND_V1
             | DURABLE_EVENT_SETTLED_KIND_V1
+            | "gantry.execution-state/v1"
     ) {
         return Err(DurableEvidenceError::UnsupportedEvidenceKind);
     }
@@ -2212,6 +2224,7 @@ fn map_graph_event_error(error: crate::DurableEventCommitError) -> DurableCommit
 pub struct RecoveredConcurrentDurableStateV1 {
     execution: RecoveredConcurrentDurableExecutionV1,
     events: RecoveredDurableEventsV1,
+    execution_state: Option<DurableExecutionStateV1>,
     cancellation: Option<CancellationReason>,
     operation_recoveries: BTreeMap<ProtocolIdentity, DurableOperationRecoveryV1>,
     task_creation_causes: BTreeMap<ProtocolIdentity, ProtocolIdentity>,
@@ -2448,6 +2461,31 @@ impl RecoveredConcurrentDurableStateV1 {
         &self.events
     }
 
+    /// Returns the latest committed mutable policy and mapping revision.
+    #[must_use]
+    pub const fn execution_state(&self) -> Option<&DurableExecutionStateV1> {
+        self.execution_state.as_ref()
+    }
+
+    /// Advances the live policy projection after one fenced revision commit.
+    pub fn record_execution_state_commit(
+        &mut self,
+        state: DurableExecutionStateV1,
+        evidence_id: ProtocolIdentity,
+        sequence: u64,
+    ) -> Result<(), DurableEvidenceError> {
+        if state.execution_id() != self.execution.foreground().execution_id()
+            || evidence_id.kind() != IdentityKind::Evidence
+            || self.latest_sequence.checked_add(1) != Some(sequence)
+        {
+            return Err(DurableEvidenceError::InvalidExecutionState);
+        }
+        self.execution_state = Some(state);
+        self.latest_sequence = sequence;
+        self.latest_evidence_id = evidence_id;
+        Ok(())
+    }
+
     /// Installs receipt-finalized event repairs without rereading storage.
     /// The caller retains the exclusive journal owner; failure leaves this projection intact.
     pub fn record_event_repairs(
@@ -2552,6 +2590,7 @@ pub fn recover_concurrent_authoritative_prefix(
     };
     let mut latest_graph: Option<ConcurrentDurableEvidenceBody> = None;
     let mut execution_start: Option<DurableExecutionStartV3> = None;
+    let mut execution_state = None;
     let mut cancellation: Option<CancellationReason> = None;
     let mut cancellation_task: Option<ProtocolIdentity> = None;
     let mut journal_tip: Option<(u64, ProtocolIdentity)> = None;
@@ -2633,9 +2672,13 @@ pub fn recover_concurrent_authoritative_prefix(
             }
         }
         for event in snapshot.events.iter() {
-            events
-                .apply_envelope(&event.envelope(journal_id))
-                .map_err(DurableEvidenceError::Event)?;
+            if event.kind.as_ref() == "gantry.execution-state/v1" {
+                execution_state = Some(DurableExecutionStateV1::decode(&event.canonical_body)?);
+            } else {
+                events
+                    .apply_envelope(&event.envelope(journal_id))
+                    .map_err(DurableEvidenceError::Event)?;
+            }
         }
         if let Some(record) = &snapshot.cancellation {
             cancellation = Some(
@@ -2674,6 +2717,16 @@ pub fn recover_concurrent_authoritative_prefix(
                 &program,
                 &envelope.canonical_body,
             )?);
+        } else if envelope.kind.as_ref() == "gantry.execution-state/v1" {
+            let revision = DurableExecutionStateV1::decode(&envelope.canonical_body)?;
+            if execution_start
+                .as_ref()
+                .is_none_or(|start| start.execution_id() != revision.execution_id())
+                || !envelope.protected_payloads.is_empty()
+            {
+                return Err(DurableEvidenceError::InvalidExecutionState);
+            }
+            execution_state = Some(revision);
         } else if matches!(
             envelope.kind.as_ref(),
             CONCURRENT_DURABLE_EVIDENCE_KIND_V4 | CONCURRENT_DURABLE_EVIDENCE_KIND_V5
@@ -2932,6 +2985,7 @@ pub fn recover_concurrent_authoritative_prefix(
     Ok(RecoveredConcurrentDurableStateV1 {
         execution,
         events,
+        execution_state,
         cancellation,
         operation_recoveries,
         task_creation_causes,

@@ -22,6 +22,12 @@ Successful repair uses receipt-based event projection rather than another storag
 read before publication. Malformed successful receipts and post-commit projection
 failures remain part of the unfinished storage-fault qualification matrix.
 
+Concurrent recovery retains committed mutable-policy and mapping revisions in
+both full prefixes and compacted snapshots. Resume preflight uses that retained
+revision, and live revision commits advance the recovered journal frontier.
+The rejection-and-retry regression also checks restart and compaction after the
+corrected retry commits its policy revision.
+
 Logical task and source-handle identities are retained. Executor handles are
 process-local and are not checkpointed. A replacement driver is another physical
 submission for the existing logical task, not a second task-creation event or
