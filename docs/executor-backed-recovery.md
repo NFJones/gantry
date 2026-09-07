@@ -61,8 +61,10 @@ Serial action recovery also reuses a retained hook outcome instead of invoking
 a replacement hook. The public `automatic_durable_root/recovery.rs` regression
 interrupts execution immediately after the outcome commit, resumes without a
 hook, and checks completion-event repair before successful result consumption.
-Serial model recovery, other operation cuts, and completion-cause retention
-across intervening policy or delivery records still need qualification.
+Serial recovery tracks the semantic cause separately from the journal tip;
+the changed-mapping regression verifies that a resume policy revision does not
+retarget the repaired completion event. Serial model recovery, other operation
+cuts, and compacted semantic-cause retention still need qualification.
 
 ## Event identity and current qualification boundary
 

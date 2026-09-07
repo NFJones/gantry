@@ -1976,7 +1976,7 @@ impl DurableOwnedExecution {
         event: gantry_core::event::EventEnvelope,
         protected_payloads: &[ProtectedPayload],
     ) -> Result<u64, DurableRunFailure> {
-        let cause = recovered.latest_evidence_id();
+        let cause = recovered.semantic_evidence_id();
         let mut active_plan = self.event_plan.clone();
         for prior in recovered.events().events().values() {
             for (sink_id, delivery) in prior.deliveries() {
@@ -2001,7 +2001,7 @@ impl DurableOwnedExecution {
         );
         let mut commits = DurableEventCommitCoordinatorV1::from_recovered(
             &sink,
-            (cause, recovered.latest_sequence()),
+            (recovered.latest_evidence_id(), recovered.latest_sequence()),
             recovered.events(),
         )
         .map_err(map_event_commit_failure)?;

@@ -4,6 +4,16 @@ use super::*;
 
 #[test]
 fn committed_serial_outcome_resumes_without_hook_and_repairs_completion() {
+    recover_serial_outcome(false);
+}
+
+#[test]
+fn serial_completion_retains_outcome_cause_across_resume_revision() {
+    recover_serial_outcome(true);
+}
+
+/// A policy record may advance the journal tip without replacing the outcome cause.
+fn recover_serial_outcome(revise_mapping: bool) {
     let root = TempDirectory::new(
         "action read_only lookup(value: Int) -> String;\nfn main() -> String { action lookup(7) }",
     );
@@ -72,7 +82,11 @@ fn committed_serial_outcome_resumes_without_hook_and_repairs_completion() {
         [
             ScriptedPreflight::success(
                 EmbeddingOperation::ResolveMappings,
-                &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+                if revise_mapping {
+                    &br#"{"action_mapping_revision":"actions-v2","result":"resolved"}"#[..]
+                } else {
+                    &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..]
+                },
             ),
             ScriptedPreflight::success(
                 EmbeddingOperation::ResolveSessions,
@@ -143,7 +157,10 @@ fn committed_serial_outcome_resumes_without_hook_and_repairs_completion() {
         event.occurrence().event().kind(),
         EventKind::OperationCompletion
     );
-    assert_eq!(event.occurrence_sequence(), sequence + 1);
+    assert_eq!(
+        event.occurrence_sequence(),
+        sequence + 1 + u64::from(revise_mapping)
+    );
     assert_eq!(
         recovered.latest_cut(),
         DurableCommitCutV1::TerminalCompletion

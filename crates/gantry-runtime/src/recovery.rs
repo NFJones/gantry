@@ -464,6 +464,7 @@ pub struct RecoveredDurableStateV1 {
     events: RecoveredDurableEventsV1,
     latest_sequence: u64,
     latest_evidence_id: ProtocolIdentity,
+    semantic_evidence_id: ProtocolIdentity,
     latest_cut: DurableCommitCutV1,
     operation_recovery: DurableOperationRecoveryV1,
 }
@@ -480,6 +481,7 @@ impl Clone for RecoveredDurableStateV1 {
             events: self.events.clone(),
             latest_sequence: self.latest_sequence,
             latest_evidence_id: self.latest_evidence_id,
+            semantic_evidence_id: self.semantic_evidence_id,
             latest_cut: self.latest_cut,
             operation_recovery: self.operation_recovery.clone(),
         }
@@ -521,6 +523,7 @@ impl RecoveredDurableStateV1 {
             events: RecoveredDurableEventsV1::default(),
             latest_sequence: sequence,
             latest_evidence_id: evidence_id,
+            semantic_evidence_id: evidence_id,
             latest_cut: DurableCommitCutV1::Checkpoint,
             operation_recovery: DurableOperationRecoveryV1::None,
         })
@@ -536,6 +539,12 @@ impl RecoveredDurableStateV1 {
     #[must_use]
     pub const fn latest_evidence_id(&self) -> ProtocolIdentity {
         self.latest_evidence_id
+    }
+
+    /// Returns the semantic cause, excluding subsequent policy and delivery records.
+    #[must_use]
+    pub const fn semantic_evidence_id(&self) -> ProtocolIdentity {
+        self.semantic_evidence_id
     }
 
     /// Returns the latest semantic commit cut represented by recovery.
@@ -613,6 +622,7 @@ impl RecoveredDurableStateV1 {
         }
         self.latest_sequence = commit.sequence;
         self.latest_evidence_id = commit.evidence_id;
+        self.semantic_evidence_id = commit.evidence_id;
         self.latest_cut = commit.cut;
         Ok(())
     }
@@ -854,7 +864,6 @@ impl PrefixProjection {
             }
             self.record_tip(envelope)?;
             self.execution_state = Some(state);
-            self.latest = Some((envelope.sequence, envelope.evidence_id, previous));
             return Ok(());
         }
         if let Some((_, _, previous)) = &self.latest {
@@ -975,7 +984,7 @@ impl PrefixProjection {
         self,
         program: Arc<MachineProgram>,
     ) -> Result<RecoveredDurableStateV1, DurableEvidenceError> {
-        let (_, _, evidence) = self
+        let (_, semantic_evidence_id, evidence) = self
             .latest
             .ok_or(DurableEvidenceError::MissingRecoveryState)?;
         let (latest_sequence, latest_evidence_id) = self
@@ -1000,6 +1009,7 @@ impl PrefixProjection {
             events: self.events,
             latest_sequence,
             latest_evidence_id,
+            semantic_evidence_id,
             latest_cut: evidence.cut,
             operation_recovery,
         })
