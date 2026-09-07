@@ -382,6 +382,12 @@ pub(crate) struct PreparedDurableResume {
     pub(crate) mapping_revisions: MappingRevisions,
     pub(crate) event_delivery: gantry_observe::SinkPlan,
     pub(crate) pending_revision: Option<DurableExecutionStateV1>,
+    /// Private event repairs committed atomically with the resume revision.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    pending_events: Vec<(
+        gantry_runtime::DurableEventOccurrenceV1,
+        Vec<gantry_host::event::ProtectedPayload>,
+    )>,
 }
 
 /// Variant-specific authoritative state retained across the common resume preflight.
@@ -1155,6 +1161,8 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             mapping_revisions,
             event_delivery,
             pending_revision,
+            #[cfg(all(feature = "concurrent", feature = "durable"))]
+            pending_events: Vec::new(),
         };
         handoff(prepared).await
     }
@@ -1183,6 +1191,10 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         &self,
         prepared: &mut PreparedDurableResume,
     ) -> Result<(), ResumeRejection> {
+        #[cfg(all(feature = "concurrent", feature = "durable"))]
+        if !prepared.pending_events.is_empty() {
+            return self.commit_prepared_repairs(prepared).await;
+        }
         let Some(revision) = prepared.pending_revision.take() else {
             return Ok(());
         };
@@ -1195,7 +1207,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
         .await
     }
 
-    /// Repairs causal event evidence before the recovered lifecycle becomes visible.
+    /// Stages causal event evidence without changing the authoritative prefix.
     #[cfg(all(feature = "concurrent", feature = "durable"))]
     pub(crate) async fn repair_prepared_event<F>(
         &self,
@@ -1213,13 +1225,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 "lifecycle-event-recovery-failure",
             )
         };
-        let PreparedDurableRecovery::Concurrent {
-            recovered,
-            latest_sequence,
-            latest_evidence_id,
-            ..
-        } = &mut prepared.recovered
-        else {
+        let PreparedDurableRecovery::Concurrent { recovered, .. } = &mut prepared.recovered else {
             return Err(failure());
         };
         let event = event.await.map_err(|_| failure())?;
@@ -1234,37 +1240,173 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
             .map_err(|_| failure())?;
         let occurrence = gantry_runtime::DurableEventOccurrenceV1::new(cause, event, plan)
             .map_err(|_| failure())?;
-        let sink = gantry_runtime::DurableTransitionSink::new(
-            Arc::clone(&self.storage),
-            prepared.journal_id.clone(),
-            prepared.ownership_token.clone(),
-        );
-        let mut commits = gantry_runtime::DurableEventCommitCoordinatorV1::from_recovered(
-            &sink,
-            (*latest_evidence_id, *latest_sequence),
-            recovered.events(),
-        )
-        .map_err(|_| failure())?;
-        commits
-            .commit_occurrence(&occurrence, payloads)
-            .await
-            .map_err(|_| failure())?;
-        let prefix = self
-            .storage
-            .read_prefix(ReadJournalPrefixV1 {
-                journal_id: prepared.journal_id.clone(),
-            })
-            .await
-            .map_err(|_| failure())?;
-        let RecoveredDurablePrefix::Concurrent {
-            recovered: updated, ..
-        } = recover_durable_prefix(&prefix).map_err(|_| failure())?
-        else {
+        prepared
+            .pending_events
+            .push((occurrence, payloads.to_vec()));
+        Ok(())
+    }
+
+    /// Commits lifecycle repairs and the optional policy revision as one atomic batch.
+    #[cfg(all(feature = "concurrent", feature = "durable"))]
+    async fn commit_prepared_repairs(
+        &self,
+        prepared: &mut PreparedDurableResume,
+    ) -> Result<(), ResumeRejection> {
+        let failure = || {
+            ResumeRejection::new(
+                ResumeStartFailureCategory::Internal,
+                "lifecycle-event-recovery-failure",
+            )
+        };
+        let PreparedDurableRecovery::Concurrent { recovered, .. } = &prepared.recovered else {
             return Err(failure());
         };
-        *latest_sequence = updated.latest_sequence();
-        *latest_evidence_id = updated.latest_evidence_id();
-        *recovered = updated;
+        let occurrences = prepared
+            .pending_events
+            .iter()
+            .map(|(occurrence, _)| occurrence.clone())
+            .collect::<Vec<_>>();
+        recovered
+            .events()
+            .validate_new_occurrences(&occurrences)
+            .map_err(|_| failure())?;
+        let mut predecessor =
+            JournalEvidenceReferenceV1::Existing(prepared.recovered.latest_evidence_id());
+        let mut bodies = Vec::new();
+        let mut protected_payloads = Vec::new();
+        for (index, (occurrence, payloads)) in prepared.pending_events.iter().enumerate() {
+            if occurrence.event().execution_id() != Some(prepared.execution_id) {
+                return Err(failure());
+            }
+            let local = BatchLocalEvidenceId::new(format!("resume-event-{index}"))
+                .map_err(|_| failure())?;
+            let cause = JournalEvidenceReferenceV1::Existing(occurrence.causal_evidence_id());
+            let mut references = vec![predecessor.clone()];
+            if !references.contains(&cause) {
+                references.push(cause);
+            }
+            let (body, payloads) = occurrence
+                .unfinalized(local.clone(), references, payloads)
+                .map_err(|_| failure())?;
+            bodies.push(body);
+            protected_payloads.extend(payloads);
+            predecessor = JournalEvidenceReferenceV1::BatchLocal(local);
+        }
+        if let Some(revision) = &prepared.pending_revision {
+            if revision.execution_id() != prepared.execution_id {
+                return Err(failure());
+            }
+            let local = BatchLocalEvidenceId::new("execution-state").map_err(|_| failure())?;
+            bodies.push(
+                revision
+                    .unfinalized(local, [predecessor])
+                    .map_err(|_| failure())?,
+            );
+        }
+        let first = prepared
+            .recovered
+            .latest_sequence()
+            .checked_add(1)
+            .ok_or_else(failure)?;
+        let count = u64::try_from(bodies.len()).map_err(|_| failure())?;
+        let last = first.checked_add(count - 1).ok_or_else(failure)?;
+        let batch =
+            JournalBatchV1::new(bodies.clone(), protected_payloads).map_err(|_| failure())?;
+        let receipt = self
+            .storage
+            .commit(JournalCommitRequestV1 {
+                journal_id: prepared.journal_id.clone(),
+                ownership_token: prepared.ownership_token.clone(),
+                batch,
+            })
+            .await
+            .map_err(|error| {
+                ResumeRejection::new(
+                    ResumeStartFailureCategory::JournalReadOrFormat,
+                    error.code.wire_name(),
+                )
+            })?;
+        if receipt.first_sequence != first
+            || receipt.last_sequence != last
+            || receipt.entries.len() != bodies.len()
+            || receipt
+                .entries
+                .iter()
+                .zip(&bodies)
+                .enumerate()
+                .any(|(index, (entry, body))| {
+                    entry.batch_local_id != body.batch_local_id
+                        || entry.sequence != first + index as u64
+                        || entry.evidence_id.kind() != IdentityKind::Evidence
+                })
+            || receipt
+                .entries
+                .iter()
+                .map(|entry| entry.evidence_id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != bodies.len()
+        {
+            return Err(failure());
+        }
+        let envelopes = bodies
+            .iter()
+            .zip(receipt.entries.iter())
+            .take(occurrences.len())
+            .map(|(body, entry)| {
+                let references = body
+                    .references
+                    .iter()
+                    .map(|reference| match reference {
+                        JournalEvidenceReferenceV1::Existing(id) => *id,
+                        JournalEvidenceReferenceV1::BatchLocal(local) => {
+                            receipt
+                                .entries
+                                .iter()
+                                .find(|entry| &entry.batch_local_id == local)
+                                .unwrap_or_else(|| {
+                                    unreachable!("validated batch references an earlier body")
+                                })
+                                .evidence_id
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                gantry_host::journal::JournalEvidenceEnvelopeV1 {
+                    journal_id: prepared.journal_id.clone(),
+                    sequence: entry.sequence,
+                    evidence_id: entry.evidence_id,
+                    kind: body.kind.clone(),
+                    canonical_body: body.canonical_body.clone(),
+                    references: references.into(),
+                    protected_payloads: body.protected_payloads.clone(),
+                }
+            })
+            .collect::<Vec<_>>();
+        let PreparedDurableRecovery::Concurrent {
+            recovered,
+            latest_sequence,
+            latest_evidence_id,
+            ..
+        } = &mut prepared.recovered
+        else {
+            unreachable!("validated concurrent recovery")
+        };
+        recovered
+            .record_event_repairs(&envelopes)
+            .map_err(|_| failure())?;
+        *latest_sequence = recovered.latest_sequence();
+        *latest_evidence_id = recovered.latest_evidence_id();
+        if let Some(revision) = prepared.pending_revision.take() {
+            let entry = receipt
+                .entries
+                .last()
+                .unwrap_or_else(|| unreachable!("nonempty batch"));
+            prepared
+                .recovered
+                .record_execution_state_commit(revision, entry.evidence_id, entry.sequence)
+                .map_err(|_| failure())?;
+        }
+        prepared.pending_events.clear();
         Ok(())
     }
 

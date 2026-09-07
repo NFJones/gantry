@@ -3238,10 +3238,11 @@ impl Interpreter {
                 .await?;
             sequences.insert(task, next);
         }
+        durable.commit_prepared_resume_revision(prepared).await?;
         if let PreparedDurableRecovery::Concurrent { recovered, .. } = &prepared.recovered {
             coordinator
                 .publish_committed_events(recovered.events().clone())
-                .map_err(|_| failure())?;
+                .unwrap_or_else(|_| unreachable!("unpublished recovery has no competing writer"));
         }
         Ok(())
     }

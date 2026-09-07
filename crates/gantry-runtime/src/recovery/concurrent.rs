@@ -2448,6 +2448,44 @@ impl RecoveredConcurrentDurableStateV1 {
         &self.events
     }
 
+    /// Installs receipt-finalized event repairs without rereading storage.
+    /// The caller retains the exclusive journal owner; failure leaves this projection intact.
+    pub fn record_event_repairs(
+        &mut self,
+        envelopes: &[JournalEvidenceEnvelopeV1],
+    ) -> Result<(), DurableEvidenceError> {
+        let mut events = self.events.clone();
+        let mut sequence = self.latest_sequence;
+        let mut predecessor = self.latest_evidence_id;
+        for envelope in envelopes {
+            if sequence.checked_add(1) != Some(envelope.sequence)
+                || envelope.evidence_id.kind() != IdentityKind::Evidence
+                || !envelope.references.contains(&predecessor)
+                || envelope.kind.as_ref() != DURABLE_EVENT_OCCURRENCE_KIND_V1
+            {
+                return Err(DurableEvidenceError::InvalidCausalOrder);
+            }
+            let occurrence = DurableEventOccurrenceV1::decode(&envelope.canonical_body)
+                .map_err(DurableEvidenceError::Event)?;
+            if occurrence.event().execution_id() != Some(self.execution.foreground().execution_id())
+                || !envelope
+                    .references
+                    .contains(&occurrence.causal_evidence_id())
+            {
+                return Err(DurableEvidenceError::MixedExecution);
+            }
+            events
+                .apply_envelope(envelope)
+                .map_err(DurableEvidenceError::Event)?;
+            sequence = envelope.sequence;
+            predecessor = envelope.evidence_id;
+        }
+        self.events = events;
+        self.latest_sequence = sequence;
+        self.latest_evidence_id = predecessor;
+        Ok(())
+    }
+
     /// Returns the first typed execution cancellation retained by graph evidence.
     #[must_use]
     pub const fn cancellation_reason(&self) -> Option<&CancellationReason> {

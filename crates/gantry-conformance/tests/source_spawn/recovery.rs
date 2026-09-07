@@ -6,6 +6,66 @@ use super::*;
 mod rollback;
 use rollback::assert_recovered_submission_rollback;
 
+struct RejectExecutionStateStore {
+    parent: Arc<FailingGraphJournalStore>,
+    rejected: AtomicBool,
+}
+
+impl RejectExecutionStateStore {
+    fn new(parent: Arc<FailingGraphJournalStore>) -> Self {
+        Self {
+            parent,
+            rejected: AtomicBool::new(false),
+        }
+    }
+}
+
+impl JournalStorage for RejectExecutionStateStore {
+    fn acquire_owner<'a>(
+        &'a self,
+        request: AcquireJournalOwnerV1,
+    ) -> HostFuture<'a, Result<JournalOwnershipV1, JournalError>> {
+        self.parent.acquire_owner(request)
+    }
+
+    fn read_prefix<'a>(
+        &'a self,
+        request: ReadJournalPrefixV1,
+    ) -> HostFuture<'a, Result<JournalPrefixV1, JournalError>> {
+        self.parent.read_prefix(request)
+    }
+
+    fn commit<'a>(
+        &'a self,
+        request: JournalCommitRequestV1,
+    ) -> HostFuture<'a, Result<JournalCommitReceiptV1, JournalError>> {
+        let has_execution_state = request
+            .batch
+            .evidence
+            .iter()
+            .any(|evidence| evidence.kind.as_ref() == "gantry.execution-state/v1");
+        if has_execution_state && !self.rejected.swap(true, Ordering::AcqRel) {
+            Box::pin(async { Err(JournalError::new(JournalErrorCode::Internal)) })
+        } else {
+            self.parent.commit(request)
+        }
+    }
+
+    fn resolve_payload<'a>(
+        &'a self,
+        request: ResolveJournalPayloadV1,
+    ) -> HostFuture<'a, Result<ResolvedJournalPayloadV1, JournalError>> {
+        self.parent.resolve_payload(request)
+    }
+
+    fn release_owner<'a>(
+        &'a self,
+        request: ReleaseJournalOwnerV1,
+    ) -> HostFuture<'a, Result<(), JournalError>> {
+        self.parent.release_owner(request)
+    }
+}
+
 #[test]
 fn missing_dispatch_event_is_repaired_before_redispatch() {
     recover_missing_operation_event(
@@ -68,6 +128,228 @@ fn missing_task_completion_event_is_replaced_before_join_observation() {
         DurableCommitCutV1::TaskSettlement,
         EventKind::TaskCompletion,
     );
+}
+
+#[test]
+fn rejected_resume_preserves_prefix_when_lifecycle_repair_precedes_revision() {
+    let root = TempDirectory::new(
+        "action read_only inspect() -> Int;\nfn main() { spawn child -> Int { action inspect() } discard join(child); }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::EstablishSession,
+                &br#"{"result":"established"}"#[..],
+            ),
+        ],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&b"7"[..]),
+        ))])],
+    ));
+    let interpreter = interpreter_with_delivery(
+        executor.clone(),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+    );
+    let mut parent = FailingGraphJournalStore::new(executor.clone());
+    parent.failure_cut = "\"kind\":\"terminal-execution\"";
+    let parent = Arc::new(parent);
+    parent.allow_release();
+    let journal_id = JournalId::new("atomic-preacceptance-repair-revision")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let accepted = durable_accepted(&interpreter, &root, parent.clone(), journal_id.clone());
+    for _ in 0..1_000 {
+        for task in executor.task_ids() {
+            if executor.is_runnable(task) {
+                let _ = executor.poll_task(task);
+            }
+        }
+        if parent.release_count() > 0 {
+            break;
+        }
+    }
+    assert!(parent.failed.load(Ordering::Acquire));
+    assert_eq!(parent.release_count(), 1);
+    let prefix_before = block_on(parent.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("prefix before resume: {error:?}"));
+
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"action_mapping_revision":"actions-v2","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let resumed = interpreter_with_identity_source(
+        executor.clone(),
+        integration.clone(),
+        integration,
+        8,
+        65_536,
+        SinkPlan::default(),
+        Arc::new(DeterministicIdentitySource::new(
+            (193_u8..=255).map(|byte| Ok([byte; 32])),
+        )),
+    );
+    let storage = Arc::new(RejectExecutionStateStore::new(parent));
+    let selection = selection();
+    let mut resume = pin!(resumed.resume_durable_execution(
+        storage.clone(),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(accepted.execution_id()),
+            event_delivery: None,
+        },
+    ));
+    let mut result = None;
+    for _ in 0..1_000 {
+        if let Poll::Ready(value) = resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            result = Some(value);
+            break;
+        }
+        for task in executor.task_ids() {
+            if executor.is_runnable(task) {
+                let _ = executor.poll_task(task);
+            }
+        }
+    }
+    assert!(
+        matches!(result, Some(DurableResumeExecutionResult::Rejected(_))),
+        "resume: {result:?}"
+    );
+    assert!(storage.rejected.load(Ordering::Acquire));
+    assert_eq!(
+        block_on(storage.read_prefix(ReadJournalPrefixV1 {
+            journal_id: journal_id.clone()
+        }))
+        .unwrap_or_else(|error| panic!("prefix after rejection: {error:?}")),
+        prefix_before
+    );
+    assert!(
+        resumed
+            .query_execution(accepted.execution_id())
+            .unwrap_or_else(|error| panic!("rejected query: {error:?}"))
+            .is_none()
+    );
+    assert!(resumed.test_task_supervisor_snapshot().tasks.is_empty());
+    let Some(DurableResumeExecutionResult::Rejected(failure)) = result else {
+        unreachable!("checked rejection")
+    };
+    assert!(failure.release_error.is_none(), "{failure:?}");
+
+    // A new caller can acquire the released owner and atomically commit both bodies.
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"action_mapping_revision":"actions-v2","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+        ],
+        [],
+    ));
+    let retry = interpreter_with_identity_source(
+        executor.clone(),
+        integration.clone(),
+        integration.clone(),
+        8,
+        65_536,
+        SinkPlan::default(),
+        Arc::new(DeterministicIdentitySource::new(
+            (193_u8..=255).map(|byte| Ok([byte; 32])),
+        )),
+    );
+    let mut resume = pin!(retry.resume_durable_execution(
+        storage.clone(),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(accepted.execution_id()),
+            event_delivery: None,
+        }
+    ));
+    let mut result = None;
+    for _ in 0..1_000 {
+        if let Poll::Ready(value) = resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            result = Some(value);
+            break;
+        }
+        for task in executor.task_ids() {
+            if executor.is_runnable(task) {
+                let _ = executor.poll_task(task);
+            }
+        }
+    }
+    let Some(DurableResumeExecutionResult::Accepted(retried)) = result else {
+        panic!("corrected retry: {result:?}")
+    };
+    assert_eq!(retried.execution_id(), accepted.execution_id());
+    assert!(integration.calls().iter().all(|call| !matches!(
+        call.operation,
+        EmbeddingOperation::CreateHook | EmbeddingOperation::DispatchOperation
+    )));
+    let after = block_on(storage.read_prefix(ReadJournalPrefixV1 { journal_id }))
+        .unwrap_or_else(|error| panic!("retry prefix: {error:?}"));
+    let (JournalPrefixV1::Full(before), JournalPrefixV1::Full(after)) = (&prefix_before, &after)
+    else {
+        panic!("expected full prefixes")
+    };
+    assert_eq!(
+        &after.evidence[..before.evidence.len()],
+        before.evidence.as_ref()
+    );
+    let appended = &after.evidence[before.evidence.len()..];
+    assert_eq!(appended.len(), 2);
+    let occurrence = DurableEventOccurrenceV1::decode(&appended[0].canonical_body)
+        .unwrap_or_else(|error| panic!("repaired occurrence: {error:?}"));
+    assert_eq!(occurrence.event().kind(), EventKind::TerminalExecution);
+    assert_eq!(
+        occurrence.causal_evidence_id(),
+        before
+            .evidence
+            .last()
+            .unwrap_or_else(|| panic!("empty fixture prefix"))
+            .evidence_id
+    );
+    assert_eq!(appended[1].kind.as_ref(), "gantry.execution-state/v1");
+    assert_eq!(appended[1].references.as_ref(), &[appended[0].evidence_id]);
 }
 
 /// Interrupts event commitment and requires its repair without another hook call.

@@ -13,6 +13,15 @@ that interval rather than receiving an inactive owner. The public result-gap
 regression pauses this handoff and checks that owner lookup remains pending;
 replacement gates open only after the ready owner is published.
 
+Concurrent lifecycle-event repairs and a pending resume policy revision are
+staged in one fenced atomic journal batch. A rejected batch leaves neither
+partial repairs nor a policy revision behind. The public rejection-and-retry
+regression verifies unchanged prefix, unpublished execution, supervision cleanup,
+owner release, and a corrected retry retaining the original terminal event cause.
+Successful repair uses receipt-based event projection rather than another storage
+read before publication. Malformed successful receipts and post-commit projection
+failures remain part of the unfinished storage-fault qualification matrix.
+
 Logical task and source-handle identities are retained. Executor handles are
 process-local and are not checkpointed. A replacement driver is another physical
 submission for the existing logical task, not a second task-creation event or

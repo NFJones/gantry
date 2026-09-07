@@ -962,6 +962,31 @@ impl RecoveredDurableEventsV1 {
                 .contains_key(&(causal_evidence_id, None))
     }
 
+    /// Validates new occurrence identities and causal cardinality before an atomic batch.
+    /// Payload validity is checked separately when constructing unfinalized evidence.
+    pub fn validate_new_occurrences(
+        &self,
+        occurrences: &[DurableEventOccurrenceV1],
+    ) -> Result<(), DurableEventEvidenceError> {
+        let mut ids = self.events.keys().copied().collect::<BTreeSet<_>>();
+        let mut causes = self
+            .causal_occurrences
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for occurrence in occurrences {
+            if !ids.insert(occurrence.event().event_id())
+                || !causes.insert(occurrence_key(
+                    occurrence.causal_evidence_id(),
+                    occurrence.event(),
+                )?)
+            {
+                return Err(DurableEventEvidenceError::InvalidDeliveryHistory);
+            }
+        }
+        Ok(())
+    }
+
     /// Projects the required-sink barrier through an inclusive occurrence sequence.
     #[must_use]
     pub fn required_barrier_through(&self, sequence: u64) -> DurableEventBarrierV1 {
