@@ -43,7 +43,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/generics_conformance_gate.rs",
-      "sha256": "6fb8e7787d7e2dc1bbc45a4403981f39dfea09325da7cf619f6634dfa002795f"
+      "sha256": "61af36dd4248972ebdfdeeb95f077634ca501a60a791d539f0786fa3a0b19511"
     },
     {
       "path": "fuzz/Cargo.lock",
@@ -99,7 +99,7 @@
     },
     {
       "path": "protocol/README.md",
-      "sha256": "dd4f274e93d06bdf066c3c96be9937108ccc67bf18afe233c77448755110ee97"
+      "sha256": "ca02d858c29e855dedbb321cf1fff3b584eca8e34b612c9cb3472cb75745e181"
     },
     {
       "path": "protocol/conformance/generics-traits-adoption-v1.json",

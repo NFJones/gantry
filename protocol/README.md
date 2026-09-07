@@ -23,8 +23,8 @@ binding, and publication-impact review.
 The active publication is the executor-backed amended baseline. Its immutable
 revision and artifact digests are recorded in `publication/index-v1.json`, and
 `publication/verification-v1.json` binds the canonical index and all seven
-members. Profile claims remain disabled until `GNT-ASYNC-REL-001` performs
-release qualification and final adoption; see
+members. `GNT-ASYNC-REL-001` adopts all six profiles on the qualified Linux
+release cells while leaving hosted macOS and stable-media claims unqualified; see
 [`docs/async-execution-release.md`](../docs/async-execution-release.md).
 
 Analyzer/runtime contract inputs live in `catalogs/ir-contracts-v1.json`.

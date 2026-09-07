@@ -23,7 +23,7 @@
       "commit": "a6915ef212b9e245da00fd383f79bc81f05c3556",
       "subject": "Close the native source concurrency evidence gate.",
       "artifact": "protocol/conformance/native-source-concurrency-gate-v1.json",
-      "sha256": "7e5ae464ff796633e5444968ea308671df1d0acaef7f2198d73645611267d385"
+      "sha256": "9dc98da85f8b170b45e2dc001bed57d12f2e559e939358664ed15b894c318a6b"
     },
     {
       "issue": "GNT-ASYNC-PROOF-001",
@@ -49,10 +49,10 @@
   },
   "artifacts": [
     {"path": ".github/workflows/ci.yml", "sha256": "21db3502f3ed0da4dad7211f4af3dbeb5b7bfaa29e55be1c6f9493e4bd6aa1d8"},
-    {"path": "protocol/catalogs/profiles-v1.json", "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"},
-    {"path": "protocol/conformance/async-execution-adoption-v1.json", "sha256": "3672ef54c3ebb6c79d5ea92b41afa0c04c01deda32f4bfef4e6c8c71561895f4"},
-    {"path": "protocol/conformance/async-execution-contract-v1.json", "sha256": "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606"},
-    {"path": "protocol/conformance/async-execution-gate-v1.json", "sha256": "19e866bc355240fb4c5cfa4602a65d2032b7a265e3dac4a8a186fc31c0bc2742"},
+    {"path": "protocol/catalogs/profiles-v1.json", "sha256": "dc2a55ffe9a2515641bb4f2bf917bfe432bb0c62899d1c9074ea1736dbbcd98e"},
+    {"path": "protocol/conformance/async-execution-adoption-v1.json", "sha256": "b409f282acafb9847d0593d0c4f2214cf49f074fd2b35436d2293c7d53c44f41"},
+    {"path": "protocol/conformance/async-execution-contract-v1.json", "sha256": "39b496c135c36ce53aa372dd2180e4001b3af1104846c238c3bb1ee769ef8c08"},
+    {"path": "protocol/conformance/async-execution-gate-v1.json", "sha256": "d2901a80f89d1f800c4abfb6e34ac3c132e67eb72d99ce596049eee1244d2ebe"},
     {"path": "protocol/goldens/concurrent-refinement-model-v1.json", "sha256": "b1dece7db1454e50db4ac3f55ed770c2ff511b4ed5a66f31f96c190d5c6adb27"},
     {"path": "protocol/goldens/durable-refinement-model-v1.json", "sha256": "621d7c89e236fde9c7353e40750e848f4899d1e86cad15c2f493e90730efb966"},
     {"path": "protocol/goldens/sequential-evaluator-model-v1.json", "sha256": "c461c9eeb0883fe746d9405faae9ca6cf07eefa26c0c506a82d593a0fc9de7f4"}
@@ -113,10 +113,10 @@
   },
   "adoption": {
     "path": "protocol/conformance/async-execution-adoption-v1.json",
-    "status": "blocked",
-    "required_blockers": ["GNT-ASYNC-REL-001"],
-    "claims_enabled": false,
-    "advertises_profiles": []
+    "status": "verified",
+    "required_blockers": [],
+    "claims_enabled": true,
+    "advertises_profiles": ["analyzer", "concurrent-evaluator", "durable-runtime", "embedding", "evaluator", "frontend"]
   },
   "environment_gaps": [
     "The checked-in CI matrix defines Linux and macOS lanes, but this aggregate was assembled on Linux x86_64 under WSL2 and does not itself attest a hosted macOS run.",
@@ -125,7 +125,7 @@
   ],
   "exclusions": [
     "No deterministic sibling order, equal CPU allocation, bounded scheduling latency, or exactly-once physical executor submission is claimed.",
-    "Publication assembly is complete under GNT-ASYNC-PUB-001; release qualification and final adoption remain owned by GNT-ASYNC-REL-001.",
-    "This aggregate does not enable profile claims or replace platform-specific release evidence."
+    "Profile claims are enabled only within the qualified Linux release boundary adopted by GNT-ASYNC-REL-001.",
+    "Hosted macOS and stable-media power-loss qualifications remain outside this aggregate and require platform-specific release evidence."
   ]
 }

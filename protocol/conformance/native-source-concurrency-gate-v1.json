@@ -64,7 +64,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-      "sha256": "54d6905c7573ee300dc23f6330d8084867d00638e0e48584aab4a066c9a39761"
+      "sha256": "c291d077db5a662cc1ec53c57fc1cd7974c85628bc4845dc661ec3d6c67ef37b"
     },
     {
       "path": "crates/gantry-conformance/tests/source_spawn.rs",
@@ -84,7 +84,7 @@
     },
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606"
+      "sha256": "39b496c135c36ce53aa372dd2180e4001b3af1104846c238c3bb1ee769ef8c08"
     },
     {
       "path": "protocol/conformance/async-execution-observation-v1.json",
@@ -92,7 +92,7 @@
     },
     {
       "path": "protocol/conformance/async-source-lowering-v1.json",
-      "sha256": "18496e5ad75ee892e512d8a376f6abb666e60d1bac0502805082a3fa95ca9b48"
+      "sha256": "d02fba40c8055fbf904728abcced68cd0ab11dfd2b53103d3a458bb268cc8e0b"
     },
     {
       "path": "protocol/conformance/durable-coordination-v1.json",

@@ -154,7 +154,7 @@ struct Counterexample {
 fn checked_in_sequential_profile_gate_is_current() {
     let root = workspace_root();
     let manifest: Manifest = read_json(&root.join(MANIFEST_PATH));
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertised_profiles().contains(&gantry::ConformanceProfile::Evaluator));
     assert!(gantry_conformance::evidence_revision_is_expected(
         &manifest.specification.sha256,
         gantry::PROFILE_SPECIFICATION_REVISION,
@@ -195,11 +195,11 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         return Err("sequential gate identity or status is invalid".to_owned());
     }
     if manifest.claim.profiles != ["analyzer", "embedding", "evaluator", "frontend"]
-        || !manifest.claim.advertises_profiles.is_empty()
+        || manifest.claim.advertises_profiles != manifest.claim.profiles
         || manifest.claim.excludes_profiles != ["concurrent-evaluator", "durable-runtime"]
         || manifest.claim.excludes_capabilities != ["journal", "resume"]
-        || gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().is_empty()
+        || !gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertised_profiles().contains(&gantry::ConformanceProfile::Evaluator)
     {
         return Err("sequential claim is invalid or overstates a later profile".to_owned());
     }

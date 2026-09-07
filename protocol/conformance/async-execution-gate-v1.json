@@ -38,7 +38,7 @@
     },
     {
       "path": "protocol/conformance/async-execution-contract-v1.json",
-      "sha256": "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606"
+      "sha256": "39b496c135c36ce53aa372dd2180e4001b3af1104846c238c3bb1ee769ef8c08"
     },
     {
       "path": "protocol/conformance/async-execution-observation-v1.json",

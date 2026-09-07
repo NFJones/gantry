@@ -243,7 +243,7 @@ fn async_contract_gate_rejects_stale_incomplete_duplicate_or_overclaimed_records
     ));
 
     let mut overclaimed = contract;
-    overclaimed.profile_claims = "enabled".to_owned();
+    overclaimed.profile_claims = "blocked".to_owned();
     assert!(matches!(
         validate_contract(&root, &overclaimed),
         Err(message) if message.contains("profile claims")
@@ -464,8 +464,8 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
     {
         return Err("contract gate identity or status is invalid".to_owned());
     }
-    if contract.profile_claims != "blocked" || gantry::PROFILE_CLAIMS_ENABLED {
-        return Err("contract gate profile claims are not blocked".to_owned());
+    if contract.profile_claims != "enabled" || !gantry::PROFILE_CLAIMS_ENABLED {
+        return Err("contract gate profile claims are not enabled".to_owned());
     }
     if contract
         .amended_profiles
@@ -488,13 +488,13 @@ fn validate_contract(root: &Path, contract: &ContractGate) -> Result<(), String>
     let adoption: AdoptionGate = read_json_result(&root.join(&contract.adoption_gate))?;
     if adoption.format != "gantry.async-execution-adoption/v1"
         || adoption.gate != contract.issue
-        || adoption.status != "blocked"
+        || adoption.status != "verified"
         || adoption.specification_sha256 != specification_sha256
         || adoption.amended_profiles != contract.amended_profiles
-        || !adoption.advertises_profiles.is_empty()
-        || adoption.blocked_by != ["GNT-ASYNC-REL-001"]
+        || adoption.advertises_profiles != contract.amended_profiles
+        || !adoption.blocked_by.is_empty()
     {
-        return Err("staged adoption gate is inconsistent with the contract gate".to_owned());
+        return Err("terminal adoption gate is inconsistent with the contract gate".to_owned());
     }
     let evidence_owners = contract
         .requirement_assignments

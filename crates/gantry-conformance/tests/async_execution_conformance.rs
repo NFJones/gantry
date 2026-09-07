@@ -30,7 +30,7 @@ const PREREQUISITES: [(&str, &str, &str, &str, &str); 5] = [
         "a6915ef212b9e245da00fd383f79bc81f05c3556",
         "Close the native source concurrency evidence gate.",
         "protocol/conformance/native-source-concurrency-gate-v1.json",
-        "7e5ae464ff796633e5444968ea308671df1d0acaef7f2198d73645611267d385",
+        "9dc98da85f8b170b45e2dc001bed57d12f2e559e939358664ed15b894c318a6b",
     ),
     (
         "GNT-ASYNC-PROOF-001",
@@ -54,19 +54,19 @@ const ARTIFACTS: [(&str, &str); 8] = [
     ),
     (
         "protocol/catalogs/profiles-v1.json",
-        "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219",
+        "dc2a55ffe9a2515641bb4f2bf917bfe432bb0c62899d1c9074ea1736dbbcd98e",
     ),
     (
         "protocol/conformance/async-execution-adoption-v1.json",
-        "3672ef54c3ebb6c79d5ea92b41afa0c04c01deda32f4bfef4e6c8c71561895f4",
+        "b409f282acafb9847d0593d0c4f2214cf49f074fd2b35436d2293c7d53c44f41",
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606",
+        "39b496c135c36ce53aa372dd2180e4001b3af1104846c238c3bb1ee769ef8c08",
     ),
     (
         "protocol/conformance/async-execution-gate-v1.json",
-        "19e866bc355240fb4c5cfa4602a65d2032b7a265e3dac4a8a186fc31c0bc2742",
+        "d2901a80f89d1f800c4abfb6e34ac3c132e67eb72d99ce596049eee1244d2ebe",
     ),
     (
         "protocol/goldens/concurrent-refinement-model-v1.json",
@@ -322,13 +322,10 @@ fn async_execution_conformance_rejects_assignment_prerequisite_digest_anchor_and
     unbounded.portable_outcomes.scheduler_claims = true;
     assert!(validate_manifest(&root, &unbounded).is_err());
 
-    let mut claimed = manifest;
-    claimed.adoption.claims_enabled = true;
-    claimed
-        .adoption
-        .advertises_profiles
-        .push("embedding".to_owned());
-    assert!(validate_manifest(&root, &claimed).is_err());
+    let mut withdrawn = manifest;
+    withdrawn.adoption.claims_enabled = false;
+    withdrawn.adoption.advertises_profiles.clear();
+    assert!(validate_manifest(&root, &withdrawn).is_err());
 }
 
 fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
@@ -358,11 +355,11 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
         || !manifest
             .exclusions
             .iter()
-            .any(|gap| gap.contains("GNT-ASYNC-PUB-001") && gap.contains("complete"))
+            .any(|gap| gap.contains("GNT-ASYNC-REL-001") && gap.contains("qualified Linux"))
         || !manifest
             .exclusions
             .iter()
-            .any(|gap| gap.contains("GNT-ASYNC-REL-001"))
+            .any(|gap| gap.contains("macOS") && gap.contains("stable-media"))
     {
         return Err("aggregate qualifications are incomplete".to_owned());
     }
@@ -555,18 +552,26 @@ fn validate_adoption(root: &Path, evidence: &AdoptionEvidence) -> Result<(), Str
     let adoption: AdoptionGate = read_json(&root.join(&evidence.path));
     let profiles: ProfileCatalog = read_json(&root.join("protocol/catalogs/profiles-v1.json"));
     if evidence.path != "protocol/conformance/async-execution-adoption-v1.json"
-        || evidence.status != "blocked"
-        || evidence.required_blockers != ["GNT-ASYNC-REL-001"]
-        || evidence.claims_enabled
-        || !evidence.advertises_profiles.is_empty()
+        || evidence.status != "verified"
+        || !evidence.required_blockers.is_empty()
+        || !evidence.claims_enabled
+        || evidence.advertises_profiles
+            != [
+                "analyzer",
+                "concurrent-evaluator",
+                "durable-runtime",
+                "embedding",
+                "evaluator",
+                "frontend",
+            ]
         || adoption.status != evidence.status
         || adoption.advertises_profiles != evidence.advertises_profiles
         || adoption.blocked_by != evidence.required_blockers
-        || profiles.claims_enabled
-        || gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().is_empty()
+        || !profiles.claims_enabled
+        || !gantry::PROFILE_CLAIMS_ENABLED
+        || !gantry::advertises_any_profile()
     {
-        return Err("aggregate enables or overstates adoption".to_owned());
+        return Err("aggregate adoption is incomplete or overstates profiles".to_owned());
     }
     Ok(())
 }

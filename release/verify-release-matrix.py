@@ -42,6 +42,18 @@ FUZZ_CAMPAIGNS = {
     "protocol_identity": 256,
 }
 
+PRODUCT_EVIDENCE = [
+    "cargo run --locked -p xtask -- check generated",
+    "cargo run --locked -p xtask -- check workspace",
+    "cargo run --locked -p xtask -- check governance",
+    "cargo test --locked -p gantry-conformance --test external_facade_matrix",
+    "python3 release/verify-async-adoption.py",
+    "python3 release/verify-package-set.py",
+    "just check",
+    "just clippy",
+    "just test",
+]
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -120,8 +132,8 @@ def main() -> None:
         if cell_id.startswith("linux-"):
             if cell["status"] != "passed" or cell["claim_supported"] is not True:
                 raise SystemExit(f"Linux cell is not passed: {cell_id}")
-            if not cell.get("evidence"):
-                raise SystemExit(f"Linux cell has no evidence: {cell_id}")
+            if cell.get("evidence") != PRODUCT_EVIDENCE:
+                raise SystemExit(f"Linux cell evidence differs: {cell_id}")
         else:
             if cell["status"] != "blocked" or cell["claim_supported"] is not False:
                 raise SystemExit(f"macOS cell must remain blocked: {cell_id}")
@@ -137,6 +149,8 @@ def main() -> None:
     for cell_id, cell in adapter_cells.items():
         if cell["status"] != "passed" or cell["suites"] != ADAPTER_SUITES:
             raise SystemExit(f"adapter cell differs: {cell_id}")
+
+    subprocess.run(["python3", "release/verify-async-adoption.py"], cwd=ROOT, check=True)
 
     dependency = matrix["dependency_policy"]
     if dependency != {

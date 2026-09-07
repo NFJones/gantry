@@ -74,7 +74,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "crates/gantry-conformance/tests/executable_bridge.rs",
-        "54d6905c7573ee300dc23f6330d8084867d00638e0e48584aab4a066c9a39761",
+        "c291d077db5a662cc1ec53c57fc1cd7974c85628bc4845dc661ec3d6c67ef37b",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
@@ -94,7 +94,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         CONTRACT_PATH,
-        "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606",
+        "39b496c135c36ce53aa372dd2180e4001b3af1104846c238c3bb1ee769ef8c08",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
@@ -102,7 +102,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         LOWER_MANIFEST_PATH,
-        "18496e5ad75ee892e512d8a376f6abb666e60d1bac0502805082a3fa95ca9b48",
+        "d02fba40c8055fbf904728abcced68cd0ab11dfd2b53103d3a458bb268cc8e0b",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
@@ -847,8 +847,6 @@ fn validate_claim(claim: &Claim) -> Result<(), String> {
             != "only GNT-ASYNC-GATE-200-relevant slices of the 13 frozen assignments"
         || claim.full_clause_coverage
         || claim.excludes_capabilities != EXCLUSIONS
-        || gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().is_empty()
     {
         return Err(
             "verified evidence-only gate overclaims clauses, capabilities, or profiles".to_owned(),

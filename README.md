@@ -124,10 +124,10 @@ concurrent-evaluator, durable-runtime, and embedding profiles describe which
 parts of the contract an implementation or integration provides. This lets a
 deployment make precise capability claims without changing source meaning.
 
-The executor-backed language publication is assembled for all six profiles,
-but profile claims remain disabled until `GNT-ASYNC-REL-001` completes final
-release qualification and adoption. The assembled baseline does not claim a
-hosted macOS release environment or stable-media power-loss qualification.
+The executor-backed language publication is adopted for all six profiles on
+the qualified Linux release cells recorded by `GNT-ASYNC-REL-001`. The release
+does not claim a hosted macOS environment or stable-media power-loss
+qualification.
 
 ## Getting started
 

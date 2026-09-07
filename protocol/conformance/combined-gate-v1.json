@@ -30,7 +30,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/combined_gate.rs",
-      "sha256": "8482b3a1d66a786f7588e570cd191ed5ba84609476c9910e45dd20e23c0c6757"
+      "sha256": "0d43c9bb75e7d3b9296a5c13d412092ec7a3c93509e0122371d0ad4bd0d60194"
     },
     {
       "path": "crates/gantry-conformance/tests/combined_refinement.rs",
@@ -54,11 +54,11 @@
     },
     {
       "path": "protocol/conformance/concurrent-gate-v1.json",
-      "sha256": "709bf4e06b28cac67ecceb46ca799d8170b5ee2ef5c3e07be914e127458ec3ca"
+      "sha256": "acd31dfd7c3db17ce8f4b61e399e8cac28f746f26ad236f0f9264105b6af408c"
     },
     {
       "path": "protocol/conformance/durable-gate-v1.json",
-      "sha256": "023b7a4a2cf8a06e551d41895444df33cac1158e884ace9765577e14b3c8e6a7"
+      "sha256": "7cfce62cf202bd58043d5b4b7ba05bb5213f7c2490982ef55840e7fb06e5756a"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
@@ -189,7 +189,14 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "analyzer",
+      "concurrent-evaluator",
+      "durable-runtime",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
     "excludes_profiles": [],
     "excludes_capabilities": []
   },

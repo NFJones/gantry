@@ -3,9 +3,9 @@
   "overall_status": "qualified-passed",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "5763b12ed78d5c594898898c5e188a414ea64fd95a5f13ef6ea64f942620aeb0",
-    "source_revision": "5502650b48a77d2b209a3042be4a5e075a6255b0",
-    "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf"
+    "publication_set_identity": "475b2841422592e39e2064c5d059f65e4ad7f927e59cb0240da0c129d1ce61cf",
+    "source_revision": "46c82f39c5485c6f05fec10c4d8bc74b913f6977",
+    "specification_sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03"
   },
   "inputs": [
     {
@@ -30,7 +30,7 @@
     },
     {
       "path": "protocol/publication/index-v1.json",
-      "sha256": "5763b12ed78d5c594898898c5e188a414ea64fd95a5f13ef6ea64f942620aeb0"
+      "sha256": "475b2841422592e39e2064c5d059f65e4ad7f927e59cb0240da0c129d1ce61cf"
     }
   ],
   "environment": {
@@ -79,6 +79,8 @@
         "cargo run --locked -p xtask -- check workspace",
         "cargo run --locked -p xtask -- check governance",
         "cargo test --locked -p gantry-conformance --test external_facade_matrix",
+        "python3 release/verify-async-adoption.py",
+        "python3 release/verify-package-set.py",
         "just check",
         "just clippy",
         "just test"
@@ -107,6 +109,8 @@
         "cargo run --locked -p xtask -- check workspace",
         "cargo run --locked -p xtask -- check governance",
         "cargo test --locked -p gantry-conformance --test external_facade_matrix",
+        "python3 release/verify-async-adoption.py",
+        "python3 release/verify-package-set.py",
         "just check",
         "just clippy",
         "just test"

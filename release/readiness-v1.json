@@ -2,41 +2,41 @@
   "format": "gantry.release-readiness/v1",
   "status": "qualified-release-ready",
   "unqualified_full_v1": false,
-  "source_revision": "5502650b48a77d2b209a3042be4a5e075a6255b0",
-  "specification_sha256": "f7c24f0af3d6073b7aab87daa9e92dca2c4795d3d47f470ce02f63b4374e34cf",
+  "source_revision": "46c82f39c5485c6f05fec10c4d8bc74b913f6977",
+  "specification_sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
-    "publication_set_identity": "5763b12ed78d5c594898898c5e188a414ea64fd95a5f13ef6ea64f942620aeb0",
+    "publication_set_identity": "475b2841422592e39e2064c5d059f65e4ad7f927e59cb0240da0c129d1ce61cf",
     "verification_path": "protocol/publication/verification-v1.json",
-    "verification_sha256": "e5f9744e511707d9d6bb9fdfbf561b2bee0f8f40919c04350bdef2cf0ff8e142"
+    "verification_sha256": "03f7cd214cbea139e96d3489c53aa30ca22a93b534a9966d0839062abb4b0ae1"
   },
   "conformance": {
     "requirement_registry": {
       "path": "protocol/requirements/generated/requirements-v1.json",
-      "sha256": "5870c219d6eaad60083ac99b41ed28ceb2ab1f3f1a105317fee7a96f61b52040"
+      "sha256": "38c59eab320fe76424d103a3c7ccde9ba59817be7c63c94e5a8025aa49ba8058"
     },
     "manifest": {
       "path": "protocol/conformance/manifest-v1.json",
-      "sha256": "645ebe534bda1c1823e8d777af3637c3f80a532575bb0ae3202c6eaa3a143c29"
+      "sha256": "2933448703bab4e663f7c2e184b1f4f4f9a5e61b9d3301ba1b5d2ce189dc0f57"
     },
     "profile_results": [
       {
         "profile": "analyzer",
         "covered_count": 224,
-        "not_applicable_count": 67,
+        "not_applicable_count": 68,
         "planned_count": 0,
         "status": "verified"
       },
       {
         "profile": "concurrent-evaluator",
-        "covered_count": 323,
+        "covered_count": 324,
         "not_applicable_count": 6,
         "planned_count": 0,
         "status": "verified"
       },
       {
         "profile": "durable-runtime",
-        "covered_count": 353,
+        "covered_count": 354,
         "not_applicable_count": 8,
         "planned_count": 0,
         "status": "verified"
@@ -50,7 +50,7 @@
       },
       {
         "profile": "evaluator",
-        "covered_count": 316,
+        "covered_count": 317,
         "not_applicable_count": 13,
         "planned_count": 0,
         "status": "verified"
@@ -65,7 +65,7 @@
     ],
     "combined_gate": {
       "path": "protocol/conformance/combined-gate-v1.json",
-      "sha256": "49b65bbf773fe1cfb85bea78f93b520163696f72d399d761e1dbe2952de027cf",
+      "sha256": "45aef3b5c3b2531009193fa60aea8058ff5aeaf02106d9eaf9ce6ab3c260a6d1",
       "gate": "GNT-COMB-001",
       "status": "verified",
       "advertises_profiles": [
@@ -78,9 +78,13 @@
       ]
     },
     "adoption_gate": {
-      "path": "protocol/conformance/generics-traits-adoption-v1.json",
-      "sha256": "6e4b31402566e5dbf29d513bfcfa46471bcff6b5502ed4d4f83af4a3b1412ad9",
-      "gate": "GNT-GEN-GATE-000"
+      "path": "protocol/conformance/async-execution-adoption-v1.json",
+      "sha256": "b409f282acafb9847d0593d0c4f2214cf49f074fd2b35436d2293c7d53c44f41",
+      "gate": "GNT-ASYNC-GATE-000"
+    },
+    "adoption_validator": {
+      "path": "release/verify-async-adoption.py",
+      "sha256": "a1bb80ba6e24e8074174491315a92d1b01db66d10d0daa15ce27f380df1b61a3"
     }
   },
   "packaging": {
@@ -104,7 +108,7 @@
     ],
     "package_verifier": {
       "path": "release/verify-package-set.py",
-      "sha256": "2de80e86073cb70280bf8e9bf56122b0ed1aebd3f82fb71a27adcd288284a52a"
+      "sha256": "87a6b74c3cd1787511376b7f3bef8db07876011b97b824b523c3bed66fd66747"
     },
     "verified_toolchains": [
       "1.97.1",
@@ -115,16 +119,16 @@
       "binary": "gantry",
       "distribution": "source-build",
       "release_build": "passed",
-      "smoke_command": "target/release/gantry",
+      "smoke_command": "target/release/gantry | sed -n '1p'",
       "smoke_exit": 0,
       "smoke_stdout": "gantry: agent-control language for Mezzanine"
     }
   },
   "matrix": {
     "path": "release/release-matrix-v1.json",
-    "sha256": "331f3080c9f9cedb36750b104d991320f22d20f2cc00b395a0e63e8f8d2b1fd5",
+    "sha256": "8b741272240629e92c7fbfd905de14ee146f93081f88bd4feb20723ce31e0984",
     "verifier_path": "release/verify-release-matrix.py",
-    "verifier_sha256": "7287379ca38dab009bdd3f0b7001276f261250aae329c4cd6a5f7e2d3fbe214d",
+    "verifier_sha256": "0d7f31fe8f607b0db86b6c2e292e06254dacaddaf2205c2f1a3af7348e9d66ee",
     "status": "qualified-passed",
     "passed_cells": [
       "linux-rust-1.97.1",

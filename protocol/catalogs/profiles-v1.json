@@ -1,6 +1,6 @@
 {
   "catalog": "gantry.profiles",
-  "claims_enabled": false,
+  "claims_enabled": true,
   "major": 1,
   "minor": 0,
   "specification_revision": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",

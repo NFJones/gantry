@@ -159,16 +159,16 @@ fn active_publication_set_is_canonical_complete_and_self_contained() {
     let adoption: AsyncAdoption = read_json(&root.join(ADOPTION_PATH));
     assert_eq!(adoption.format, "gantry.async-execution-adoption/v1");
     assert_eq!(adoption.gate, "GNT-ASYNC-GATE-000");
-    assert_eq!(adoption.status, "blocked");
+    assert_eq!(adoption.status, "verified");
     assert_eq!(
         adoption.specification_sha256,
         sha256(&read(&root.join("SPEC.md")))
     );
     assert_eq!(adoption.amended_profiles.len(), 6);
-    assert!(adoption.advertises_profiles.is_empty());
-    assert_eq!(adoption.blocked_by, ["GNT-ASYNC-REL-001"]);
+    assert_eq!(adoption.advertises_profiles, adoption.amended_profiles);
+    assert!(adoption.blocked_by.is_empty());
     assert!(!adoption.blocked_by.contains(&adoption.gate));
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertises_any_profile());
     let index_bytes = read(&root.join(INDEX_PATH));
     assert_canonical_and_schema_valid(&root, INDEX_SCHEMA_PATH, &index_bytes);
     let index: PublicationIndex = decode(&index_bytes, INDEX_PATH);

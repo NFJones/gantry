@@ -74,7 +74,7 @@ pub enum Primitive {
     StringParseInt,
     /// Exact finite binary64 parsing.
     StringParseFloat,
-    /// Join List<String> with one exact separator.
+    /// Join `List<String>` with one exact separator.
     StringListJoin,
 }
 

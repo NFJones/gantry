@@ -315,7 +315,7 @@ fn generated_conformance_manifest_and_corpus_are_exact_and_complete() {
         manifest
             .gates
             .iter()
-            .any(|gate| { gate.gate == "GNT-ASYNC-GATE-000" && gate.status == "blocked" })
+            .any(|gate| { gate.gate == "GNT-ASYNC-GATE-000" && gate.status == "verified" })
     );
 
     let expected_profiles = expected_profile_results(&review);

@@ -99,6 +99,7 @@ def main() -> None:
     require_digest(conformance["manifest"])
     require_digest(conformance["combined_gate"])
     require_digest(conformance["adoption_gate"])
+    require_digest(conformance["adoption_validator"])
     manifest = json.loads((ROOT / conformance["manifest"]["path"]).read_text())
     if manifest["profile_results"] != conformance["profile_results"]:
         raise SystemExit("profile readiness results differ")
@@ -123,6 +124,11 @@ def main() -> None:
         or adoption["blocked_by"]
     ):
         raise SystemExit("language-adoption readiness gate differs")
+    subprocess.run(
+        ["python3", conformance["adoption_validator"]["path"]],
+        cwd=ROOT,
+        check=True,
+    )
 
     packaging = record["packaging"]
     if packaging["version"] != "0.1.0":
@@ -150,6 +156,7 @@ def main() -> None:
         or cli["binary"] != "gantry"
         or cli["distribution"] != "source-build"
         or cli["release_build"] != "passed"
+        or cli["smoke_command"] != "target/release/gantry | sed -n '1p'"
         or cli["smoke_exit"] != 0
         or cli["smoke_stdout"] != "gantry: agent-control language for Mezzanine"
     ):

@@ -150,14 +150,14 @@ fn async_publication_baseline_is_current_complete_and_release_blocked() {
     assert_eq!(validate_adoption(&adoption, &specification_sha256), Ok(()));
 
     let profiles: serde_json::Value = read_json(&root.join("protocol/catalogs/profiles-v1.json"));
-    assert_eq!(profiles["claims_enabled"], false);
+    assert_eq!(profiles["claims_enabled"], true);
     assert_eq!(profiles["specification_revision"], specification_sha256);
     assert!(profiles.get("superseded_specification_revision").is_none());
     assert_eq!(
         profiles["claims_enabled"].as_bool(),
         Some(gantry::PROFILE_CLAIMS_ENABLED)
     );
-    assert!(gantry::advertised_profiles().is_empty());
+    assert!(gantry::advertises_any_profile());
 
     let contract: Contract = read_json(&root.join(CONTRACT_PATH));
     let mut owned = contract
@@ -212,14 +212,11 @@ fn async_publication_validator_rejects_release_and_integrity_overclaims() {
     let specification_sha256 = sha256(&specification);
     let adoption: AdoptionGate = read_json(&root.join(ADOPTION_PATH));
 
-    let mut adopted = adoption.clone();
-    adopted.status = "verified".to_owned();
-    adopted.blocked_by.clear();
-    adopted.advertises_profiles = PROFILES
-        .iter()
-        .map(|profile| (*profile).to_owned())
-        .collect();
-    assert!(validate_adoption(&adopted, &specification_sha256).is_err());
+    let mut blocked = adoption.clone();
+    blocked.status = "blocked".to_owned();
+    blocked.blocked_by = vec!["GNT-ASYNC-REL-001".to_owned()];
+    blocked.advertises_profiles.clear();
+    assert!(validate_adoption(&blocked, &specification_sha256).is_err());
 
     let index_bytes = read(&root.join(INDEX_PATH));
     let mut index: PublicationIndex = decode(&index_bytes, INDEX_PATH);
@@ -230,17 +227,21 @@ fn async_publication_validator_rejects_release_and_integrity_overclaims() {
 fn validate_adoption(adoption: &AdoptionGate, specification_sha256: &str) -> Result<(), String> {
     if adoption.format != "gantry.async-execution-adoption/v1"
         || adoption.gate != "GNT-ASYNC-GATE-000"
-        || adoption.status != "blocked"
+        || adoption.status != "verified"
         || adoption.specification_sha256 != specification_sha256
         || adoption
             .amended_profiles
             .iter()
             .map(String::as_str)
             .ne(PROFILES)
-        || !adoption.advertises_profiles.is_empty()
-        || adoption.blocked_by != ["GNT-ASYNC-REL-001"]
+        || adoption
+            .advertises_profiles
+            .iter()
+            .map(String::as_str)
+            .ne(PROFILES)
+        || !adoption.blocked_by.is_empty()
     {
-        return Err("publication assembly overstates final adoption".to_owned());
+        return Err("publication adoption is incomplete or overclaims profiles".to_owned());
     }
     Ok(())
 }

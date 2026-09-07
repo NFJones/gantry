@@ -4,7 +4,7 @@
   "status": "verified",
   "specification_sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",
   "adoption_gate": "protocol/conformance/async-execution-adoption-v1.json",
-  "profile_claims": "blocked",
+  "profile_claims": "enabled",
   "amended_profiles": [
     "analyzer",
     "concurrent-evaluator",
@@ -42,7 +42,7 @@
     },
     {
       "path": "crates/gantry-core/src/generated/profiles.rs",
-      "sha256": "c50d9842b2ed218606d577deb85fe635381c79c49e167143ca49ab55684f231d"
+      "sha256": "c08607ac829c23c0241f951da41d590ec53d32d9f5854fa9d75860bb20c2bed2"
     },
     {
       "path": "crates/gantry-host/src/generated/embedding.rs",
@@ -58,7 +58,7 @@
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
+      "sha256": "dc2a55ffe9a2515641bb4f2bf917bfe432bb0c62899d1c9074ea1736dbbcd98e"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",

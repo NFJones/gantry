@@ -10,12 +10,11 @@ The publication bundles the current specification, protocol catalogs and
 schemas, goldens, requirement ledger, conformance evidence, and public
 authoring material; no file under `docs/reference/` is a publication input.
 
-Publication assembly is not release adoption. The adoption gate remains
-blocked only by `GNT-ASYNC-REL-001`, which owns the clean release matrix,
-platform qualification, final profile advertisement, and sign-off. Until that
-gate closes, the public facade reports no advertised profiles. In particular,
-the assembled set does not claim a hosted macOS release environment and does
-not claim stable-media power-loss qualification for the SQLite adapter.
+`GNT-ASYNC-REL-001` adopts the publication for all six profiles on the
+qualified Linux release cells and enables the corresponding public facade
+advertisement. The qualified release does not claim a hosted macOS environment
+and does not claim stable-media power-loss qualification for the SQLite
+adapter.
 
 ## Embedding migration
 
@@ -60,5 +59,6 @@ The reference SQLite adapter documents process-restart evidence and effective
 durability settings in
 [`sqlite-journal-storage.md`](sqlite-journal-storage.md). Those checks are not
 evidence of power-loss survival on stable media. Hosted macOS validation and
-any stable-media qualification remain explicit release evidence for
-`GNT-ASYNC-REL-001`, not conclusions inferred from publication assembly.
+any stable-media qualification remain outside the adopted Linux claim; they
+must be established by explicit evidence rather than inferred from publication
+assembly.

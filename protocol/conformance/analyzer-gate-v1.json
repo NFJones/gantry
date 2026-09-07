@@ -64,7 +64,7 @@
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
+      "sha256": "dc2a55ffe9a2515641bb4f2bf917bfe432bb0c62899d1c9074ea1736dbbcd98e"
     },
     {
       "path": "protocol/conformance/analyzer-ir-v1.json",
@@ -96,7 +96,7 @@
     },
     {
       "path": "protocol/conformance/frontend-gate-v1.json",
-      "sha256": "168eaef95e26794f0eb77f9d7d1135da7373e9c171a4f8c1fb739e9e256c3b91"
+      "sha256": "64724652fc0ac4000ccae3f6f2b6d56fe41fc3802f4e8b336f90f179c33c5502"
     },
     {
       "path": "protocol/goldens/activity-observation-vectors-v1.json",
@@ -116,7 +116,7 @@
     },
     {
       "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "eb891d6d916a52a100aa4e9be987d7bf4b785e6cb770f215a00a92ba7d1add09"
+      "sha256": "6eca887ef097acb58d3a1142f3ea9daae4c6892a48f6c332713f15e27d951079"
     },
     {
       "path": "protocol/requirements/generated/requirements-v1.json",
@@ -170,7 +170,10 @@
       "analyzer",
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "analyzer",
+      "frontend"
+    ],
     "excludes_profiles": [
       "concurrent-evaluator",
       "durable-runtime",

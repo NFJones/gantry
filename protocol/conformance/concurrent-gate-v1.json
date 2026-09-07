@@ -45,7 +45,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_gate.rs",
-      "sha256": "f143ca96261e27197d8a837bd485a0469cd48ff61899a004d187961e34df4eda"
+      "sha256": "994fd9b308f72039fbbe4ba7aae3cf1b244da0f804f0d22a4f06565ecbe51d9c"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_handle_ownership.rs",
@@ -81,7 +81,7 @@
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
+      "sha256": "dc2a55ffe9a2515641bb4f2bf917bfe432bb0c62899d1c9074ea1736dbbcd98e"
     },
     {
       "path": "protocol/conformance/concurrent-executor-v1.json",
@@ -105,7 +105,7 @@
     },
     {
       "path": "protocol/conformance/sequential-gate-v1.json",
-      "sha256": "287ca0f2995ab78ce36977b60dbfd429000b7c9d7d0b76a474fc6dd2584ddd62"
+      "sha256": "030785096f4c3d0c6dfac8f119c025cef3934860b53bd110fb530a1b1061849e"
     },
     {
       "path": "protocol/conformance/source-spawn-v1.json",
@@ -178,7 +178,13 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "analyzer",
+      "concurrent-evaluator",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
     "excludes_profiles": [
       "durable-runtime"
     ],

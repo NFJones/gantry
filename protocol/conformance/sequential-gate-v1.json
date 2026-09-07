@@ -93,7 +93,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_gate.rs",
-      "sha256": "f51202555e980710d8dbf82a60239347e73d589d2146d664ab93abf641e8b087"
+      "sha256": "40e16614c7d5163c881fde7ff9bc0c0e7089a0001b25b0e8e751f2ad56b3b970"
     },
     {
       "path": "crates/gantry-conformance/tests/analyzer_lowering.rs",
@@ -113,7 +113,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/async_publication.rs",
-      "sha256": "a61ca79c9dfcea9d04833f9165b97afe5ae2acb19a27e3951a4b8cbeed7ebf47"
+      "sha256": "aba3cefcfbff6f9eb7f9687f521aa0a6165a2f2c48fefdf9033936fafd2bc00d"
     },
     {
       "path": "crates/gantry-conformance/tests/automatic_root_start.rs",
@@ -125,15 +125,15 @@
     },
     {
       "path": "crates/gantry-conformance/tests/canonical_protocol.rs",
-      "sha256": "b19a9a5e3b238d5a3f84149880a328be5f352666b1266c6c186468dff2fe52dd"
+      "sha256": "d2f7fe3a753a99c0e96b12d27b1f5962eccedf994871e8bee4f4e4dedba43e6e"
     },
     {
       "path": "crates/gantry-conformance/tests/concurrent_executor.rs",
-      "sha256": "7c320a2e9475d68ccced578f5c8a0e60703c4776dbcd58629d8170f3690d7332"
+      "sha256": "d37f83b74db3e09190478b27db97fb84e9ab29e128bc6b6c225d686a405913c4"
     },
     {
       "path": "crates/gantry-conformance/tests/conformance_publication.rs",
-      "sha256": "fdc0a6c11948632f72a4c58e48404ce51e527ad46abc22e829f5a02d3b3330b0"
+      "sha256": "c6b2997c3a3e5f14dfec456cf82edcfda34c323c8ca24227fbc6f6f10da723da"
     },
     {
       "path": "crates/gantry-conformance/tests/diagnostic_presentation.rs",
@@ -141,11 +141,11 @@
     },
     {
       "path": "crates/gantry-conformance/tests/durable_start.rs",
-      "sha256": "1bfa848d1dc03c26d7916840f341b8f20b7d03cd3133890f3c512959d52080c8"
+      "sha256": "30e1f3992e54b03ac9bf3d2450ade847ec91c4c32fc3a2121c6fbde2422e6ee0"
     },
     {
       "path": "crates/gantry-conformance/tests/executable_bridge.rs",
-      "sha256": "54d6905c7573ee300dc23f6330d8084867d00638e0e48584aab4a066c9a39761"
+      "sha256": "c291d077db5a662cc1ec53c57fc1cd7974c85628bc4845dc661ec3d6c67ef37b"
     },
     {
       "path": "crates/gantry-conformance/tests/execution_observation.rs",
@@ -165,7 +165,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/frontend_gate.rs",
-      "sha256": "bcd122983b6f47a0be9f951f0895d31d42c35d5ce61d99150bbff50f0cfe0aa3"
+      "sha256": "f10b470adbea363ed2d1f4dc0e8f89852c590f864bf0ca87fc7dc4b9e7d40870"
     },
     {
       "path": "crates/gantry-conformance/tests/frontend_lexical_evidence.rs",
@@ -185,7 +185,7 @@
     },
     {
       "path": "crates/gantry-conformance/tests/generics_authoring.rs",
-      "sha256": "a7e7b8422477b1031b7de028fbae8f24aaf1daeb01d515fdb8391875714f8ed1"
+      "sha256": "6a2348b841181e3754b96ff54c99ced143da2646219033dcebdf4332eb422cf4"
     },
     {
       "path": "crates/gantry-conformance/tests/generics_conformance.rs",
@@ -289,11 +289,11 @@
     },
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
+      "sha256": "dc2a55ffe9a2515641bb4f2bf917bfe432bb0c62899d1c9074ea1736dbbcd98e"
     },
     {
       "path": "protocol/conformance/analyzer-gate-v1.json",
-      "sha256": "98fbeb038bee3817e740d023a94be3831c7287e32067ffd09293bec5db975e38"
+      "sha256": "b27bbec5e0b94045f823296beab0b030018c927df376450f99d3582d888006a3"
     },
     {
       "path": "protocol/conformance/execution-observation-v1.json",
@@ -389,7 +389,12 @@
       "evaluator",
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "analyzer",
+      "embedding",
+      "evaluator",
+      "frontend"
+    ],
     "excludes_profiles": [
       "concurrent-evaluator",
       "durable-runtime"

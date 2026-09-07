@@ -1,7 +1,7 @@
 {
   "format": "gantry.async-execution-adoption/v1",
   "gate": "GNT-ASYNC-GATE-000",
-  "status": "blocked",
+  "status": "verified",
   "specification_sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",
   "amended_profiles": [
     "analyzer",
@@ -11,8 +11,13 @@
     "evaluator",
     "frontend"
   ],
-  "advertises_profiles": [],
-  "blocked_by": [
-    "GNT-ASYNC-REL-001"
-  ]
+  "advertises_profiles": [
+    "analyzer",
+    "concurrent-evaluator",
+    "durable-runtime",
+    "embedding",
+    "evaluator",
+    "frontend"
+  ],
+  "blocked_by": []
 }

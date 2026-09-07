@@ -57,7 +57,7 @@
   "artifacts": [
     {
       "path": "protocol/catalogs/profiles-v1.json",
-      "sha256": "3753410db7288ec1c68822ea0838973d4c74cd79859ef88deafad0933b063219"
+      "sha256": "dc2a55ffe9a2515641bb4f2bf917bfe432bb0c62899d1c9074ea1736dbbcd98e"
     },
     {
       "path": "protocol/conformance/frontend-lexical-v1.json",
@@ -89,7 +89,7 @@
     },
     {
       "path": "protocol/goldens/profiles-v1.canonical.json",
-      "sha256": "eb891d6d916a52a100aa4e9be987d7bf4b785e6cb770f215a00a92ba7d1add09"
+      "sha256": "6eca887ef097acb58d3a1142f3ea9daae4c6892a48f6c332713f15e27d951079"
     },
     {
       "path": "protocol/goldens/source-substrate-vectors-v1.json",
@@ -130,7 +130,9 @@
     "profiles": [
       "frontend"
     ],
-    "advertises_profiles": [],
+    "advertises_profiles": [
+      "frontend"
+    ],
     "excludes_profiles": [
       "analyzer",
       "concurrent-evaluator",

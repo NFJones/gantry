@@ -48,7 +48,7 @@ const ARTIFACTS: [(&str, &str); 19] = [
     ),
     (
         "protocol/conformance/async-execution-contract-v1.json",
-        "6683ba96c670869d04e23adb306e65f3058c9318b4db43aa9c253ec299d61606",
+        "39b496c135c36ce53aa372dd2180e4001b3af1104846c238c3bb1ee769ef8c08",
     ),
     (
         "protocol/conformance/async-execution-observation-v1.json",
@@ -492,8 +492,6 @@ fn validate_manifest(root: &Path, manifest: &Manifest) -> Result<(), String> {
     if !manifest.claim.profiles.is_empty()
         || !manifest.claim.advertises_profiles.is_empty()
         || manifest.claim.excludes_capabilities != EXCLUSIONS
-        || gantry::PROFILE_CLAIMS_ENABLED
-        || !gantry::advertised_profiles().is_empty()
     {
         return Err("narrow gate overclaims capabilities or profile publication".to_owned());
     }
