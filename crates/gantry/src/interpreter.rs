@@ -8636,6 +8636,36 @@ impl Interpreter {
             *last_committed = recovered.clone();
             return Ok(());
         }
+        if matches!(recovery, DurableOperationRecoveryV1::RetryDelay { .. }) {
+            match owner
+                .poll_driver_future(
+                    recovered,
+                    last_committed,
+                    operation.prepare_after_retry_wait(
+                        self.inner.configuration.executor(),
+                        cancellation,
+                        &self.inner.allocator,
+                        self.inner.configuration.identity_source(),
+                    ),
+                )
+                .await?
+            {
+                crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(Some(_))) => {}
+                crate::durable_lifecycle::DurableDriverPoll::Completed(Ok(None)) => {
+                    Self::settle_retry_terminal(recovered.machine_mut(), occurrence, &operation)
+                        .map_err(|_| DurableRunFailure::Internal)?;
+                    owner
+                        .commit_driver_cut(recovered, DurableCommitCutV1::Checkpoint, None)
+                        .await?;
+                    *last_committed = recovered.clone();
+                    return Ok(());
+                }
+                crate::durable_lifecycle::DurableDriverPoll::Completed(Err(_)) => {
+                    return Err(DurableRunFailure::Internal);
+                }
+                crate::durable_lifecycle::DurableDriverPoll::CancellationSettled => return Ok(()),
+            }
+        }
         let mut retries_left = operation.retries_left();
         loop {
             let reused_request = reused_outcome_request.take();

@@ -180,6 +180,163 @@ fn serial_non_idempotent_preparation_recovers_as_unknown_outcome_without_dispatc
     ));
 }
 
+#[test]
+fn serial_retry_wait_is_replayed_before_replacement_dispatch() {
+    let root = TempDirectory::new(
+        "action read_only lookup() -> String;\nfn main() -> String { action(retry_limit = 1) lookup() }",
+    );
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    let integration = Arc::new(ScriptedIntegration::new(
+        [ScriptedPreflight::success(
+            EmbeddingOperation::ResolveMappings,
+            &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+        )],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&b"true"[..]),
+        ))])],
+    ));
+    let initial = interpreter_with_integration(executor.clone(), integration);
+    let mut store = ObservedJournalStore::with_post_commit_settlement_gate(1);
+    store.operation_gate = Some("\"cut\":\"retry-waiting\"");
+    let storage = Arc::new(store);
+    let journal_id = JournalId::new("serial-retry-wait-recovery")
+        .unwrap_or_else(|error| panic!("journal: {error:?}"));
+    let selection = selection();
+    let DurableStartExecutionResult::Accepted(started) = block_on(initial.start_durable_execution(
+        storage.clone(),
+        DurableStartExecutionRequest {
+            journal_id: journal_id.clone(),
+            start: StartExecutionRequest {
+                package_root: &root.0,
+                protocol_selection: &selection,
+                required_peers: &[],
+                entry_input: None,
+                root_session: None,
+                event_delivery: None,
+            },
+        },
+    )) else {
+        panic!("initial start rejected")
+    };
+    let root_task = *executor
+        .task_ids()
+        .last()
+        .unwrap_or_else(|| panic!("no root"));
+    poll_task_until(&executor, root_task, || {
+        storage.post_commit_settlement_started()
+    });
+    let prefix = block_on(storage.read_prefix(ReadJournalPrefixV1 {
+        journal_id: journal_id.clone(),
+    }))
+    .unwrap_or_else(|error| panic!("prefix: {error:?}"));
+    let (_, recovered) = recover_authoritative_prefix_with_retained_program(&prefix)
+        .unwrap_or_else(|error| panic!("recovery: {error:?}"));
+    assert_eq!(recovered.latest_cut(), DurableCommitCutV1::RetryWaiting);
+    assert!(matches!(
+        recovered.operation_recovery(),
+        gantry::runtime::DurableOperationRecoveryV1::RetryDelay { .. }
+    ));
+    executor
+        .fail_task(root_task)
+        .unwrap_or_else(|error| panic!("crash: {error:?}"));
+    storage.release_post_commit_settlement();
+    block_on(storage.release_owner(ReleaseJournalOwnerV1 {
+        journal_id: journal_id.clone(),
+        ownership_token: started.test_ownership_token().clone(),
+    }))
+    .unwrap_or_else(|error| panic!("release: {error:?}"));
+
+    let executor = Arc::new(DeterministicConcurrentExecutor::default());
+    executor.control_sleeps();
+    let integration = Arc::new(ScriptedIntegration::new(
+        [
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveMappings,
+                &br#"{"action_mapping_revision":"actions-v1","result":"resolved"}"#[..],
+            ),
+            ScriptedPreflight::success(
+                EmbeddingOperation::ResolveSessions,
+                &br#"{"result":"resolved"}"#[..],
+            ),
+        ],
+        [ScriptedHook::created([Ok(HookOutcomeV1::Completed(
+            Arc::from(&br#""done""#[..]),
+        ))])],
+    ));
+    let resumed =
+        interpreter_with_integration_and_identity_start(executor.clone(), integration.clone(), 97);
+    let mut resume = pin!(resumed.resume_durable_execution(
+        storage.clone(),
+        DurableResumeExecutionRequest {
+            journal_id: journal_id.clone(),
+            protocol_selection: &selection,
+            candidate_package_root: None,
+            expected_execution_id: Some(started.execution_id()),
+            event_delivery: None,
+        }
+    ));
+    let mut result = None;
+    for _ in 0..1_000 {
+        if let Poll::Ready(value) = resume
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            result = Some(value);
+            break;
+        }
+        for task in executor.task_ids() {
+            if executor.is_runnable(task) {
+                let _ = executor.poll_task(task);
+            }
+        }
+    }
+    let Some(DurableResumeExecutionResult::Accepted(accepted)) = result else {
+        panic!("resume: {result:?}")
+    };
+    for _ in 0..1_000 {
+        for task in executor.task_ids() {
+            if executor.is_runnable(task) {
+                let _ = executor.poll_task(task);
+            }
+        }
+        if !executor.sleep_durations().is_empty() {
+            break;
+        }
+    }
+    assert_eq!(executor.sleep_durations().len(), 1);
+    assert!(integration.calls().iter().all(|call| !matches!(
+        call.operation,
+        EmbeddingOperation::CreateHook | EmbeddingOperation::DispatchOperation
+    )));
+    executor
+        .release_sleep(0)
+        .unwrap_or_else(|error| panic!("retry delay release: {error:?}"));
+    for _ in 0..1_000 {
+        for task in executor.task_ids() {
+            if executor.is_runnable(task) {
+                let _ = executor.poll_task(task);
+            }
+        }
+    }
+    let snapshot = resumed
+        .query_execution(accepted.execution_id())
+        .unwrap_or_else(|error| panic!("query: {error:?}"))
+        .unwrap_or_else(|| panic!("missing execution"));
+    assert!(
+        matches!(snapshot.foreground, Some(MachineOutcome::Succeeded(ref value))
+            if matches!(value.view(), LogicalValueView::String("done"))),
+        "{snapshot:?}"
+    );
+    assert_eq!(
+        integration
+            .calls()
+            .iter()
+            .filter(|call| matches!(call.operation, EmbeddingOperation::DispatchOperation))
+            .count(),
+        1
+    );
+}
+
 /// A policy record may advance the journal tip without replacing the outcome cause.
 fn recover_serial_outcome(revise_mapping: bool, model: bool, result_cut: bool) {
     let root = TempDirectory::new(if model {
