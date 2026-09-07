@@ -48,7 +48,7 @@ const EXIT_SUCCESS: u8 = 0;
 const EXIT_SOURCE_INVALID: u8 = 1;
 const EXIT_OPERATIONAL_FAILURE: u8 = 2;
 const EXIT_USAGE: u8 = 64;
-const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]|run) [PACKAGE_ROOT]\n\nGeneric declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Every package activity uses twelve finite frontend-policy fields; see docs/frontend-resource-policy.md and docs/generics-and-traits.md.";
+const HELP: &str = "gantry: agent-control language for Mezzanine\n\nusage: gantry (check|analyze [--json]) [PACKAGE_ROOT]\n       gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]\n\n`run` owns a multithread Tokio runtime. An omitted worker count uses Tokio's CPU-derived default; `--workers` accepts only a positive integer. Generic declarations and static traits are checked by `analyze`; `--json` emits inferred substitutions, selected calls, effects, concrete schemas, and structured diagnostics. Every package activity uses twelve finite frontend-policy fields; see docs/frontend-resource-policy.md and docs/generics-and-traits.md.";
 
 /// Starts the Gantry command-line application.
 fn main() -> ExitCode {
@@ -80,14 +80,27 @@ fn run(arguments: &[OsString], stdout: &mut dyn Write, stderr: &mut dyn Write) -
         [command, package_root] if command == "analyze" => {
             analyze_command(std::path::Path::new(package_root), stdout, stderr)
         }
-        [command] if command == "run" => run_command(std::path::Path::new("."), stdout, stderr),
-        [command, package_root] if command == "run" => {
-            run_command(std::path::Path::new(package_root), stdout, stderr)
+        [command] if command == "run" => {
+            run_command(std::path::Path::new("."), None, stdout, stderr)
+        }
+        [command, package_root] if command == "run" && package_root != "--workers" => {
+            run_command(std::path::Path::new(package_root), None, stdout, stderr)
+        }
+        [command, workers, count] if command == "run" && workers == "--workers" => {
+            run_command_with_worker_argument(std::path::Path::new("."), count, stdout, stderr)
+        }
+        [command, workers, count, package_root] if command == "run" && workers == "--workers" => {
+            run_command_with_worker_argument(
+                std::path::Path::new(package_root),
+                count,
+                stdout,
+                stderr,
+            )
         }
         _ => {
             let _ = writeln!(
                 stderr,
-                "usage: gantry (check|analyze [--json]|run) [PACKAGE_ROOT]"
+                "usage: gantry (check|analyze [--json]) [PACKAGE_ROOT]; gantry run [--workers POSITIVE_INTEGER] [PACKAGE_ROOT]"
             );
             EXIT_USAGE
         }
@@ -355,16 +368,31 @@ fn analyze_json_command(
     EXIT_OPERATIONAL_FAILURE
 }
 
-#[cfg(feature = "evaluator")]
-fn run_command(
+fn run_command_with_worker_argument(
     package_root: &std::path::Path,
+    worker_count: &OsString,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> u8 {
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-    {
+    let Some(worker_count) = worker_count
+        .to_str()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+    else {
+        let _ = writeln!(stderr, "usage-error[workers-must-be-positive-integer]");
+        return EXIT_USAGE;
+    };
+    run_command(package_root, Some(worker_count), stdout, stderr)
+}
+
+#[cfg(feature = "evaluator")]
+fn run_command(
+    package_root: &std::path::Path,
+    worker_count: Option<usize>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    let runtime = match cli_runtime(worker_count) {
         Ok(runtime) => runtime,
         Err(_) => {
             let _ = writeln!(stderr, "operational-failure[executor-failure]");
@@ -476,9 +504,20 @@ fn run_command(
     code
 }
 
+#[cfg(feature = "evaluator")]
+fn cli_runtime(worker_count: Option<usize>) -> Result<tokio::runtime::Runtime, std::io::Error> {
+    let mut runtime = tokio::runtime::Builder::new_multi_thread();
+    runtime.enable_time();
+    if let Some(worker_count) = worker_count {
+        runtime.worker_threads(worker_count);
+    }
+    runtime.build()
+}
+
 #[cfg(not(feature = "evaluator"))]
 fn run_command(
     _package_root: &std::path::Path,
+    _worker_count: Option<usize>,
     _stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> u8 {
@@ -573,6 +612,8 @@ mod tests {
         SourceSnapshotBuilder, SourceSpan, StructuredDiagnostic,
     };
 
+    #[cfg(feature = "evaluator")]
+    use super::cli_runtime;
     use super::{EXIT_OPERATIONAL_FAILURE, EXIT_SOURCE_INVALID, EXIT_SUCCESS, EXIT_USAGE, run};
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -696,7 +737,7 @@ mod tests {
             EXIT_USAGE
         );
         assert!(
-            String::from_utf8_lossy(&stderr).contains("usage: gantry (check|analyze [--json]|run)")
+            String::from_utf8_lossy(&stderr).contains("usage: gantry (check|analyze [--json])")
         );
 
         stdout.clear();
@@ -812,6 +853,19 @@ mod tests {
 
     #[cfg(feature = "evaluator")]
     #[test]
+    fn cli_runtime_policy_is_multithreaded_for_default_and_positive_worker_counts() {
+        for worker_count in [None, Some(1), Some(2), Some(4)] {
+            let runtime = cli_runtime(worker_count)
+                .unwrap_or_else(|error| panic!("runtime construction failed: {error}"));
+            assert_eq!(
+                runtime.handle().runtime_flavor(),
+                tokio::runtime::RuntimeFlavor::MultiThread
+            );
+        }
+    }
+
+    #[cfg(feature = "evaluator")]
+    #[test]
     fn run_command_maps_success_source_rejection_and_usage() {
         let valid = TempDirectory::new(b"fn main() -> Int { 1 + 2 }");
         let invalid = TempDirectory::new(b"fn main() -> Int { \"SECRET\" }");
@@ -842,5 +896,58 @@ mod tests {
         assert!(stdout.is_empty());
         assert!(String::from_utf8_lossy(&stderr).contains("start-rejected[analysis:"));
         assert!(!String::from_utf8_lossy(&stderr).contains("SECRET"));
+
+        for workers in ["1", "2", "4"] {
+            stdout.clear();
+            stderr.clear();
+            assert_eq!(
+                run(
+                    &[
+                        OsString::from("run"),
+                        OsString::from("--workers"),
+                        OsString::from(workers),
+                        valid.0.clone().into_os_string(),
+                    ],
+                    &mut stdout,
+                    &mut stderr,
+                ),
+                EXIT_SUCCESS
+            );
+            assert_eq!(stdout, b"3\n");
+            assert!(stderr.is_empty());
+        }
+
+        for workers in ["0", "invalid", "-1"] {
+            stdout.clear();
+            stderr.clear();
+            assert_eq!(
+                run(
+                    &[
+                        OsString::from("run"),
+                        OsString::from("--workers"),
+                        OsString::from(workers),
+                        valid.0.clone().into_os_string(),
+                    ],
+                    &mut stdout,
+                    &mut stderr,
+                ),
+                EXIT_USAGE
+            );
+            assert!(stdout.is_empty());
+            assert!(String::from_utf8_lossy(&stderr).contains("workers-must-be-positive-integer"));
+        }
+
+        stdout.clear();
+        stderr.clear();
+        assert_eq!(
+            run(
+                &[OsString::from("run"), OsString::from("--workers")],
+                &mut stdout,
+                &mut stderr,
+            ),
+            EXIT_USAGE
+        );
+        assert!(stdout.is_empty());
+        assert!(String::from_utf8_lossy(&stderr).contains("usage: gantry"));
     }
 }
