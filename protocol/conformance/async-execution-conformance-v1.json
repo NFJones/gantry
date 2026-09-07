@@ -1,0 +1,131 @@
+{
+  "format": "gantry.async-execution-conformance-evidence/v1",
+  "issue": "GNT-ASYNC-CONF-001",
+  "status": "verified",
+  "specification_sha256": "994cb6fe150dd71b3a4f383c34c0a04f55f7e640db8a9fd22d2988a5f86ab21a",
+  "prerequisites": [
+    {
+      "issue": "GNT-ASYNC-BLOCK-001",
+      "commit": "3892895c41d1f8290e97da09ce32260c51a1d74d",
+      "subject": "Isolate package work behind bounded blocking admission.",
+      "artifact": "protocol/conformance/blocking-work-v1.json",
+      "sha256": "15f4a000e47b3eb9ab3d1fd3c853ed2218fbfdb61afd47dc647fa8bd83d3cd2f"
+    },
+    {
+      "issue": "GNT-ASYNC-CLI-001",
+      "commit": "98d91f33e6206688a5354dc7d5260dbc1afaf5d6",
+      "subject": "Adopt multithread CLI runtime policy",
+      "artifact": "protocol/conformance/cli-runtime-policy-v1.json",
+      "sha256": "747faf4ed4771b7ff7d3e7a36f3a7465864630cac45e1b832b6f25bc17184ac7"
+    },
+    {
+      "issue": "GNT-ASYNC-GATE-200",
+      "commit": "a6915ef212b9e245da00fd383f79bc81f05c3556",
+      "subject": "Close the native source concurrency evidence gate.",
+      "artifact": "protocol/conformance/native-source-concurrency-gate-v1.json",
+      "sha256": "84da855f3227a9a76d91df94c99b19de1832c29f051e61bc5875d9922580dddb"
+    },
+    {
+      "issue": "GNT-ASYNC-PROOF-001",
+      "commit": "ca413e8e23f714e33d72511a74f02a2eeccc4032",
+      "subject": "Compose async execution refinements",
+      "artifact": "protocol/conformance/async-execution-refinement-v1.json",
+      "sha256": "18a3730462d701ee12d9c7e80b3eac0a4d4ff95a823f7b8ce256f715fee612ff"
+    },
+    {
+      "issue": "GNT-ASYNC-REC-001",
+      "commit": "d5d34c22107d8f16739b21baf6a0f6f773de276a",
+      "subject": "Qualify executor-backed recovery",
+      "artifact": "protocol/conformance/async-recovery-v1.json",
+      "sha256": "6c840ee6333e15816048a3a50cf1f889ca778167ae53f8d71bb28e899409e54b"
+    }
+  ],
+  "assignment_authentication": {
+    "contract": "protocol/conformance/async-execution-contract-v1.json",
+    "owner": "GNT-ASYNC-CONF-001",
+    "assignment_count": 28,
+    "profile_row_count": 65,
+    "sha256": "878398b1881eaa6ace6e8e9ab9d07775557a3e3202c5e5e52167c1d68c6bf347"
+  },
+  "artifacts": [
+    {"path": ".github/workflows/ci.yml", "sha256": "21db3502f3ed0da4dad7211f4af3dbeb5b7bfaa29e55be1c6f9493e4bd6aa1d8"},
+    {"path": "protocol/catalogs/profiles-v1.json", "sha256": "a867acbedfa91aae24401533ebf5b4bf4a9e067701032025f6cf924eaa1479e4"},
+    {"path": "protocol/conformance/async-execution-adoption-v1.json", "sha256": "a0a82cee9e5da59eaac09d457c720fd9149de9dedc84957a5b77baeca825e4f6"},
+    {"path": "protocol/conformance/async-execution-contract-v1.json", "sha256": "49dd4c0100c63f88c70114b6aed33130d301c4f96b1ae0684cf29701e65ccbd3"},
+    {"path": "protocol/conformance/async-execution-gate-v1.json", "sha256": "b45a1b70aa0b8bd4d80acf7fc5fda4a5d429525124ce478bdcf3bb5208704ecb"},
+    {"path": "protocol/goldens/concurrent-refinement-model-v1.json", "sha256": "b1dece7db1454e50db4ac3f55ed770c2ff511b4ed5a66f31f96c190d5c6adb27"},
+    {"path": "protocol/goldens/durable-refinement-model-v1.json", "sha256": "621d7c89e236fde9c7353e40750e848f4899d1e86cad15c2f493e90730efb966"},
+    {"path": "protocol/goldens/sequential-evaluator-model-v1.json", "sha256": "c461c9eeb0883fe746d9405faae9ca6cf07eefa26c0c506a82d593a0fc9de7f4"}
+  ],
+  "evidence": [
+    {"category": "admission-async-atomic", "anchor": "crates/gantry-conformance/tests/async_admission.rs#public_admission_batches_are_atomic_nonblocking_and_boundary_typed"},
+    {"category": "admission-async-policy", "anchor": "crates/gantry-conformance/tests/async_admission.rs#public_async_capacities_are_explicit_positive_operational_policy"},
+    {"category": "admission-control-reserve", "anchor": "crates/gantry-conformance/tests/async_admission.rs#public_cleanup_reserve_survives_ordinary_saturation"},
+    {"category": "blocking-admission", "anchor": "crates/gantry-conformance/tests/blocking_work.rs#bounded_blocking_work_is_nonblocking_cancellable_and_retained_to_settlement"},
+    {"category": "blocking-worker-isolation", "anchor": "crates/gantry-conformance/tests/blocking_work.rs#package_jobs_are_owned_separate_deterministic_and_do_not_starve_timers"},
+    {"category": "cancellation", "anchor": "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_cancellation_abort_terminal_and_shutdown_cohorts_are_exact"},
+    {"category": "event-fault", "anchor": "crates/gantry-conformance/tests/durable_events.rs#public_delivery_crash_cuts_preserve_retry_budget_and_terminal_settlement"},
+    {"category": "event-order", "anchor": "crates/gantry-conformance/tests/concurrent_lifecycle.rs#public_concurrent_events_are_canonical_typed_and_causal"},
+    {"category": "facade-feature-matrix", "anchor": "crates/gantry-conformance/tests/external_facade_matrix.rs#every_supported_feature_combination_builds_for_an_external_consumer"},
+    {"category": "lifecycle", "anchor": "crates/gantry-conformance/tests/task_supervision.rs#semantic_settlement_retains_capacity_until_physical_reaping"},
+    {"category": "portable-root-outcomes", "anchor": "crates/gantry-conformance/tests/async_execution_gate.rs#deterministic_and_tokio_runtimes_produce_the_same_portable_root_outcome"},
+    {"category": "recovery-fault", "anchor": "crates/gantry-conformance/tests/automatic_durable_root.rs#resume_revision_commit_failure_times_out_abort_resistant_rollback"},
+    {"category": "recovery-fencing", "anchor": "crates/gantry-conformance/tests/automatic_durable_root.rs#fenced_resume_rejects_a_live_superseded_root_publish"},
+    {"category": "shutdown-fault", "anchor": "crates/gantry-conformance/tests/tokio_executor.rs#runtime_shutdown_reports_structured_task_and_service_failures"},
+    {"category": "tokio-fault", "anchor": "crates/gantry-conformance/tests/tokio_executor.rs#abort_drop_panic_and_stale_wakes_settle_once"},
+    {"category": "tokio-runtime-matrix", "anchor": "crates/gantry-conformance/tests/tokio_executor.rs#caller_owned_runtime_matrix_keeps_runnable_work_making_progress"},
+    {"category": "worker-count-independent-recovery", "anchor": "crates/gantry-conformance/tests/source_spawn_tokio.rs#durable_resume_preserves_identities_and_budgets_across_worker_count_changes"}
+  ],
+  "portable_outcomes": {
+    "executors": ["deterministic", "tokio-current-thread", "tokio-multi-thread"],
+    "compares_only": "portable foreground and terminal outcomes",
+    "scheduler_claims": false
+  },
+  "worker_policy": {
+    "cli_runtime": "tokio-multi-thread",
+    "worker_counts": ["default", "1", "2", "4"],
+    "semantic_identity": false,
+    "evidence": "crates/gantry-cli/src/main.rs#cli_runtime_policy_is_multithreaded_for_default_and_positive_worker_counts"
+  },
+  "bounded_validation": {
+    "models": [
+      "crates/gantry-conformance/tests/concurrent_refinement_model.rs#bounded_concurrent_refinement_model_and_counterexamples_replay",
+      "crates/gantry-conformance/tests/durable_refinement_model.rs#bounded_durable_refinement_model_and_counterexamples_replay",
+      "crates/gantry-conformance/tests/sequential_refinement_model.rs#bounded_sequential_refinement_model_and_counterexamples_replay"
+    ],
+    "stress": {
+      "iterations": 32,
+      "base_seed": "0x6a09e667f3bcc909",
+      "selector": "GANTRY_SOURCE_STRESS_ITERATION",
+      "current_thread": "crates/gantry-conformance/tests/source_spawn_tokio.rs#current_thread_tokio_seeded_native_source_stress",
+      "multi_thread": "crates/gantry-conformance/tests/source_spawn_tokio.rs#multithread_tokio_seeded_native_source_stress"
+    },
+    "limitations": [
+      "The bounded models are not an unbounded proof over all programs, task graphs, host futures, adapters, or schedules.",
+      "A stress seed reconstructs generated inputs only; Tokio scheduling remains nondeterministic and is not schedule replay."
+    ]
+  },
+  "ci": {
+    "workflow": ".github/workflows/ci.yml",
+    "linux_rust": ["1.91.0", "1.97.1", "stable"],
+    "macos_rust": ["1.97.1", "stable"],
+    "scope": "shared product matrix with workspace all-target all-feature build, lint, and tests"
+  },
+  "adoption": {
+    "path": "protocol/conformance/async-execution-adoption-v1.json",
+    "status": "blocked",
+    "required_blockers": ["GNT-ASYNC-CONF-001", "GNT-ASYNC-PUB-001", "GNT-ASYNC-REL-001"],
+    "claims_enabled": false,
+    "advertises_profiles": []
+  },
+  "environment_gaps": [
+    "The checked-in CI matrix defines Linux and macOS lanes, but this aggregate was assembled on Linux x86_64 under WSL2 and does not itself attest a hosted macOS run.",
+    "Only x86_64-unknown-linux-gnu was installed locally; alternate architectures and macOS targets were not locally executed.",
+    "Bounded stress covers reproducible inputs on current-thread and multithread Tokio, not exhaustive schedules or timing bounds."
+  ],
+  "exclusions": [
+    "No deterministic sibling order, equal CPU allocation, bounded scheduling latency, or exactly-once physical executor submission is claimed.",
+    "Publication assembly remains owned by GNT-ASYNC-PUB-001 and release qualification remains owned by GNT-ASYNC-REL-001.",
+    "This aggregate does not enable profile claims or replace platform-specific release evidence."
+  ]
+}
