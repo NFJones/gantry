@@ -2,6 +2,10 @@
 
 use super::*;
 
+#[path = "rollback.rs"]
+mod rollback;
+use rollback::assert_recovered_submission_rollback;
+
 #[test]
 fn missing_operation_result_event_is_replaced_before_source_consumption() {
     recover_missing_operation_event(
@@ -335,6 +339,18 @@ fn recover_missing_control_event(kind: EventKind) {
     let before = recover_concurrent_authoritative_prefix(program.clone(), &prefix)
         .unwrap_or_else(|error| panic!("recovery: {error:?}"));
     assert!(before.events().event_for_cause(cause).is_none());
+
+    if kind == EventKind::Spawn {
+        for submission in 1..=3 {
+            assert_recovered_submission_rollback(
+                storage.clone(),
+                &journal_id,
+                accepted.execution_id(),
+                &prefix,
+                submission,
+            );
+        }
+    }
 
     let executor = Arc::new(DeterministicConcurrentExecutor::default());
     let integration = Arc::new(ScriptedIntegration::new(
