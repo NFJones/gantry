@@ -1688,11 +1688,15 @@ fn check_parametric_generic_bodies(
             .iter()
             .enumerate()
             .map(|(parameter_index, _)| {
-                CanonicalPath::new(&format!(
-                    "crate::__gantry_parametric_{signature_index}_{parameter_index}"
-                ))
-                .map(TypeDescriptor::declared)
-                .map_err(|_| AnalysisError::Invariant)
+                let mut name =
+                    format!("crate::__gantry_parametric_{signature_index}_{parameter_index}");
+                // Authored nominal types must never stand in for a rigid parameter.
+                while context.capability_declarations.contains_key(&name) {
+                    name.push('_');
+                }
+                CanonicalPath::new(&name)
+                    .map(TypeDescriptor::declared)
+                    .map_err(|_| AnalysisError::Invariant)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let substitution = ExactTypeSubstitution::explicit(&signature.required, &rigid_arguments)

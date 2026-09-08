@@ -232,6 +232,7 @@ fn public_equality_uses_structural_capabilities() {
     for source in [
         "struct Stored { value: Decision }\nfn compare(value: Stored) -> Bool { value == value }\nfn main() {}",
         "fn compare<T>(value: T) -> Bool { value == value }\nfn main() {}",
+        "struct __gantry_parametric_0_0 { value: Int }\nfn compare<T>(value: T) -> Bool { value == value }\nfn main() {}",
     ] {
         let package = analyze(source);
         assert_eq!(
