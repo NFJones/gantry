@@ -342,6 +342,25 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     use gantry::ir::TypeDescriptor;
     use gantry::source::FrontendLimits;
 
+    let nested = analyze("struct Nested { value: List<List<Int>> }\nfn main(value: Nested) {}");
+    let nested_type = TypeDescriptor::from_canonical_string("crate::Nested")
+        .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+    for (depth, succeeds) in [(3, true), (2, false), (3, true)] {
+        let policy = FrontendLimits::new(
+            4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, depth, 64, 100,
+        )
+        .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
+        let result = nested.type_capabilities(&nested_type, policy);
+        if succeeds {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            assert!(
+                matches!(result, Err(TypeCapabilityQueryError::ResourceLimit(error))
+                if error.code == gantry::portable::FrontendResourceCode::ConstructedTypeDepthLimit)
+            );
+        }
+    }
+
     let package = analyze(
         "struct Phantom<T> { value: Int }\nstruct Stored { value: Decision }\nfn inspect(value: Stored) {}\nfn main(value: Phantom<Decision>) {}",
     );

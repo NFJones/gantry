@@ -1983,6 +1983,16 @@ pub(crate) fn prove_sealed_capability(
         let index = stack.len().checked_sub(1).ok_or(AnalysisError::Invariant)?;
         if stack[index].members.is_none() {
             charge_trait_steps(counters, 1)?;
+            if let Some(counters) = counters.as_ref() {
+                let expression = TypeExpression::closed(&stack[index].descriptor, u64::MAX)
+                    .map_err(|_| AnalysisError::Invariant)?;
+                counters
+                    .check_constructed_type_depth(expression.depth())
+                    .map_err(|error| AnalysisError::ResourceLimit {
+                        error,
+                        diagnostics: Vec::new(),
+                    })?;
+            }
             match capability_node(capability, &stack[index].descriptor, declarations)? {
                 CapabilityNode::Leaf(result) => {
                     let frame = stack.pop().ok_or(AnalysisError::Invariant)?;

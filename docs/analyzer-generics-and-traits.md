@@ -58,6 +58,8 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   fresh constructed-depth and trait-resolution limits on every query, and
   returns no partial report on exhaustion. Query results do not admit new
   types, grant authority, or establish durable execution eligibility.
+  Depth checks also cover each expanded stored-member type, so a shallow
+  nominal root cannot hide an over-depth field from the query policy.
   Compound successes that may depend on recursive back-edges are published
   only after the root proof succeeds; a failed or exhausted proof cannot
   leave a provisional success available to a later query.
