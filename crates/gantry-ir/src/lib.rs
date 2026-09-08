@@ -59,5 +59,5 @@ pub use primitive::{Comparison, Primitive};
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
 pub use signature::{ActionParameter, CanonicalSignature, SignatureError, WorkflowParameter};
 pub use type_expression::{TypeExpression, TypeExpressionError};
-pub use type_properties::PrimitiveTypeProperties;
+pub use type_properties::{OwnershipClass, PrimitiveTypeProperties};
 pub use types::{TypeDescriptor, TypeDescriptorError};

@@ -3328,6 +3328,15 @@ External eligibility does not imply or follow from copyability, task capture,
 or sealed recovery projection. These facts grant neither execution admission
 nor authority and do not introduce additional source capabilities.
 
+Ownership classification distinguishes `Copyable`, `AffineDroppable`, and
+`MustConsume`. A structural aggregate combines its stored-member obligations:
+`MustConsume` dominates `AffineDroppable`, which dominates `Copyable`; an empty
+aggregate is `Copyable`. Enum classification includes every variant payload,
+not only the active variant. Combination MUST be associative, commutative, and
+idempotent. Every currently admitted v1 first-class value remains `Copyable`.
+The other classifications do not admit new source types, moves, or loans;
+noncopyable types require separately specified transfer and cleanup contracts.
+
 A generic direct self-recursive occurrence MUST use the same declared
 constructor with the same parameter ordinals in the same order and MUST remain
 guarded by `Option` or `List`. Thus `Node<T>` may contain

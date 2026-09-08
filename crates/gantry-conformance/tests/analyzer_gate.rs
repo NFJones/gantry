@@ -17,8 +17,9 @@ const PREREQUISITES: [&str; 6] = [
     "GNT-GEN-API-001",
     "GNT-GEN-PROOF-001",
 ];
-const REQUIRED_ARTIFACTS: [&str; 33] = [
+const REQUIRED_ARTIFACTS: [&str; 37] = [
     "crates/gantry-analysis/src/bodies.rs",
+    "crates/gantry-analysis/src/capabilities.rs",
     "crates/gantry-analysis/src/effects.rs",
     "crates/gantry-analysis/src/generics.rs",
     "crates/gantry-analysis/src/lowering.rs",
@@ -33,7 +34,10 @@ const REQUIRED_ARTIFACTS: [&str; 33] = [
     "crates/gantry-conformance/tests/frontend_parser_evidence.rs",
     "crates/gantry-conformance/tests/ir_contracts.rs",
     "crates/gantry-conformance/tests/requirements_ledger.rs",
+    "crates/gantry-conformance/tests/type_properties.rs",
     "crates/gantry-conformance/tests/validate_package.rs",
+    "crates/gantry-ir/src/lib.rs",
+    "crates/gantry-ir/src/type_properties.rs",
     "crates/gantry/src/lib.rs",
     "crates/gantry/src/validate.rs",
     "docs/analyzer-generics-and-traits.md",

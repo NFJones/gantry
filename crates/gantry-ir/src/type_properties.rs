@@ -6,6 +6,36 @@
 
 use crate::generated::TypeKind;
 
+/// Ownership obligation of a value, independent of encoding and authority.
+///
+/// Classification does not admit a source type or define its transfer or cleanup
+/// operations. Existing v1 first-class values are all [`Self::Copyable`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum OwnershipClass {
+    /// Independent logical copies and ordinary discard are permitted.
+    Copyable,
+    /// Copying is prohibited; discard requires the type's defined disposition.
+    AffineDroppable,
+    /// Copying and silent discard are prohibited; consumption must be accounted for.
+    MustConsume,
+}
+
+impl OwnershipClass {
+    /// Combines reachable member obligations without weakening either member.
+    ///
+    /// `MustConsume` dominates `AffineDroppable`, which dominates `Copyable`.
+    /// This operation is associative, commutative, and idempotent. Fold from
+    /// `Copyable` for an empty aggregate; an enum includes every variant payload.
+    #[must_use]
+    pub const fn combine(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::MustConsume, _) | (_, Self::MustConsume) => Self::MustConsume,
+            (Self::AffineDroppable, _) | (_, Self::AffineDroppable) => Self::AffineDroppable,
+            (Self::Copyable, Self::Copyable) => Self::Copyable,
+        }
+    }
+}
+
 /// Compiler-owned facts about one existing primitive value type.
 ///
 /// Copyability, equality, external encoding, interpolation, and recovery are
@@ -48,7 +78,13 @@ impl PrimitiveTypeProperties {
     /// Whether v1 permits an independent logical copy of this primitive.
     #[must_use]
     pub const fn is_copyable(self) -> bool {
-        true
+        matches!(self.ownership_class(), OwnershipClass::Copyable)
+    }
+
+    /// Returns the ownership class of an existing v1 primitive value.
+    #[must_use]
+    pub const fn ownership_class(self) -> OwnershipClass {
+        OwnershipClass::Copyable
     }
 
     /// Whether this primitive satisfies the compiler-owned `Equatable` bound.

@@ -57,8 +57,14 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   closed types, plus v1 logical copyability and source-task capture eligibility.
   Stored sealed values remain copyable and task-capturable even when they are
   not external. Capture eligibility does not grant spawn authority, shared
-  identity, or host-thread safety. The query rejects invalid packages and unretained descriptors, uses
-  fresh constructed-depth and trait-resolution limits on every query, and
+  identity, or host-thread safety.
+  `ownership_class()` reports `OwnershipClass::Copyable` for current v1 values.
+  The IR classification algebra combines stored-member obligations with
+  `MustConsume` above `AffineDroppable` above `Copyable`, independently of
+  encoding eligibility. The noncopyable classes describe obligations only;
+  they do not enable source resources, moves, loans, or cleanup operations.
+  The query rejects invalid packages and unretained descriptors, uses fresh
+  constructed-depth and trait-resolution limits on every query, and
   returns no partial report on exhaustion. Query results do not admit new
   types, grant authority, or establish durable execution eligibility.
   Depth checks also cover each expanded stored-member type, so a shallow

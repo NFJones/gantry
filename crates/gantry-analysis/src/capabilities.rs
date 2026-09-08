@@ -26,7 +26,15 @@ impl TypeCapabilities {
     /// values that cannot cross an external boundary. Task handles are not values.
     #[must_use]
     pub const fn is_copyable(self) -> bool {
-        true
+        matches!(self.ownership_class(), gantry_ir::OwnershipClass::Copyable)
+    }
+
+    /// Returns the ownership class of this validated v1 value.
+    ///
+    /// Noncopyable classifications do not yet have source inhabitants in v1.
+    #[must_use]
+    pub const fn ownership_class(self) -> gantry_ir::OwnershipClass {
+        gantry_ir::OwnershipClass::Copyable
     }
 
     /// Whether a v1 task may capture an independent copy of this value.
