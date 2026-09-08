@@ -20,6 +20,24 @@ pub struct TypeCapabilities {
 }
 
 impl TypeCapabilities {
+    /// Whether the validated v1 value permits independent logical copies.
+    ///
+    /// Every currently admitted first-class value is copyable, including sealed
+    /// values that cannot cross an external boundary. Task handles are not values.
+    #[must_use]
+    pub const fn is_copyable(self) -> bool {
+        true
+    }
+
+    /// Whether a v1 task may capture an independent copy of this value.
+    ///
+    /// This is source-task capture eligibility, not shared identity, host-thread
+    /// safety, authority delegation, or permission to spawn a task.
+    #[must_use]
+    pub const fn is_task_capturable(self) -> bool {
+        true
+    }
+
     /// Whether the stored value satisfies `Equatable`.
     #[must_use]
     pub const fn is_equatable(self) -> bool {

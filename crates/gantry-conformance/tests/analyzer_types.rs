@@ -377,6 +377,8 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
         assert_eq!(properties.is_external(), external);
         assert_eq!(properties.is_equatable(), external);
         assert!(properties.is_interpolatable());
+        assert!(properties.is_copyable());
+        assert!(properties.is_task_capturable());
         assert_eq!(package.type_capabilities(&ty, policy), Ok(properties));
     }
     let unknown = TypeDescriptor::from_canonical_string("crate::Unknown")
