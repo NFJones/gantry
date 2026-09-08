@@ -74,7 +74,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         "crates/gantry-conformance/tests/executable_bridge.rs",
-        "4d3d5208c7e710c6caab87c9d8206d42eb8aa5857ebfded704b0e2d05e18d4d9",
+        "aa14705709b0dd75d3a4e79026532714f3c3eb118592d7ea2675fda807d022b8",
     ),
     (
         "crates/gantry-conformance/tests/source_spawn.rs",
@@ -102,7 +102,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         LOWER_MANIFEST_PATH,
-        "5b8edc6b6f9f2f3f09b8dea34a0e2559bc055df28dd7dbc7d01161ec75ccdf85",
+        "c363fca2e094ae2b46c5145d03fe6f63ae4da090188131296fd40fc9a8061292",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
