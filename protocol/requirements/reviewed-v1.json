@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e",
+  "specification_sha256": "a19c8eae1dcf0dc4eafc7d75d7cb5f5a58e12eef79ddcdf872f094bceb630bd0",
   "regions": [
     {
       "kind": "excluded",
@@ -23,19 +23,19 @@
     {
       "kind": "normative",
       "start_line": 663,
-      "end_line": 7598,
+      "end_line": 7611,
       "rationale": null
     },
     {
       "kind": "excluded",
-      "start_line": 7599,
-      "end_line": 8801,
+      "start_line": 7612,
+      "end_line": 8814,
       "rationale": "Section 14 is a non-normative authoring aid under GNT-1.0; its source excerpts are classified separately."
     },
     {
       "kind": "normative",
-      "start_line": 8802,
-      "end_line": 9948,
+      "start_line": 8815,
+      "end_line": 9961,
       "rationale": null
     }
   ],
@@ -13005,10 +13005,10 @@
     {
       "id": "GNT-5.20-parametric-types",
       "span_start_line": 3280,
-      "span_end_line": 3334,
+      "span_end_line": 3347,
       "anchor_line": 3280,
       "body_start_line": 3281,
-      "body_end_line": 3334,
+      "body_end_line": 3347,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13024,7 +13024,7 @@
         {
           "key": "clause-001",
           "start_line": 3281,
-          "end_line": 3334,
+          "end_line": 3347,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13042,6 +13042,11 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_analysis_proves_bounds_and_substitutes_enum_patterns",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_equality_uses_structural_capabilities",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_parametric_calls_require_callee_bounds",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_type_capability_queries_are_bounded_and_declaration_aware",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_entry_boundaries_use_declared_members",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_callable_bounds_use_declared_members",
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures"
               ],
               "rationale": null
@@ -13085,11 +13090,11 @@
     },
     {
       "id": "GNT-6.0",
-      "span_start_line": 3335,
-      "span_end_line": 3343,
-      "anchor_line": 3337,
-      "body_start_line": 3338,
-      "body_end_line": 3343,
+      "span_start_line": 3348,
+      "span_end_line": 3356,
+      "anchor_line": 3350,
+      "body_start_line": 3351,
+      "body_end_line": 3356,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13103,8 +13108,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3338,
-          "end_line": 3343,
+          "start_line": 3351,
+          "end_line": 3356,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13154,11 +13159,11 @@
     },
     {
       "id": "GNT-6.1",
-      "span_start_line": 3344,
-      "span_end_line": 3355,
-      "anchor_line": 3344,
-      "body_start_line": 3345,
-      "body_end_line": 3355,
+      "span_start_line": 3357,
+      "span_end_line": 3368,
+      "anchor_line": 3357,
+      "body_start_line": 3358,
+      "body_end_line": 3368,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13172,8 +13177,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3345,
-          "end_line": 3355,
+          "start_line": 3358,
+          "end_line": 3368,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13223,11 +13228,11 @@
     },
     {
       "id": "GNT-6.2",
-      "span_start_line": 3356,
-      "span_end_line": 3358,
-      "anchor_line": 3356,
-      "body_start_line": 3357,
-      "body_end_line": 3358,
+      "span_start_line": 3369,
+      "span_end_line": 3371,
+      "anchor_line": 3369,
+      "body_start_line": 3370,
+      "body_end_line": 3371,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13241,8 +13246,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3357,
-          "end_line": 3358,
+          "start_line": 3370,
+          "end_line": 3371,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13292,11 +13297,11 @@
     },
     {
       "id": "GNT-6.3",
-      "span_start_line": 3359,
-      "span_end_line": 3379,
-      "anchor_line": 3359,
-      "body_start_line": 3360,
-      "body_end_line": 3379,
+      "span_start_line": 3372,
+      "span_end_line": 3392,
+      "anchor_line": 3372,
+      "body_start_line": 3373,
+      "body_end_line": 3392,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13310,8 +13315,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3360,
-          "end_line": 3379,
+          "start_line": 3373,
+          "end_line": 3392,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13361,11 +13366,11 @@
     },
     {
       "id": "GNT-6.4",
-      "span_start_line": 3380,
-      "span_end_line": 3394,
-      "anchor_line": 3380,
-      "body_start_line": 3381,
-      "body_end_line": 3394,
+      "span_start_line": 3393,
+      "span_end_line": 3407,
+      "anchor_line": 3393,
+      "body_start_line": 3394,
+      "body_end_line": 3407,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13379,8 +13384,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3381,
-          "end_line": 3394,
+          "start_line": 3394,
+          "end_line": 3407,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13430,11 +13435,11 @@
     },
     {
       "id": "GNT-6.5",
-      "span_start_line": 3395,
-      "span_end_line": 3469,
-      "anchor_line": 3395,
-      "body_start_line": 3396,
-      "body_end_line": 3469,
+      "span_start_line": 3408,
+      "span_end_line": 3482,
+      "anchor_line": 3408,
+      "body_start_line": 3409,
+      "body_end_line": 3482,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13448,8 +13453,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3396,
-          "end_line": 3469,
+          "start_line": 3409,
+          "end_line": 3482,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13499,11 +13504,11 @@
     },
     {
       "id": "GNT-6.6",
-      "span_start_line": 3470,
-      "span_end_line": 3487,
-      "anchor_line": 3470,
-      "body_start_line": 3471,
-      "body_end_line": 3487,
+      "span_start_line": 3483,
+      "span_end_line": 3500,
+      "anchor_line": 3483,
+      "body_start_line": 3484,
+      "body_end_line": 3500,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13517,8 +13522,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3471,
-          "end_line": 3487,
+          "start_line": 3484,
+          "end_line": 3500,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13568,11 +13573,11 @@
     },
     {
       "id": "GNT-6.7",
-      "span_start_line": 3488,
-      "span_end_line": 3524,
-      "anchor_line": 3488,
-      "body_start_line": 3489,
-      "body_end_line": 3524,
+      "span_start_line": 3501,
+      "span_end_line": 3537,
+      "anchor_line": 3501,
+      "body_start_line": 3502,
+      "body_end_line": 3537,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13586,8 +13591,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3489,
-          "end_line": 3524,
+          "start_line": 3502,
+          "end_line": 3537,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13637,11 +13642,11 @@
     },
     {
       "id": "GNT-6.8",
-      "span_start_line": 3525,
-      "span_end_line": 3551,
-      "anchor_line": 3525,
-      "body_start_line": 3526,
-      "body_end_line": 3551,
+      "span_start_line": 3538,
+      "span_end_line": 3564,
+      "anchor_line": 3538,
+      "body_start_line": 3539,
+      "body_end_line": 3564,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13655,8 +13660,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3526,
-          "end_line": 3551,
+          "start_line": 3539,
+          "end_line": 3564,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13706,79 +13711,10 @@
     },
     {
       "id": "GNT-6.9",
-      "span_start_line": 3552,
-      "span_end_line": 3556,
-      "anchor_line": 3552,
-      "body_start_line": 3553,
-      "body_end_line": 3556,
-      "profiles": [
-        "analyzer",
-        "concurrent-evaluator",
-        "durable-runtime",
-        "evaluator"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 3553,
-          "end_line": 3556,
-          "profiles": [
-            "analyzer",
-            "concurrent-evaluator",
-            "durable-runtime",
-            "evaluator"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "concurrent-evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "durable-runtime",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-6.10",
-      "span_start_line": 3557,
+      "span_start_line": 3565,
       "span_end_line": 3569,
-      "anchor_line": 3557,
-      "body_start_line": 3558,
+      "anchor_line": 3565,
+      "body_start_line": 3566,
       "body_end_line": 3569,
       "profiles": [
         "analyzer",
@@ -13793,7 +13729,7 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3558,
+          "start_line": 3566,
           "end_line": 3569,
           "profiles": [
             "analyzer",
@@ -13843,12 +13779,12 @@
       ]
     },
     {
-      "id": "GNT-6.11",
+      "id": "GNT-6.10",
       "span_start_line": 3570,
-      "span_end_line": 3585,
+      "span_end_line": 3582,
       "anchor_line": 3570,
       "body_start_line": 3571,
-      "body_end_line": 3585,
+      "body_end_line": 3582,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13863,7 +13799,76 @@
         {
           "key": "clause-001",
           "start_line": 3571,
-          "end_line": 3585,
+          "end_line": 3582,
+          "profiles": [
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "evaluator"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-6.11",
+      "span_start_line": 3583,
+      "span_end_line": 3598,
+      "anchor_line": 3583,
+      "body_start_line": 3584,
+      "body_end_line": 3598,
+      "profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "evaluator"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 3584,
+          "end_line": 3598,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13913,11 +13918,11 @@
     },
     {
       "id": "GNT-6.12",
-      "span_start_line": 3586,
-      "span_end_line": 3616,
-      "anchor_line": 3586,
-      "body_start_line": 3587,
-      "body_end_line": 3616,
+      "span_start_line": 3599,
+      "span_end_line": 3629,
+      "anchor_line": 3599,
+      "body_start_line": 3600,
+      "body_end_line": 3629,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13931,8 +13936,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3587,
-          "end_line": 3616,
+          "start_line": 3600,
+          "end_line": 3629,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -13982,11 +13987,11 @@
     },
     {
       "id": "GNT-6.12-static-traits",
-      "span_start_line": 3617,
-      "span_end_line": 3677,
-      "anchor_line": 3617,
-      "body_start_line": 3618,
-      "body_end_line": 3677,
+      "span_start_line": 3630,
+      "span_end_line": 3690,
+      "anchor_line": 3630,
+      "body_start_line": 3631,
+      "body_end_line": 3690,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14001,8 +14006,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3618,
-          "end_line": 3677,
+          "start_line": 3631,
+          "end_line": 3690,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14063,11 +14068,11 @@
     },
     {
       "id": "GNT-7.0",
-      "span_start_line": 3678,
-      "span_end_line": 3687,
-      "anchor_line": 3680,
-      "body_start_line": 3681,
-      "body_end_line": 3687,
+      "span_start_line": 3691,
+      "span_end_line": 3700,
+      "anchor_line": 3693,
+      "body_start_line": 3694,
+      "body_end_line": 3700,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14083,8 +14088,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3681,
-          "end_line": 3687,
+          "start_line": 3694,
+          "end_line": 3700,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14146,11 +14151,11 @@
     },
     {
       "id": "GNT-7.1",
-      "span_start_line": 3688,
-      "span_end_line": 3727,
-      "anchor_line": 3688,
-      "body_start_line": 3689,
-      "body_end_line": 3727,
+      "span_start_line": 3701,
+      "span_end_line": 3740,
+      "anchor_line": 3701,
+      "body_start_line": 3702,
+      "body_end_line": 3740,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14166,8 +14171,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3689,
-          "end_line": 3727,
+          "start_line": 3702,
+          "end_line": 3740,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14227,11 +14232,11 @@
     },
     {
       "id": "GNT-7.2",
-      "span_start_line": 3728,
-      "span_end_line": 3749,
-      "anchor_line": 3728,
-      "body_start_line": 3729,
-      "body_end_line": 3749,
+      "span_start_line": 3741,
+      "span_end_line": 3762,
+      "anchor_line": 3741,
+      "body_start_line": 3742,
+      "body_end_line": 3762,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14247,8 +14252,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3729,
-          "end_line": 3749,
+          "start_line": 3742,
+          "end_line": 3762,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14310,11 +14315,11 @@
     },
     {
       "id": "GNT-7.3",
-      "span_start_line": 3750,
-      "span_end_line": 3779,
-      "anchor_line": 3750,
-      "body_start_line": 3751,
-      "body_end_line": 3779,
+      "span_start_line": 3763,
+      "span_end_line": 3792,
+      "anchor_line": 3763,
+      "body_start_line": 3764,
+      "body_end_line": 3792,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14330,8 +14335,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3751,
-          "end_line": 3779,
+          "start_line": 3764,
+          "end_line": 3792,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14391,11 +14396,11 @@
     },
     {
       "id": "GNT-7.4",
-      "span_start_line": 3780,
-      "span_end_line": 3839,
-      "anchor_line": 3780,
-      "body_start_line": 3781,
-      "body_end_line": 3839,
+      "span_start_line": 3793,
+      "span_end_line": 3852,
+      "anchor_line": 3793,
+      "body_start_line": 3794,
+      "body_end_line": 3852,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14411,8 +14416,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3781,
-          "end_line": 3839,
+          "start_line": 3794,
+          "end_line": 3852,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14478,11 +14483,11 @@
     },
     {
       "id": "GNT-7.5",
-      "span_start_line": 3840,
-      "span_end_line": 3936,
-      "anchor_line": 3840,
-      "body_start_line": 3841,
-      "body_end_line": 3936,
+      "span_start_line": 3853,
+      "span_end_line": 3949,
+      "anchor_line": 3853,
+      "body_start_line": 3854,
+      "body_end_line": 3949,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14498,8 +14503,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3841,
-          "end_line": 3868,
+          "start_line": 3854,
+          "end_line": 3881,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14563,8 +14568,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 3869,
-          "end_line": 3895,
+          "start_line": 3882,
+          "end_line": 3908,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14628,8 +14633,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 3896,
-          "end_line": 3936,
+          "start_line": 3909,
+          "end_line": 3949,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14695,11 +14700,11 @@
     },
     {
       "id": "GNT-7.6",
-      "span_start_line": 3937,
-      "span_end_line": 3971,
-      "anchor_line": 3937,
-      "body_start_line": 3938,
-      "body_end_line": 3971,
+      "span_start_line": 3950,
+      "span_end_line": 3984,
+      "anchor_line": 3950,
+      "body_start_line": 3951,
+      "body_end_line": 3984,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14715,8 +14720,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3938,
-          "end_line": 3947,
+          "start_line": 3951,
+          "end_line": 3960,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14772,8 +14777,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 3948,
-          "end_line": 3957,
+          "start_line": 3961,
+          "end_line": 3970,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14829,8 +14834,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 3958,
-          "end_line": 3971,
+          "start_line": 3971,
+          "end_line": 3984,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14888,11 +14893,11 @@
     },
     {
       "id": "GNT-7.7",
-      "span_start_line": 3972,
-      "span_end_line": 3990,
-      "anchor_line": 3972,
-      "body_start_line": 3973,
-      "body_end_line": 3990,
+      "span_start_line": 3985,
+      "span_end_line": 4003,
+      "anchor_line": 3985,
+      "body_start_line": 3986,
+      "body_end_line": 4003,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14908,8 +14913,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3973,
-          "end_line": 3990,
+          "start_line": 3986,
+          "end_line": 4003,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -14969,11 +14974,11 @@
     },
     {
       "id": "GNT-7.8",
-      "span_start_line": 3991,
-      "span_end_line": 4006,
-      "anchor_line": 3991,
-      "body_start_line": 3992,
-      "body_end_line": 4006,
+      "span_start_line": 4004,
+      "span_end_line": 4019,
+      "anchor_line": 4004,
+      "body_start_line": 4005,
+      "body_end_line": 4019,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -14989,8 +14994,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 3992,
-          "end_line": 4006,
+          "start_line": 4005,
+          "end_line": 4019,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15050,11 +15055,11 @@
     },
     {
       "id": "GNT-7.9",
-      "span_start_line": 4007,
-      "span_end_line": 4024,
-      "anchor_line": 4007,
-      "body_start_line": 4008,
-      "body_end_line": 4024,
+      "span_start_line": 4020,
+      "span_end_line": 4037,
+      "anchor_line": 4020,
+      "body_start_line": 4021,
+      "body_end_line": 4037,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15070,8 +15075,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4008,
-          "end_line": 4024,
+          "start_line": 4021,
+          "end_line": 4037,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15129,11 +15134,11 @@
     },
     {
       "id": "GNT-7.10",
-      "span_start_line": 4025,
-      "span_end_line": 4034,
-      "anchor_line": 4025,
-      "body_start_line": 4026,
-      "body_end_line": 4034,
+      "span_start_line": 4038,
+      "span_end_line": 4047,
+      "anchor_line": 4038,
+      "body_start_line": 4039,
+      "body_end_line": 4047,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15149,8 +15154,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4026,
-          "end_line": 4034,
+          "start_line": 4039,
+          "end_line": 4047,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15216,11 +15221,11 @@
     },
     {
       "id": "GNT-7.11",
-      "span_start_line": 4035,
-      "span_end_line": 4064,
-      "anchor_line": 4035,
-      "body_start_line": 4036,
-      "body_end_line": 4064,
+      "span_start_line": 4048,
+      "span_end_line": 4077,
+      "anchor_line": 4048,
+      "body_start_line": 4049,
+      "body_end_line": 4077,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15236,8 +15241,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4036,
-          "end_line": 4064,
+          "start_line": 4049,
+          "end_line": 4077,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15303,11 +15308,11 @@
     },
     {
       "id": "GNT-7.12",
-      "span_start_line": 4065,
-      "span_end_line": 4109,
-      "anchor_line": 4065,
-      "body_start_line": 4066,
-      "body_end_line": 4109,
+      "span_start_line": 4078,
+      "span_end_line": 4122,
+      "anchor_line": 4078,
+      "body_start_line": 4079,
+      "body_end_line": 4122,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15323,8 +15328,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4066,
-          "end_line": 4095,
+          "start_line": 4079,
+          "end_line": 4108,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15388,8 +15393,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4096,
-          "end_line": 4109,
+          "start_line": 4109,
+          "end_line": 4122,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15455,11 +15460,11 @@
     },
     {
       "id": "GNT-7.13",
-      "span_start_line": 4110,
-      "span_end_line": 4121,
-      "anchor_line": 4110,
-      "body_start_line": 4111,
-      "body_end_line": 4121,
+      "span_start_line": 4123,
+      "span_end_line": 4134,
+      "anchor_line": 4123,
+      "body_start_line": 4124,
+      "body_end_line": 4134,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15475,8 +15480,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4111,
-          "end_line": 4121,
+          "start_line": 4124,
+          "end_line": 4134,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15538,11 +15543,11 @@
     },
     {
       "id": "GNT-7.14",
-      "span_start_line": 4122,
-      "span_end_line": 4131,
-      "anchor_line": 4122,
-      "body_start_line": 4123,
-      "body_end_line": 4131,
+      "span_start_line": 4135,
+      "span_end_line": 4144,
+      "anchor_line": 4135,
+      "body_start_line": 4136,
+      "body_end_line": 4144,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15558,8 +15563,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4123,
-          "end_line": 4131,
+          "start_line": 4136,
+          "end_line": 4144,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15619,11 +15624,11 @@
     },
     {
       "id": "GNT-7.15",
-      "span_start_line": 4132,
-      "span_end_line": 4149,
-      "anchor_line": 4132,
-      "body_start_line": 4133,
-      "body_end_line": 4149,
+      "span_start_line": 4145,
+      "span_end_line": 4162,
+      "anchor_line": 4145,
+      "body_start_line": 4146,
+      "body_end_line": 4162,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15639,8 +15644,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4133,
-          "end_line": 4149,
+          "start_line": 4146,
+          "end_line": 4162,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15700,11 +15705,11 @@
     },
     {
       "id": "GNT-7.16",
-      "span_start_line": 4150,
-      "span_end_line": 4181,
-      "anchor_line": 4150,
-      "body_start_line": 4151,
-      "body_end_line": 4181,
+      "span_start_line": 4163,
+      "span_end_line": 4194,
+      "anchor_line": 4163,
+      "body_start_line": 4164,
+      "body_end_line": 4194,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15720,8 +15725,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4151,
-          "end_line": 4181,
+          "start_line": 4164,
+          "end_line": 4194,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15781,11 +15786,11 @@
     },
     {
       "id": "GNT-7.16-protocol-identities",
-      "span_start_line": 4182,
-      "span_end_line": 4309,
-      "anchor_line": 4182,
-      "body_start_line": 4183,
-      "body_end_line": 4309,
+      "span_start_line": 4195,
+      "span_end_line": 4322,
+      "anchor_line": 4195,
+      "body_start_line": 4196,
+      "body_end_line": 4322,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -15801,8 +15806,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4183,
-          "end_line": 4193,
+          "start_line": 4196,
+          "end_line": 4206,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -15860,125 +15865,7 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4194,
-          "end_line": 4201,
-          "profiles": [
-            "analyzer",
-            "concurrent-evaluator",
-            "durable-runtime",
-            "embedding",
-            "evaluator"
-          ],
-          "roles": [
-            "harness",
-            "implementation",
-            "integration"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "concurrent-evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "durable-runtime",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "embedding",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            }
-          ]
-        },
-        {
-          "key": "clause-003",
-          "start_line": 4202,
-          "end_line": 4204,
-          "profiles": [
-            "analyzer",
-            "concurrent-evaluator",
-            "durable-runtime",
-            "embedding",
-            "evaluator"
-          ],
-          "roles": [
-            "harness",
-            "implementation",
-            "integration"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "concurrent-evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "durable-runtime",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "embedding",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            }
-          ]
-        },
-        {
-          "key": "clause-004",
-          "start_line": 4205,
+          "start_line": 4207,
           "end_line": 4214,
           "profiles": [
             "analyzer",
@@ -16036,9 +15923,127 @@
           ]
         },
         {
-          "key": "clause-005",
+          "key": "clause-003",
           "start_line": 4215,
-          "end_line": 4224,
+          "end_line": 4217,
+          "profiles": [
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "embedding",
+            "evaluator"
+          ],
+          "roles": [
+            "harness",
+            "implementation",
+            "integration"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "embedding",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            }
+          ]
+        },
+        {
+          "key": "clause-004",
+          "start_line": 4218,
+          "end_line": 4227,
+          "profiles": [
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "embedding",
+            "evaluator"
+          ],
+          "roles": [
+            "harness",
+            "implementation",
+            "integration"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "embedding",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            }
+          ]
+        },
+        {
+          "key": "clause-005",
+          "start_line": 4228,
+          "end_line": 4237,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16096,8 +16101,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 4225,
-          "end_line": 4235,
+          "start_line": 4238,
+          "end_line": 4248,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16155,8 +16160,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 4236,
-          "end_line": 4247,
+          "start_line": 4249,
+          "end_line": 4260,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16214,8 +16219,8 @@
         },
         {
           "key": "clause-008",
-          "start_line": 4248,
-          "end_line": 4264,
+          "start_line": 4261,
+          "end_line": 4277,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16273,66 +16278,7 @@
         },
         {
           "key": "clause-009",
-          "start_line": 4265,
-          "end_line": 4280,
-          "profiles": [
-            "analyzer",
-            "concurrent-evaluator",
-            "durable-runtime",
-            "embedding",
-            "evaluator"
-          ],
-          "roles": [
-            "harness",
-            "implementation",
-            "integration"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "concurrent-evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "durable-runtime",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "embedding",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            }
-          ]
-        },
-        {
-          "key": "clause-010",
-          "start_line": 4281,
+          "start_line": 4278,
           "end_line": 4293,
           "profiles": [
             "analyzer",
@@ -16390,9 +16336,68 @@
           ]
         },
         {
-          "key": "clause-011",
+          "key": "clause-010",
           "start_line": 4294,
-          "end_line": 4309,
+          "end_line": 4306,
+          "profiles": [
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "embedding",
+            "evaluator"
+          ],
+          "roles": [
+            "harness",
+            "implementation",
+            "integration"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "embedding",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            }
+          ]
+        },
+        {
+          "key": "clause-011",
+          "start_line": 4307,
+          "end_line": 4322,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16452,11 +16457,11 @@
     },
     {
       "id": "GNT-7.17",
-      "span_start_line": 4310,
-      "span_end_line": 4383,
-      "anchor_line": 4310,
-      "body_start_line": 4311,
-      "body_end_line": 4383,
+      "span_start_line": 4323,
+      "span_end_line": 4396,
+      "anchor_line": 4323,
+      "body_start_line": 4324,
+      "body_end_line": 4396,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -16472,8 +16477,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4311,
-          "end_line": 4330,
+          "start_line": 4324,
+          "end_line": 4343,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16533,8 +16538,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4331,
-          "end_line": 4345,
+          "start_line": 4344,
+          "end_line": 4358,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16602,8 +16607,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4346,
-          "end_line": 4383,
+          "start_line": 4359,
+          "end_line": 4396,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16673,11 +16678,11 @@
     },
     {
       "id": "GNT-7.18",
-      "span_start_line": 4384,
-      "span_end_line": 4398,
-      "anchor_line": 4384,
-      "body_start_line": 4385,
-      "body_end_line": 4398,
+      "span_start_line": 4397,
+      "span_end_line": 4411,
+      "anchor_line": 4397,
+      "body_start_line": 4398,
+      "body_end_line": 4411,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -16693,8 +16698,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4385,
-          "end_line": 4398,
+          "start_line": 4398,
+          "end_line": 4411,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16760,11 +16765,11 @@
     },
     {
       "id": "GNT-8.0",
-      "span_start_line": 4399,
-      "span_end_line": 4408,
-      "anchor_line": 4401,
-      "body_start_line": 4402,
-      "body_end_line": 4408,
+      "span_start_line": 4412,
+      "span_end_line": 4421,
+      "anchor_line": 4414,
+      "body_start_line": 4415,
+      "body_end_line": 4421,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -16780,8 +16785,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4402,
-          "end_line": 4408,
+          "start_line": 4415,
+          "end_line": 4421,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16847,11 +16852,11 @@
     },
     {
       "id": "GNT-8.1",
-      "span_start_line": 4409,
-      "span_end_line": 4451,
-      "anchor_line": 4409,
-      "body_start_line": 4410,
-      "body_end_line": 4451,
+      "span_start_line": 4422,
+      "span_end_line": 4464,
+      "anchor_line": 4422,
+      "body_start_line": 4423,
+      "body_end_line": 4464,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -16867,8 +16872,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4410,
-          "end_line": 4441,
+          "start_line": 4423,
+          "end_line": 4454,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16930,8 +16935,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4442,
-          "end_line": 4448,
+          "start_line": 4455,
+          "end_line": 4461,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -16989,8 +16994,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4449,
-          "end_line": 4451,
+          "start_line": 4462,
+          "end_line": 4464,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17050,11 +17055,11 @@
     },
     {
       "id": "GNT-8.2",
-      "span_start_line": 4452,
-      "span_end_line": 4509,
-      "anchor_line": 4452,
-      "body_start_line": 4453,
-      "body_end_line": 4509,
+      "span_start_line": 4465,
+      "span_end_line": 4522,
+      "anchor_line": 4465,
+      "body_start_line": 4466,
+      "body_end_line": 4522,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17070,8 +17075,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4453,
-          "end_line": 4509,
+          "start_line": 4466,
+          "end_line": 4522,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17131,11 +17136,11 @@
     },
     {
       "id": "GNT-8.3",
-      "span_start_line": 4510,
-      "span_end_line": 4514,
-      "anchor_line": 4510,
-      "body_start_line": 4511,
-      "body_end_line": 4514,
+      "span_start_line": 4523,
+      "span_end_line": 4527,
+      "anchor_line": 4523,
+      "body_start_line": 4524,
+      "body_end_line": 4527,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17151,8 +17156,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4511,
-          "end_line": 4514,
+          "start_line": 4524,
+          "end_line": 4527,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17212,11 +17217,11 @@
     },
     {
       "id": "GNT-8.4",
-      "span_start_line": 4515,
-      "span_end_line": 4521,
-      "anchor_line": 4515,
-      "body_start_line": 4516,
-      "body_end_line": 4521,
+      "span_start_line": 4528,
+      "span_end_line": 4534,
+      "anchor_line": 4528,
+      "body_start_line": 4529,
+      "body_end_line": 4534,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17232,8 +17237,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4516,
-          "end_line": 4521,
+          "start_line": 4529,
+          "end_line": 4534,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17293,11 +17298,11 @@
     },
     {
       "id": "GNT-8.5",
-      "span_start_line": 4522,
-      "span_end_line": 4560,
-      "anchor_line": 4522,
-      "body_start_line": 4523,
-      "body_end_line": 4560,
+      "span_start_line": 4535,
+      "span_end_line": 4573,
+      "anchor_line": 4535,
+      "body_start_line": 4536,
+      "body_end_line": 4573,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17313,8 +17318,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4523,
-          "end_line": 4543,
+          "start_line": 4536,
+          "end_line": 4556,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17372,8 +17377,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4544,
-          "end_line": 4560,
+          "start_line": 4557,
+          "end_line": 4573,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17433,11 +17438,11 @@
     },
     {
       "id": "GNT-8.6",
-      "span_start_line": 4561,
-      "span_end_line": 4651,
-      "anchor_line": 4561,
-      "body_start_line": 4562,
-      "body_end_line": 4651,
+      "span_start_line": 4574,
+      "span_end_line": 4664,
+      "anchor_line": 4574,
+      "body_start_line": 4575,
+      "body_end_line": 4664,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17453,8 +17458,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4562,
-          "end_line": 4651,
+          "start_line": 4575,
+          "end_line": 4664,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17518,11 +17523,11 @@
     },
     {
       "id": "GNT-8.7",
-      "span_start_line": 4652,
-      "span_end_line": 4678,
-      "anchor_line": 4652,
-      "body_start_line": 4653,
-      "body_end_line": 4678,
+      "span_start_line": 4665,
+      "span_end_line": 4691,
+      "anchor_line": 4665,
+      "body_start_line": 4666,
+      "body_end_line": 4691,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17538,8 +17543,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4653,
-          "end_line": 4678,
+          "start_line": 4666,
+          "end_line": 4691,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17599,11 +17604,11 @@
     },
     {
       "id": "GNT-8.8",
-      "span_start_line": 4679,
-      "span_end_line": 4687,
-      "anchor_line": 4679,
-      "body_start_line": 4680,
-      "body_end_line": 4687,
+      "span_start_line": 4692,
+      "span_end_line": 4700,
+      "anchor_line": 4692,
+      "body_start_line": 4693,
+      "body_end_line": 4700,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17619,8 +17624,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4680,
-          "end_line": 4687,
+          "start_line": 4693,
+          "end_line": 4700,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17680,11 +17685,11 @@
     },
     {
       "id": "GNT-8.9",
-      "span_start_line": 4688,
-      "span_end_line": 4723,
-      "anchor_line": 4688,
-      "body_start_line": 4689,
-      "body_end_line": 4723,
+      "span_start_line": 4701,
+      "span_end_line": 4736,
+      "anchor_line": 4701,
+      "body_start_line": 4702,
+      "body_end_line": 4736,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17700,8 +17705,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4689,
-          "end_line": 4723,
+          "start_line": 4702,
+          "end_line": 4736,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17767,11 +17772,11 @@
     },
     {
       "id": "GNT-8.10",
-      "span_start_line": 4724,
-      "span_end_line": 4752,
-      "anchor_line": 4724,
-      "body_start_line": 4725,
-      "body_end_line": 4752,
+      "span_start_line": 4737,
+      "span_end_line": 4765,
+      "anchor_line": 4737,
+      "body_start_line": 4738,
+      "body_end_line": 4765,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17787,8 +17792,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4725,
-          "end_line": 4752,
+          "start_line": 4738,
+          "end_line": 4765,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17854,11 +17859,11 @@
     },
     {
       "id": "GNT-8.11",
-      "span_start_line": 4753,
-      "span_end_line": 4759,
-      "anchor_line": 4753,
-      "body_start_line": 4754,
-      "body_end_line": 4759,
+      "span_start_line": 4766,
+      "span_end_line": 4772,
+      "anchor_line": 4766,
+      "body_start_line": 4767,
+      "body_end_line": 4772,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17874,8 +17879,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4754,
-          "end_line": 4759,
+          "start_line": 4767,
+          "end_line": 4772,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -17941,11 +17946,11 @@
     },
     {
       "id": "GNT-8.12",
-      "span_start_line": 4760,
-      "span_end_line": 4763,
-      "anchor_line": 4760,
-      "body_start_line": 4761,
-      "body_end_line": 4763,
+      "span_start_line": 4773,
+      "span_end_line": 4776,
+      "anchor_line": 4773,
+      "body_start_line": 4774,
+      "body_end_line": 4776,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -17961,8 +17966,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4761,
-          "end_line": 4763,
+          "start_line": 4774,
+          "end_line": 4776,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18024,11 +18029,11 @@
     },
     {
       "id": "GNT-8.13",
-      "span_start_line": 4764,
-      "span_end_line": 4771,
-      "anchor_line": 4764,
-      "body_start_line": 4765,
-      "body_end_line": 4771,
+      "span_start_line": 4777,
+      "span_end_line": 4784,
+      "anchor_line": 4777,
+      "body_start_line": 4778,
+      "body_end_line": 4784,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18044,8 +18049,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4765,
-          "end_line": 4771,
+          "start_line": 4778,
+          "end_line": 4784,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18105,11 +18110,11 @@
     },
     {
       "id": "GNT-8.13-concrete-generic-schemas",
-      "span_start_line": 4772,
-      "span_end_line": 4790,
-      "anchor_line": 4772,
-      "body_start_line": 4773,
-      "body_end_line": 4790,
+      "span_start_line": 4785,
+      "span_end_line": 4803,
+      "anchor_line": 4785,
+      "body_start_line": 4786,
+      "body_end_line": 4803,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18124,8 +18129,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4773,
-          "end_line": 4790,
+          "start_line": 4786,
+          "end_line": 4803,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18187,11 +18192,11 @@
     },
     {
       "id": "GNT-9.0",
-      "span_start_line": 4791,
-      "span_end_line": 4797,
-      "anchor_line": 4793,
-      "body_start_line": 4794,
-      "body_end_line": 4797,
+      "span_start_line": 4804,
+      "span_end_line": 4810,
+      "anchor_line": 4806,
+      "body_start_line": 4807,
+      "body_end_line": 4810,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18205,8 +18210,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4794,
-          "end_line": 4797,
+          "start_line": 4807,
+          "end_line": 4810,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18256,11 +18261,11 @@
     },
     {
       "id": "GNT-9.1",
-      "span_start_line": 4798,
-      "span_end_line": 4804,
-      "anchor_line": 4798,
-      "body_start_line": 4799,
-      "body_end_line": 4804,
+      "span_start_line": 4811,
+      "span_end_line": 4817,
+      "anchor_line": 4811,
+      "body_start_line": 4812,
+      "body_end_line": 4817,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18274,8 +18279,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4799,
-          "end_line": 4804,
+          "start_line": 4812,
+          "end_line": 4817,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18325,11 +18330,11 @@
     },
     {
       "id": "GNT-9.2",
-      "span_start_line": 4805,
-      "span_end_line": 4830,
-      "anchor_line": 4805,
-      "body_start_line": 4806,
-      "body_end_line": 4830,
+      "span_start_line": 4818,
+      "span_end_line": 4843,
+      "anchor_line": 4818,
+      "body_start_line": 4819,
+      "body_end_line": 4843,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18343,8 +18348,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4806,
-          "end_line": 4811,
+          "start_line": 4819,
+          "end_line": 4824,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18392,8 +18397,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 4812,
-          "end_line": 4823,
+          "start_line": 4825,
+          "end_line": 4836,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18441,76 +18446,7 @@
         },
         {
           "key": "clause-003",
-          "start_line": 4824,
-          "end_line": 4830,
-          "profiles": [
-            "analyzer",
-            "concurrent-evaluator",
-            "durable-runtime",
-            "evaluator"
-          ],
-          "roles": [
-            "harness",
-            "implementation"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "analyzer",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "concurrent-evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "durable-runtime",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "evaluator",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
-              ],
-              "rationale": null
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "GNT-9.3",
-      "span_start_line": 4831,
-      "span_end_line": 4843,
-      "anchor_line": 4831,
-      "body_start_line": 4832,
-      "body_end_line": 4843,
-      "profiles": [
-        "analyzer",
-        "concurrent-evaluator",
-        "durable-runtime",
-        "evaluator"
-      ],
-      "roles": [
-        "harness",
-        "implementation"
-      ],
-      "clauses": [
-        {
-          "key": "clause-001",
-          "start_line": 4832,
+          "start_line": 4837,
           "end_line": 4843,
           "profiles": [
             "analyzer",
@@ -18560,12 +18496,12 @@
       ]
     },
     {
-      "id": "GNT-9.4",
+      "id": "GNT-9.3",
       "span_start_line": 4844,
-      "span_end_line": 4857,
+      "span_end_line": 4856,
       "anchor_line": 4844,
       "body_start_line": 4845,
-      "body_end_line": 4857,
+      "body_end_line": 4856,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18580,7 +18516,76 @@
         {
           "key": "clause-001",
           "start_line": 4845,
-          "end_line": 4857,
+          "end_line": 4856,
+          "profiles": [
+            "analyzer",
+            "concurrent-evaluator",
+            "durable-runtime",
+            "evaluator"
+          ],
+          "roles": [
+            "harness",
+            "implementation"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "analyzer",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "concurrent-evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "durable-runtime",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "evaluator",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_gate.rs#checked_in_analyzer_profile_gate_is_current"
+              ],
+              "rationale": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GNT-9.4",
+      "span_start_line": 4857,
+      "span_end_line": 4870,
+      "anchor_line": 4857,
+      "body_start_line": 4858,
+      "body_end_line": 4870,
+      "profiles": [
+        "analyzer",
+        "concurrent-evaluator",
+        "durable-runtime",
+        "evaluator"
+      ],
+      "roles": [
+        "harness",
+        "implementation"
+      ],
+      "clauses": [
+        {
+          "key": "clause-001",
+          "start_line": 4858,
+          "end_line": 4870,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18630,11 +18635,11 @@
     },
     {
       "id": "GNT-9.5",
-      "span_start_line": 4858,
-      "span_end_line": 4869,
-      "anchor_line": 4858,
-      "body_start_line": 4859,
-      "body_end_line": 4869,
+      "span_start_line": 4871,
+      "span_end_line": 4882,
+      "anchor_line": 4871,
+      "body_start_line": 4872,
+      "body_end_line": 4882,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18648,8 +18653,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4859,
-          "end_line": 4869,
+          "start_line": 4872,
+          "end_line": 4882,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18699,11 +18704,11 @@
     },
     {
       "id": "GNT-9.6",
-      "span_start_line": 4870,
-      "span_end_line": 4891,
-      "anchor_line": 4870,
-      "body_start_line": 4871,
-      "body_end_line": 4891,
+      "span_start_line": 4883,
+      "span_end_line": 4904,
+      "anchor_line": 4883,
+      "body_start_line": 4884,
+      "body_end_line": 4904,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18717,8 +18722,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4871,
-          "end_line": 4891,
+          "start_line": 4884,
+          "end_line": 4904,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18768,11 +18773,11 @@
     },
     {
       "id": "GNT-9.7",
-      "span_start_line": 4892,
-      "span_end_line": 4911,
-      "anchor_line": 4892,
-      "body_start_line": 4893,
-      "body_end_line": 4911,
+      "span_start_line": 4905,
+      "span_end_line": 4924,
+      "anchor_line": 4905,
+      "body_start_line": 4906,
+      "body_end_line": 4924,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18786,8 +18791,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4893,
-          "end_line": 4911,
+          "start_line": 4906,
+          "end_line": 4924,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18835,11 +18840,11 @@
     },
     {
       "id": "GNT-9.8",
-      "span_start_line": 4912,
-      "span_end_line": 4918,
-      "anchor_line": 4912,
-      "body_start_line": 4913,
-      "body_end_line": 4918,
+      "span_start_line": 4925,
+      "span_end_line": 4931,
+      "anchor_line": 4925,
+      "body_start_line": 4926,
+      "body_end_line": 4931,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18853,8 +18858,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4913,
-          "end_line": 4918,
+          "start_line": 4926,
+          "end_line": 4931,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18904,11 +18909,11 @@
     },
     {
       "id": "GNT-9.9",
-      "span_start_line": 4919,
-      "span_end_line": 4925,
-      "anchor_line": 4919,
-      "body_start_line": 4920,
-      "body_end_line": 4925,
+      "span_start_line": 4932,
+      "span_end_line": 4938,
+      "anchor_line": 4932,
+      "body_start_line": 4933,
+      "body_end_line": 4938,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18922,8 +18927,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4920,
-          "end_line": 4925,
+          "start_line": 4933,
+          "end_line": 4938,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -18974,11 +18979,11 @@
     },
     {
       "id": "GNT-9.10",
-      "span_start_line": 4926,
-      "span_end_line": 4934,
-      "anchor_line": 4926,
-      "body_start_line": 4927,
-      "body_end_line": 4934,
+      "span_start_line": 4939,
+      "span_end_line": 4947,
+      "anchor_line": 4939,
+      "body_start_line": 4940,
+      "body_end_line": 4947,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -18992,8 +18997,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4927,
-          "end_line": 4934,
+          "start_line": 4940,
+          "end_line": 4947,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19043,11 +19048,11 @@
     },
     {
       "id": "GNT-9.11",
-      "span_start_line": 4935,
-      "span_end_line": 4954,
-      "anchor_line": 4935,
-      "body_start_line": 4936,
-      "body_end_line": 4954,
+      "span_start_line": 4948,
+      "span_end_line": 4967,
+      "anchor_line": 4948,
+      "body_start_line": 4949,
+      "body_end_line": 4967,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19061,8 +19066,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4936,
-          "end_line": 4954,
+          "start_line": 4949,
+          "end_line": 4967,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19112,11 +19117,11 @@
     },
     {
       "id": "GNT-9.12",
-      "span_start_line": 4955,
-      "span_end_line": 4960,
-      "anchor_line": 4955,
-      "body_start_line": 4956,
-      "body_end_line": 4960,
+      "span_start_line": 4968,
+      "span_end_line": 4973,
+      "anchor_line": 4968,
+      "body_start_line": 4969,
+      "body_end_line": 4973,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19130,8 +19135,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4956,
-          "end_line": 4960,
+          "start_line": 4969,
+          "end_line": 4973,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19182,11 +19187,11 @@
     },
     {
       "id": "GNT-10.0",
-      "span_start_line": 4961,
-      "span_end_line": 4974,
-      "anchor_line": 4963,
-      "body_start_line": 4964,
-      "body_end_line": 4974,
+      "span_start_line": 4974,
+      "span_end_line": 4987,
+      "anchor_line": 4976,
+      "body_start_line": 4977,
+      "body_end_line": 4987,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19202,8 +19207,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4964,
-          "end_line": 4974,
+          "start_line": 4977,
+          "end_line": 4987,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19263,11 +19268,11 @@
     },
     {
       "id": "GNT-10.1",
-      "span_start_line": 4975,
-      "span_end_line": 4981,
-      "anchor_line": 4975,
-      "body_start_line": 4976,
-      "body_end_line": 4981,
+      "span_start_line": 4988,
+      "span_end_line": 4994,
+      "anchor_line": 4988,
+      "body_start_line": 4989,
+      "body_end_line": 4994,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19283,8 +19288,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4976,
-          "end_line": 4981,
+          "start_line": 4989,
+          "end_line": 4994,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19344,11 +19349,11 @@
     },
     {
       "id": "GNT-10.2",
-      "span_start_line": 4982,
-      "span_end_line": 5017,
-      "anchor_line": 4982,
-      "body_start_line": 4983,
-      "body_end_line": 5017,
+      "span_start_line": 4995,
+      "span_end_line": 5030,
+      "anchor_line": 4995,
+      "body_start_line": 4996,
+      "body_end_line": 5030,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19364,8 +19369,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 4983,
-          "end_line": 5017,
+          "start_line": 4996,
+          "end_line": 5030,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19425,11 +19430,11 @@
     },
     {
       "id": "GNT-10.3",
-      "span_start_line": 5018,
-      "span_end_line": 5044,
-      "anchor_line": 5018,
-      "body_start_line": 5019,
-      "body_end_line": 5044,
+      "span_start_line": 5031,
+      "span_end_line": 5057,
+      "anchor_line": 5031,
+      "body_start_line": 5032,
+      "body_end_line": 5057,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19445,8 +19450,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5019,
-          "end_line": 5044,
+          "start_line": 5032,
+          "end_line": 5057,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19507,11 +19512,11 @@
     },
     {
       "id": "GNT-10.4",
-      "span_start_line": 5045,
-      "span_end_line": 5057,
-      "anchor_line": 5045,
-      "body_start_line": 5046,
-      "body_end_line": 5057,
+      "span_start_line": 5058,
+      "span_end_line": 5070,
+      "anchor_line": 5058,
+      "body_start_line": 5059,
+      "body_end_line": 5070,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19527,8 +19532,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5046,
-          "end_line": 5057,
+          "start_line": 5059,
+          "end_line": 5070,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19588,11 +19593,11 @@
     },
     {
       "id": "GNT-10.5",
-      "span_start_line": 5058,
-      "span_end_line": 5094,
-      "anchor_line": 5058,
-      "body_start_line": 5059,
-      "body_end_line": 5094,
+      "span_start_line": 5071,
+      "span_end_line": 5107,
+      "anchor_line": 5071,
+      "body_start_line": 5072,
+      "body_end_line": 5107,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19608,8 +19613,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5059,
-          "end_line": 5094,
+          "start_line": 5072,
+          "end_line": 5107,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19669,11 +19674,11 @@
     },
     {
       "id": "GNT-10.6",
-      "span_start_line": 5095,
-      "span_end_line": 5146,
-      "anchor_line": 5095,
-      "body_start_line": 5096,
-      "body_end_line": 5146,
+      "span_start_line": 5108,
+      "span_end_line": 5159,
+      "anchor_line": 5108,
+      "body_start_line": 5109,
+      "body_end_line": 5159,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19689,8 +19694,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5096,
-          "end_line": 5146,
+          "start_line": 5109,
+          "end_line": 5159,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19750,11 +19755,11 @@
     },
     {
       "id": "GNT-10.7",
-      "span_start_line": 5147,
-      "span_end_line": 5151,
-      "anchor_line": 5147,
-      "body_start_line": 5148,
-      "body_end_line": 5151,
+      "span_start_line": 5160,
+      "span_end_line": 5164,
+      "anchor_line": 5160,
+      "body_start_line": 5161,
+      "body_end_line": 5164,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19770,8 +19775,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5148,
-          "end_line": 5151,
+          "start_line": 5161,
+          "end_line": 5164,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19823,11 +19828,11 @@
     },
     {
       "id": "GNT-10.8",
-      "span_start_line": 5152,
-      "span_end_line": 5194,
-      "anchor_line": 5152,
-      "body_start_line": 5153,
-      "body_end_line": 5194,
+      "span_start_line": 5165,
+      "span_end_line": 5207,
+      "anchor_line": 5165,
+      "body_start_line": 5166,
+      "body_end_line": 5207,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19843,8 +19848,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5153,
-          "end_line": 5194,
+          "start_line": 5166,
+          "end_line": 5207,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19904,11 +19909,11 @@
     },
     {
       "id": "GNT-10.9",
-      "span_start_line": 5195,
-      "span_end_line": 5235,
-      "anchor_line": 5195,
-      "body_start_line": 5196,
-      "body_end_line": 5235,
+      "span_start_line": 5208,
+      "span_end_line": 5248,
+      "anchor_line": 5208,
+      "body_start_line": 5209,
+      "body_end_line": 5248,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19924,8 +19929,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5196,
-          "end_line": 5235,
+          "start_line": 5209,
+          "end_line": 5248,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -19978,11 +19983,11 @@
     },
     {
       "id": "GNT-10.10",
-      "span_start_line": 5236,
-      "span_end_line": 5271,
-      "anchor_line": 5236,
-      "body_start_line": 5237,
-      "body_end_line": 5271,
+      "span_start_line": 5249,
+      "span_end_line": 5284,
+      "anchor_line": 5249,
+      "body_start_line": 5250,
+      "body_end_line": 5284,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -19998,8 +20003,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5237,
-          "end_line": 5271,
+          "start_line": 5250,
+          "end_line": 5284,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20061,11 +20066,11 @@
     },
     {
       "id": "GNT-10.11",
-      "span_start_line": 5272,
-      "span_end_line": 5278,
-      "anchor_line": 5272,
-      "body_start_line": 5273,
-      "body_end_line": 5278,
+      "span_start_line": 5285,
+      "span_end_line": 5291,
+      "anchor_line": 5285,
+      "body_start_line": 5286,
+      "body_end_line": 5291,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -20081,8 +20086,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5273,
-          "end_line": 5278,
+          "start_line": 5286,
+          "end_line": 5291,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20135,11 +20140,11 @@
     },
     {
       "id": "GNT-10.12",
-      "span_start_line": 5279,
-      "span_end_line": 5317,
-      "anchor_line": 5279,
-      "body_start_line": 5280,
-      "body_end_line": 5317,
+      "span_start_line": 5292,
+      "span_end_line": 5330,
+      "anchor_line": 5292,
+      "body_start_line": 5293,
+      "body_end_line": 5330,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -20155,8 +20160,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5280,
-          "end_line": 5317,
+          "start_line": 5293,
+          "end_line": 5330,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20222,11 +20227,11 @@
     },
     {
       "id": "GNT-10.13",
-      "span_start_line": 5318,
-      "span_end_line": 5335,
-      "anchor_line": 5318,
-      "body_start_line": 5319,
-      "body_end_line": 5335,
+      "span_start_line": 5331,
+      "span_end_line": 5348,
+      "anchor_line": 5331,
+      "body_start_line": 5332,
+      "body_end_line": 5348,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -20242,8 +20247,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5319,
-          "end_line": 5335,
+          "start_line": 5332,
+          "end_line": 5348,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20305,11 +20310,11 @@
     },
     {
       "id": "GNT-10.14",
-      "span_start_line": 5336,
-      "span_end_line": 5358,
-      "anchor_line": 5336,
-      "body_start_line": 5337,
-      "body_end_line": 5358,
+      "span_start_line": 5349,
+      "span_end_line": 5371,
+      "anchor_line": 5349,
+      "body_start_line": 5350,
+      "body_end_line": 5371,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -20325,8 +20330,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5337,
-          "end_line": 5358,
+          "start_line": 5350,
+          "end_line": 5371,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -20387,11 +20392,11 @@
     },
     {
       "id": "GNT-11.0",
-      "span_start_line": 5359,
-      "span_end_line": 5368,
-      "anchor_line": 5361,
-      "body_start_line": 5362,
-      "body_end_line": 5368,
+      "span_start_line": 5372,
+      "span_end_line": 5381,
+      "anchor_line": 5374,
+      "body_start_line": 5375,
+      "body_end_line": 5381,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20404,8 +20409,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5362,
-          "end_line": 5368,
+          "start_line": 5375,
+          "end_line": 5381,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20438,11 +20443,11 @@
     },
     {
       "id": "GNT-11.1",
-      "span_start_line": 5369,
-      "span_end_line": 5387,
-      "anchor_line": 5369,
-      "body_start_line": 5370,
-      "body_end_line": 5387,
+      "span_start_line": 5382,
+      "span_end_line": 5400,
+      "anchor_line": 5382,
+      "body_start_line": 5383,
+      "body_end_line": 5400,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20455,8 +20460,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5370,
-          "end_line": 5387,
+          "start_line": 5383,
+          "end_line": 5400,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20490,11 +20495,11 @@
     },
     {
       "id": "GNT-11.2",
-      "span_start_line": 5388,
-      "span_end_line": 5469,
-      "anchor_line": 5388,
-      "body_start_line": 5389,
-      "body_end_line": 5469,
+      "span_start_line": 5401,
+      "span_end_line": 5482,
+      "anchor_line": 5401,
+      "body_start_line": 5402,
+      "body_end_line": 5482,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20507,8 +20512,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5389,
-          "end_line": 5469,
+          "start_line": 5402,
+          "end_line": 5482,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20542,11 +20547,11 @@
     },
     {
       "id": "GNT-11.3",
-      "span_start_line": 5470,
-      "span_end_line": 5518,
-      "anchor_line": 5470,
-      "body_start_line": 5471,
-      "body_end_line": 5518,
+      "span_start_line": 5483,
+      "span_end_line": 5531,
+      "anchor_line": 5483,
+      "body_start_line": 5484,
+      "body_end_line": 5531,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20559,8 +20564,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5471,
-          "end_line": 5518,
+          "start_line": 5484,
+          "end_line": 5531,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20591,11 +20596,11 @@
     },
     {
       "id": "GNT-11.4",
-      "span_start_line": 5519,
-      "span_end_line": 5533,
-      "anchor_line": 5519,
-      "body_start_line": 5520,
-      "body_end_line": 5533,
+      "span_start_line": 5532,
+      "span_end_line": 5546,
+      "anchor_line": 5532,
+      "body_start_line": 5533,
+      "body_end_line": 5546,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20608,8 +20613,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5520,
-          "end_line": 5533,
+          "start_line": 5533,
+          "end_line": 5546,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20640,11 +20645,11 @@
     },
     {
       "id": "GNT-11.5",
-      "span_start_line": 5534,
-      "span_end_line": 5544,
-      "anchor_line": 5534,
-      "body_start_line": 5535,
-      "body_end_line": 5544,
+      "span_start_line": 5547,
+      "span_end_line": 5557,
+      "anchor_line": 5547,
+      "body_start_line": 5548,
+      "body_end_line": 5557,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20657,8 +20662,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5535,
-          "end_line": 5544,
+          "start_line": 5548,
+          "end_line": 5557,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20689,11 +20694,11 @@
     },
     {
       "id": "GNT-11.6",
-      "span_start_line": 5545,
-      "span_end_line": 5571,
-      "anchor_line": 5545,
-      "body_start_line": 5546,
-      "body_end_line": 5571,
+      "span_start_line": 5558,
+      "span_end_line": 5584,
+      "anchor_line": 5558,
+      "body_start_line": 5559,
+      "body_end_line": 5584,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20706,8 +20711,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5546,
-          "end_line": 5562,
+          "start_line": 5559,
+          "end_line": 5575,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20736,8 +20741,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 5563,
-          "end_line": 5571,
+          "start_line": 5576,
+          "end_line": 5584,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20768,11 +20773,11 @@
     },
     {
       "id": "GNT-11.6-package-source-manifest",
-      "span_start_line": 5572,
-      "span_end_line": 5658,
-      "anchor_line": 5572,
-      "body_start_line": 5573,
-      "body_end_line": 5658,
+      "span_start_line": 5585,
+      "span_end_line": 5671,
+      "anchor_line": 5585,
+      "body_start_line": 5586,
+      "body_end_line": 5671,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -20785,8 +20790,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5573,
-          "end_line": 5585,
+          "start_line": 5586,
+          "end_line": 5598,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20819,40 +20824,7 @@
         },
         {
           "key": "clause-002",
-          "start_line": 5586,
-          "end_line": 5600,
-          "profiles": [
-            "durable-runtime",
-            "embedding"
-          ],
-          "roles": [
-            "harness",
-            "implementation",
-            "integration"
-          ],
-          "profile_reviews": [
-            {
-              "profile": "durable-runtime",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
-              ],
-              "rationale": null
-            },
-            {
-              "profile": "embedding",
-              "state": "covered",
-              "evidence": [
-                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_artifact_vectors_match_the_public_facade",
-                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
-              ],
-              "rationale": null
-            }
-          ]
-        },
-        {
-          "key": "clause-003",
-          "start_line": 5601,
+          "start_line": 5599,
           "end_line": 5613,
           "profiles": [
             "durable-runtime",
@@ -20884,9 +20856,42 @@
           ]
         },
         {
-          "key": "clause-004",
+          "key": "clause-003",
           "start_line": 5614,
-          "end_line": 5624,
+          "end_line": 5626,
+          "profiles": [
+            "durable-runtime",
+            "embedding"
+          ],
+          "roles": [
+            "harness",
+            "implementation",
+            "integration"
+          ],
+          "profile_reviews": [
+            {
+              "profile": "durable-runtime",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/analyzer_lowering.rs#public_canonical_lowering_preserves_sites_phases_and_identity"
+              ],
+              "rationale": null
+            },
+            {
+              "profile": "embedding",
+              "state": "covered",
+              "evidence": [
+                "crates/gantry-conformance/tests/ir_contracts.rs#canonical_artifact_vectors_match_the_public_facade",
+                "crates/gantry-conformance/tests/validate_package.rs#analyze_package_sequences_phases_and_exposes_valid_artifacts"
+              ],
+              "rationale": null
+            }
+          ]
+        },
+        {
+          "key": "clause-004",
+          "start_line": 5627,
+          "end_line": 5637,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20918,8 +20923,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 5625,
-          "end_line": 5634,
+          "start_line": 5638,
+          "end_line": 5647,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20948,8 +20953,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 5635,
-          "end_line": 5651,
+          "start_line": 5648,
+          "end_line": 5664,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -20978,8 +20983,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 5652,
-          "end_line": 5658,
+          "start_line": 5665,
+          "end_line": 5671,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21013,11 +21018,11 @@
     },
     {
       "id": "GNT-11.7",
-      "span_start_line": 5659,
-      "span_end_line": 5685,
-      "anchor_line": 5659,
-      "body_start_line": 5660,
-      "body_end_line": 5685,
+      "span_start_line": 5672,
+      "span_end_line": 5698,
+      "anchor_line": 5672,
+      "body_start_line": 5673,
+      "body_end_line": 5698,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -21030,8 +21035,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5660,
-          "end_line": 5685,
+          "start_line": 5673,
+          "end_line": 5698,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21063,11 +21068,11 @@
     },
     {
       "id": "GNT-11.8",
-      "span_start_line": 5686,
-      "span_end_line": 5723,
-      "anchor_line": 5686,
-      "body_start_line": 5687,
-      "body_end_line": 5723,
+      "span_start_line": 5699,
+      "span_end_line": 5736,
+      "anchor_line": 5699,
+      "body_start_line": 5700,
+      "body_end_line": 5736,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -21080,8 +21085,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5687,
-          "end_line": 5723,
+          "start_line": 5700,
+          "end_line": 5736,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21110,11 +21115,11 @@
     },
     {
       "id": "GNT-11.9",
-      "span_start_line": 5724,
-      "span_end_line": 5744,
-      "anchor_line": 5724,
-      "body_start_line": 5725,
-      "body_end_line": 5744,
+      "span_start_line": 5737,
+      "span_end_line": 5757,
+      "anchor_line": 5737,
+      "body_start_line": 5738,
+      "body_end_line": 5757,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -21127,8 +21132,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5725,
-          "end_line": 5744,
+          "start_line": 5738,
+          "end_line": 5757,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21161,11 +21166,11 @@
     },
     {
       "id": "GNT-11.10",
-      "span_start_line": 5745,
-      "span_end_line": 5965,
-      "anchor_line": 5745,
-      "body_start_line": 5746,
-      "body_end_line": 5965,
+      "span_start_line": 5758,
+      "span_end_line": 5978,
+      "anchor_line": 5758,
+      "body_start_line": 5759,
+      "body_end_line": 5978,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -21178,8 +21183,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5746,
-          "end_line": 5758,
+          "start_line": 5759,
+          "end_line": 5771,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21208,8 +21213,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 5759,
-          "end_line": 5782,
+          "start_line": 5772,
+          "end_line": 5795,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21238,8 +21243,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 5783,
-          "end_line": 5796,
+          "start_line": 5796,
+          "end_line": 5809,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21268,8 +21273,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 5797,
-          "end_line": 5861,
+          "start_line": 5810,
+          "end_line": 5874,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21298,8 +21303,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 5862,
-          "end_line": 5923,
+          "start_line": 5875,
+          "end_line": 5936,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21328,8 +21333,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 5924,
-          "end_line": 5965,
+          "start_line": 5937,
+          "end_line": 5978,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21360,11 +21365,11 @@
     },
     {
       "id": "GNT-11.11",
-      "span_start_line": 5966,
-      "span_end_line": 5970,
-      "anchor_line": 5966,
-      "body_start_line": 5967,
-      "body_end_line": 5970,
+      "span_start_line": 5979,
+      "span_end_line": 5983,
+      "anchor_line": 5979,
+      "body_start_line": 5980,
+      "body_end_line": 5983,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -21377,8 +21382,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5967,
-          "end_line": 5970,
+          "start_line": 5980,
+          "end_line": 5983,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21409,11 +21414,11 @@
     },
     {
       "id": "GNT-11.11-generic-artifact-recovery",
-      "span_start_line": 5971,
-      "span_end_line": 5991,
-      "anchor_line": 5971,
-      "body_start_line": 5972,
-      "body_end_line": 5991,
+      "span_start_line": 5984,
+      "span_end_line": 6004,
+      "anchor_line": 5984,
+      "body_start_line": 5985,
+      "body_end_line": 6004,
       "profiles": [
         "durable-runtime",
         "embedding"
@@ -21425,8 +21430,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5972,
-          "end_line": 5991,
+          "start_line": 5985,
+          "end_line": 6004,
           "profiles": [
             "durable-runtime",
             "embedding"
@@ -21458,11 +21463,11 @@
     },
     {
       "id": "GNT-12.0",
-      "span_start_line": 5992,
-      "span_end_line": 6058,
-      "anchor_line": 5994,
-      "body_start_line": 5995,
-      "body_end_line": 6058,
+      "span_start_line": 6005,
+      "span_end_line": 6071,
+      "anchor_line": 6007,
+      "body_start_line": 6008,
+      "body_end_line": 6071,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -21479,8 +21484,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 5995,
-          "end_line": 6000,
+          "start_line": 6008,
+          "end_line": 6013,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21550,8 +21555,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6001,
-          "end_line": 6020,
+          "start_line": 6014,
+          "end_line": 6033,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21621,8 +21626,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6021,
-          "end_line": 6024,
+          "start_line": 6034,
+          "end_line": 6037,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21692,8 +21697,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 6025,
-          "end_line": 6047,
+          "start_line": 6038,
+          "end_line": 6060,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21764,8 +21769,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 6048,
-          "end_line": 6058,
+          "start_line": 6061,
+          "end_line": 6071,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21830,11 +21835,11 @@
     },
     {
       "id": "GNT-12.1",
-      "span_start_line": 6059,
-      "span_end_line": 6139,
-      "anchor_line": 6059,
-      "body_start_line": 6060,
-      "body_end_line": 6139,
+      "span_start_line": 6072,
+      "span_end_line": 6152,
+      "anchor_line": 6072,
+      "body_start_line": 6073,
+      "body_end_line": 6152,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -21851,8 +21856,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6060,
-          "end_line": 6139,
+          "start_line": 6073,
+          "end_line": 6152,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -21925,11 +21930,11 @@
     },
     {
       "id": "GNT-12.2",
-      "span_start_line": 6140,
-      "span_end_line": 6176,
-      "anchor_line": 6140,
-      "body_start_line": 6141,
-      "body_end_line": 6176,
+      "span_start_line": 6153,
+      "span_end_line": 6189,
+      "anchor_line": 6153,
+      "body_start_line": 6154,
+      "body_end_line": 6189,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -21946,8 +21951,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6141,
-          "end_line": 6176,
+          "start_line": 6154,
+          "end_line": 6189,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22023,11 +22028,11 @@
     },
     {
       "id": "GNT-12.3",
-      "span_start_line": 6177,
-      "span_end_line": 6210,
-      "anchor_line": 6177,
-      "body_start_line": 6178,
-      "body_end_line": 6210,
+      "span_start_line": 6190,
+      "span_end_line": 6223,
+      "anchor_line": 6190,
+      "body_start_line": 6191,
+      "body_end_line": 6223,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -22044,8 +22049,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6178,
-          "end_line": 6194,
+          "start_line": 6191,
+          "end_line": 6207,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22115,8 +22120,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6195,
-          "end_line": 6210,
+          "start_line": 6208,
+          "end_line": 6223,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22182,11 +22187,11 @@
     },
     {
       "id": "GNT-12.4",
-      "span_start_line": 6211,
-      "span_end_line": 6250,
-      "anchor_line": 6211,
-      "body_start_line": 6212,
-      "body_end_line": 6250,
+      "span_start_line": 6224,
+      "span_end_line": 6263,
+      "anchor_line": 6224,
+      "body_start_line": 6225,
+      "body_end_line": 6263,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -22203,8 +22208,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6212,
-          "end_line": 6231,
+          "start_line": 6225,
+          "end_line": 6244,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22268,8 +22273,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6232,
-          "end_line": 6250,
+          "start_line": 6245,
+          "end_line": 6263,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22336,11 +22341,11 @@
     },
     {
       "id": "GNT-12.5",
-      "span_start_line": 6251,
-      "span_end_line": 6330,
-      "anchor_line": 6251,
-      "body_start_line": 6252,
-      "body_end_line": 6330,
+      "span_start_line": 6264,
+      "span_end_line": 6343,
+      "anchor_line": 6264,
+      "body_start_line": 6265,
+      "body_end_line": 6343,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -22357,8 +22362,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6252,
-          "end_line": 6271,
+          "start_line": 6265,
+          "end_line": 6284,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22432,8 +22437,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6272,
-          "end_line": 6284,
+          "start_line": 6285,
+          "end_line": 6297,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22490,8 +22495,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6285,
-          "end_line": 6295,
+          "start_line": 6298,
+          "end_line": 6308,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22548,8 +22553,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 6296,
-          "end_line": 6330,
+          "start_line": 6309,
+          "end_line": 6343,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22609,11 +22614,11 @@
     },
     {
       "id": "GNT-12.6",
-      "span_start_line": 6331,
-      "span_end_line": 6405,
-      "anchor_line": 6331,
-      "body_start_line": 6332,
-      "body_end_line": 6405,
+      "span_start_line": 6344,
+      "span_end_line": 6418,
+      "anchor_line": 6344,
+      "body_start_line": 6345,
+      "body_end_line": 6418,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -22630,8 +22635,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6332,
-          "end_line": 6383,
+          "start_line": 6345,
+          "end_line": 6396,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22699,8 +22704,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6384,
-          "end_line": 6392,
+          "start_line": 6397,
+          "end_line": 6405,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22764,8 +22769,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6393,
-          "end_line": 6405,
+          "start_line": 6406,
+          "end_line": 6418,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22831,11 +22836,11 @@
     },
     {
       "id": "GNT-12.7",
-      "span_start_line": 6406,
-      "span_end_line": 6431,
-      "anchor_line": 6406,
-      "body_start_line": 6407,
-      "body_end_line": 6431,
+      "span_start_line": 6419,
+      "span_end_line": 6444,
+      "anchor_line": 6419,
+      "body_start_line": 6420,
+      "body_end_line": 6444,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -22852,8 +22857,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6407,
-          "end_line": 6431,
+          "start_line": 6420,
+          "end_line": 6444,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -22926,11 +22931,11 @@
     },
     {
       "id": "GNT-12.8",
-      "span_start_line": 6432,
-      "span_end_line": 6500,
-      "anchor_line": 6432,
-      "body_start_line": 6433,
-      "body_end_line": 6500,
+      "span_start_line": 6445,
+      "span_end_line": 6513,
+      "anchor_line": 6445,
+      "body_start_line": 6446,
+      "body_end_line": 6513,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -22947,8 +22952,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6433,
-          "end_line": 6500,
+          "start_line": 6446,
+          "end_line": 6513,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23017,11 +23022,11 @@
     },
     {
       "id": "GNT-12.9",
-      "span_start_line": 6501,
-      "span_end_line": 6528,
-      "anchor_line": 6501,
-      "body_start_line": 6502,
-      "body_end_line": 6528,
+      "span_start_line": 6514,
+      "span_end_line": 6541,
+      "anchor_line": 6514,
+      "body_start_line": 6515,
+      "body_end_line": 6541,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23038,8 +23043,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6502,
-          "end_line": 6528,
+          "start_line": 6515,
+          "end_line": 6541,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23111,11 +23116,11 @@
     },
     {
       "id": "GNT-12.10",
-      "span_start_line": 6529,
-      "span_end_line": 6532,
-      "anchor_line": 6529,
-      "body_start_line": 6530,
-      "body_end_line": 6532,
+      "span_start_line": 6542,
+      "span_end_line": 6545,
+      "anchor_line": 6542,
+      "body_start_line": 6543,
+      "body_end_line": 6545,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23132,8 +23137,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6530,
-          "end_line": 6532,
+          "start_line": 6543,
+          "end_line": 6545,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23202,11 +23207,11 @@
     },
     {
       "id": "GNT-12.11",
-      "span_start_line": 6533,
-      "span_end_line": 6568,
-      "anchor_line": 6533,
-      "body_start_line": 6534,
-      "body_end_line": 6568,
+      "span_start_line": 6546,
+      "span_end_line": 6581,
+      "anchor_line": 6546,
+      "body_start_line": 6547,
+      "body_end_line": 6581,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23223,8 +23228,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6534,
-          "end_line": 6548,
+          "start_line": 6547,
+          "end_line": 6561,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23310,8 +23315,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6549,
-          "end_line": 6568,
+          "start_line": 6562,
+          "end_line": 6581,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23395,11 +23400,11 @@
     },
     {
       "id": "GNT-12.11-generic-diagnostics",
-      "span_start_line": 6569,
-      "span_end_line": 6608,
-      "anchor_line": 6569,
-      "body_start_line": 6570,
-      "body_end_line": 6608,
+      "span_start_line": 6582,
+      "span_end_line": 6621,
+      "anchor_line": 6582,
+      "body_start_line": 6583,
+      "body_end_line": 6621,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23414,8 +23419,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6570,
-          "end_line": 6608,
+          "start_line": 6583,
+          "end_line": 6621,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23477,11 +23482,11 @@
     },
     {
       "id": "GNT-13.0",
-      "span_start_line": 6609,
-      "span_end_line": 6622,
-      "anchor_line": 6611,
-      "body_start_line": 6612,
-      "body_end_line": 6622,
+      "span_start_line": 6622,
+      "span_end_line": 6635,
+      "anchor_line": 6624,
+      "body_start_line": 6625,
+      "body_end_line": 6635,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23496,8 +23501,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6612,
-          "end_line": 6622,
+          "start_line": 6625,
+          "end_line": 6635,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23561,11 +23566,11 @@
     },
     {
       "id": "GNT-13.1",
-      "span_start_line": 6623,
-      "span_end_line": 6662,
-      "anchor_line": 6625,
-      "body_start_line": 6626,
-      "body_end_line": 6662,
+      "span_start_line": 6636,
+      "span_end_line": 6675,
+      "anchor_line": 6638,
+      "body_start_line": 6639,
+      "body_end_line": 6675,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23580,8 +23585,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6626,
-          "end_line": 6628,
+          "start_line": 6639,
+          "end_line": 6641,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23638,8 +23643,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 6629,
-          "end_line": 6646,
+          "start_line": 6642,
+          "end_line": 6659,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23696,8 +23701,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 6647,
-          "end_line": 6654,
+          "start_line": 6660,
+          "end_line": 6667,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23754,8 +23759,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 6655,
-          "end_line": 6662,
+          "start_line": 6668,
+          "end_line": 6675,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23814,11 +23819,11 @@
     },
     {
       "id": "GNT-13.2",
-      "span_start_line": 6663,
-      "span_end_line": 6889,
-      "anchor_line": 6665,
-      "body_start_line": 6666,
-      "body_end_line": 6889,
+      "span_start_line": 6676,
+      "span_end_line": 6902,
+      "anchor_line": 6678,
+      "body_start_line": 6679,
+      "body_end_line": 6902,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23833,8 +23838,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6666,
-          "end_line": 6889,
+          "start_line": 6679,
+          "end_line": 6902,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23893,11 +23898,11 @@
     },
     {
       "id": "GNT-13.3",
-      "span_start_line": 6890,
-      "span_end_line": 7016,
-      "anchor_line": 6892,
-      "body_start_line": 6893,
-      "body_end_line": 7016,
+      "span_start_line": 6903,
+      "span_end_line": 7029,
+      "anchor_line": 6905,
+      "body_start_line": 6906,
+      "body_end_line": 7029,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23912,8 +23917,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 6893,
-          "end_line": 7016,
+          "start_line": 6906,
+          "end_line": 7029,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -23972,11 +23977,11 @@
     },
     {
       "id": "GNT-13.4",
-      "span_start_line": 7017,
-      "span_end_line": 7067,
-      "anchor_line": 7019,
-      "body_start_line": 7020,
-      "body_end_line": 7067,
+      "span_start_line": 7030,
+      "span_end_line": 7080,
+      "anchor_line": 7032,
+      "body_start_line": 7033,
+      "body_end_line": 7080,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -23991,8 +23996,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7020,
-          "end_line": 7067,
+          "start_line": 7033,
+          "end_line": 7080,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24051,11 +24056,11 @@
     },
     {
       "id": "GNT-13.5",
-      "span_start_line": 7068,
-      "span_end_line": 7140,
-      "anchor_line": 7070,
-      "body_start_line": 7071,
-      "body_end_line": 7140,
+      "span_start_line": 7081,
+      "span_end_line": 7153,
+      "anchor_line": 7083,
+      "body_start_line": 7084,
+      "body_end_line": 7153,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -24070,8 +24075,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7071,
-          "end_line": 7119,
+          "start_line": 7084,
+          "end_line": 7132,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24128,8 +24133,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 7120,
-          "end_line": 7140,
+          "start_line": 7133,
+          "end_line": 7153,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24193,11 +24198,11 @@
     },
     {
       "id": "GNT-13.6",
-      "span_start_line": 7141,
-      "span_end_line": 7385,
-      "anchor_line": 7143,
-      "body_start_line": 7144,
-      "body_end_line": 7385,
+      "span_start_line": 7154,
+      "span_end_line": 7398,
+      "anchor_line": 7156,
+      "body_start_line": 7157,
+      "body_end_line": 7398,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -24212,8 +24217,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7144,
-          "end_line": 7385,
+          "start_line": 7157,
+          "end_line": 7398,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24272,11 +24277,11 @@
     },
     {
       "id": "GNT-13.7",
-      "span_start_line": 7386,
-      "span_end_line": 7536,
-      "anchor_line": 7388,
-      "body_start_line": 7389,
-      "body_end_line": 7536,
+      "span_start_line": 7399,
+      "span_end_line": 7549,
+      "anchor_line": 7401,
+      "body_start_line": 7402,
+      "body_end_line": 7549,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -24291,8 +24296,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7389,
-          "end_line": 7536,
+          "start_line": 7402,
+          "end_line": 7549,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24351,11 +24356,11 @@
     },
     {
       "id": "GNT-13.8",
-      "span_start_line": 7537,
-      "span_end_line": 7575,
-      "anchor_line": 7539,
-      "body_start_line": 7540,
-      "body_end_line": 7575,
+      "span_start_line": 7550,
+      "span_end_line": 7588,
+      "anchor_line": 7552,
+      "body_start_line": 7553,
+      "body_end_line": 7588,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -24370,8 +24375,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7540,
-          "end_line": 7565,
+          "start_line": 7553,
+          "end_line": 7578,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24428,8 +24433,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 7566,
-          "end_line": 7575,
+          "start_line": 7579,
+          "end_line": 7588,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24493,11 +24498,11 @@
     },
     {
       "id": "GNT-13.9",
-      "span_start_line": 7576,
-      "span_end_line": 7598,
-      "anchor_line": 7578,
-      "body_start_line": 7579,
-      "body_end_line": 7598,
+      "span_start_line": 7589,
+      "span_end_line": 7611,
+      "anchor_line": 7591,
+      "body_start_line": 7592,
+      "body_end_line": 7611,
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -24512,8 +24517,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 7579,
-          "end_line": 7588,
+          "start_line": 7592,
+          "end_line": 7601,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24570,8 +24575,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 7589,
-          "end_line": 7598,
+          "start_line": 7602,
+          "end_line": 7611,
           "profiles": [
             "analyzer",
             "concurrent-evaluator",
@@ -24635,11 +24640,11 @@
     },
     {
       "id": "GNT-15.0",
-      "span_start_line": 8802,
-      "span_end_line": 8841,
-      "anchor_line": 8804,
-      "body_start_line": 8805,
-      "body_end_line": 8841,
+      "span_start_line": 8815,
+      "span_end_line": 8854,
+      "anchor_line": 8817,
+      "body_start_line": 8818,
+      "body_end_line": 8854,
       "profiles": [
         "embedding"
       ],
@@ -24651,8 +24656,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 8805,
-          "end_line": 8807,
+          "start_line": 8818,
+          "end_line": 8820,
           "profiles": [
             "embedding"
           ],
@@ -24676,8 +24681,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 8808,
-          "end_line": 8813,
+          "start_line": 8821,
+          "end_line": 8826,
           "profiles": [
             "embedding"
           ],
@@ -24701,8 +24706,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 8814,
-          "end_line": 8821,
+          "start_line": 8827,
+          "end_line": 8834,
           "profiles": [
             "embedding"
           ],
@@ -24726,8 +24731,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 8822,
-          "end_line": 8825,
+          "start_line": 8835,
+          "end_line": 8838,
           "profiles": [
             "embedding"
           ],
@@ -24751,8 +24756,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 8826,
-          "end_line": 8841,
+          "start_line": 8839,
+          "end_line": 8854,
           "profiles": [
             "embedding"
           ],
@@ -24781,11 +24786,11 @@
     },
     {
       "id": "GNT-15.1",
-      "span_start_line": 8842,
-      "span_end_line": 8952,
-      "anchor_line": 8844,
-      "body_start_line": 8845,
-      "body_end_line": 8952,
+      "span_start_line": 8855,
+      "span_end_line": 8965,
+      "anchor_line": 8857,
+      "body_start_line": 8858,
+      "body_end_line": 8965,
       "profiles": [
         "embedding"
       ],
@@ -24797,8 +24802,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 8845,
-          "end_line": 8952,
+          "start_line": 8858,
+          "end_line": 8965,
           "profiles": [
             "embedding"
           ],
@@ -24824,11 +24829,11 @@
     },
     {
       "id": "GNT-15.1-automatic-execution",
-      "span_start_line": 8953,
-      "span_end_line": 9023,
-      "anchor_line": 8953,
-      "body_start_line": 8954,
-      "body_end_line": 9023,
+      "span_start_line": 8966,
+      "span_end_line": 9036,
+      "anchor_line": 8966,
+      "body_start_line": 8967,
+      "body_end_line": 9036,
       "profiles": [
         "embedding"
       ],
@@ -24840,8 +24845,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 8954,
-          "end_line": 9023,
+          "start_line": 8967,
+          "end_line": 9036,
           "profiles": [
             "embedding"
           ],
@@ -24866,11 +24871,11 @@
     },
     {
       "id": "GNT-15.1-concurrency-and-reentrancy",
-      "span_start_line": 9024,
-      "span_end_line": 9266,
-      "anchor_line": 9024,
-      "body_start_line": 9025,
-      "body_end_line": 9266,
+      "span_start_line": 9037,
+      "span_end_line": 9279,
+      "anchor_line": 9037,
+      "body_start_line": 9038,
+      "body_end_line": 9279,
       "profiles": [
         "embedding"
       ],
@@ -24882,8 +24887,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9025,
-          "end_line": 9041,
+          "start_line": 9038,
+          "end_line": 9054,
           "profiles": [
             "embedding"
           ],
@@ -24908,8 +24913,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 9042,
-          "end_line": 9060,
+          "start_line": 9055,
+          "end_line": 9073,
           "profiles": [
             "embedding"
           ],
@@ -24934,8 +24939,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 9061,
-          "end_line": 9070,
+          "start_line": 9074,
+          "end_line": 9083,
           "profiles": [
             "embedding"
           ],
@@ -24960,8 +24965,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 9071,
-          "end_line": 9089,
+          "start_line": 9084,
+          "end_line": 9102,
           "profiles": [
             "embedding"
           ],
@@ -24986,8 +24991,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 9090,
-          "end_line": 9103,
+          "start_line": 9103,
+          "end_line": 9116,
           "profiles": [
             "embedding"
           ],
@@ -25012,8 +25017,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 9104,
-          "end_line": 9105,
+          "start_line": 9117,
+          "end_line": 9118,
           "profiles": [
             "embedding"
           ],
@@ -25038,8 +25043,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 9106,
-          "end_line": 9174,
+          "start_line": 9119,
+          "end_line": 9187,
           "profiles": [
             "embedding"
           ],
@@ -25064,8 +25069,8 @@
         },
         {
           "key": "clause-008",
-          "start_line": 9175,
-          "end_line": 9176,
+          "start_line": 9188,
+          "end_line": 9189,
           "profiles": [
             "embedding"
           ],
@@ -25090,8 +25095,8 @@
         },
         {
           "key": "clause-009",
-          "start_line": 9177,
-          "end_line": 9228,
+          "start_line": 9190,
+          "end_line": 9241,
           "profiles": [
             "embedding"
           ],
@@ -25116,8 +25121,8 @@
         },
         {
           "key": "clause-010",
-          "start_line": 9229,
-          "end_line": 9230,
+          "start_line": 9242,
+          "end_line": 9243,
           "profiles": [
             "embedding"
           ],
@@ -25142,8 +25147,8 @@
         },
         {
           "key": "clause-011",
-          "start_line": 9231,
-          "end_line": 9266,
+          "start_line": 9244,
+          "end_line": 9279,
           "profiles": [
             "embedding"
           ],
@@ -25170,11 +25175,11 @@
     },
     {
       "id": "GNT-15.2",
-      "span_start_line": 9267,
-      "span_end_line": 9294,
-      "anchor_line": 9269,
-      "body_start_line": 9270,
-      "body_end_line": 9294,
+      "span_start_line": 9280,
+      "span_end_line": 9307,
+      "anchor_line": 9282,
+      "body_start_line": 9283,
+      "body_end_line": 9307,
       "profiles": [
         "embedding"
       ],
@@ -25186,8 +25191,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9270,
-          "end_line": 9294,
+          "start_line": 9283,
+          "end_line": 9307,
           "profiles": [
             "embedding"
           ],
@@ -25213,11 +25218,11 @@
     },
     {
       "id": "GNT-15.2-runtime-sessions",
-      "span_start_line": 9295,
-      "span_end_line": 9376,
-      "anchor_line": 9295,
-      "body_start_line": 9296,
-      "body_end_line": 9376,
+      "span_start_line": 9308,
+      "span_end_line": 9389,
+      "anchor_line": 9308,
+      "body_start_line": 9309,
+      "body_end_line": 9389,
       "profiles": [
         "embedding"
       ],
@@ -25229,8 +25234,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9296,
-          "end_line": 9376,
+          "start_line": 9309,
+          "end_line": 9389,
           "profiles": [
             "embedding"
           ],
@@ -25255,11 +25260,11 @@
     },
     {
       "id": "GNT-15.3",
-      "span_start_line": 9377,
-      "span_end_line": 9392,
-      "anchor_line": 9379,
-      "body_start_line": 9380,
-      "body_end_line": 9392,
+      "span_start_line": 9390,
+      "span_end_line": 9405,
+      "anchor_line": 9392,
+      "body_start_line": 9393,
+      "body_end_line": 9405,
       "profiles": [
         "embedding"
       ],
@@ -25271,8 +25276,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9380,
-          "end_line": 9392,
+          "start_line": 9393,
+          "end_line": 9405,
           "profiles": [
             "embedding"
           ],
@@ -25297,11 +25302,11 @@
     },
     {
       "id": "GNT-15.4",
-      "span_start_line": 9393,
-      "span_end_line": 9421,
-      "anchor_line": 9395,
-      "body_start_line": 9396,
-      "body_end_line": 9421,
+      "span_start_line": 9406,
+      "span_end_line": 9434,
+      "anchor_line": 9408,
+      "body_start_line": 9409,
+      "body_end_line": 9434,
       "profiles": [
         "embedding"
       ],
@@ -25313,8 +25318,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9396,
-          "end_line": 9421,
+          "start_line": 9409,
+          "end_line": 9434,
           "profiles": [
             "embedding"
           ],
@@ -25340,11 +25345,11 @@
     },
     {
       "id": "GNT-15.4-owned-work",
-      "span_start_line": 9422,
-      "span_end_line": 9498,
-      "anchor_line": 9422,
-      "body_start_line": 9423,
-      "body_end_line": 9498,
+      "span_start_line": 9435,
+      "span_end_line": 9511,
+      "anchor_line": 9435,
+      "body_start_line": 9436,
+      "body_end_line": 9511,
       "profiles": [
         "embedding"
       ],
@@ -25356,8 +25361,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9423,
-          "end_line": 9498,
+          "start_line": 9436,
+          "end_line": 9511,
           "profiles": [
             "embedding"
           ],
@@ -25383,11 +25388,11 @@
     },
     {
       "id": "GNT-15.5",
-      "span_start_line": 9499,
-      "span_end_line": 9545,
-      "anchor_line": 9501,
-      "body_start_line": 9502,
-      "body_end_line": 9545,
+      "span_start_line": 9512,
+      "span_end_line": 9558,
+      "anchor_line": 9514,
+      "body_start_line": 9515,
+      "body_end_line": 9558,
       "profiles": [
         "embedding"
       ],
@@ -25399,8 +25404,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9502,
-          "end_line": 9545,
+          "start_line": 9515,
+          "end_line": 9558,
           "profiles": [
             "embedding"
           ],
@@ -25422,11 +25427,11 @@
     },
     {
       "id": "GNT-15.6",
-      "span_start_line": 9546,
-      "span_end_line": 9585,
-      "anchor_line": 9548,
-      "body_start_line": 9549,
-      "body_end_line": 9585,
+      "span_start_line": 9559,
+      "span_end_line": 9598,
+      "anchor_line": 9561,
+      "body_start_line": 9562,
+      "body_end_line": 9598,
       "profiles": [
         "embedding"
       ],
@@ -25438,8 +25443,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9549,
-          "end_line": 9585,
+          "start_line": 9562,
+          "end_line": 9598,
           "profiles": [
             "embedding"
           ],
@@ -25465,11 +25470,11 @@
     },
     {
       "id": "GNT-15.7",
-      "span_start_line": 9586,
-      "span_end_line": 9645,
-      "anchor_line": 9588,
-      "body_start_line": 9589,
-      "body_end_line": 9645,
+      "span_start_line": 9599,
+      "span_end_line": 9658,
+      "anchor_line": 9601,
+      "body_start_line": 9602,
+      "body_end_line": 9658,
       "profiles": [
         "embedding"
       ],
@@ -25481,8 +25486,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9589,
-          "end_line": 9645,
+          "start_line": 9602,
+          "end_line": 9658,
           "profiles": [
             "embedding"
           ],
@@ -25507,11 +25512,11 @@
     },
     {
       "id": "GNT-15.8",
-      "span_start_line": 9646,
-      "span_end_line": 9733,
-      "anchor_line": 9648,
-      "body_start_line": 9649,
-      "body_end_line": 9733,
+      "span_start_line": 9659,
+      "span_end_line": 9746,
+      "anchor_line": 9661,
+      "body_start_line": 9662,
+      "body_end_line": 9746,
       "profiles": [
         "embedding"
       ],
@@ -25523,8 +25528,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9649,
-          "end_line": 9733,
+          "start_line": 9662,
+          "end_line": 9746,
           "profiles": [
             "embedding"
           ],
@@ -25550,11 +25555,11 @@
     },
     {
       "id": "GNT-15.8-publication-integrity",
-      "span_start_line": 9734,
-      "span_end_line": 9814,
-      "anchor_line": 9734,
-      "body_start_line": 9735,
-      "body_end_line": 9814,
+      "span_start_line": 9747,
+      "span_end_line": 9827,
+      "anchor_line": 9747,
+      "body_start_line": 9748,
+      "body_end_line": 9827,
       "profiles": [
         "embedding"
       ],
@@ -25566,8 +25571,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9735,
-          "end_line": 9762,
+          "start_line": 9748,
+          "end_line": 9775,
           "profiles": [
             "embedding"
           ],
@@ -25587,8 +25592,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 9763,
-          "end_line": 9780,
+          "start_line": 9776,
+          "end_line": 9793,
           "profiles": [
             "embedding"
           ],
@@ -25608,8 +25613,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 9781,
-          "end_line": 9789,
+          "start_line": 9794,
+          "end_line": 9802,
           "profiles": [
             "embedding"
           ],
@@ -25629,8 +25634,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 9790,
-          "end_line": 9803,
+          "start_line": 9803,
+          "end_line": 9816,
           "profiles": [
             "embedding"
           ],
@@ -25650,8 +25655,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 9804,
-          "end_line": 9814,
+          "start_line": 9817,
+          "end_line": 9827,
           "profiles": [
             "embedding"
           ],
@@ -25673,11 +25678,11 @@
     },
     {
       "id": "GNT-15.9",
-      "span_start_line": 9815,
-      "span_end_line": 9836,
-      "anchor_line": 9817,
-      "body_start_line": 9818,
-      "body_end_line": 9836,
+      "span_start_line": 9828,
+      "span_end_line": 9849,
+      "anchor_line": 9830,
+      "body_start_line": 9831,
+      "body_end_line": 9849,
       "profiles": [
         "embedding"
       ],
@@ -25689,8 +25694,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9818,
-          "end_line": 9836,
+          "start_line": 9831,
+          "end_line": 9849,
           "profiles": [
             "embedding"
           ],
@@ -25715,11 +25720,11 @@
     },
     {
       "id": "GNT-15.9-boundary-failure-containment",
-      "span_start_line": 9837,
-      "span_end_line": 9920,
-      "anchor_line": 9837,
-      "body_start_line": 9838,
-      "body_end_line": 9920,
+      "span_start_line": 9850,
+      "span_end_line": 9933,
+      "anchor_line": 9850,
+      "body_start_line": 9851,
+      "body_end_line": 9933,
       "profiles": [
         "embedding"
       ],
@@ -25731,8 +25736,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9838,
-          "end_line": 9849,
+          "start_line": 9851,
+          "end_line": 9862,
           "profiles": [
             "embedding"
           ],
@@ -25756,8 +25761,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 9850,
-          "end_line": 9861,
+          "start_line": 9863,
+          "end_line": 9874,
           "profiles": [
             "embedding"
           ],
@@ -25781,8 +25786,8 @@
         },
         {
           "key": "clause-003",
-          "start_line": 9862,
-          "end_line": 9863,
+          "start_line": 9875,
+          "end_line": 9876,
           "profiles": [
             "embedding"
           ],
@@ -25806,8 +25811,8 @@
         },
         {
           "key": "clause-004",
-          "start_line": 9864,
-          "end_line": 9885,
+          "start_line": 9877,
+          "end_line": 9898,
           "profiles": [
             "embedding"
           ],
@@ -25831,8 +25836,8 @@
         },
         {
           "key": "clause-005",
-          "start_line": 9886,
-          "end_line": 9895,
+          "start_line": 9899,
+          "end_line": 9908,
           "profiles": [
             "embedding"
           ],
@@ -25856,8 +25861,8 @@
         },
         {
           "key": "clause-006",
-          "start_line": 9896,
-          "end_line": 9914,
+          "start_line": 9909,
+          "end_line": 9927,
           "profiles": [
             "embedding"
           ],
@@ -25881,8 +25886,8 @@
         },
         {
           "key": "clause-007",
-          "start_line": 9915,
-          "end_line": 9920,
+          "start_line": 9928,
+          "end_line": 9933,
           "profiles": [
             "embedding"
           ],
@@ -25908,11 +25913,11 @@
     },
     {
       "id": "GNT-15.10",
-      "span_start_line": 9921,
-      "span_end_line": 9948,
-      "anchor_line": 9923,
-      "body_start_line": 9924,
-      "body_end_line": 9948,
+      "span_start_line": 9934,
+      "span_end_line": 9961,
+      "anchor_line": 9936,
+      "body_start_line": 9937,
+      "body_end_line": 9961,
       "profiles": [
         "embedding"
       ],
@@ -25924,8 +25929,8 @@
       "clauses": [
         {
           "key": "clause-001",
-          "start_line": 9924,
-          "end_line": 9942,
+          "start_line": 9937,
+          "end_line": 9955,
           "profiles": [
             "embedding"
           ],
@@ -25948,8 +25953,8 @@
         },
         {
           "key": "clause-002",
-          "start_line": 9943,
-          "end_line": 9948,
+          "start_line": 9956,
+          "end_line": 9961,
           "profiles": [
             "embedding"
           ],

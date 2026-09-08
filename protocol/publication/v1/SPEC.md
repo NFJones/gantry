@@ -3315,6 +3315,19 @@ member and every outgoing edge satisfies the capability. This structural
 proof is separate from user-trait obligation resolution and is charged under
 the trait-resolution-step policy.
 
+Capability proofs MUST inspect substituted stored fields and enum payloads,
+not unused nominal type arguments. Declaration bounds, callable bounds,
+equality eligibility, and external-boundary checks MUST use these same
+structural rules. A generic body MUST prove each callee's sealed bounds from
+its own declared predicates, including when the body is unreachable. Rigid
+generic representatives MUST NOT acquire proofs from authored nominal types.
+A provisional recursive success MUST NOT enter a reusable proof cache until
+its root proof succeeds. Proof exhaustion MUST return no partial capability
+report and MUST preserve diagnostics already collected by the activity.
+External eligibility does not imply or follow from copyability, task capture,
+or sealed recovery projection. These facts grant neither execution admission
+nor authority and do not introduce additional source capabilities.
+
 A generic direct self-recursive occurrence MUST use the same declared
 constructor with the same parameter ordinals in the same order and MUST remain
 guarded by `Option` or `List`. Thus `Node<T>` may contain
