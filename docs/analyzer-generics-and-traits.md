@@ -47,6 +47,9 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   and `ExternalValue` capabilities are proved only after substitution is
   complete. Capability proof is structural, memoized, native-stack-safe, and
   deterministic across declaration order and cache hits.
+  Compound successes that may depend on recursive back-edges are published
+  only after the root proof succeeds; a failed or exhausted proof cannot
+  leave a provisional success available to a later query.
   Both use instantiated stored fields and enum payloads: an unused phantom
   type argument does not by itself disqualify a declared value. Proof work is
   charged to the trait-resolution budget, including callable-bound checks.

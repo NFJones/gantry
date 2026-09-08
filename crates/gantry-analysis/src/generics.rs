@@ -1969,6 +1969,9 @@ pub(crate) fn prove_sealed_capability(
     }
 
     let mut active = BTreeSet::from([root_key.clone()]);
+    // Compound proofs may depend on active back-edges. Publish their successes
+    // only after the root succeeds; failures and independent leaves are final.
+    let mut pending_successes = BTreeSet::new();
     let mut stack = vec![CapabilityFrame {
         descriptor: root.clone(),
         key: root_key,
@@ -2016,8 +2019,11 @@ pub(crate) fn prove_sealed_capability(
         let Some(member) = members.get(stack[index].next_member).cloned() else {
             let frame = stack.pop().ok_or(AnalysisError::Invariant)?;
             active.remove(&frame.key);
-            memo.insert((capability, frame.key), true);
+            pending_successes.insert(frame.key);
             if stack.is_empty() {
+                for key in pending_successes {
+                    memo.insert((capability, key), true);
+                }
                 return Ok(true);
             }
             continue;
@@ -2630,6 +2636,54 @@ mod tests {
         assert_eq!(binders[1].depth, 1);
         assert_eq!(binders[1].parameters[0].ordinal, 0);
         assert_eq!(binders[1].parameters[0].name.as_ref(), "U");
+    }
+
+    /// Recursive wrappers must not retain success that depended on a failed root.
+    #[test]
+    fn recursive_capability_cache_rejects_provisional_success() {
+        let root = TempDirectory::with_source(
+            "struct Sealed { value: Decision }\nstruct Node { next: Option<Node>, sealed: Sealed }\nfn main() {}",
+        );
+        let phase = root.syntax();
+        let structure = analyze_package_structure(&phase)
+            .unwrap_or_else(|error| panic!("structure failed: {error:?}"));
+        let mut diagnostics = Vec::new();
+        let binders = collect_type_binders(phase.parsed_sources(), &mut diagnostics)
+            .unwrap_or_else(|error| panic!("binders failed: {error:?}"));
+        let facts = collect_generic_type_facts(
+            phase.parsed_sources(),
+            &structure,
+            &binders,
+            &mut diagnostics,
+        )
+        .unwrap_or_else(|error| panic!("facts failed: {error:?}"));
+        let declarations = super::collect_generic_declaration_shapes(
+            phase.parsed_sources(),
+            &structure,
+            &binders,
+            &facts,
+        )
+        .unwrap_or_else(|error| panic!("shapes failed: {error:?}"));
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let node = TypeDescriptor::from_canonical_string("crate::Node")
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        let wrapper = TypeDescriptor::option(node.clone())
+            .unwrap_or_else(|error| panic!("wrapper failed: {error:?}"));
+        let mut memo = std::collections::BTreeMap::new();
+        for descriptor in [&node, &wrapper] {
+            assert!(
+                !super::prove_sealed_capability(
+                    super::SealedCapability::Equatable,
+                    descriptor,
+                    &declarations,
+                    &mut None,
+                    &mut memo,
+                )
+                .unwrap_or_else(|error| panic!("proof failed: {error:?}")),
+                "incorrect proof for {}",
+                descriptor.canonical_string()
+            );
+        }
     }
 
     #[test]
