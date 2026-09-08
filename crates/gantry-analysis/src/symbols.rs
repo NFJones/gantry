@@ -1590,6 +1590,14 @@ fn path_requires_package_item(
     let mut current = parents.get(node.index()).copied().flatten();
     while let Some(parent) = current {
         let form = tree.node(parent).ok_or(AnalysisError::Invariant)?.form();
+        if matches!(form, SyntaxForm::WherePredicate)
+            && matches!(
+                name.as_ref(),
+                "Equatable" | "Interpolatable" | "ExternalValue"
+            )
+        {
+            return Ok(false);
+        }
         if matches!(
             form,
             SyntaxForm::UseDeclaration

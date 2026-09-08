@@ -760,6 +760,11 @@ fn build_body_context(
                     .is_some_and(|node| matches!(node.form(), SyntaxForm::MethodDeclaration))
             }) {
                 let method_node = source.tree().node(method).ok_or(AnalysisError::Invariant)?;
+                if direct_child_form(source.tree(), method_node, SyntaxForm::TypeParameterList)
+                    .is_some()
+                {
+                    continue;
+                }
                 let Some(name) = direct_identifier(source.tree(), method)? else {
                     return Err(AnalysisError::Invariant);
                 };
@@ -891,16 +896,13 @@ fn collect_generic_method_signatures(
             if !matches!(implementation.form(), SyntaxForm::ImplDeclaration) {
                 continue;
             }
-            let Some(receiver_node) =
-                direct_child_form(tree, implementation, SyntaxForm::ValueType)
-            else {
-                continue;
-            };
-            let receiver = tree
-                .node(receiver_node)
-                .and_then(|node| generic_types.get(node.span()))
-                .cloned()
-                .ok_or(AnalysisError::Invariant)?;
+            let receiver = crate::generics::implementation_receiver_expression(
+                tree,
+                NodeId::from_index(implementation_index),
+                &generic_type_references,
+                references,
+                symbols,
+            )?;
             let implementation_binder = binders.get(implementation.span()).copied();
             let implementation_required = implementation_binder
                 .into_iter()

@@ -50,6 +50,10 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   Both use instantiated stored fields and enum payloads: an unused phantom
   type argument does not by itself disqualify a declared value. Proof work is
   charged to the trait-resolution budget, including callable-bound checks.
+  Generic methods on nongeneric receivers use the same substitution and bound
+  checks as methods on generic receivers; path-form `impl` declarations do not
+  turn their method parameters into monomorphic signatures. Empty receiver
+  structs are valid zero-field values.
 - Generic field defaults are valid only when they hold for every admitted
   substitution. Generic enum constructors, payload bindings, redundancy, and
   exhaustiveness use the substituted closed enum application.

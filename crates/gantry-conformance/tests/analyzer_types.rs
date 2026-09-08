@@ -217,6 +217,30 @@ fn main() {}
 /// Callable capabilities follow stored members, not phantom type arguments.
 #[test]
 fn public_callable_bounds_use_declared_members() {
+    let method = analyze(
+        "struct Phantom<T> { value: Int }\nstruct Acceptor {}\nimpl Acceptor { fn accept<T>(self, value: T) -> T where T: ExternalValue { value } }\nfn main() { let receiver: Acceptor = Acceptor {}; let argument: Phantom<Decision> = Phantom::<Decision> { value: 1 }; discard receiver.accept(argument); }",
+    );
+    assert_eq!(
+        method.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        method.diagnostics()
+    );
+
+    let stored = analyze(
+        "struct Stored { value: Decision }\nfn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(Stored { value: decide \"x\" }); }",
+    );
+    assert_eq!(stored.status(), AnalysisStatus::Invalid);
+    assert!(
+        stored.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unsatisfied-bound"
+                && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("ExternalValue")
+                && diagnostic.fields.get("type").map(AsRef::as_ref) == Some("crate::Stored")
+        }),
+        "{:?}",
+        stored.diagnostics()
+    );
+
     let valid = analyze(
         "struct Phantom<T> { value: Int }\nfn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(Phantom::<Decision> { value: 1 }); }",
     );

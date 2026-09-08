@@ -1122,7 +1122,6 @@ impl Compiler<'_> {
         ty: TypeDescriptor,
     ) -> Result<TypeDescriptor, AnalysisError> {
         let type_name = ty.canonical_string();
-        let constructor = self.node(struct_expression)?.clone();
         let mut fields = Vec::new();
         for initializer in semantic_children(self.tree, struct_expression)? {
             let initializer_node = self.node(initializer)?.clone();
@@ -1141,9 +1140,6 @@ impl Compiler<'_> {
                 )?;
             }
             fields.push(name);
-        }
-        if fields.is_empty() && !constructor.children().is_empty() {
-            return Err(AnalysisError::Invariant);
         }
         self.emit(
             ty.clone(),

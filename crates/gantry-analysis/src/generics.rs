@@ -1555,7 +1555,8 @@ fn collect_effect_contract(
     Ok(effects)
 }
 
-fn implementation_receiver_expression(
+/// Resolves both path-form and typed implementation receivers to one expression.
+pub(crate) fn implementation_receiver_expression(
     tree: &SyntaxTree,
     implementation: NodeId,
     facts: &BTreeMap<SourceSpan, &TypeExpression>,
