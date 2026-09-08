@@ -1708,14 +1708,14 @@ fn implementation_id(
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum SealedCapability {
+pub(crate) enum SealedCapability {
     Equatable,
     ExternalValue,
     Interpolatable,
 }
 
 impl SealedCapability {
-    const fn wire_name(self) -> &'static str {
+    pub(crate) const fn wire_name(self) -> &'static str {
         match self {
             Self::Equatable => "Equatable",
             Self::ExternalValue => "ExternalValue",
@@ -1736,10 +1736,10 @@ impl SealedCapability {
     }
 }
 
-#[derive(Clone)]
-struct CapabilityPredicate {
-    parameter: TypeParameterKey,
-    capability: SealedCapability,
+#[derive(Clone, Debug)]
+pub(crate) struct CapabilityPredicate {
+    pub(crate) parameter: TypeParameterKey,
+    pub(crate) capability: SealedCapability,
     span: SourceSpan,
 }
 
@@ -1895,7 +1895,7 @@ fn collect_generic_declaration_shapes(
     Ok(declarations)
 }
 
-fn collect_capability_predicates(
+pub(crate) fn collect_capability_predicates(
     tree: &SyntaxTree,
     owner: NodeId,
     binder: Option<&TypeBinder>,
@@ -1948,6 +1948,20 @@ fn collect_capability_predicates(
             .then_with(|| left.span.cmp(&right.span))
     });
     Ok(predicates)
+}
+
+/// Checks one closed value against a compiler-owned capability predicate.
+#[must_use]
+pub(crate) fn satisfies_sealed_capability(
+    capability: SealedCapability,
+    descriptor: &TypeDescriptor,
+) -> bool {
+    match capability {
+        SealedCapability::Equatable | SealedCapability::ExternalValue => {
+            !descriptor.contains_sealed_boundary()
+        }
+        SealedCapability::Interpolatable => true,
+    }
 }
 
 fn prove_sealed_capability(
@@ -2045,7 +2059,10 @@ fn capability_node(
 ) -> Result<CapabilityNode, AnalysisError> {
     match descriptor.kind() {
         TypeKind::Decision | TypeKind::OperationError
-            if capability == SealedCapability::Equatable =>
+            if matches!(
+                capability,
+                SealedCapability::Equatable | SealedCapability::ExternalValue
+            ) =>
         {
             Ok(CapabilityNode::Leaf(false))
         }

@@ -2220,6 +2220,33 @@ fn main(flag: Bool) -> Int {
                 && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("Equatable")
         }));
 
+        let external = analyze(
+            "fn emit<T>() -> T where T: ExternalValue { prompt \"x\" -> T }\nfn main() { discard emit::<Decision>(); }",
+        );
+        assert_eq!(external.status(), AnalysisStatus::Invalid);
+        assert!(external.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unsatisfied-bound"
+                && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("ExternalValue")
+        }));
+
+        let nested_external = analyze(
+            "fn emit<T>() -> T where T: ExternalValue { prompt \"x\" -> T }\nfn main() { discard emit::<Option<Decision>>(); }",
+        );
+        assert_eq!(nested_external.status(), AnalysisStatus::Invalid);
+        assert!(nested_external.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unsatisfied-bound"
+                && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("ExternalValue")
+        }));
+
+        let method_external = analyze(
+            "struct Envelope<T> { value: T }\nimpl<T> Envelope<T> { fn emit<U>(self) -> U where U: ExternalValue { prompt \"x\" -> U } }\nfn main(value: Envelope<String>) { discard value.emit::<Decision>(); }",
+        );
+        assert_eq!(method_external.status(), AnalysisStatus::Invalid);
+        assert!(method_external.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unsatisfied-bound"
+                && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("ExternalValue")
+        }));
+
         let phase = syntax(
             "struct Envelope<T> where T: Equatable { value: T }\nfn inspect(value: Envelope<String>) {}\nfn main() {}",
         );

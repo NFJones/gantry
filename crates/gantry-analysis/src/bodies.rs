@@ -27,8 +27,9 @@ use gantry_ir::{
 };
 
 use crate::generics::{
-    ExactTypeSubstitution, TypeInferenceFailure, TypeParameterKey, collect_type_parameter_keys,
-    collect_where_predicates, substitute_self_type,
+    CapabilityPredicate, ExactTypeSubstitution, TypeInferenceFailure, TypeParameterKey,
+    collect_capability_predicates, collect_type_parameter_keys, collect_where_predicates,
+    satisfies_sealed_capability, substitute_self_type,
 };
 use crate::{
     AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
@@ -70,6 +71,7 @@ struct GenericCallableSignature {
     declaration: NodeId,
     required: Vec<TypeParameterKey>,
     predicates: Vec<Predicate>,
+    sealed_predicates: Vec<CapabilityPredicate>,
     parameters: Vec<TypeExpression>,
     result: TypeExpression,
 }
@@ -423,6 +425,11 @@ fn build_body_context(
                             &references,
                             &symbols_by_id,
                         )?;
+                        let sealed_predicates = collect_capability_predicates(
+                            source.tree(),
+                            declaration,
+                            Some(binder),
+                        )?;
                         let parameters = node
                             .children()
                             .iter()
@@ -470,6 +477,7 @@ fn build_body_context(
                                 declaration,
                                 required,
                                 predicates: predicates.clone(),
+                                sealed_predicates,
                                 parameters,
                                 result,
                             },
@@ -848,7 +856,7 @@ fn collect_generic_method_signatures(
         .collect::<BTreeMap<_, _>>();
     for (source_index, source) in sources.iter().enumerate() {
         let tree = source.tree();
-        for implementation in tree.nodes() {
+        for (implementation_index, implementation) in tree.nodes().iter().enumerate() {
             if !matches!(implementation.form(), SyntaxForm::ImplDeclaration) {
                 continue;
             }
@@ -968,6 +976,24 @@ fn collect_generic_method_signatures(
                         .cmp(right.canonical_string().as_bytes())
                 });
                 predicates.dedup();
+                let mut sealed_predicates = collect_capability_predicates(
+                    tree,
+                    NodeId::from_index(implementation_index),
+                    implementation_binder,
+                )?;
+                sealed_predicates.extend(collect_capability_predicates(
+                    tree,
+                    method,
+                    method_binder,
+                )?);
+                sealed_predicates.sort_by(|left, right| {
+                    left.capability
+                        .cmp(&right.capability)
+                        .then_with(|| left.parameter.cmp(&right.parameter))
+                });
+                sealed_predicates.dedup_by(|left, right| {
+                    left.capability == right.capability && left.parameter == right.parameter
+                });
                 let method_arguments = method_required
                     .iter()
                     .map(|parameter| {
@@ -1069,6 +1095,7 @@ fn collect_generic_method_signatures(
                     declaration: method,
                     required,
                     predicates,
+                    sealed_predicates,
                     parameters,
                     result,
                 });
@@ -6612,6 +6639,29 @@ fn retain_generic_instantiation(
     }
     let substitution = ExactTypeSubstitution::explicit(&signature.required, &concrete_arguments)
         .map_err(|_| AnalysisError::Invariant)?;
+    for predicate in &signature.sealed_predicates {
+        let argument_index = signature
+            .required
+            .iter()
+            .position(|parameter| parameter == &predicate.parameter)
+            .ok_or(AnalysisError::Invariant)?;
+        let argument = concrete_arguments
+            .get(argument_index)
+            .ok_or(AnalysisError::Invariant)?;
+        if !satisfies_sealed_capability(predicate.capability, argument) {
+            diagnostics.push(body_diagnostic(
+                GenericAnalysisCode::UnsatisfiedBound.wire_name(),
+                DiagnosticCategory::Type,
+                "a concrete generic workflow argument does not satisfy its sealed bound",
+                call_site.span().clone(),
+                [
+                    ("capability", predicate.capability.wire_name()),
+                    ("type", argument.canonical_string().as_str()),
+                ],
+            )?);
+            return Ok(());
+        }
+    }
     let concrete = match signature.kind {
         TemplateKind::FreeWorkflow => {
             CanonicalCallableIdentity::free(&signature.path, &concrete_arguments)
