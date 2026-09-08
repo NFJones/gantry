@@ -99,7 +99,7 @@
     },
     {
       "path": "protocol/README.md",
-      "sha256": "ca02d858c29e855dedbb321cf1fff3b584eca8e34b612c9cb3472cb75745e181"
+      "sha256": "518d053032363b5d56442c1d5348e4f06853e7d8fc3e0075f6ca756bef807873"
     },
     {
       "path": "protocol/conformance/generics-traits-adoption-v1.json",

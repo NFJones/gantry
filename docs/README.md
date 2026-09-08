@@ -85,6 +85,11 @@ manual root driving, durable compatibility boundary, and release
 qualifications are documented in
 [`async-execution-release.md`](async-execution-release.md).
 
+The general-purpose effort's fixed platform, embedding-hook, agent-run,
+performance, representative-application, rerun, and claim-blocking boundaries
+are documented in
+[`general-purpose-preregistration.md`](general-purpose-preregistration.md).
+
 The nondurable sequential evaluator's progress, preservation, cancellation,
 operation-consumption, lifecycle, observation, and terminal-uniqueness
 argument is documented in

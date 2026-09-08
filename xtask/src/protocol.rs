@@ -2,6 +2,7 @@
 
 mod conformance;
 mod embedding;
+mod general_purpose;
 mod ir;
 mod portable;
 mod publication;
@@ -42,6 +43,7 @@ struct ProfileInput {
 pub(crate) fn generate(root: &Path) -> Result<(), String> {
     let profiles_changed = generate_protocol(root)?;
     let embedding_changed = embedding::generate(root)?;
+    let general_purpose_changed = general_purpose::generate(root)?;
     let conformance_changed = conformance::generate(root)?;
     let ir_changed = ir::generate(root)?;
     let portable_changed = portable::generate(root)?;
@@ -52,6 +54,7 @@ pub(crate) fn generate(root: &Path) -> Result<(), String> {
     }
     if !profiles_changed
         && !embedding_changed
+        && !general_purpose_changed
         && !conformance_changed
         && !ir_changed
         && !portable_changed
@@ -75,6 +78,7 @@ pub(crate) fn check_generated(root: &Path) -> Result<(), String> {
         ));
     }
     embedding::check_generated(root)?;
+    general_purpose::check_generated(root)?;
     conformance::check_generated(root)?;
     ir::check_generated(root)?;
     portable::check_generated(root)?;

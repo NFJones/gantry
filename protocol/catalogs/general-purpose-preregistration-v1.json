@@ -1,0 +1,1691 @@
+{
+  "catalog": "gantry.general-purpose-preregistration",
+  "major": 1,
+  "minor": 0,
+  "specification_revision": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",
+  "decision_record_template": [
+    "compatibility-owner",
+    "evidence-owner",
+    "normative-owner",
+    "publication-blocker",
+    "rerun-set"
+  ],
+  "policy": {
+    "supported_platforms": [
+      "linux",
+      "macos"
+    ],
+    "unsupported_platforms": [
+      "windows"
+    ],
+    "provider_integration": "embedding-harness-mocked-hooks-only",
+    "semantic_oracles": [
+      "deterministic-fakes",
+      "mocked-hooks",
+      "recorded-transcripts"
+    ],
+    "agent_runs_per_task": 1,
+    "human_trials": "deferred-until-after-implementation",
+    "performance_gate": "functionality-first-no-obviously-suboptimal-design",
+    "quantitative_performance_thresholds": "deferred"
+  },
+  "tasks": [
+    {
+      "id": "cancellation",
+      "intent": "Stop active application and agent work without leaking ownership or publishing a second outcome.",
+      "acceptance": "The agent identifies the stop boundary and produces a compile-and-test-correct change using only documented controls."
+    },
+    {
+      "id": "create",
+      "intent": "Create a complete package from a fixed behavioral brief.",
+      "acceptance": "The package compiles, its tests pass, and all external operations and authority requirements are explicit."
+    },
+    {
+      "id": "debug",
+      "intent": "Diagnose and repair a seeded type, ownership, effect, or runtime failure.",
+      "acceptance": "The repair passes the fixed regression and does not weaken authority, recovery, or resource limits."
+    },
+    {
+      "id": "explain",
+      "intent": "Explain the behavior and authority boundaries of a complete representative program.",
+      "acceptance": "The explanation locates every external operation, suspension point, ownership transfer, and release boundary."
+    },
+    {
+      "id": "modify",
+      "intent": "Modify a representative program while preserving its fixed behavioral contract.",
+      "acceptance": "The modified package compiles and passes old and new tests without ambient authority or fixture substitution."
+    },
+    {
+      "id": "security-review",
+      "intent": "Review a representative program for authority, protected release, recovery, and shutdown defects.",
+      "acceptance": "No critical authority or release boundary is missed and every reported defect cites a source-visible boundary."
+    },
+    {
+      "id": "sustained-service",
+      "intent": "Operate the long-running service through repeated bounded work and orderly shutdown.",
+      "acceptance": "The service remains bounded by declared quotas and settles all owned work during shutdown."
+    }
+  ],
+  "applications": [
+    {
+      "id": "agent-enabled-service",
+      "mode": "application",
+      "intent": "Compose typed errors, artifacts, capabilities, live I/O, concurrency, source tools, protected release, and lifecycle."
+    },
+    {
+      "id": "concurrent-tls-client",
+      "mode": "application",
+      "intent": "Exercise DNS, TLS, streaming I/O, cancellation, cleanup, and bounded concurrency."
+    },
+    {
+      "id": "durable-agent-companion",
+      "mode": "durable",
+      "intent": "Reuse the portable agent library while proving transcript, tool-result, and resume recovery without live resources."
+    },
+    {
+      "id": "filesystem-cli",
+      "mode": "application",
+      "intent": "Exercise explicit filesystem, environment, console, typed-error, and cleanup capabilities."
+    },
+    {
+      "id": "http-service",
+      "mode": "application",
+      "intent": "Exercise listeners, streaming HTTP, mutable single-owner state, quotas, stop, and shutdown."
+    },
+    {
+      "id": "parser-data-library",
+      "mode": "portable",
+      "intent": "Exercise pure packages, collections, iterators, closures, parsing, and typed errors."
+    },
+    {
+      "id": "subprocess-build-tool",
+      "mode": "application",
+      "intent": "Exercise confined process launch, pipes, concurrent drain, cancellation, and reaping."
+    }
+  ],
+  "matrix": {
+    "launches": [
+      "embedded",
+      "standalone"
+    ],
+    "modes": [
+      "application",
+      "durable",
+      "portable"
+    ],
+    "provider_evidence": [
+      "deterministic-fake",
+      "mocked-hook",
+      "recorded-transcript"
+    ],
+    "failure_cuts": [
+      "after-acceptance",
+      "after-effect-before-commit",
+      "after-result-commit",
+      "before-admission",
+      "during-cancellation",
+      "during-cleanup"
+    ]
+  },
+  "claim_blockers": [
+    "general-purpose-profile",
+    "production-execution-strategy",
+    "stable-edition",
+    "stable-standard-library"
+  ],
+  "material_change_reruns": [
+    {
+      "material_change": "api",
+      "rerun": [
+        "create",
+        "debug",
+        "modify",
+        "security-review"
+      ]
+    },
+    {
+      "material_change": "diagnostics",
+      "rerun": [
+        "create",
+        "debug",
+        "modify"
+      ]
+    },
+    {
+      "material_change": "documentation",
+      "rerun": [
+        "create",
+        "explain",
+        "security-review"
+      ]
+    },
+    {
+      "material_change": "strategy",
+      "rerun": [
+        "cancellation",
+        "create",
+        "debug",
+        "modify",
+        "sustained-service"
+      ]
+    },
+    {
+      "material_change": "syntax",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ]
+    }
+  ],
+  "issues": [
+    {
+      "id": "GNT-GP-MODE-001",
+      "normative_owner": "SPEC.md, frontend package contracts, analyzer applicability, executable IR, runtime recovery, facade, and launcher",
+      "compatibility_owner": "SPEC.md, frontend package contracts, analyzer applicability, executable IR, runtime recovery, facade, and launcher",
+      "evidence_owner": "SPEC.md, frontend package contracts, analyzer applicability, executable IR, runtime recovery, facade, and launcher",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-GATE-000"
+      ]
+    },
+    {
+      "id": "GNT-GP-TYPE-001",
+      "normative_owner": "gantry-analysis, gantry-ir, gantry-core, runtime recovery, schemas, and SPEC.md",
+      "compatibility_owner": "gantry-analysis, gantry-ir, gantry-core, runtime recovery, schemas, and SPEC.md",
+      "evidence_owner": "gantry-analysis, gantry-ir, gantry-core, runtime recovery, schemas, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-MODE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-OWN-001",
+      "normative_owner": "frontend, analyzer ownership, IR transfer instructions, runtime frames, operations, tasks, and SPEC.md",
+      "compatibility_owner": "frontend, analyzer ownership, IR transfer instructions, runtime frames, operations, tasks, and SPEC.md",
+      "evidence_owner": "frontend, analyzer ownership, IR transfer instructions, runtime frames, operations, tasks, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-EFFECT-001",
+      "normative_owner": "analyzer effects, IR signatures and operation inventories, linker, preflight, and SPEC.md",
+      "compatibility_owner": "analyzer effects, IR signatures and operation inventories, linker, preflight, and SPEC.md",
+      "evidence_owner": "analyzer effects, IR signatures and operation inventories, linker, preflight, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-MODE-001",
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-CAP-001",
+      "normative_owner": "gantry-core, gantry-ir, gantry-host, runtime policy, durable rebinding, and SPEC.md",
+      "compatibility_owner": "gantry-core, gantry-ir, gantry-host, runtime policy, durable rebinding, and SPEC.md",
+      "evidence_owner": "gantry-core, gantry-ir, gantry-host, runtime policy, durable rebinding, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-EFFECT-001",
+        "GNT-GP-OWN-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-PROTECT-001",
+      "normative_owner": "protected core types, host ABI, policy, observation, runtime, and SPEC.md",
+      "compatibility_owner": "protected core types, host ABI, policy, observation, runtime, and SPEC.md",
+      "evidence_owner": "protected core types, host ABI, policy, observation, runtime, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CAP-001",
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-AUTH-001",
+      "normative_owner": "host policy/approval contracts, runtime state, durable evidence, protected audit, and SPEC.md",
+      "compatibility_owner": "host policy/approval contracts, runtime state, durable evidence, protected audit, and SPEC.md",
+      "evidence_owner": "host policy/approval contracts, runtime state, durable evidence, protected audit, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CAP-001",
+        "GNT-GP-PROTECT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-OP-001",
+      "normative_owner": "gantry-host, runtime operation lifecycle, durable evidence, adapters, and SPEC.md",
+      "compatibility_owner": "gantry-host, runtime operation lifecycle, durable evidence, adapters, and SPEC.md",
+      "evidence_owner": "gantry-host, runtime operation lifecycle, durable evidence, adapters, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AUTH-001",
+        "GNT-GP-CAP-001",
+        "GNT-GP-OWN-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-FAULT-001",
+      "normative_owner": "host containment, runtime supervision, adapters, protected diagnostics, and public facade",
+      "compatibility_owner": "host containment, runtime supervision, adapters, protected diagnostics, and public facade",
+      "evidence_owner": "host containment, runtime supervision, adapters, protected diagnostics, and public facade",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-OP-001",
+        "GNT-GP-PROTECT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STOP-001",
+      "normative_owner": "runtime lifecycle, task supervision, host cancellation, durable recovery, launcher signals, and SPEC.md",
+      "compatibility_owner": "runtime lifecycle, task supervision, host cancellation, durable recovery, launcher signals, and SPEC.md",
+      "evidence_owner": "runtime lifecycle, task supervision, host cancellation, durable recovery, launcher signals, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-OP-001",
+        "GNT-GP-OWN-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-WAIT-001",
+      "normative_owner": "runtime coordination, concurrent semantics, durable evidence, and SPEC.md",
+      "compatibility_owner": "runtime coordination, concurrent semantics, durable evidence, and SPEC.md",
+      "evidence_owner": "runtime coordination, concurrent semantics, durable evidence, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-OP-001",
+        "GNT-GP-STOP-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-PKG-SPEC-001",
+      "normative_owner": "SPEC.md, package frontend, analyzer symbols, IR identities, linker, and publication",
+      "compatibility_owner": "SPEC.md, package frontend, analyzer symbols, IR identities, linker, and publication",
+      "evidence_owner": "SPEC.md, package frontend, analyzer symbols, IR identities, linker, and publication",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-EFFECT-001",
+        "GNT-GP-MODE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-TARGET-001",
+      "normative_owner": "package resolver, frontend, analyzer, build system, linker, and artifact identity",
+      "compatibility_owner": "package resolver, frontend, analyzer, build system, linker, and artifact identity",
+      "evidence_owner": "package resolver, frontend, analyzer, build system, linker, and artifact identity",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-MODE-001",
+        "GNT-GP-PKG-SPEC-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-IDENT-001",
+      "normative_owner": "core identities and Unicode, package/analyzer symbols, generated bindings, providers, policy, diagnostics, and SPEC.md",
+      "compatibility_owner": "core identities and Unicode, package/analyzer symbols, generated bindings, providers, policy, diagnostics, and SPEC.md",
+      "evidence_owner": "core identities and Unicode, package/analyzer symbols, generated bindings, providers, policy, diagnostics, and SPEC.md",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CAP-001",
+        "GNT-GP-PKG-SPEC-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-TOOLCHAIN-001",
+      "normative_owner": "frontend, analyzer, linker, generators, incremental cache, LSP, xtask, and governance",
+      "compatibility_owner": "frontend, analyzer, linker, generators, incremental cache, LSP, xtask, and governance",
+      "evidence_owner": "frontend, analyzer, linker, generators, incremental cache, LSP, xtask, and governance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-TARGET-001",
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-CONST-SPEC-001",
+      "normative_owner": "SPEC.md, frontend declarations, analyzer constant evaluation, IR/public interfaces, package loading, and diagnostics",
+      "compatibility_owner": "SPEC.md, frontend declarations, analyzer constant evaluation, IR/public interfaces, package loading, and diagnostics",
+      "evidence_owner": "SPEC.md, frontend declarations, analyzer constant evaluation, IR/public interfaces, package loading, and diagnostics",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-EFFECT-001",
+        "GNT-GP-PKG-SPEC-001",
+        "GNT-GP-TOOLCHAIN-001",
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-RESOURCE-SPEC-001",
+      "normative_owner": "SPEC.md, core accounting, analyzer ownership, runtime resources, durable recovery, host operations, and retention protocols",
+      "compatibility_owner": "SPEC.md, core accounting, analyzer ownership, runtime resources, durable recovery, host operations, and retention protocols",
+      "evidence_owner": "SPEC.md, core accounting, analyzer ownership, runtime resources, durable recovery, host operations, and retention protocols",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CAP-001",
+        "GNT-GP-OP-001",
+        "GNT-GP-OWN-001",
+        "GNT-GP-STOP-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-HOST-SPEC-001",
+      "normative_owner": "SPEC.md, gantry-host, standard-library protocols, adapter schemas, runtime operation state, and conformance",
+      "compatibility_owner": "SPEC.md, gantry-host, standard-library protocols, adapter schemas, runtime operation state, and conformance",
+      "evidence_owner": "SPEC.md, gantry-host, standard-library protocols, adapter schemas, runtime operation state, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-FAULT-001",
+        "GNT-GP-OP-001",
+        "GNT-GP-RESOURCE-SPEC-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-APP-SPEC-001",
+      "normative_owner": "SPEC.md, target ABI, facade and launcher contracts, runtime lifecycle, environment/CWD capability contracts, and durable admission",
+      "compatibility_owner": "SPEC.md, target ABI, facade and launcher contracts, runtime lifecycle, environment/CWD capability contracts, and durable admission",
+      "evidence_owner": "SPEC.md, target ABI, facade and launcher contracts, runtime lifecycle, environment/CWD capability contracts, and durable admission",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-HOST-SPEC-001",
+        "GNT-GP-MODE-001",
+        "GNT-GP-RESOURCE-SPEC-001",
+        "GNT-GP-STOP-001",
+        "GNT-GP-TARGET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-REGISTRY-SPEC-001",
+      "normative_owner": "SPEC.md, package and registry protocols, provenance, lockfiles, security policy, and publication",
+      "compatibility_owner": "SPEC.md, package and registry protocols, provenance, lockfiles, security policy, and publication",
+      "evidence_owner": "SPEC.md, package and registry protocols, provenance, lockfiles, security policy, and publication",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IDENT-001",
+        "GNT-GP-PKG-SPEC-001",
+        "GNT-GP-TARGET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-LOCALE-SPEC-001",
+      "normative_owner": "SPEC.md, core temporal/locale values, standard library, target data catalogs, runtime snapshots, and durable evidence",
+      "compatibility_owner": "SPEC.md, core temporal/locale values, standard library, target data catalogs, runtime snapshots, and durable evidence",
+      "evidence_owner": "SPEC.md, core temporal/locale values, standard library, target data catalogs, runtime snapshots, and durable evidence",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IDENT-001",
+        "GNT-GP-TARGET-001",
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-META-SPEC-001",
+      "normative_owner": "SPEC.md, frontend metadata, analyzer diagnostics, public interfaces, formatter, documentation generator, LSP, and generated origins",
+      "compatibility_owner": "SPEC.md, frontend metadata, analyzer diagnostics, public interfaces, formatter, documentation generator, LSP, and generated origins",
+      "evidence_owner": "SPEC.md, frontend metadata, analyzer diagnostics, public interfaces, formatter, documentation generator, LSP, and generated origins",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IDENT-001",
+        "GNT-GP-PKG-SPEC-001",
+        "GNT-GP-TOOLCHAIN-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-AGENT-SPEC-001",
+      "normative_owner": "SPEC.md, analyzer/IR agent contracts, core turn/transcript types, runtime, host provider/tool contracts, policy, and durable recovery",
+      "compatibility_owner": "SPEC.md, analyzer/IR agent contracts, core turn/transcript types, runtime, host provider/tool contracts, policy, and durable recovery",
+      "evidence_owner": "SPEC.md, analyzer/IR agent contracts, core turn/transcript types, runtime, host provider/tool contracts, policy, and durable recovery",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AUTH-001",
+        "GNT-GP-CAP-001",
+        "GNT-GP-EFFECT-001",
+        "GNT-GP-WAIT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-SPEC-001",
+      "normative_owner": "SPEC.md, standard-library package manifests and interfaces, package/link identity, target selection, documentation, and publication",
+      "compatibility_owner": "SPEC.md, standard-library package manifests and interfaces, package/link identity, target selection, documentation, and publication",
+      "evidence_owner": "SPEC.md, standard-library package manifests and interfaces, package/link identity, target selection, documentation, and publication",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-EFFECT-001",
+        "GNT-GP-HOST-SPEC-001",
+        "GNT-GP-IDENT-001",
+        "GNT-GP-META-SPEC-001",
+        "GNT-GP-PKG-SPEC-001",
+        "GNT-GP-TARGET-001",
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-GATE-100",
+      "normative_owner": "cross-project contract gate",
+      "compatibility_owner": "cross-project contract gate",
+      "evidence_owner": "cross-project contract gate",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-SPEC-001",
+        "GNT-GP-APP-SPEC-001",
+        "GNT-GP-AUTH-001",
+        "GNT-GP-CAP-001",
+        "GNT-GP-CONST-SPEC-001",
+        "GNT-GP-EFFECT-001",
+        "GNT-GP-FAULT-001",
+        "GNT-GP-GATE-000",
+        "GNT-GP-HOST-SPEC-001",
+        "GNT-GP-IDENT-001",
+        "GNT-GP-LOCALE-SPEC-001",
+        "GNT-GP-META-SPEC-001",
+        "GNT-GP-MODE-001",
+        "GNT-GP-OP-001",
+        "GNT-GP-OWN-001",
+        "GNT-GP-PKG-SPEC-001",
+        "GNT-GP-PROTECT-001",
+        "GNT-GP-REGISTRY-SPEC-001",
+        "GNT-GP-RESOURCE-SPEC-001",
+        "GNT-GP-STDLIB-SPEC-001",
+        "GNT-GP-STOP-001",
+        "GNT-GP-TARGET-001",
+        "GNT-GP-TOOLCHAIN-001",
+        "GNT-GP-TYPE-001",
+        "GNT-GP-WAIT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-SCALAR-001",
+      "normative_owner": "core values/numbers, frontend literals, analyzer types, IR, runtime, schemas, recovery, and standard library",
+      "compatibility_owner": "core values/numbers, frontend literals, analyzer types, IR, runtime, schemas, recovery, and standard library",
+      "evidence_owner": "core values/numbers, frontend literals, analyzer types, IR, runtime, schemas, recovery, and standard library",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-GATE-100"
+      ]
+    },
+    {
+      "id": "GNT-GP-ADT-001",
+      "normative_owner": "frontend, analyzer, IR, core values/schemas, runtime, recovery",
+      "compatibility_owner": "frontend, analyzer, IR, core values/schemas, runtime, recovery",
+      "evidence_owner": "frontend, analyzer, IR, core values/schemas, runtime, recovery",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CONST-SPEC-001",
+        "GNT-GP-GATE-100"
+      ]
+    },
+    {
+      "id": "GNT-GP-CLOSURE-001",
+      "normative_owner": "frontend callable syntax, analyzer inference/effects/ownership, IR callable identities, runtime frames/tasks/recovery",
+      "compatibility_owner": "frontend callable syntax, analyzer inference/effects/ownership, IR callable identities, runtime frames/tasks/recovery",
+      "evidence_owner": "frontend callable syntax, analyzer inference/effects/ownership, IR callable identities, runtime frames/tasks/recovery",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-GATE-100"
+      ]
+    },
+    {
+      "id": "GNT-GP-COLL-001",
+      "normative_owner": "std.collections, core collection values, analyzer, IR, runtime, schemas, recovery, documentation, and conformance",
+      "compatibility_owner": "std.collections, core collection values, analyzer, IR, runtime, schemas, recovery, documentation, and conformance",
+      "evidence_owner": "std.collections, core collection values, analyzer, IR, runtime, schemas, recovery, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CLOSURE-001",
+        "GNT-GP-SCALAR-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-ERROR-001",
+      "normative_owner": "frontend, analyzer, IR, runtime outcomes, diagnostics, standard library",
+      "compatibility_owner": "frontend, analyzer, IR, runtime outcomes, diagnostics, standard library",
+      "evidence_owner": "frontend, analyzer, IR, runtime outcomes, diagnostics, standard library",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-ADT-001",
+        "GNT-GP-GATE-100",
+        "GNT-GP-SCALAR-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-SERDE-001",
+      "normative_owner": "core encodings/schemas, stdlib codecs, IR boundaries, runtime recovery, protocol",
+      "compatibility_owner": "core encodings/schemas, stdlib codecs, IR boundaries, runtime recovery, protocol",
+      "evidence_owner": "core encodings/schemas, stdlib codecs, IR boundaries, runtime recovery, protocol",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-ADT-001",
+        "GNT-GP-SCALAR-001",
+        "GNT-GP-TYPE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-PACKAGE-001",
+      "normative_owner": "package frontend, resolver, linker, CLI",
+      "compatibility_owner": "package frontend, resolver, linker, CLI",
+      "evidence_owner": "package frontend, resolver, linker, CLI",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IDENT-001",
+        "GNT-GP-PKG-SPEC-001",
+        "GNT-GP-TARGET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-CORE-001",
+      "normative_owner": "foundational standard package manifests/interfaces, compiler prelude injection, core documentation, and conformance",
+      "compatibility_owner": "foundational standard package manifests/interfaces, compiler prelude injection, core documentation, and conformance",
+      "evidence_owner": "foundational standard package manifests/interfaces, compiler prelude injection, core documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-ADT-001",
+        "GNT-GP-ERROR-001",
+        "GNT-GP-GATE-100",
+        "GNT-GP-PACKAGE-001",
+        "GNT-GP-SCALAR-001",
+        "GNT-GP-STDLIB-SPEC-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-TEXT-001",
+      "normative_owner": "std.text, pinned Unicode data, bounded text intrinsics, documentation, and conformance",
+      "compatibility_owner": "std.text, pinned Unicode data, bounded text intrinsics, documentation, and conformance",
+      "evidence_owner": "std.text, pinned Unicode data, bounded text intrinsics, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-COLL-001",
+        "GNT-GP-STDLIB-CORE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-NUM-001",
+      "normative_owner": "std.num, bounded numeric intrinsics, algorithm/version metadata, documentation, and conformance",
+      "compatibility_owner": "std.num, bounded numeric intrinsics, algorithm/version metadata, documentation, and conformance",
+      "evidence_owner": "std.num, bounded numeric intrinsics, algorithm/version metadata, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-SCALAR-001",
+        "GNT-GP-STDLIB-CORE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-CODEC-001",
+      "normative_owner": "std.codec and its json, binary, base64, hex, and compression modules, schemas, documentation, and conformance",
+      "compatibility_owner": "std.codec and its json, binary, base64, hex, and compression modules, schemas, documentation, and conformance",
+      "evidence_owner": "std.codec and its json, binary, base64, hex, and compression modules, schemas, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-COLL-001",
+        "GNT-GP-SERDE-001",
+        "GNT-GP-STDLIB-CORE-001",
+        "GNT-GP-STDLIB-TEXT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-CRYPTO-001",
+      "normative_owner": "std.crypto, reviewed deterministic crypto intrinsics and dependencies, algorithm registries, documentation, and conformance",
+      "compatibility_owner": "std.crypto, reviewed deterministic crypto intrinsics and dependencies, algorithm registries, documentation, and conformance",
+      "evidence_owner": "std.crypto, reviewed deterministic crypto intrinsics and dependencies, algorithm registries, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-STDLIB-CODEC-001",
+        "GNT-GP-STDLIB-CORE-001",
+        "GNT-GP-STDLIB-NUM-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-DATA-001",
+      "normative_owner": "std.data.url, std.data.mime, std.data.http, pure protocol models/helpers, documentation, and conformance",
+      "compatibility_owner": "std.data.url, std.data.mime, std.data.http, pure protocol models/helpers, documentation, and conformance",
+      "evidence_owner": "std.data.url, std.data.mime, std.data.http, pure protocol models/helpers, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-COLL-001",
+        "GNT-GP-STDLIB-CODEC-001",
+        "GNT-GP-STDLIB-CORE-001",
+        "GNT-GP-STDLIB-TEXT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STDLIB-001",
+      "normative_owner": "aggregate std facade, canonical package graph and interfaces, cross-package conformance, documentation, and publication inputs",
+      "compatibility_owner": "aggregate std facade, canonical package graph and interfaces, cross-package conformance, documentation, and publication inputs",
+      "evidence_owner": "aggregate std facade, canonical package graph and interfaces, cross-package conformance, documentation, and publication inputs",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-COLL-001",
+        "GNT-GP-STDLIB-CODEC-001",
+        "GNT-GP-STDLIB-CORE-001",
+        "GNT-GP-STDLIB-CRYPTO-001",
+        "GNT-GP-STDLIB-DATA-001",
+        "GNT-GP-STDLIB-NUM-001",
+        "GNT-GP-STDLIB-TEXT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-REGISTRY-001",
+      "normative_owner": "package client, registry protocol, provenance, security",
+      "compatibility_owner": "package client, registry protocol, provenance, security",
+      "evidence_owner": "package client, registry protocol, provenance, security",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-PACKAGE-001",
+        "GNT-GP-REGISTRY-SPEC-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-LINK-001",
+      "normative_owner": "analyzer/linker, IR interfaces, package compatibility tooling, durable admission",
+      "compatibility_owner": "analyzer/linker, IR interfaces, package compatibility tooling, durable admission",
+      "evidence_owner": "analyzer/linker, IR interfaces, package compatibility tooling, durable admission",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-EFFECT-001",
+        "GNT-GP-PACKAGE-001",
+        "GNT-GP-REGISTRY-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-META-001",
+      "normative_owner": "frontend metadata, analyzer diagnostics, formatter, docs, LSP",
+      "compatibility_owner": "frontend metadata, analyzer diagnostics, formatter, docs, LSP",
+      "evidence_owner": "frontend metadata, analyzer diagnostics, formatter, docs, LSP",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-LINK-001",
+        "GNT-GP-META-SPEC-001",
+        "GNT-GP-TOOLCHAIN-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-VALUE-PERF-001",
+      "normative_owner": "core/runtime storage, semantic metering, benchmarks, recovery",
+      "compatibility_owner": "core/runtime storage, semantic metering, benchmarks, recovery",
+      "evidence_owner": "core/runtime storage, semantic metering, benchmarks, recovery",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-COLL-001",
+        "GNT-GP-OWN-001",
+        "GNT-GP-RESOURCE-SPEC-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-TEST-001",
+      "normative_owner": "std.test, package targets, runtime test harnesses, gantry-conformance, documentation, and CLI tooling",
+      "compatibility_owner": "std.test, package targets, runtime test harnesses, gantry-conformance, documentation, and CLI tooling",
+      "evidence_owner": "std.test, package targets, runtime test harnesses, gantry-conformance, documentation, and CLI tooling",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-ERROR-001",
+        "GNT-GP-PACKAGE-001",
+        "GNT-GP-STDLIB-001",
+        "GNT-GP-TARGET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-TOOLING-001",
+      "normative_owner": "CLI/tooling packages, compiler services, package client, docs",
+      "compatibility_owner": "CLI/tooling packages, compiler services, package client, docs",
+      "evidence_owner": "CLI/tooling packages, compiler services, package client, docs",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-LINK-001",
+        "GNT-GP-META-001",
+        "GNT-GP-STDLIB-001",
+        "GNT-GP-TEST-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-GATE-200",
+      "normative_owner": "Phase 1 evidence assembly, gantry-conformance, package fixtures, and generated/publication checks",
+      "compatibility_owner": "Phase 1 evidence assembly, gantry-conformance, package fixtures, and generated/publication checks",
+      "evidence_owner": "Phase 1 evidence assembly, gantry-conformance, package fixtures, and generated/publication checks",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-ADT-001",
+        "GNT-GP-CLOSURE-001",
+        "GNT-GP-COLL-001",
+        "GNT-GP-ERROR-001",
+        "GNT-GP-LINK-001",
+        "GNT-GP-META-001",
+        "GNT-GP-PACKAGE-001",
+        "GNT-GP-REGISTRY-001",
+        "GNT-GP-SCALAR-001",
+        "GNT-GP-SERDE-001",
+        "GNT-GP-STDLIB-001",
+        "GNT-GP-STDLIB-CODEC-001",
+        "GNT-GP-STDLIB-CORE-001",
+        "GNT-GP-STDLIB-CRYPTO-001",
+        "GNT-GP-STDLIB-DATA-001",
+        "GNT-GP-STDLIB-NUM-001",
+        "GNT-GP-STDLIB-TEXT-001",
+        "GNT-GP-TEST-001",
+        "GNT-GP-TOOLING-001",
+        "GNT-GP-VALUE-PERF-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-RESOURCE-001",
+      "normative_owner": "IR ownership/resource facts, runtime resources/supervision/recovery, host contracts",
+      "compatibility_owner": "IR ownership/resource facts, runtime resources/supervision/recovery, host contracts",
+      "evidence_owner": "IR ownership/resource facts, runtime resources/supervision/recovery, host contracts",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-GATE-200",
+        "GNT-GP-OP-001",
+        "GNT-GP-RESOURCE-SPEC-001",
+        "GNT-GP-STOP-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-IO-001",
+      "normative_owner": "std.io, common progress/error values, host adapter framework, runtime operations, documentation, and conformance",
+      "compatibility_owner": "std.io, common progress/error values, host adapter framework, runtime operations, documentation, and conformance",
+      "evidence_owner": "std.io, common progress/error values, host adapter framework, runtime operations, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-FAULT-001",
+        "GNT-GP-HOST-SPEC-001",
+        "GNT-GP-RESOURCE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-CONSOLE-001",
+      "normative_owner": "std.console, console host contracts and leaf adapters, launcher, protected rendering, documentation, and conformance",
+      "compatibility_owner": "std.console, console host contracts and leaf adapters, launcher, protected rendering, documentation, and conformance",
+      "evidence_owner": "std.console, console host contracts and leaf adapters, launcher, protected rendering, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IO-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-OBSERVE-001",
+      "normative_owner": "std.observe, observation contracts, runtime context, protected-data policy, leaf sink adapters, documentation, and conformance",
+      "compatibility_owner": "std.observe, observation contracts, runtime context, protected-data policy, leaf sink adapters, documentation, and conformance",
+      "evidence_owner": "std.observe, observation contracts, runtime context, protected-data policy, leaf sink adapters, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IO-001",
+        "GNT-GP-PROTECT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-FS-001",
+      "normative_owner": "std.fs, filesystem values, host contracts and leaf adapters, runtime resources, target policy, documentation, and conformance",
+      "compatibility_owner": "std.fs, filesystem values, host contracts and leaf adapters, runtime resources, target policy, documentation, and conformance",
+      "evidence_owner": "std.fs, filesystem values, host contracts and leaf adapters, runtime resources, target policy, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CAP-001",
+        "GNT-GP-IO-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-ENV-001",
+      "normative_owner": "std.env, environment values, host capability contracts and leaf adapters, runtime snapshots, facade/launcher composition, documentation, and durable admission",
+      "compatibility_owner": "std.env, environment values, host capability contracts and leaf adapters, runtime snapshots, facade/launcher composition, documentation, and durable admission",
+      "evidence_owner": "std.env, environment values, host capability contracts and leaf adapters, runtime snapshots, facade/launcher composition, documentation, and durable admission",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-APP-SPEC-001",
+        "GNT-GP-CAP-001",
+        "GNT-GP-IO-001",
+        "GNT-GP-PROTECT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-TIME-001",
+      "normative_owner": "std.time, temporal values, runtime timers and snapshots, leaf host adapters, target data catalogs, documentation, and recovery",
+      "compatibility_owner": "std.time, temporal values, runtime timers and snapshots, leaf host adapters, target data catalogs, documentation, and recovery",
+      "evidence_owner": "std.time, temporal values, runtime timers and snapshots, leaf host adapters, target data catalogs, documentation, and recovery",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IO-001",
+        "GNT-GP-LOCALE-SPEC-001",
+        "GNT-GP-TARGET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-RANDOM-001",
+      "normative_owner": "std.random, host entropy contracts and adapters, runtime durable evidence, documentation, and conformance",
+      "compatibility_owner": "std.random, host entropy contracts and adapters, runtime durable evidence, documentation, and conformance",
+      "evidence_owner": "std.random, host entropy contracts and adapters, runtime durable evidence, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CAP-001",
+        "GNT-GP-SERDE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-SECRET-001",
+      "normative_owner": "std.secret, protected secret references, credential host contracts and leaf adapters, policy/audit, runtime lineage, documentation, and durable rebinding",
+      "compatibility_owner": "std.secret, protected secret references, credential host contracts and leaf adapters, policy/audit, runtime lineage, documentation, and durable rebinding",
+      "evidence_owner": "std.secret, protected secret references, credential host contracts and leaf adapters, policy/audit, runtime lineage, documentation, and durable rebinding",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CAP-001",
+        "GNT-GP-PROTECT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-APP-001",
+      "normative_owner": "compiler target ABI, facade, CLI launcher, runtime lifecycle",
+      "compatibility_owner": "compiler target ABI, facade, CLI launcher, runtime lifecycle",
+      "evidence_owner": "compiler target ABI, facade, CLI launcher, runtime lifecycle",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-APP-SPEC-001",
+        "GNT-GP-CONSOLE-001",
+        "GNT-GP-ENV-001",
+        "GNT-GP-GATE-200",
+        "GNT-GP-IO-001",
+        "GNT-GP-RESOURCE-001",
+        "GNT-GP-STOP-001",
+        "GNT-GP-TARGET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-PROCESS-001",
+      "normative_owner": "std.process, process host contracts and leaf adapters, runtime supervision, launcher policy, target confinement, documentation, and conformance",
+      "compatibility_owner": "std.process, process host contracts and leaf adapters, runtime supervision, launcher policy, target confinement, documentation, and conformance",
+      "evidence_owner": "std.process, process host contracts and leaf adapters, runtime supervision, launcher policy, target confinement, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-APP-001",
+        "GNT-GP-AUTH-001",
+        "GNT-GP-HOST-SPEC-001",
+        "GNT-GP-IO-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-INTEROP-001",
+      "normative_owner": "host ABI and security, runtime containment, package/link auditing, target policy, and conformance",
+      "compatibility_owner": "host ABI and security, runtime containment, package/link auditing, target policy, and conformance",
+      "evidence_owner": "host ABI and security, runtime containment, package/link auditing, target policy, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-FAULT-001",
+        "GNT-GP-LINK-001",
+        "GNT-GP-RESOURCE-001",
+        "GNT-GP-TARGET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-ARTIFACT-001",
+      "normative_owner": "std.artifact, artifact core/protocol types, common I/O contracts, leaf transport adapters, protected grant policy, runtime retention/recovery, model transport, documentation, and conformance",
+      "compatibility_owner": "std.artifact, artifact core/protocol types, common I/O contracts, leaf transport adapters, protected grant policy, runtime retention/recovery, model transport, documentation, and conformance",
+      "evidence_owner": "std.artifact, artifact core/protocol types, common I/O contracts, leaf transport adapters, protected grant policy, runtime retention/recovery, model transport, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-SPEC-001",
+        "GNT-GP-IO-001",
+        "GNT-GP-PROTECT-001",
+        "GNT-GP-RESOURCE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-AGENT-BIND-001",
+      "normative_owner": "std.agent public contracts, package/analyzer requirement graphs, linker inventories, facade preflight, provider mappings, runtime agent context, documentation, and conformance",
+      "compatibility_owner": "std.agent public contracts, package/analyzer requirement graphs, linker inventories, facade preflight, provider mappings, runtime agent context, documentation, and conformance",
+      "evidence_owner": "std.agent public contracts, package/analyzer requirement graphs, linker inventories, facade preflight, provider mappings, runtime agent context, documentation, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-SPEC-001",
+        "GNT-GP-ARTIFACT-001",
+        "GNT-GP-LINK-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-GATE-300",
+      "normative_owner": "Phase 2 evidence assembly, application fixtures, target/adapter matrices, and gantry-conformance",
+      "compatibility_owner": "Phase 2 evidence assembly, application fixtures, target/adapter matrices, and gantry-conformance",
+      "evidence_owner": "Phase 2 evidence assembly, application fixtures, target/adapter matrices, and gantry-conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-BIND-001",
+        "GNT-GP-APP-001",
+        "GNT-GP-ARTIFACT-001",
+        "GNT-GP-CONSOLE-001",
+        "GNT-GP-ENV-001",
+        "GNT-GP-FS-001",
+        "GNT-GP-INTEROP-001",
+        "GNT-GP-IO-001",
+        "GNT-GP-OBSERVE-001",
+        "GNT-GP-PROCESS-001",
+        "GNT-GP-RANDOM-001",
+        "GNT-GP-RESOURCE-001",
+        "GNT-GP-SECRET-001",
+        "GNT-GP-TIME-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-ASYNC-001",
+      "normative_owner": "frontend, analyzer ownership/effects, IR, runtime coordination",
+      "compatibility_owner": "frontend, analyzer ownership/effects, IR, runtime coordination",
+      "evidence_owner": "frontend, analyzer ownership/effects, IR, runtime coordination",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-GATE-300",
+        "GNT-GP-RESOURCE-001",
+        "GNT-GP-WAIT-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-SCHED-001",
+      "normative_owner": "runtime scheduling and supervision, wait-graph analysis, adapter cooperation, durable arbitration evidence, and conformance",
+      "compatibility_owner": "runtime scheduling and supervision, wait-graph analysis, adapter cooperation, durable arbitration evidence, and conformance",
+      "evidence_owner": "runtime scheduling and supervision, wait-graph analysis, adapter cooperation, durable arbitration evidence, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-APP-001",
+        "GNT-GP-ASYNC-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-NET-001",
+      "normative_owner": "std.net, host contracts and adapters, runtime resources, TLS trust policy, and conformance",
+      "compatibility_owner": "std.net, host contracts and adapters, runtime resources, TLS trust policy, and conformance",
+      "evidence_owner": "std.net, host contracts and adapters, runtime resources, TLS trust policy, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-IO-001",
+        "GNT-GP-SCHED-001",
+        "GNT-GP-SECRET-001",
+        "GNT-GP-STDLIB-DATA-001",
+        "GNT-GP-TIME-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-LOOP-001",
+      "normative_owner": "runtime model-loop state, canonical turns/transcripts, provider contracts, durable evidence, policy/release integration, and conformance",
+      "compatibility_owner": "runtime model-loop state, canonical turns/transcripts, provider contracts, durable evidence, policy/release integration, and conformance",
+      "evidence_owner": "runtime model-loop state, canonical turns/transcripts, provider contracts, durable evidence, policy/release integration, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-BIND-001",
+        "GNT-GP-ASYNC-001",
+        "GNT-GP-AUTH-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-TOOL-001",
+      "normative_owner": "analyzer/linker tool descriptors, generated bindings, runtime action dispatch, policy/recovery metadata, and conformance",
+      "compatibility_owner": "analyzer/linker tool descriptors, generated bindings, runtime action dispatch, policy/recovery metadata, and conformance",
+      "evidence_owner": "analyzer/linker tool descriptors, generated bindings, runtime action dispatch, policy/recovery metadata, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-SPEC-001",
+        "GNT-GP-LOOP-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-HANDLER-001",
+      "normative_owner": "analyzer callable/effect contracts, IR handler bindings, runtime instance state, durable continuations, and conformance",
+      "compatibility_owner": "analyzer callable/effect contracts, IR handler bindings, runtime instance state, durable continuations, and conformance",
+      "evidence_owner": "analyzer callable/effect contracts, IR handler bindings, runtime instance state, durable continuations, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CLOSURE-001",
+        "GNT-GP-LOOP-001",
+        "GNT-GP-RESOURCE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-AGENT-SESSION-001",
+      "normative_owner": "runtime session/transcript state, provider session contracts, durable open-round evidence, handler integration, and conformance",
+      "compatibility_owner": "runtime session/transcript state, provider session contracts, durable open-round evidence, handler integration, and conformance",
+      "evidence_owner": "runtime session/transcript state, provider session contracts, durable open-round evidence, handler integration, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-HANDLER-001",
+        "GNT-GP-TOOL-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-STREAM-001",
+      "normative_owner": "provider stream contracts, runtime loop/tool integration, observation and protected release, durable evidence, and conformance",
+      "compatibility_owner": "provider stream contracts, runtime loop/tool integration, observation and protected release, durable evidence, and conformance",
+      "evidence_owner": "provider stream contracts, runtime loop/tool integration, observation and protected release, durable evidence, and conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-ASYNC-001",
+        "GNT-GP-LOOP-001",
+        "GNT-GP-OBSERVE-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-AGENT-CONF-001",
+      "normative_owner": "gantry-conformance, deterministic providers, recorded transcripts, production-provider smoke adapters, and agent evidence manifests",
+      "compatibility_owner": "gantry-conformance, deterministic providers, recorded transcripts, production-provider smoke adapters, and agent evidence manifests",
+      "evidence_owner": "gantry-conformance, deterministic providers, recorded transcripts, production-provider smoke adapters, and agent evidence manifests",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-SESSION-001",
+        "GNT-GP-HANDLER-001",
+        "GNT-GP-LOOP-001",
+        "GNT-GP-STREAM-001",
+        "GNT-GP-TOOL-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-GATE-400",
+      "normative_owner": "Phase 3 evidence assembly, network/agent application fixtures, target/provider matrices, and gantry-conformance",
+      "compatibility_owner": "Phase 3 evidence assembly, network/agent application fixtures, target/provider matrices, and gantry-conformance",
+      "evidence_owner": "Phase 3 evidence assembly, network/agent application fixtures, target/provider matrices, and gantry-conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-AGENT-CONF-001",
+        "GNT-GP-NET-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-APP-CORPUS-001",
+      "normative_owner": "published example packages, fixtures, target manifests, deterministic fakes/transcripts, and application conformance",
+      "compatibility_owner": "published example packages, fixtures, target manifests, deterministic fakes/transcripts, and application conformance",
+      "evidence_owner": "published example packages, fixtures, target manifests, deterministic fakes/transcripts, and application conformance",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-GATE-000",
+        "GNT-GP-GATE-400"
+      ]
+    },
+    {
+      "id": "GNT-GP-STRATEGY-001",
+      "normative_owner": "evaluator/backend implementations, runtime and compiler strategy contracts, benchmarks, differential conformance, and release policy",
+      "compatibility_owner": "evaluator/backend implementations, runtime and compiler strategy contracts, benchmarks, differential conformance, and release policy",
+      "evidence_owner": "evaluator/backend implementations, runtime and compiler strategy contracts, benchmarks, differential conformance, and release policy",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-APP-CORPUS-001",
+        "GNT-GP-GATE-400",
+        "GNT-GP-VALUE-PERF-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-USABILITY-001",
+      "normative_owner": "usability protocol, experimental edition, candidate corpus, documentation/tooling surfaces, and independent study evidence",
+      "compatibility_owner": "usability protocol, experimental edition, candidate corpus, documentation/tooling surfaces, and independent study evidence",
+      "evidence_owner": "usability protocol, experimental edition, candidate corpus, documentation/tooling surfaces, and independent study evidence",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-APP-CORPUS-001",
+        "GNT-GP-GATE-000",
+        "GNT-GP-STRATEGY-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-CONF-001",
+      "normative_owner": "gantry-conformance, target/adapter matrices, proof/model evidence, and release qualification",
+      "compatibility_owner": "gantry-conformance, target/adapter matrices, proof/model evidence, and release qualification",
+      "evidence_owner": "gantry-conformance, target/adapter matrices, proof/model evidence, and release qualification",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-APP-CORPUS-001",
+        "GNT-GP-STRATEGY-001",
+        "GNT-GP-USABILITY-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-PUB-001",
+      "normative_owner": "canonical specification/publication artifacts, generated schemas and bindings, requirement ledger, conformance corpus, documentation, migrations, and release metadata",
+      "compatibility_owner": "canonical specification/publication artifacts, generated schemas and bindings, requirement ledger, conformance corpus, documentation, migrations, and release metadata",
+      "evidence_owner": "canonical specification/publication artifacts, generated schemas and bindings, requirement ledger, conformance corpus, documentation, migrations, and release metadata",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-CONF-001"
+      ]
+    },
+    {
+      "id": "GNT-GP-REL-001",
+      "normative_owner": "release readiness, CI/platform qualification, package distribution, capability advertisement, publication adoption, and final claim records",
+      "compatibility_owner": "release readiness, CI/platform qualification, package distribution, capability advertisement, publication adoption, and final claim records",
+      "evidence_owner": "release readiness, CI/platform qualification, package distribution, capability advertisement, publication adoption, and final claim records",
+      "publication_blocker": "general-purpose-profile",
+      "rerun": [
+        "create",
+        "debug",
+        "explain",
+        "modify",
+        "security-review"
+      ],
+      "depends_on": [
+        "GNT-GP-PUB-001"
+      ]
+    }
+  ]
+}

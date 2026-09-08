@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gantry.example/protocol/schemas/general-purpose-preregistration-v1.schema.json",
+  "title": "Gantry general-purpose preregistration catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["catalog", "major", "minor", "specification_revision", "decision_record_template", "policy", "tasks", "applications", "matrix", "claim_blockers", "material_change_reruns", "issues"],
+  "properties": {
+    "catalog": {"const": "gantry.general-purpose-preregistration"},
+    "major": {"const": 1},
+    "minor": {"const": 0},
+    "specification_revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "decision_record_template": {"type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": {"type": "string"}},
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported_platforms", "unsupported_platforms", "provider_integration", "semantic_oracles", "agent_runs_per_task", "human_trials", "performance_gate", "quantitative_performance_thresholds"],
+      "properties": {
+        "supported_platforms": {"const": ["linux", "macos"]},
+        "unsupported_platforms": {"const": ["windows"]},
+        "provider_integration": {"const": "embedding-harness-mocked-hooks-only"},
+        "semantic_oracles": {"const": ["deterministic-fakes", "mocked-hooks", "recorded-transcripts"]},
+        "agent_runs_per_task": {"const": 1},
+        "human_trials": {"const": "deferred-until-after-implementation"},
+        "performance_gate": {"const": "functionality-first-no-obviously-suboptimal-design"},
+        "quantitative_performance_thresholds": {"const": "deferred"}
+      }
+    },
+    "tasks": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"$ref": "#/$defs/task"}},
+    "applications": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"$ref": "#/$defs/application"}},
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["launches", "modes", "provider_evidence", "failure_cuts"],
+      "properties": {
+        "launches": {"const": ["embedded", "standalone"]},
+        "modes": {"const": ["application", "durable", "portable"]},
+        "provider_evidence": {"const": ["deterministic-fake", "mocked-hook", "recorded-transcript"]},
+        "failure_cuts": {"type": "array", "minItems": 6, "uniqueItems": true, "items": {"type": "string"}}
+      }
+    },
+    "claim_blockers": {"type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true, "items": {"type": "string"}},
+    "material_change_reruns": {"type": "array", "minItems": 5, "maxItems": 5, "items": {"$ref": "#/$defs/rerun"}},
+    "issues": {"type": "array", "minItems": 77, "maxItems": 77, "items": {"$ref": "#/$defs/issue"}}
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "intent", "acceptance"],
+      "properties": {"id": {"type": "string", "minLength": 1}, "intent": {"type": "string", "minLength": 1}, "acceptance": {"type": "string", "minLength": 1}}
+    },
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "mode", "intent"],
+      "properties": {"id": {"type": "string", "minLength": 1}, "mode": {"enum": ["application", "durable", "portable"]}, "intent": {"type": "string", "minLength": 1}}
+    },
+    "rerun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["material_change", "rerun"],
+      "properties": {"material_change": {"type": "string", "minLength": 1}, "rerun": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}}
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "normative_owner", "compatibility_owner", "evidence_owner", "publication_blocker", "rerun", "depends_on"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^GNT-GP-[A-Z0-9-]+$"},
+        "normative_owner": {"type": "string", "minLength": 1},
+        "compatibility_owner": {"type": "string", "minLength": 1},
+        "evidence_owner": {"type": "string", "minLength": 1},
+        "publication_blocker": {"const": "general-purpose-profile"},
+        "rerun": {"const": ["create", "debug", "explain", "modify", "security-review"]},
+        "depends_on": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^GNT-GP-[A-Z0-9-]+$"}}
+      }
+    }
+  }
+}

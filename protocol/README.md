@@ -20,6 +20,13 @@ checked-in outputs match their canonical inputs without modifying the tree.
 Every protocol change requires explicit version, schema, golden, generated
 binding, and publication-impact review.
 
+`catalogs/general-purpose-preregistration-v1.json` fixes the initial
+general-purpose evidence scope: Linux and macOS, embedding-harness mocked
+hooks, one agent run per task, deferred human trials, and no quantitative
+performance threshold. Its canonical golden and closed schema are checked by
+`xtask`; see
+[`docs/general-purpose-preregistration.md`](../docs/general-purpose-preregistration.md).
+
 The active publication is the executor-backed amended baseline. Its immutable
 revision and artifact digests are recorded in `publication/index-v1.json`, and
 `publication/verification-v1.json` binds the canonical index and all seven

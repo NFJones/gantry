@@ -179,6 +179,9 @@ Run `just help` to list all development commands.
   policy, observation, and durable resume.
 - [`docs/async-execution-release.md`](docs/async-execution-release.md) records
   the executor-backed publication boundary and migration from manual driving.
+- [`docs/general-purpose-preregistration.md`](docs/general-purpose-preregistration.md)
+  records the fixed evidence scope and claim blockers for the staged
+  general-purpose implementation effort.
 - [`AGENTS.md`](AGENTS.md) describes repository workflow and contribution
   requirements.
 
