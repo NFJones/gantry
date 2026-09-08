@@ -659,6 +659,12 @@ impl Compiler<'_> {
                 TypeDescriptor::UNIT,
                 InstructionKind::Load(Arc::clone(&root)),
             )?;
+            for field in fields {
+                self.emit(
+                    TypeDescriptor::UNIT,
+                    InstructionKind::Project(Projection::Field(field.clone())),
+                )?;
+            }
         }
         let ty = self.compile_expression(expression)?;
         if operator != Punctuation::Equal {

@@ -3895,6 +3895,37 @@ fn main() { self; }
     }
 
     #[test]
+    fn compound_field_assignment_projects_its_target_before_the_primitive() {
+        let package = analyze(
+            "struct Counter { value: Int }\nimpl Counter { fn increment(mut self) -> Counter { self.value += 1; self } }\nfn main(value: Counter) -> Counter { value.increment() }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+
+        let program = package
+            .executable_program()
+            .unwrap_or_else(|| unreachable!("valid package has an executable program"));
+        let increment = program
+            .workflows()
+            .iter()
+            .find(|workflow| workflow.path.as_str() == "<crate::Counter>::increment")
+            .unwrap_or_else(|| unreachable!("method workflow is lowered"));
+        assert!(increment.instructions.windows(2).any(|pair| {
+            matches!(
+                (&pair[0].kind, &pair[1].kind),
+                (
+                    gantry_ir::InstructionKind::Load(name),
+                    gantry_ir::InstructionKind::Project(gantry_ir::Projection::Field(field)),
+                ) if name.as_ref() == "self" && field.as_ref() == "value"
+            )
+        }));
+    }
+
+    #[test]
     fn method_calls_and_struct_field_projections_use_receiver_types() {
         let valid = analyze(
             r#"
