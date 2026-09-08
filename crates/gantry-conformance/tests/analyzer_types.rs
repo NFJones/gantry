@@ -57,7 +57,10 @@ struct ProfileReview {
 /// Primitive facts do not infer declared fields or grant boundary admission.
 #[test]
 fn primitive_properties_keep_eligibility_axes_separate() {
-    use gantry::ir::TypeDescriptor;
+    use gantry::ir::{
+        RecoveryProjectionClass, SourceProtectionClass, TransferEligibility, TypeDescriptor,
+        ValueResourceClass,
+    };
 
     for (ty, external, orderable) in [
         (TypeDescriptor::UNIT, true, false),
@@ -77,6 +80,26 @@ fn primitive_properties_keep_eligibility_axes_separate() {
         assert!(properties.is_copyable());
         assert!(properties.is_interpolatable());
         assert!(properties.has_recovery_projection());
+        assert_eq!(
+            properties.transfer_eligibility(),
+            TransferEligibility::IsolatedTaskCapture
+        );
+        assert_eq!(
+            properties.resource_class(),
+            ValueResourceClass::NonLiveResource
+        );
+        assert_eq!(
+            properties.recovery_projection_class(),
+            RecoveryProjectionClass::SealedValue
+        );
+        assert_eq!(
+            properties.source_protection_class(),
+            if ty == TypeDescriptor::DECISION || ty == TypeDescriptor::OPERATION_ERROR {
+                SourceProtectionClass::Sealed
+            } else {
+                SourceProtectionClass::Unsealed
+            }
+        );
     }
     for canonical in [
         "crate::Unknown",
@@ -339,7 +362,10 @@ fn public_parametric_calls_require_callee_bounds() {
 #[test]
 fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     use gantry::analysis::TypeCapabilityQueryError;
-    use gantry::ir::{OwnershipClass, TypeDescriptor};
+    use gantry::ir::{
+        OwnershipClass, RecoveryProjectionClass, SourceProtectionClass, TransferEligibility,
+        TypeDescriptor, ValueResourceClass,
+    };
     use gantry::source::FrontendLimits;
 
     let nested = analyze("struct Nested { value: List<List<Int>> }\nfn main(value: Nested) {}");
@@ -384,6 +410,29 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
         assert_eq!(properties.ownership_class(), OwnershipClass::Copyable);
         assert!(properties.is_copyable());
         assert!(properties.is_task_capturable());
+        assert_eq!(
+            properties.transfer_eligibility(),
+            TransferEligibility::IsolatedTaskCapture
+        );
+        assert_eq!(
+            properties.resource_class(),
+            ValueResourceClass::NonLiveResource
+        );
+        assert!(!properties.is_live_resource());
+        assert_eq!(
+            properties.source_protection_class(),
+            if external {
+                SourceProtectionClass::Unsealed
+            } else {
+                SourceProtectionClass::Sealed
+            }
+        );
+        assert_eq!(properties.is_source_protected(), !external);
+        assert_eq!(
+            properties.recovery_projection_class(),
+            RecoveryProjectionClass::SealedValue
+        );
+        assert!(properties.has_sealed_recovery_projection());
         assert_eq!(package.type_capabilities(&ty, policy), Ok(properties));
     }
     let unknown = TypeDescriptor::from_canonical_string("crate::Unknown")

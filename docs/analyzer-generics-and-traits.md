@@ -54,17 +54,20 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   fields, grant execution admission, or introduce affine values and loans.
   For declaration-aware inspection, `TypedPackage::type_capabilities` reports
   the three existing sealed capabilities for primitives and exact retained
-  closed types, plus v1 logical copyability and source-task capture eligibility.
-  Stored sealed values remain copyable and task-capturable even when they are
-  not external. Capture eligibility does not grant spawn authority, shared
-  identity, or host-thread safety.
-  `ownership_class()` is derived by folding the retained instantiated
-  stored-member graph; current v1 primitive leaves make the result
-  `OwnershipClass::Copyable`. The IR classification algebra combines
-  obligations with `MustConsume` above `AffineDroppable` above `Copyable`,
-  independently of encoding eligibility. The noncopyable classes describe
-  obligations only; they do not enable source resources, moves, loans, or
-  cleanup operations.
+  closed types, plus independent ownership, transfer, live-resource,
+  source-protection, and value-recovery classifications. One componentwise
+  fold over the retained instantiated stored-member graph derives all five;
+  it reuses declaration substitution, recursive cache safety, depth checks,
+  and the query's trait-resolution budget. Current v1 leaves are copyable,
+  transferable only as isolated source-task captures, non-live-resource, and
+  reconstructable through sealed value evidence. `Decision` and
+  `OperationError` are source-sealed; an aggregate is source-sealed when any
+  stored member is. This source type classification does not classify
+  transport content as nonsensitive: SPEC section 15.10 still treats source,
+  operation, normalized-value, journal, and protected-event data as
+  potentially sensitive integration data. Capture eligibility grants no spawn
+  authority, shared identity, host-thread safety, loan, release authority, or
+  runtime recovery implementation.
   The query rejects invalid packages and unretained descriptors, uses fresh
   constructed-depth and trait-resolution limits on every query, and
   returns no partial report on exhaustion. Query results do not admit new

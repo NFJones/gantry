@@ -18,7 +18,7 @@ use gantry_core::source::{
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
-    EffectSet, ImplementationHead, OwnershipClass, Predicate, PrimitiveTypeProperties,
+    EffectSet, ImplementationHead, IndependentTypeProperties, Predicate, PrimitiveTypeProperties,
     TraitContract, TraitMethodContract, TraitReference, TypeDescriptor, TypeExpression,
 };
 
@@ -1959,14 +1959,14 @@ pub(crate) fn prove_sealed_capability(
     prove_stored_member_property(root, declarations, counters, &mut property)
 }
 
-/// Derives ownership from instantiated stored members with the shared proof fold.
-pub(crate) fn prove_ownership_class(
+/// Derives independent properties from instantiated members with the shared fold.
+pub(crate) fn prove_independent_type_properties(
     root: &TypeDescriptor,
     declarations: &BTreeMap<String, GenericDeclarationShape>,
     counters: &mut Option<GenericAnalysisCounters>,
-    memo: &mut BTreeMap<String, OwnershipClass>,
-) -> Result<OwnershipClass, AnalysisError> {
-    let mut property = OwnershipProperty { memo };
+    memo: &mut BTreeMap<String, IndependentTypeProperties>,
+) -> Result<IndependentTypeProperties, AnalysisError> {
+    let mut property = IndependentProperty { memo };
     prove_stored_member_property(root, declarations, counters, &mut property)
 }
 
@@ -2024,19 +2024,19 @@ impl StoredMemberProperty for CapabilityProperty<'_> {
     }
 }
 
-struct OwnershipProperty<'a> {
-    memo: &'a mut BTreeMap<String, OwnershipClass>,
+struct IndependentProperty<'a> {
+    memo: &'a mut BTreeMap<String, IndependentTypeProperties>,
 }
 
-impl StoredMemberProperty for OwnershipProperty<'_> {
-    type Value = OwnershipClass;
+impl StoredMemberProperty for IndependentProperty<'_> {
+    type Value = IndependentTypeProperties;
 
     fn identity(&self) -> Self::Value {
-        OwnershipClass::Copyable
+        IndependentTypeProperties::empty_aggregate()
     }
 
     fn primitive(&self, properties: PrimitiveTypeProperties) -> Self::Value {
-        properties.ownership_class()
+        properties.independent_properties()
     }
 
     fn opaque(&self) -> Result<Self::Value, AnalysisError> {
@@ -2047,8 +2047,8 @@ impl StoredMemberProperty for OwnershipProperty<'_> {
         left.combine(right)
     }
 
-    fn is_absorbing(&self, value: Self::Value) -> bool {
-        matches!(value, OwnershipClass::MustConsume)
+    fn is_absorbing(&self, _value: Self::Value) -> bool {
+        false
     }
 
     fn cached(&self, key: &str) -> Option<Self::Value> {

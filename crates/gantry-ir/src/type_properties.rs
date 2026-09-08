@@ -36,6 +36,173 @@ impl OwnershipClass {
     }
 }
 
+/// Eligibility for moving a value between source-task ownership domains.
+///
+/// This classification grants neither task creation nor authority delegation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TransferEligibility {
+    /// A spawned source task may receive an independent logical copy.
+    IsolatedTaskCapture,
+    /// No transfer contract has been established for the value.
+    Ineligible,
+}
+
+impl TransferEligibility {
+    /// Conservatively combines stored-member transfer eligibility.
+    #[must_use]
+    pub const fn combine(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Ineligible, _) | (_, Self::Ineligible) => Self::Ineligible,
+            (Self::IsolatedTaskCapture, Self::IsolatedTaskCapture) => Self::IsolatedTaskCapture,
+        }
+    }
+}
+
+/// Whether a value contains a live source resource.
+///
+/// Classification alone defines no cleanup operation or release authority.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ValueResourceClass {
+    /// The value contains no live source resource.
+    NonLiveResource,
+    /// The value contains a live source resource requiring a separate contract.
+    LiveResource,
+}
+
+impl ValueResourceClass {
+    /// Conservatively combines stored-member resource classification.
+    #[must_use]
+    pub const fn combine(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::LiveResource, _) | (_, Self::LiveResource) => Self::LiveResource,
+            (Self::NonLiveResource, Self::NonLiveResource) => Self::NonLiveResource,
+        }
+    }
+}
+
+/// Source-language protection of a value type.
+///
+/// This is distinct from the potentially sensitive integration data carried by
+/// any value at a transport, journal, diagnostic, or event boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SourceProtectionClass {
+    /// Source may use the type without a sealed-type restriction.
+    Unsealed,
+    /// Source operations are restricted by a sealed-type contract.
+    Sealed,
+}
+
+impl SourceProtectionClass {
+    /// Conservatively combines stored-member source protection.
+    #[must_use]
+    pub const fn combine(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Sealed, _) | (_, Self::Sealed) => Self::Sealed,
+            (Self::Unsealed, Self::Unsealed) => Self::Unsealed,
+        }
+    }
+}
+
+/// Availability of a canonical sealed-value recovery projection.
+///
+/// This classifies value evidence only; it does not implement runtime recovery
+/// or establish durable execution admission.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RecoveryProjectionClass {
+    /// Canonical sealed value evidence can reconstruct the logical value.
+    SealedValue,
+    /// No value recovery projection is available.
+    Unavailable,
+}
+
+impl RecoveryProjectionClass {
+    /// Conservatively combines stored-member recovery projection availability.
+    #[must_use]
+    pub const fn combine(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Unavailable, _) | (_, Self::Unavailable) => Self::Unavailable,
+            (Self::SealedValue, Self::SealedValue) => Self::SealedValue,
+        }
+    }
+}
+
+/// Independent structural properties folded over stored members.
+///
+/// Each axis combines conservatively and remains independent of external-value
+/// eligibility, operation admission, authority, and runtime implementation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndependentTypeProperties {
+    ownership: OwnershipClass,
+    transfer: TransferEligibility,
+    resource: ValueResourceClass,
+    source_protection: SourceProtectionClass,
+    recovery_projection: RecoveryProjectionClass,
+}
+
+impl IndependentTypeProperties {
+    /// Identity used for an aggregate with no stored members.
+    #[must_use]
+    pub const fn empty_aggregate() -> Self {
+        Self {
+            ownership: OwnershipClass::Copyable,
+            transfer: TransferEligibility::IsolatedTaskCapture,
+            resource: ValueResourceClass::NonLiveResource,
+            source_protection: SourceProtectionClass::Unsealed,
+            recovery_projection: RecoveryProjectionClass::SealedValue,
+        }
+    }
+
+    /// Constructs one property tuple for a primitive leaf.
+    const fn primitive(source_protection: SourceProtectionClass) -> Self {
+        Self {
+            source_protection,
+            ..Self::empty_aggregate()
+        }
+    }
+
+    /// Combines every axis conservatively for aggregate storage.
+    #[must_use]
+    pub const fn combine(self, other: Self) -> Self {
+        Self {
+            ownership: self.ownership.combine(other.ownership),
+            transfer: self.transfer.combine(other.transfer),
+            resource: self.resource.combine(other.resource),
+            source_protection: self.source_protection.combine(other.source_protection),
+            recovery_projection: self.recovery_projection.combine(other.recovery_projection),
+        }
+    }
+
+    /// Returns the value ownership obligation.
+    #[must_use]
+    pub const fn ownership_class(self) -> OwnershipClass {
+        self.ownership
+    }
+
+    /// Returns source-task transfer eligibility.
+    #[must_use]
+    pub const fn transfer_eligibility(self) -> TransferEligibility {
+        self.transfer
+    }
+
+    /// Returns the live source-resource classification.
+    #[must_use]
+    pub const fn resource_class(self) -> ValueResourceClass {
+        self.resource
+    }
+
+    /// Returns source-language protection independently of transport sensitivity.
+    #[must_use]
+    pub const fn source_protection_class(self) -> SourceProtectionClass {
+        self.source_protection
+    }
+
+    /// Returns sealed-value recovery projection availability.
+    #[must_use]
+    pub const fn recovery_projection_class(self) -> RecoveryProjectionClass {
+        self.recovery_projection
+    }
+}
+
 /// Compiler-owned facts about one existing primitive value type.
 ///
 /// Copyability, equality, external encoding, interpolation, and recovery are
@@ -46,6 +213,7 @@ pub struct PrimitiveTypeProperties {
     equatable: bool,
     external: bool,
     orderable: bool,
+    source_protection: SourceProtectionClass,
 }
 
 impl PrimitiveTypeProperties {
@@ -56,16 +224,19 @@ impl PrimitiveTypeProperties {
                 equatable: true,
                 external: true,
                 orderable: false,
+                source_protection: SourceProtectionClass::Unsealed,
             }),
             TypeKind::Int | TypeKind::Float => Some(Self {
                 equatable: true,
                 external: true,
                 orderable: true,
+                source_protection: SourceProtectionClass::Unsealed,
             }),
             TypeKind::Decision | TypeKind::OperationError => Some(Self {
                 equatable: false,
                 external: false,
                 orderable: false,
+                source_protection: SourceProtectionClass::Sealed,
             }),
             TypeKind::Declared
             | TypeKind::Option
@@ -84,7 +255,37 @@ impl PrimitiveTypeProperties {
     /// Returns the ownership class of an existing v1 primitive value.
     #[must_use]
     pub const fn ownership_class(self) -> OwnershipClass {
-        OwnershipClass::Copyable
+        self.independent_properties().ownership_class()
+    }
+
+    /// Returns source-task transfer eligibility for this primitive.
+    #[must_use]
+    pub const fn transfer_eligibility(self) -> TransferEligibility {
+        self.independent_properties().transfer_eligibility()
+    }
+
+    /// Returns the live source-resource classification for this primitive.
+    #[must_use]
+    pub const fn resource_class(self) -> ValueResourceClass {
+        self.independent_properties().resource_class()
+    }
+
+    /// Returns source-language protection independently of transport sensitivity.
+    #[must_use]
+    pub const fn source_protection_class(self) -> SourceProtectionClass {
+        self.independent_properties().source_protection_class()
+    }
+
+    /// Returns sealed-value recovery projection availability for this primitive.
+    #[must_use]
+    pub const fn recovery_projection_class(self) -> RecoveryProjectionClass {
+        self.independent_properties().recovery_projection_class()
+    }
+
+    /// Returns the complete independent property tuple for this primitive.
+    #[must_use]
+    pub const fn independent_properties(self) -> IndependentTypeProperties {
+        IndependentTypeProperties::primitive(self.source_protection)
     }
 
     /// Whether this primitive satisfies the compiler-owned `Equatable` bound.
@@ -116,6 +317,9 @@ impl PrimitiveTypeProperties {
     /// This does not establish that a containing execution is durably admissible.
     #[must_use]
     pub const fn has_recovery_projection(self) -> bool {
-        true
+        matches!(
+            self.recovery_projection_class(),
+            RecoveryProjectionClass::SealedValue
+        )
     }
 }

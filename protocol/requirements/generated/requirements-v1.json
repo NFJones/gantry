@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "9472a438954fe38a3cdd2adc00b5e510758e76625dd076b524f7d10ee2216e37",
-  "byte_length": 576651,
+  "specification_sha256": "e8b7ff328968cf4ba69672c3391025a03b1773576e854dc155935b77bff80e99",
+  "byte_length": 576797,
   "line_count": 9970,
   "regions": [
     {
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 663,
       "end_line": 7620,
-      "sha256": "55b02099fbac338685bd08d74c322f3cb02d004a01bf481521c48ebeea4bf091",
+      "sha256": "b4dadf3518fbdea9e488318f1009e16e501a4fca63996a973ca69ea4f297bbf8",
       "rationale": null
     },
     {
@@ -13241,11 +13241,11 @@
       "id": "GNT-5.20-parametric-types",
       "span_start_line": 3280,
       "span_end_line": 3356,
-      "span_sha256": "d2d38f46b8f06490362d319d67b38257a60993b71878fca3f1580c0f7504bba7",
+      "span_sha256": "3ea307ceb0007f583569bc51b605c19dbd00e1aaa0663d0eb081b0c428894677",
       "anchor_line": 3280,
       "body_start_line": 3281,
       "body_end_line": 3356,
-      "body_sha256": "11729fd578c12175dcba1eb959e6e33d973ad31bfaf06be4c7dc6b738eb1a9bd",
+      "body_sha256": "11a2b133c45de8a633aae47e4b30759ddeea1e3b4d5592c088a64fd6f4520caa",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -13285,6 +13285,7 @@
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_entry_boundaries_use_declared_members",
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_callable_bounds_use_declared_members",
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/type_properties.rs#independent_property_axes_form_conservative_aggregate_algebras",
                 "crates/gantry-conformance/tests/type_properties.rs#ownership_classes_form_a_conservative_aggregate_algebra",
                 "crates/gantry-conformance/tests/type_properties.rs#v1_primitive_ownership_does_not_depend_on_external_eligibility"
               ],

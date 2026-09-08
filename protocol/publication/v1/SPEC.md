@@ -3325,17 +3325,17 @@ A provisional recursive success MUST NOT enter a reusable proof cache until
 its root proof succeeds. Proof exhaustion MUST return no partial capability
 report and MUST preserve diagnostics already collected by the activity.
 External eligibility does not imply or follow from copyability, task capture,
-or sealed recovery projection. These facts grant neither execution admission
-nor authority and do not introduce additional source capabilities.
+transfer eligibility, resource or source protection, or sealed value recovery projection. These
+facts grant neither execution admission nor authority or additional source capabilities.
 
 Ownership classification distinguishes `Copyable`, `AffineDroppable`, and
-`MustConsume`. A structural aggregate combines its stored-member obligations:
-`MustConsume` dominates `AffineDroppable`, which dominates `Copyable`; an empty
-aggregate is `Copyable`. Enum classification includes every variant payload,
-not only the active variant. Combination MUST be associative, commutative, and
-idempotent. Every currently admitted v1 first-class value remains `Copyable`.
-The other classifications do not admit new source types, moves, or loans;
-noncopyable types require separately specified transfer and cleanup contracts.
+`MustConsume`; transfer: `IsolatedTaskCapture`/`Ineligible`; resource:
+`NonLiveResource`/`LiveResource`; protection: `Unsealed`/`Sealed`; recovery:
+`SealedValue`/`Unavailable`. Aggregates fold all stored fields and enum payloads conservatively:
+restrictive classes dominate permissive empty identities under associative, commutative, and
+idempotent combine. All v1 values are `Copyable`, `IsolatedTaskCapture`, `NonLiveResource`, and
+`SealedValue`; values storing `Decision` or `OperationError` are `Sealed`. `Unsealed` never means
+transport data is nonsensitive; no class grants live resources, moves, loans, release authority, or runtime recovery.
 
 A generic direct self-recursive occurrence MUST use the same declared
 constructor with the same parameter ordinals in the same order and MUST remain

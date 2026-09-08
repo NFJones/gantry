@@ -6,15 +6,20 @@
 use std::collections::BTreeMap;
 
 use gantry_core::source::{FrontendLimits, FrontendResourceLimit, GenericAnalysisCounters};
-use gantry_ir::{OwnershipClass, TypeDescriptor, TypeExpression};
+use gantry_ir::{
+    IndependentTypeProperties, OwnershipClass, RecoveryProjectionClass, SourceProtectionClass,
+    TransferEligibility, TypeDescriptor, TypeExpression, ValueResourceClass,
+};
 
-use crate::generics::{SealedCapability, prove_ownership_class, prove_sealed_capability};
+use crate::generics::{
+    SealedCapability, prove_independent_type_properties, prove_sealed_capability,
+};
 use crate::{AnalysisError, AnalysisStatus, TypedPackage};
 
 /// Independent compiler-owned capability results, not execution admission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TypeCapabilities {
-    ownership_class: OwnershipClass,
+    independent: IndependentTypeProperties,
     equatable: bool,
     external: bool,
     interpolatable: bool,
@@ -35,7 +40,7 @@ impl TypeCapabilities {
     /// Noncopyable classifications do not yet have source inhabitants in v1.
     #[must_use]
     pub const fn ownership_class(self) -> OwnershipClass {
-        self.ownership_class
+        self.independent.ownership_class()
     }
 
     /// Whether a v1 task may capture an independent copy of this value.
@@ -44,7 +49,58 @@ impl TypeCapabilities {
     /// safety, authority delegation, or permission to spawn a task.
     #[must_use]
     pub const fn is_task_capturable(self) -> bool {
-        matches!(self.ownership_class, OwnershipClass::Copyable)
+        matches!(
+            self.transfer_eligibility(),
+            TransferEligibility::IsolatedTaskCapture
+        )
+    }
+
+    /// Returns eligibility for transfer between source-task ownership domains.
+    #[must_use]
+    pub const fn transfer_eligibility(self) -> TransferEligibility {
+        self.independent.transfer_eligibility()
+    }
+
+    /// Whether this type contains a live source resource.
+    #[must_use]
+    pub const fn is_live_resource(self) -> bool {
+        matches!(self.resource_class(), ValueResourceClass::LiveResource)
+    }
+
+    /// Returns the live source-resource classification.
+    #[must_use]
+    pub const fn resource_class(self) -> ValueResourceClass {
+        self.independent.resource_class()
+    }
+
+    /// Whether source operations are restricted by a sealed type boundary.
+    #[must_use]
+    pub const fn is_source_protected(self) -> bool {
+        matches!(
+            self.source_protection_class(),
+            SourceProtectionClass::Sealed
+        )
+    }
+
+    /// Returns source-language protection, independently of transport sensitivity.
+    #[must_use]
+    pub const fn source_protection_class(self) -> SourceProtectionClass {
+        self.independent.source_protection_class()
+    }
+
+    /// Whether canonical sealed value evidence can reconstruct this value.
+    #[must_use]
+    pub const fn has_sealed_recovery_projection(self) -> bool {
+        matches!(
+            self.recovery_projection_class(),
+            RecoveryProjectionClass::SealedValue
+        )
+    }
+
+    /// Returns the value recovery-projection classification.
+    #[must_use]
+    pub const fn recovery_projection_class(self) -> RecoveryProjectionClass {
+        self.independent.recovery_projection_class()
     }
 
     /// Whether the stored value satisfies `Equatable`.
@@ -151,17 +207,21 @@ impl TypedPackage {
         let equatable = prove(SealedCapability::Equatable)?;
         let external = prove(SealedCapability::ExternalValue)?;
         let interpolatable = prove(SealedCapability::Interpolatable)?;
-        let mut ownership_memo = BTreeMap::new();
-        let ownership_class =
-            prove_ownership_class(descriptor, declarations, &mut counters, &mut ownership_memo)
-                .map_err(|error| match error {
-                    AnalysisError::ResourceLimit { error, .. } => {
-                        TypeCapabilityQueryError::ResourceLimit(error)
-                    }
-                    _ => TypeCapabilityQueryError::Invariant,
-                })?;
+        let mut independent_memo = BTreeMap::new();
+        let independent = prove_independent_type_properties(
+            descriptor,
+            declarations,
+            &mut counters,
+            &mut independent_memo,
+        )
+        .map_err(|error| match error {
+            AnalysisError::ResourceLimit { error, .. } => {
+                TypeCapabilityQueryError::ResourceLimit(error)
+            }
+            _ => TypeCapabilityQueryError::Invariant,
+        })?;
         Ok(TypeCapabilities {
-            ownership_class,
+            independent,
             equatable,
             external,
             interpolatable,
