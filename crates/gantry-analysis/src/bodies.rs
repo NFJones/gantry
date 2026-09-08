@@ -6740,6 +6740,44 @@ fn infer_generic_call(
         .map_err(|_| AnalysisError::Invariant)
 }
 
+/// Checks callee capabilities using concrete types or the caller's rigid assumptions.
+fn check_callable_sealed_bounds(
+    signature: &GenericCallableSignature,
+    arguments: &[TypeDescriptor],
+    call_site: &gantry_frontend::SyntaxNode,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<bool, AnalysisError> {
+    for predicate in &signature.sealed_predicates {
+        let index = signature
+            .required
+            .iter()
+            .position(|parameter| parameter == &predicate.parameter)
+            .ok_or(AnalysisError::Invariant)?;
+        let argument = arguments.get(index).ok_or(AnalysisError::Invariant)?;
+        if !prove_sealed_capability(
+            predicate.capability,
+            argument,
+            &context.capability_declarations,
+            &mut context.generic_analysis_counters.borrow_mut(),
+            &mut context.capability_proofs.borrow_mut(),
+        )? {
+            diagnostics.push(body_diagnostic(
+                GenericAnalysisCode::UnsatisfiedBound.wire_name(),
+                DiagnosticCategory::Type,
+                "a generic workflow argument does not satisfy its sealed bound",
+                call_site.span().clone(),
+                [
+                    ("capability", predicate.capability.wire_name()),
+                    ("type", argument.canonical_string().as_str()),
+                ],
+            )?);
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn retain_generic_instantiation(
     signature: &GenericCallableSignature,
     concrete_arguments: Vec<TypeDescriptor>,
@@ -6749,6 +6787,13 @@ fn retain_generic_instantiation(
 ) -> Result<(), AnalysisError> {
     if context.parametric_validation.get() {
         record_effect_call(context, EffectNode::Template(signature.template.clone()));
+        check_callable_sealed_bounds(
+            signature,
+            &concrete_arguments,
+            call_site,
+            context,
+            diagnostics,
+        )?;
         return Ok(());
     }
     let key = (signature.template.clone(), concrete_arguments.clone());
@@ -6807,34 +6852,14 @@ fn retain_generic_instantiation(
     }
     let substitution = ExactTypeSubstitution::explicit(&signature.required, &concrete_arguments)
         .map_err(|_| AnalysisError::Invariant)?;
-    for predicate in &signature.sealed_predicates {
-        let argument_index = signature
-            .required
-            .iter()
-            .position(|parameter| parameter == &predicate.parameter)
-            .ok_or(AnalysisError::Invariant)?;
-        let argument = concrete_arguments
-            .get(argument_index)
-            .ok_or(AnalysisError::Invariant)?;
-        if !prove_sealed_capability(
-            predicate.capability,
-            argument,
-            &context.capability_declarations,
-            &mut context.generic_analysis_counters.borrow_mut(),
-            &mut context.capability_proofs.borrow_mut(),
-        )? {
-            diagnostics.push(body_diagnostic(
-                GenericAnalysisCode::UnsatisfiedBound.wire_name(),
-                DiagnosticCategory::Type,
-                "a concrete generic workflow argument does not satisfy its sealed bound",
-                call_site.span().clone(),
-                [
-                    ("capability", predicate.capability.wire_name()),
-                    ("type", argument.canonical_string().as_str()),
-                ],
-            )?);
-            return Ok(());
-        }
+    if !check_callable_sealed_bounds(
+        signature,
+        &concrete_arguments,
+        call_site,
+        context,
+        diagnostics,
+    )? {
+        return Ok(());
     }
     let concrete = match signature.kind {
         TemplateKind::FreeWorkflow => {

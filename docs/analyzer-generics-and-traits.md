@@ -77,6 +77,9 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   uses rigid internal representatives and only the declaration's canonical
   predicates; those predicates supply trait-method slots without selecting a
   concrete implementation or retaining a synthetic instantiation.
+  Calls in these bodies must also prove the callee's sealed capability bounds
+  from the caller's declared predicates, even when no concrete call reaches
+  the body. Later instantiation cannot repair a missing generic bound.
 - Calls reached from non-generic roots seed a canonical worklist of closed
   generic free workflows, inherent methods, and selected trait methods.
   Substituted bodies extend the worklist transitively. Equal template and type

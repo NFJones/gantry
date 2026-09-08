@@ -276,6 +276,28 @@ fn public_equality_uses_structural_capabilities() {
     }
 }
 
+/// Unused generic callers must prove the capabilities required by their callees.
+#[test]
+fn public_parametric_calls_require_callee_bounds() {
+    for (bound, expected) in [
+        ("where U: ExternalValue", AnalysisStatus::Valid),
+        ("", AnalysisStatus::Invalid),
+    ] {
+        let package = analyze(&format!(
+            "fn accept<T>(value: T) -> T where T: ExternalValue {{ value }}\nfn wrapper<U>(value: U) -> U {bound} {{ accept(value) }}\nfn main() {{}}"
+        ));
+        assert_eq!(package.status(), expected, "{:?}", package.diagnostics());
+        if expected == AnalysisStatus::Invalid {
+            assert!(
+                package
+                    .diagnostics()
+                    .iter()
+                    .any(|diagnostic| { diagnostic.code.as_str() == "unsatisfied-bound" })
+            );
+        }
+    }
+}
+
 /// Entry boundaries use stored members rather than phantom type arguments.
 #[test]
 fn public_entry_boundaries_use_declared_members() {

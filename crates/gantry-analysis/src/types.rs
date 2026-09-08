@@ -3662,6 +3662,30 @@ fn main(flag: Bool) -> Int {
 
     #[test]
     fn unreachable_generic_bodies_are_checked_parametrically() {
+        let unbounded = analyze(
+            "fn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn wrapper<U>(value: U) -> U { accept(value) }\nfn main() {}",
+        );
+        assert_eq!(
+            unbounded.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            unbounded.diagnostics()
+        );
+        assert!(
+            unbounded
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "unsatisfied-bound")
+        );
+        let bounded = analyze(
+            "fn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn wrapper<U>(value: U) -> U where U: ExternalValue { accept(value) }\nfn main() {}",
+        );
+        assert_eq!(
+            bounded.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            bounded.diagnostics()
+        );
         let package = analyze("fn invalid<T>(value: T) -> Int { value }\nfn main() {}");
         assert_eq!(package.status(), AnalysisStatus::Invalid);
         assert!(

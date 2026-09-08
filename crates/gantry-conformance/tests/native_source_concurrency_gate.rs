@@ -102,7 +102,7 @@ const ARTIFACTS: [(&str, &str); 14] = [
     ),
     (
         LOWER_MANIFEST_PATH,
-        "20a1f40fdbedd8780115a57b694dfff42871fce4190426ef2f2fedff774f4ed6",
+        "283362e2b2e5e2bb70a64136facd498959ad76f91aaf1df78201a92c0ad75b0a",
     ),
     (
         "protocol/conformance/durable-coordination-v1.json",
