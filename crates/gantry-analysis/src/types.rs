@@ -535,13 +535,7 @@ fn assemble_generic_analysis_facts(
                 ty: receiver.clone(),
             });
         }
-        parameters.extend(
-            metadata
-                .parameters
-                .iter()
-                .cloned()
-                .map(|ty| WorkflowParameter { mutable: false, ty }),
-        );
+        parameters.extend(metadata.parameters.iter().cloned());
         let mut pending = parameters
             .iter()
             .map(|parameter| parameter.ty.clone())
@@ -3646,6 +3640,31 @@ fn main(flag: Bool) -> Int {
                 }),
             "{:?}",
             contextual_self.generic_instantiations()
+        );
+
+        let mutable_parameters = analyze(
+            "fn revise<T>(mut value: T) -> T { value }\nstruct Envelope<T> { value: T }\nimpl<T> Envelope<T> { pure fn update<U>(self, mut value: U) -> U { value } }\nfn main(value: Envelope<String>) -> String { discard revise::<String>(\"free\"); value.update::<String>(\"method\") }",
+        );
+        assert_eq!(
+            mutable_parameters.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            mutable_parameters.diagnostics()
+        );
+        let signatures = mutable_parameters
+            .canonical_ir()
+            .unwrap_or_else(|| unreachable!("valid package has canonical IR"))
+            .generic_facts()
+            .executable()
+            .callables()
+            .iter()
+            .map(|callable| callable.signature().as_str())
+            .collect::<Vec<_>>();
+        assert!(signatures.contains(&"fn crate::revise<String>(mut String)->String"));
+        assert!(
+            signatures.contains(
+                &"fn <crate::Envelope<String>>::update<String>(crate::Envelope<String>,mut String)->String"
+            )
         );
     }
 

@@ -73,6 +73,7 @@ struct GenericCallableSignature {
     predicates: Vec<Predicate>,
     sealed_predicates: Vec<CapabilityPredicate>,
     parameters: Vec<TypeExpression>,
+    parameter_mutability: Vec<bool>,
     result: TypeExpression,
 }
 
@@ -130,7 +131,7 @@ pub(crate) struct ConcreteCallableMetadata {
     pub(crate) key: InstantiationKey,
     pub(crate) receiver: Option<TypeDescriptor>,
     pub(crate) mutable_receiver: bool,
-    pub(crate) parameters: Vec<TypeDescriptor>,
+    pub(crate) parameters: Vec<WorkflowParameter>,
     pub(crate) result: TypeDescriptor,
     pub(crate) declaration: SourceSpan,
     pub(crate) declaration_types: BTreeMap<NodeId, TypeFact>,
@@ -446,6 +447,23 @@ fn build_body_context(
                             .filter_map(|type_node| generic_by_span.get(type_node.span()))
                             .map(|fact| fact.expression.clone())
                             .collect::<Vec<_>>();
+                        let parameter_mutability = node
+                            .children()
+                            .iter()
+                            .filter_map(|child| source.tree().node(*child))
+                            .filter(|parameter| {
+                                matches!(parameter.form(), SyntaxForm::Parameter)
+                                    && direct_child_form(
+                                        source.tree(),
+                                        parameter,
+                                        SyntaxForm::ValueType,
+                                    )
+                                    .is_some()
+                            })
+                            .map(|parameter| {
+                                node_has_reserved_word(source.tree(), parameter, "mut")
+                            })
+                            .collect::<Vec<_>>();
                         let result = node
                             .children()
                             .iter()
@@ -479,6 +497,7 @@ fn build_body_context(
                                 predicates: predicates.clone(),
                                 sealed_predicates,
                                 parameters,
+                                parameter_mutability,
                                 result,
                             },
                         );
@@ -1046,6 +1065,16 @@ fn collect_generic_method_signatures(
                             .ok_or(AnalysisError::Invariant)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                let parameter_mutability = method_node
+                    .children()
+                    .iter()
+                    .filter_map(|child| tree.node(*child))
+                    .filter(|parameter| {
+                        matches!(parameter.form(), SyntaxForm::Parameter)
+                            && !node_has_reserved_word(tree, parameter, "self")
+                    })
+                    .map(|parameter| node_has_reserved_word(tree, parameter, "mut"))
+                    .collect::<Vec<_>>();
                 let result = method_node
                     .children()
                     .iter()
@@ -1097,6 +1126,7 @@ fn collect_generic_method_signatures(
                     predicates,
                     sealed_predicates,
                     parameters,
+                    parameter_mutability,
                     result,
                 });
             }
@@ -1272,10 +1302,14 @@ fn collect_concrete_callable_metadata(
             let parameters = signature
                 .parameters
                 .iter()
-                .map(|parameter| {
-                    substitution
-                        .apply_with_receiver(parameter, receiver.as_ref())
-                        .map_err(|_| AnalysisError::Invariant)
+                .zip(&signature.parameter_mutability)
+                .map(|(parameter, mutable)| {
+                    Ok(WorkflowParameter {
+                        mutable: *mutable,
+                        ty: substitution
+                            .apply_with_receiver(parameter, receiver.as_ref())
+                            .map_err(|_| AnalysisError::Invariant)?,
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let result = substitution
