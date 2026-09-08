@@ -214,6 +214,30 @@ fn main() {}
     }));
 }
 
+/// A recursive back-edge cannot publish a proof before all stored fields qualify.
+#[test]
+fn recursive_equality_proofs_do_not_cache_provisional_success() {
+    for comparisons in [
+        "discard value == value; discard value.next == value.next;",
+        "discard value.next == value.next; discard value == value;",
+    ] {
+        let package = analyze(&format!(
+            "struct Sealed {{ value: Decision }}\nstruct Node {{ next: Option<Node>, sealed: Sealed }}\nfn compare(value: Node) {{ {comparisons} }}\nfn main() {{}}"
+        ));
+        assert_eq!(package.status(), AnalysisStatus::Invalid);
+        assert_eq!(
+            package
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| diagnostic.code.as_str() == "invalid-primitive")
+                .count(),
+            2,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+}
+
 /// Equality follows stored members and requires an explicit generic capability.
 #[test]
 fn public_equality_uses_structural_capabilities() {
