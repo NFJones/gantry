@@ -1743,7 +1743,9 @@ pub(crate) struct CapabilityPredicate {
     span: SourceSpan,
 }
 
-struct GenericDeclarationShape {
+/// Declared members used by both declaration and callable capability proofs.
+#[derive(Clone, Debug)]
+pub(crate) struct GenericDeclarationShape {
     binder: Option<TypeBinder>,
     declaration: SourceSpan,
     members: Vec<TypeExpression>,
@@ -1824,7 +1826,8 @@ pub(crate) fn check_sealed_declaration_bounds(
     Ok(())
 }
 
-fn collect_generic_declaration_shapes(
+/// Collects authored declared-member shapes for structural capability checking.
+pub(crate) fn collect_generic_declaration_shapes(
     sources: &[ParsedSource],
     structure: &PackageStructure,
     binders: &[TypeBinder],
@@ -1950,21 +1953,8 @@ pub(crate) fn collect_capability_predicates(
     Ok(predicates)
 }
 
-/// Checks one closed value against a compiler-owned capability predicate.
-#[must_use]
-pub(crate) fn satisfies_sealed_capability(
-    capability: SealedCapability,
-    descriptor: &TypeDescriptor,
-) -> bool {
-    match capability {
-        SealedCapability::Equatable | SealedCapability::ExternalValue => {
-            !descriptor.contains_sealed_boundary()
-        }
-        SealedCapability::Interpolatable => true,
-    }
-}
-
-fn prove_sealed_capability(
+/// Proves a closed capability over instantiated stored members with metering.
+pub(crate) fn prove_sealed_capability(
     capability: SealedCapability,
     root: &TypeDescriptor,
     declarations: &BTreeMap<String, GenericDeclarationShape>,

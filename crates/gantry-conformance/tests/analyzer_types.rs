@@ -214,6 +214,33 @@ fn main() {}
     }));
 }
 
+/// Callable capabilities follow stored members, not phantom type arguments.
+#[test]
+fn public_callable_bounds_use_declared_members() {
+    let valid = analyze(
+        "struct Phantom<T> { value: Int }\nfn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(Phantom::<Decision> { value: 1 }); }",
+    );
+    assert_eq!(
+        valid.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        valid.diagnostics()
+    );
+
+    let invalid = analyze(
+        "fn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(decide \"x\"); }",
+    );
+    assert_eq!(invalid.status(), AnalysisStatus::Invalid);
+    assert!(
+        invalid.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unsatisfied-bound"
+                && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("ExternalValue")
+        }),
+        "{:?}",
+        invalid.diagnostics()
+    );
+}
+
 #[test]
 fn public_static_trait_resolution_is_coherent_and_diagnostic() {
     let valid = analyze(

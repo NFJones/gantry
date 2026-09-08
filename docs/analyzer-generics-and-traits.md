@@ -43,10 +43,13 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   results are memoized, cache hits retain exact charging semantics, and an
   active obligation that re-enters itself is rejected with a bounded
   `cyclic-trait-obligation` chain.
-- Declaration bounds using the compiler-owned `Equatable`, `Interpolatable`,
+- Declaration and callable bounds using the compiler-owned `Equatable`, `Interpolatable`,
   and `ExternalValue` capabilities are proved only after substitution is
   complete. Capability proof is structural, memoized, native-stack-safe, and
   deterministic across declaration order and cache hits.
+  Both use instantiated stored fields and enum payloads: an unused phantom
+  type argument does not by itself disqualify a declared value. Proof work is
+  charged to the trait-resolution budget, including callable-bound checks.
 - Generic field defaults are valid only when they hold for every admitted
   substitution. Generic enum constructors, payload bindings, redundancy, and
   exhaustiveness use the substituted closed enum application.

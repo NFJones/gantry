@@ -2193,6 +2193,20 @@ fn main(flag: Bool) -> Int {
         ));
     }
 
+    /// Callable bounds must inspect stored fields, not unused generic arguments.
+    #[test]
+    fn callable_external_bounds_use_instantiated_declared_fields() {
+        let package = analyze(
+            "struct Phantom<T> { value: Int }\nfn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(Phantom::<Decision> { value: 1 }); }",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+
     #[test]
     fn sealed_declaration_bounds_are_proved_after_complete_substitution() {
         let accepted = analyze(

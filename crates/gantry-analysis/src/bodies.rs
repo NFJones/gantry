@@ -27,9 +27,10 @@ use gantry_ir::{
 };
 
 use crate::generics::{
-    CapabilityPredicate, ExactTypeSubstitution, TypeInferenceFailure, TypeParameterKey,
-    collect_capability_predicates, collect_type_parameter_keys, collect_where_predicates,
-    satisfies_sealed_capability, substitute_self_type,
+    CapabilityPredicate, ExactTypeSubstitution, GenericDeclarationShape, SealedCapability,
+    TypeInferenceFailure, TypeParameterKey, collect_capability_predicates,
+    collect_generic_declaration_shapes, collect_type_parameter_keys, collect_where_predicates,
+    prove_sealed_capability, substitute_self_type,
 };
 use crate::{
     AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
@@ -215,6 +216,8 @@ struct GenericEnumShape {
 #[derive(Clone, Debug)]
 struct BodyContext {
     callables: BTreeMap<SymbolId, CallableSignature>,
+    capability_declarations: BTreeMap<String, GenericDeclarationShape>,
+    capability_proofs: RefCell<BTreeMap<(SealedCapability, String), bool>>,
     generic_callables: BTreeMap<SymbolId, GenericCallableSignature>,
     generic_methods: Vec<GenericCallableSignature>,
     generic_types: BTreeMap<SourceSpan, TypeExpression>,
@@ -817,6 +820,13 @@ fn build_body_context(
     });
     Ok(BodyContext {
         callables,
+        capability_declarations: collect_generic_declaration_shapes(
+            sources,
+            structure,
+            binders,
+            generic_facts,
+        )?,
+        capability_proofs: RefCell::new(BTreeMap::new()),
         generic_callables,
         generic_methods,
         generic_types,
@@ -6776,7 +6786,13 @@ fn retain_generic_instantiation(
         let argument = concrete_arguments
             .get(argument_index)
             .ok_or(AnalysisError::Invariant)?;
-        if !satisfies_sealed_capability(predicate.capability, argument) {
+        if !prove_sealed_capability(
+            predicate.capability,
+            argument,
+            &context.capability_declarations,
+            &mut context.generic_analysis_counters.borrow_mut(),
+            &mut context.capability_proofs.borrow_mut(),
+        )? {
             diagnostics.push(body_diagnostic(
                 GenericAnalysisCode::UnsatisfiedBound.wire_name(),
                 DiagnosticCategory::Type,
