@@ -190,6 +190,9 @@ fn analyze_package_types_with_policy(
         phase.parsed_sources(),
         &structure,
         &facts_by_source,
+        &type_binders,
+        &generic_types,
+        &mut generic_counters,
         &mut type_diagnostics,
     )?;
     check_impl_targets(phase.parsed_sources(), &structure, &mut type_diagnostics)?;
@@ -1171,8 +1174,18 @@ fn check_sealed_boundaries(
     sources: &[ParsedSource],
     structure: &PackageStructure,
     facts: &[BTreeMap<NodeId, TypeFact>],
+    binders: &[TypeBinder],
+    generic_facts: &[GenericTypeFact],
+    counters: &mut Option<GenericAnalysisCounters>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
+    let declarations = crate::generics::collect_generic_declaration_shapes(
+        sources,
+        structure,
+        binders,
+        generic_facts,
+    )?;
+    let mut proofs = BTreeMap::new();
     let root_main = structure
         .symbols()
         .iter()
@@ -1230,7 +1243,13 @@ fn check_sealed_boundaries(
                 let Some(fact) = resolved.get(&type_node) else {
                     continue;
                 };
-                if fact.descriptor.contains_sealed_boundary() {
+                if !crate::generics::prove_sealed_capability(
+                    crate::generics::SealedCapability::ExternalValue,
+                    &fact.descriptor,
+                    &declarations,
+                    counters,
+                    &mut proofs,
+                )? {
                     diagnostics.push(type_diagnostic(
                         "sealed-type-boundary",
                         "Decision or OperationError is not permitted at this boundary",
@@ -2720,7 +2739,8 @@ fn main(flag: Bool) -> Int {
         let phase = syntax(
             "trait Label { pure fn label(self) -> String; }\nstruct Item {}\nstruct Envelope<T> { value: T }\nimpl Label for Item { pure fn label(self) -> String { \"item\" } }\nimpl<T> Label for Envelope<T> where T: Label { pure fn label(self) -> String { \"envelope\" } }\nfn main(value: Envelope<Item>) { discard value.label(); discard value.label(); }",
         );
-        let admitted = analyze_package_types_with_limits(&phase, trait_limits(6))
+        // Four boundary-proof steps precede the six memoized method-proof steps.
+        let admitted = analyze_package_types_with_limits(&phase, trait_limits(10))
             .unwrap_or_else(|error| panic!("memoized obligation analysis failed: {error:?}"));
         assert_eq!(
             admitted.status(),
@@ -2729,7 +2749,7 @@ fn main(flag: Bool) -> Int {
             admitted.diagnostics()
         );
         assert!(matches!(
-            analyze_package_types_with_limits(&phase, trait_limits(5)),
+            analyze_package_types_with_limits(&phase, trait_limits(9)),
             Err(AnalysisError::ResourceLimit { error, .. })
                 if error.code == FrontendResourceCode::TraitResolutionStepLimit
         ));

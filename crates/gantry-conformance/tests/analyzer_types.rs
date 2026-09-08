@@ -252,6 +252,35 @@ fn public_equality_uses_structural_capabilities() {
     }
 }
 
+/// Entry boundaries use stored members rather than phantom type arguments.
+#[test]
+fn public_entry_boundaries_use_declared_members() {
+    let valid = analyze(
+        "struct Phantom<T> { value: Int }\nfn main(value: Phantom<Decision>) { discard value; }",
+    );
+    assert_eq!(
+        valid.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        valid.diagnostics()
+    );
+
+    let invalid =
+        analyze("struct Stored { value: Decision }\nfn main(value: Stored) { discard value; }");
+    assert_eq!(
+        invalid.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        invalid.diagnostics()
+    );
+    assert!(
+        invalid
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "sealed-type-boundary")
+    );
+}
+
 /// Callable capabilities follow stored members, not phantom type arguments.
 #[test]
 fn public_callable_bounds_use_declared_members() {

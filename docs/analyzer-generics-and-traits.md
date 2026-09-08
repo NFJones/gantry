@@ -58,6 +58,10 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   `Decision` cannot be compared, while unused phantom arguments do not affect
   equality eligibility. A generic body may compare a type parameter only
   when its declaration promises `Equatable`.
+- Entry, action-result, and prompt-result boundary checks also prove
+  `ExternalValue` over instantiated stored members. Phantom arguments do not
+  disqualify an otherwise external value; stored sealed values do. These
+  boundary proofs consume the shared trait-resolution budget.
 - Generic field defaults are valid only when they hold for every admitted
   substitution. Generic enum constructors, payload bindings, redundancy, and
   exhaustiveness use the substituted closed enum application.
