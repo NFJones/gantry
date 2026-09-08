@@ -319,10 +319,10 @@ struct Holder<T> { value: T, counter: Counter }
 impl<T> Holder<T> {
     fn bump(mut self, delta: Int) -> Holder<T> { self.counter.value += delta; self }
 }
-fn main() -> Tuple<Holder<Int>, Holder<Int>> {
+fn main() -> Tuple<Int, Int> {
     let original: Holder<Int> = Holder::<Int> { value: 0, counter: Counter { value: 1 } };
     let changed: Holder<Int> = original.bump(6);
-    (original, changed)
+    (original.counter.value, changed.counter.value)
 }
 "#,
     );
@@ -350,13 +350,9 @@ fn main() -> Tuple<Holder<Int>, Holder<Int>> {
     };
     let original = value
         .member(0)
-        .and_then(|holder| holder.field("counter"))
-        .and_then(|counter| counter.field("value"))
         .unwrap_or_else(|| panic!("result omitted the original count"));
     let changed = value
         .member(1)
-        .and_then(|holder| holder.field("counter"))
-        .and_then(|counter| counter.field("value"))
         .unwrap_or_else(|| panic!("result omitted the changed count"));
     assert!(matches!(original.view(), LogicalValueView::Int(value) if value.get() == 1));
     assert!(matches!(changed.view(), LogicalValueView::Int(value) if value.get() == 7));

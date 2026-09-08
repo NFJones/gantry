@@ -1004,12 +1004,14 @@ impl Compiler<'_> {
         {
             return self.compile_struct(expression, struct_expression, ty);
         }
-        if let Some((root, field)) = postfix_field_projection(self.tree, &node) {
+        if let Some((root, fields)) = postfix_field_projection(self.tree, &node) {
             self.emit(ty.clone(), InstructionKind::Load(root))?;
-            self.emit(
-                ty.clone(),
-                InstructionKind::Project(Projection::Field(field)),
-            )?;
+            for field in fields {
+                self.emit(
+                    ty.clone(),
+                    InstructionKind::Project(Projection::Field(field)),
+                )?;
+            }
             return Ok(ty);
         }
         if let Some(projection) = self.compile_static_projection(expression, &node, &ty)? {
@@ -1635,7 +1637,7 @@ fn postfix_method_receiver(
 fn postfix_field_projection(
     tree: &SyntaxTree,
     expression: &gantry_frontend::SyntaxNode,
-) -> Option<(Arc<str>, Arc<str>)> {
+) -> Option<(Arc<str>, Vec<Arc<str>>)> {
     let mut tokens = Vec::new();
     let mut work = expression
         .children()
@@ -1661,30 +1663,29 @@ fn postfix_field_projection(
     }) {
         return None;
     }
-    let dot = tokens.iter().position(|node| {
-        matches!(
-            node.form(),
+    let root = match tokens.first()?.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+            Arc::from("self")
+        }
+        _ => return None,
+    };
+    let mut fields = Vec::new();
+    let mut cursor = 1;
+    while cursor < tokens.len() {
+        if !matches!(
+            tokens.get(cursor)?.form(),
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
-        )
-    })?;
-    let root = tokens
-        .get(..dot)?
-        .iter()
-        .find_map(|node| match node.form() {
-            SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.clone()),
-            SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
-                Some(Arc::from("self"))
-            }
-            _ => None,
-        })?;
-    let field = tokens
-        .get(dot.saturating_add(1)..)?
-        .iter()
-        .find_map(|node| match node.form() {
-            SyntaxForm::Token(TokenKind::Identifier(value)) => Some(value.clone()),
-            _ => None,
-        })?;
-    Some((root, field))
+        ) {
+            return None;
+        }
+        let SyntaxForm::Token(TokenKind::Identifier(field)) = tokens.get(cursor + 1)?.form() else {
+            return None;
+        };
+        fields.push(field.clone());
+        cursor += 2;
+    }
+    (!fields.is_empty()).then_some((root, fields))
 }
 
 fn method_receiver_type(path: &CanonicalPath) -> Result<TypeDescriptor, AnalysisError> {

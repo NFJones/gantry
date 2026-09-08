@@ -79,6 +79,8 @@ struct GenericCallableSignature {
 
 pub(crate) type InstantiationKey = (CanonicalTemplateIdentity, Vec<TypeDescriptor>);
 
+type PostfixFieldSequence = (Arc<str>, Vec<(Arc<str>, NodeId)>);
+
 type EffectSummaries = (
     BTreeMap<CanonicalTemplateIdentity, EffectSet>,
     BTreeMap<InstantiationKey, EffectSet>,
@@ -4967,6 +4969,51 @@ fn infer_member_sequence(
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    if receiver.is_none()
+        && let Some((root, fields)) = postfix_field_sequence(tree, children)
+        && fields.len() > 1
+    {
+        let Some(mut receiver) = environment.get(&root).cloned() else {
+            return Ok(None);
+        };
+        for (member, member_id) in fields {
+            let field = if receiver == TypeDescriptor::DECISION {
+                match member.as_ref() {
+                    "decision" => Some(TypeDescriptor::BOOL),
+                    "rationale" => Some(TypeDescriptor::STRING),
+                    _ => None,
+                }
+            } else {
+                let closed = context
+                    .structs
+                    .values()
+                    .find(|shape| shape.descriptor == receiver)
+                    .and_then(|shape| shape.fields.get(&member))
+                    .map(|field| field.ty.clone());
+                if closed.is_some() {
+                    closed
+                } else {
+                    generic_field_type(&receiver, &member, context)?
+                }
+            };
+            let Some(field) = field else {
+                let member_node = tree.node(member_id).ok_or(AnalysisError::Invariant)?;
+                diagnostics.push(body_diagnostic(
+                    "unknown-member",
+                    DiagnosticCategory::Type,
+                    "a receiver type has no field or inherent method with this name",
+                    member_node.span().clone(),
+                    [
+                        ("member", member.as_ref()),
+                        ("receiver", receiver.canonical_string().as_str()),
+                    ],
+                )?);
+                return Ok(None);
+            };
+            receiver = field;
+        }
+        return Ok(Some(receiver));
+    }
     let Some(dot) = children
         .iter()
         .position(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
@@ -5192,6 +5239,53 @@ fn infer_member_sequence(
         ],
     )?);
     Ok(None)
+}
+
+fn postfix_field_sequence(tree: &SyntaxTree, children: &[NodeId]) -> Option<PostfixFieldSequence> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push((id, node));
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    if tokens.iter().any(|(_, node)| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(
+                Punctuation::LeftParenthesis | Punctuation::LeftBracket
+            ))
+        )
+    }) {
+        return None;
+    }
+    let root = match tokens.first()?.1.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+            Arc::from("self")
+        }
+        _ => return None,
+    };
+    let mut fields = Vec::new();
+    let mut cursor = 1;
+    while cursor < tokens.len() {
+        if !matches!(
+            tokens.get(cursor)?.1.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        ) {
+            return None;
+        }
+        let (id, node) = tokens.get(cursor + 1)?;
+        let SyntaxForm::Token(TokenKind::Identifier(field)) = node.form() else {
+            return None;
+        };
+        fields.push((field.clone(), *id));
+        cursor += 2;
+    }
+    (!fields.is_empty()).then_some((root, fields))
 }
 
 fn generic_field_type(
