@@ -27,5 +27,5 @@ pub use model::{
 pub use symbols::analyze_package_structure;
 pub use types::{
     analyze_package_types, analyze_package_types_with_artifact_limits,
-    analyze_package_types_with_limits,
+    analyze_package_types_with_limits, analyze_package_types_with_limits_and_mode,
 };

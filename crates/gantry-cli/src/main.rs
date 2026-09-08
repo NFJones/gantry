@@ -218,6 +218,7 @@ fn analyze_command_with_format(
     let result = block_on(coordinator.analyze(AnalyzePackageRequest {
         package_root,
         protocol_selection: &selection,
+        semantic_mode: gantry::mode::SemanticMode::Portable,
         frontend_limits: limits,
         event_delivery: None,
     }));

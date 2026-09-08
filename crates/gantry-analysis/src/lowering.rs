@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use gantry_core::mode::SemanticMode;
 use gantry_core::protocol::ProtocolVersion;
 use gantry_core::source::{FrontendResourceLimit, SourceSnapshot, SourceSpan};
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
@@ -32,6 +33,7 @@ pub(crate) fn lower_package_manifest(
         .map_err(map_manifest_error)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_package_artifacts(
     snapshot: &SourceSnapshot,
     sources: &[ParsedSource],
@@ -39,6 +41,7 @@ pub(crate) fn lower_package_artifacts(
     workflows: &[WorkflowFacts],
     generic: Option<GenericAnalysisFacts>,
     generic_declarations: &BTreeSet<SourceSpan>,
+    semantic_mode: SemanticMode,
     limits: ArtifactLimits,
 ) -> Result<LoweredArtifacts, LoweringError> {
     if sources.len() != body_types.len() {
@@ -72,8 +75,13 @@ pub(crate) fn lower_package_artifacts(
         .collect::<Result<Vec<_>, _>>()?;
     let generic = generic.unwrap_or_else(GenericAnalysisFacts::empty);
     let generic_entries = generic.source_map().to_vec();
-    let canonical_ir = CanonicalIr::with_generic_facts(canonical_workflows, generic, limits)
-        .map_err(map_ir_error)?;
+    let canonical_ir = CanonicalIr::with_generic_facts_and_mode(
+        canonical_workflows,
+        generic,
+        semantic_mode,
+        limits,
+    )
+    .map_err(map_ir_error)?;
     source_entries.sort_by(|left, right| {
         (&left.workflow, &left.position).cmp(&(&right.workflow, &right.position))
     });

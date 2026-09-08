@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use gantry_core::mode::SemanticMode;
 use gantry_core::source::SourceSpan;
 
 use crate::artifact::{
@@ -101,6 +102,7 @@ impl CanonicalWorkflow {
 pub struct CanonicalIr {
     workflows: Vec<CanonicalWorkflow>,
     generic: GenericAnalysisFacts,
+    semantic_mode: SemanticMode,
     artifact: BoundedArtifact,
 }
 
@@ -110,7 +112,21 @@ impl CanonicalIr {
         workflows: Vec<CanonicalWorkflow>,
         limits: ArtifactLimits,
     ) -> Result<Self, IrArtifactError> {
-        Self::with_generic_facts(workflows, GenericAnalysisFacts::empty(), limits)
+        Self::with_mode(workflows, SemanticMode::Portable, limits)
+    }
+
+    /// Encodes workflows under one selected semantic execution mode.
+    pub fn with_mode(
+        workflows: Vec<CanonicalWorkflow>,
+        semantic_mode: SemanticMode,
+        limits: ArtifactLimits,
+    ) -> Result<Self, IrArtifactError> {
+        Self::with_generic_facts_and_mode(
+            workflows,
+            GenericAnalysisFacts::empty(),
+            semantic_mode,
+            limits,
+        )
     }
 
     /// Encodes workflows and generic analysis facts under the IR byte limit.
@@ -119,17 +135,28 @@ impl CanonicalIr {
         generic: GenericAnalysisFacts,
         limits: ArtifactLimits,
     ) -> Result<Self, IrArtifactError> {
+        Self::with_generic_facts_and_mode(workflows, generic, SemanticMode::Portable, limits)
+    }
+
+    /// Encodes workflows and generic facts under one selected semantic mode.
+    pub fn with_generic_facts_and_mode(
+        workflows: Vec<CanonicalWorkflow>,
+        generic: GenericAnalysisFacts,
+        semantic_mode: SemanticMode,
+        limits: ArtifactLimits,
+    ) -> Result<Self, IrArtifactError> {
         if workflows
             .windows(2)
             .any(|pair| pair[0].path >= pair[1].path)
         {
             return Err(IrArtifactError::NoncanonicalOrder);
         }
-        let artifact =
-            encode_ir(&workflows, &generic, limits).map_err(IrArtifactError::Encoding)?;
+        let artifact = encode_ir(&workflows, &generic, semantic_mode, limits)
+            .map_err(IrArtifactError::Encoding)?;
         Ok(Self {
             workflows,
             generic,
+            semantic_mode,
             artifact,
         })
     }
@@ -144,6 +171,12 @@ impl CanonicalIr {
     #[must_use]
     pub const fn generic_facts(&self) -> &GenericAnalysisFacts {
         &self.generic
+    }
+
+    /// Returns the semantic mode selected before this artifact was analyzed.
+    #[must_use]
+    pub const fn semantic_mode(&self) -> SemanticMode {
+        self.semantic_mode
     }
 
     /// Returns canonical bytes and their accepted execution-package identity.
@@ -248,6 +281,7 @@ impl std::error::Error for IrArtifactError {}
 fn encode_ir(
     workflows: &[CanonicalWorkflow],
     generic: &GenericAnalysisFacts,
+    semantic_mode: SemanticMode,
     limits: ArtifactLimits,
 ) -> Result<BoundedArtifact, ArtifactEncodingError> {
     let mut output = CanonicalArtifactEncoder::new(ArtifactKind::CanonicalIr, limits);
@@ -389,7 +423,9 @@ fn encode_ir(
         push_json_string(&mut output, call.site.workflow().as_str())?;
         output.push_byte(b'}')?;
     }
-    output.push_str("],\"templates\":[")?;
+    output.push_str("],\"semantic_mode\":")?;
+    push_json_string(&mut output, semantic_mode.wire_name())?;
+    output.push_str(",\"templates\":[")?;
     for (index, template) in generic.templates().iter().enumerate() {
         if index > 0 {
             output.push_byte(b',')?;
@@ -731,6 +767,7 @@ mod tests {
         ArtifactLimits, CanonicalPath, CanonicalSignature, EffectSet, StructuralPosition,
         TypeDescriptor,
     };
+    use gantry_core::mode::SemanticMode;
 
     fn limits(limit: u64) -> ArtifactLimits {
         ArtifactLimits {
@@ -779,6 +816,29 @@ mod tests {
         assert!(text.is_ok_and(|text| {
             text.contains("\"effects\":[\"prompt\",\"attempt\"]") && !text.contains("main.gnt")
         }));
+    }
+
+    #[test]
+    fn semantic_mode_changes_canonical_ir_identity() {
+        let portable = CanonicalIr::with_mode(Vec::new(), SemanticMode::Portable, limits(4_096))
+            .unwrap_or_else(|_| unreachable!("portable IR fits"));
+        let application =
+            CanonicalIr::with_mode(Vec::new(), SemanticMode::Application, limits(4_096))
+                .unwrap_or_else(|_| unreachable!("application IR fits"));
+        let durable = CanonicalIr::with_mode(Vec::new(), SemanticMode::Durable, limits(4_096))
+            .unwrap_or_else(|_| unreachable!("durable IR fits"));
+
+        assert_eq!(portable.semantic_mode(), SemanticMode::Portable);
+        assert_eq!(application.semantic_mode(), SemanticMode::Application);
+        assert_eq!(durable.semantic_mode(), SemanticMode::Durable);
+        assert_ne!(
+            portable.artifact().sha256_hex(),
+            application.artifact().sha256_hex()
+        );
+        assert_ne!(
+            application.artifact().sha256_hex(),
+            durable.artifact().sha256_hex()
+        );
     }
 
     #[test]

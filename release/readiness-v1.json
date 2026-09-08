@@ -3,7 +3,7 @@
   "status": "qualified-release-ready",
   "unqualified_full_v1": false,
   "source_revision": "46c82f39c5485c6f05fec10c4d8bc74b913f6977",
-  "specification_sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",
+  "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e",
   "publication": {
     "index_path": "protocol/publication/index-v1.json",
     "publication_set_identity": "475b2841422592e39e2064c5d059f65e4ad7f927e59cb0240da0c129d1ce61cf",

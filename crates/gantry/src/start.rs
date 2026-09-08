@@ -1,5 +1,6 @@
 //! Public nondurable pre-execution coordination and acceptance.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::future::Future;
 use std::path::Path;
@@ -20,7 +21,7 @@ use gantry_host::contracts::{
     IdentityAllocationError, IntegrationPreflight,
 };
 use gantry_host::embedding::EmbeddingOperation;
-use gantry_ir::TypeDescriptor;
+use gantry_ir::{InstructionKind, TypeDescriptor};
 use gantry_observe::{ActivityDeliveryResult, SinkPlan};
 use gantry_runtime::{
     AcceptExecutionError, AdapterPoison, AdmissionKind, BoundaryFailure, CanonicalTranscriptV1,
@@ -153,6 +154,12 @@ impl StartExecutionAccepted {
     #[must_use]
     pub const fn handle(&self) -> &ExecutionHandle {
         &self.handle
+    }
+
+    /// Returns the completed mode-bound package activity accepted for this execution.
+    #[must_use]
+    pub const fn package_activity(&self) -> &AnalyzePackageResult {
+        &self.package_activity
     }
 }
 
@@ -305,6 +312,16 @@ impl<'a> StartExecutionCoordinator<'a> {
         &self,
         request: StartExecutionRequest<'_>,
     ) -> Result<PreparedExecutionStart, StartExecutionFailure> {
+        self.prepare_with_mode(request, gantry_core::mode::SemanticMode::Application)
+            .await
+    }
+
+    /// Runs shared pre-acceptance work under a mode fixed before analysis.
+    pub(crate) async fn prepare_with_mode(
+        &self,
+        request: StartExecutionRequest<'_>,
+        semantic_mode: gantry_core::mode::SemanticMode,
+    ) -> Result<PreparedExecutionStart, StartExecutionFailure> {
         let admission = match self.lifecycle.admit(AdmissionKind::NewWork) {
             Ok(admission) => admission,
             Err(error) => return Err(lifecycle_failure(error)),
@@ -325,6 +342,7 @@ impl<'a> StartExecutionCoordinator<'a> {
             .analyze(AnalyzePackageRequest {
                 package_root: request.package_root,
                 protocol_selection: request.protocol_selection,
+                semantic_mode,
                 frontend_limits: self.configuration.required().frontend_limits,
                 event_delivery: None,
             })
@@ -507,16 +525,16 @@ impl<'a> StartExecutionCoordinator<'a> {
         &self,
         analysis: &TypedPackage,
     ) -> Result<MappingRevisions, StartExecutionFailure> {
-        let agents = analysis
-            .structure()
-            .agents()
+        let dependencies = mapping_dependencies(analysis)?;
+        let agents = dependencies
+            .agents
             .iter()
-            .map(|agent| agent.name.as_ref())
+            .map(String::as_str)
             .collect::<Vec<_>>();
-        let actions = analysis
-            .actions()
+        let actions = dependencies
+            .actions
             .iter()
-            .map(|action| action.signature.as_str())
+            .map(String::as_str)
             .collect::<Vec<_>>();
         if agents.is_empty() && actions.is_empty() {
             return Ok(MappingRevisions::default());
@@ -670,6 +688,75 @@ fn invalid_preflight_response() -> StartExecutionFailure {
         StartFailureCategory::IntegrationPreflight,
         "invalid-preflight-response",
     )
+}
+
+/// Closed integration dependencies reached by the analyzer-selected executable program.
+///
+/// The program contains only entry-reachable direct, trait-selected, generic, and task
+/// callables. Keeping this inventory separate from package declarations prevents unused
+/// application-only declarations from affecting durable admission or recovery metadata.
+pub(crate) struct MappingDependencies {
+    /// Canonical action signatures reached by executable action operations.
+    pub(crate) actions: Vec<String>,
+    /// Agent names selected by reachable dynamic scopes or the reachable model default.
+    pub(crate) agents: Vec<String>,
+}
+
+/// Collects the complete reachable integration dependency closure for one valid package.
+pub(crate) fn mapping_dependencies(
+    analysis: &TypedPackage,
+) -> Result<MappingDependencies, StartExecutionFailure> {
+    let entry = analysis
+        .entry()
+        .ok_or_else(|| failure(StartFailureCategory::Internal, "missing-entry-inventory"))?;
+    let entry_facts = analysis
+        .workflows()
+        .iter()
+        .find(|workflow| workflow.path == entry.path)
+        .ok_or_else(|| failure(StartFailureCategory::Internal, "missing-entry-workflow"))?;
+    let program = analysis
+        .executable_program()
+        .ok_or_else(|| failure(StartFailureCategory::Internal, "missing-executable-program"))?;
+    let mut actions = BTreeSet::new();
+    let mut agents = BTreeSet::new();
+    let mut reaches_model_operation = false;
+    for contributor in &entry_facts.action_contributors {
+        let signature = analysis
+            .actions()
+            .iter()
+            .find(|action| action.path == contributor.action)
+            .map(|action| action.signature.as_str())
+            .ok_or_else(|| failure(StartFailureCategory::Internal, "missing-reachable-action"))?;
+        actions.insert(signature.to_owned());
+    }
+    for instruction in program
+        .workflows()
+        .iter()
+        .flat_map(|workflow| workflow.instructions.iter())
+        .chain(
+            program
+                .task_bodies()
+                .iter()
+                .flat_map(|body| body.instructions().iter()),
+        )
+    {
+        match &instruction.kind {
+            InstructionKind::OperationCall { operation, .. } if operation.action.is_none() => {
+                reaches_model_operation = true;
+            }
+            InstructionKind::EnterAgent(agent) => {
+                agents.insert(agent.to_string());
+            }
+            _ => {}
+        }
+    }
+    if reaches_model_operation && let Some(agent) = analysis.structure().default_agent() {
+        agents.insert(agent.to_owned());
+    }
+    Ok(MappingDependencies {
+        actions: actions.into_iter().collect(),
+        agents: agents.into_iter().collect(),
+    })
 }
 
 fn validate_entry_input(

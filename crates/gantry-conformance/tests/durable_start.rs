@@ -337,6 +337,59 @@ impl IntegrationPreflight for ResolvedPreflight {
     }
 }
 
+#[derive(Default)]
+struct RecordingPreflight {
+    mapping_requests: Mutex<Vec<serde_json::Value>>,
+}
+
+impl RecordingPreflight {
+    fn mapping_requests(&self) -> Vec<serde_json::Value> {
+        self.mapping_requests
+            .lock()
+            .unwrap_or_else(|_| panic!("recording preflight mutex poisoned"))
+            .clone()
+    }
+}
+
+impl IntegrationPreflight for RecordingPreflight {
+    fn call<'a>(&'a self, request: HostRequest) -> HostFuture<'a, Result<HostResponse, HostError>> {
+        let operation = request.operation();
+        let body = request.canonical_bytes().to_vec();
+        let requests = &self.mapping_requests;
+        Box::pin(async move {
+            let body = match operation {
+                EmbeddingOperation::ResolveMappings => {
+                    let payload: serde_json::Value = serde_json::from_slice(&body)
+                        .map_err(|_| host_failure("invalid-recorded-preflight"))?;
+                    requests
+                        .lock()
+                        .map_err(|_| host_failure("recording-preflight-poisoned"))?
+                        .push(payload.clone());
+                    let actions = payload["action_signatures"]
+                        .as_array()
+                        .ok_or_else(|| host_failure("missing-action-signatures"))?;
+                    let agents = payload["agent_names"]
+                        .as_array()
+                        .ok_or_else(|| host_failure("missing-agent-names"))?;
+                    let mut response = serde_json::json!({"result":"resolved"});
+                    if !actions.is_empty() {
+                        response["action_mapping_revision"] = serde_json::json!("actions-v1");
+                    }
+                    if !agents.is_empty() {
+                        response["agent_mapping_revision"] = serde_json::json!("agents-v1");
+                    }
+                    serde_json::to_vec(&response)
+                        .map_err(|_| host_failure("recording-response-invariant"))?
+                }
+                EmbeddingOperation::ResolveSessions => b"{\"result\":\"resolved\"}".to_vec(),
+                _ => return Err(host_failure("unexpected-preflight-operation")),
+            };
+            HostResponse::new(EmbeddingVersion::V1, operation, Arc::from(body))
+                .map_err(|_| host_failure("response-invariant"))
+        })
+    }
+}
+
 #[test]
 fn checked_in_durable_start_evidence_is_narrow_and_current() {
     let root = workspace_root();
@@ -857,6 +910,72 @@ fn durable_journal_failure_wakes_waiters_without_fabricating_terminal_state() {
 }
 
 #[test]
+fn durable_start_preflight_authenticates_the_transitive_reachable_dependency_closure() {
+    let root = TempDirectory::new(
+        br#"
+agents { worker, unused }
+default agent = worker;
+action read_only direct(value: Int) -> Int;
+action idempotent unreachable(value: Int) -> Int;
+fn leaf() -> Int { with worker { discard prompt "reachable" -> String; action direct(1) } }
+fn unused_leaf() -> Int { action unreachable(2) }
+fn main() -> Int { leaf() }
+"#,
+    );
+    let services = Arc::new(Services::default());
+    let configuration = test_configuration(Arc::clone(&services));
+    let selection = selection();
+    let storage: Arc<dyn JournalStorage> = Arc::new(InMemoryJournalStore::new());
+    let lifecycle = InterpreterLifecycle::new(&configuration);
+    let allocator = FreshIdentityAllocator::default();
+    let package = AnalyzePackageCoordinator::new(
+        &allocator,
+        services.as_ref(),
+        &FixedClock,
+        gantry_conformance::blocking_work(),
+    );
+    let preflight = Arc::new(RecordingPreflight::default());
+    let start = StartExecutionCoordinator::new(
+        &package,
+        &lifecycle,
+        &configuration,
+        &allocator,
+        preflight.clone(),
+    );
+    let durable = DurableStartExecutionCoordinator::new(start, &configuration, storage);
+    let journal_id = JournalId::new("reachable-mapping-dependencies")
+        .unwrap_or_else(|error| panic!("journal identity failed: {error:?}"));
+    let result = block_on(durable.start(DurableStartExecutionRequest {
+        journal_id,
+        start: start_request(&root.0, &selection),
+    }));
+    match result {
+        DurableStartExecutionResult::Accepted(_) => {}
+        DurableStartExecutionResult::Rejected(failure) => panic!(
+            "reachable dependency fixture was rejected: {:?} {}",
+            failure.failure.category, failure.failure.code
+        ),
+    }
+    let requests = preflight.mapping_requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["agent_names"], serde_json::json!(["worker"]));
+    let actions = requests[0]["action_signatures"]
+        .as_array()
+        .unwrap_or_else(|| panic!("action signatures are an array"));
+    assert_eq!(actions.len(), 1);
+    assert!(
+        actions[0]
+            .as_str()
+            .is_some_and(|value| value.contains("crate::direct"))
+    );
+    assert!(actions.iter().all(|action| {
+        action
+            .as_str()
+            .is_some_and(|value| !value.contains("unreachable"))
+    }));
+}
+
+#[test]
 fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
     let root = TempDirectory::new(
         b"agents { worker } default agent = worker; action read_only inspect(value: Int) -> Int; fn main() {}",
@@ -970,8 +1089,11 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         .unwrap_or_else(|error| panic!("sequence-one metadata failed to decode: {error}"));
     assert_eq!(metadata["format"], "gantry.execution-start-metadata/v1");
     assert_eq!(metadata["execution_id"], execution_id.to_string());
-    assert_eq!(metadata["agent_mapping_revision"], "agents-v1");
-    assert_eq!(metadata["action_mapping_revision"], "actions-v1");
+    assert_eq!(metadata["semantic_mode"], "durable");
+    assert_eq!(metadata["agent_mapping_revision"], serde_json::Value::Null);
+    assert_eq!(metadata["action_mapping_revision"], serde_json::Value::Null);
+    assert_eq!(metadata["agent_names"], serde_json::json!([]));
+    assert_eq!(metadata["action_signatures"], serde_json::json!([]));
     assert_eq!(metadata["entry"]["input"], serde_json::Value::Null);
     assert_eq!(metadata["entry"]["input_type"], serde_json::Value::Null);
     assert_eq!(metadata["entry"]["signature"], "fn crate::main()->Unit");
@@ -1320,8 +1442,8 @@ fn durable_start_and_resume_preserve_acceptance_and_nonmutation_boundaries() {
         std::str::from_utf8(state.mutable_policy())
             .is_ok_and(|policy| policy.contains("\"graceful_shutdown_timeout_us\":\"45000000\""))
     );
-    assert_eq!(state.agent_mapping_revision(), Some("agents-v2"));
-    assert_eq!(state.action_mapping_revision(), Some("actions-v2"));
+    assert_eq!(state.agent_mapping_revision(), None);
+    assert_eq!(state.action_mapping_revision(), None);
     let prefix_after_revision = read_prefix(storage.as_ref(), &journal_id);
     let JournalPrefixV1::Full(full) = &prefix_after_revision else {
         panic!("in-memory revision did not produce a full prefix");
@@ -1479,6 +1601,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
     let expected_package_activity = block_on(package.analyze(AnalyzePackageRequest {
         package_root: &root.0,
         protocol_selection: &selection,
+        semantic_mode: gantry::mode::SemanticMode::Durable,
         frontend_limits: configuration.required().frontend_limits,
         event_delivery: None,
     }))

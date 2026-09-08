@@ -798,6 +798,7 @@ fn analyze_request<'a>(
     AnalyzePackageRequest {
         package_root: root,
         protocol_selection: selection,
+        semantic_mode: gantry::mode::SemanticMode::Portable,
         frontend_limits: frontend_limits(),
         event_delivery: None,
     }

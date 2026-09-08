@@ -538,6 +538,7 @@ fn analyze_package_preserves_event_barrier_and_limit_failure_order() {
     let result = block_on(coordinator.analyze(AnalyzePackageRequest {
         package_root: &root.0,
         protocol_selection: &selection,
+        semantic_mode: gantry::mode::SemanticMode::Portable,
         frontend_limits: limits,
         event_delivery: None,
     }));
@@ -697,6 +698,7 @@ fn validate_and_analyze_enforce_constructed_type_depth_per_activity() {
     let rejected = block_on(analyze.analyze(AnalyzePackageRequest {
         package_root: &root.0,
         protocol_selection: &selection,
+        semantic_mode: gantry::mode::SemanticMode::Portable,
         frontend_limits: rejected_limits,
         event_delivery: None,
     }));
@@ -852,6 +854,7 @@ fn analyze_request<'a>(
     AnalyzePackageRequest {
         package_root: root,
         protocol_selection: selection,
+        semantic_mode: gantry::mode::SemanticMode::Portable,
         frontend_limits: FrontendLimits::new(
             32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304,
             256, 65_536, 1_000_000,

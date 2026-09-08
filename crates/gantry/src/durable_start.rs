@@ -31,7 +31,8 @@ use crate::durable_lifecycle::concurrent_recovery;
 use crate::durable_lifecycle::{RecoveredDurablePrefix, recover_durable_prefix};
 use crate::interpreter::{decode_logical_value, root_task_identity};
 use crate::start::{
-    PreparedExecutionStart, StartExecutionCoordinator, decode_mapping_revisions, require_resolved,
+    PreparedExecutionStart, StartExecutionCoordinator, decode_mapping_revisions,
+    mapping_dependencies, require_resolved,
 };
 use crate::{
     AnalyzePackageError, AnalyzePackageRequest, AnalyzePackageResult, AnalyzePackageStatus,
@@ -605,7 +606,11 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                 .await;
         }
 
-        let mut prepared = match self.start.prepare(request.start).await {
+        let mut prepared = match self
+            .start
+            .prepare_with_mode(request.start, gantry_core::mode::SemanticMode::Durable)
+            .await
+        {
             Ok(prepared) => prepared,
             Err(failure) => {
                 return self
@@ -964,6 +969,7 @@ impl<'a> DurableStartExecutionCoordinator<'a> {
                     .analyze(AnalyzePackageRequest {
                         package_root,
                         protocol_selection: request.protocol_selection,
+                        semantic_mode: gantry_core::mode::SemanticMode::Durable,
                         frontend_limits: self.configuration.required().frontend_limits,
                         event_delivery: None,
                     })
@@ -1783,6 +1789,7 @@ fn decode_resume_metadata(
             "required_event_sinks",
             "required_event_sinks_identity",
             "root_session",
+            "semantic_mode",
             "source_map",
             "source_map_identity",
         ],
@@ -1811,6 +1818,12 @@ fn decode_resume_metadata(
     if execution_id != execution_start.execution_id() {
         return Err(invalid_resume_metadata());
     }
+    gantry_core::mode::SemanticMode::from_wire_name(metadata_string(
+        &document,
+        metadata_field(root, "semantic_mode")?,
+    )?)
+    .filter(|mode| *mode == gantry_core::mode::SemanticMode::Durable)
+    .ok_or_else(invalid_resume_metadata)?;
     let protocol_selection =
         canonical_metadata_node(&document, metadata_field(root, "protocol_selection")?)?;
     let configuration = canonical_metadata_node(&document, metadata_field(root, "configuration")?)?;
@@ -2487,12 +2500,13 @@ fn execution_start_metadata(
             .as_ref()
             .map(|value| value.as_str()),
     );
+    let dependencies = mapping_dependencies(analysis)?;
     output.push_str(",\"action_signatures\":[");
-    for (index, action) in analysis.actions().iter().enumerate() {
+    for (index, action) in dependencies.actions.iter().enumerate() {
         if index > 0 {
             output.push(',');
         }
-        push_json_string(&mut output, action.signature.as_str());
+        push_json_string(&mut output, action);
     }
     output.push_str("],\"agent_mapping_revision\":");
     push_optional_string(
@@ -2504,11 +2518,11 @@ fn execution_start_metadata(
             .map(|value| value.as_str()),
     );
     output.push_str(",\"agent_names\":[");
-    for (index, agent) in analysis.structure().agents().iter().enumerate() {
+    for (index, agent) in dependencies.agents.iter().enumerate() {
         if index > 0 {
             output.push(',');
         }
-        push_json_string(&mut output, &agent.name);
+        push_json_string(&mut output, agent);
     }
     output.push(']');
     output.push_str(",\"canonical_ir\":");
@@ -2576,6 +2590,7 @@ fn execution_start_metadata(
             .map_err(|_| start_failure(StartFailureCategory::Internal, "transcript-utf8"))?,
     );
     output.push('}');
+    output.push_str(",\"semantic_mode\":\"durable\"");
     output.push_str(",\"source_map\":");
     push_json_string(&mut output, &hex(source_map.artifact().canonical_bytes()));
     output.push_str(",\"source_map_identity\":");

@@ -10,6 +10,9 @@
       "type": "array",
       "items": { "$ref": "#/$defs/concrete_effect" }
     },
+    "semantic_mode": {
+      "enum": ["portable", "application", "durable"]
+    },
     "executable_projection": { "$ref": "#/$defs/executable_projection" },
     "implementations": {
       "type": "array",
@@ -37,7 +40,7 @@
     }
   },
   "required": [
-    "canonical_ir", "concrete_effects", "executable_projection",
+    "canonical_ir", "semantic_mode", "concrete_effects", "executable_projection",
     "implementations", "instantiations", "resolved_calls", "templates",
     "traits", "workflows"
   ],

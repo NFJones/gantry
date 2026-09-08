@@ -6,6 +6,7 @@
 pub mod canonical_json;
 pub mod event;
 pub mod identity;
+pub mod mode;
 pub mod numeric;
 pub mod portable;
 pub mod profile;

@@ -9,6 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use gantry_core::mode::SemanticMode;
 use gantry_core::portable::{DiagnosticCategory, DiagnosticSeverity};
 use gantry_core::source::{
     DiagnosticCode, DiagnosticMetadata, DiagnosticPhase, FrontendLimits, GenericAnalysisCounters,
@@ -72,7 +73,7 @@ pub fn analyze_package_types_with_artifact_limits(
     phase: &CompletedSyntaxPhase,
     artifact_limits: ArtifactLimits,
 ) -> Result<TypedPackage, AnalysisError> {
-    analyze_package_types_with_policy(phase, artifact_limits, None)
+    analyze_package_types_with_policy(phase, artifact_limits, None, SemanticMode::Portable)
 }
 
 /// Resolves and validates a package under one complete frontend activity policy.
@@ -80,13 +81,28 @@ pub fn analyze_package_types_with_limits(
     phase: &CompletedSyntaxPhase,
     limits: FrontendLimits,
 ) -> Result<TypedPackage, AnalysisError> {
-    analyze_package_types_with_policy(phase, ArtifactLimits::from(limits), Some(limits))
+    analyze_package_types_with_limits_and_mode(phase, limits, SemanticMode::Portable)
+}
+
+/// Resolves and validates a package under the selected semantic execution mode.
+pub fn analyze_package_types_with_limits_and_mode(
+    phase: &CompletedSyntaxPhase,
+    limits: FrontendLimits,
+    semantic_mode: SemanticMode,
+) -> Result<TypedPackage, AnalysisError> {
+    analyze_package_types_with_policy(
+        phase,
+        ArtifactLimits::from(limits),
+        Some(limits),
+        semantic_mode,
+    )
 }
 
 fn analyze_package_types_with_policy(
     phase: &CompletedSyntaxPhase,
     artifact_limits: ArtifactLimits,
     frontend_limits: Option<FrontendLimits>,
+    semantic_mode: SemanticMode,
 ) -> Result<TypedPackage, AnalysisError> {
     let structure = analyze_package_structure(phase)?;
     let mut diagnostics = structure.diagnostics().to_vec();
@@ -308,6 +324,7 @@ fn analyze_package_types_with_policy(
             &workflows,
             generic,
             &body_analysis.generic_declarations,
+            semantic_mode,
             artifact_limits,
         ) {
             Ok(artifacts) => artifacts,

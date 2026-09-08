@@ -12,6 +12,8 @@ use gantry_core::event::{EventDraft, EventEnvelope};
 use gantry_core::event::{PackageEventPhase, package_phase_event_payload};
 use gantry_core::identity::ProtocolIdentity;
 #[cfg(feature = "analyzer")]
+use gantry_core::mode::SemanticMode;
+#[cfg(feature = "analyzer")]
 use gantry_core::portable::EventKind;
 use gantry_core::portable::{IdentityKind, ProtocolFamily};
 use gantry_core::protocol::ProtocolSelection;
@@ -40,7 +42,7 @@ use gantry_observe::{
 #[cfg(feature = "analyzer")]
 use gantry_analysis::{
     AnalysisError, AnalysisStatus, GenericTypeFact, TypeBinder, TypedPackage,
-    analyze_package_types_with_limits,
+    analyze_package_types_with_limits_and_mode,
 };
 #[cfg(feature = "analyzer")]
 use gantry_ir::{
@@ -195,6 +197,8 @@ pub struct AnalyzePackageRequest<'a> {
     pub package_root: &'a Path,
     /// Exact complete protocol tuple selected for the activity.
     pub protocol_selection: &'a ProtocolSelection,
+    /// Semantic mode fixed before syntax and semantic analysis.
+    pub semantic_mode: SemanticMode,
     /// Finite source, diagnostic, and artifact limits.
     pub frontend_limits: FrontendLimits,
     /// Optional immutable nondurable event sink plan.
@@ -522,9 +526,11 @@ impl<'a> ValidatePackageCoordinator<'a> {
         }
 
         let limits = request.frontend_limits;
+        let semantic_mode = request.semantic_mode;
         let (syntax, analysis) =
             run_blocking_job(self.blocking_work, &self.blocking_work_poison, move || {
-                let analysis = analyze_package_types_with_limits(&syntax, limits);
+                let analysis =
+                    analyze_package_types_with_limits_and_mode(&syntax, limits, semantic_mode);
                 (syntax, analysis)
             })
             .await

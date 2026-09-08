@@ -374,7 +374,7 @@ fn closed_operation_and_task_sites_have_exact_bytes_and_fail_closed() {
     assert_eq!(
         std::str::from_utf8(ir.artifact().canonical_bytes()),
         Ok(
-            "{\"canonical_ir\":{\"major\":1,\"minor\":0},\"concrete_effects\":[],\"executable_projection\":{\"callables\":[{\"direct_calls\":[],\"effects\":[],\"identity\":\"crate::main\",\"operations\":[{\"action\":\"crate::fetch\",\"kind\":\"action\",\"position\":[\"0\"],\"recovery\":\"idempotent\",\"result\":\"String\"},{\"kind\":\"prompt\",\"position\":[\"1\"],\"result\":\"String\"}],\"signature\":\"fn crate::main()->Unit\",\"task_sites\":[{\"handles\":[\"child\"],\"kind\":\"spawn\",\"position\":[\"2\"]},{\"handles\":[\"child\"],\"kind\":\"join\",\"position\":[\"3\"]}]}],\"types\":[\"String\",\"Unit\"]},\"implementations\":[],\"instantiations\":[],\"resolved_calls\":[],\"templates\":[],\"traits\":[],\"workflows\":[]}"
+            "{\"canonical_ir\":{\"major\":1,\"minor\":0},\"concrete_effects\":[],\"executable_projection\":{\"callables\":[{\"direct_calls\":[],\"effects\":[],\"identity\":\"crate::main\",\"operations\":[{\"action\":\"crate::fetch\",\"kind\":\"action\",\"position\":[\"0\"],\"recovery\":\"idempotent\",\"result\":\"String\"},{\"kind\":\"prompt\",\"position\":[\"1\"],\"result\":\"String\"}],\"signature\":\"fn crate::main()->Unit\",\"task_sites\":[{\"handles\":[\"child\"],\"kind\":\"spawn\",\"position\":[\"2\"]},{\"handles\":[\"child\"],\"kind\":\"join\",\"position\":[\"3\"]}]}],\"types\":[\"String\",\"Unit\"]},\"implementations\":[],\"instantiations\":[],\"resolved_calls\":[],\"semantic_mode\":\"portable\",\"templates\":[],\"traits\":[],\"workflows\":[]}"
         )
     );
     assert_canonical_and_schema_valid(

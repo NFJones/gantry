@@ -841,6 +841,15 @@ defined in Sections 3.1 through 3.6.
    additionally requires the integration obligations defined above. A parser,
    analyzer, or nondurable evaluator may therefore make a precise profile
    claim without claiming the complete durable runtime.
+
+   Before semantic analysis, an execution selects exactly one semantic mode:
+   `portable`, `application`, or `durable`. These modes share one grammar, type
+   system, package model, evaluator, and source semantics; they are not
+   conformance profiles and embedding is not a fourth mode. The selected mode
+   MUST be retained in the analyzed executable artifact and therefore changes
+   its identity. Application-only execution MUST be rejected before durable
+   admission, and durable recovery MUST reject a retained or candidate artifact
+   whose mode differs from the recorded durable mode.
 <a id="GNT-3.2"></a>
 
 2. An implementation MUST parse Gantry source according to Section 13 and,

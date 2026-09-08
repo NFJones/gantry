@@ -332,6 +332,19 @@ fn main(value: Input) -> Input { value }
     };
     assert_eq!(accepted.execution_id().kind(), IdentityKind::Execution);
     assert_eq!(accepted.handle().execution_id(), accepted.execution_id());
+    let analysis = accepted
+        .package_activity()
+        .analysis
+        .as_ref()
+        .unwrap_or_else(|| panic!("accepted start retains package analysis"));
+    assert_eq!(
+        analysis
+            .canonical_ir()
+            .unwrap_or_else(|| panic!("accepted start retains canonical IR"))
+            .semantic_mode()
+            .wire_name(),
+        "application"
+    );
     assert!(
         lifecycle
             .query_execution(accepted.execution_id())
@@ -339,30 +352,13 @@ fn main(value: Input) -> Input { value }
     );
 
     let preflight_calls = preflight.calls();
-    assert_eq!(preflight_calls.len(), 2);
+    assert_eq!(preflight_calls.len(), 1);
     assert_eq!(
-        preflight_calls
-            .iter()
-            .map(|call| call.operation)
-            .collect::<Vec<_>>(),
-        [
-            EmbeddingOperation::ResolveMappings,
-            EmbeddingOperation::ResolveSessions,
-        ]
+        preflight_calls[0].operation,
+        EmbeddingOperation::ResolveSessions
     );
     assert!(
         preflight_calls[0]
-            .request
-            .starts_with(b"{\"action_signatures\":")
-    );
-    assert!(
-        preflight_calls[0]
-            .request
-            .windows(8)
-            .any(|bytes| bytes == b"\"worker\"")
-    );
-    assert!(
-        preflight_calls[1]
             .request
             .starts_with(b"{\"session_descriptors\":[{")
     );

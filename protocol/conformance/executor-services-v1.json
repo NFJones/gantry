@@ -1,6 +1,6 @@
 {
   "format": "gantry.executor-services-evidence/v1",
-  "specification_sha256": "59fa14f0a55ff2fe416c3fa28c0b1fa60567ea42ea857075b2282ba8a8762f03",
+  "specification_sha256": "5ce48d9140573f60a59a8833510a60abcbc47c3298a7260a50dbc1a56a9f811e",
   "issue": "GNT-ASYNC-EXEC-001",
   "capabilities": [
     {
