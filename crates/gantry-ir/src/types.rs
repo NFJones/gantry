@@ -164,6 +164,15 @@ impl TypeDescriptor {
         self.contains_sealed_boundary
     }
 
+    /// Returns independent v1 primitive properties, or `None` for a structural type.
+    ///
+    /// Declared fields and aggregate members must be checked with their complete
+    /// declaration graph, not inferred from nominal arguments or descriptor flags.
+    #[must_use]
+    pub const fn primitive_properties(&self) -> Option<crate::PrimitiveTypeProperties> {
+        crate::PrimitiveTypeProperties::for_kind(self.kind)
+    }
+
     /// Returns the outermost closed type kind.
     #[must_use]
     pub const fn kind(&self) -> TypeKind {

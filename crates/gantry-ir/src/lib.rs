@@ -23,6 +23,7 @@ mod primitive;
 mod schema;
 mod signature;
 mod type_expression;
+mod type_properties;
 mod types;
 
 pub use artifact::{ArtifactEncodingError, ArtifactLimits, BoundedArtifact};
@@ -58,4 +59,5 @@ pub use primitive::{Comparison, Primitive};
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
 pub use signature::{ActionParameter, CanonicalSignature, SignatureError, WorkflowParameter};
 pub use type_expression::{TypeExpression, TypeExpressionError};
+pub use type_properties::PrimitiveTypeProperties;
 pub use types::{TypeDescriptor, TypeDescriptorError};

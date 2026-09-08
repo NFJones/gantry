@@ -54,6 +54,43 @@ struct ProfileReview {
     evidence: Vec<String>,
 }
 
+/// Primitive facts do not infer declared fields or grant boundary admission.
+#[test]
+fn primitive_properties_keep_eligibility_axes_separate() {
+    use gantry::ir::TypeDescriptor;
+
+    for (ty, external, orderable) in [
+        (TypeDescriptor::UNIT, true, false),
+        (TypeDescriptor::BOOL, true, false),
+        (TypeDescriptor::INT, true, true),
+        (TypeDescriptor::FLOAT, true, true),
+        (TypeDescriptor::STRING, true, false),
+        (TypeDescriptor::DECISION, false, false),
+        (TypeDescriptor::OPERATION_ERROR, false, false),
+    ] {
+        let properties = ty
+            .primitive_properties()
+            .unwrap_or_else(|| panic!("primitive omitted properties: {ty:?}"));
+        assert_eq!(properties.is_external(), external);
+        assert_eq!(properties.is_equatable(), external);
+        assert_eq!(properties.is_orderable(), orderable);
+        assert!(properties.is_copyable());
+        assert!(properties.is_interpolatable());
+        assert!(properties.has_recovery_projection());
+    }
+    for canonical in [
+        "crate::Unknown",
+        "List<Int>",
+        "Option<Int>",
+        "Result<Int,String>",
+        "Tuple<Int,Bool>",
+    ] {
+        let ty = TypeDescriptor::from_canonical_string(canonical)
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        assert_eq!(ty.primitive_properties(), None);
+    }
+}
+
 struct TempDirectory(PathBuf);
 
 impl TempDirectory {

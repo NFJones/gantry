@@ -47,6 +47,11 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   and `ExternalValue` capabilities are proved only after substitution is
   complete. Capability proof is structural, memoized, native-stack-safe, and
   deterministic across declaration order and cache hits.
+  Primitive leaves use `TypeDescriptor::primitive_properties()` from the
+  public IR API. It reports copyability, equality, numeric ordering,
+  interpolation, external eligibility, and recovery projection separately.
+  Structural descriptors return `None`: this API cannot infer declared
+  fields, grant execution admission, or introduce affine values and loans.
   Compound successes that may depend on recursive back-edges are published
   only after the root proof succeeds; a failed or exhausted proof cannot
   leave a provisional success available to a later query.

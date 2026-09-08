@@ -2055,21 +2055,22 @@ fn capability_node(
     declarations: &BTreeMap<String, GenericDeclarationShape>,
 ) -> Result<CapabilityNode, AnalysisError> {
     match descriptor.kind() {
-        TypeKind::Decision | TypeKind::OperationError
-            if matches!(
-                capability,
-                SealedCapability::Equatable | SealedCapability::ExternalValue
-            ) =>
-        {
-            Ok(CapabilityNode::Leaf(false))
-        }
         TypeKind::Unit
         | TypeKind::Bool
         | TypeKind::Int
         | TypeKind::Float
         | TypeKind::String
         | TypeKind::Decision
-        | TypeKind::OperationError => Ok(CapabilityNode::Leaf(true)),
+        | TypeKind::OperationError => {
+            let properties = descriptor
+                .primitive_properties()
+                .ok_or(AnalysisError::Invariant)?;
+            Ok(CapabilityNode::Leaf(match capability {
+                SealedCapability::Equatable => properties.is_equatable(),
+                SealedCapability::ExternalValue => properties.is_external(),
+                SealedCapability::Interpolatable => properties.is_interpolatable(),
+            }))
+        }
         TypeKind::Option | TypeKind::Result | TypeKind::List | TypeKind::Tuple => {
             Ok(CapabilityNode::Members(descriptor.immediate_members()))
         }
