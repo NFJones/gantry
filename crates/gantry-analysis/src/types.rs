@@ -186,7 +186,7 @@ fn analyze_package_types_with_policy(
         &type_binders,
         &mut type_diagnostics,
     )?;
-    check_sealed_boundaries(
+    if let Err(error) = check_sealed_boundaries(
         phase.parsed_sources(),
         &structure,
         &facts_by_source,
@@ -194,7 +194,17 @@ fn analyze_package_types_with_policy(
         &generic_types,
         &mut generic_counters,
         &mut type_diagnostics,
-    )?;
+    ) {
+        return match error {
+            AnalysisError::ResourceLimit { error, .. } => {
+                diagnostics.append(&mut type_diagnostics);
+                diagnostics.sort();
+                diagnostics.dedup();
+                Err(AnalysisError::ResourceLimit { error, diagnostics })
+            }
+            other => Err(other),
+        };
+    }
     check_impl_targets(phase.parsed_sources(), &structure, &mut type_diagnostics)?;
     check_entry_and_field_defaults(
         phase.parsed_sources(),
@@ -2251,6 +2261,22 @@ fn main(flag: Bool) -> Int {
             Err(AnalysisError::ResourceLimit { error, .. })
                 if error.code == FrontendResourceCode::TraitResolutionStepLimit
         ));
+    }
+
+    /// Boundary cutoffs retain diagnostics collected before the proof exhausted its budget.
+    #[test]
+    fn boundary_proof_exhaustion_preserves_prior_diagnostics() {
+        let phase = syntax("use crate::missing;\nfn main(value: Int) {}");
+        let Err(AnalysisError::ResourceLimit { error, diagnostics }) =
+            analyze_package_types_with_limits(&phase, trait_limits(1))
+        else {
+            panic!("boundary proof did not exhaust its one-step budget")
+        };
+        assert_eq!(error.code, FrontendResourceCode::TraitResolutionStepLimit);
+        assert!(
+            !diagnostics.is_empty(),
+            "the unresolved import diagnostic was lost"
+        );
     }
 
     /// Callable bounds must inspect stored fields, not unused generic arguments.
