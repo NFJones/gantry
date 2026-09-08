@@ -264,6 +264,53 @@ fn main() -> Tuple<Int, Int> {
 }
 
 #[test]
+fn generic_method_compound_assignment_mutates_only_the_receiver_copy() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter<T> { value: T, count: Int }
+impl<T> Counter<T> {
+    fn bump(mut self, delta: Int) -> Counter<T> { self.count += delta; self }
+}
+fn main() -> Tuple<Int, Int> {
+    let original: Counter<Int> = Counter::<Int> { value: 0, count: 1 };
+    let changed: Counter<Int> = original.bump(6);
+    (original.count, changed.count)
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("closed generic package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x57; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("closed generic program was rejected: {error:?}"));
+
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("closed generic program did not succeed")
+    };
+    let original = value
+        .member(0)
+        .unwrap_or_else(|| panic!("result omitted the original count"));
+    let changed = value
+        .member(1)
+        .unwrap_or_else(|| panic!("result omitted the changed count"));
+    assert!(matches!(original.view(), LogicalValueView::Int(value) if value.get() == 1));
+    assert!(matches!(changed.view(), LogicalValueView::Int(value) if value.get() == 7));
+}
+
+#[test]
 fn generic_methods_and_static_trait_calls_preserve_logical_copy_isolation() {
     let root = TempDirectory::new(
         r#"
