@@ -2193,6 +2193,26 @@ fn main(flag: Bool) -> Int {
         ));
     }
 
+    /// Equality must reject sealed values hidden behind a declared field.
+    #[test]
+    fn equality_checks_instantiated_declared_fields() {
+        let package = analyze(
+            "struct Stored { value: Decision }\nfn compare(value: Stored) -> Bool { value == value }\nfn main() {}",
+        );
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-primitive")
+        );
+    }
+
     /// Callable proof admission charges its root and leaf before publishing a package.
     #[test]
     fn callable_capability_proofs_obey_the_trait_budget() {

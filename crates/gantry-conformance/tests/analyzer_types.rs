@@ -214,6 +214,43 @@ fn main() {}
     }));
 }
 
+/// Equality follows stored members and requires an explicit generic capability.
+#[test]
+fn public_equality_uses_structural_capabilities() {
+    for source in [
+        "struct Phantom<T> { value: Int }\nfn compare(value: Phantom<Decision>) -> Bool { value == value }\nfn main() {}",
+        "fn compare<T>(value: T) -> Bool where T: Equatable { value == value }\nfn main() { discard compare(1); }",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+    for source in [
+        "struct Stored { value: Decision }\nfn compare(value: Stored) -> Bool { value == value }\nfn main() {}",
+        "fn compare<T>(value: T) -> Bool { value == value }\nfn main() {}",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-primitive"),
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+}
+
 /// Callable capabilities follow stored members, not phantom type arguments.
 #[test]
 fn public_callable_bounds_use_declared_members() {

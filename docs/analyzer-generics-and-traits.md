@@ -54,6 +54,10 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   checks as methods on generic receivers; path-form `impl` declarations do not
   turn their method parameters into monomorphic signatures. Empty receiver
   structs are valid zero-field values.
+- Equality uses the same stored-member capability proof. Structs containing
+  `Decision` cannot be compared, while unused phantom arguments do not affect
+  equality eligibility. A generic body may compare a type parameter only
+  when its declaration promises `Equatable`.
 - Generic field defaults are valid only when they hold for every admitted
   substitution. Generic enum constructors, payload bindings, redundancy, and
   exhaustiveness use the substituted closed enum application.

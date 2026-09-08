@@ -1697,6 +1697,21 @@ fn check_parametric_generic_bodies(
             .collect::<Result<Vec<_>, _>>()?;
         let substitution = ExactTypeSubstitution::explicit(&signature.required, &rigid_arguments)
             .map_err(|_| AnalysisError::Invariant)?;
+        // Rigid representatives prove only capabilities promised by this binder.
+        for predicate in &signature.sealed_predicates {
+            let index = signature
+                .required
+                .iter()
+                .position(|parameter| parameter == &predicate.parameter)
+                .ok_or(AnalysisError::Invariant)?;
+            context.capability_proofs.borrow_mut().insert(
+                (
+                    predicate.capability,
+                    rigid_arguments[index].canonical_string(),
+                ),
+                true,
+            );
+        }
         let receiver = signature
             .receiver
             .as_ref()
@@ -2839,6 +2854,7 @@ fn check_assignment(
                 expected.clone(),
                 actual,
                 node.span().clone(),
+                context,
                 diagnostics,
             )?;
             require_type(&expected, &result, node.span().clone(), diagnostics)?;
@@ -3636,8 +3652,15 @@ fn infer_expression_inner(
             diagnostics,
         )?;
         if let (Some(left), Some(right)) = (left, right) {
-            return infer_binary_operator(operator, left, right, node.span().clone(), diagnostics)
-                .map(Some);
+            return infer_binary_operator(
+                operator,
+                left,
+                right,
+                node.span().clone(),
+                context,
+                diagnostics,
+            )
+            .map(Some);
         }
         return Ok(None);
     }
@@ -4915,7 +4938,8 @@ fn infer_operand_sequence(
                 .and_then(|child| tree.node(*child))
                 .map(|node| node.span().clone())
                 .ok_or(AnalysisError::Invariant)?;
-            return infer_binary_operator(operator, left, right, span, diagnostics).map(Some);
+            return infer_binary_operator(operator, left, right, span, context, diagnostics)
+                .map(Some);
         }
         return Ok(None);
     }
@@ -6953,6 +6977,7 @@ fn infer_binary_operator(
     left: TypeDescriptor,
     right: TypeDescriptor,
     span: SourceSpan,
+    context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<TypeDescriptor, AnalysisError> {
     let result = match operator {
@@ -6982,7 +7007,14 @@ fn infer_binary_operator(
             Some(TypeDescriptor::BOOL)
         }
         Punctuation::EqualEqual | Punctuation::NotEqual
-            if left == right && !left.contains_sealed_boundary() =>
+            if left == right
+                && prove_sealed_capability(
+                    SealedCapability::Equatable,
+                    &left,
+                    &context.capability_declarations,
+                    &mut context.generic_analysis_counters.borrow_mut(),
+                    &mut context.capability_proofs.borrow_mut(),
+                )? =>
         {
             Some(TypeDescriptor::BOOL)
         }
