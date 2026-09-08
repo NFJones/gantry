@@ -339,7 +339,7 @@ fn public_parametric_calls_require_callee_bounds() {
 #[test]
 fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     use gantry::analysis::TypeCapabilityQueryError;
-    use gantry::ir::TypeDescriptor;
+    use gantry::ir::{OwnershipClass, TypeDescriptor};
     use gantry::source::FrontendLimits;
 
     let nested = analyze("struct Nested { value: List<List<Int>> }\nfn main(value: Nested) {}");
@@ -362,13 +362,17 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     }
 
     let package = analyze(
-        "struct Phantom<T> { value: Int }\nstruct Stored { value: Decision }\nfn inspect(value: Stored) {}\nfn main(value: Phantom<Decision>) {}",
+        "struct Phantom<T> { value: Int }\nstruct Stored { value: Decision }\nstruct Node<T> { value: T, next: Option<Node<T>> }\nfn inspect(value: Stored) {}\nfn inspect_node(value: Node<Decision>) {}\nfn main(value: Phantom<Decision>) {}",
     );
     let policy = FrontendLimits::new(
         4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
     )
     .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
-    for (name, external) in [("crate::Phantom<Decision>", true), ("crate::Stored", false)] {
+    for (name, external) in [
+        ("crate::Phantom<Decision>", true),
+        ("crate::Stored", false),
+        ("crate::Node<Decision>", false),
+    ] {
         let ty = TypeDescriptor::from_canonical_string(name)
             .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
         let properties = package
@@ -377,6 +381,7 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
         assert_eq!(properties.is_external(), external);
         assert_eq!(properties.is_equatable(), external);
         assert!(properties.is_interpolatable());
+        assert_eq!(properties.ownership_class(), OwnershipClass::Copyable);
         assert!(properties.is_copyable());
         assert!(properties.is_task_capturable());
         assert_eq!(package.type_capabilities(&ty, policy), Ok(properties));
@@ -387,7 +392,7 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
         package.type_capabilities(&unknown, policy),
         Err(TypeCapabilityQueryError::TypeNotRetained)
     );
-    for (steps, succeeds) in [(6, true), (5, false), (6, true)] {
+    for (steps, succeeds) in [(8, true), (7, false), (8, true)] {
         let bounded = FrontendLimits::new(
             4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, steps,
         )

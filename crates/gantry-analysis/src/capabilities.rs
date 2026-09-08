@@ -6,14 +6,15 @@
 use std::collections::BTreeMap;
 
 use gantry_core::source::{FrontendLimits, FrontendResourceLimit, GenericAnalysisCounters};
-use gantry_ir::{TypeDescriptor, TypeExpression};
+use gantry_ir::{OwnershipClass, TypeDescriptor, TypeExpression};
 
-use crate::generics::{SealedCapability, prove_sealed_capability};
+use crate::generics::{SealedCapability, prove_ownership_class, prove_sealed_capability};
 use crate::{AnalysisError, AnalysisStatus, TypedPackage};
 
 /// Independent compiler-owned capability results, not execution admission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TypeCapabilities {
+    ownership_class: OwnershipClass,
     equatable: bool,
     external: bool,
     interpolatable: bool,
@@ -33,8 +34,8 @@ impl TypeCapabilities {
     ///
     /// Noncopyable classifications do not yet have source inhabitants in v1.
     #[must_use]
-    pub const fn ownership_class(self) -> gantry_ir::OwnershipClass {
-        gantry_ir::OwnershipClass::Copyable
+    pub const fn ownership_class(self) -> OwnershipClass {
+        self.ownership_class
     }
 
     /// Whether a v1 task may capture an independent copy of this value.
@@ -43,7 +44,7 @@ impl TypeCapabilities {
     /// safety, authority delegation, or permission to spawn a task.
     #[must_use]
     pub const fn is_task_capturable(self) -> bool {
-        true
+        matches!(self.ownership_class, OwnershipClass::Copyable)
     }
 
     /// Whether the stored value satisfies `Equatable`.
@@ -147,10 +148,23 @@ impl TypedPackage {
                 _ => TypeCapabilityQueryError::Invariant,
             })
         };
+        let equatable = prove(SealedCapability::Equatable)?;
+        let external = prove(SealedCapability::ExternalValue)?;
+        let interpolatable = prove(SealedCapability::Interpolatable)?;
+        let mut ownership_memo = BTreeMap::new();
+        let ownership_class =
+            prove_ownership_class(descriptor, declarations, &mut counters, &mut ownership_memo)
+                .map_err(|error| match error {
+                    AnalysisError::ResourceLimit { error, .. } => {
+                        TypeCapabilityQueryError::ResourceLimit(error)
+                    }
+                    _ => TypeCapabilityQueryError::Invariant,
+                })?;
         Ok(TypeCapabilities {
-            equatable: prove(SealedCapability::Equatable)?,
-            external: prove(SealedCapability::ExternalValue)?,
-            interpolatable: prove(SealedCapability::Interpolatable)?,
+            ownership_class,
+            equatable,
+            external,
+            interpolatable,
         })
     }
 }

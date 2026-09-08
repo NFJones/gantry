@@ -18,8 +18,8 @@ use gantry_core::source::{
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
-    EffectSet, ImplementationHead, Predicate, TraitContract, TraitMethodContract, TraitReference,
-    TypeDescriptor, TypeExpression,
+    EffectSet, ImplementationHead, OwnershipClass, Predicate, PrimitiveTypeProperties,
+    TraitContract, TraitMethodContract, TraitReference, TypeDescriptor, TypeExpression,
 };
 
 use crate::{
@@ -1753,16 +1753,9 @@ pub(crate) struct GenericDeclarationShape {
     predicates: Vec<CapabilityPredicate>,
 }
 
-struct CapabilityFrame {
-    descriptor: TypeDescriptor,
-    key: String,
-    members: Option<Vec<TypeDescriptor>>,
-    next_member: usize,
-    satisfied: bool,
-}
-
-enum CapabilityNode {
-    Leaf(bool),
+enum StoredMemberNode {
+    Primitive(PrimitiveTypeProperties),
+    Opaque,
     Members(Vec<TypeDescriptor>),
 }
 
@@ -1962,22 +1955,141 @@ pub(crate) fn prove_sealed_capability(
     counters: &mut Option<GenericAnalysisCounters>,
     memo: &mut BTreeMap<(SealedCapability, String), bool>,
 ) -> Result<bool, AnalysisError> {
+    let mut property = CapabilityProperty { capability, memo };
+    prove_stored_member_property(root, declarations, counters, &mut property)
+}
+
+/// Derives ownership from instantiated stored members with the shared proof fold.
+pub(crate) fn prove_ownership_class(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+    counters: &mut Option<GenericAnalysisCounters>,
+    memo: &mut BTreeMap<String, OwnershipClass>,
+) -> Result<OwnershipClass, AnalysisError> {
+    let mut property = OwnershipProperty { memo };
+    prove_stored_member_property(root, declarations, counters, &mut property)
+}
+
+/// Algebra and cache policy for one proof over the retained stored-member graph.
+trait StoredMemberProperty {
+    type Value: Copy;
+
+    fn identity(&self) -> Self::Value;
+    fn primitive(&self, properties: PrimitiveTypeProperties) -> Self::Value;
+    fn opaque(&self) -> Result<Self::Value, AnalysisError>;
+    fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value;
+    fn is_absorbing(&self, value: Self::Value) -> bool;
+    fn cached(&self, key: &str) -> Option<Self::Value>;
+    fn cache(&mut self, key: String, value: Self::Value);
+}
+
+struct CapabilityProperty<'a> {
+    capability: SealedCapability,
+    memo: &'a mut BTreeMap<(SealedCapability, String), bool>,
+}
+
+impl StoredMemberProperty for CapabilityProperty<'_> {
+    type Value = bool;
+
+    fn identity(&self) -> Self::Value {
+        true
+    }
+
+    fn primitive(&self, properties: PrimitiveTypeProperties) -> Self::Value {
+        match self.capability {
+            SealedCapability::Equatable => properties.is_equatable(),
+            SealedCapability::ExternalValue => properties.is_external(),
+            SealedCapability::Interpolatable => properties.is_interpolatable(),
+        }
+    }
+
+    fn opaque(&self) -> Result<Self::Value, AnalysisError> {
+        Ok(false)
+    }
+
+    fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value {
+        left && right
+    }
+
+    fn is_absorbing(&self, value: Self::Value) -> bool {
+        !value
+    }
+
+    fn cached(&self, key: &str) -> Option<Self::Value> {
+        self.memo.get(&(self.capability, key.to_owned())).copied()
+    }
+
+    fn cache(&mut self, key: String, value: Self::Value) {
+        self.memo.insert((self.capability, key), value);
+    }
+}
+
+struct OwnershipProperty<'a> {
+    memo: &'a mut BTreeMap<String, OwnershipClass>,
+}
+
+impl StoredMemberProperty for OwnershipProperty<'_> {
+    type Value = OwnershipClass;
+
+    fn identity(&self) -> Self::Value {
+        OwnershipClass::Copyable
+    }
+
+    fn primitive(&self, properties: PrimitiveTypeProperties) -> Self::Value {
+        properties.ownership_class()
+    }
+
+    fn opaque(&self) -> Result<Self::Value, AnalysisError> {
+        Err(AnalysisError::Invariant)
+    }
+
+    fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value {
+        left.combine(right)
+    }
+
+    fn is_absorbing(&self, value: Self::Value) -> bool {
+        matches!(value, OwnershipClass::MustConsume)
+    }
+
+    fn cached(&self, key: &str) -> Option<Self::Value> {
+        self.memo.get(key).copied()
+    }
+
+    fn cache(&mut self, key: String, value: Self::Value) {
+        self.memo.insert(key, value);
+    }
+}
+
+struct StoredMemberFrame<Value> {
+    descriptor: TypeDescriptor,
+    key: String,
+    members: Option<Vec<TypeDescriptor>>,
+    next_member: usize,
+    provisional: bool,
+    value: Value,
+}
+
+/// Folds one property over exact instantiated members without native recursion.
+fn prove_stored_member_property<Property: StoredMemberProperty>(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+    counters: &mut Option<GenericAnalysisCounters>,
+    property: &mut Property,
+) -> Result<Property::Value, AnalysisError> {
     charge_trait_steps(counters, 1)?;
     let root_key = root.canonical_string();
-    if let Some(result) = memo.get(&(capability, root_key.clone())).copied() {
+    if let Some(result) = property.cached(&root_key) {
         return Ok(result);
     }
 
     let mut active = BTreeSet::from([root_key.clone()]);
-    // Compound proofs may depend on active back-edges. Publish their successes
-    // only after the root succeeds; failures and independent leaves are final.
-    let mut pending_successes = BTreeSet::new();
-    let mut stack = vec![CapabilityFrame {
+    let mut stack = vec![StoredMemberFrame {
         descriptor: root.clone(),
         key: root_key,
         members: None,
         next_member: 0,
-        satisfied: true,
+        provisional: false,
+        value: property.identity(),
     }];
     loop {
         let index = stack.len().checked_sub(1).ok_or(AnalysisError::Invariant)?;
@@ -1993,33 +2105,45 @@ pub(crate) fn prove_sealed_capability(
                         diagnostics: Vec::new(),
                     })?;
             }
-            match capability_node(capability, &stack[index].descriptor, declarations)? {
-                CapabilityNode::Leaf(result) => {
+            match stored_member_node(&stack[index].descriptor, declarations)? {
+                StoredMemberNode::Primitive(properties) => {
+                    let result = property.primitive(properties);
                     let frame = stack.pop().ok_or(AnalysisError::Invariant)?;
                     active.remove(&frame.key);
-                    memo.insert((capability, frame.key), result);
+                    property.cache(frame.key, result);
                     if let Some(parent) = stack.last_mut() {
-                        parent.satisfied &= result;
+                        parent.value = property.combine(parent.value, result);
                         continue;
                     }
                     return Ok(result);
                 }
-                CapabilityNode::Members(mut members) => {
+                StoredMemberNode::Opaque => {
+                    let result = property.opaque()?;
+                    let frame = stack.pop().ok_or(AnalysisError::Invariant)?;
+                    active.remove(&frame.key);
+                    property.cache(frame.key, result);
+                    if let Some(parent) = stack.last_mut() {
+                        parent.value = property.combine(parent.value, result);
+                        continue;
+                    }
+                    return Ok(result);
+                }
+                StoredMemberNode::Members(mut members) => {
                     members.sort_by_key(TypeDescriptor::canonical_string);
                     stack[index].members = Some(members);
                 }
             }
         }
 
-        if !stack[index].satisfied {
+        if property.is_absorbing(stack[index].value) {
             let frame = stack.pop().ok_or(AnalysisError::Invariant)?;
             active.remove(&frame.key);
-            memo.insert((capability, frame.key), false);
+            property.cache(frame.key, frame.value);
             if let Some(parent) = stack.last_mut() {
-                parent.satisfied = false;
+                parent.value = property.combine(parent.value, frame.value);
                 continue;
             }
-            return Ok(false);
+            return Ok(frame.value);
         }
 
         let members = stack[index]
@@ -2029,41 +2153,44 @@ pub(crate) fn prove_sealed_capability(
         let Some(member) = members.get(stack[index].next_member).cloned() else {
             let frame = stack.pop().ok_or(AnalysisError::Invariant)?;
             active.remove(&frame.key);
-            pending_successes.insert(frame.key);
-            if stack.is_empty() {
-                for key in pending_successes {
-                    memo.insert((capability, key), true);
-                }
-                return Ok(true);
+            let complete = stack.is_empty() || !frame.provisional;
+            if complete {
+                property.cache(frame.key, frame.value);
             }
-            continue;
+            if let Some(parent) = stack.last_mut() {
+                parent.value = property.combine(parent.value, frame.value);
+                parent.provisional |= frame.provisional;
+                continue;
+            }
+            return Ok(frame.value);
         };
         stack[index].next_member = stack[index].next_member.saturating_add(1);
         charge_trait_steps(counters, 1)?;
         let member_key = member.canonical_string();
         if active.contains(&member_key) {
+            stack[index].provisional = true;
             continue;
         }
-        if let Some(result) = memo.get(&(capability, member_key.clone())).copied() {
-            stack[index].satisfied &= result;
+        if let Some(result) = property.cached(&member_key) {
+            stack[index].value = property.combine(stack[index].value, result);
             continue;
         }
         active.insert(member_key.clone());
-        stack.push(CapabilityFrame {
+        stack.push(StoredMemberFrame {
             descriptor: member,
             key: member_key,
             members: None,
             next_member: 0,
-            satisfied: true,
+            provisional: false,
+            value: property.identity(),
         });
     }
 }
 
-fn capability_node(
-    capability: SealedCapability,
+fn stored_member_node(
     descriptor: &TypeDescriptor,
     declarations: &BTreeMap<String, GenericDeclarationShape>,
-) -> Result<CapabilityNode, AnalysisError> {
+) -> Result<StoredMemberNode, AnalysisError> {
     match descriptor.kind() {
         TypeKind::Unit
         | TypeKind::Bool
@@ -2075,19 +2202,15 @@ fn capability_node(
             let properties = descriptor
                 .primitive_properties()
                 .ok_or(AnalysisError::Invariant)?;
-            Ok(CapabilityNode::Leaf(match capability {
-                SealedCapability::Equatable => properties.is_equatable(),
-                SealedCapability::ExternalValue => properties.is_external(),
-                SealedCapability::Interpolatable => properties.is_interpolatable(),
-            }))
+            Ok(StoredMemberNode::Primitive(properties))
         }
         TypeKind::Option | TypeKind::Result | TypeKind::List | TypeKind::Tuple => {
-            Ok(CapabilityNode::Members(descriptor.immediate_members()))
+            Ok(StoredMemberNode::Members(descriptor.immediate_members()))
         }
         TypeKind::Declared => {
             let path = descriptor.declared_path().ok_or(AnalysisError::Invariant)?;
             let Some(declaration) = declarations.get(path.as_str()) else {
-                return Ok(CapabilityNode::Leaf(false));
+                return Ok(StoredMemberNode::Opaque);
             };
             let members = if let Some(binder) = declaration.binder.as_ref() {
                 let required = binder
@@ -2121,7 +2244,7 @@ fn capability_node(
                     })
                     .collect::<Result<Vec<_>, _>>()?
             };
-            Ok(CapabilityNode::Members(members))
+            Ok(StoredMemberNode::Members(members))
         }
     }
 }
