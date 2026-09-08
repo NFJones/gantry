@@ -335,6 +335,59 @@ fn public_parametric_calls_require_callee_bounds() {
     }
 }
 
+/// Public queries reuse structural proof without admitting unknown descriptors.
+#[test]
+fn public_type_capability_queries_are_bounded_and_declaration_aware() {
+    use gantry::analysis::TypeCapabilityQueryError;
+    use gantry::ir::TypeDescriptor;
+    use gantry::source::FrontendLimits;
+
+    let package = analyze(
+        "struct Phantom<T> { value: Int }\nstruct Stored { value: Decision }\nfn inspect(value: Stored) {}\nfn main(value: Phantom<Decision>) {}",
+    );
+    let policy = FrontendLimits::new(
+        4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
+    )
+    .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
+    for (name, external) in [("crate::Phantom<Decision>", true), ("crate::Stored", false)] {
+        let ty = TypeDescriptor::from_canonical_string(name)
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        let properties = package
+            .type_capabilities(&ty, policy)
+            .unwrap_or_else(|error| panic!("query failed: {error:?}"));
+        assert_eq!(properties.is_external(), external);
+        assert_eq!(properties.is_equatable(), external);
+        assert!(properties.is_interpolatable());
+        assert_eq!(package.type_capabilities(&ty, policy), Ok(properties));
+    }
+    let unknown = TypeDescriptor::from_canonical_string("crate::Unknown")
+        .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+    assert_eq!(
+        package.type_capabilities(&unknown, policy),
+        Err(TypeCapabilityQueryError::TypeNotRetained)
+    );
+    for (steps, succeeds) in [(6, true), (5, false), (6, true)] {
+        let bounded = FrontendLimits::new(
+            4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, steps,
+        )
+        .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
+        let result = package.type_capabilities(&TypeDescriptor::INT, bounded);
+        if succeeds {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            assert!(matches!(
+                result,
+                Err(TypeCapabilityQueryError::ResourceLimit(_))
+            ));
+        }
+    }
+    let invalid = analyze("fn main() -> Int { true }");
+    assert_eq!(
+        invalid.type_capabilities(&TypeDescriptor::INT, policy),
+        Err(TypeCapabilityQueryError::InvalidPackage)
+    );
+}
+
 /// Entry boundaries use stored members rather than phantom type arguments.
 #[test]
 fn public_entry_boundaries_use_declared_members() {

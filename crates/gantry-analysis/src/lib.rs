@@ -8,6 +8,7 @@
 //! without performing integration or runtime work.
 
 mod bodies;
+mod capabilities;
 mod effects;
 mod executable;
 mod generics;
@@ -18,6 +19,7 @@ mod security;
 mod symbols;
 mod types;
 
+pub use capabilities::{TypeCapabilities, TypeCapabilityQueryError};
 pub use model::{
     AgentName, AnalysisError, AnalysisStatus, DeclaredEnumVariant, DeclaredStructField,
     DeclaredValueShape, DeclaredValueShapes, GenericTypeFact, Module, ModuleId, PackageStructure,

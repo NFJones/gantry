@@ -52,6 +52,12 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   interpolation, external eligibility, and recovery projection separately.
   Structural descriptors return `None`: this API cannot infer declared
   fields, grant execution admission, or introduce affine values and loans.
+  For declaration-aware inspection, `TypedPackage::type_capabilities` reports
+  the three existing sealed capabilities for primitives and exact retained
+  closed types. It rejects invalid packages and unretained descriptors, uses
+  fresh constructed-depth and trait-resolution limits on every query, and
+  returns no partial report on exhaustion. Query results do not admit new
+  types, grant authority, or establish durable execution eligibility.
   Compound successes that may depend on recursive back-edges are published
   only after the root proof succeeds; a failed or exhausted proof cannot
   leave a provisional success available to a later query.

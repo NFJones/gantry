@@ -1737,7 +1737,7 @@ impl SealedCapability {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CapabilityPredicate {
     pub(crate) parameter: TypeParameterKey,
     pub(crate) capability: SealedCapability,
@@ -1745,7 +1745,7 @@ pub(crate) struct CapabilityPredicate {
 }
 
 /// Declared members used by both declaration and callable capability proofs.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct GenericDeclarationShape {
     binder: Option<TypeBinder>,
     declaration: SourceSpan,

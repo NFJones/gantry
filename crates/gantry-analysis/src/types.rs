@@ -378,6 +378,16 @@ fn analyze_package_types_with_policy(
     };
     Ok(TypedPackage {
         status,
+        capability_declarations: if status == AnalysisStatus::Valid {
+            Some(crate::generics::collect_generic_declaration_shapes(
+                phase.parsed_sources(),
+                &structure,
+                &type_binders,
+                &generic_types,
+            )?)
+        } else {
+            None
+        },
         structure,
         type_binders,
         generic_types,

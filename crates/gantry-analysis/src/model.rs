@@ -309,6 +309,8 @@ impl DeclaredValueShapes {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypedPackage {
     pub(crate) status: AnalysisStatus,
+    pub(crate) capability_declarations:
+        Option<BTreeMap<String, crate::generics::GenericDeclarationShape>>,
     pub(crate) structure: PackageStructure,
     pub(crate) type_binders: Vec<TypeBinder>,
     pub(crate) generic_types: Vec<GenericTypeFact>,
