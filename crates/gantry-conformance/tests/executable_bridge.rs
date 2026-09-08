@@ -219,6 +219,51 @@ pure fn main() -> Int { preserve::<Int>(7) }
 }
 
 #[test]
+fn generic_mutable_parameters_are_mutated_only_in_the_callee_copy() {
+    let root = TempDirectory::new(
+        r#"
+struct Holder<T> { value: T }
+fn replace<T>(mut holder: Holder<T>, replacement: T) -> Holder<T> { holder.value = replacement; holder }
+fn main() -> Tuple<Int, Int> {
+    let original: Holder<Int> = Holder::<Int> { value: 1 };
+    let changed: Holder<Int> = replace(original, 7);
+    (original.value, changed.value)
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("closed generic package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x54; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("closed generic program was rejected: {error:?}"));
+
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("closed generic program did not succeed")
+    };
+    let original = value
+        .member(0)
+        .unwrap_or_else(|| panic!("result omitted the original value"));
+    let changed = value
+        .member(1)
+        .unwrap_or_else(|| panic!("result omitted the changed value"));
+    assert!(matches!(original.view(), LogicalValueView::Int(value) if value.get() == 1));
+    assert!(matches!(changed.view(), LogicalValueView::Int(value) if value.get() == 7));
+}
+
+#[test]
 fn generic_methods_and_static_trait_calls_preserve_logical_copy_isolation() {
     let root = TempDirectory::new(
         r#"
