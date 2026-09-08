@@ -2193,6 +2193,27 @@ fn main(flag: Bool) -> Int {
         ));
     }
 
+    /// Callable proof admission charges its root and leaf before publishing a package.
+    #[test]
+    fn callable_capability_proofs_obey_the_trait_budget() {
+        let phase = syntax(
+            "fn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(1); }",
+        );
+        let package = analyze_package_types_with_limits(&phase, trait_limits(2))
+            .unwrap_or_else(|error| panic!("at-limit callable proof failed: {error:?}"));
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(matches!(
+            analyze_package_types_with_limits(&phase, trait_limits(1)),
+            Err(AnalysisError::ResourceLimit { error, .. })
+                if error.code == FrontendResourceCode::TraitResolutionStepLimit
+        ));
+    }
+
     /// Callable bounds must inspect stored fields, not unused generic arguments.
     #[test]
     fn callable_external_bounds_use_instantiated_declared_fields() {
