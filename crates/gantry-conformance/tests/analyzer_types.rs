@@ -280,6 +280,20 @@ fn main() {}
     }));
 }
 
+/// A typed scrutinee closes an unqualified generic enum pattern substitution.
+#[test]
+fn public_generic_enum_patterns_infer_substitution_from_scrutinee() {
+    let accepted = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main(value: State<String, Int>) -> String { match value { State::Ready(item) => item, State::Failed(_) => \"failed\", } }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+}
+
 /// A recursive back-edge cannot publish a proof before all stored fields qualify.
 #[test]
 fn recursive_equality_proofs_do_not_cache_provisional_success() {
