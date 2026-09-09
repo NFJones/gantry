@@ -1011,6 +1011,36 @@ fn public_generic_enum_constructor_payloads_are_exact() {
     );
 }
 
+/// Generic enum constructors require exactly every explicit type argument.
+#[test]
+fn public_explicit_generic_enum_constructor_argument_arity_is_exact() {
+    let accepted = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() { discard State::<String, Int>::Ready(\"ok\"); }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    for source in [
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() { discard State::<String>::Ready(\"ok\"); }",
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() { discard State::<String, Int, Bool>::Ready(\"ok\"); }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "type-argument-arity"),
+            "{:?}",
+            rejected.diagnostics()
+        );
+    }
+}
+
 /// Expected results select generic enum payload types for nested constructors.
 #[test]
 fn public_expected_result_completes_generic_enum_constructor_substitution() {
