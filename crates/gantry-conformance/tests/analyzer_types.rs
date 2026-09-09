@@ -858,6 +858,49 @@ fn public_generic_option_validation_obeys_work_and_depth_cutoffs() {
 #[test]
 /// Declared recursion permits only guarded regular self recursion in v1.
 fn public_declared_recursion_obeys_guarded_regular_v1_rules() {
+    let phase =
+        syntax("struct Node<T> { next: Option<Node<List<T>>> } fn main(value: Node<Int>) {}");
+    let package = analyze_package_types_with_limits(&phase, analysis_limits(16, 256))
+        .unwrap_or_else(|error| panic!("rejected recursion reached later expansion: {error:?}"));
+    assert_eq!(package.status(), AnalysisStatus::Invalid);
+    assert!(
+        package
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "polymorphic-recursion")
+    );
+    assert!(package.executable_program().is_none());
+
+    let bounded = syntax(
+        "struct Node<T> { next: Option<Node<List<T>>> } struct Envelope<T> where T: Equatable { value: T } fn main(value: Envelope<Node<Int>>) {}",
+    );
+    let package = analyze_package_types_with_limits(&bounded, analysis_limits(16, 256))
+        .unwrap_or_else(|error| panic!("rejected bound proof kept expanding: {error:?}"));
+    assert_eq!(package.status(), AnalysisStatus::Invalid);
+    for code in ["polymorphic-recursion", "unsatisfied-bound"] {
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "expected {code}: {:?}",
+            package.diagnostics()
+        );
+    }
+
+    let regular = syntax(
+        "struct Node<T> { value: T, next: Option<Node<T>> } struct Envelope<T> where T: Equatable { value: T } fn main(value: Envelope<Node<Int>>) {}",
+    );
+    let package = analyze_package_types_with_limits(&regular, analysis_limits(16, 256))
+        .unwrap_or_else(|error| panic!("regular recursion proof failed: {error:?}"));
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    assert!(package.executable_program().is_some());
+
     for source in [
         "struct Node { next: Option<Node> } fn main() {}",
         "struct Node<T> { next: List<Node<T>> } fn main() {}",

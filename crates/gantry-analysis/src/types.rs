@@ -154,10 +154,23 @@ fn analyze_package_types_with_policy(
         diagnostics.dedup();
         return Err(AnalysisError::ResourceLimit { error, diagnostics });
     }
-    if let Err(error) = crate::generics::diagnose_invalid_generic_option_members(
+
+    let rejected_declarations = check_recursive_declarations(
+        phase.parsed_sources(),
+        &structure,
+        &generic_types,
+        &type_binders,
+        &mut type_diagnostics,
+    )?;
+    let capability_declarations = crate::generics::collect_generic_declaration_shapes(
         phase.parsed_sources(),
         &structure,
         &type_binders,
+        &generic_types,
+        &rejected_declarations,
+    )?;
+    if let Err(error) = crate::generics::diagnose_invalid_generic_option_members(
+        &capability_declarations,
         &generic_types,
         &mut generic_counters,
         &mut type_diagnostics,
@@ -173,9 +186,7 @@ fn analyze_package_types_with_policy(
         };
     }
     if let Err(error) = check_sealed_declaration_bounds(
-        phase.parsed_sources(),
-        &structure,
-        &type_binders,
+        &capability_declarations,
         &generic_types,
         &mut generic_counters,
         &mut type_diagnostics,
@@ -197,19 +208,11 @@ fn analyze_package_types_with_policy(
         facts_by_source.push(parsed);
     }
 
-    check_recursive_declarations(
-        phase.parsed_sources(),
-        &structure,
-        &generic_types,
-        &type_binders,
-        &mut type_diagnostics,
-    )?;
     if let Err(error) = check_sealed_boundaries(
         phase.parsed_sources(),
         &structure,
         &facts_by_source,
-        &type_binders,
-        &generic_types,
+        &capability_declarations,
         &mut generic_counters,
         &mut type_diagnostics,
     ) {
@@ -237,6 +240,7 @@ fn analyze_package_types_with_policy(
         &generic_types,
         &type_binders,
         &structure,
+        &capability_declarations,
         &trait_contracts,
         &implementation_heads,
         frontend_limits.map(FrontendLimits::maximum_constructed_type_depth),
@@ -397,12 +401,7 @@ fn analyze_package_types_with_policy(
     Ok(TypedPackage {
         status,
         capability_declarations: if status == AnalysisStatus::Valid {
-            Some(crate::generics::collect_generic_declaration_shapes(
-                phase.parsed_sources(),
-                &structure,
-                &type_binders,
-                &generic_types,
-            )?)
+            Some(capability_declarations)
         } else {
             None
         },
@@ -1005,7 +1004,7 @@ fn check_recursive_declarations(
     generic_types: &[GenericTypeFact],
     type_binders: &[TypeBinder],
     diagnostics: &mut Vec<StructuredDiagnostic>,
-) -> Result<(), AnalysisError> {
+) -> Result<BTreeSet<String>, AnalysisError> {
     let references = structure
         .references()
         .iter()
@@ -1097,11 +1096,13 @@ fn check_recursive_declarations(
         }
     }
 
+    let mut rejected = BTreeSet::new();
     for (owner, edges) in &graph {
         let owner_symbol = symbol_by_id.get(owner).ok_or(AnalysisError::Invariant)?;
         for edge in edges {
             if edge.target == *owner {
                 if owner_symbol.kind == SymbolKind::Enum {
+                    rejected.insert(owner_symbol.path.as_str().to_owned());
                     diagnostics.push(type_diagnostic(
                         "recursive-enum",
                         "an enum payload recursively contains its declaring enum",
@@ -1109,6 +1110,7 @@ fn check_recursive_declarations(
                         [("canonical_path", owner_symbol.path.as_str())],
                     )?);
                 } else if !edge.preserves_owner_arguments {
+                    rejected.insert(owner_symbol.path.as_str().to_owned());
                     diagnostics.push(type_diagnostic(
                         "polymorphic-recursion",
                         "a recursive generic declaration changes its own type arguments",
@@ -1116,6 +1118,7 @@ fn check_recursive_declarations(
                         [("canonical_path", owner_symbol.path.as_str())],
                     )?);
                 } else if !edge.guarded {
+                    rejected.insert(owner_symbol.path.as_str().to_owned());
                     diagnostics.push(type_diagnostic(
                         "unguarded-recursive-type",
                         "a self-recursive struct field is not guarded by Option or List",
@@ -1124,6 +1127,7 @@ fn check_recursive_declarations(
                     )?);
                 }
             } else if reaches(edge.target, *owner, &graph) {
+                rejected.insert(owner_symbol.path.as_str().to_owned());
                 diagnostics.push(type_diagnostic(
                     "recursive-type-cycle",
                     "a cycle contains more than one declared type",
@@ -1133,7 +1137,7 @@ fn check_recursive_declarations(
             }
         }
     }
-    Ok(())
+    Ok(rejected)
 }
 
 /// Builds the only regular self-application admitted for one generic owner.
@@ -1212,17 +1216,10 @@ fn check_sealed_boundaries(
     sources: &[ParsedSource],
     structure: &PackageStructure,
     facts: &[BTreeMap<NodeId, TypeFact>],
-    binders: &[TypeBinder],
-    generic_facts: &[GenericTypeFact],
+    declarations: &BTreeMap<String, crate::generics::GenericDeclarationShape>,
     counters: &mut Option<GenericAnalysisCounters>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    let declarations = crate::generics::collect_generic_declaration_shapes(
-        sources,
-        structure,
-        binders,
-        generic_facts,
-    )?;
     let mut proofs = BTreeMap::new();
     let root_main = structure
         .symbols()
@@ -1284,7 +1281,7 @@ fn check_sealed_boundaries(
                 if !crate::generics::prove_sealed_capability(
                     crate::generics::SealedCapability::ExternalValue,
                     &fact.descriptor,
-                    &declarations,
+                    declarations,
                     counters,
                     &mut proofs,
                 )? {

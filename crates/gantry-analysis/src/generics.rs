@@ -1785,6 +1785,14 @@ pub(crate) struct GenericDeclarationShape {
     declaration: SourceSpan,
     members: Vec<TypeExpression>,
     predicates: Vec<CapabilityPredicate>,
+    expandable: bool,
+}
+
+impl GenericDeclarationShape {
+    /// Returns whether later analysis may instantiate this declaration's members.
+    pub(crate) const fn is_expandable(&self) -> bool {
+        self.expandable
+    }
 }
 
 enum StoredMemberNode {
@@ -1796,14 +1804,11 @@ enum StoredMemberNode {
 
 /// Proves every compiler-owned declaration predicate after complete substitution.
 pub(crate) fn check_sealed_declaration_bounds(
-    sources: &[ParsedSource],
-    structure: &PackageStructure,
-    binders: &[TypeBinder],
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
     facts: &[GenericTypeFact],
     counters: &mut Option<GenericAnalysisCounters>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    let declarations = collect_generic_declaration_shapes(sources, structure, binders, facts)?;
     let mut memo = BTreeMap::<(SealedCapability, String), bool>::new();
 
     for fact in facts {
@@ -1825,7 +1830,7 @@ pub(crate) fn check_sealed_declaration_bounds(
             if prove_sealed_capability(
                 predicate.capability,
                 argument,
-                &declarations,
+                declarations,
                 counters,
                 &mut memo,
             )? {
@@ -1857,14 +1862,11 @@ pub(crate) fn check_sealed_declaration_bounds(
 
 /// Diagnoses closed declared applications whose stored members become invalid options.
 pub(crate) fn diagnose_invalid_generic_option_members(
-    sources: &[ParsedSource],
-    structure: &PackageStructure,
-    binders: &[TypeBinder],
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
     facts: &[GenericTypeFact],
     counters: &mut Option<GenericAnalysisCounters>,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<(), AnalysisError> {
-    let declarations = collect_generic_declaration_shapes(sources, structure, binders, facts)?;
     let mut visited = BTreeSet::new();
     for (span, root) in facts.iter().filter_map(|fact| {
         fact.descriptor.as_ref().and_then(|descriptor| {
@@ -1874,7 +1876,7 @@ pub(crate) fn diagnose_invalid_generic_option_members(
     }) {
         if let Some(declaration) = invalid_generic_option_member_declaration_with_visited(
             root,
-            &declarations,
+            declarations,
             counters,
             &mut visited,
         )? {
@@ -1959,6 +1961,7 @@ pub(crate) fn collect_generic_declaration_shapes(
     structure: &PackageStructure,
     binders: &[TypeBinder],
     facts: &[GenericTypeFact],
+    rejected_declarations: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, GenericDeclarationShape>, AnalysisError> {
     let symbols = structure
         .symbols()
@@ -2018,6 +2021,7 @@ pub(crate) fn collect_generic_declaration_shapes(
                     declaration: node.span().clone(),
                     members,
                     predicates,
+                    expandable: !rejected_declarations.contains(symbol.path.as_str()),
                 },
             );
         }
@@ -2335,6 +2339,9 @@ fn stored_member_node(
             let Some(declaration) = declarations.get(path.as_str()) else {
                 return Ok(StoredMemberNode::Opaque);
             };
+            if !declaration.expandable {
+                return Ok(StoredMemberNode::Opaque);
+            }
             let members = if let Some(binder) = declaration.binder.as_ref() {
                 let required = binder
                     .parameters
@@ -2948,6 +2955,7 @@ mod tests {
             &structure,
             &binders,
             &facts,
+            &std::collections::BTreeSet::new(),
         )
         .unwrap_or_else(|error| panic!("shapes failed: {error:?}"));
         assert!(diagnostics.is_empty(), "{diagnostics:?}");

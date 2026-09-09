@@ -29,7 +29,7 @@ use gantry_ir::{
 use crate::generics::{
     CapabilityPredicate, ExactTypeSubstitution, GenericDeclarationShape, SealedCapability,
     TypeInferenceFailure, TypeParameterKey, collect_capability_predicates,
-    collect_generic_declaration_shapes, collect_type_parameter_keys, collect_where_predicates,
+    collect_type_parameter_keys, collect_where_predicates,
     invalid_generic_option_member_declaration, prove_sealed_capability, substitute_self_type,
 };
 use crate::{
@@ -285,6 +285,7 @@ fn build_body_context(
     generic_facts: &[GenericTypeFact],
     binders: &[TypeBinder],
     structure: &PackageStructure,
+    capability_declarations: &BTreeMap<String, GenericDeclarationShape>,
     trait_contracts: &[TraitContract],
     implementation_heads: &[ImplementationHead],
     maximum_constructed_type_depth: Option<u64>,
@@ -586,6 +587,12 @@ fn build_body_context(
                     actions.insert(symbol.id, CallableSignature { parameters, result });
                 }
                 SyntaxForm::StructDeclaration => {
+                    if !capability_declarations
+                        .get(symbol.path.as_str())
+                        .is_some_and(GenericDeclarationShape::is_expandable)
+                    {
+                        continue;
+                    }
                     if let Some(binder) = binders_by_declaration.get(node.span()).copied() {
                         let mut fields = BTreeMap::new();
                         for child in node.children().iter().copied() {
@@ -671,6 +678,12 @@ fn build_body_context(
                     );
                 }
                 SyntaxForm::EnumDeclaration => {
+                    if !capability_declarations
+                        .get(symbol.path.as_str())
+                        .is_some_and(GenericDeclarationShape::is_expandable)
+                    {
+                        continue;
+                    }
                     if let Some(binder) = binders_by_declaration.get(node.span()).copied() {
                         let mut variants = BTreeMap::new();
                         for child in node.children().iter().copied() {
@@ -826,12 +839,7 @@ fn build_body_context(
     });
     Ok(BodyContext {
         callables,
-        capability_declarations: collect_generic_declaration_shapes(
-            sources,
-            structure,
-            binders,
-            generic_facts,
-        )?,
+        capability_declarations: capability_declarations.clone(),
         capability_proofs: RefCell::new(BTreeMap::new()),
         invalid_option_members: RefCell::new(BTreeMap::new()),
         generic_callables,
@@ -1160,6 +1168,7 @@ pub(crate) fn check_package_bodies(
     generic_facts: &[GenericTypeFact],
     binders: &[TypeBinder],
     structure: &PackageStructure,
+    capability_declarations: &BTreeMap<String, GenericDeclarationShape>,
     trait_contracts: &[TraitContract],
     implementation_heads: &[ImplementationHead],
     maximum_constructed_type_depth: Option<u64>,
@@ -1172,6 +1181,7 @@ pub(crate) fn check_package_bodies(
         generic_facts,
         binders,
         structure,
+        capability_declarations,
         trait_contracts,
         implementation_heads,
         maximum_constructed_type_depth,
