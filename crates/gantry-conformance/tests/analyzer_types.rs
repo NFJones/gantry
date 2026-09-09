@@ -906,6 +906,35 @@ fn public_qualified_trait_calls_require_complete_inference() {
     );
 }
 
+/// Qualified trait calls must prove the trait declaration's concrete predicates.
+#[test]
+fn public_qualified_trait_calls_enforce_declaration_predicates() {
+    let source = |argument, receiver| {
+        format!(
+            "trait Marker {{ pure fn marker(self); }} trait Wrapped<T> where T: Marker {{ pure fn wrapped(self) -> String; }} struct Item {{}} struct Missing {{}} struct Envelope<T> {{ value: T }} impl Marker for Item {{ pure fn marker(self) {{}} }} impl<T> Wrapped<T> for Envelope<T> {{ pure fn wrapped(self) -> String {{ \"wrapped\" }} }} fn main(value: {receiver}) -> String {{ Wrapped::<{argument}>::wrapped(value) }}"
+        )
+    };
+
+    let accepted = analyze(&source("Item", "Envelope<Item>"));
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let rejected = analyze(&source("Missing", "Envelope<Missing>"));
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "missing-implementation"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
