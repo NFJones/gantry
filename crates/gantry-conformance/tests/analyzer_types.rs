@@ -952,6 +952,36 @@ fn public_cyclic_trait_obligations_are_rejected() {
     );
 }
 
+/// Recursive capability proofs inspect stored members and ignore declaration order.
+#[test]
+fn public_recursive_generic_capabilities_are_structural() {
+    for source in [
+        "struct Node<T> { value: T, next: Option<Node<T>> } struct Envelope<T> where T: Equatable { value: T } fn inspect(value: Envelope<Node<String>>) {} fn main() {}",
+        "struct Envelope<T> where T: Equatable { value: T } struct Node<T> { value: T, next: Option<Node<T>> } fn inspect(value: Envelope<Node<String>>) {} fn main() {}",
+    ] {
+        let accepted = analyze(source);
+        assert_eq!(
+            accepted.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            accepted.diagnostics()
+        );
+    }
+
+    let rejected = analyze(
+        "struct Node<T> { value: T, next: Option<Node<T>> } struct Envelope<T> where T: Equatable { value: T } fn inspect(value: Envelope<Node<Decision>>) {} fn main() {}",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "unsatisfied-bound"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
