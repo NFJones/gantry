@@ -511,6 +511,7 @@ fn public_canonical_scalar_key_reports_match_value_admission() {
             .type_capabilities(&descriptor, policy)
             .unwrap_or_else(|error| panic!("primitive report failed: {error:?}"));
         assert!(report.is_canonical_scalar_key(), "{descriptor:?}");
+        assert!(report.is_hashable(), "{descriptor:?}");
         assert!(
             value.canonical_key(DEFAULT_CANONICAL_KEY_LIMITS).is_ok(),
             "{descriptor:?}"
@@ -567,6 +568,7 @@ fn public_canonical_scalar_key_reports_match_value_admission() {
             .type_capabilities(&descriptor, policy)
             .unwrap_or_else(|error| panic!("non-scalar report failed: {error:?}"));
         assert!(!report.is_canonical_scalar_key(), "{descriptor:?}");
+        assert!(!report.is_hashable(), "{descriptor:?}");
         assert!(matches!(
             value.canonical_key(DEFAULT_CANONICAL_KEY_LIMITS),
             Err(CanonicalKeyError::IneligibleKind(_))

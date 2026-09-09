@@ -20,6 +20,7 @@ use crate::{AnalysisError, AnalysisStatus, TypedPackage};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TypeCapabilities {
     canonical_scalar_key: bool,
+    hashable: bool,
     independent: IndependentTypeProperties,
     equatable: bool,
     external: bool,
@@ -117,6 +118,15 @@ impl TypeCapabilities {
     #[must_use]
     pub const fn is_canonical_scalar_key(self) -> bool {
         self.canonical_scalar_key
+    }
+
+    /// Whether this exact type has the stable canonical scalar-key hash contract.
+    ///
+    /// Hashability is limited to the five versioned scalar-key primitives. It
+    /// does not follow from external eligibility, equality, or a source codec.
+    #[must_use]
+    pub const fn is_hashable(self) -> bool {
+        self.hashable
     }
 
     /// Whether the stored value satisfies `ExternalValue`, before contextual checks.
@@ -234,6 +244,9 @@ impl TypedPackage {
             canonical_scalar_key: descriptor
                 .primitive_properties()
                 .is_some_and(|properties| properties.is_canonical_scalar_key()),
+            hashable: descriptor
+                .primitive_properties()
+                .is_some_and(|properties| properties.is_hashable()),
             independent,
             equatable,
             external,

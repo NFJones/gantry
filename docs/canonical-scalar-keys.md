@@ -4,11 +4,13 @@ Gantry core exposes one deliberately narrow canonical-key foundation for
 existing scalar values. It adds no source syntax or collection type.
 
 Primitive type properties and `TypedPackage::type_capabilities` report this as
-an explicit canonical-scalar-key eligibility predicate. It is deliberately
-distinct from `is_orderable`, which only describes numeric source operators:
-Unit, Bool, and String have canonical keys but are not orderable. The report
-does not introduce a source capability, structural key encoding, or collection
-admission.
+explicit canonical-scalar-key eligibility and hashability predicates. Both are
+limited to this versioned scalar-key domain and remain distinct from external
+eligibility, ordinary equality, and source codecs. Canonical-key eligibility is
+also distinct from `is_orderable`, which only describes numeric source
+operators: Unit, Bool, and String have canonical keys but are not orderable.
+The report does not introduce a source capability, structural key encoding, or
+collection admission.
 
 ## Eligibility and limits
 
