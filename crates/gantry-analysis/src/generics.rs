@@ -1917,22 +1917,10 @@ fn invalid_generic_option_member_declaration_with_visited(
     counters: &mut Option<GenericAnalysisCounters>,
     visited: &mut BTreeSet<String>,
 ) -> Result<Option<SourceSpan>, AnalysisError> {
-    let mut work = vec![(root.clone(), BTreeMap::<String, u64>::new())];
-    while let Some((descriptor, mut active_declarations)) = work.pop() {
+    let mut work = vec![root.clone()];
+    while let Some(descriptor) = work.pop() {
         let key = descriptor.canonical_string();
         check_stored_member_descriptor(&descriptor, counters)?;
-        if let Some(path) = descriptor.declared_path() {
-            let depth = TypeExpression::closed(&descriptor, u64::MAX)
-                .map_err(|_| AnalysisError::Invariant)?
-                .depth();
-            if active_declarations
-                .get(path.as_str())
-                .is_some_and(|active_depth| depth >= *active_depth)
-            {
-                continue;
-            }
-            active_declarations.insert(path.as_str().to_owned(), depth);
-        }
         if !visited.insert(key) {
             continue;
         }
@@ -1942,12 +1930,7 @@ fn invalid_generic_option_member_declaration_with_visited(
             }
             StoredMemberNode::Members(mut members) => {
                 members.sort_by_key(TypeDescriptor::canonical_string);
-                work.extend(
-                    members
-                        .into_iter()
-                        .rev()
-                        .map(|member| (member, active_declarations.clone())),
-                );
+                work.extend(members.into_iter().rev());
             }
             StoredMemberNode::Primitive(_) | StoredMemberNode::Opaque => {}
         }
