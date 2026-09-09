@@ -100,10 +100,22 @@ fn admit_int(value: i64) -> Result<GantryInt, DeterministicEvaluationCode> {
 }
 
 /// One finite Gantry `Float` with negative zero normalized to positive zero.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GantryFloat(f64);
 
 impl Eq for GantryFloat {}
+
+impl PartialOrd for GantryFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for GantryFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
 
 impl GantryFloat {
     /// Admits one finite binary64 value and normalizes either signed zero.

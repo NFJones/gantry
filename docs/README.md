@@ -30,6 +30,10 @@ That guide also defines bounded blocking-work admission, owned package-source
 and analysis jobs, caller-cancellation behavior, interpreter shutdown
 ownership, and SQLite worker isolation.
 
+The versioned binary identity, eligibility, limits, total order, deterministic
+hash, and compatibility boundary for the sealed scalar-key domain are
+documented in [`canonical-scalar-keys.md`](canonical-scalar-keys.md).
+
 The syntax-only boundary for parametric declarations and static traits is
 documented in [`frontend-generics-and-traits.md`](frontend-generics-and-traits.md).
 

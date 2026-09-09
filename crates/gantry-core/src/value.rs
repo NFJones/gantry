@@ -11,6 +11,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
 
 use crate::canonical_json::CanonicalJson;
+use crate::canonical_key::{CanonicalKey, CanonicalKeyError, CanonicalKeyLimits};
 use crate::numeric::{GantryFloat, GantryInt};
 use crate::schema::{SchemaError, SchemaValidator, ValidationError};
 use crate::strict_json::{JsonError, JsonLimits, StrictJsonDocument};
@@ -709,6 +710,18 @@ impl LogicalValue {
     #[must_use]
     pub fn canonical_json(&self) -> CanonicalJson {
         CanonicalJson::from_encoded_bytes(encode_canonical(self))
+    }
+
+    /// Returns the versioned canonical key for an eligible scalar value.
+    ///
+    /// Structural values, sealed Decision values, and sealed OperationError
+    /// values are rejected rather than inheriting the JSON boundary's
+    /// collisions or an unspecified structural-key contract.
+    pub fn canonical_key(
+        &self,
+        limits: CanonicalKeyLimits,
+    ) -> Result<CanonicalKey, CanonicalKeyError> {
+        CanonicalKey::from_value(self, limits)
     }
 
     /// Validates this normalized value with the generated-schema kernel.

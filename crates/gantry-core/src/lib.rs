@@ -4,6 +4,7 @@
 //! their owning issues. This crate has no ambient I/O or orchestration role.
 
 pub mod canonical_json;
+pub mod canonical_key;
 pub mod event;
 pub mod identity;
 pub mod mode;

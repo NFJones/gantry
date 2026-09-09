@@ -790,7 +790,7 @@ than one block.
 | Implementation summary items | `GNT-3.0`, `GNT-3.1` through `GNT-3.15`, `GNT-3.3-runtime-ownership`, `GNT-3.15-liveness`, `GNT-3.15-generic-profiles` |
 | Formal kernel | Every named `GNT-3-F-*`, `GNT-3-T-*`, `GNT-3-M-*`, and `GNT-3-D-*` rule in Sections 3.1 through 3.6 |
 | Source organization | `GNT-4.0`, `GNT-4.1` through `GNT-4.17`, `GNT-4.17-frontend-resource-limits`, `GNT-4.17-generic-analysis-limits` |
-| Values and types | `GNT-5.0`, `GNT-5.1` through `GNT-5.20`, `GNT-5.13-automatic-storage`, `GNT-5.20-parametric-types` |
+| Values and types | `GNT-5.0`, `GNT-5.1` through `GNT-5.20`, `GNT-5.13-automatic-storage`, `GNT-5.15-canonical-scalar-keys`, `GNT-5.20-parametric-types` |
 | Workflows and actions | `GNT-6.0`, `GNT-6.1` through `GNT-6.12`, `GNT-6.12-static-traits` |
 | Integration operations | `GNT-7.0`, `GNT-7.1` through `GNT-7.18` |
 | Structured output | `GNT-8.0`, `GNT-8.1` through `GNT-8.13`, `GNT-8.13-concrete-generic-schemas` |
@@ -3169,6 +3169,32 @@ implementation- or embedding-defined and is not catchable by `attempt`.
     Lists and tuples MAY otherwise be constructed, passed, returned,
     interpolated, and projected. Tuple patterns provide deterministic tuple
     destructuring; list patterns and list destructuring are excluded from v1.
+
+<a id="GNT-5.15-canonical-scalar-keys"></a>
+
+**15a. Canonical scalar keys.**
+
+The implementation canonical scalar-key format version 1.0 admits exactly
+normalized `Unit`, `Bool`, `Int`, finite normalized `Float`, and `String`
+values. It rejects `Decision`, `OperationError`, and every structural value;
+application codecs and existing canonical JSON do not grant eligibility.
+The complete byte frame is the eight bytes `GNTYKEY\0`, unsigned big-endian
+major and minor `u16` values, one tag byte (`0` Unit, `1` Bool, `2` Int, `3`
+Float, `4` String), an unsigned big-endian `u64` payload length, and the
+payload. Unit has no payload; Bool is `00` or `01`; Int is its signed `i64`
+two's-complement big-endian representation; Float is its normalized IEEE
+binary64 bits in big-endian order; String is its exact UTF-8 bytes without
+normalization. Admission MUST apply a positive finite limit to the complete
+21-byte frame plus payload before retaining it.
+
+Scalar-key order is `Unit < Bool < Int < Float < String`; Bool orders false
+before true, Int and Float use their numeric orders independently, and
+String uses lexicographic Unicode-scalar order. Cross-numeric-type coercion
+is not performed. Comparison reports equal exactly when value equality does
+within this admitted domain; in particular, normalized signed zeros have
+one Float key. The stable content hash is SHA-256 over exactly the complete
+framed bytes. Format major changes may alter eligibility, framing, order, or
+hashing; a minor change MUST preserve all version-1.0 bytes and semantics.
 <a id="GNT-5.16"></a>
 
 16. `String` is an immutable valid-UTF-8 sequence of Unicode scalar values.
