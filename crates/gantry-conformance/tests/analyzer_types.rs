@@ -1011,6 +1011,35 @@ fn public_generic_enum_constructor_payloads_are_exact() {
     );
 }
 
+/// Expected results select generic enum payload types for nested constructors.
+#[test]
+fn public_expected_result_completes_generic_enum_constructor_substitution() {
+    let accepted = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() -> State<Option<String>, Int> { State::Ready(None) }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let rejected = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() -> State<Option<String>, Int> { State::Ready(1) }",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected.diagnostics().iter().any(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "aggregate-member-type" | "type-mismatch" | "conflicting-type-inference"
+            )
+        }),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
