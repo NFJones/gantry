@@ -479,7 +479,7 @@ fn public_standard_container_capabilities_fold_sealed_members() {
     use gantry::source::FrontendLimits;
 
     let package = analyze(
-        "fn option(value: Option<Decision>) {}\nfn result(value: Result<Int,Decision>) {}\nfn list(value: List<Decision>) {}\nfn tuple(value: Tuple<Int,Decision>) {}\nfn main() {}",
+        "enum Choice { Open(Int), Protected(Decision) }\nfn option(value: Option<Decision>) {}\nfn result(value: Result<Int,Decision>) {}\nfn list(value: List<Decision>) {}\nfn tuple(value: Tuple<Int,Decision>) {}\nfn choice(value: Choice) {}\nfn main() {}",
     );
     let policy = FrontendLimits::new(
         4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
@@ -494,6 +494,8 @@ fn public_standard_container_capabilities_fold_sealed_members() {
         TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::DECISION),
         TypeDescriptor::list(TypeDescriptor::DECISION),
         tuple,
+        TypeDescriptor::from_canonical_string("crate::Choice")
+            .unwrap_or_else(|error| panic!("enum descriptor failed: {error:?}")),
     ] {
         let report = package
             .type_capabilities(&descriptor, policy)
