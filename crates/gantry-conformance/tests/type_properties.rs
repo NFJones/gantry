@@ -26,6 +26,16 @@ fn receiver_modes_preserve_v1_copy_isolation_and_name_place_access() {
     }
     assert!(ReceiverMode::ExclusivePlace.mutates_caller_place());
     assert_eq!(ReceiverMode::ExclusivePlace.wire_name(), "exclusive-place");
+    assert!(ReceiverMode::LocalCopy.copies_receiver());
+    assert!(ReceiverMode::MutableLocalCopy.copies_receiver());
+    assert!(ReceiverMode::Owned.consumes_receiver());
+    assert!(ReceiverMode::SharedPlace.borrows_shared_place());
+    assert!(ReceiverMode::ExclusivePlace.borrows_exclusive_place());
+    assert!(!ReceiverMode::LocalCopy.requires_caller_place());
+    assert!(!ReceiverMode::MutableLocalCopy.requires_caller_place());
+    assert!(!ReceiverMode::Owned.requires_caller_place());
+    assert!(ReceiverMode::SharedPlace.requires_caller_place());
+    assert!(ReceiverMode::ExclusivePlace.requires_caller_place());
 }
 
 /// Aggregates retain the strongest member obligation regardless of grouping or order.

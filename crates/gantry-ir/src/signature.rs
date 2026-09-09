@@ -40,6 +40,36 @@ impl ReceiverMode {
         matches!(self, Self::ExclusivePlace)
     }
 
+    /// Returns whether invocation creates an independent local receiver copy.
+    #[must_use]
+    pub const fn copies_receiver(self) -> bool {
+        matches!(self, Self::LocalCopy | Self::MutableLocalCopy)
+    }
+
+    /// Returns whether invocation transfers receiver ownership into the call frame.
+    #[must_use]
+    pub const fn consumes_receiver(self) -> bool {
+        matches!(self, Self::Owned)
+    }
+
+    /// Returns whether invocation acquires a shared temporary caller-place loan.
+    #[must_use]
+    pub const fn borrows_shared_place(self) -> bool {
+        matches!(self, Self::SharedPlace)
+    }
+
+    /// Returns whether invocation acquires an exclusive temporary caller-place loan.
+    #[must_use]
+    pub const fn borrows_exclusive_place(self) -> bool {
+        matches!(self, Self::ExclusivePlace)
+    }
+
+    /// Returns whether invocation requires an addressable caller place.
+    #[must_use]
+    pub const fn requires_caller_place(self) -> bool {
+        matches!(self, Self::SharedPlace | Self::ExclusivePlace)
+    }
+
     /// Returns the stable descriptive spelling used by IR inspection.
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
