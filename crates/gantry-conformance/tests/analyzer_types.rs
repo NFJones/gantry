@@ -870,6 +870,29 @@ fn public_expected_result_completes_generic_struct_substitution() {
     }));
 }
 
+/// A generic field default must remain valid for every admitted substitution.
+#[test]
+fn public_generic_field_defaults_are_universal() {
+    let accepted = analyze("struct Envelope<T> { value: Option<T> = None } fn main() {}");
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let rejected = analyze("struct Envelope<T> { value: T = \"not universal\" } fn main() {}");
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "invalid-field-default"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// A generic aggregate without member or expected-type facts remains incomplete.
 fn public_unconstrained_generic_struct_construction_is_rejected() {
