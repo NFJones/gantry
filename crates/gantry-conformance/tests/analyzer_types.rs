@@ -1041,6 +1041,24 @@ fn public_explicit_generic_enum_constructor_argument_arity_is_exact() {
     }
 }
 
+/// An unqualified generic enum constructor must resolve every type parameter.
+#[test]
+fn public_unqualified_generic_enum_constructor_requires_complete_substitution() {
+    let unresolved = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() { discard State::Ready(\"ok\"); }",
+    );
+    assert_eq!(unresolved.status(), AnalysisStatus::Invalid);
+    assert!(
+        unresolved
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "incomplete-type-inference"),
+        "{:?}",
+        unresolved.diagnostics()
+    );
+    assert!(unresolved.executable_program().is_none());
+}
+
 /// Expected results select generic enum payload types for nested constructors.
 #[test]
 fn public_expected_result_completes_generic_enum_constructor_substitution() {
