@@ -61,6 +61,15 @@ pub struct Parameter {
     pub mutable: bool,
 }
 
+impl Parameter {
+    /// Returns the V1 local-copy receiver mode when this is the `self` binding.
+    #[must_use]
+    pub fn receiver_mode(&self) -> Option<crate::ReceiverMode> {
+        (self.name.as_ref() == "self")
+            .then(|| crate::ReceiverMode::from_v1_mutability(self.mutable))
+    }
+}
+
 /// Stable identity of one independently executable spawned block.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TaskBodyIdentity {

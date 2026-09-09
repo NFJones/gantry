@@ -440,6 +440,14 @@ pure fn main() -> Tuple<Int, Int, String> {
             identity.as_str() == "<crate::Counter<Int> as crate::Label>::label"
         })
     );
+    let receiver_modes = program
+        .workflows()
+        .iter()
+        .filter_map(|workflow| workflow.parameters.first()?.receiver_mode())
+        .collect::<Vec<_>>();
+    assert!(receiver_modes.contains(&gantry::ir::ReceiverMode::LocalCopy));
+    assert!(receiver_modes.contains(&gantry::ir::ReceiverMode::MutableLocalCopy));
+    assert!(receiver_modes.iter().all(|mode| mode.copies_receiver()));
     assert!(
         program
             .workflows()
