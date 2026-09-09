@@ -935,6 +935,23 @@ fn public_qualified_trait_calls_enforce_declaration_predicates() {
     );
 }
 
+/// Cyclic trait predicates reject instead of completing a provisional proof.
+#[test]
+fn public_cyclic_trait_obligations_are_rejected() {
+    let cyclic = analyze(
+        "trait First<T> { pure fn label(self) -> String; } trait Second<T> { pure fn second(self) -> String; } struct Item {} struct Envelope<T> { value: T } impl<T> First<T> for Envelope<T> where T: Second<Envelope<T>> { pure fn label(self) -> String { \"first\" } } impl<T> Second<T> for Item where T: First<Item> { pure fn second(self) -> String { \"second\" } } fn main(value: Envelope<Item>) -> String { First::<Item>::label(value) }",
+    );
+    assert_eq!(cyclic.status(), AnalysisStatus::Invalid);
+    assert!(
+        cyclic
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "cyclic-trait-obligation"),
+        "{:?}",
+        cyclic.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
