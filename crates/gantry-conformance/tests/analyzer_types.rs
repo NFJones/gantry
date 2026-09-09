@@ -772,6 +772,8 @@ fn public_conflicting_expected_and_argument_facts_reject_deterministically() {
 /// Substitution cannot introduce an option member forbidden by the public wire contract.
 fn public_generic_substitution_rejects_ambiguous_option_members() {
     for source in [
+        "struct Stored<T> { value: Option<T> } fn internal(value: Stored<Unit>) {} fn main() {}",
+        "struct Stored<T> { value: Option<T> } struct Outer<T> { inner: Stored<T> } fn internal(value: List<Outer<Option<Int>>>) {} fn main() {}",
         "struct Stored<T> { value: Option<T> } struct Wrap<T> { value: T } fn make<T>(value: T) -> Wrap<Wrap<Stored<T>>> { make(value) } fn main() { discard make(()); }",
         "enum Stored<T> { Empty, Value(Option<T>) } fn main() { discard Stored::<Unit>::Empty; }",
         "struct Stored<T> { value: Option<T> } struct Outer<T> { inner: Stored<T> } fn main(value: Outer<Unit>) { discard value; }",
