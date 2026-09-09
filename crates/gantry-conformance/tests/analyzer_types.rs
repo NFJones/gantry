@@ -879,6 +879,33 @@ fn public_explicit_generic_argument_arity_is_exact() {
     );
 }
 
+/// Trait selection cannot infer a type parameter that local facts leave open.
+#[test]
+fn public_qualified_trait_calls_require_complete_inference() {
+    let accepted = analyze(
+        "trait Convert<T> { pure fn convert<U>(self, fallback: U) -> T; } struct Item {} impl Convert<String> for Item { pure fn convert<U>(self, fallback: U) -> String { \"converted\" } } fn main(value: Item) -> String { Convert::convert(value, 1) }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let rejected = analyze(
+        "trait Convert<T> { pure fn convert<U>(self, fallback: U) -> T; } struct Item {} impl Convert<String> for Item { pure fn convert<U>(self, fallback: U) -> String { \"converted\" } } fn main(value: Item) { discard Convert::convert(value, 1); }",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "incomplete-type-inference"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
