@@ -895,6 +895,7 @@ fn public_expected_result_variants_propagate_nested_constructor_types() {
     for source in [
         "fn main() -> Result<Option<String>, Int> { Ok(None) }",
         "fn main() -> Result<Int, Option<String>> { Err(None) }",
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() -> State<Option<String>, Int> { State::Ready(None) }",
     ] {
         let package = analyze(source);
         assert_eq!(
