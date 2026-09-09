@@ -1040,6 +1040,35 @@ fn public_expected_result_completes_generic_enum_constructor_substitution() {
     );
 }
 
+/// Expected results select generic enum error payload types for nested constructors.
+#[test]
+fn public_expected_result_completes_generic_enum_error_constructor_substitution() {
+    let accepted = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() -> State<Int, Option<String>> { State::Failed(None) }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let rejected = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() -> State<Int, Option<String>> { State::Failed(1) }",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected.diagnostics().iter().any(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "aggregate-member-type" | "type-mismatch" | "conflicting-type-inference"
+            )
+        }),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
