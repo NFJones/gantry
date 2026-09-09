@@ -735,9 +735,8 @@ fn public_expected_result_completes_generic_substitution() {
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
-    let expected_result = analyze(
-        "struct Envelope<T> { value: T } fn main() -> Envelope<String> { Envelope { value: \"ready\" } }",
-    );
+    let expected_result =
+        analyze("struct Envelope<T> {} fn main() -> Envelope<String> { Envelope {} }");
     assert_eq!(
         expected_result.status(),
         AnalysisStatus::Valid,
