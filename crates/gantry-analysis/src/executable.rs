@@ -962,13 +962,15 @@ impl Compiler<'_> {
             for argument in &arguments {
                 self.compile_expression(*argument)?;
             }
+            let arguments = arguments
+                .len()
+                .saturating_add(usize::from(has_implicit_receiver));
             self.emit(
                 ty.clone(),
-                InstructionKind::Call {
-                    callee,
-                    arguments: arguments
-                        .len()
-                        .saturating_add(usize::from(has_implicit_receiver)),
+                if has_implicit_receiver {
+                    InstructionKind::ReceiverCall { callee, arguments }
+                } else {
+                    InstructionKind::Call { callee, arguments }
                 },
             )?;
             return Ok(ty);
@@ -988,13 +990,16 @@ impl Compiler<'_> {
             for argument in &arguments {
                 self.compile_expression(*argument)?;
             }
+            let arguments = arguments
+                .len()
+                .saturating_add(usize::from(receiver.is_some()));
+            let callee = CanonicalCallableIdentity::free(&call.callee, &[]);
             self.emit(
                 ty.clone(),
-                InstructionKind::Call {
-                    callee: CanonicalCallableIdentity::free(&call.callee, &[]),
-                    arguments: arguments
-                        .len()
-                        .saturating_add(usize::from(receiver.is_some())),
+                if receiver.is_some() {
+                    InstructionKind::ReceiverCall { callee, arguments }
+                } else {
+                    InstructionKind::Call { callee, arguments }
                 },
             )?;
             return Ok(ty);

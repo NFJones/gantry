@@ -2169,7 +2169,8 @@ impl Machine {
                 source_limit,
             } => self.enter_loop(&workflow, &site, phase, source_limit, &mut budget_state),
             InstructionKind::LeaveOccurrence => self.leave_occurrence(&mut budget_state),
-            InstructionKind::Call { callee, arguments } => {
+            InstructionKind::Call { callee, arguments }
+            | InstructionKind::ReceiverCall { callee, arguments } => {
                 return self.call(workflow, site, callee, arguments, &mut budget_state);
             }
             InstructionKind::Return => {
@@ -3736,6 +3737,7 @@ fn instruction_name(instruction: &InstructionKind) -> Arc<str> {
         InstructionKind::EnterLoop { .. } => "loop",
         InstructionKind::LeaveOccurrence => "occurrence-exit",
         InstructionKind::Call { .. } => "call",
+        InstructionKind::ReceiverCall { .. } => "receiver-call",
         InstructionKind::Return => "return",
         InstructionKind::Spawn { .. } => "spawn",
         InstructionKind::Join { .. } => "join",

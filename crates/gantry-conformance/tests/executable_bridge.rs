@@ -1,5 +1,6 @@
 //! Public regression coverage for the analyzer-to-runtime executable handoff.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -448,13 +449,62 @@ pure fn main() -> Tuple<Int, Int, String> {
     assert!(receiver_modes.contains(&gantry::ir::ReceiverMode::LocalCopy));
     assert!(receiver_modes.contains(&gantry::ir::ReceiverMode::MutableLocalCopy));
     assert!(receiver_modes.iter().all(|mode| mode.copies_receiver()));
+    let receiver_calls = program
+        .workflows()
+        .iter()
+        .flat_map(|workflow| &workflow.instructions)
+        .filter_map(|instruction| match &instruction.kind {
+            InstructionKind::ReceiverCall { callee, arguments } => Some((callee, arguments)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let expected_receiver_calls = BTreeMap::from([
+        ("<crate::Counter<Int>>::replace", vec![2]),
+        ("<crate::Counter<Int>>::get", vec![1, 1]),
+        ("<crate::Counter<Int> as crate::Label>::label", vec![1]),
+    ]);
+    let mut observed_receiver_calls = BTreeMap::<&str, Vec<usize>>::new();
+    for (callee, arguments) in &receiver_calls {
+        observed_receiver_calls
+            .entry(callee.as_str())
+            .or_default()
+            .push(**arguments);
+    }
+    for arguments in observed_receiver_calls.values_mut() {
+        arguments.sort_unstable();
+    }
+    assert_eq!(observed_receiver_calls, expected_receiver_calls);
+    assert!(
+        receiver_calls
+            .iter()
+            .all(|(callee, _)| callee.receiver_type().is_some()),
+        "ReceiverCall must target a callable with a receiver"
+    );
     assert!(
         program
             .workflows()
             .iter()
             .flat_map(|workflow| &workflow.instructions)
             .filter_map(|instruction| match &instruction.kind {
-                InstructionKind::Call { callee, .. } => Some(callee.as_str()),
+                InstructionKind::Call { callee, .. }
+                    if expected_receiver_calls.contains_key(callee.as_str()) =>
+                {
+                    Some(callee.as_str())
+                }
+                _ => None,
+            })
+            .next()
+            .is_none(),
+        "receiver identities must not lower through legacy Call"
+    );
+    assert!(
+        program
+            .workflows()
+            .iter()
+            .flat_map(|workflow| &workflow.instructions)
+            .filter_map(|instruction| match &instruction.kind {
+                InstructionKind::Call { callee, .. }
+                | InstructionKind::ReceiverCall { callee, .. } => Some(callee.as_str()),
                 _ => None,
             })
             .all(|callee| !callee.contains('^'))
@@ -739,7 +789,9 @@ pure fn main() -> String {
         .iter()
         .flat_map(|workflow| &workflow.instructions)
         .filter_map(|instruction| match &instruction.kind {
-            InstructionKind::Call { callee, .. } => Some(callee),
+            InstructionKind::Call { callee, .. } | InstructionKind::ReceiverCall { callee, .. } => {
+                Some(callee)
+            }
             _ => None,
         })
     {

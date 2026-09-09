@@ -214,6 +214,11 @@ fn write_instruction(writer: &mut Writer, instruction: &InstructionKind) {
             writer.string(callee.as_str());
             writer.usize(*arguments);
         }
+        InstructionKind::ReceiverCall { callee, arguments } => {
+            writer.u8(31);
+            writer.string(callee.as_str());
+            writer.usize(*arguments);
+        }
         InstructionKind::Return => writer.u8(16),
         InstructionKind::Operation => writer.u8(17),
         InstructionKind::OperationWithOperands { operands } => {
@@ -303,6 +308,11 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<InstructionKind, MachineR
         },
         14 => InstructionKind::LeaveOccurrence,
         15 => InstructionKind::Call {
+            callee: CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
+                .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
+            arguments: reader.usize()?,
+        },
+        31 => InstructionKind::ReceiverCall {
             callee: CanonicalCallableIdentity::from_canonical_string(&reader.string()?, u64::MAX)
                 .map_err(|_| MachineRecoveryError::InvalidEncoding)?,
             arguments: reader.usize()?,
@@ -758,6 +768,7 @@ fn recovery(value: &str) -> Result<RecoveryClass, MachineRecoveryError> {
 mod tests {
     use std::sync::Arc;
 
+    use gantry_core::numeric::GantryInt;
     use gantry_core::value::LogicalValue;
     use gantry_ir::{
         CanonicalCallableIdentity, CanonicalPath, EffectSet, ExecutableTaskBody,
@@ -896,6 +907,176 @@ mod tests {
             .unwrap_or_else(|error| panic!("generic program decode failed: {error:?}"));
         assert_eq!(decoded, program);
         assert_eq!(decoded.callable_identities()[1], preserve_identity);
+        assert_eq!(encode_machine_program(&decoded), encoded);
+    }
+
+    #[test]
+    fn executable_program_codec_preserves_receiver_calls() {
+        let main_path = CanonicalPath::new("crate::main")
+            .unwrap_or_else(|error| panic!("main path failed: {error}"));
+        let method_path = CanonicalPath::new("crate::Counter::value")
+            .unwrap_or_else(|error| panic!("method path failed: {error}"));
+        let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+        let method_identity =
+            CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+                .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+        let mut callables = vec![
+            (
+                main_identity,
+                Workflow {
+                    path: main_path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Push(LogicalValue::integer(
+                                GantryInt::new(1)
+                                    .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                            )),
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::ReceiverCall {
+                                callee: method_identity.clone(),
+                                arguments: 1,
+                            },
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![2])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ),
+            (
+                method_identity.clone(),
+                Workflow {
+                    path: method_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("self"),
+                        ty: TypeDescriptor::INT,
+                        mutable: false,
+                    }],
+                    result: TypeDescriptor::INT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Load(Arc::from("self")),
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::INT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ),
+        ];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let program = MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("receiver-call program failed: {error:?}"));
+
+        let mut instruction_writer = super::Writer::default();
+        super::write_instruction(
+            &mut instruction_writer,
+            &InstructionKind::ReceiverCall {
+                callee: method_identity.clone(),
+                arguments: 1,
+            },
+        );
+        assert_eq!(instruction_writer.finish()[0], 31);
+        let encoded = encode_machine_program(&program);
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("receiver-call decode failed: {error:?}"));
+        assert_eq!(decoded, program);
+        assert_eq!(encode_machine_program(&decoded), encoded);
+    }
+
+    #[test]
+    fn executable_program_codec_preserves_legacy_call_opcode_programs() {
+        let method_path = CanonicalPath::new("crate::Counter::value")
+            .unwrap_or_else(|error| panic!("callee path failed: {error}"));
+        let method = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+            .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+        let caller_path = CanonicalPath::new("crate::caller")
+            .unwrap_or_else(|error| panic!("caller path failed: {error}"));
+        let caller = CanonicalCallableIdentity::free(&caller_path, &[]);
+        let mut callables = vec![
+            (
+                caller,
+                Workflow {
+                    path: caller_path,
+                    parameters: Vec::new(),
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![
+                        Instruction {
+                            site: StructuralPosition::new(vec![0])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Call {
+                                callee: method.clone(),
+                                arguments: 1,
+                            },
+                        },
+                        Instruction {
+                            site: StructuralPosition::new(vec![1])
+                                .unwrap_or_else(|error| panic!("site failed: {error}")),
+                            ty: TypeDescriptor::UNIT,
+                            kind: InstructionKind::Return,
+                        },
+                    ],
+                },
+            ),
+            (
+                method,
+                Workflow {
+                    path: method_path,
+                    parameters: vec![Parameter {
+                        name: Arc::from("self"),
+                        ty: TypeDescriptor::INT,
+                        mutable: false,
+                    }],
+                    result: TypeDescriptor::UNIT,
+                    effects: EffectSet::default(),
+                    instructions: vec![Instruction {
+                        site: StructuralPosition::new(vec![0])
+                            .unwrap_or_else(|error| panic!("site failed: {error}")),
+                        ty: TypeDescriptor::UNIT,
+                        kind: InstructionKind::Return,
+                    }],
+                },
+            ),
+        ];
+        callables.sort_by(|left, right| left.0.cmp(&right.0));
+        let program = MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("legacy-call program failed: {error:?}"));
+        let mut instruction_writer = super::Writer::default();
+        super::write_instruction(
+            &mut instruction_writer,
+            &InstructionKind::Call {
+                callee: CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "value", &[])
+                    .unwrap_or_else(|error| panic!("method identity failed: {error}")),
+                arguments: 1,
+            },
+        );
+        assert_eq!(instruction_writer.finish()[0], 15);
+        let encoded = encode_machine_program(&program);
+        let decoded = decode_machine_program(&encoded)
+            .unwrap_or_else(|error| panic!("legacy-call decode failed: {error:?}"));
+        assert_eq!(decoded, program);
         assert_eq!(encode_machine_program(&decoded), encoded);
     }
 

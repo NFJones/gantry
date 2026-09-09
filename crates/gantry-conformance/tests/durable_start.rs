@@ -1705,7 +1705,7 @@ pure fn main(number: Envelope<Int>) -> Envelope<String> {
         main.instructions
             .iter()
             .filter_map(|instruction| match &instruction.kind {
-                InstructionKind::Call { callee, .. } => Some(callee.as_str()),
+                InstructionKind::ReceiverCall { callee, .. } => Some(callee.as_str()),
                 _ => None,
             })
             .collect::<Vec<_>>(),
