@@ -512,6 +512,11 @@ fn public_canonical_scalar_key_reports_match_value_admission() {
             .unwrap_or_else(|error| panic!("primitive report failed: {error:?}"));
         assert!(report.is_canonical_scalar_key(), "{descriptor:?}");
         assert!(report.is_hashable(), "{descriptor:?}");
+        assert_eq!(
+            report.is_orderable(),
+            descriptor == TypeDescriptor::INT || descriptor == TypeDescriptor::FLOAT,
+            "{descriptor:?}"
+        );
         assert!(
             value.canonical_key(DEFAULT_CANONICAL_KEY_LIMITS).is_ok(),
             "{descriptor:?}"
@@ -569,6 +574,7 @@ fn public_canonical_scalar_key_reports_match_value_admission() {
             .unwrap_or_else(|error| panic!("non-scalar report failed: {error:?}"));
         assert!(!report.is_canonical_scalar_key(), "{descriptor:?}");
         assert!(!report.is_hashable(), "{descriptor:?}");
+        assert!(!report.is_orderable(), "{descriptor:?}");
         assert!(matches!(
             value.canonical_key(DEFAULT_CANONICAL_KEY_LIMITS),
             Err(CanonicalKeyError::IneligibleKind(_))

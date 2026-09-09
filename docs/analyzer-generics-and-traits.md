@@ -69,7 +69,7 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   For declaration-aware inspection, `TypedPackage::type_capabilities` reports
   the three existing sealed capabilities for primitives and exact retained
   closed types, plus canonical-key eligibility and hashability for the five
-  scalar primitives, and independent ownership, transfer, live-resource,
+  scalar primitives, numeric ordering for `Int` and `Float`, and independent ownership, transfer, live-resource,
   source-protection, and value-recovery classifications. One componentwise
   fold over the retained instantiated stored-member graph derives all five;
   it reuses declaration substitution, recursive cache safety, depth checks,

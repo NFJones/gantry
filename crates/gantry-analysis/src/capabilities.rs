@@ -25,6 +25,7 @@ pub struct TypeCapabilities {
     equatable: bool,
     external: bool,
     interpolatable: bool,
+    orderable: bool,
 }
 
 impl TypeCapabilities {
@@ -127,6 +128,15 @@ impl TypeCapabilities {
     #[must_use]
     pub const fn is_hashable(self) -> bool {
         self.hashable
+    }
+
+    /// Whether this exact type supports the existing numeric ordering operators.
+    ///
+    /// Ordering is limited to `Int` and finite `Float`; it does not follow from
+    /// equality, hashability, external eligibility, or canonical-key admission.
+    #[must_use]
+    pub const fn is_orderable(self) -> bool {
+        self.orderable
     }
 
     /// Whether the stored value satisfies `ExternalValue`, before contextual checks.
@@ -251,6 +261,9 @@ impl TypedPackage {
             equatable,
             external,
             interpolatable,
+            orderable: descriptor
+                .primitive_properties()
+                .is_some_and(|properties| properties.is_orderable()),
         })
     }
 }
