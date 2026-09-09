@@ -210,6 +210,7 @@ impl IndependentTypeProperties {
 /// eligibility. No fact grants authority or bypasses contextual boundary rules.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PrimitiveTypeProperties {
+    canonical_scalar_key: bool,
     equatable: bool,
     external: bool,
     orderable: bool,
@@ -221,18 +222,21 @@ impl PrimitiveTypeProperties {
     pub(crate) const fn for_kind(kind: TypeKind) -> Option<Self> {
         match kind {
             TypeKind::Unit | TypeKind::Bool | TypeKind::String => Some(Self {
+                canonical_scalar_key: true,
                 equatable: true,
                 external: true,
                 orderable: false,
                 source_protection: SourceProtectionClass::Unsealed,
             }),
             TypeKind::Int | TypeKind::Float => Some(Self {
+                canonical_scalar_key: true,
                 equatable: true,
                 external: true,
                 orderable: true,
                 source_protection: SourceProtectionClass::Unsealed,
             }),
             TypeKind::Decision | TypeKind::OperationError => Some(Self {
+                canonical_scalar_key: false,
                 equatable: false,
                 external: false,
                 orderable: false,
@@ -298,6 +302,16 @@ impl PrimitiveTypeProperties {
     #[must_use]
     pub const fn is_orderable(self) -> bool {
         self.orderable
+    }
+
+    /// Whether this primitive is admitted to the canonical scalar-key domain.
+    ///
+    /// This is independent of numeric source ordering: Unit, Bool, and String
+    /// are eligible, while sealed primitives are not. Structural types have no
+    /// primitive properties and therefore cannot be admitted by this predicate.
+    #[must_use]
+    pub const fn is_canonical_scalar_key(self) -> bool {
+        self.canonical_scalar_key
     }
 
     /// Whether this primitive satisfies `ExternalValue`, before contextual checks.

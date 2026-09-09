@@ -19,6 +19,7 @@ use crate::{AnalysisError, AnalysisStatus, TypedPackage};
 /// Independent compiler-owned capability results, not execution admission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TypeCapabilities {
+    canonical_scalar_key: bool,
     independent: IndependentTypeProperties,
     equatable: bool,
     external: bool,
@@ -107,6 +108,15 @@ impl TypeCapabilities {
     #[must_use]
     pub const fn is_equatable(self) -> bool {
         self.equatable
+    }
+
+    /// Whether this exact type is admitted to the canonical scalar-key domain.
+    ///
+    /// Only the five unsealed scalar primitives qualify. This report does not
+    /// grant a source capability, add structural keys, or admit collections.
+    #[must_use]
+    pub const fn is_canonical_scalar_key(self) -> bool {
+        self.canonical_scalar_key
     }
 
     /// Whether the stored value satisfies `ExternalValue`, before contextual checks.
@@ -221,6 +231,9 @@ impl TypedPackage {
             _ => TypeCapabilityQueryError::Invariant,
         })?;
         Ok(TypeCapabilities {
+            canonical_scalar_key: descriptor
+                .primitive_properties()
+                .is_some_and(|properties| properties.is_canonical_scalar_key()),
             independent,
             equatable,
             external,

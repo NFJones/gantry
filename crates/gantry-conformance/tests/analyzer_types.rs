@@ -62,14 +62,14 @@ fn primitive_properties_keep_eligibility_axes_separate() {
         ValueResourceClass,
     };
 
-    for (ty, external, orderable) in [
-        (TypeDescriptor::UNIT, true, false),
-        (TypeDescriptor::BOOL, true, false),
-        (TypeDescriptor::INT, true, true),
-        (TypeDescriptor::FLOAT, true, true),
-        (TypeDescriptor::STRING, true, false),
-        (TypeDescriptor::DECISION, false, false),
-        (TypeDescriptor::OPERATION_ERROR, false, false),
+    for (ty, external, orderable, canonical_scalar_key) in [
+        (TypeDescriptor::UNIT, true, false, true),
+        (TypeDescriptor::BOOL, true, false, true),
+        (TypeDescriptor::INT, true, true, true),
+        (TypeDescriptor::FLOAT, true, true, true),
+        (TypeDescriptor::STRING, true, false, true),
+        (TypeDescriptor::DECISION, false, false, false),
+        (TypeDescriptor::OPERATION_ERROR, false, false, false),
     ] {
         let properties = ty
             .primitive_properties()
@@ -77,6 +77,7 @@ fn primitive_properties_keep_eligibility_axes_separate() {
         assert_eq!(properties.is_external(), external);
         assert_eq!(properties.is_equatable(), external);
         assert_eq!(properties.is_orderable(), orderable);
+        assert_eq!(properties.is_canonical_scalar_key(), canonical_scalar_key);
         assert!(properties.is_copyable());
         assert!(properties.is_interpolatable());
         assert!(properties.has_recovery_projection());
@@ -461,6 +462,111 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
         invalid.type_capabilities(&TypeDescriptor::INT, policy),
         Err(TypeCapabilityQueryError::InvalidPackage)
     );
+}
+
+/// Type reports match canonical-key admission without extending the scalar domain.
+#[test]
+fn public_canonical_scalar_key_reports_match_value_admission() {
+    use gantry::canonical_key::{CanonicalKeyError, DEFAULT_CANONICAL_KEY_LIMITS};
+    use gantry::ir::TypeDescriptor;
+    use gantry::numeric::{GantryFloat, GantryInt};
+    use gantry::source::FrontendLimits;
+    use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, OperationErrorValue};
+
+    let package = analyze(
+        "struct Pair { left: Int }\nfn list(value: List<Int>) {}\nfn tuple(value: Tuple<Int,Bool>) {}\nfn option(value: Option<Int>) {}\nfn result(value: Result<Int,String>) {}\nfn pair(value: Pair) {}\nfn main() {}",
+    );
+    let policy = FrontendLimits::new(
+        4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
+    )
+    .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
+    let integer = |value| {
+        LogicalValue::integer(
+            GantryInt::new(value).unwrap_or_else(|| unreachable!("test integer is in range")),
+        )
+    };
+    let floating = |value| {
+        LogicalValue::float(
+            GantryFloat::new(value).unwrap_or_else(|| unreachable!("test float is finite")),
+        )
+    };
+
+    for (descriptor, value) in [
+        (TypeDescriptor::UNIT, LogicalValue::unit()),
+        (TypeDescriptor::BOOL, LogicalValue::boolean(true)),
+        (TypeDescriptor::INT, integer(7)),
+        (TypeDescriptor::FLOAT, floating(1.5)),
+        (
+            TypeDescriptor::STRING,
+            LogicalValue::string("key", DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("test string failed: {error:?}")),
+        ),
+    ] {
+        let report = package
+            .type_capabilities(&descriptor, policy)
+            .unwrap_or_else(|error| panic!("primitive report failed: {error:?}"));
+        assert!(report.is_canonical_scalar_key(), "{descriptor:?}");
+        assert!(
+            value.canonical_key(DEFAULT_CANONICAL_KEY_LIMITS).is_ok(),
+            "{descriptor:?}"
+        );
+    }
+
+    let tuple = TypeDescriptor::tuple(vec![TypeDescriptor::INT, TypeDescriptor::BOOL])
+        .unwrap_or_else(|error| panic!("tuple descriptor failed: {error:?}"));
+    let option = TypeDescriptor::option(TypeDescriptor::INT)
+        .unwrap_or_else(|error| panic!("option descriptor failed: {error:?}"));
+    let cases = [
+        (
+            TypeDescriptor::DECISION,
+            LogicalValue::decision(true, "because", DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("test decision failed: {error:?}")),
+        ),
+        (
+            TypeDescriptor::OPERATION_ERROR,
+            LogicalValue::operation_error(OperationErrorValue::InvalidOutput, DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("test operation error failed: {error:?}")),
+        ),
+        (
+            TypeDescriptor::list(TypeDescriptor::INT),
+            LogicalValue::list(vec![integer(1)], DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("test list failed: {error:?}")),
+        ),
+        (
+            tuple,
+            LogicalValue::tuple(
+                vec![integer(1), LogicalValue::boolean(true)],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("test tuple failed: {error:?}")),
+        ),
+        (option, LogicalValue::none()),
+        (
+            TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::STRING),
+            LogicalValue::ok(integer(1), DEFAULT_VALUE_LIMITS)
+                .unwrap_or_else(|error| panic!("test result failed: {error:?}")),
+        ),
+        (
+            TypeDescriptor::from_canonical_string("crate::Pair")
+                .unwrap_or_else(|error| panic!("pair descriptor failed: {error:?}")),
+            LogicalValue::structure(
+                "crate::Pair",
+                vec![("left".to_owned(), integer(1))],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("test structure failed: {error:?}")),
+        ),
+    ];
+    for (descriptor, value) in cases {
+        let report = package
+            .type_capabilities(&descriptor, policy)
+            .unwrap_or_else(|error| panic!("non-scalar report failed: {error:?}"));
+        assert!(!report.is_canonical_scalar_key(), "{descriptor:?}");
+        assert!(matches!(
+            value.canonical_key(DEFAULT_CANONICAL_KEY_LIMITS),
+            Err(CanonicalKeyError::IneligibleKind(_))
+        ));
+    }
 }
 
 /// Entry boundaries use stored members rather than phantom type arguments.
