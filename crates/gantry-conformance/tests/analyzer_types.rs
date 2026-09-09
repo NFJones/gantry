@@ -753,6 +753,21 @@ fn public_callable_bounds_use_declared_members() {
         valid.diagnostics()
     );
 
+    let generic_enum = analyze(
+        "enum Choice<T, E> { Open(T), Closed(E) }\nfn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(Choice::<Decision, Int>::Open(decide \"x\")); }",
+    );
+    assert_eq!(generic_enum.status(), AnalysisStatus::Invalid);
+    assert!(
+        generic_enum.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code.as_str() == "unsatisfied-bound"
+                && diagnostic.fields.get("capability").map(AsRef::as_ref) == Some("ExternalValue")
+                && diagnostic.fields.get("type").map(AsRef::as_ref)
+                    == Some("crate::Choice<Decision,Int>")
+        }),
+        "{:?}",
+        generic_enum.diagnostics()
+    );
+
     let invalid = analyze(
         "fn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(decide \"x\"); }",
     );
