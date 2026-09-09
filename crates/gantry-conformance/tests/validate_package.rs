@@ -9,8 +9,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
-use gantry::analysis::AnalysisStatus;
-use gantry::frontend::PackageSyntaxStatus;
+use gantry::analysis::{AnalysisStatus, TypedPackage, analyze_package_types_with_limits_and_mode};
+use gantry::frontend::{
+    CompletedSyntaxPhase, PackageSyntaxStatus, PackageSyntaxStep, PackageSyntaxWork,
+    RootDirectorySourceProvider, validate_package_syntax,
+};
 use gantry::host::contracts::{
     FreshIdentityAllocator, HostError, HostFuture, IdentitySource, UtcClock,
 };
@@ -387,6 +390,189 @@ fn analyze_package_sequences_phases_and_exposes_valid_artifacts() {
             IdentityKind::Event,
         ]
     );
+}
+
+#[test]
+/// Direct and resumable syntax acquisition must feed identical independent analyses.
+fn supported_analysis_paths_preserve_types_artifacts_and_diagnostics() {
+    let valid = TempDirectory::new(b"mod model;\nmod logic;\nfn main(value: crate::model::Input) { crate::logic::consume(value); }");
+    assert!(fs::write(
+        valid.0.join("model.gnt"),
+        b"struct Envelope<T> { value: T }\nenum State<T> { Empty, Ready(T) }\nstruct Node<T> { value: T, next: Option<Node<T>> }\nstruct Input { envelope: Envelope<String>, state: State<Int>, root: Node<String> }",
+    )
+    .is_ok());
+    assert!(fs::write(
+        valid.0.join("logic.gnt"),
+        b"fn preserve<T>(value: T) -> T { value }\nfn consume(value: crate::model::Input) { discard preserve(value); }",
+    )
+    .is_ok());
+
+    let invalid = TempDirectory::new(b"mod helper;\nmod conflict;\nfn main() {}");
+    assert!(
+        fs::write(
+            invalid.0.join("helper.gnt"),
+            b"fn preserve<T>(value: T) -> T { value }",
+        )
+        .is_ok()
+    );
+    assert!(
+        fs::write(
+            invalid.0.join("conflict.gnt"),
+            b"fn fail() -> String { crate::helper::preserve(1) }",
+        )
+        .is_ok()
+    );
+
+    std::thread::scope(|scope| {
+        let valid_analysis = scope.spawn(|| analyze_supported_paths(&valid.0));
+        let invalid_analysis = scope.spawn(|| analyze_supported_paths(&invalid.0));
+        let (valid_direct, valid_resumable) = valid_analysis
+            .join()
+            .unwrap_or_else(|_| panic!("valid package analysis thread panicked"));
+        let (invalid_direct, invalid_resumable) = invalid_analysis
+            .join()
+            .unwrap_or_else(|_| panic!("invalid package analysis thread panicked"));
+
+        assert_equivalent_analysis(&valid_direct, &valid_resumable);
+        assert_eq!(valid_direct.status(), AnalysisStatus::Valid);
+        assert!(valid_direct.diagnostics().is_empty());
+
+        assert_equivalent_analysis(&invalid_direct, &invalid_resumable);
+        assert_eq!(invalid_direct.status(), AnalysisStatus::Invalid);
+        assert!(
+            invalid_direct
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "conflicting-type-inference"),
+            "expected inference conflict: {:?}",
+            invalid_direct.diagnostics()
+        );
+    });
+}
+
+fn analyze_supported_paths(root: &Path) -> (TypedPackage, TypedPackage) {
+    let limits = analysis_equivalence_limits();
+    let direct_syntax = validate_package_syntax(
+        root,
+        limits.source_limits(),
+        limits.maximum_constructed_type_depth(),
+    )
+    .unwrap_or_else(|error| panic!("direct syntax validation failed: {error:?}"));
+    let resumable_syntax = drive_package_syntax(root, limits);
+    assert_eq!(direct_syntax, resumable_syntax);
+
+    let direct = analyze_package_types_with_limits_and_mode(
+        &direct_syntax,
+        limits,
+        gantry::mode::SemanticMode::Portable,
+    )
+    .unwrap_or_else(|error| panic!("direct package analysis failed: {error:?}"));
+    let resumable = analyze_package_types_with_limits_and_mode(
+        &resumable_syntax,
+        limits,
+        gantry::mode::SemanticMode::Portable,
+    )
+    .unwrap_or_else(|error| panic!("resumable package analysis failed: {error:?}"));
+    (direct, resumable)
+}
+
+fn drive_package_syntax(root: &Path, limits: FrontendLimits) -> CompletedSyntaxPhase {
+    let provider = RootDirectorySourceProvider::open(root)
+        .unwrap_or_else(|error| panic!("source provider failed: {error:?}"));
+    let mut step = PackageSyntaxWork::begin(
+        limits.source_limits(),
+        limits.maximum_constructed_type_depth(),
+    )
+    .unwrap_or_else(|error| panic!("syntax work failed to begin: {error:?}"));
+    loop {
+        step = match step {
+            PackageSyntaxStep::Acquire(work, request) => {
+                let acquisition = request.acquire(&provider);
+                work.accept_acquisition(request, acquisition)
+                    .unwrap_or_else(|error| panic!("syntax acquisition failed: {error:?}"))
+            }
+            PackageSyntaxStep::Parse(work) => work
+                .parse_next()
+                .unwrap_or_else(|error| panic!("resumable parse failed: {error:?}")),
+            PackageSyntaxStep::Complete(phase) => return phase,
+        };
+    }
+}
+
+fn assert_equivalent_analysis(direct: &TypedPackage, resumable: &TypedPackage) {
+    assert_eq!(direct.status(), resumable.status());
+    assert_eq!(direct.diagnostics(), resumable.diagnostics());
+
+    match (direct.manifest(), resumable.manifest()) {
+        (Some(direct), Some(resumable)) => assert_eq!(
+            direct.artifact().canonical_bytes(),
+            resumable.artifact().canonical_bytes()
+        ),
+        (None, None) => {}
+        _ => panic!("manifest publication differs between supported paths"),
+    }
+    match (direct.schemas(), resumable.schemas()) {
+        (Some(direct), Some(resumable)) => assert_eq!(
+            direct.artifact().canonical_bytes(),
+            resumable.artifact().canonical_bytes()
+        ),
+        (None, None) => {}
+        _ => panic!("schema publication differs between supported paths"),
+    }
+
+    if direct.status() == AnalysisStatus::Invalid {
+        assert!(direct.canonical_ir().is_none());
+        assert!(direct.source_map().is_none());
+        assert!(resumable.canonical_ir().is_none());
+        assert!(resumable.source_map().is_none());
+        return;
+    }
+
+    let direct_ir = direct
+        .canonical_ir()
+        .unwrap_or_else(|| unreachable!("valid package has canonical IR"));
+    let resumable_ir = resumable
+        .canonical_ir()
+        .unwrap_or_else(|| unreachable!("valid package has canonical IR"));
+    assert_eq!(
+        direct_ir.artifact().canonical_bytes(),
+        resumable_ir.artifact().canonical_bytes()
+    );
+    assert_eq!(
+        direct_ir.generic_facts().executable(),
+        resumable_ir.generic_facts().executable()
+    );
+    assert_eq!(
+        direct_ir.generic_facts().executable().types(),
+        resumable_ir.generic_facts().executable().types()
+    );
+    assert!(
+        direct_ir
+            .generic_facts()
+            .executable()
+            .types()
+            .iter()
+            .all(|ty| !ty.canonical_string().contains('^'))
+    );
+
+    let direct_source_map = direct
+        .source_map()
+        .unwrap_or_else(|| unreachable!("valid package has a source map"));
+    let resumable_source_map = resumable
+        .source_map()
+        .unwrap_or_else(|| unreachable!("valid package has a source map"));
+    assert_eq!(
+        direct_source_map.artifact().canonical_bytes(),
+        resumable_source_map.artifact().canonical_bytes()
+    );
+}
+
+fn analysis_equivalence_limits() -> FrontendLimits {
+    FrontendLimits::new(
+        32, 1_048_576, 4_194_304, 262_144, 256, 4_194_304, 4_194_304, 4_194_304, 4_194_304, 256,
+        65_536, 1_000_000,
+    )
+    .unwrap_or_else(|_| unreachable!("positive limits"))
 }
 
 #[test]

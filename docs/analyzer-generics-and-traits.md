@@ -220,3 +220,21 @@ exact concrete effects, emits concrete schemas, and publishes canonical
 analysis and closed executable projections with multi-origin source maps. It
 does not execute the projection, schedule tasks, invoke hooks, or reconstruct
 durable state; those behaviors remain owned by evaluator-derived profiles.
+
+The focused supported-path regression in
+`crates/gantry-conformance/tests/validate_package.rs` compares the public
+`validate_package_syntax` path with a manually driven
+`PackageSyntaxWork::{begin, accept_acquisition, parse_next}` path using
+`RootDirectorySourceProvider`. Concurrent independent analyses of multi-file
+generic/recursive valid and inference-conflict invalid packages must retain
+the same ordered structured diagnostics, closed types and executable
+projection, and byte-identical canonical IR, generated-schema, package
+manifest, and source-map outputs wherever those outputs are published.
+
+This evidence qualifies resumable source acquisition and isolation between
+independent concurrent package analyses only. It is not a cached incremental
+analysis implementation, is not separate compilation, and does not establish
+the complete `GNT-GP-TYPE-001` acceptance condition. Full-prefix, compacted-
+prefix, and fresh-process recovery of generic artifacts remains covered by
+`crates/gantry-conformance/tests/durable_start.rs`; this regression does not
+duplicate or broaden that durable-recovery evidence.
