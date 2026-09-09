@@ -62,20 +62,21 @@ fn primitive_properties_keep_eligibility_axes_separate() {
         ValueResourceClass,
     };
 
-    for (ty, external, orderable, canonical_scalar_key) in [
-        (TypeDescriptor::UNIT, true, false, true),
-        (TypeDescriptor::BOOL, true, false, true),
-        (TypeDescriptor::INT, true, true, true),
-        (TypeDescriptor::FLOAT, true, true, true),
-        (TypeDescriptor::STRING, true, false, true),
-        (TypeDescriptor::DECISION, false, false, false),
-        (TypeDescriptor::OPERATION_ERROR, false, false, false),
+    for (ty, external, hashable, orderable, canonical_scalar_key) in [
+        (TypeDescriptor::UNIT, true, true, false, true),
+        (TypeDescriptor::BOOL, true, true, false, true),
+        (TypeDescriptor::INT, true, true, true, true),
+        (TypeDescriptor::FLOAT, true, true, true, true),
+        (TypeDescriptor::STRING, true, true, false, true),
+        (TypeDescriptor::DECISION, false, false, false, false),
+        (TypeDescriptor::OPERATION_ERROR, false, false, false, false),
     ] {
         let properties = ty
             .primitive_properties()
             .unwrap_or_else(|| panic!("primitive omitted properties: {ty:?}"));
         assert_eq!(properties.is_external(), external);
         assert_eq!(properties.is_equatable(), external);
+        assert_eq!(properties.is_hashable(), hashable);
         assert_eq!(properties.is_orderable(), orderable);
         assert_eq!(properties.is_canonical_scalar_key(), canonical_scalar_key);
         assert!(properties.is_copyable());

@@ -3183,6 +3183,8 @@ Unit, `1` Bool, `2` Int, `3` Float, `4` String), an unsigned big-endian `u64`
 payload length, and the payload. Unit has no payload; Bool is `00` or `01`; Int is
 its signed `i64` two's-complement big-endian representation; Float is its normalized
 IEEE binary64 bits in big-endian order; String is exact UTF-8 without normalization.
+Exactly this admitted scalar-key domain is hashable in v1; hashability does not follow
+from `ExternalValue`, ordinary equality, or an application codec.
 Encoding and decoding MUST apply a positive finite limit before retaining the complete
 frame. Decoding MUST reject all framing, length, scalar-range, and UTF-8 violations.
 

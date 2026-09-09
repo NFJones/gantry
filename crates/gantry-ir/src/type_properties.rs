@@ -213,6 +213,7 @@ pub struct PrimitiveTypeProperties {
     canonical_scalar_key: bool,
     equatable: bool,
     external: bool,
+    hashable: bool,
     orderable: bool,
     source_protection: SourceProtectionClass,
 }
@@ -225,6 +226,7 @@ impl PrimitiveTypeProperties {
                 canonical_scalar_key: true,
                 equatable: true,
                 external: true,
+                hashable: true,
                 orderable: false,
                 source_protection: SourceProtectionClass::Unsealed,
             }),
@@ -232,6 +234,7 @@ impl PrimitiveTypeProperties {
                 canonical_scalar_key: true,
                 equatable: true,
                 external: true,
+                hashable: true,
                 orderable: true,
                 source_protection: SourceProtectionClass::Unsealed,
             }),
@@ -239,6 +242,7 @@ impl PrimitiveTypeProperties {
                 canonical_scalar_key: false,
                 equatable: false,
                 external: false,
+                hashable: false,
                 orderable: false,
                 source_protection: SourceProtectionClass::Sealed,
             }),
@@ -296,6 +300,16 @@ impl PrimitiveTypeProperties {
     #[must_use]
     pub const fn is_equatable(self) -> bool {
         self.equatable
+    }
+
+    /// Whether this primitive has the stable canonical scalar-key hash contract.
+    ///
+    /// Hashability is intentionally narrower than `ExternalValue`: only the
+    /// primitive domain with a versioned scalar-key frame and SHA-256 content
+    /// hash may report this property.
+    #[must_use]
+    pub const fn is_hashable(self) -> bool {
+        self.hashable
     }
 
     /// Whether numeric ordering primitives admit this type.

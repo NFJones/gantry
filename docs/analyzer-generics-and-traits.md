@@ -60,8 +60,10 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   complete. Capability proof is structural, memoized, native-stack-safe, and
   deterministic across declaration order and cache hits.
   Primitive leaves use `TypeDescriptor::primitive_properties()` from the
-  public IR API. It reports copyability, equality, numeric ordering,
-  interpolation, external eligibility, and recovery projection separately.
+  public IR API. It reports copyability, equality, canonical-key hashability,
+  numeric ordering, interpolation, external eligibility, and recovery
+  projection separately. Hashability is limited to the versioned canonical
+  scalar-key domain; it does not follow from external eligibility alone.
   Structural descriptors return `None`: this API cannot infer declared
   fields, grant execution admission, or introduce affine values and loans.
   For declaration-aware inspection, `TypedPackage::type_capabilities` reports
