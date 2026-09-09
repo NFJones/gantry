@@ -423,6 +423,9 @@ fn supported_analysis_paths_preserve_types_artifacts_and_diagnostics() {
         .is_ok()
     );
 
+    let (serial_valid, _) = analyze_supported_paths(&valid.0);
+    let (serial_invalid, _) = analyze_supported_paths(&invalid.0);
+
     std::thread::scope(|scope| {
         let valid_analysis = scope.spawn(|| analyze_supported_paths(&valid.0));
         let invalid_analysis = scope.spawn(|| analyze_supported_paths(&invalid.0));
@@ -434,10 +437,12 @@ fn supported_analysis_paths_preserve_types_artifacts_and_diagnostics() {
             .unwrap_or_else(|_| panic!("invalid package analysis thread panicked"));
 
         assert_equivalent_analysis(&valid_direct, &valid_resumable);
+        assert_equivalent_analysis(&serial_valid, &valid_direct);
         assert_eq!(valid_direct.status(), AnalysisStatus::Valid);
         assert!(valid_direct.diagnostics().is_empty());
 
         assert_equivalent_analysis(&invalid_direct, &invalid_resumable);
+        assert_equivalent_analysis(&serial_invalid, &invalid_direct);
         assert_eq!(invalid_direct.status(), AnalysisStatus::Invalid);
         assert!(
             invalid_direct
@@ -502,6 +507,7 @@ fn drive_package_syntax(root: &Path, limits: FrontendLimits) -> CompletedSyntaxP
 fn assert_equivalent_analysis(direct: &TypedPackage, resumable: &TypedPackage) {
     assert_eq!(direct.status(), resumable.status());
     assert_eq!(direct.diagnostics(), resumable.diagnostics());
+    assert_eq!(direct.executable_program(), resumable.executable_program());
 
     match (direct.manifest(), resumable.manifest()) {
         (Some(direct), Some(resumable)) => assert_eq!(
@@ -523,10 +529,13 @@ fn assert_equivalent_analysis(direct: &TypedPackage, resumable: &TypedPackage) {
     if direct.status() == AnalysisStatus::Invalid {
         assert!(direct.canonical_ir().is_none());
         assert!(direct.source_map().is_none());
+        assert!(direct.executable_program().is_none());
         assert!(resumable.canonical_ir().is_none());
         assert!(resumable.source_map().is_none());
         return;
     }
+
+    assert!(direct.executable_program().is_some());
 
     let direct_ir = direct
         .canonical_ir()
