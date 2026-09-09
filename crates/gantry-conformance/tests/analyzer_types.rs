@@ -4,9 +4,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use gantry::analysis::{AnalysisStatus, analyze_package_types};
+use gantry::analysis::{
+    AnalysisError, AnalysisStatus, analyze_package_types, analyze_package_types_with_limits,
+};
 use gantry::frontend::validate_package_syntax;
-use gantry::source::SourceLimits;
+use gantry::portable::FrontendResourceCode;
+use gantry::source::{FrontendLimits, SourceLimits};
 use serde::Deserialize;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -806,6 +809,53 @@ fn public_generic_substitution_accepts_shaped_option_members() {
 }
 
 #[test]
+/// Stored-member option validation has inclusive public cutoffs and retains earlier diagnostics.
+fn public_generic_option_validation_obeys_work_and_depth_cutoffs() {
+    let source = "use crate::missing; struct Stored<T> { value: Option<T> } struct Outer<T> { inner: Stored<T> } fn main(value: Outer<Unit>) { discard value; }";
+    let phase = syntax(source);
+
+    let at_work_limit = analyze_package_types_with_limits(&phase, analysis_limits(64, 6))
+        .unwrap_or_else(|error| panic!("at-limit option validation failed: {error:?}"));
+    assert_eq!(at_work_limit.status(), AnalysisStatus::Invalid);
+    assert!(
+        at_work_limit
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "invalid-option-type")
+    );
+    let at_depth_limit = analyze_package_types_with_limits(&phase, analysis_limits(2, 6))
+        .unwrap_or_else(|error| panic!("at-limit option depth failed: {error:?}"));
+    assert_eq!(at_depth_limit.diagnostics(), at_work_limit.diagnostics());
+
+    for (depth, work, code) in [
+        (64, 5, FrontendResourceCode::TraitResolutionStepLimit),
+        (1, 6, FrontendResourceCode::ConstructedTypeDepthLimit),
+    ] {
+        let Err(AnalysisError::ResourceLimit { error, diagnostics }) =
+            analyze_package_types_with_limits(&phase, analysis_limits(depth, work))
+        else {
+            panic!("option validation unexpectedly crossed the {code:?} cutoff")
+        };
+        assert_eq!(error.code, code);
+        assert_eq!(error.limit, if depth == 1 { depth } else { work });
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "unresolved-import"),
+            "prior diagnostic was lost at {code:?}: {diagnostics:?}"
+        );
+        if code == FrontendResourceCode::TraitResolutionStepLimit {
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code.as_str() == "invalid-option-type"),
+                "validated option diagnostic was lost at the work cutoff: {diagnostics:?}"
+            );
+        }
+    }
+}
+
+#[test]
 /// Declared recursion permits only guarded regular self recursion in v1.
 fn public_declared_recursion_obeys_guarded_regular_v1_rules() {
     for source in [
@@ -943,6 +993,31 @@ fn assert_forbidden_generic_option(source: &str) {
         package.diagnostics()
     );
     assert!(package.executable_program().is_none());
+}
+
+fn syntax(source: &str) -> gantry::frontend::CompletedSyntaxPhase {
+    let root = TempDirectory::new();
+    root.write(source);
+    validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"))
+}
+
+fn analysis_limits(depth: u64, trait_steps: u64) -> FrontendLimits {
+    FrontendLimits::new(
+        4,
+        65_536,
+        65_536,
+        65_536,
+        64,
+        65_536,
+        65_536,
+        65_536,
+        65_536,
+        depth,
+        64,
+        trait_steps,
+    )
+    .unwrap_or_else(|_| unreachable!("positive frontend limits"))
 }
 
 fn limits() -> SourceLimits {
