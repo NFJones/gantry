@@ -189,6 +189,10 @@ applications share one definition and regular recursion uses canonical
 definition before publication, so every accepted schema is finite and
 contains no parameter expression.
 
+Every member of an instantiated declared type is validated before its enum
+shape is used. An invalid `Option` member is therefore diagnosed even when a
+constructor selects a payload-free sibling variant.
+
 ## Lemma: Diagnostic determinism and witnesses
 
 Analysis phases enforce the precedence relation before sorting diagnostics by

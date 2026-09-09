@@ -4466,6 +4466,9 @@ fn infer_generic_enum_constructor(
         )?);
         return Ok(None);
     };
+    if diagnose_invalid_inferred_option_member(&descriptor, node.span(), context, diagnostics)? {
+        return Ok(None);
+    }
     let shape = enum_shape_for_descriptor(context, &descriptor)?.ok_or(AnalysisError::Invariant)?;
     let Some(payload) = shape.variants.get(variant) else {
         return Ok(None);
