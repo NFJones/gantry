@@ -237,14 +237,20 @@ The focused supported-path regression in
 `PackageSyntaxWork::{begin, accept_acquisition, parse_next}` path using
 `RootDirectorySourceProvider`. Concurrent independent analyses of multi-file
 generic/recursive valid and inference-conflict invalid packages must retain
-the same ordered structured diagnostics, closed types and executable
-projection, and byte-identical canonical IR, generated-schema, package
-manifest, and source-map outputs wherever those outputs are published.
+the same ordered structured diagnostics, closed types, selected callable and
+implementation identities, exact concrete effects, and executable projection,
+and byte-identical canonical IR, generated-schema, package-manifest, and
+source-map outputs wherever those outputs are published. The comparison fixes
+the package-source snapshot, portable semantic mode, selected v1 language and
+protocol contracts, and `FrontendLimits` analysis policy; it varies only the
+supported source-acquisition and independent scheduling paths.
 
 This evidence qualifies resumable source acquisition and isolation between
 independent concurrent package analyses only. It is not a cached incremental
-analysis implementation, is not separate compilation, and does not establish
-the complete `GNT-GP-TYPE-001` acceptance condition. Full-prefix, compacted-
-prefix, and fresh-process recovery of generic artifacts remains covered by
-`crates/gantry-conformance/tests/durable_start.rs`; this regression does not
-duplicate or broaden that durable-recovery evidence.
+analysis implementation or API, is not a separate-compilation implementation
+or API, and does not establish the complete `GNT-GP-TYPE-001` acceptance
+condition. Incremental invalidation and separate-compilation/link identity
+remain downstream `GNT-GP-TOOLCHAIN-001` and `GNT-GP-LINK-001` work.
+Full-prefix, compacted-prefix, and fresh-process recovery of generic artifacts
+remains covered by `crates/gantry-conformance/tests/durable_start.rs`; this
+regression does not duplicate or broaden that durable-recovery evidence.

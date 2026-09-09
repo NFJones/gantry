@@ -508,6 +508,14 @@ fn assert_equivalent_analysis(direct: &TypedPackage, resumable: &TypedPackage) {
     assert_eq!(direct.status(), resumable.status());
     assert_eq!(direct.diagnostics(), resumable.diagnostics());
     assert_eq!(direct.executable_program(), resumable.executable_program());
+    assert_eq!(
+        direct.generic_instantiations(),
+        resumable.generic_instantiations()
+    );
+    assert_eq!(
+        direct.generic_concrete_effects(),
+        resumable.generic_concrete_effects()
+    );
 
     match (direct.manifest(), resumable.manifest()) {
         (Some(direct), Some(resumable)) => assert_eq!(

@@ -6574,6 +6574,16 @@ nonrecursive sink-delivery exception still applies.
    mappings, and the distinct closed executable projection. These fields are
    structured protocol data; a consumer MUST NOT have to parse display text or
    rerun inference or trait selection to recover them.
+   For the same pinned package-source snapshot, semantic mode, selected
+   language and protocol contracts, and effective analysis policy, every
+   supported analysis execution MUST produce the same closed types, selected
+   implementation and callable identities, exact effects, canonical artifact
+   bytes, and ordered machine-readable diagnostics. This equivalence MUST NOT
+   depend on a supported scheduling or cache strategy. This requirement does
+   not define or require a cached incremental-analysis API or separate
+   compilation API; those interfaces and their additional identity,
+   invalidation, and linking contracts are owned by downstream toolchain and
+   linker requirements.
 <a id="GNT-12.10"></a>
 
 10. Normal execution MUST complete semantic analysis successfully before its
