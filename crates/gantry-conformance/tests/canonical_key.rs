@@ -3,8 +3,8 @@
 use std::cmp::Ordering;
 
 use gantry::canonical_key::{
-    CANONICAL_KEY_FORMAT_MAJOR, CANONICAL_KEY_FORMAT_MINOR, CanonicalKey, CanonicalKeyError,
-    CanonicalKeyLimits, DEFAULT_CANONICAL_KEY_LIMITS,
+    CANONICAL_KEY_FORMAT_MAJOR, CANONICAL_KEY_FORMAT_MINOR, CanonicalKey, CanonicalKeyBatchError,
+    CanonicalKeyBatchLimits, CanonicalKeyError, CanonicalKeyLimits, DEFAULT_CANONICAL_KEY_LIMITS,
 };
 use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, OperationErrorValue, ValueKind};
@@ -80,6 +80,134 @@ fn public_canonical_keys_roundtrip_from_exact_versioned_bytes() {
         assert_eq!(decoded.bytes(), encoded.bytes());
         assert_eq!(decoded.sha256(), encoded.sha256());
     }
+}
+
+#[test]
+fn public_batch_decoder_returns_unique_keys_in_input_order() {
+    let encoded = [
+        LogicalValue::unit(),
+        LogicalValue::boolean(true),
+        LogicalValue::string("batch", DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("test string failed: {error:?}")),
+    ]
+    .map(|value| {
+        value
+            .canonical_key(DEFAULT_CANONICAL_KEY_LIMITS)
+            .unwrap_or_else(|error| panic!("eligible scalar failed: {error:?}"))
+    });
+    let inputs = encoded.iter().map(CanonicalKey::bytes).collect::<Vec<_>>();
+    let total_bytes = inputs.iter().map(|bytes| bytes.len() as u128).sum();
+
+    let decoded = CanonicalKey::decode_batch(
+        &inputs,
+        DEFAULT_CANONICAL_KEY_LIMITS,
+        CanonicalKeyBatchLimits::new(inputs.len(), total_bytes),
+    )
+    .unwrap_or_else(|error| panic!("unique batch failed: {error:?}"));
+    assert_eq!(decoded, encoded);
+}
+
+#[test]
+fn public_batch_decoder_reports_the_first_normalized_zero_duplicate() {
+    let positive_zero = float(0.0)
+        .canonical_key(DEFAULT_CANONICAL_KEY_LIMITS)
+        .unwrap_or_else(|error| panic!("positive zero key failed: {error:?}"));
+    let negative_zero = float(-0.0)
+        .canonical_key(DEFAULT_CANONICAL_KEY_LIMITS)
+        .unwrap_or_else(|error| panic!("negative zero key failed: {error:?}"));
+    let inputs = [
+        positive_zero.bytes(),
+        negative_zero.bytes(),
+        positive_zero.bytes(),
+    ];
+
+    assert_eq!(
+        CanonicalKey::decode_batch(
+            &inputs,
+            DEFAULT_CANONICAL_KEY_LIMITS,
+            CanonicalKeyBatchLimits::new(3, 1_000),
+        ),
+        Err(CanonicalKeyBatchError::Duplicate {
+            first_index: 0,
+            repeated_index: 1,
+        })
+    );
+}
+
+#[test]
+fn public_batch_decoder_keeps_int_and_float_identities_distinct() {
+    let integer = int(1)
+        .canonical_key(DEFAULT_CANONICAL_KEY_LIMITS)
+        .unwrap_or_else(|error| panic!("integer key failed: {error:?}"));
+    let floating = float(1.0)
+        .canonical_key(DEFAULT_CANONICAL_KEY_LIMITS)
+        .unwrap_or_else(|error| panic!("float key failed: {error:?}"));
+    let inputs = [integer.bytes(), floating.bytes()];
+
+    let decoded = CanonicalKey::decode_batch(
+        &inputs,
+        DEFAULT_CANONICAL_KEY_LIMITS,
+        CanonicalKeyBatchLimits::new(2, 58),
+    )
+    .unwrap_or_else(|error| panic!("distinct numeric keys failed: {error:?}"));
+    assert_eq!(decoded, [integer, floating]);
+}
+
+#[test]
+fn public_batch_decoder_reports_the_malformed_input_index() {
+    let valid = frame(0, &[]);
+    let malformed = frame(1, &[2]);
+    let inputs = [valid.as_slice(), malformed.as_slice()];
+
+    assert_eq!(
+        CanonicalKey::decode_batch(
+            &inputs,
+            DEFAULT_CANONICAL_KEY_LIMITS,
+            CanonicalKeyBatchLimits::new(2, 43),
+        ),
+        Err(CanonicalKeyBatchError::InvalidKey {
+            index: 1,
+            error: CanonicalKeyError::InvalidBool,
+        })
+    );
+}
+
+#[test]
+fn public_batch_decoder_enforces_exact_aggregate_limits() {
+    let unit = frame(0, &[]);
+    let boolean = frame(1, &[1]);
+    let inputs = [unit.as_slice(), boolean.as_slice()];
+    let exact_limits = CanonicalKeyBatchLimits::new(2, 43);
+    assert_eq!(exact_limits.maximum_count(), 2);
+    assert_eq!(exact_limits.maximum_total_bytes(), 43);
+    assert_eq!(
+        CanonicalKey::decode_batch(&inputs, DEFAULT_CANONICAL_KEY_LIMITS, exact_limits)
+            .unwrap_or_else(|error| panic!("exact limits failed: {error:?}"))
+            .len(),
+        2
+    );
+    assert_eq!(
+        CanonicalKey::decode_batch(
+            &inputs,
+            DEFAULT_CANONICAL_KEY_LIMITS,
+            CanonicalKeyBatchLimits::new(1, 43),
+        ),
+        Err(CanonicalKeyBatchError::CountLimit {
+            limit: 1,
+            required: 2,
+        })
+    );
+    assert_eq!(
+        CanonicalKey::decode_batch(
+            &inputs,
+            DEFAULT_CANONICAL_KEY_LIMITS,
+            CanonicalKeyBatchLimits::new(2, 42),
+        ),
+        Err(CanonicalKeyBatchError::TotalBytesLimit {
+            limit: 42,
+            required: 43,
+        })
+    );
 }
 
 #[test]

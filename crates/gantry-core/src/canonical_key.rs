@@ -1,6 +1,7 @@
 //! Versioned canonical key identities for the sealed portable scalar domain.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
@@ -48,6 +49,36 @@ impl CanonicalKeyLimits {
     }
 }
 
+/// Explicit aggregate limits for one canonical scalar-key decoding batch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CanonicalKeyBatchLimits {
+    maximum_count: usize,
+    maximum_total_bytes: u128,
+}
+
+impl CanonicalKeyBatchLimits {
+    /// Constructs aggregate limits, including zero for callers that admit only an empty batch.
+    #[must_use]
+    pub const fn new(maximum_count: usize, maximum_total_bytes: u128) -> Self {
+        Self {
+            maximum_count,
+            maximum_total_bytes,
+        }
+    }
+
+    /// Returns the maximum number of encoded keys in one batch.
+    #[must_use]
+    pub const fn maximum_count(self) -> usize {
+        self.maximum_count
+    }
+
+    /// Returns the maximum sum of all encoded input frame lengths.
+    #[must_use]
+    pub const fn maximum_total_bytes(self) -> u128 {
+        self.maximum_total_bytes
+    }
+}
+
 /// Failure to admit a logical value into the canonical scalar-key domain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CanonicalKeyError {
@@ -86,6 +117,39 @@ pub enum CanonicalKeyError {
         limit: u64,
         /// Exact required complete frame length.
         required: u64,
+    },
+}
+
+/// Failure to decode and validate one complete canonical scalar-key batch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalKeyBatchError {
+    /// The number of inputs exceeds the explicit aggregate count limit.
+    CountLimit {
+        /// Effective configured maximum.
+        limit: usize,
+        /// Exact number of inputs in the batch.
+        required: usize,
+    },
+    /// The sum of encoded input lengths exceeds the explicit aggregate byte limit.
+    TotalBytesLimit {
+        /// Effective configured maximum.
+        limit: u128,
+        /// Exact sum of all encoded input frame lengths.
+        required: u128,
+    },
+    /// One indexed input is not a canonical scalar-key frame.
+    InvalidKey {
+        /// Zero-based input index.
+        index: usize,
+        /// Exact error returned by [`CanonicalKey::from_bytes`].
+        error: CanonicalKeyError,
+    },
+    /// Two inputs decode to the same canonical scalar-key identity.
+    Duplicate {
+        /// Zero-based index where this identity first appeared.
+        first_index: usize,
+        /// Zero-based index of its first repeated appearance.
+        repeated_index: usize,
     },
 }
 
@@ -188,6 +252,53 @@ impl CanonicalKey {
             bytes: Arc::from(bytes),
             sha256,
         })
+    }
+
+    /// Decodes one bounded batch and rejects duplicate scalar-key identities.
+    ///
+    /// Aggregate count and byte limits are checked before decoding. Each input
+    /// is then validated by [`Self::from_bytes`] in input order. Duplicate
+    /// identity is determined by this type's [`Ord`] implementation, not its
+    /// content hash. No decoded output is returned until the complete batch is
+    /// valid and unique.
+    pub fn decode_batch(
+        encoded_keys: &[&[u8]],
+        key_limits: CanonicalKeyLimits,
+        batch_limits: CanonicalKeyBatchLimits,
+    ) -> Result<Vec<Self>, CanonicalKeyBatchError> {
+        let required_count = encoded_keys.len();
+        if required_count > batch_limits.maximum_count {
+            return Err(CanonicalKeyBatchError::CountLimit {
+                limit: batch_limits.maximum_count,
+                required: required_count,
+            });
+        }
+        let required_total_bytes = encoded_keys
+            .iter()
+            .map(|bytes| bytes.len() as u128)
+            .sum::<u128>();
+        if required_total_bytes > batch_limits.maximum_total_bytes {
+            return Err(CanonicalKeyBatchError::TotalBytesLimit {
+                limit: batch_limits.maximum_total_bytes,
+                required: required_total_bytes,
+            });
+        }
+
+        let mut decoded = Vec::with_capacity(required_count);
+        let mut first_indices = BTreeMap::new();
+        for (index, bytes) in encoded_keys.iter().enumerate() {
+            let key = Self::from_bytes(bytes, key_limits)
+                .map_err(|error| CanonicalKeyBatchError::InvalidKey { index, error })?;
+            if let Some(&first_index) = first_indices.get(&key) {
+                return Err(CanonicalKeyBatchError::Duplicate {
+                    first_index,
+                    repeated_index: index,
+                });
+            }
+            first_indices.insert(key.clone(), index);
+            decoded.push(key);
+        }
+        Ok(decoded)
     }
 
     /// Returns the complete canonical versioned frame.

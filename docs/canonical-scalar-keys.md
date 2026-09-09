@@ -44,6 +44,18 @@ incorrect fixed-width payloads, non-Boolean Bool bytes, out-of-range Ints,
 non-finite Floats, noncanonical negative zero, and invalid UTF-8. Input bytes
 are retained and hashed only after the complete frame and payload are valid.
 
+`CanonicalKey::decode_batch` accepts a borrowed slice of encoded frames plus
+the existing per-key limit and explicit `CanonicalKeyBatchLimits` for maximum
+input count and aggregate encoded bytes. It checks both aggregate limits before
+decoding, validates each frame with `CanonicalKey::from_bytes`, and returns
+decoded keys in input order only after the complete batch is valid and unique.
+Malformed-key errors include the input index. Duplicate errors include both the
+first and first-repeated input indices. Duplicate identity uses `CanonicalKey`'s
+total `Ord` contract through an ordered map; SHA-256 is never an identity key.
+Consequently normalized signed-zero Float frames collide, while Int `1` and
+Float `1.0` remain distinct. This API decodes no source collections and does
+not admit structural keys.
+
 This framing is not the existing canonical JSON boundary. In particular,
 canonical JSON spells both Int `1` and Float `1.0` as `1`, and spells both Unit
 and an absent option as `null`; the type tag prevents those collisions.

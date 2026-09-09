@@ -3174,27 +3174,27 @@ implementation- or embedding-defined and is not catchable by `attempt`.
 
 **15a. Canonical scalar keys.**
 
-The implementation canonical scalar-key format version 1.0 admits exactly
-normalized `Unit`, `Bool`, `Int`, finite normalized `Float`, and `String`
-values. It rejects `Decision`, `OperationError`, and every structural value;
-application codecs and existing canonical JSON do not grant eligibility. The
-complete byte frame is the eight bytes `GNTYKEY\0`, unsigned big-endian major
-and minor `u16` values, one tag byte (`0` Unit, `1` Bool, `2` Int, `3` Float,
-`4` String), an unsigned big-endian `u64` payload length, and the payload. Unit
-has no payload; Bool is `00` or `01`; Int is its signed `i64` two's-complement
-big-endian representation; Float is its normalized IEEE binary64 bits in
-big-endian order; String is exact UTF-8 without normalization. Encoding and
-decoding MUST apply a positive finite limit before retaining the complete frame.
-Decoding MUST reject all framing, length, scalar-range, and UTF-8 violations.
+The implementation canonical scalar-key format version 1.0 admits exactly normalized
+`Unit`, `Bool`, `Int`, finite normalized `Float`, and `String` values. It rejects
+`Decision`, `OperationError`, and every structural value; application codecs and existing
+canonical JSON do not grant eligibility. The complete byte frame is the eight bytes
+`GNTYKEY\0`, unsigned big-endian major and minor `u16` values, one tag byte (`0`
+Unit, `1` Bool, `2` Int, `3` Float, `4` String), an unsigned big-endian `u64`
+payload length, and the payload. Unit has no payload; Bool is `00` or `01`; Int is
+its signed `i64` two's-complement big-endian representation; Float is its normalized
+IEEE binary64 bits in big-endian order; String is exact UTF-8 without normalization.
+Encoding and decoding MUST apply a positive finite limit before retaining the complete
+frame. Decoding MUST reject all framing, length, scalar-range, and UTF-8 violations.
 
-Scalar-key order is `Unit < Bool < Int < Float < String`; Bool orders false
-before true, Int and Float use their numeric orders independently, and
-String uses lexicographic Unicode-scalar order. Cross-numeric-type coercion
-is not performed. Comparison reports equal exactly when value equality does
-within this admitted domain; in particular, normalized signed zeros have
-one Float key. The stable content hash is SHA-256 over exactly the complete
-framed bytes. Format major changes may alter eligibility, framing, order, or
-hashing; a minor change MUST preserve all version-1.0 bytes and semantics.
+Batch decoding accepts only encoded scalar-key frames and MUST apply explicit maximum input-count and aggregate encoded-byte limits before decoding or retaining any key.
+It MUST decode each input through the single-key decoder in input order and publish no output unless every input is valid and every key identity is unique.
+Duplicate identity MUST use canonical-key comparison, not content hashes; a duplicate error identifies the zero-based first and first-repeated input indices.
+Batch decoding adds no source collection, structural-key, or cross-numeric-type admission.
+
+Scalar-key order is `Unit < Bool < Int < Float < String`; Bool orders false before true, and Int and Float use numeric orders independently.
+String uses lexicographic Unicode-scalar order. Cross-numeric-type coercion is not performed. Comparison reports equal exactly when value equality does within this admitted domain.
+In particular, normalized signed zeros have one Float key. The stable content hash is SHA-256 over exactly the complete framed bytes.
+Format major changes may alter eligibility, framing, order, or hashing; a minor change MUST preserve all version-1.0 bytes and semantics.
 <a id="GNT-5.16"></a>
 
 16. `String` is an immutable valid-UTF-8 sequence of Unicode scalar values.

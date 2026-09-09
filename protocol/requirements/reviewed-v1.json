@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "ee374a4ee2be668a5902ce190d8a569559a25ec0a3d6bb720204759bb5af774b",
+  "specification_sha256": "2167e13a4bb9e01a0e462930f1267d4ea1a56697b93429e29deab7c69a3b5d53",
   "regions": [
     {
       "kind": "excluded",
@@ -12648,6 +12648,11 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_returns_unique_keys_in_input_order",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_first_normalized_zero_duplicate",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_keeps_int_and_float_identities_distinct",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_malformed_input_index",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_enforces_exact_aggregate_limits",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
@@ -12664,6 +12669,11 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_returns_unique_keys_in_input_order",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_first_normalized_zero_duplicate",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_keeps_int_and_float_identities_distinct",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_malformed_input_index",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_enforces_exact_aggregate_limits",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
@@ -12680,6 +12690,11 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_returns_unique_keys_in_input_order",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_first_normalized_zero_duplicate",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_keeps_int_and_float_identities_distinct",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_malformed_input_index",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_enforces_exact_aggregate_limits",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
@@ -12696,6 +12711,11 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_returns_unique_keys_in_input_order",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_first_normalized_zero_duplicate",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_keeps_int_and_float_identities_distinct",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_malformed_input_index",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_enforces_exact_aggregate_limits",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
@@ -12712,6 +12732,11 @@
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_returns_unique_keys_in_input_order",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_first_normalized_zero_duplicate",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_keeps_int_and_float_identities_distinct",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_reports_the_malformed_input_index",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_batch_decoder_enforces_exact_aggregate_limits",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
