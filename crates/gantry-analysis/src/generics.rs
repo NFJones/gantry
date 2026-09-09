@@ -153,6 +153,9 @@ impl ExactTypeSubstitution {
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
         let canonical = substitute_canonical(expression.as_str(), &open)?;
+        if contains_invalid_option_member(&canonical)? {
+            return Err(TypeInferenceFailure::InvalidOptionMember);
+        }
         TypeDescriptor::from_canonical_string(&canonical)
             .map_err(|_| TypeInferenceFailure::Incomplete)
     }
@@ -177,6 +180,7 @@ pub(crate) enum TypeInferenceFailure {
     Arity,
     Conflict,
     Incomplete,
+    InvalidOptionMember,
     OccursCheck,
 }
 
@@ -273,6 +277,36 @@ fn contains_parameter(
                 work.extend(arguments.into_iter().map(str::to_owned));
             }
             ExpressionRoot::SelfType(_) => {}
+        }
+    }
+    Ok(false)
+}
+
+/// Finds option members that become wire-ambiguous only after substitution.
+fn contains_invalid_option_member(expression: &str) -> Result<bool, TypeInferenceFailure> {
+    let mut work = vec![expression.to_owned()];
+    while let Some(current) = work.pop() {
+        match expression_root(&current)? {
+            ExpressionRoot::Application {
+                constructor,
+                arguments,
+            } => {
+                if constructor == "Option"
+                    && arguments.first().is_some_and(|member| {
+                        matches!(
+                            expression_root(member),
+                            Ok(ExpressionRoot::Application {
+                                constructor: "Unit" | "Option",
+                                ..
+                            })
+                        )
+                    })
+                {
+                    return Ok(true);
+                }
+                work.extend(arguments.into_iter().map(str::to_owned));
+            }
+            ExpressionRoot::Parameter(_) | ExpressionRoot::SelfType(_) => {}
         }
     }
     Ok(false)
@@ -1756,6 +1790,7 @@ pub(crate) struct GenericDeclarationShape {
 enum StoredMemberNode {
     Primitive(PrimitiveTypeProperties),
     Opaque,
+    InvalidOptionMember(SourceSpan),
     Members(Vec<TypeDescriptor>),
 }
 
@@ -1818,6 +1853,97 @@ pub(crate) fn check_sealed_declaration_bounds(
         }
     }
     Ok(())
+}
+
+/// Diagnoses closed declared applications whose stored members become invalid options.
+pub(crate) fn diagnose_invalid_generic_option_members(
+    sources: &[ParsedSource],
+    structure: &PackageStructure,
+    binders: &[TypeBinder],
+    facts: &[GenericTypeFact],
+    counters: &mut Option<GenericAnalysisCounters>,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    let declarations = collect_generic_declaration_shapes(sources, structure, binders, facts)?;
+    let mut visited = BTreeSet::new();
+    for (span, root) in facts.iter().filter_map(|fact| {
+        fact.descriptor.as_ref().and_then(|descriptor| {
+            (descriptor.kind() == TypeKind::Declared && !descriptor.immediate_members().is_empty())
+                .then_some((&fact.span, descriptor))
+        })
+    }) {
+        if let Some(declaration) = invalid_generic_option_member_declaration_with_visited(
+            root,
+            &declarations,
+            counters,
+            &mut visited,
+        )? {
+            diagnostics.push(named_generic_diagnostic(
+                "invalid-option-type",
+                "generic substitution gives Option an ambiguous immediate member type",
+                span.clone(),
+                vec![RelatedSpan {
+                    label: Arc::from("generic declaration"),
+                    span: declaration,
+                }],
+                [("type", root.canonical_string())],
+            )?);
+        }
+    }
+    Ok(())
+}
+
+/// Finds a forbidden substituted option through exact, bounded stored-member expansion.
+pub(crate) fn invalid_generic_option_member_declaration(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+    counters: &mut Option<GenericAnalysisCounters>,
+) -> Result<Option<SourceSpan>, AnalysisError> {
+    let mut visited = BTreeSet::new();
+    invalid_generic_option_member_declaration_with_visited(
+        root,
+        declarations,
+        counters,
+        &mut visited,
+    )
+}
+
+/// Reuses canonical descriptor work across roots in one validation activity.
+fn invalid_generic_option_member_declaration_with_visited(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+    counters: &mut Option<GenericAnalysisCounters>,
+    visited: &mut BTreeSet<String>,
+) -> Result<Option<SourceSpan>, AnalysisError> {
+    let mut work = vec![(root.clone(), BTreeSet::<String>::new())];
+    while let Some((descriptor, mut active_declarations)) = work.pop() {
+        let key = descriptor.canonical_string();
+        if !visited.insert(key) {
+            continue;
+        }
+        check_stored_member_descriptor(&descriptor, counters)?;
+        if let Some(path) = descriptor.declared_path()
+            && !active_declarations.insert(path.as_str().to_owned())
+        {
+            continue;
+        }
+        match stored_member_node(&descriptor, declarations)? {
+            StoredMemberNode::InvalidOptionMember(declaration) => {
+                return Ok(Some(declaration));
+            }
+            StoredMemberNode::Members(mut members) => {
+                members.sort_by_key(TypeDescriptor::canonical_string);
+                work.extend(
+                    members
+                        .into_iter()
+                        .rev()
+                        .map(|member| (member, active_declarations.clone())),
+                );
+            }
+            StoredMemberNode::Primitive(_) | StoredMemberNode::Opaque => {}
+        }
+    }
+    Ok(None)
 }
 
 /// Collects authored declared-member shapes for structural capability checking.
@@ -2094,17 +2220,7 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
     loop {
         let index = stack.len().checked_sub(1).ok_or(AnalysisError::Invariant)?;
         if stack[index].members.is_none() {
-            charge_trait_steps(counters, 1)?;
-            if let Some(counters) = counters.as_ref() {
-                let expression = TypeExpression::closed(&stack[index].descriptor, u64::MAX)
-                    .map_err(|_| AnalysisError::Invariant)?;
-                counters
-                    .check_constructed_type_depth(expression.depth())
-                    .map_err(|error| AnalysisError::ResourceLimit {
-                        error,
-                        diagnostics: Vec::new(),
-                    })?;
-            }
+            check_stored_member_descriptor(&stack[index].descriptor, counters)?;
             match stored_member_node(&stack[index].descriptor, declarations)? {
                 StoredMemberNode::Primitive(properties) => {
                     let result = property.primitive(properties);
@@ -2117,7 +2233,7 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
                     }
                     return Ok(result);
                 }
-                StoredMemberNode::Opaque => {
+                StoredMemberNode::Opaque | StoredMemberNode::InvalidOptionMember(_) => {
                     let result = property.opaque()?;
                     let frame = stack.pop().ok_or(AnalysisError::Invariant)?;
                     active.remove(&frame.key);
@@ -2221,18 +2337,28 @@ fn stored_member_node(
                         ordinal: parameter.ordinal,
                     })
                     .collect::<Vec<_>>();
-                let substitution =
-                    ExactTypeSubstitution::explicit(&required, &descriptor.immediate_members())
-                        .map_err(|_| AnalysisError::Invariant)?;
-                declaration
+                let substitution = match ExactTypeSubstitution::explicit(
+                    &required,
+                    &descriptor.immediate_members(),
+                ) {
+                    Ok(substitution) => substitution,
+                    Err(_) => return Ok(StoredMemberNode::Opaque),
+                };
+                let members = declaration
                     .members
                     .iter()
-                    .map(|member| {
-                        substitution
-                            .apply(member)
-                            .map_err(|_| AnalysisError::Invariant)
+                    .map(|member| match substitution.apply(member) {
+                        Ok(member) => Ok(Some(member)),
+                        Err(TypeInferenceFailure::InvalidOptionMember) => Ok(None),
+                        Err(_) => Err(AnalysisError::Invariant),
                     })
-                    .collect::<Result<Vec<_>, _>>()?
+                    .collect::<Result<Option<Vec<_>>, _>>()?;
+                let Some(members) = members else {
+                    return Ok(StoredMemberNode::InvalidOptionMember(
+                        declaration.declaration.clone(),
+                    ));
+                };
+                members
             } else {
                 declaration
                     .members
@@ -2247,6 +2373,25 @@ fn stored_member_node(
             Ok(StoredMemberNode::Members(members))
         }
     }
+}
+
+/// Charges and depth-checks one descriptor before stored-member expansion.
+fn check_stored_member_descriptor(
+    descriptor: &TypeDescriptor,
+    counters: &mut Option<GenericAnalysisCounters>,
+) -> Result<(), AnalysisError> {
+    charge_trait_steps(counters, 1)?;
+    if let Some(counters) = counters.as_ref() {
+        let expression =
+            TypeExpression::closed(descriptor, u64::MAX).map_err(|_| AnalysisError::Invariant)?;
+        counters
+            .check_constructed_type_depth(expression.depth())
+            .map_err(|error| AnalysisError::ResourceLimit {
+                error,
+                diagnostics: Vec::new(),
+            })?;
+    }
+    Ok(())
 }
 
 fn charge_trait_steps(

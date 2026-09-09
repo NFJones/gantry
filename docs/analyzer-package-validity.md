@@ -121,9 +121,12 @@ source spelling, so alpha-renaming does not alter identity. Substitution maps
 only parameters owned by the applicable declaration, implementation, trait, or
 method binder; it preserves constructor shape and argument order, performs an
 occurs check, and yields a runtime descriptor only after every parameter and
-`Self` entry is replaced. Duplicate, shadowed, escaped, or unresolved
-parameters therefore prevent the package-valid judgment before a concrete key
-can be retained.
+`Self` entry is replaced. The resulting closed type is revalidated against the
+constructed-type invariants, so substitution cannot introduce an ambiguous
+`Option<Unit>` or immediate nested `Option`; such a site reports
+`invalid-option-type` before any concrete callable key or executable program is
+retained. Duplicate, shadowed, escaped, or unresolved parameters likewise
+prevent the package-valid judgment before a concrete key can be retained.
 
 ## Lemma: Complete and unique inference
 

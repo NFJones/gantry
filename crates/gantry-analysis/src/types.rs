@@ -154,6 +154,24 @@ fn analyze_package_types_with_policy(
         diagnostics.dedup();
         return Err(AnalysisError::ResourceLimit { error, diagnostics });
     }
+    if let Err(error) = crate::generics::diagnose_invalid_generic_option_members(
+        phase.parsed_sources(),
+        &structure,
+        &type_binders,
+        &generic_types,
+        &mut generic_counters,
+        &mut type_diagnostics,
+    ) {
+        return match error {
+            AnalysisError::ResourceLimit { error, .. } => {
+                diagnostics.append(&mut type_diagnostics);
+                diagnostics.sort();
+                diagnostics.dedup();
+                Err(AnalysisError::ResourceLimit { error, diagnostics })
+            }
+            other => Err(other),
+        };
+    }
     if let Err(error) = check_sealed_declaration_bounds(
         phase.parsed_sources(),
         &structure,
@@ -2252,13 +2270,13 @@ fn main(flag: Bool) -> Int {
         );
     }
 
-    /// Callable proof admission charges its root and leaf before publishing a package.
+    /// Callable proof admission includes option validation plus its root and leaf proof.
     #[test]
     fn callable_capability_proofs_obey_the_trait_budget() {
         let phase = syntax(
             "fn accept<T>(value: T) -> T where T: ExternalValue { value }\nfn main() { discard accept(1); }",
         );
-        let package = analyze_package_types_with_limits(&phase, trait_limits(2))
+        let package = analyze_package_types_with_limits(&phase, trait_limits(3))
             .unwrap_or_else(|error| panic!("at-limit callable proof failed: {error:?}"));
         assert_eq!(
             package.status(),
@@ -2267,7 +2285,7 @@ fn main(flag: Bool) -> Int {
             package.diagnostics()
         );
         assert!(matches!(
-            analyze_package_types_with_limits(&phase, trait_limits(1)),
+            analyze_package_types_with_limits(&phase, trait_limits(2)),
             Err(AnalysisError::ResourceLimit { error, .. })
                 if error.code == FrontendResourceCode::TraitResolutionStepLimit
         ));
@@ -2354,11 +2372,11 @@ fn main(flag: Bool) -> Int {
         let phase = syntax(
             "struct Envelope<T> where T: Equatable { value: T }\nfn inspect(value: Envelope<String>) {}\nfn main() {}",
         );
-        let at_limit = analyze_package_types_with_limits(&phase, trait_limits(3))
+        let at_limit = analyze_package_types_with_limits(&phase, trait_limits(5))
             .unwrap_or_else(|error| panic!("at-limit analysis failed: {error:?}"));
         assert_eq!(at_limit.status(), AnalysisStatus::Valid);
         assert!(matches!(
-            analyze_package_types_with_limits(&phase, trait_limits(2)),
+            analyze_package_types_with_limits(&phase, trait_limits(4)),
             Err(AnalysisError::ResourceLimit { error, .. })
                 if error.code == FrontendResourceCode::TraitResolutionStepLimit
         ));
@@ -2775,8 +2793,9 @@ fn main(flag: Bool) -> Int {
         let phase = syntax(
             "trait Label { pure fn label(self) -> String; }\nstruct Item {}\nstruct Envelope<T> { value: T }\nimpl Label for Item { pure fn label(self) -> String { \"item\" } }\nimpl<T> Label for Envelope<T> where T: Label { pure fn label(self) -> String { \"envelope\" } }\nfn main(value: Envelope<Item>) { discard value.label(); discard value.label(); }",
         );
-        // Four boundary-proof steps precede the six memoized method-proof steps.
-        let admitted = analyze_package_types_with_limits(&phase, trait_limits(10))
+        // Two option-validation steps and four boundary-proof steps precede the six
+        // memoized method-proof steps.
+        let admitted = analyze_package_types_with_limits(&phase, trait_limits(12))
             .unwrap_or_else(|error| panic!("memoized obligation analysis failed: {error:?}"));
         assert_eq!(
             admitted.status(),
@@ -2785,7 +2804,7 @@ fn main(flag: Bool) -> Int {
             admitted.diagnostics()
         );
         assert!(matches!(
-            analyze_package_types_with_limits(&phase, trait_limits(9)),
+            analyze_package_types_with_limits(&phase, trait_limits(11)),
             Err(AnalysisError::ResourceLimit { error, .. })
                 if error.code == FrontendResourceCode::TraitResolutionStepLimit
         ));

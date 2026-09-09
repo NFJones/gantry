@@ -30,7 +30,7 @@ use crate::generics::{
     CapabilityPredicate, ExactTypeSubstitution, GenericDeclarationShape, SealedCapability,
     TypeInferenceFailure, TypeParameterKey, collect_capability_predicates,
     collect_generic_declaration_shapes, collect_type_parameter_keys, collect_where_predicates,
-    prove_sealed_capability, substitute_self_type,
+    invalid_generic_option_member_declaration, prove_sealed_capability, substitute_self_type,
 };
 use crate::{
     AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
@@ -218,6 +218,7 @@ struct BodyContext {
     callables: BTreeMap<SymbolId, CallableSignature>,
     capability_declarations: BTreeMap<String, GenericDeclarationShape>,
     capability_proofs: RefCell<BTreeMap<(SealedCapability, String), bool>>,
+    invalid_option_members: RefCell<BTreeMap<String, Option<SourceSpan>>>,
     generic_callables: BTreeMap<SymbolId, GenericCallableSignature>,
     generic_methods: Vec<GenericCallableSignature>,
     generic_types: BTreeMap<SourceSpan, TypeExpression>,
@@ -832,6 +833,7 @@ fn build_body_context(
             generic_facts,
         )?,
         capability_proofs: RefCell::new(BTreeMap::new()),
+        invalid_option_members: RefCell::new(BTreeMap::new()),
         generic_callables,
         generic_methods,
         generic_types,
@@ -4737,7 +4739,9 @@ fn infer_generic_struct(
                 TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
                     GenericAnalysisCode::ConflictingTypeInference
                 }
-                TypeInferenceFailure::Incomplete => GenericAnalysisCode::IncompleteTypeInference,
+                TypeInferenceFailure::Incomplete | TypeInferenceFailure::InvalidOptionMember => {
+                    GenericAnalysisCode::IncompleteTypeInference
+                }
             };
             diagnostics.push(body_diagnostic(
                 code.wire_name(),
@@ -4752,9 +4756,11 @@ fn infer_generic_struct(
 
     for (initializer, name) in &initializers {
         let field = shape.fields.get(name).ok_or(AnalysisError::Invariant)?;
-        let expected_field = substitution
-            .apply(&field.ty)
-            .map_err(|_| AnalysisError::Invariant)?;
+        let Some(expected_field) =
+            apply_generic_type_or_diagnose(&substitution, &field.ty, node.span(), diagnostics)?
+        else {
+            return Ok(None);
+        };
         let initializer_node = tree.node(*initializer).ok_or(AnalysisError::Invariant)?;
         let actual = if let Some(actual) = inferred_actuals.get(initializer).cloned() {
             Some(actual)
@@ -4802,10 +4808,13 @@ fn infer_generic_struct(
         u64::MAX,
     )
     .map_err(|_| AnalysisError::Invariant)?;
-    substitution
+    let descriptor = substitution
         .apply(&application)
-        .map(Some)
-        .map_err(|_| AnalysisError::Invariant)
+        .map_err(|_| AnalysisError::Invariant)?;
+    if diagnose_invalid_inferred_option_member(&descriptor, node.span(), context, diagnostics)? {
+        return Ok(None);
+    }
+    Ok(Some(descriptor))
 }
 
 fn infer_projection(
@@ -5581,6 +5590,9 @@ fn resolve_trait_method(
                     TypeInferenceFailure::Incomplete => {
                         GenericAnalysisCode::IncompleteTypeInference
                     }
+                    TypeInferenceFailure::InvalidOptionMember => {
+                        GenericAnalysisCode::IncompleteTypeInference
+                    }
                 };
                 diagnostics.push(body_diagnostic(
                     code.wire_name(),
@@ -6081,6 +6093,7 @@ fn infer_implementation_substitution(
             TypeInferenceFailure::Arity
             | TypeInferenceFailure::Conflict
             | TypeInferenceFailure::Incomplete
+            | TypeInferenceFailure::InvalidOptionMember
             | TypeInferenceFailure::OccursCheck,
         ) => return Ok(None),
     };
@@ -6684,7 +6697,9 @@ fn infer_generic_call(
                 TypeInferenceFailure::Conflict | TypeInferenceFailure::OccursCheck => {
                     GenericAnalysisCode::ConflictingTypeInference
                 }
-                TypeInferenceFailure::Incomplete => GenericAnalysisCode::IncompleteTypeInference,
+                TypeInferenceFailure::Incomplete | TypeInferenceFailure::InvalidOptionMember => {
+                    GenericAnalysisCode::IncompleteTypeInference
+                }
             };
             diagnostics.push(body_diagnostic(
                 code.wire_name(),
@@ -6697,15 +6712,34 @@ fn infer_generic_call(
         }
     };
 
+    let mut instantiated_parameters = Vec::with_capacity(signature.parameters.len());
+    for parameter in &signature.parameters {
+        let Some(parameter) =
+            apply_generic_type_or_diagnose(&substitution, parameter, path.span(), diagnostics)?
+        else {
+            return Ok(None);
+        };
+        instantiated_parameters.push(parameter);
+    }
+    let Some(instantiated_result) =
+        apply_generic_type_or_diagnose(&substitution, &signature.result, path.span(), diagnostics)?
+    else {
+        return Ok(None);
+    };
+    if diagnose_invalid_inferred_option_member(
+        &instantiated_result,
+        path.span(),
+        context,
+        diagnostics,
+    )? {
+        return Ok(None);
+    }
     for ((argument, actual), template) in arguments
         .iter()
         .zip(&actual_arguments)
-        .zip(&signature.parameters)
+        .zip(&instantiated_parameters)
     {
-        let instantiated = substitution
-            .apply(template)
-            .map_err(|_| AnalysisError::Invariant)?;
-        if &instantiated != actual {
+        if template != actual {
             diagnostics.push(body_diagnostic(
                 "call-argument-type",
                 DiagnosticCategory::Type,
@@ -6716,7 +6750,7 @@ fn infer_generic_call(
                     .clone(),
                 [
                     ("actual", actual.canonical_string()),
-                    ("expected", instantiated.canonical_string()),
+                    ("expected", template.canonical_string()),
                 ],
             )?);
         }
@@ -6734,10 +6768,65 @@ fn infer_generic_call(
         })
         .collect::<Result<Vec<_>, _>>()?;
     retain_generic_instantiation(signature, concrete_arguments, path, context, diagnostics)?;
-    substitution
-        .apply(&signature.result)
-        .map(Some)
-        .map_err(|_| AnalysisError::Invariant)
+    Ok(Some(instantiated_result))
+}
+
+/// Rejects an inferred descriptor whose instantiated declarations hide an invalid option.
+fn diagnose_invalid_inferred_option_member(
+    descriptor: &TypeDescriptor,
+    span: &SourceSpan,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<bool, AnalysisError> {
+    let key = descriptor.canonical_string();
+    let invalid = if let Some(invalid) = context.invalid_option_members.borrow().get(&key) {
+        invalid.clone()
+    } else {
+        let invalid = invalid_generic_option_member_declaration(
+            descriptor,
+            &context.capability_declarations,
+            &mut context.generic_analysis_counters.borrow_mut(),
+        )?;
+        context
+            .invalid_option_members
+            .borrow_mut()
+            .insert(key, invalid.clone());
+        invalid
+    };
+    if invalid.is_none() {
+        return Ok(false);
+    }
+    diagnostics.push(body_diagnostic(
+        "invalid-option-type",
+        DiagnosticCategory::Type,
+        "generic substitution gives Option an ambiguous immediate member type",
+        span.clone(),
+        [("type", descriptor.canonical_string())],
+    )?);
+    Ok(true)
+}
+
+/// Applies one closed generic type and reports a forbidden substituted option member.
+fn apply_generic_type_or_diagnose(
+    substitution: &ExactTypeSubstitution,
+    expression: &TypeExpression,
+    span: &SourceSpan,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    match substitution.apply(expression) {
+        Ok(descriptor) => Ok(Some(descriptor)),
+        Err(TypeInferenceFailure::InvalidOptionMember) => {
+            diagnostics.push(body_diagnostic(
+                "invalid-option-type",
+                DiagnosticCategory::Type,
+                "generic substitution gives Option an ambiguous immediate member type",
+                span.clone(),
+                [("type", expression.as_str())],
+            )?);
+            Ok(None)
+        }
+        Err(_) => Err(AnalysisError::Invariant),
+    }
 }
 
 /// Checks callee capabilities using concrete types or the caller's rigid assumptions.
@@ -7270,14 +7359,18 @@ fn enum_shape_for_descriptor(
         .variants
         .iter()
         .map(|(name, payload)| {
-            payload
-                .as_ref()
-                .map(|payload| substitution.apply(payload))
-                .transpose()
-                .map(|payload| (name.clone(), payload))
-                .map_err(|_| AnalysisError::Invariant)
+            let payload = match payload.as_ref().map(|payload| substitution.apply(payload)) {
+                Some(Ok(payload)) => Some(payload),
+                Some(Err(TypeInferenceFailure::InvalidOptionMember)) => return Ok(None),
+                Some(Err(_)) => return Err(AnalysisError::Invariant),
+                None => None,
+            };
+            Ok(Some((name.clone(), payload)))
         })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
+        .collect::<Result<Option<BTreeMap<_, _>>, _>>()?;
+    let Some(variants) = variants else {
+        return Ok(None);
+    };
     Ok(Some(EnumShape {
         descriptor: descriptor.clone(),
         variants,

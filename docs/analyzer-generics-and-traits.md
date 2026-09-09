@@ -15,7 +15,12 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   are metadata and cannot escape, duplicate, or shadow an enclosing binder.
 - Built-in and package-declared applications require exact arity. An open type
   remains analyzer-only; a runtime `TypeDescriptor` is produced only after one
-  complete substitution closes every parameter.
+  complete substitution closes every parameter. Closing a substitution also
+  revalidates the existing option-member invariant: a substitution that would
+  produce `Option<Unit>` or an immediate nested `Option` is rejected as
+  `invalid-option-type`, including occurrences in stored generic members and
+  callable parameter or result types. Tagged enum and object-shaped struct
+  members remain permitted because their outer option encoding is injective.
 - Generic free calls and struct or enum constructors use exact local
   unification. Constraints may come from explicit `::<...>` arguments, value
   arguments, initialized fields, payloads, and expected results. Inference has

@@ -766,6 +766,42 @@ fn public_conflicting_expected_and_argument_facts_reject_deterministically() {
 }
 
 #[test]
+/// Substitution cannot introduce an option member forbidden by the public wire contract.
+fn public_generic_substitution_rejects_ambiguous_option_members() {
+    for source in [
+        "struct Stored<T> { value: Option<T> } struct Outer<T> { inner: Stored<T> } fn main(value: Outer<Unit>) { discard value; }",
+        "struct Stored<T> { value: Option<T> } struct Outer<T> { inner: Stored<T> } fn make<T>(value: T) -> Outer<T> { make(value) } fn main() { let value: Option<Int> = Some(1); discard make(value); }",
+        "struct Stored<T> { value: Option<T> } fn main(value: Stored<Unit>) { discard value; }",
+        "struct Stored<T> { value: Option<T> } fn main(value: Stored<Option<Int>>) { discard value; }",
+        "enum Stored<T> { Value(Option<T>) } fn main(value: Stored<Unit>) { discard value; }",
+        "enum Stored<T> { Value(Option<T>) } fn main(value: Stored<Option<Int>>) { discard value; }",
+        "fn make<T>() -> Option<T> { None } fn main() { discard make::<Unit>(); }",
+        "fn make<T>() -> Option<T> { None } fn main() { discard make::<Option<Int>>(); }",
+    ] {
+        assert_forbidden_generic_option(source);
+    }
+}
+
+#[test]
+/// Tagged and object-shaped members keep an outer generic option injective.
+fn public_generic_substitution_accepts_shaped_option_members() {
+    for source in [
+        "struct Payload { value: Option<Int> } struct Stored<T> { value: Option<T> } fn main(value: Stored<Payload>) { discard value; }",
+        "struct Payload { value: Option<Int> } enum Stored<T> { Value(Option<T>) } fn main(value: Stored<Payload>) { discard value; }",
+        "enum Payload { Present(Option<Int>) } fn make<T>() -> Option<T> { None } fn main() -> Option<Payload> { make::<Payload>() }",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(package.executable_program().is_some());
+    }
+}
+
+#[test]
 /// Declared recursion permits only guarded regular self recursion in v1.
 fn public_declared_recursion_obeys_guarded_regular_v1_rules() {
     for source in [
@@ -883,6 +919,26 @@ fn analyze(source: &str) -> gantry::analysis::TypedPackage {
     let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
     analyze_package_types(&syntax).unwrap_or_else(|error| panic!("type analysis failed: {error:?}"))
+}
+
+/// Requires one substituted ambiguous option to invalidate analysis without publishing a program.
+fn assert_forbidden_generic_option(source: &str) {
+    let package = analyze(source);
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        package.diagnostics()
+    );
+    assert!(
+        package
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "invalid-option-type"),
+        "{:?}",
+        package.diagnostics()
+    );
+    assert!(package.executable_program().is_none());
 }
 
 fn limits() -> SourceLimits {
