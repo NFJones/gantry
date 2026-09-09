@@ -8,6 +8,59 @@ use gantry_core::unicode::{is_nfc, is_xid_continue, is_xid_start};
 use crate::generated::RecoveryClass;
 use crate::{CanonicalCallableIdentity, CanonicalPath, TypeDescriptor};
 
+/// Receiver ownership and caller-place access selected by static analysis.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ReceiverMode {
+    /// V1 `self`: an immutable local logical copy.
+    LocalCopy,
+    /// V1 `mut self`: a mutable local logical copy that never aliases its caller.
+    MutableLocalCopy,
+    /// A consuming receiver whose value is transferred into the call frame.
+    Owned,
+    /// A nonmutating temporary loan of the caller's place.
+    SharedPlace,
+    /// An exclusive temporary loan that may mutate the caller's place.
+    ExclusivePlace,
+}
+
+impl ReceiverMode {
+    /// Maps the two receiver forms admitted by the V1 parser.
+    #[must_use]
+    pub const fn from_v1_mutability(mutable: bool) -> Self {
+        if mutable {
+            Self::MutableLocalCopy
+        } else {
+            Self::LocalCopy
+        }
+    }
+
+    /// Returns whether assignments through this receiver update its caller's place.
+    #[must_use]
+    pub const fn mutates_caller_place(self) -> bool {
+        matches!(self, Self::ExclusivePlace)
+    }
+
+    /// Returns the stable descriptive spelling used by IR inspection.
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::LocalCopy => "local-copy",
+            Self::MutableLocalCopy => "mutable-local-copy",
+            Self::Owned => "owned",
+            Self::SharedPlace => "shared-place",
+            Self::ExclusivePlace => "exclusive-place",
+        }
+    }
+
+    const fn v1_signature_spelling(self) -> Option<&'static str> {
+        match self {
+            Self::LocalCopy => Some("self"),
+            Self::MutableLocalCopy => Some("mut self"),
+            Self::Owned | Self::SharedPlace | Self::ExclusivePlace => None,
+        }
+    }
+}
+
 /// Mutability and type of one workflow parameter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkflowParameter {
@@ -84,13 +137,17 @@ impl CanonicalSignature {
     pub fn method(
         receiver_type: &CanonicalPath,
         method: &str,
-        mutable_receiver: bool,
+        receiver_mode: ReceiverMode,
         parameters: &[WorkflowParameter],
         result: &TypeDescriptor,
     ) -> Result<Self, SignatureError> {
         validate_identifier(method)?;
         let mut output = format!("fn <{}>::{}(", receiver_type.as_str(), method);
-        output.push_str(if mutable_receiver { "mut self" } else { "self" });
+        output.push_str(
+            receiver_mode
+                .v1_signature_spelling()
+                .ok_or(SignatureError::UnsupportedReceiverMode)?,
+        );
         if !parameters.is_empty() {
             output.push(',');
             push_workflow_parameters(&mut output, parameters);
@@ -140,11 +197,16 @@ impl fmt::Display for CanonicalSignature {
 pub enum SignatureError {
     /// A method or action parameter name is not one exact NFC XID identifier.
     InvalidIdentifier,
+    /// The receiver mode has no source-compatible V1 signature spelling.
+    UnsupportedReceiverMode,
 }
 
 impl fmt::Display for SignatureError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("signature identifier is not canonical")
+        formatter.write_str(match self {
+            Self::InvalidIdentifier => "signature identifier is not canonical",
+            Self::UnsupportedReceiverMode => "receiver mode is not admitted by V1 signatures",
+        })
     }
 }
 
@@ -177,7 +239,9 @@ fn validate_identifier(value: &str) -> Result<(), SignatureError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActionParameter, CanonicalSignature, SignatureError, WorkflowParameter};
+    use super::{
+        ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
+    };
     use crate::generated::RecoveryClass;
     use crate::{CanonicalCallableIdentity, CanonicalPath, TypeDescriptor};
 
@@ -204,7 +268,7 @@ mod tests {
             CanonicalSignature::method(
                 &report,
                 "revise",
-                true,
+                ReceiverMode::MutableLocalCopy,
                 &[WorkflowParameter {
                     mutable: false,
                     ty: TypeDescriptor::STRING,
@@ -217,6 +281,19 @@ mod tests {
                     .to_owned()
             )
         );
+        assert_eq!(
+            ReceiverMode::from_v1_mutability(false),
+            ReceiverMode::LocalCopy
+        );
+        assert_eq!(
+            ReceiverMode::from_v1_mutability(true),
+            ReceiverMode::MutableLocalCopy
+        );
+        assert!(!ReceiverMode::LocalCopy.mutates_caller_place());
+        assert!(!ReceiverMode::MutableLocalCopy.mutates_caller_place());
+        assert!(ReceiverMode::ExclusivePlace.mutates_caller_place());
+        assert_eq!(ReceiverMode::Owned.wire_name(), "owned");
+        assert_eq!(ReceiverMode::SharedPlace.wire_name(), "shared-place");
         let preserve = CanonicalPath::new("crate::preserve")
             .unwrap_or_else(|_| unreachable!("constant path is canonical"));
         let concrete =

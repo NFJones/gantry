@@ -9,7 +9,7 @@ use gantry_core::source::SourceSpan;
 use crate::generated::{OperationSiteKind, RecoveryClass, TaskControlSiteKind, TemplateKind};
 use crate::{
     CanonicalCallableIdentity, CanonicalPath, CanonicalSignature, CanonicalTemplateIdentity,
-    EffectSet, StaticSiteId, StructuralPosition, TypeDescriptor, TypeExpression,
+    EffectSet, ReceiverMode, StaticSiteId, StructuralPosition, TypeDescriptor, TypeExpression,
 };
 
 /// One canonical trait reference with ordered template arguments.
@@ -101,7 +101,7 @@ impl Predicate {
 pub struct TraitMethodContract {
     name: Arc<str>,
     parameter_count: u64,
-    mutable_receiver: bool,
+    receiver_mode: ReceiverMode,
     parameters: Vec<TypeExpression>,
     result: TypeExpression,
     predicates: Vec<Predicate>,
@@ -114,7 +114,7 @@ impl TraitMethodContract {
     pub fn new(
         name: &str,
         parameter_count: u64,
-        mutable_receiver: bool,
+        receiver_mode: ReceiverMode,
         parameters: Vec<TypeExpression>,
         result: TypeExpression,
         predicates: Vec<Predicate>,
@@ -125,7 +125,7 @@ impl TraitMethodContract {
         Ok(Self {
             name: Arc::from(name),
             parameter_count,
-            mutable_receiver,
+            receiver_mode,
             parameters,
             result,
             predicates,
@@ -145,10 +145,16 @@ impl TraitMethodContract {
         self.parameter_count
     }
 
-    /// Returns whether the receiver is `mut self`.
+    /// Returns the statically selected receiver ownership and access mode.
+    #[must_use]
+    pub const fn receiver_mode(&self) -> ReceiverMode {
+        self.receiver_mode
+    }
+
+    /// Returns whether the V1 receiver is a mutable local copy.
     #[must_use]
     pub const fn mutable_receiver(&self) -> bool {
-        self.mutable_receiver
+        matches!(self.receiver_mode, ReceiverMode::MutableLocalCopy)
     }
 
     /// Returns non-receiver parameter types in declaration order.

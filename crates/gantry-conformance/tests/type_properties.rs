@@ -1,9 +1,32 @@
 //! Public independent-property laws, separate from source-type admission.
 
 use gantry::ir::{
-    IndependentTypeProperties, OwnershipClass, RecoveryProjectionClass, SourceProtectionClass,
-    TransferEligibility, TypeDescriptor, ValueResourceClass,
+    IndependentTypeProperties, OwnershipClass, ReceiverMode, RecoveryProjectionClass,
+    SourceProtectionClass, TransferEligibility, TypeDescriptor, ValueResourceClass,
 };
+
+/// Receiver modes distinguish V1 local copies from future caller-place access.
+#[test]
+fn receiver_modes_preserve_v1_copy_isolation_and_name_place_access() {
+    assert_eq!(
+        ReceiverMode::from_v1_mutability(false),
+        ReceiverMode::LocalCopy
+    );
+    assert_eq!(
+        ReceiverMode::from_v1_mutability(true),
+        ReceiverMode::MutableLocalCopy
+    );
+    for mode in [
+        ReceiverMode::LocalCopy,
+        ReceiverMode::MutableLocalCopy,
+        ReceiverMode::Owned,
+        ReceiverMode::SharedPlace,
+    ] {
+        assert!(!mode.mutates_caller_place(), "{}", mode.wire_name());
+    }
+    assert!(ReceiverMode::ExclusivePlace.mutates_caller_place());
+    assert_eq!(ReceiverMode::ExclusivePlace.wire_name(), "exclusive-place");
+}
 
 /// Aggregates retain the strongest member obligation regardless of grouping or order.
 #[test]

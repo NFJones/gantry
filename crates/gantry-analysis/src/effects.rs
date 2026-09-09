@@ -11,7 +11,7 @@ use gantry_frontend::{NodeId, ParsedSource, Punctuation, SyntaxForm, SyntaxTree,
 use gantry_ir::generated::{Effect, OperationSiteKind, RecoveryClass, TaskControlSiteKind};
 use gantry_ir::{
     ActionEffectContributor, ActionInventory, ActionParameter, CallEdge, CanonicalPath,
-    CanonicalSignature, EffectSet, OperationSite, StaticSiteId, StructuralPosition,
+    CanonicalSignature, EffectSet, OperationSite, ReceiverMode, StaticSiteId, StructuralPosition,
     TaskControlSite, TypeDescriptor, WorkflowFacts, WorkflowParameter,
 };
 
@@ -317,8 +317,14 @@ fn analyze_callable(
                     && has_direct_word(tree, parameter, "mut")
             })
         });
-        CanonicalSignature::method(receiver, &name, mutable_receiver, &parameters, &result)
-            .map_err(|_| AnalysisError::Invariant)?
+        CanonicalSignature::method(
+            receiver,
+            &name,
+            ReceiverMode::from_v1_mutability(mutable_receiver),
+            &parameters,
+            &result,
+        )
+        .map_err(|_| AnalysisError::Invariant)?
     } else {
         CanonicalSignature::function(&path, &parameters, &result)
     };

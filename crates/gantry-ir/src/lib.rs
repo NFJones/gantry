@@ -57,7 +57,9 @@ pub use manifest::{ManifestError, ManifestFile, PackageSourceManifest};
 pub use path::{CanonicalPath, CanonicalPathError};
 pub use primitive::{Comparison, Primitive};
 pub use schema::{GeneratedSchemaObject, SchemaObjectError};
-pub use signature::{ActionParameter, CanonicalSignature, SignatureError, WorkflowParameter};
+pub use signature::{
+    ActionParameter, CanonicalSignature, ReceiverMode, SignatureError, WorkflowParameter,
+};
 pub use type_expression::{TypeExpression, TypeExpressionError};
 pub use type_properties::{
     IndependentTypeProperties, OwnershipClass, PrimitiveTypeProperties, RecoveryProjectionClass,

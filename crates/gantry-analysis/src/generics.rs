@@ -19,7 +19,8 @@ use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
     EffectSet, ImplementationHead, IndependentTypeProperties, Predicate, PrimitiveTypeProperties,
-    TraitContract, TraitMethodContract, TraitReference, TypeDescriptor, TypeExpression,
+    ReceiverMode, TraitContract, TraitMethodContract, TraitReference, TypeDescriptor,
+    TypeExpression,
 };
 
 use crate::{
@@ -1233,7 +1234,7 @@ fn trait_method_matches_head(
             != usize::try_from(contract.parameter_count()).map_err(|_| AnalysisError::Invariant)?
         || actual.name() != expected.name()
         || actual.parameter_count() != expected.parameter_count()
-        || actual.mutable_receiver() != expected.mutable_receiver()
+        || actual.receiver_mode() != expected.receiver_mode()
         || !actual
             .effects()
             .iter()
@@ -1528,7 +1529,7 @@ fn collect_trait_method(
     TraitMethodContract::new(
         &name,
         parameter_count,
-        mutable_receiver,
+        ReceiverMode::from_v1_mutability(mutable_receiver),
         parameters,
         result,
         predicates,
