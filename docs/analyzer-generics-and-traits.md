@@ -125,6 +125,11 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   argument keys are interned once, same-substitution recursion is finite, and
   type-changing recursion is rejected with a deterministic
   `instantiation_witness` chain.
+- Stored-member validation memoizes exact canonical instantiated types rather
+  than declaration paths, so finite repeated wrappers remain transparent to
+  nested option checks. An active declaration may repeat only at strictly
+  decreasing instantiated depth; exact cycles and expanding substitutions
+  therefore terminate before authored recursive-declaration diagnostics run.
 - Each retained method receives its canonical closed identity, such as
   `<crate::Envelope<String>>::get` or
   `<crate::Envelope<String> as crate::Label>::label`. Substituted receiver and

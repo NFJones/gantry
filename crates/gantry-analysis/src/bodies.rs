@@ -3442,6 +3442,12 @@ fn infer_expression_inner(
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
     let node = tree.node(expression).ok_or(AnalysisError::Invariant)?;
+    if let [left, right] = node.children()
+        && node_is_punctuation(tree, *left, Punctuation::LeftParenthesis)
+        && node_is_punctuation(tree, *right, Punctuation::RightParenthesis)
+    {
+        return Ok(Some(TypeDescriptor::UNIT));
+    }
     if let Some(join) = node.children().iter().copied().find(|child| {
         tree.node(*child).is_some_and(|node| {
             matches!(

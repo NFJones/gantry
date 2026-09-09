@@ -1915,16 +1915,23 @@ fn invalid_generic_option_member_declaration_with_visited(
     counters: &mut Option<GenericAnalysisCounters>,
     visited: &mut BTreeSet<String>,
 ) -> Result<Option<SourceSpan>, AnalysisError> {
-    let mut work = vec![(root.clone(), BTreeSet::<String>::new())];
+    let mut work = vec![(root.clone(), BTreeMap::<String, u64>::new())];
     while let Some((descriptor, mut active_declarations)) = work.pop() {
         let key = descriptor.canonical_string();
-        if !visited.insert(key) {
-            continue;
-        }
         check_stored_member_descriptor(&descriptor, counters)?;
-        if let Some(path) = descriptor.declared_path()
-            && !active_declarations.insert(path.as_str().to_owned())
-        {
+        if let Some(path) = descriptor.declared_path() {
+            let depth = TypeExpression::closed(&descriptor, u64::MAX)
+                .map_err(|_| AnalysisError::Invariant)?
+                .depth();
+            if active_declarations
+                .get(path.as_str())
+                .is_some_and(|active_depth| depth >= *active_depth)
+            {
+                continue;
+            }
+            active_declarations.insert(path.as_str().to_owned(), depth);
+        }
+        if !visited.insert(key) {
             continue;
         }
         match stored_member_node(&descriptor, declarations)? {

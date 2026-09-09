@@ -769,6 +769,7 @@ fn public_conflicting_expected_and_argument_facts_reject_deterministically() {
 /// Substitution cannot introduce an option member forbidden by the public wire contract.
 fn public_generic_substitution_rejects_ambiguous_option_members() {
     for source in [
+        "struct Stored<T> { value: Option<T> } struct Wrap<T> { value: T } fn make<T>(value: T) -> Wrap<Wrap<Stored<T>>> { make(value) } fn main() { discard make(()); }",
         "enum Stored<T> { Empty, Value(Option<T>) } fn main() { discard Stored::<Unit>::Empty; }",
         "struct Stored<T> { value: Option<T> } struct Outer<T> { inner: Stored<T> } fn main(value: Outer<Unit>) { discard value; }",
         "struct Stored<T> { value: Option<T> } struct Outer<T> { inner: Stored<T> } fn make<T>(value: T) -> Outer<T> { make(value) } fn main() { let value: Option<Int> = Some(1); discard make(value); }",
@@ -789,6 +790,8 @@ fn public_generic_substitution_accepts_shaped_option_members() {
     for source in [
         "struct Payload { value: Option<Int> } struct Stored<T> { value: Option<T> } fn main(value: Stored<Payload>) { discard value; }",
         "struct Payload { value: Option<Int> } enum Stored<T> { Value(Option<T>) } fn main(value: Stored<Payload>) { discard value; }",
+        "struct Payload { value: Option<Int> } struct Stored<T> { value: Option<T> } struct Wrap<T> { value: T } fn main(value: Wrap<Wrap<Stored<Payload>>>) { discard value; }",
+        "fn identity<T>(value: T) -> T { value } fn main() { discard identity(()); }",
         "enum Payload { Present(Option<Int>) } fn make<T>() -> Option<T> { None } fn main() -> Option<Payload> { make::<Payload>() }",
     ] {
         let package = analyze(source);
