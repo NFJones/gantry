@@ -1092,6 +1092,33 @@ fn public_unqualified_generic_enum_constructor_requires_complete_substitution() 
     assert!(unresolved.executable_program().is_none());
 }
 
+/// Expected results close payloadless generic enum constructor substitutions.
+#[test]
+fn public_expected_result_completes_payloadless_generic_enum_constructor() {
+    let accepted = analyze(
+        "enum State<T, E> { Ready(T), Failed(E), Pending } fn main() -> State<String, Int> { State::Pending }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let unresolved = analyze(
+        "enum State<T, E> { Ready(T), Failed(E), Pending } fn main() { discard State::Pending; }",
+    );
+    assert_eq!(unresolved.status(), AnalysisStatus::Invalid);
+    assert!(
+        unresolved
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "incomplete-type-inference"),
+        "{:?}",
+        unresolved.diagnostics()
+    );
+}
+
 /// Expected results select generic enum payload types for nested constructors.
 #[test]
 fn public_expected_result_completes_generic_enum_constructor_substitution() {
