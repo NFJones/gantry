@@ -887,6 +887,23 @@ fn public_expected_generic_aggregate_propagates_nested_constructor_type() {
 }
 
 #[test]
+/// Expected `Result` variants propagate their selected member type to nested constructors.
+fn public_expected_result_variants_propagate_nested_constructor_types() {
+    for source in [
+        "fn main() -> Result<Option<String>, Int> { Ok(None) }",
+        "fn main() -> Result<Int, Option<String>> { Err(None) }",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+}
+
+#[test]
 /// Trait selection occurs after inference and cannot supply a missing type.
 fn public_unique_trait_implementation_cannot_guess_missing_type() {
     let implementation_must_not_guess = analyze(
