@@ -394,7 +394,7 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     }
 
     let package = analyze(
-        "struct Phantom<T> { value: Int }\nstruct Stored { value: Decision }\nstruct Node<T> { value: T, next: Option<Node<T>> }\nfn inspect(value: Stored) {}\nfn inspect_node(value: Node<Decision>) {}\nfn main(value: Phantom<Decision>) {}",
+        "struct Phantom<T> { value: Int }\nenum GenericChoice<T, E> { Open(T), Closed(E) }\nstruct Stored { value: Decision }\nstruct Node<T> { value: T, next: Option<Node<T>> }\nfn inspect(value: Stored) {}\nfn inspect_node(value: Node<Decision>) {}\nfn main(value: Tuple<Phantom<Decision>, GenericChoice<Int, String>>) {}",
     );
     let policy = FrontendLimits::new(
         4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
@@ -402,6 +402,7 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
     for (name, external) in [
         ("crate::Phantom<Decision>", true),
+        ("crate::GenericChoice<Int,String>", true),
         ("crate::Stored", false),
         ("crate::Node<Decision>", false),
     ] {
