@@ -294,6 +294,25 @@ fn public_generic_enum_patterns_infer_substitution_from_scrutinee() {
     );
 }
 
+/// Explicit generic enum patterns must agree with the typed scrutinee.
+#[test]
+fn public_explicit_generic_enum_patterns_reject_conflicting_scrutinee_types() {
+    let rejected = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main(value: State<String, Int>) -> String { match value { State::<Int, String>::Ready(_) => \"ready\", State::<Int, String>::Failed(_) => \"failed\", } }",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected.diagnostics().iter().any(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "pattern-type-mismatch" | "type-mismatch" | "conflicting-type-inference"
+            )
+        }),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 /// A recursive back-edge cannot publish a proof before all stored fields qualify.
 #[test]
 fn recursive_equality_proofs_do_not_cache_provisional_success() {

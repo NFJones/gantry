@@ -7499,6 +7499,34 @@ fn pattern_coverage(
             && let Some(variant) = identifiers.last()
             && let Some(payload) = shape.variants.get(variant)
         {
+            if let Some(list) = direct_child_form(tree, node, SyntaxForm::TypeArgumentList) {
+                let arguments = closed_type_arguments(tree, list, context)?;
+                let expected = scrutinee.immediate_members();
+                if arguments.len() != expected.len() || arguments != expected {
+                    diagnostics.push(body_diagnostic(
+                        "pattern-type-mismatch",
+                        DiagnosticCategory::Type,
+                        "an explicit generic enum pattern differs from its scrutinee type",
+                        node.span().clone(),
+                        [
+                            (
+                                "pattern",
+                                TypeDescriptor::declared_with_arguments(
+                                    shape
+                                        .descriptor
+                                        .declared_path()
+                                        .ok_or(AnalysisError::Invariant)?
+                                        .clone(),
+                                    arguments,
+                                )
+                                .canonical_string(),
+                            ),
+                            ("scrutinee", scrutinee.canonical_string()),
+                        ],
+                    )?);
+                    return Ok((BTreeSet::new(), bindings));
+                }
+            }
             if let (Some(payload), Some(nested)) =
                 (payload, direct_child_form(tree, node, SyntaxForm::Pattern))
             {
