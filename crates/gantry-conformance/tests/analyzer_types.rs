@@ -529,6 +529,47 @@ fn public_standard_container_capabilities_fold_sealed_members() {
     }
 }
 
+/// Ordered comparisons accept only same-type `Int` and `Float` operands.
+#[test]
+fn public_ordered_comparisons_require_exact_numeric_operands() {
+    for source in [
+        "fn compare(left: Int, right: Int) -> Bool { left < right } fn main() {}",
+        "fn compare(left: Float, right: Float) -> Bool { left >= right } fn main() {}",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+
+    for source in [
+        "fn compare(left: Bool, right: Bool) -> Bool { left < right } fn main() {}",
+        "fn compare(left: Int, right: Float) -> Bool { left < right } fn main() {}",
+        "fn compare(left: List<Int>, right: List<Int>) -> Bool { left < right } fn main() {}",
+        "fn compare(left: Decision, right: Decision) -> Bool { left < right } fn main() {}",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Invalid,
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "invalid-primitive"),
+            "{:?}",
+            package.diagnostics()
+        );
+        assert!(package.executable_program().is_none());
+    }
+}
+
 /// Type reports match canonical-key admission without extending the scalar domain.
 #[test]
 fn public_canonical_scalar_key_reports_match_value_admission() {
