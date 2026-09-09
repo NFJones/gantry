@@ -751,6 +751,25 @@ fn public_expected_result_completes_generic_struct_substitution() {
 }
 
 #[test]
+/// A resolved generic aggregate field supplies the expected type for `None`.
+fn public_expected_generic_aggregate_propagates_nested_constructor_type() {
+    let expected_result = analyze(
+        "struct Envelope<T> { value: Option<T> } fn main() -> Envelope<String> { Envelope { value: None } }",
+    );
+    assert_eq!(
+        expected_result.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        expected_result.diagnostics()
+    );
+    assert!(expected_result.generic_types().iter().any(|fact| {
+        fact.descriptor
+            .as_ref()
+            .is_some_and(|descriptor| descriptor.canonical_string() == "crate::Envelope<String>")
+    }));
+}
+
+#[test]
 /// Trait selection occurs after inference and cannot supply a missing type.
 fn public_unique_trait_implementation_cannot_guess_missing_type() {
     let implementation_must_not_guess = analyze(
