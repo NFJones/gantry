@@ -7502,7 +7502,20 @@ fn pattern_coverage(
             if let Some(list) = direct_child_form(tree, node, SyntaxForm::TypeArgumentList) {
                 let arguments = closed_type_arguments(tree, list, context)?;
                 let expected = scrutinee.immediate_members();
-                if arguments.len() != expected.len() || arguments != expected {
+                if arguments.len() != expected.len() {
+                    diagnostics.push(body_diagnostic(
+                        GenericAnalysisCode::TypeArgumentArity.wire_name(),
+                        DiagnosticCategory::Type,
+                        "an enum pattern has the wrong number of explicit type arguments",
+                        node.span().clone(),
+                        [
+                            ("expected", expected.len().to_string()),
+                            ("observed", arguments.len().to_string()),
+                        ],
+                    )?);
+                    return Ok((BTreeSet::new(), bindings));
+                }
+                if arguments != expected {
                     diagnostics.push(body_diagnostic(
                         "pattern-type-mismatch",
                         DiagnosticCategory::Type,

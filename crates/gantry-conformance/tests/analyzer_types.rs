@@ -313,6 +313,26 @@ fn public_explicit_generic_enum_patterns_reject_conflicting_scrutinee_types() {
     );
 }
 
+/// Explicit generic enum patterns require exactly every type argument.
+#[test]
+fn public_explicit_generic_enum_pattern_argument_arity_is_exact() {
+    for source in [
+        "enum State<T, E> { Ready(T), Failed(E) } fn main(value: State<String, Int>) -> String { match value { State::<String>::Ready(item) => item, State::<String>::Failed(_) => \"failed\", } }",
+        "enum State<T, E> { Ready(T), Failed(E) } fn main(value: State<String, Int>) -> String { match value { State::<String, Int, Bool>::Ready(item) => item, State::<String, Int, Bool>::Failed(_) => \"failed\", } }",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "type-argument-arity"),
+            "{:?}",
+            rejected.diagnostics()
+        );
+    }
+}
+
 /// A recursive back-edge cannot publish a proof before all stored fields qualify.
 #[test]
 fn recursive_equality_proofs_do_not_cache_provisional_success() {
