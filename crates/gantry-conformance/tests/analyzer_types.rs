@@ -751,6 +751,22 @@ fn public_expected_result_completes_generic_struct_substitution() {
 }
 
 #[test]
+/// A generic aggregate without member or expected-type facts remains incomplete.
+fn public_unconstrained_generic_struct_construction_is_rejected() {
+    let unconstrained = analyze("struct Envelope<T> {} fn main() { discard Envelope {}; }");
+    assert_eq!(unconstrained.status(), AnalysisStatus::Invalid);
+    assert!(
+        unconstrained
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "incomplete-type-inference"),
+        "{:?}",
+        unconstrained.diagnostics()
+    );
+    assert!(unconstrained.executable_program().is_none());
+}
+
+#[test]
 /// A resolved generic aggregate field supplies the expected type for `None`.
 fn public_expected_generic_aggregate_propagates_nested_constructor_type() {
     let expected_result = analyze(
