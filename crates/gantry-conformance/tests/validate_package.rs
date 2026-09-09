@@ -393,7 +393,7 @@ fn analyze_package_sequences_phases_and_exposes_valid_artifacts() {
 }
 
 #[test]
-/// Direct and resumable syntax acquisition must feed identical independent analyses.
+/// Direct and resumable syntax acquisition must agree within each semantic mode.
 fn supported_analysis_paths_preserve_types_artifacts_and_diagnostics() {
     let valid = TempDirectory::new(b"mod model;\nmod logic;\nfn main(value: crate::model::Input) { crate::logic::consume(value); }");
     assert!(fs::write(
@@ -423,39 +423,58 @@ fn supported_analysis_paths_preserve_types_artifacts_and_diagnostics() {
         .is_ok()
     );
 
-    let (serial_valid, _) = analyze_supported_paths(&valid.0);
-    let (serial_invalid, _) = analyze_supported_paths(&invalid.0);
+    let mut mode_artifacts = Vec::new();
+    for semantic_mode in [
+        gantry::mode::SemanticMode::Portable,
+        gantry::mode::SemanticMode::Application,
+        gantry::mode::SemanticMode::Durable,
+    ] {
+        let (serial_valid, _) = analyze_supported_paths(&valid.0, semantic_mode);
+        let (serial_invalid, _) = analyze_supported_paths(&invalid.0, semantic_mode);
 
-    std::thread::scope(|scope| {
-        let valid_analysis = scope.spawn(|| analyze_supported_paths(&valid.0));
-        let invalid_analysis = scope.spawn(|| analyze_supported_paths(&invalid.0));
-        let (valid_direct, valid_resumable) = valid_analysis
-            .join()
-            .unwrap_or_else(|_| panic!("valid package analysis thread panicked"));
-        let (invalid_direct, invalid_resumable) = invalid_analysis
-            .join()
-            .unwrap_or_else(|_| panic!("invalid package analysis thread panicked"));
+        std::thread::scope(|scope| {
+            let valid_analysis = scope.spawn(|| analyze_supported_paths(&valid.0, semantic_mode));
+            let invalid_analysis =
+                scope.spawn(|| analyze_supported_paths(&invalid.0, semantic_mode));
+            let (valid_direct, valid_resumable) = valid_analysis
+                .join()
+                .unwrap_or_else(|_| panic!("valid package analysis thread panicked"));
+            let (invalid_direct, invalid_resumable) = invalid_analysis
+                .join()
+                .unwrap_or_else(|_| panic!("invalid package analysis thread panicked"));
 
-        assert_equivalent_analysis(&valid_direct, &valid_resumable);
-        assert_equivalent_analysis(&serial_valid, &valid_direct);
-        assert_eq!(valid_direct.status(), AnalysisStatus::Valid);
-        assert!(valid_direct.diagnostics().is_empty());
+            assert_equivalent_analysis(&valid_direct, &valid_resumable);
+            assert_equivalent_analysis(&serial_valid, &valid_direct);
+            assert_eq!(valid_direct.status(), AnalysisStatus::Valid);
+            assert!(valid_direct.diagnostics().is_empty());
+            let artifact = valid_direct
+                .canonical_ir()
+                .unwrap_or_else(|| unreachable!("valid package has canonical IR"));
+            assert_eq!(artifact.semantic_mode(), semantic_mode);
+            mode_artifacts.push(artifact.artifact().canonical_bytes().to_vec());
 
-        assert_equivalent_analysis(&invalid_direct, &invalid_resumable);
-        assert_equivalent_analysis(&serial_invalid, &invalid_direct);
-        assert_eq!(invalid_direct.status(), AnalysisStatus::Invalid);
-        assert!(
-            invalid_direct
-                .diagnostics()
-                .iter()
-                .any(|diagnostic| diagnostic.code.as_str() == "conflicting-type-inference"),
-            "expected inference conflict: {:?}",
-            invalid_direct.diagnostics()
-        );
-    });
+            assert_equivalent_analysis(&invalid_direct, &invalid_resumable);
+            assert_equivalent_analysis(&serial_invalid, &invalid_direct);
+            assert_eq!(invalid_direct.status(), AnalysisStatus::Invalid);
+            assert!(
+                invalid_direct
+                    .diagnostics()
+                    .iter()
+                    .any(|diagnostic| diagnostic.code.as_str() == "conflicting-type-inference"),
+                "expected inference conflict: {:?}",
+                invalid_direct.diagnostics()
+            );
+        });
+    }
+    assert_ne!(mode_artifacts[0], mode_artifacts[1]);
+    assert_ne!(mode_artifacts[0], mode_artifacts[2]);
+    assert_ne!(mode_artifacts[1], mode_artifacts[2]);
 }
 
-fn analyze_supported_paths(root: &Path) -> (TypedPackage, TypedPackage) {
+fn analyze_supported_paths(
+    root: &Path,
+    semantic_mode: gantry::mode::SemanticMode,
+) -> (TypedPackage, TypedPackage) {
     let limits = analysis_equivalence_limits();
     let direct_syntax = validate_package_syntax(
         root,
@@ -466,18 +485,11 @@ fn analyze_supported_paths(root: &Path) -> (TypedPackage, TypedPackage) {
     let resumable_syntax = drive_package_syntax(root, limits);
     assert_eq!(direct_syntax, resumable_syntax);
 
-    let direct = analyze_package_types_with_limits_and_mode(
-        &direct_syntax,
-        limits,
-        gantry::mode::SemanticMode::Portable,
-    )
-    .unwrap_or_else(|error| panic!("direct package analysis failed: {error:?}"));
-    let resumable = analyze_package_types_with_limits_and_mode(
-        &resumable_syntax,
-        limits,
-        gantry::mode::SemanticMode::Portable,
-    )
-    .unwrap_or_else(|error| panic!("resumable package analysis failed: {error:?}"));
+    let direct = analyze_package_types_with_limits_and_mode(&direct_syntax, limits, semantic_mode)
+        .unwrap_or_else(|error| panic!("direct package analysis failed: {error:?}"));
+    let resumable =
+        analyze_package_types_with_limits_and_mode(&resumable_syntax, limits, semantic_mode)
+            .unwrap_or_else(|error| panic!("resumable package analysis failed: {error:?}"));
     (direct, resumable)
 }
 
