@@ -31,6 +31,12 @@ signed `i64` represented as two's-complement big-endian bytes. Float is its
 normalized finite IEEE binary64 bit pattern in big-endian order. String is its
 exact UTF-8 sequence; Gantry performs no implicit Unicode normalization.
 
+`CanonicalKey::from_bytes` performs bounded exact decoding of version 1.0. It
+rejects bad magic, unsupported versions and tags, truncated or trailing data,
+incorrect fixed-width payloads, non-Boolean Bool bytes, out-of-range Ints,
+non-finite Floats, noncanonical negative zero, and invalid UTF-8. Input bytes
+are retained and hashed only after the complete frame and payload are valid.
+
 This framing is not the existing canonical JSON boundary. In particular,
 canonical JSON spells both Int `1` and Float `1.0` as `1`, and spells both Unit
 and an absent option as `null`; the type tag prevents those collisions.
@@ -53,4 +59,5 @@ state. Hash collisions do not make unequal keys equal and do not define order.
 Consumers persist both format numbers as part of the bytes. A future major
 format may change eligibility, framing, ordering, or hashing. A compatible
 minor revision must retain every version-1.0 byte sequence and semantic result;
-silent reinterpretation of stored keys is forbidden.
+silent reinterpretation of stored keys is forbidden. The version-1.0 decoder
+does not accept a future version speculatively.

@@ -3177,15 +3177,15 @@ implementation- or embedding-defined and is not catchable by `attempt`.
 The implementation canonical scalar-key format version 1.0 admits exactly
 normalized `Unit`, `Bool`, `Int`, finite normalized `Float`, and `String`
 values. It rejects `Decision`, `OperationError`, and every structural value;
-application codecs and existing canonical JSON do not grant eligibility.
-The complete byte frame is the eight bytes `GNTYKEY\0`, unsigned big-endian
-major and minor `u16` values, one tag byte (`0` Unit, `1` Bool, `2` Int, `3`
-Float, `4` String), an unsigned big-endian `u64` payload length, and the
-payload. Unit has no payload; Bool is `00` or `01`; Int is its signed `i64`
-two's-complement big-endian representation; Float is its normalized IEEE
-binary64 bits in big-endian order; String is its exact UTF-8 bytes without
-normalization. Admission MUST apply a positive finite limit to the complete
-21-byte frame plus payload before retaining it.
+application codecs and existing canonical JSON do not grant eligibility. The
+complete byte frame is the eight bytes `GNTYKEY\0`, unsigned big-endian major
+and minor `u16` values, one tag byte (`0` Unit, `1` Bool, `2` Int, `3` Float,
+`4` String), an unsigned big-endian `u64` payload length, and the payload. Unit
+has no payload; Bool is `00` or `01`; Int is its signed `i64` two's-complement
+big-endian representation; Float is its normalized IEEE binary64 bits in
+big-endian order; String is exact UTF-8 without normalization. Encoding and
+decoding MUST apply a positive finite limit before retaining the complete frame.
+Decoding MUST reject all framing, length, scalar-range, and UTF-8 violations.
 
 Scalar-key order is `Unit < Bool < Int < Float < String`; Bool orders false
 before true, Int and Float use their numeric orders independently, and

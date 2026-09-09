@@ -3,10 +3,10 @@
 use std::cmp::Ordering;
 
 use gantry::canonical_key::{
-    CANONICAL_KEY_FORMAT_MAJOR, CANONICAL_KEY_FORMAT_MINOR, CanonicalKeyError, CanonicalKeyLimits,
-    DEFAULT_CANONICAL_KEY_LIMITS,
+    CANONICAL_KEY_FORMAT_MAJOR, CANONICAL_KEY_FORMAT_MINOR, CanonicalKey, CanonicalKeyError,
+    CanonicalKeyLimits, DEFAULT_CANONICAL_KEY_LIMITS,
 };
-use gantry::numeric::{GantryFloat, GantryInt};
+use gantry::numeric::{GANTRY_INT_MAXIMUM, GANTRY_INT_MINIMUM, GantryFloat, GantryInt};
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, OperationErrorValue, ValueKind};
 
 fn int(value: i64) -> LogicalValue {
@@ -19,6 +19,14 @@ fn float(value: f64) -> LogicalValue {
     LogicalValue::float(
         GantryFloat::new(value).unwrap_or_else(|| unreachable!("test float is finite")),
     )
+}
+
+fn frame(tag: u8, payload: &[u8]) -> Vec<u8> {
+    let mut bytes = b"GNTYKEY\0\0\x01\0\0".to_vec();
+    bytes.push(tag);
+    bytes.extend_from_slice(&(payload.len() as u64).to_be_bytes());
+    bytes.extend_from_slice(payload);
+    bytes
 }
 
 #[test]
@@ -46,6 +54,132 @@ fn public_scalar_values_produce_versioned_canonical_keys() {
         );
         assert_eq!(key.sha256_hex().len(), 64);
     }
+}
+
+#[test]
+fn public_canonical_keys_roundtrip_from_exact_versioned_bytes() {
+    let values = [
+        LogicalValue::unit(),
+        LogicalValue::boolean(false),
+        LogicalValue::boolean(true),
+        int(GANTRY_INT_MINIMUM),
+        int(GANTRY_INT_MAXIMUM),
+        float(f64::MIN),
+        float(0.0),
+        float(f64::MAX),
+        LogicalValue::string("Aλ🦀", DEFAULT_VALUE_LIMITS)
+            .unwrap_or_else(|error| panic!("test string failed: {error:?}")),
+    ];
+    for value in values {
+        let encoded = value
+            .canonical_key(DEFAULT_CANONICAL_KEY_LIMITS)
+            .unwrap_or_else(|error| panic!("eligible scalar failed: {error:?}"));
+        let decoded = CanonicalKey::from_bytes(encoded.bytes(), DEFAULT_CANONICAL_KEY_LIMITS)
+            .unwrap_or_else(|error| panic!("canonical bytes failed: {error:?}"));
+        assert_eq!(decoded, encoded);
+        assert_eq!(decoded.bytes(), encoded.bytes());
+        assert_eq!(decoded.sha256(), encoded.sha256());
+    }
+}
+
+#[test]
+fn public_decoder_rejects_invalid_frame_structure() {
+    let unit = frame(0, &[]);
+
+    let mut bad_magic = unit.clone();
+    bad_magic[0] = b'X';
+    assert_eq!(
+        CanonicalKey::from_bytes(&bad_magic, DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::InvalidMagic)
+    );
+
+    let mut bad_major = unit.clone();
+    bad_major[9] = 2;
+    assert_eq!(
+        CanonicalKey::from_bytes(&bad_major, DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::UnsupportedVersion { major: 2, minor: 0 })
+    );
+    let mut bad_minor = unit.clone();
+    bad_minor[11] = 1;
+    assert_eq!(
+        CanonicalKey::from_bytes(&bad_minor, DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::UnsupportedVersion { major: 1, minor: 1 })
+    );
+
+    let unknown_tag = frame(5, &[]);
+    assert_eq!(
+        CanonicalKey::from_bytes(&unknown_tag, DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::UnknownTag(5))
+    );
+    assert_eq!(
+        CanonicalKey::from_bytes(&unit[..20], DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::InvalidFrameLength)
+    );
+
+    let mut truncated_payload = unit.clone();
+    truncated_payload[20] = 1;
+    assert_eq!(
+        CanonicalKey::from_bytes(&truncated_payload, DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::InvalidFrameLength)
+    );
+    let mut trailing_data = unit.clone();
+    trailing_data.push(0);
+    assert_eq!(
+        CanonicalKey::from_bytes(&trailing_data, DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::TrailingData)
+    );
+    assert_eq!(
+        CanonicalKey::from_bytes(&frame(0, &[0]), DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::InvalidPayloadLength)
+    );
+
+    let limit = CanonicalKeyLimits::new(21).unwrap_or_else(|| unreachable!("positive limit"));
+    assert_eq!(
+        CanonicalKey::from_bytes(&frame(1, &[1]), limit),
+        Err(CanonicalKeyError::ResourceLimit {
+            limit: 21,
+            required: 22,
+        })
+    );
+}
+
+#[test]
+fn public_decoder_rejects_noncanonical_scalar_payloads() {
+    assert_eq!(
+        CanonicalKey::from_bytes(&frame(1, &[]), DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::InvalidPayloadLength)
+    );
+    assert_eq!(
+        CanonicalKey::from_bytes(&frame(1, &[2]), DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::InvalidBool)
+    );
+    assert_eq!(
+        CanonicalKey::from_bytes(
+            &frame(2, &i64::MAX.to_be_bytes()),
+            DEFAULT_CANONICAL_KEY_LIMITS
+        ),
+        Err(CanonicalKeyError::InvalidInt)
+    );
+    for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        assert_eq!(
+            CanonicalKey::from_bytes(
+                &frame(3, &value.to_bits().to_be_bytes()),
+                DEFAULT_CANONICAL_KEY_LIMITS
+            ),
+            Err(CanonicalKeyError::NonFiniteFloat)
+        );
+    }
+    assert_eq!(
+        CanonicalKey::from_bytes(
+            &frame(3, &(-0.0_f64).to_bits().to_be_bytes()),
+            DEFAULT_CANONICAL_KEY_LIMITS
+        ),
+        Err(CanonicalKeyError::NonCanonicalNegativeZero)
+    );
+    assert_eq!(
+        CanonicalKey::from_bytes(&frame(4, &[0xff]), DEFAULT_CANONICAL_KEY_LIMITS),
+        Err(CanonicalKeyError::InvalidUtf8)
+    );
 }
 
 #[test]

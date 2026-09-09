@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "631f6214bd3bce04e7a73ed0d7c723ef94552d7023d85156315968b571d70d3c",
+  "specification_sha256": "c065926488bb3e632cc9546e37a0e55cff30f59d1759c2c5d6e010ffa2bff19d",
   "regions": [
     {
       "kind": "excluded",
@@ -12643,6 +12643,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_bytes_are_exact_and_distinguish_json_collisions",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_limit_counts_the_complete_frame",
@@ -12656,6 +12659,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_bytes_are_exact_and_distinguish_json_collisions",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_limit_counts_the_complete_frame",
@@ -12669,6 +12675,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_bytes_are_exact_and_distinguish_json_collisions",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_limit_counts_the_complete_frame",
@@ -12682,6 +12691,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_bytes_are_exact_and_distinguish_json_collisions",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_limit_counts_the_complete_frame",
@@ -12695,6 +12707,9 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/canonical_key.rs#public_scalar_values_produce_versioned_canonical_keys",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_canonical_keys_roundtrip_from_exact_versioned_bytes",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_invalid_frame_structure",
+                "crates/gantry-conformance/tests/canonical_key.rs#public_decoder_rejects_noncanonical_scalar_payloads",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_structural_and_sealed_values_are_not_scalar_keys",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_bytes_are_exact_and_distinguish_json_collisions",
                 "crates/gantry-conformance/tests/canonical_key.rs#public_key_limit_counts_the_complete_frame",

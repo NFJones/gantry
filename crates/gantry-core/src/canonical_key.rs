@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
+use crate::numeric::{GantryFloat, GantryInt};
 use crate::value::{LogicalValue, LogicalValueView, ValueKind};
 
 const MAGIC: &[u8; 8] = b"GNTYKEY\0";
@@ -52,6 +53,33 @@ impl CanonicalKeyLimits {
 pub enum CanonicalKeyError {
     /// The value is structural or belongs to a sealed non-key domain.
     IneligibleKind(ValueKind),
+    /// The frame does not begin with the canonical scalar-key magic bytes.
+    InvalidMagic,
+    /// The frame names a format version this decoder does not support.
+    UnsupportedVersion {
+        /// Encoded format major version.
+        major: u16,
+        /// Encoded format minor version.
+        minor: u16,
+    },
+    /// The frame contains an unknown scalar tag.
+    UnknownTag(u8),
+    /// The frame is shorter than its header or declared payload length.
+    InvalidFrameLength,
+    /// Bytes remain after the declared payload.
+    TrailingData,
+    /// The payload length is not canonical for its scalar tag.
+    InvalidPayloadLength,
+    /// A Bool payload is neither zero nor one.
+    InvalidBool,
+    /// An Int payload is outside the portable Gantry range.
+    InvalidInt,
+    /// A Float payload encodes infinity or NaN.
+    NonFiniteFloat,
+    /// A Float payload encodes negative zero instead of normalized positive zero.
+    NonCanonicalNegativeZero,
+    /// A String payload is not valid UTF-8.
+    InvalidUtf8,
     /// The complete versioned frame exceeds the effective byte limit.
     ResourceLimit {
         /// Effective configured maximum.
@@ -112,6 +140,56 @@ impl CanonicalKey {
         })
     }
 
+    /// Decodes one exact format-version-1.0 frame under `limits`.
+    ///
+    /// Validation rejects unsupported framing and every payload that cannot
+    /// have been produced by [`Self::from_value`]. The input is retained and
+    /// hashed only after its complete frame is valid.
+    pub fn from_bytes(bytes: &[u8], limits: CanonicalKeyLimits) -> Result<Self, CanonicalKeyError> {
+        let required = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if required > limits.maximum_bytes {
+            return Err(CanonicalKeyError::ResourceLimit {
+                limit: limits.maximum_bytes,
+                required,
+            });
+        }
+        if bytes.len() < HEADER_BYTES as usize {
+            return Err(CanonicalKeyError::InvalidFrameLength);
+        }
+        if &bytes[..MAGIC.len()] != MAGIC {
+            return Err(CanonicalKeyError::InvalidMagic);
+        }
+
+        let major = u16::from_be_bytes([bytes[8], bytes[9]]);
+        let minor = u16::from_be_bytes([bytes[10], bytes[11]]);
+        if (major, minor) != (CANONICAL_KEY_FORMAT_MAJOR, CANONICAL_KEY_FORMAT_MINOR) {
+            return Err(CanonicalKeyError::UnsupportedVersion { major, minor });
+        }
+
+        let tag = bytes[12];
+        if tag > 4 {
+            return Err(CanonicalKeyError::UnknownTag(tag));
+        }
+        let payload_length = u64::from_be_bytes([
+            bytes[13], bytes[14], bytes[15], bytes[16], bytes[17], bytes[18], bytes[19], bytes[20],
+        ]);
+        let actual_payload_length = required - HEADER_BYTES;
+        if actual_payload_length < payload_length {
+            return Err(CanonicalKeyError::InvalidFrameLength);
+        }
+        if actual_payload_length > payload_length {
+            return Err(CanonicalKeyError::TrailingData);
+        }
+
+        let payload = &bytes[HEADER_BYTES as usize..];
+        validate_payload(tag, payload)?;
+        let sha256 = Sha256::digest(bytes).into();
+        Ok(Self {
+            bytes: Arc::from(bytes),
+            sha256,
+        })
+    }
+
     /// Returns the complete canonical versioned frame.
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
@@ -150,6 +228,44 @@ impl Payload<'_> {
             Self::String(value) => value.as_bytes(),
         }
     }
+}
+
+fn validate_payload(tag: u8, payload: &[u8]) -> Result<(), CanonicalKeyError> {
+    let expected_length = match tag {
+        0 => 0,
+        1 => 1,
+        2 | 3 => 8,
+        4 => payload.len(),
+        _ => unreachable!("the scalar tag was validated before its payload"),
+    };
+    if payload.len() != expected_length {
+        return Err(CanonicalKeyError::InvalidPayloadLength);
+    }
+    match tag {
+        0 => {}
+        1 if payload[0] > 1 => return Err(CanonicalKeyError::InvalidBool),
+        1 => {}
+        2 if GantryInt::new(decode_i64(payload)).is_none() => {
+            return Err(CanonicalKeyError::InvalidInt);
+        }
+        2 => {}
+        3 => {
+            let value = decode_f64(payload);
+            if !value.is_finite() {
+                return Err(CanonicalKeyError::NonFiniteFloat);
+            }
+            if value.to_bits() == (-0.0_f64).to_bits() {
+                return Err(CanonicalKeyError::NonCanonicalNegativeZero);
+            }
+            debug_assert!(GantryFloat::new(value).is_some());
+        }
+        4 if std::str::from_utf8(payload).is_err() => {
+            return Err(CanonicalKeyError::InvalidUtf8);
+        }
+        4 => {}
+        _ => unreachable!("the scalar tag was validated before its payload"),
+    }
+    Ok(())
 }
 
 impl PartialEq for CanonicalKey {
