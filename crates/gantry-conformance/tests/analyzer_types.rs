@@ -469,6 +469,66 @@ fn public_type_capability_queries_are_bounded_and_declaration_aware() {
     );
 }
 
+/// Standard containers fold stored sealed members without changing v1 value axes.
+#[test]
+fn public_standard_container_capabilities_fold_sealed_members() {
+    use gantry::ir::{
+        OwnershipClass, RecoveryProjectionClass, SourceProtectionClass, TransferEligibility,
+        TypeDescriptor, ValueResourceClass,
+    };
+    use gantry::source::FrontendLimits;
+
+    let package = analyze(
+        "fn option(value: Option<Decision>) {}\nfn result(value: Result<Int,Decision>) {}\nfn list(value: List<Decision>) {}\nfn tuple(value: Tuple<Int,Decision>) {}\nfn main() {}",
+    );
+    let policy = FrontendLimits::new(
+        4, 65_536, 65_536, 65_536, 64, 65_536, 65_536, 65_536, 65_536, 64, 64, 100,
+    )
+    .unwrap_or_else(|error| panic!("query policy failed: {error:?}"));
+    let tuple = TypeDescriptor::tuple(vec![TypeDescriptor::INT, TypeDescriptor::DECISION])
+        .unwrap_or_else(|error| panic!("tuple descriptor failed: {error:?}"));
+
+    for descriptor in [
+        TypeDescriptor::option(TypeDescriptor::DECISION)
+            .unwrap_or_else(|error| panic!("option descriptor failed: {error:?}")),
+        TypeDescriptor::result(TypeDescriptor::INT, TypeDescriptor::DECISION),
+        TypeDescriptor::list(TypeDescriptor::DECISION),
+        tuple,
+    ] {
+        let report = package
+            .type_capabilities(&descriptor, policy)
+            .unwrap_or_else(|error| panic!("container report failed: {error:?}"));
+        assert!(!report.is_external(), "{descriptor:?}");
+        assert!(!report.is_equatable(), "{descriptor:?}");
+        assert!(report.is_interpolatable(), "{descriptor:?}");
+        assert_eq!(
+            report.source_protection_class(),
+            SourceProtectionClass::Sealed,
+            "{descriptor:?}"
+        );
+        assert_eq!(
+            report.ownership_class(),
+            OwnershipClass::Copyable,
+            "{descriptor:?}"
+        );
+        assert_eq!(
+            report.transfer_eligibility(),
+            TransferEligibility::IsolatedTaskCapture,
+            "{descriptor:?}"
+        );
+        assert_eq!(
+            report.resource_class(),
+            ValueResourceClass::NonLiveResource,
+            "{descriptor:?}"
+        );
+        assert_eq!(
+            report.recovery_projection_class(),
+            RecoveryProjectionClass::SealedValue,
+            "{descriptor:?}"
+        );
+    }
+}
+
 /// Type reports match canonical-key admission without extending the scalar domain.
 #[test]
 fn public_canonical_scalar_key_reports_match_value_admission() {
