@@ -244,9 +244,11 @@ the same ordered structured diagnostics, closed types, selected callable and
 implementation identities, exact concrete effects, and executable projection,
 and byte-identical canonical IR, generated-schema, package-manifest, and
 source-map outputs wherever those outputs are published. The comparison fixes
-the package-source snapshot, portable semantic mode, selected v1 language and
-protocol contracts, and `FrontendLimits` analysis policy; it varies only the
-supported source-acquisition and independent scheduling paths.
+the package-source snapshot, each selected `portable`, `application`, and
+`durable` semantic mode, selected v1 language and protocol contracts, and
+`FrontendLimits` analysis policy; it varies only the supported source-acquisition
+and independent scheduling paths within a mode. Canonical artifacts remain
+intentionally distinct across modes.
 
 This evidence qualifies resumable source acquisition and isolation between
 independent concurrent package analyses only. It is not a cached incremental
