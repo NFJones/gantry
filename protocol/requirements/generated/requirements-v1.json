@@ -1,8 +1,8 @@
 {
   "format": "gantry.requirements/v1",
   "specification": "SPEC.md",
-  "specification_sha256": "c065926488bb3e632cc9546e37a0e55cff30f59d1759c2c5d6e010ffa2bff19d",
-  "byte_length": 578436,
+  "specification_sha256": "ee374a4ee2be668a5902ce190d8a569559a25ec0a3d6bb720204759bb5af774b",
+  "byte_length": 578749,
   "line_count": 9996,
   "regions": [
     {
@@ -30,7 +30,7 @@
       "kind": "normative",
       "start_line": 663,
       "end_line": 7646,
-      "sha256": "7d6c9203742d7dd0115e951ce6d2b4b73849cc9e98c67dea34e349ea4b6753c6",
+      "sha256": "7704c5fcd5f48145e6ace07c881165f5517fc3d34a0a6541900c2f673917a46f",
       "rationale": null
     },
     {
@@ -3123,6 +3123,7 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_declared_recursion_obeys_guarded_regular_v1_rules",
                 "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs",
                 "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
               ],
@@ -4096,11 +4097,11 @@
       "id": "GNT-3-T-GENERIC-CALL",
       "span_start_line": 1431,
       "span_end_line": 1462,
-      "span_sha256": "aa3f2672f93f17eae270dfdbe3ef559a2b9327caa5989f593414e909cd1dc5d0",
+      "span_sha256": "7c2bd53ec5f169f34a96d217c376e0913544ba3d5078617cb41b80cdbefc088e",
       "anchor_line": 1431,
       "body_start_line": 1432,
       "body_end_line": 1462,
-      "body_sha256": "b88986081febf6bb1e5da1a569a867c492d8ab30e420727e5a4cb24fdf40b8a8",
+      "body_sha256": "746712ef2f110c5f3eedafc92016bf8b988dbe91191d1eb4ee30b1fa2c9f021b",
       "profiles": [
         "analyzer",
         "concurrent-evaluator",
@@ -4133,8 +4134,11 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_conflicting_expected_and_argument_facts_reject_deterministically",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_expected_result_completes_generic_substitution",
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
-                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_unique_trait_implementation_cannot_guess_missing_type"
               ],
               "rationale": null
             },

@@ -9,9 +9,6 @@ use gantry::frontend::validate_package_syntax;
 use gantry::source::SourceLimits;
 use serde::Deserialize;
 
-const RECEIVER_EVIDENCE: &str =
-    "crates/gantry-conformance/tests/analyzer_types.rs#public_impl_targets_and_receivers_are_typed";
-
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Deserialize)]
@@ -160,7 +157,11 @@ fn reviewed_analyzer_type_evidence_is_closed() {
     assert!(manifest.entries.windows(2).all(|pair| pair[0] < pair[1]));
 
     for entry in manifest.entries {
-        assert_eq!(entry.evidence, RECEIVER_EVIDENCE);
+        assert!(
+            entry
+                .evidence
+                .starts_with("crates/gantry-conformance/tests/analyzer_types.rs#public_")
+        );
         if !evidence_is_current {
             continue;
         }
@@ -186,7 +187,7 @@ fn reviewed_analyzer_type_evidence_is_closed() {
                 )
             });
         assert_eq!(analyzer.state, "covered");
-        assert_eq!(analyzer.evidence, [entry.evidence]);
+        assert!(analyzer.evidence.contains(&entry.evidence));
     }
 }
 
@@ -696,6 +697,115 @@ fn main() {}
         "{:?}",
         invalid.diagnostics()
     );
+}
+
+#[test]
+/// An expected result is a permitted local fact and can close a substitution.
+fn public_expected_result_completes_generic_substitution() {
+    let expected_result =
+        analyze("fn make<T>() -> T { make::<T>() } fn main() -> String { make() }");
+    assert_eq!(
+        expected_result.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        expected_result.diagnostics()
+    );
+    assert!(
+        expected_result
+            .generic_instantiations()
+            .iter()
+            .any(|instantiation| {
+                instantiation.concrete().canonical_string() == "crate::make<String>"
+            })
+    );
+}
+
+#[test]
+/// Trait selection occurs after inference and cannot supply a missing type.
+fn public_unique_trait_implementation_cannot_guess_missing_type() {
+    let implementation_must_not_guess = analyze(
+        r#"
+trait Produce<T> { pure fn produce(self) -> T; }
+struct Factory {}
+impl Produce<String> for Factory {
+    pure fn produce(self) -> String { "made" }
+}
+fn main(value: Factory) { discard Produce::produce(value); }
+"#,
+    );
+    assert_eq!(
+        implementation_must_not_guess.status(),
+        AnalysisStatus::Invalid
+    );
+    assert!(
+        implementation_must_not_guess
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code.as_str() == "incomplete-type-inference" })
+    );
+}
+
+#[test]
+/// Conflicting expected and argument facts produce one stable inference error.
+fn public_conflicting_expected_and_argument_facts_reject_deterministically() {
+    let conflicting_facts =
+        analyze("fn preserve<T>(value: T) -> T { value } fn main() -> String { preserve(1) }");
+    assert_eq!(conflicting_facts.status(), AnalysisStatus::Invalid);
+    let inference_codes = conflicting_facts
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "conflicting-type-inference" | "incomplete-type-inference"
+            )
+        })
+        .map(|diagnostic| diagnostic.code.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(inference_codes, ["conflicting-type-inference"]);
+}
+
+#[test]
+/// Declared recursion permits only guarded regular self recursion in v1.
+fn public_declared_recursion_obeys_guarded_regular_v1_rules() {
+    for source in [
+        "struct Node { next: Option<Node> } fn main() {}",
+        "struct Node<T> { next: List<Node<T>> } fn main() {}",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{:?}",
+            package.diagnostics()
+        );
+    }
+
+    for (source, code) in [
+        (
+            "struct Node { next: Node } fn main() {}",
+            "unguarded-recursive-type",
+        ),
+        (
+            "struct Node<T> { next: Option<Node<List<T>>> } fn main() {}",
+            "polymorphic-recursion",
+        ),
+        (
+            "struct Left { right: Option<Right> } struct Right { left: Option<Left> } fn main() {}",
+            "recursive-type-cycle",
+        ),
+    ] {
+        let package = analyze(source);
+        assert_eq!(package.status(), AnalysisStatus::Invalid);
+        assert!(
+            package
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == code),
+            "expected {code}: {:?}",
+            package.diagnostics()
+        );
+    }
 }
 
 #[test]

@@ -1,6 +1,6 @@
 {
   "specification": "SPEC.md",
-  "specification_sha256": "c065926488bb3e632cc9546e37a0e55cff30f59d1759c2c5d6e010ffa2bff19d",
+  "specification_sha256": "ee374a4ee2be668a5902ce190d8a569559a25ec0a3d6bb720204759bb5af774b",
   "regions": [
     {
       "kind": "excluded",
@@ -3054,6 +3054,7 @@
               "state": "covered",
               "evidence": [
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_declared_recursion_obeys_guarded_regular_v1_rules",
                 "crates/gantry-conformance/tests/analyzer_validity_model.rs#generic_analyzer_lemmas_preserve_closed_outputs",
                 "crates/gantry-conformance/tests/ir_contracts.rs#generic_ir_contracts_publish_closed_instantiations_and_multi_origin_maps"
               ],
@@ -4052,8 +4053,11 @@
               "profile": "analyzer",
               "state": "covered",
               "evidence": [
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_conflicting_expected_and_argument_facts_reject_deterministically",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_expected_result_completes_generic_substitution",
                 "crates/gantry-conformance/tests/analyzer_types.rs#public_generic_bodies_retain_closed_calls_effects_and_failures",
-                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic"
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_static_trait_resolution_is_coherent_and_diagnostic",
+                "crates/gantry-conformance/tests/analyzer_types.rs#public_unique_trait_implementation_cannot_guess_missing_type"
               ],
               "rationale": null
             },

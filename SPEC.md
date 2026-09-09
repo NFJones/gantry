@@ -1431,11 +1431,11 @@ wrong arity, a non-callable value, or a type mismatch.
 <a id="GNT-3-T-GENERIC-CALL"></a>
 
 **[GNT-3-T-GENERIC-CALL] Generic inference and static trait calls.** For a
-generic callable template `g`, `infer` uses only explicit type arguments,
-receiver type, ordered argument types, constructor members, and an available
-expected result type. It performs exact unification with an occurs check and
-has no coercion, subtyping, default type argument, implementation-guided
-guessing, or unconstrained global inference:
+generic callable template `g`, `infer` first gathers only complete explicit
+type arguments and exact locally established receiver, ordered-argument,
+constructor-member, and available expected-result types. It exactly unifies
+those facts with an occurs check before candidate or trait-implementation selection, without coercion,
+subtyping, defaulting, implementation-guided guessing, or global inference:
 
 ```text
 infer(Σ,g,explicit?,receiver?,τargs,expected?)=σ
@@ -1447,10 +1447,10 @@ instantiate(Σ,g,σ)=fclosed
 ```
 
 `infer` is defined only for one complete substitution. No solution, conflicting
-facts, more than one solution, or an unconstrained parameter is the
-corresponding analysis error in Section 12. A complete explicit list fixes the
-listed substitution and is checked by the same premises. Partial explicit
-lists and `_` placeholders have no derivation.
+facts, multiple solutions, or an unconstrained parameter is the corresponding Section 12 error.
+A complete explicit list fixes the substitution and is checked by the same premises; partial lists and `_` have no derivation.
+Receiver, capture, ownership, effect, and suspension analysis and lowering MUST NOT guess value types; they
+consume exact closed types. Lowering starts only after call and reachable-package closure; this adds no v1 literal defaulting, and absent associated types and closure types remain unadmitted.
 
 A postfix trait call first applies inherent-method precedence and otherwise
 requires one in-scope applicable trait member. A qualified

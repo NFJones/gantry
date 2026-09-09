@@ -1,8 +1,28 @@
 {
   "format": "gantry.analyzer-type-evidence/v1",
-  "specification_sha256": "c065926488bb3e632cc9546e37a0e55cff30f59d1759c2c5d6e010ffa2bff19d",
+  "specification_sha256": "ee374a4ee2be668a5902ce190d8a569559a25ec0a3d6bb720204759bb5af774b",
   "issue": "GNT-AN-003",
   "entries": [
+    {
+      "requirement": "GNT-3-F-INSTANTIATION",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_declared_recursion_obeys_guarded_regular_v1_rules"
+    },
+    {
+      "requirement": "GNT-3-T-GENERIC-CALL",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_conflicting_expected_and_argument_facts_reject_deterministically"
+    },
+    {
+      "requirement": "GNT-3-T-GENERIC-CALL",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_expected_result_completes_generic_substitution"
+    },
+    {
+      "requirement": "GNT-3-T-GENERIC-CALL",
+      "clause": "clause-001",
+      "evidence": "crates/gantry-conformance/tests/analyzer_types.rs#public_unique_trait_implementation_cannot_guess_missing_type"
+    },
     {
       "requirement": "GNT-6.1",
       "clause": "clause-001",

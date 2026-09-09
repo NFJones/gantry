@@ -20,7 +20,14 @@ static trait calls, reachable monomorphization, and exact concrete effects.
   unification. Constraints may come from explicit `::<...>` arguments, value
   arguments, initialized fields, payloads, and expected results. Inference has
   no coercions, default type arguments, overload guessing, or trait-driven
-  guessing.
+  guessing. These permitted local and expected constraints are gathered and
+  exactly unified before candidate or trait-implementation selection.
+- Receiver checks, capture and ownership analysis, effect and suspension
+  analysis, and lowering consume the resulting exact value types; none may
+  guess a missing value type. Lowering starts only after call and reachable
+  package closure. This ordering preserves the fixed v1 literal types without
+  adding defaulting and does not admit absent associated types or closure
+  types.
 - Trait contracts and implementation heads are retained in canonical path and
   implementation-identity order. Every implementation parameter must occur in
   its receiver or trait arguments. A trait implementation may target a
