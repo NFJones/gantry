@@ -852,6 +852,33 @@ fn public_expected_result_completes_generic_substitution() {
     );
 }
 
+/// Explicit generic argument lists must supply exactly every type parameter.
+#[test]
+fn public_explicit_generic_argument_arity_is_exact() {
+    let accepted = analyze(
+        "fn preserve<T>(value: T) -> T { value } fn main() { discard preserve::<String>(\"value\"); }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let rejected = analyze(
+        "fn preserve<T>(value: T) -> T { value } fn main() { discard preserve::<String, Int>(\"value\"); }",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "type-argument-arity"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
