@@ -1109,6 +1109,10 @@ fn public_declared_recursion_obeys_guarded_regular_v1_rules() {
             "struct Left { right: Option<Right> } struct Right { left: Option<Left> } fn main() {}",
             "recursive-type-cycle",
         ),
+        (
+            "enum Node { Next(Option<Node>) } fn main() {}",
+            "recursive-enum",
+        ),
     ] {
         let package = analyze(source);
         assert_eq!(package.status(), AnalysisStatus::Invalid);
