@@ -982,6 +982,35 @@ fn public_recursive_generic_capabilities_are_structural() {
     );
 }
 
+/// Generic enum constructors use the selected substitution for every payload.
+#[test]
+fn public_generic_enum_constructor_payloads_are_exact() {
+    let accepted = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() { discard State::<String, Int>::Ready(\"ok\"); }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+
+    let rejected = analyze(
+        "enum State<T, E> { Ready(T), Failed(E) } fn main() { discard State::<String, Int>::Ready(1); }",
+    );
+    assert_eq!(rejected.status(), AnalysisStatus::Invalid);
+    assert!(
+        rejected.diagnostics().iter().any(|diagnostic| {
+            matches!(
+                diagnostic.code.as_str(),
+                "aggregate-member-type" | "type-mismatch"
+            )
+        }),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
 #[test]
 /// An expected aggregate result closes its generic struct substitution.
 fn public_expected_result_completes_generic_struct_substitution() {
