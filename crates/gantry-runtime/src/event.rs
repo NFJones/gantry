@@ -1577,9 +1577,9 @@ mod tests {
     use super::*;
     use crate::{
         ActionOperationRequestV1, AdmissionKind, CanonicalTranscriptV1, ConcurrentTaskStateV1,
-        ExecutionCoordinator, InterpreterConfiguration, InterpreterLifecycle,
-        LogicalSessionRegistryV1, OperationRequestHeaderV1, RequiredConfiguration,
-        SessionCreationModeV1,
+        ConcurrentTerminalOutcomeV1, ExecutionCoordinator, InterpreterConfiguration,
+        InterpreterLifecycle, LogicalSessionRegistryV1, OperationRequestHeaderV1,
+        RequiredConfiguration, SessionCreationModeV1,
     };
 
     #[derive(Default)]

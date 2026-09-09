@@ -24,13 +24,13 @@ use gantry_ir::{
 
 #[cfg(feature = "concurrent")]
 use crate::{
-    DynamicTaskHandleIdentity, ExecutionBudget, JoinResolutionV1, TaskCaptureV1,
+    DynamicTaskHandleIdentity, JoinResolutionV1, TaskCaptureV1,
     TaskControlCompletionError, TaskFailureV1, TaskJoinFailureV1, TaskJoinMemberFailureKindV1,
     TaskJoinMemberFailureV1, root_task_identity,
 };
 use crate::{
-    Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError, MachineLabel,
-    MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
+    ExecutionBudget, Instruction, InstructionKind, LoopPhase, Machine, MachineBuildError,
+    MachineLabel, MachineLimits, MachineOutcome, MachineProgram, MachineStatus, MachineStep,
     OperationCompletionError, Parameter, Primitive, ProgramError, RuntimeCode, Workflow,
 };
 
