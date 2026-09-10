@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gantry::analysis::{
     AnalysisError, AnalysisStatus, analyze_package_types, analyze_package_types_with_limits,
 };
-use gantry::frontend::validate_package_syntax;
+use gantry::frontend::{PackageSyntaxStatus, validate_package_syntax};
 use gantry::portable::FrontendResourceCode;
 use gantry::source::{FrontendLimits, SourceLimits};
 use serde::Deserialize;
@@ -337,6 +337,33 @@ fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent
         );
         assert!(rejected.executable_program().is_none());
     }
+}
+
+/// The owned/consuming receiver is rejected by the parser and never reaches lowering.
+#[test]
+fn analyzer_rejects_owned_receiver() {
+    let root = TempDirectory::new();
+    root.write(
+        "struct Counter { value: Int } impl Counter { fn take(owned self) -> Int { self.value } } fn main(counter: Counter) -> Int { counter.take() }",
+    );
+    let syntax = validate_package_syntax(&root.0, limits(), i64::MAX as u64)
+        .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"));
+    assert_eq!(
+        syntax.status(),
+        PackageSyntaxStatus::Invalid,
+        "{:?}",
+        syntax.diagnostics()
+    );
+    assert!(
+        syntax
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "unexpected-token"
+                && diagnostic.primary.is_some()),
+        "{:?}",
+        syntax.diagnostics()
+    );
+    assert!(syntax.parsed_sources().is_empty());
 }
 
 /// A shared receiver exposes an immutable callee-local `self` binding.

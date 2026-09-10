@@ -245,3 +245,21 @@ fn public_parser_rejects_malformed_exclusive_receiver_forms() {
         }));
     }
 }
+
+/// The owned/consuming receiver is a ratification proposal, not an admitted v1 form.
+#[test]
+fn public_parser_rejects_owned_receiver_forms() {
+    for source in [
+        "struct Counter { value: Int } impl Counter { fn take(owned self) -> Int { self.value } }",
+        "struct Counter { value: Int } impl Counter { fn take(move self) -> Int { self.value } }",
+        "struct Counter { value: Int } impl Counter { fn take(consuming self) -> Int { self.value } }",
+        "struct Counter { value: Int } impl Counter { fn take(owned mut self) { } }",
+        "struct Counter { value: Int } impl Counter { fn take(owned self: Counter) -> Int { self.value } }",
+    ] {
+        let outcome = parse(source, 256, 8);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(outcome.diagnostics().iter().all(|diagnostic| {
+            diagnostic.code.as_str() == "unexpected-token" && diagnostic.primary.is_some()
+        }));
+    }
+}

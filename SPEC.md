@@ -3421,6 +3421,32 @@ reborrow MUST select a strict struct-field subplace, while a shared reborrow may
 observe an exclusive receiver place. Both forms are unavailable to trait methods,
 generic methods or implementations, constructed values, indexed places, enum
 payloads, owned receivers, or general loan forms.
+<a id="GNT-6.2b"></a>
+
+2b. A zero-argument monomorphic inherent method MAY declare `owned self` as the
+owned/consuming receiver. This is a ratification proposal, and the spelling is
+reserved but not admitted by the v1 parser or analyzer; its wire name MUST match
+the IR `Owned` receiver-mode variant when ratified. For a `Copyable` receiver,
+an owned admission MUST produce an independent logical copy and leave the source
+place valid. For a future `AffineDroppable` or `MustConsume` receiver, the value
+MUST be staged in the evaluation frame at a move transfer point and the source
+place marked uninitialized. Admission is left to right: the receiver is admitted
+first, then the remaining arguments, then arity, mode, depth, cancellation, and
+frame admission, then the transfer. A staged move and an overlapping later use of
+the same place in the same expression MUST be rejected, while shared argument
+reads admitted before an exclusive-loan admission stay permitted. A failed
+admission changes nothing and acquires no transfer; a failure before the
+transfer point leaves the staging frame the sole owner, does not repeat the
+move, and does not roll back external effects. On unwind, an `AffineDroppable`
+staged value uses its lexical or emergency release, a `MustConsume` staged value
+transfers its consumption obligation to the runtime supervisor, and a
+`Copyable` staged value is discarded silently. A staged or owned receiver MUST
+be reconstructible from checkpointed state; existing checkpoint formats MAY be
+retained only if an explicit place-initialization bit is added to the retained
+frame representation and `validate_machine_checkpoint` reconstructs every
+invariant, otherwise a new checkpoint magic is required. Partial moves,
+arbitrary or argument loans, reborrow through an owned receiver, must-consume
+type declarations, and task or channel transfer are excluded.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
