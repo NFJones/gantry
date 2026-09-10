@@ -4477,3 +4477,99 @@ fn owned_move_unwind_discards_staged_value_without_rollback() {
         Some(token_value(5))
     );
 }
+
+/// Admission is decided before the transfer point, so a rejected owned call must leave the caller
+/// place initialized and record no staging entry.
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_admission_failure_acquires_no_staging_entry() {
+    let program = owned_move_program(
+        token_parameter("token"),
+        "token",
+        Vec::new(),
+        TypeDescriptor::INT,
+        vec![
+            int_push(0, 7),
+            instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(8, 1, 1, 1, 8),
+    );
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Failed(failure)
+            if failure.code
+                == RuntimeCode::Deterministic(
+                    DeterministicEvaluationCode::WorkflowCallDepthLimit
+                )
+    ));
+    assert_eq!(
+        machine.test_frame_binding_value(0, "token"),
+        Some(token_value(5))
+    );
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_ne!(
+        bytes.get(..8),
+        Some(b"GNTMCP06".as_slice()),
+        "a rejected admission must not acquire a staging entry"
+    );
+    assert!(crate::MachineCheckpointV3::decode(&program, &bytes).is_ok());
+}
+
+/// Cancellation leaves the interrupted owned move consistent: the caller place keeps its original
+/// value, and the terminal checkpoint still reconstructs the staged move without write-back.
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_cancellation_retains_consistent_staging_without_write_back() {
+    let program = owned_move_program(
+        token_parameter("token"),
+        "token",
+        Vec::new(),
+        TypeDescriptor::INT,
+        vec![
+            int_push(0, 7),
+            instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    assert_eq!(
+        machine.checkpoint().canonical_bytes().get(..8),
+        Some(b"GNTMCP06".as_slice()),
+        "the staged move must still be live inside the callee frame"
+    );
+    assert!(matches!(
+        machine.cancel("caller"),
+        Some(MachineLabel::Cancellation { .. })
+    ));
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Cancelled(ref reason)))
+            if reason.as_ref() == "caller"
+    ));
+    assert_eq!(
+        machine.test_frame_binding_value(0, "token"),
+        Some(token_value(5))
+    );
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Cancelled(ref reason) if reason.as_ref() == "caller"
+    ));
+    // The interrupted callee frame retains its staging entry, and the terminal checkpoint still
+    // reconstructs every invariant of that interrupted owned move.
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
+    assert!(crate::MachineCheckpointV3::decode(&program, &bytes).is_ok());
+}
