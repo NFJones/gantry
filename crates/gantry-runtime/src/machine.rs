@@ -1098,6 +1098,31 @@ impl MachineCheckpointV3 {
             })
     }
 
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_clear_place_initialization(&mut self) -> bool {
+        self.frames.iter_mut().any(|frame| {
+            let had_entry = !frame.place_initialization.is_empty();
+            frame.place_initialization.clear();
+            had_entry
+        })
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_place_initialization_path(
+        &mut self,
+        frame_index: usize,
+        entry_index: usize,
+        path: Vec<ValuePathSegment>,
+    ) -> bool {
+        self.frames
+            .get_mut(frame_index)
+            .and_then(|frame| frame.place_initialization.get_mut(entry_index))
+            .is_some_and(|entry| {
+                entry.path = path;
+                true
+            })
+    }
+
     #[cfg(all(test, feature = "concurrent"))]
     pub(crate) fn test_set_pending_spawn_capture_value(
         &mut self,
@@ -1278,7 +1303,7 @@ impl MachineCheckpointV3 {
         encode_machine_checkpoint(self)
     }
 
-    /// Decodes one exact version-three or version-four checkpoint.
+    /// Decodes one exact `GNTMCP03` through `GNTMCP06` checkpoint.
     pub fn decode(program: &MachineProgram, bytes: &[u8]) -> Result<Self, MachineRecoveryError> {
         decode_machine_checkpoint(program, bytes)
     }
@@ -1812,6 +1837,21 @@ impl Machine {
     #[cfg(test)]
     pub(crate) fn test_binding_value(&self, name: &str) -> Option<LogicalValue> {
         self.binding(name).map(|binding| binding.value.clone())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_frame_binding_value(
+        &self,
+        frame_index: usize,
+        name: &str,
+    ) -> Option<LogicalValue> {
+        self.frames
+            .get(frame_index)?
+            .scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name))
+            .map(|binding| binding.value.clone())
     }
 
     #[cfg(test)]
@@ -3119,7 +3159,7 @@ impl Machine {
                 site,
             );
         }
-        let (values, stack_arguments, receiver_admission) = match receiver_source.as_ref() {
+        let (values, stack_arguments, caller_place) = match receiver_source.as_ref() {
             Some(ReceiverSource::CallerPlace { root, path }) => {
                 let Some(stack_arguments) = arguments.checked_sub(1) else {
                     return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
@@ -3137,14 +3177,7 @@ impl Machine {
                 let mut values = Vec::with_capacity(arguments);
                 values.push(receiver);
                 values.extend_from_slice(operands);
-                (
-                    values,
-                    stack_arguments,
-                    Some(SharedPlaceAdmission {
-                        root: root.clone(),
-                        path: path.clone(),
-                    }),
-                )
+                (values, stack_arguments, Some((root.clone(), path.clone())))
             }
             Some(ReceiverSource::CopiedValue) | None => match self.peek_operands(arguments) {
                 Ok(values) => (values.to_vec(), arguments, None),
@@ -3159,6 +3192,30 @@ impl Machine {
         if parameters.len() != values.len() {
             return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
         }
+        let owned_move = caller_place.is_some()
+            && parameters.first().and_then(Parameter::receiver_mode) == Some(ReceiverMode::Owned);
+        let receiver_admission = if owned_move {
+            None
+        } else {
+            caller_place
+                .as_ref()
+                .map(|(root, path)| SharedPlaceAdmission {
+                    root: root.clone(),
+                    path: path.clone(),
+                })
+        };
+        let place_initialization = if owned_move {
+            let Some((root, path)) = caller_place.as_ref() else {
+                return self.fail_at(RuntimeCode::InternalInvariant, workflow, site);
+            };
+            vec![PlaceInitialization {
+                root: root.clone(),
+                path: path.clone(),
+                initialized: false,
+            }]
+        } else {
+            Vec::new()
+        };
         if let Some(ReceiverSource::CallerPlace { root, path }) = receiver_source.as_ref()
             && parameters.first().and_then(Parameter::receiver_mode)
                 == Some(ReceiverMode::ExclusivePlace)
@@ -3222,7 +3279,7 @@ impl Machine {
             session_stack_base: self.session_stack.len(),
             session_at_entry: self.session,
             receiver_admission,
-            place_initialization: Vec::new(),
+            place_initialization,
         });
         self.finish_deterministic(workflow, site, Arc::from("call"))
     }
@@ -3976,15 +4033,33 @@ fn validate_machine_checkpoint(
                 .checked_sub(1)
                 .and_then(|index| instructions.get(index))
         });
-        let parent_requires_admission = matches!(
-            parent_instruction.map(|instruction| &instruction.kind),
+        let parent_caller_place = match parent_instruction.map(|instruction| &instruction.kind) {
             Some(InstructionKind::ReceiverCall {
-                source: ReceiverSource::CallerPlace { .. },
+                source: ReceiverSource::CallerPlace { root, path },
                 ..
-            })
-        );
-        if parent_requires_admission != frame.receiver_admission.is_some() {
-            return Err(MachineRecoveryError::ProgramMismatch);
+            }) => Some((root, path)),
+            _ => None,
+        };
+        let receiver_mode = workflow
+            .parameters
+            .first()
+            .and_then(Parameter::receiver_mode);
+        match (parent_caller_place, receiver_mode) {
+            (Some(_), Some(ReceiverMode::Owned)) => {
+                if frame.receiver_admission.is_some() || frame.place_initialization.len() != 1 {
+                    return Err(MachineRecoveryError::ProgramMismatch);
+                }
+            }
+            (Some(_), _) => {
+                if frame.receiver_admission.is_none() || !frame.place_initialization.is_empty() {
+                    return Err(MachineRecoveryError::ProgramMismatch);
+                }
+            }
+            (None, _) => {
+                if frame.receiver_admission.is_some() {
+                    return Err(MachineRecoveryError::ProgramMismatch);
+                }
+            }
         }
         if let Some(admission) = &frame.receiver_admission {
             let Some(parent) = frame_index
@@ -4054,6 +4129,7 @@ fn validate_machine_checkpoint(
                 return Err(MachineRecoveryError::ProgramMismatch);
             }
         }
+        let mut staged_values = Vec::with_capacity(frame.place_initialization.len());
         for (entry_index, entry) in frame.place_initialization.iter().enumerate() {
             if entry.initialized {
                 return Err(MachineRecoveryError::InvalidCheckpoint);
@@ -4079,8 +4155,24 @@ fn validate_machine_checkpoint(
             else {
                 return Err(MachineRecoveryError::ProgramMismatch);
             };
-            if value_at_path(&binding.value, &entry.path).is_none() {
+            let Some(staged) = value_at_path(&binding.value, &entry.path) else {
                 return Err(MachineRecoveryError::InvalidCheckpoint);
+            };
+            staged_values.push(staged);
+        }
+        for (entry, staged) in frame.place_initialization.iter().zip(&staged_values) {
+            if receiver_mode != Some(ReceiverMode::Owned)
+                || parent_caller_place.is_none_or(|(root, path)| {
+                    root.as_ref() != entry.root.as_ref() || path != &entry.path
+                })
+            {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            }
+            let Some(receiver) = frame.scopes.first().and_then(|scope| scope.get("self")) else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
+            if !value_matches_type(staged, &receiver.ty) {
+                return Err(MachineRecoveryError::ProgramMismatch);
             }
         }
     }

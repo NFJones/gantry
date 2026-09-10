@@ -3444,8 +3444,20 @@ be reconstructible from checkpointed state; existing checkpoint formats MAY be
 retained only if an explicit place-initialization bit is added to the retained
 frame representation and `validate_machine_checkpoint` reconstructs every
 invariant, otherwise a new checkpoint magic is required. Partial moves,
-arbitrary or argument loans, reborrow through an owned receiver, must-consume
-type declarations, and task or channel transfer are excluded.
+arbitrary or argument loans, reborrow through an owned receiver,
+`MustConsume` type declarations, and task or channel transfer are excluded.
+
+<a id="GNT-6.2c"></a>
+
+2c. A struct declaration MAY be prefixed with `affine`. An `affine struct` admits
+the `AffineDroppable` ownership class: its stored members fold with the affine
+seed, an empty affine struct remains affine, and nested or generic affine members
+combine conservatively. Copying an `AffineDroppable` value, including reading a
+moved value more than once or passing it as a copied argument and reusing it,
+MUST be rejected at compile time. Discarding an `AffineDroppable` value is
+permitted. An `owned self` method on an `AffineDroppable` receiver performs the
+owned-move transfer described in item 2b. `MustConsume` and resource
+declarations remain excluded.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field

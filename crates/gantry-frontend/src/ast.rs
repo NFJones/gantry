@@ -113,6 +113,8 @@ pub enum SyntaxForm {
     UseDeclaration,
     /// `struct` declaration.
     StructDeclaration,
+    /// `affine` marker preceding a struct declaration.
+    AffineStructModifier,
     /// Struct field declaration.
     StructField,
     /// `enum` declaration.

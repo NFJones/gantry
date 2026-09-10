@@ -16,13 +16,15 @@ use gantry_ir::{
     ActionInventory, AggregateKind, CanonicalCallableIdentity, CanonicalPath, Comparison,
     EffectSet, EntryInventory, ExecutableAction, ExecutableOperation, ExecutableTaskBody,
     ExecutableTaskCapture, ExecutableTaskContext, ExecutableTaskHandle, Instruction,
-    InstructionKind, LoopPhase, MachineProgram, Parameter, Primitive, ProgramError, Projection,
-    StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow, WorkflowFacts,
+    InstructionKind, LoopPhase, MachineProgram, OwnershipClass, Parameter, Primitive, ProgramError,
+    Projection, StructuralPosition, TaskBodyIdentity, TypeDescriptor, Workflow, WorkflowFacts,
 };
 
 use crate::bodies::{BodyAnalysis, EffectNode, SpawnCaptureMetadata};
+use crate::generics::{GenericDeclarationShape, prove_ownership_class};
 use crate::{AnalysisError, TypeFact};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_executable_program(
     sources: &[ParsedSource],
     type_facts: &[BTreeMap<NodeId, TypeFact>],
@@ -31,6 +33,7 @@ pub(crate) fn lower_executable_program(
     workflows: &[WorkflowFacts],
     actions: &[ActionInventory],
     body: &BodyAnalysis,
+    capability_declarations: &BTreeMap<String, GenericDeclarationShape>,
 ) -> Result<MachineProgram, AnalysisError> {
     if sources.len() != type_facts.len() || sources.len() != body_types.len() {
         return Err(AnalysisError::Invariant);
@@ -127,6 +130,18 @@ pub(crate) fn lower_executable_program(
         })
         .map(|callable| callable.identity.clone())
         .collect::<BTreeSet<_>>();
+    let owned_move_receivers = body
+        .source_callables
+        .iter()
+        .filter(|callable| {
+            callable.receiver_mode == Some(gantry_ir::ReceiverMode::Owned)
+                && callable.receiver.as_ref().is_some_and(|ty| {
+                    prove_ownership_class(ty, capability_declarations)
+                        .is_ok_and(|class| class == OwnershipClass::AffineDroppable)
+                })
+        })
+        .map(|callable| callable.identity.clone())
+        .collect::<BTreeSet<_>>();
     let root_identity = CanonicalCallableIdentity::free(&entry.path, &[]);
     let mut reachable = BTreeSet::new();
     let mut pending = vec![root_identity.clone()];
@@ -173,6 +188,7 @@ pub(crate) fn lower_executable_program(
                 .unwrap_or_default(),
             callable_results: &callable_results,
             shared_receivers: &shared_receivers,
+            owned_move_receivers: &owned_move_receivers,
             operation_results: None,
             closed_enums: &body.closed_enums,
             actions,
@@ -224,6 +240,7 @@ pub(crate) fn lower_executable_program(
                 .unwrap_or_default(),
             callable_results: &callable_results,
             shared_receivers: &shared_receivers,
+            owned_move_receivers: &owned_move_receivers,
             operation_results: Some(&metadata.operation_results),
             closed_enums: &body.closed_enums,
             actions,
@@ -282,6 +299,7 @@ struct Compiler<'a> {
     direct_targets: &'a [(gantry_core::source::SourceSpan, CanonicalCallableIdentity)],
     callable_results: &'a BTreeMap<CanonicalCallableIdentity, TypeDescriptor>,
     shared_receivers: &'a BTreeSet<CanonicalCallableIdentity>,
+    owned_move_receivers: &'a BTreeSet<CanonicalCallableIdentity>,
     operation_results: Option<&'a BTreeMap<gantry_core::source::SourceSpan, TypeDescriptor>>,
     closed_enums: &'a BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, Option<TypeDescriptor>>>,
     actions: &'a [ActionInventory],
@@ -356,6 +374,7 @@ impl Compiler<'_> {
             direct_targets: self.direct_targets,
             callable_results: self.callable_results,
             shared_receivers: self.shared_receivers,
+            owned_move_receivers: self.owned_move_receivers,
             operation_results: self.operation_results,
             closed_enums: self.closed_enums,
             actions: self.actions,
@@ -1271,6 +1290,8 @@ impl Compiler<'_> {
         if let Some(callee) = self.direct_target(&node) {
             let receiver_type = callee.receiver_type();
             let shared_receiver = self.shared_receivers.contains(&callee);
+            let owned_move_receiver = self.owned_move_receivers.contains(&callee);
+            let requires_place = shared_receiver || owned_move_receiver;
             let constructed_receiver = receiver_type.as_ref().and_then(|_| {
                 descendant_form(self.tree, expression, &[SyntaxForm::StructExpression])
             });
@@ -1278,7 +1299,7 @@ impl Compiler<'_> {
                 .as_ref()
                 .and_then(|_| postfix_method_receiver_place(self.tree, &node));
             let has_implicit_receiver = constructed_receiver.is_some() || receiver_place.is_some();
-            let caller_place = if shared_receiver {
+            let caller_place = if requires_place {
                 postfix_method_receiver_place(self.tree, &node)
             } else {
                 None
@@ -1286,12 +1307,12 @@ impl Compiler<'_> {
             if let (Some(struct_expression), Some(receiver_type)) =
                 (constructed_receiver, receiver_type.as_ref())
             {
-                if shared_receiver {
+                if requires_place {
                     return Err(AnalysisError::Invariant);
                 }
                 self.compile_struct(expression, struct_expression, receiver_type.clone())?;
             } else if let (Some((root, path)), Some(_)) = (&receiver_place, receiver_type.as_ref())
-                && !shared_receiver
+                && !requires_place
             {
                 let mut projection_types =
                     receiver_place_types(root, path, &self.binding_types, self.struct_fields)
@@ -1327,7 +1348,7 @@ impl Compiler<'_> {
                     InstructionKind::ReceiverCall {
                         callee,
                         arguments,
-                        source: if shared_receiver {
+                        source: if requires_place {
                             let (root, path) = caller_place.ok_or(AnalysisError::Invariant)?;
                             gantry_ir::ReceiverSource::CallerPlace { root, path }
                         } else {
@@ -1349,8 +1370,10 @@ impl Compiler<'_> {
             let receiver = postfix_method_receiver(self.tree, &node);
             let callee = CanonicalCallableIdentity::free(&call.callee, &[]);
             let shared_receiver = self.shared_receivers.contains(&callee);
+            let owned_move_receiver = self.owned_move_receivers.contains(&callee);
+            let requires_place = shared_receiver || owned_move_receiver;
             if let Some(receiver) = &receiver
-                && !shared_receiver
+                && !requires_place
             {
                 let receiver_type = method_receiver_type(&call.callee)?;
                 self.emit(receiver_type, InstructionKind::Load(receiver.clone()))?;
@@ -1368,7 +1391,7 @@ impl Compiler<'_> {
                     InstructionKind::ReceiverCall {
                         callee,
                         arguments,
-                        source: if shared_receiver {
+                        source: if requires_place {
                             let (root, path) = postfix_method_receiver_place(self.tree, &node)
                                 .ok_or(AnalysisError::Invariant)?;
                             gantry_ir::ReceiverSource::CallerPlace { root, path }

@@ -31,8 +31,9 @@ pub struct TypeCapabilities {
 impl TypeCapabilities {
     /// Whether the validated v1 value permits independent logical copies.
     ///
-    /// Every currently admitted first-class value is copyable, including sealed
-    /// values that cannot cross an external boundary. Task handles are not values.
+    /// Only [`OwnershipClass::Copyable`] values permit independent copies. An
+    /// `affine struct` is [`OwnershipClass::AffineDroppable`] and cannot be
+    /// copied. Task handles are not values.
     #[must_use]
     pub const fn is_copyable(self) -> bool {
         matches!(self.ownership_class(), gantry_ir::OwnershipClass::Copyable)
@@ -40,7 +41,7 @@ impl TypeCapabilities {
 
     /// Returns the ownership class of this validated v1 value.
     ///
-    /// Noncopyable classifications do not yet have source inhabitants in v1.
+    /// An `affine struct` produces [`OwnershipClass::AffineDroppable`].
     #[must_use]
     pub const fn ownership_class(self) -> OwnershipClass {
         self.independent.ownership_class()

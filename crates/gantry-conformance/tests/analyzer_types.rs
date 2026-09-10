@@ -2092,3 +2092,309 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> T {
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|error| panic!("could not decode {}: {error}", path.display()))
 }
+
+/// `affine struct` seeds `AffineDroppable`; plain structs fold member classes, and empty or
+/// generic affine structs stay affine.
+#[test]
+fn affine_structs_fold_ownership_class_and_generics() {
+    use gantry::ir::{OwnershipClass, TypeDescriptor};
+
+    let package = analyze(
+        "affine struct Token { value: Int }\n\
+         affine struct Empty {}\n\
+         affine struct Generic<T> { value: T }\n\
+         struct Plain { value: Int }\n\
+         struct Contains { token: Token }\n\
+         fn use_token(value: Token) {}\n\
+         fn use_empty(value: Empty) {}\n\
+         fn use_generic(value: Generic<Int>) {}\n\
+         fn use_plain(value: Plain) {}\n\
+         fn use_contains(value: Contains) {}\n\
+         fn main() {}",
+    );
+    let policy = analysis_limits(64, 100);
+    for (name, affine) in [
+        ("crate::Token", true),
+        ("crate::Empty", true),
+        ("crate::Generic<Int>", true),
+        ("crate::Plain", false),
+        ("crate::Contains", true),
+    ] {
+        let ty = TypeDescriptor::from_canonical_string(name)
+            .unwrap_or_else(|error| panic!("descriptor failed: {error:?}"));
+        let properties = package
+            .type_capabilities(&ty, policy)
+            .unwrap_or_else(|error| panic!("query failed for {name}: {error:?}"));
+        assert_eq!(
+            properties.ownership_class(),
+            if affine {
+                OwnershipClass::AffineDroppable
+            } else {
+                OwnershipClass::Copyable
+            },
+            "{name}"
+        );
+    }
+}
+
+/// Copying or reusing an `AffineDroppable` value is a compile-time rejection.
+#[test]
+fn affine_values_are_rejected_when_copied_or_reused() {
+    for source in [
+        "affine struct Token {}\nfn take(t: Token) {}\nfn main(t: Token) {\n    take(t);\n    take(t);\n}",
+        "affine struct Token {}\nfn main(t: Token) {\n    let a: Token = t;\n    let b: Token = t;\n}",
+    ] {
+        let rejected = analyze(source);
+        assert_eq!(
+            rejected.status(),
+            AnalysisStatus::Invalid,
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+        assert!(
+            rejected
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code.as_str() == "affine-value-reuse"),
+            "{source}: {:?}",
+            rejected.diagnostics()
+        );
+    }
+}
+
+/// An `owned self` method on an affine receiver lowers to `CallerPlace`, while a copyable owned
+/// receiver stays `CopiedValue`.
+#[test]
+fn affine_owned_receiver_lowers_to_caller_place_move() {
+    use gantry::ir::{InstructionKind, ReceiverSource};
+
+    let package = analyze(
+        "affine struct Token { value: Int }\n\
+         struct Counter { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         impl Counter { fn bump(owned self) -> Int { self.value } }\n\
+         fn bump_counter(counter: Counter) -> Int { counter.bump() }\n\
+         fn consume_token(token: Token) -> Int { token.consume() }\n\
+         fn main(token: Token) -> Int {\n\
+             discard bump_counter(Counter { value: 1 });\n\
+             consume_token(token)\n\
+         }",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package has an executable program"));
+    let mut saw_caller_place = false;
+    let mut saw_copied_value = false;
+    for workflow in program.workflows() {
+        for instruction in &workflow.instructions {
+            if let InstructionKind::ReceiverCall { source, .. } = &instruction.kind {
+                match source {
+                    ReceiverSource::CallerPlace { .. } => saw_caller_place = true,
+                    ReceiverSource::CopiedValue => saw_copied_value = true,
+                }
+            }
+        }
+    }
+    assert!(
+        saw_caller_place,
+        "affine owned receiver did not lower to CallerPlace"
+    );
+    assert!(
+        saw_copied_value,
+        "copyable owned receiver did not stay CopiedValue"
+    );
+}
+
+/// Reading a moved affine place after an owned move is rejected.
+#[test]
+fn affine_moved_place_cannot_be_read_again() {
+    let rejected = analyze(
+        "affine struct Token {} fn take(t: Token) {} impl Token { fn consume(owned self) {} } fn main(t: Token) { t.consume(); take(t); }",
+    );
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "affine-value-reuse"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+}
+
+/// Requires one affine misuse to be rejected by a source diagnostic, never an internal failure.
+fn assert_affine_rejected(source: &str, code: &str) {
+    let rejected = analyze(source);
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{source}: {:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == code),
+        "{source}: {:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| !diagnostic.code.as_str().contains("internal")),
+        "{source}: {:?}",
+        rejected.diagnostics()
+    );
+    assert!(rejected.executable_program().is_none(), "{source}");
+}
+
+fn assert_affine_accepted(source: &str) {
+    let accepted = analyze(source);
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{source}: {:?}",
+        accepted.diagnostics()
+    );
+}
+
+/// The affine move ledger keys `(root, field path)` places, so a repeated owned move and a read of
+/// an already-moved place — including through a struct-field projection — are rejected.
+#[test]
+fn affine_owned_move_ledger_rejects_repeated_moves_and_moved_place_reads() {
+    // The same binding root cannot be moved twice.
+    assert_affine_rejected(
+        "affine struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         fn main() -> Int {\n\
+             let token: Token = Token { value: 5 };\n\
+             let first: Int = token.consume();\n\
+             let second: Int = token.consume();\n\
+             first + second\n\
+         }",
+        "affine-value-reuse",
+    );
+    // A field read after the whole value moved is rejected.
+    assert_affine_rejected(
+        "affine struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         fn main(token: Token) -> Int {\n\
+             let first: Int = token.consume();\n\
+             first + token.value\n\
+         }",
+        "affine-value-reuse",
+    );
+    // A struct-field receiver place cannot be moved twice.
+    assert_affine_rejected(
+        "affine struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         struct Holder { token: Token }\n\
+         fn main(holder: Holder) -> Int {\n\
+             let first: Int = holder.token.consume();\n\
+             let second: Int = holder.token.consume();\n\
+             first + second\n\
+         }",
+        "affine-value-reuse",
+    );
+}
+
+/// A read of an affine place that executes once per loop iteration is repeated use.
+#[test]
+fn affine_repeated_read_inside_loop_is_rejected() {
+    assert_affine_rejected(
+        "affine struct Token {}\n\
+         fn take(token: Token) {}\n\
+         fn run(token: Token, count: Int) {\n\
+             let mut index: Int = 0;\n\
+             while index < count {\n\
+                 take(token);\n\
+                 index = index + 1;\n\
+             }\n\
+         }\n\
+         fn main(seed: Int) { run(Token {}, 2); }",
+        "affine-value-reuse",
+    );
+    assert_affine_rejected(
+        "affine struct Token { flag: Bool }\n\
+         fn main(token: Token) {\n\
+             let mut index: Int = 0;\n\
+             while token.flag {\n\
+                 index = index + 1;\n\
+             }\n\
+         }",
+        "affine-value-reuse",
+    );
+}
+
+/// An `owned self` receiver on an `AffineDroppable` type requires an addressable caller place and
+/// is rejected with a source diagnostic rather than an internal lowering or runtime failure.
+#[test]
+fn affine_owned_receiver_requires_addressable_caller_place() {
+    for source in [
+        "affine struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         fn main(seed: Int) -> Int { Token { value: 1 }.consume() }",
+        "affine struct Token { value: Int }\n\
+         impl Token { fn consume(owned self) -> Int { self.value } }\n\
+         fn make(seed: Int) -> Token { Token { value: seed } }\n\
+         fn main() -> Int { make(7).consume() }",
+    ] {
+        assert_affine_rejected(source, "owned-receiver-scope");
+    }
+}
+
+/// Permitted affine uses and copyable values must stay source-valid.
+#[test]
+fn affine_single_use_guards_stay_valid() {
+    for source in [
+        // A single read.
+        "affine struct Token {}\n\
+         fn take(t: Token) {}\n\
+         fn main(token: Token) { take(token); }",
+        // Discarding an affine value is permitted.
+        "affine struct Token {}\n\
+         fn main(token: Token) { discard token; }",
+        // Returning a parameter is a single use.
+        "affine struct Token {}\n\
+         fn identity(token: Token) -> Token { token }\n\
+         fn main() {}",
+        // A generic call reads one argument once.
+        "affine struct Token {}\n\
+         fn identity<T>(value: T) -> T { value }\n\
+         fn main(token: Token) { discard identity(token); }",
+        // Unrelated sibling bindings do not intersect.
+        "affine struct Token {}\n\
+         fn take(t: Token) {}\n\
+         fn run(first: Token, second: Token) { take(first); take(second); }\n\
+         fn main() {}",
+        // A copyable value may be passed more than once.
+        "struct Plain { value: Int }\n\
+         fn take(p: Plain) {}\n\
+         fn main(p: Plain) { take(p); take(p); }",
+        // A single copied argument.
+        "struct Plain { value: Int }\n\
+         fn take(p: Plain) {}\n\
+         fn main(p: Plain) { take(p); }",
+        // A trait `self` receiver on an affine value.
+        "affine struct Token { value: Int }\n\
+         trait Greet { pure fn greet(self) -> Int; }\n\
+         impl Greet for Token { pure fn greet(self) -> Int { self.value } }\n\
+         fn main(token: Token) -> Int { token.greet() }",
+    ] {
+        assert_affine_accepted(source);
+    }
+}

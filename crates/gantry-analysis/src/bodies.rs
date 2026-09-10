@@ -22,15 +22,17 @@ use gantry_ir::generated::{Effect, TemplateKind, TypeKind};
 use gantry_ir::{
     CanonicalCallableIdentity, CanonicalImplementationIdentity, CanonicalPath,
     CanonicalTemplateIdentity, ConcreteIdentity, ConcreteInstantiation, EffectSet, GenericTemplate,
-    ImplementationHead, Predicate, ReceiverMode, TraitContract, TraitMethodContract,
-    TraitReference, TypeDescriptor, TypeDescriptorError, TypeExpression, WorkflowParameter,
+    ImplementationHead, OwnershipClass, Predicate, ReceiverMode, TraitContract,
+    TraitMethodContract, TraitReference, TypeDescriptor, TypeDescriptorError, TypeExpression,
+    WorkflowParameter,
 };
 
 use crate::generics::{
     CapabilityPredicate, ExactTypeSubstitution, GenericDeclarationShape, SealedCapability,
     TypeInferenceFailure, TypeParameterKey, collect_capability_predicates,
     collect_type_parameter_keys, collect_where_predicates,
-    invalid_generic_option_member_declaration, prove_sealed_capability, substitute_self_type,
+    invalid_generic_option_member_declaration, prove_ownership_class, prove_sealed_capability,
+    substitute_self_type,
 };
 use crate::{
     AnalysisError, GenericTypeFact, PackageStructure, Symbol, SymbolId, SymbolKind, TypeBinder,
@@ -87,6 +89,32 @@ struct GenericCallableSignature {
 pub(crate) type InstantiationKey = (CanonicalTemplateIdentity, Vec<TypeDescriptor>);
 
 type PostfixFieldSequence = (Arc<str>, Vec<(Arc<str>, NodeId)>);
+
+/// One addressable place in the affine move ledger: a binding root plus projected struct fields.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct AffinePlace {
+    root: Arc<str>,
+    path: Vec<Arc<str>>,
+}
+
+impl AffinePlace {
+    fn root_only(root: Arc<str>) -> Self {
+        Self {
+            root,
+            path: Vec::new(),
+        }
+    }
+
+    fn projected(root: Arc<str>, path: Vec<Arc<str>>) -> Self {
+        Self { root, path }
+    }
+
+    /// Returns whether one place is an ancestor-or-equal projection of the other.
+    fn intersects(&self, other: &Self) -> bool {
+        self.root == other.root
+            && (self.path.starts_with(&other.path) || other.path.starts_with(&self.path))
+    }
+}
 
 type EffectSummaries = (
     BTreeMap<CanonicalTemplateIdentity, EffectSet>,
@@ -265,6 +293,8 @@ struct BodyContext {
     trait_obligations: RefCell<BTreeMap<String, ObligationProof>>,
     expression_types: RefCell<BTreeMap<NodeId, TypeDescriptor>>,
     shared_receiver_value_roots: RefCell<BTreeSet<Arc<str>>>,
+    affine_consumed: RefCell<BTreeSet<AffinePlace>>,
+    affine_loop_entry_roots: RefCell<Vec<BTreeSet<Arc<str>>>>,
     resolved_struct_fields: RefCell<BTreeMap<TypeDescriptor, BTreeMap<Arc<str>, TypeDescriptor>>>,
     spawn_captures: RefCell<BTreeMap<EffectNode, BTreeMap<SourceSpan, Vec<SpawnCaptureMetadata>>>>,
     concrete_declaration_types: RefCell<BTreeMap<InstantiationKey, BTreeMap<NodeId, TypeFact>>>,
@@ -891,6 +921,8 @@ fn build_body_context(
         trait_obligations: RefCell::new(BTreeMap::new()),
         expression_types: RefCell::new(BTreeMap::new()),
         shared_receiver_value_roots: RefCell::new(BTreeSet::new()),
+        affine_consumed: RefCell::new(BTreeSet::new()),
+        affine_loop_entry_roots: RefCell::new(Vec::new()),
         resolved_struct_fields: RefCell::new(BTreeMap::new()),
         spawn_captures: RefCell::new(BTreeMap::new()),
         concrete_declaration_types: RefCell::new(BTreeMap::new()),
@@ -2302,6 +2334,8 @@ fn check_callable(
     let node = tree.node(callable).ok_or(AnalysisError::Invariant)?;
     initialize_effect_draft(tree, node, context)?;
     context.shared_receiver_value_roots.borrow_mut().clear();
+    context.affine_consumed.borrow_mut().clear();
+    context.affine_loop_entry_roots.borrow_mut().clear();
     *context.current_visible_traits.borrow_mut() = context
         .callable_visible_traits
         .get(node.span())
@@ -2697,53 +2731,57 @@ fn check_block(
                         )?);
                     }
                 }
-                let _ = check_block(
-                    tree,
-                    body,
-                    facts,
-                    &body_environment,
-                    expected_result,
-                    context,
-                    diagnostics,
-                )?;
+                let _ = with_affine_loop_scope(context, &environment, || {
+                    check_block(
+                        tree,
+                        body,
+                        facts,
+                        &body_environment,
+                        expected_result,
+                        context,
+                        diagnostics,
+                    )
+                })?;
             }
             SyntaxForm::LoopStatement | SyntaxForm::WhileStatement | SyntaxForm::UntilStatement => {
                 check_loop_limit(tree, child_node, diagnostics)?;
                 let condition = direct_child_form(tree, child_node, SyntaxForm::Expression);
-                for condition in condition.iter().copied() {
-                    if let Some(actual) = infer_expression(
-                        tree,
-                        condition,
-                        facts,
-                        &environment,
-                        None,
-                        context,
-                        diagnostics,
-                    )? && !matches!(actual.kind(), TypeKind::Bool | TypeKind::Decision)
-                    {
-                        diagnostics.push(body_diagnostic(
-                            "condition-type",
-                            DiagnosticCategory::Type,
-                            "a condition is neither Bool nor Decision",
-                            tree.node(condition)
-                                .ok_or(AnalysisError::Invariant)?
-                                .span()
-                                .clone(),
-                            [("actual", actual.canonical_string())],
-                        )?);
-                    }
-                }
                 let body = direct_child_form(tree, child_node, SyntaxForm::Block)
                     .ok_or(AnalysisError::Invariant)?;
-                let body_result = check_block(
-                    tree,
-                    body,
-                    facts,
-                    &environment,
-                    expected_result,
-                    context,
-                    diagnostics,
-                )?;
+                let body_result = with_affine_loop_scope(context, &environment, || {
+                    for condition in condition.iter().copied() {
+                        if let Some(actual) = infer_expression(
+                            tree,
+                            condition,
+                            facts,
+                            &environment,
+                            None,
+                            context,
+                            diagnostics,
+                        )? && !matches!(actual.kind(), TypeKind::Bool | TypeKind::Decision)
+                        {
+                            diagnostics.push(body_diagnostic(
+                                "condition-type",
+                                DiagnosticCategory::Type,
+                                "a condition is neither Bool nor Decision",
+                                tree.node(condition)
+                                    .ok_or(AnalysisError::Invariant)?
+                                    .span()
+                                    .clone(),
+                                [("actual", actual.canonical_string())],
+                            )?);
+                        }
+                    }
+                    check_block(
+                        tree,
+                        body,
+                        facts,
+                        &environment,
+                        expected_result,
+                        context,
+                        diagnostics,
+                    )
+                })?;
                 let fact = condition
                     .map(|condition| bool_fact(tree, condition))
                     .transpose()?
@@ -3388,6 +3426,124 @@ fn with_shared_receiver_payload_roots<T>(
     result
 }
 
+fn is_affine_type(ty: &TypeDescriptor, context: &BodyContext) -> bool {
+    prove_ownership_class(ty, &context.capability_declarations)
+        .is_ok_and(|class| class == OwnershipClass::AffineDroppable)
+}
+
+/// Runs one loop body with the outer binding roots visible for repeated-execution checks.
+fn with_affine_loop_scope<T>(
+    context: &BodyContext,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    check: impl FnOnce() -> Result<T, AnalysisError>,
+) -> Result<T, AnalysisError> {
+    let entry_roots = environment.keys().cloned().collect::<BTreeSet<_>>();
+    context
+        .affine_loop_entry_roots
+        .borrow_mut()
+        .push(entry_roots);
+    let result = check();
+    context.affine_loop_entry_roots.borrow_mut().pop();
+    result
+}
+
+/// Records one affine read or move place, rejecting any intersecting or repeated use.
+fn record_affine_place(
+    place: AffinePlace,
+    root_type: Option<&TypeDescriptor>,
+    place_type: &TypeDescriptor,
+    span: SourceSpan,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if !is_affine_type(place_type, context)
+        && !root_type.is_some_and(|root| is_affine_type(root, context))
+    {
+        return Ok(());
+    }
+    let repeats_in_loop = context
+        .affine_loop_entry_roots
+        .borrow()
+        .last()
+        .is_some_and(|roots| roots.contains(&place.root));
+    let intersects = context
+        .affine_consumed
+        .borrow()
+        .iter()
+        .any(|consumed| consumed.intersects(&place));
+    if repeats_in_loop || intersects {
+        diagnostics.push(body_diagnostic(
+            "affine-value-reuse",
+            DiagnosticCategory::Type,
+            "an AffineDroppable value is used more than once",
+            span,
+            [] as [(&str, &str); 0],
+        )?);
+    }
+    context.affine_consumed.borrow_mut().insert(place);
+    Ok(())
+}
+
+fn record_affine_read(
+    name: Arc<str>,
+    ty: &TypeDescriptor,
+    span: SourceSpan,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    record_affine_place(
+        AffinePlace::root_only(name),
+        Some(ty),
+        ty,
+        span,
+        context,
+        diagnostics,
+    )
+}
+
+fn owned_receiver_place(
+    tree: &SyntaxTree,
+    receiver_children: &[NodeId],
+) -> Option<(Arc<str>, Vec<Arc<str>>)> {
+    if let Some((root, fields)) = postfix_field_sequence(tree, receiver_children) {
+        return Some((root, fields.into_iter().map(|(field, _)| field).collect()));
+    }
+    for child in receiver_children {
+        let node = tree.node(*child)?;
+        if matches!(node.form(), SyntaxForm::Path)
+            && let Ok(Some(name)) = direct_identifier(tree, *child)
+        {
+            return Some((name, Vec::new()));
+        }
+    }
+    None
+}
+
+fn check_owned_move_receiver(
+    tree: &SyntaxTree,
+    receiver_children: &[NodeId],
+    receiver_type: &TypeDescriptor,
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    span: SourceSpan,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<(), AnalysisError> {
+    if !is_affine_type(receiver_type, context) {
+        return Ok(());
+    }
+    let Some((root, fields)) = owned_receiver_place(tree, receiver_children) else {
+        return Ok(());
+    };
+    record_affine_place(
+        AffinePlace::projected(root.clone(), fields),
+        environment.get(&root),
+        receiver_type,
+        span,
+        context,
+        diagnostics,
+    )
+}
+
 fn validate_pattern_shape(
     tree: &SyntaxTree,
     pattern: NodeId,
@@ -4022,7 +4178,17 @@ fn infer_expression_inner(
             }
             SyntaxForm::Path => {
                 if let Some(name) = direct_identifier(tree, child)? {
-                    return Ok(environment.get(&name).cloned());
+                    if let Some(ty) = environment.get(&name).cloned() {
+                        record_affine_read(
+                            name,
+                            &ty,
+                            child_node.span().clone(),
+                            context,
+                            diagnostics,
+                        )?;
+                        return Ok(Some(ty));
+                    }
+                    return Ok(None);
                 }
             }
             SyntaxForm::Token(token) => {
@@ -5214,18 +5380,22 @@ fn diagnose_projected_shared_receiver_place(
         && let Some(metadata) = context
             .inherent_method_sources
             .get(&(receiver.clone(), member.clone()))
-        && metadata.receiver_mode.requires_caller_place()
+        && (metadata.receiver_mode.requires_caller_place()
+            || (metadata.receiver_mode == ReceiverMode::Owned && is_affine_type(receiver, context)))
     {
-        let (code, message) = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
-            (
+        let (code, message) = match metadata.receiver_mode {
+            ReceiverMode::ExclusivePlace => (
                 "exclusive-receiver-place",
                 "`exclusive self` requires a mutable binding root or struct-field receiver place",
-            )
-        } else {
-            (
+            ),
+            ReceiverMode::Owned => (
+                "owned-receiver-scope",
+                "`owned self` on an AffineDroppable receiver requires a binding root or struct-field receiver place",
+            ),
+            _ => (
                 "shared-receiver-place",
                 "`shared self` requires a binding root or struct-field receiver place",
-            )
+            ),
         };
         diagnostics.push(body_diagnostic(
             code,
@@ -5339,6 +5509,13 @@ fn infer_operand_sequence(
                 if let Some(name) = direct_identifier(tree, *child)?
                     && let Some(value) = environment.get(&name)
                 {
+                    record_affine_read(
+                        name.clone(),
+                        value,
+                        node.span().clone(),
+                        context,
+                        diagnostics,
+                    )?;
                     return Ok(Some(value.clone()));
                 }
             }
@@ -5368,10 +5545,13 @@ fn infer_member_sequence(
         && let Some((root, fields)) = postfix_field_sequence(tree, children)
         && fields.len() > 1
     {
-        let Some(mut receiver) = environment.get(&root).cloned() else {
+        let Some(root_binding) = environment.get(&root).cloned() else {
             return Ok(None);
         };
+        let mut receiver = root_binding.clone();
+        let mut path = Vec::with_capacity(fields.len());
         for (member, member_id) in fields {
+            path.push(member.clone());
             let field = if receiver == TypeDescriptor::DECISION {
                 match member.as_ref() {
                     "decision" => Some(TypeDescriptor::BOOL),
@@ -5407,6 +5587,19 @@ fn infer_member_sequence(
             };
             receiver = field;
         }
+        let place_span = children
+            .last()
+            .and_then(|child| tree.node(*child))
+            .map(|node| node.span().clone())
+            .ok_or(AnalysisError::Invariant)?;
+        record_affine_place(
+            AffinePlace::projected(root, path),
+            Some(&root_binding),
+            &receiver,
+            place_span,
+            context,
+            diagnostics,
+        )?;
         return Ok(Some(receiver));
     }
     let Some(dot) = children
@@ -5605,17 +5798,23 @@ fn infer_member_sequence(
             } else {
                 postfix_shared_receiver_place(tree, children, context)
             };
-            if metadata.receiver_mode.requires_caller_place() && !caller_place_is_valid {
-                let (code, message) = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
-                    (
+            let requires_place = metadata.receiver_mode.requires_caller_place()
+                || (metadata.receiver_mode == ReceiverMode::Owned
+                    && is_affine_type(&receiver, context));
+            if requires_place && !caller_place_is_valid {
+                let (code, message) = match metadata.receiver_mode {
+                    ReceiverMode::ExclusivePlace => (
                         "exclusive-receiver-place",
                         "`exclusive self` requires a mutable binding root or struct-field receiver place",
-                    )
-                } else {
-                    (
+                    ),
+                    ReceiverMode::Owned => (
+                        "owned-receiver-scope",
+                        "`owned self` on an AffineDroppable receiver requires a binding root or struct-field receiver place",
+                    ),
+                    _ => (
                         "shared-receiver-place",
                         "`shared self` requires a binding root or struct-field receiver place",
-                    )
+                    ),
                 };
                 diagnostics.push(body_diagnostic(
                     code,
@@ -5624,6 +5823,17 @@ fn infer_member_sequence(
                     member_node.span().clone(),
                     [] as [(&str, &str); 0],
                 )?);
+            }
+            if metadata.receiver_mode == ReceiverMode::Owned {
+                check_owned_move_receiver(
+                    tree,
+                    children.get(..dot).unwrap_or_default(),
+                    &receiver,
+                    environment,
+                    member_node.span().clone(),
+                    context,
+                    diagnostics,
+                )?;
             }
             if let Some(caller) = context.current_effect_owner.borrow().clone() {
                 let call_site = call_sequence_span(tree, children, member_node)
@@ -5704,6 +5914,18 @@ fn infer_member_sequence(
         }
     };
     if let Some(field) = field {
+        if let Some((root, fields)) = postfix_field_sequence(tree, children)
+            && let Some(root_binding) = environment.get(&root).cloned()
+        {
+            record_affine_place(
+                AffinePlace::projected(root, fields.into_iter().map(|(field, _)| field).collect()),
+                Some(&root_binding),
+                &field,
+                member_node.span().clone(),
+                context,
+                diagnostics,
+            )?;
+        }
         return Ok(Some(field));
     }
     diagnostics.push(body_diagnostic(

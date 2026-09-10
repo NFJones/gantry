@@ -9,7 +9,8 @@ use crate::generated::TypeKind;
 /// Ownership obligation of a value, independent of encoding and authority.
 ///
 /// Classification does not admit a source type or define its transfer or cleanup
-/// operations. Existing v1 first-class values are all [`Self::Copyable`].
+/// operations. Primitives and ordinary aggregates are [`Self::Copyable`]; an
+/// `affine struct` inhabits [`Self::AffineDroppable`].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OwnershipClass {
     /// Independent logical copies and ordinary discard are permitted.
@@ -156,6 +157,15 @@ impl IndependentTypeProperties {
     const fn primitive(source_protection: SourceProtectionClass) -> Self {
         Self {
             source_protection,
+            ..Self::empty_aggregate()
+        }
+    }
+
+    /// Seed contributed by an `affine struct` declaration independent of its members.
+    #[must_use]
+    pub const fn affine() -> Self {
+        Self {
+            ownership: OwnershipClass::AffineDroppable,
             ..Self::empty_aggregate()
         }
     }

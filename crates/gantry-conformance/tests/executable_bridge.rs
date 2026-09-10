@@ -898,6 +898,155 @@ fn main(mut holder: Holder) -> Int { holder.counter.increment(); holder.counter.
     ));
 }
 
+/// A source-lowered affine owned move admits the caller place as a move source rather than a
+/// copied value and keeps a mid-call checkpoint decodable and tamper-rejecting.
+#[test]
+fn source_affine_owned_receiver_moves_caller_place_and_recovers_mid_call_checkpoint() {
+    use gantry::ir::ReceiverMode;
+    use gantry::runtime::{ExecutionBudget, MachineCheckpointV3};
+
+    let root = TempDirectory::new(
+        r#"
+affine struct Token { value: Int }
+struct Holder { token: Token, marker: Int }
+impl Token { fn consume(owned self) -> Int { self.value } }
+fn main(holder: Holder) -> Int {
+    let moved: Int = holder.token.consume();
+    moved + holder.marker
+}
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let main = entry_workflow(&package);
+    assert!(
+        program.workflows().iter().any(|workflow| {
+            workflow.path.as_str() == "<crate::Token>::consume"
+                && matches!(
+                    workflow.parameters.as_slice(),
+                    [gantry::ir::Parameter {
+                        name,
+                        mutable: true,
+                        receiver_mode: Some(ReceiverMode::Owned),
+                        ..
+                    }] if name.as_ref() == "self"
+                )
+        }),
+        "{:#?}",
+        program.workflows()
+    );
+    // The affine owned receiver lowers to a caller-place move, never a copied receiver value.
+    assert!(
+        main.instructions.iter().any(|instruction| matches!(
+            &instruction.kind,
+            InstructionKind::ReceiverCall {
+                callee,
+                arguments: 1,
+                source: ReceiverSource::CallerPlace { root, path },
+            } if callee.as_str() == "<crate::Token>::consume"
+                && root.as_ref() == "holder"
+                && path
+                    == &vec![gantry::value::ValuePathSegment::StructField(
+                        "token".to_owned(),
+                    )]
+        )),
+        "{:#?}",
+        main.instructions
+    );
+    assert!(
+        !main.instructions.iter().any(|instruction| matches!(
+            &instruction.kind,
+            InstructionKind::ReceiverCall {
+                callee,
+                source: ReceiverSource::CopiedValue,
+                ..
+            } if callee.as_str() == "<crate::Token>::consume"
+        )),
+        "{:#?}",
+        main.instructions
+    );
+
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted entry"));
+    let holder = LogicalValue::structure(
+        "crate::Holder",
+        vec![
+            (
+                "token".to_owned(),
+                LogicalValue::structure(
+                    "crate::Token",
+                    vec![(
+                        "value".to_owned(),
+                        LogicalValue::integer(
+                            GantryInt::new(7)
+                                .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                        ),
+                    )],
+                    DEFAULT_VALUE_LIMITS,
+                )
+                .unwrap_or_else(|error| panic!("token fixture failed: {error:?}")),
+            ),
+            (
+                "marker".to_owned(),
+                LogicalValue::integer(
+                    GantryInt::new(3).unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                ),
+            ),
+        ],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x51; 32])
+        .unwrap_or_else(|error| panic!("identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program.clone()),
+        &entry.path,
+        vec![holder],
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("affine source program did not start: {error:?}"));
+
+    // The first transition admits the caller place and enters the owned callee: a mid-call cut.
+    assert!(matches!(machine.step(), MachineStep::Transition(_)));
+
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
+    assert!(
+        bytes
+            .windows(b"holder".len())
+            .any(|window| window == b"holder"),
+        "mid-call checkpoint omitted the admitted caller place"
+    );
+    let checkpoint = MachineCheckpointV3::decode(program, &bytes)
+        .unwrap_or_else(|error| panic!("affine owned move checkpoint did not decode: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), bytes);
+    let mut altered = bytes.clone();
+    let caller_at = altered
+        .windows(b"holder".len())
+        .rposition(|window| window == b"holder")
+        .unwrap_or_else(|| panic!("checkpoint omitted the owned-move caller place"));
+    altered[caller_at..caller_at + b"holder".len()].copy_from_slice(b"absent");
+    assert_eq!(
+        MachineCheckpointV3::decode(program, &altered),
+        Err(gantry::runtime::MachineRecoveryError::ProgramMismatch)
+    );
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("affine owned move budget recovery failed: {error:?}"));
+    let mut recovered =
+        Machine::recover_from_checkpoint(Arc::new(program.clone()), checkpoint, budget)
+            .unwrap_or_else(|error| panic!("affine owned move recovery failed: {error:?}"));
+    // The resumed call reads the caller place's own value (7), and the caller frame still exposes
+    // its unchanged sibling binding (3) after the call: the owned move is a caller-place move with
+    // no write-back of the independent callee receiver.
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 10)
+    ));
+}
+
 /// Shared caller places preserve every nested field projection in aggregate and assignment RHSs.
 #[test]
 fn shared_calls_preserve_nested_places_in_aggregate_and_assignment_rhs() {

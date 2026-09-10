@@ -18,9 +18,9 @@ use gantry_core::source::{
 use gantry_frontend::{NodeId, ParsedSource, SyntaxForm, SyntaxTree, TokenKind};
 use gantry_ir::generated::{Effect, TypeExpressionKind, TypeKind};
 use gantry_ir::{
-    EffectSet, ImplementationHead, IndependentTypeProperties, Predicate, PrimitiveTypeProperties,
-    ReceiverMode, TraitContract, TraitMethodContract, TraitReference, TypeDescriptor,
-    TypeExpression,
+    EffectSet, ImplementationHead, IndependentTypeProperties, OwnershipClass, Predicate,
+    PrimitiveTypeProperties, ReceiverMode, TraitContract, TraitMethodContract, TraitReference,
+    TypeDescriptor, TypeExpression,
 };
 
 use crate::{
@@ -1786,6 +1786,7 @@ pub(crate) struct GenericDeclarationShape {
     declaration: SourceSpan,
     members: Vec<TypeExpression>,
     predicates: Vec<CapabilityPredicate>,
+    affine: bool,
     expandable: bool,
 }
 
@@ -1793,6 +1794,11 @@ impl GenericDeclarationShape {
     /// Returns whether later analysis may instantiate this declaration's members.
     pub(crate) const fn is_expandable(&self) -> bool {
         self.expandable
+    }
+
+    /// Returns whether the declaration is an `affine struct`.
+    pub(crate) const fn is_affine(&self) -> bool {
+        self.affine
     }
 }
 
@@ -1998,6 +2004,8 @@ pub(crate) fn collect_generic_declaration_shapes(
                 }
             }
             let predicates = collect_capability_predicates(tree, owner, binder.as_ref())?;
+            let affine = matches!(node.form(), SyntaxForm::StructDeclaration)
+                && direct_child(tree, owner, SyntaxForm::AffineStructModifier).is_some();
             declarations.insert(
                 symbol.path.as_str().to_owned(),
                 GenericDeclarationShape {
@@ -2005,6 +2013,7 @@ pub(crate) fn collect_generic_declaration_shapes(
                     declaration: node.span().clone(),
                     members,
                     predicates,
+                    affine,
                     expandable: !rejected_declarations.contains(symbol.path.as_str()),
                 },
             );
@@ -2091,6 +2100,16 @@ pub(crate) fn prove_independent_type_properties(
     prove_stored_member_property(root, declarations, counters, &mut property)
 }
 
+/// Proves the ownership class of one retained closed type with an uncounted fold.
+pub(crate) fn prove_ownership_class(
+    root: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+) -> Result<OwnershipClass, AnalysisError> {
+    let mut memo = BTreeMap::new();
+    prove_independent_type_properties(root, declarations, &mut None, &mut memo)
+        .map(IndependentTypeProperties::ownership_class)
+}
+
 /// Algebra and cache policy for one proof over the retained stored-member graph.
 trait StoredMemberProperty {
     type Value: Copy;
@@ -2099,6 +2118,7 @@ trait StoredMemberProperty {
     fn primitive(&self, properties: PrimitiveTypeProperties) -> Self::Value;
     fn opaque(&self) -> Result<Self::Value, AnalysisError>;
     fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value;
+    fn affine_declaration_seed(&self) -> Self::Value;
     fn is_absorbing(&self, value: Self::Value) -> bool;
     fn cached(&self, key: &str) -> Option<Self::Value>;
     fn cache(&mut self, key: String, value: Self::Value);
@@ -2130,6 +2150,10 @@ impl StoredMemberProperty for CapabilityProperty<'_> {
 
     fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value {
         left && right
+    }
+
+    fn affine_declaration_seed(&self) -> Self::Value {
+        self.identity()
     }
 
     fn is_absorbing(&self, value: Self::Value) -> bool {
@@ -2166,6 +2190,10 @@ impl StoredMemberProperty for IndependentProperty<'_> {
 
     fn combine(&self, left: Self::Value, right: Self::Value) -> Self::Value {
         left.combine(right)
+    }
+
+    fn affine_declaration_seed(&self) -> Self::Value {
+        IndependentTypeProperties::affine()
     }
 
     fn is_absorbing(&self, _value: Self::Value) -> bool {
@@ -2241,6 +2269,10 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
                 }
                 StoredMemberNode::Members(mut members) => {
                     members.sort_by_key(TypeDescriptor::canonical_string);
+                    if declared_affine(&stack[index].descriptor, declarations) {
+                        stack[index].value = property
+                            .combine(stack[index].value, property.affine_declaration_seed());
+                    }
                     stack[index].members = Some(members);
                 }
             }
@@ -2296,6 +2328,16 @@ fn prove_stored_member_property<Property: StoredMemberProperty>(
             value: property.identity(),
         });
     }
+}
+
+fn declared_affine(
+    descriptor: &TypeDescriptor,
+    declarations: &BTreeMap<String, GenericDeclarationShape>,
+) -> bool {
+    descriptor
+        .declared_path()
+        .and_then(|path| declarations.get(path.as_str()))
+        .is_some_and(GenericDeclarationShape::is_affine)
 }
 
 fn stored_member_node(

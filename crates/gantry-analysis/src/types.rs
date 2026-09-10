@@ -379,6 +379,7 @@ fn analyze_package_types_with_policy(
             &workflows,
             &actions,
             &body_analysis,
+            &capability_declarations,
         )?);
         (
             Some(artifacts.manifest),

@@ -280,3 +280,37 @@ fn public_parser_admits_owned_receiver_and_keeps_owned_contextual() {
         }));
     }
 }
+
+/// `affine` is a contextual struct modifier, not a reserved word, and stays a valid identifier.
+#[test]
+fn public_parser_accepts_affine_struct_and_keeps_affine_contextual() {
+    let source = r#"affine struct Token { value: Int }
+affine struct Box<T> { value: T }
+struct Ordinary { value: Int }
+fn main(affine: Int, token: Token) -> Int { let affine_again: Int = affine; discard token; affine_again }
+"#;
+    let outcome = parse(source, 512, 16);
+    assert!(outcome.is_valid(), "{:?}", outcome.diagnostics());
+    let tree = outcome.tree().unwrap_or_else(|| unreachable!("valid tree"));
+    let affine_structs = tree
+        .nodes()
+        .iter()
+        .filter(|node| {
+            matches!(node.form(), SyntaxForm::StructDeclaration)
+                && node.children().iter().any(|child| {
+                    tree.node(*child)
+                        .is_some_and(|n| matches!(n.form(), SyntaxForm::AffineStructModifier))
+                })
+        })
+        .count();
+    assert_eq!(affine_structs, 2);
+}
+
+/// `affine` without a following `struct` is a syntax fault at item position.
+#[test]
+fn public_parser_rejects_affine_without_struct() {
+    for source in ["affine Token { value: Int }", "affine enum State { Ready }"] {
+        let outcome = parse(source, 64, 4);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+    }
+}

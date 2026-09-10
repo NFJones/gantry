@@ -1035,9 +1035,10 @@ fn validate_instruction(
                 }),
                 ReceiverSource::CallerPlace { root, .. } => {
                     !root.is_empty()
-                        && receiver
-                            .receiver_mode()
-                            .is_some_and(crate::ReceiverMode::requires_caller_place)
+                        && receiver.receiver_mode().is_some_and(|mode| {
+                            mode.requires_caller_place()
+                                || matches!(mode, crate::ReceiverMode::Owned)
+                        })
                 }
             };
             if *arguments != callee_workflow.parameters.len()

@@ -14,7 +14,7 @@ use gantry_core::value::{
 };
 use gantry_ir::generated::Effect;
 use gantry_ir::{
-    CanonicalCallableIdentity, CanonicalPath, EffectSet, ReceiverMode, ReceiverSource,
+    CanonicalCallableIdentity, CanonicalPath, EffectSet, Projection, ReceiverMode, ReceiverSource,
     StructuralPosition, TypeDescriptor,
 };
 #[cfg(feature = "concurrent")]
@@ -2081,21 +2081,186 @@ fn place_initialization_fixture() -> (Arc<MachineProgram>, Machine) {
     (program, machine)
 }
 
+/// Builds a program whose `crate::main` enters `crate::Token::consume` through one owned-move
+/// caller place, so the callee frame carries a justified staging entry.
+#[cfg(feature = "durable")]
+fn owned_move_program(
+    main_parameter: Parameter,
+    receiver_root: &str,
+    receiver_path: Vec<ValuePathSegment>,
+    callee_result: TypeDescriptor,
+    callee: Vec<Instruction>,
+) -> Arc<MachineProgram> {
+    let main_path = path("crate::main");
+    let method_path = path("crate::Token::consume");
+    let token_type = TypeDescriptor::declared(path("crate::Token"));
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let method_identity = CanonicalCallableIdentity::inherent(&token_type, "consume", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let mut callables = vec![
+        (
+            main_identity,
+            Workflow {
+                path: main_path,
+                parameters: vec![main_parameter],
+                result: callee_result.clone(),
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        callee_result.clone(),
+                        InstructionKind::ReceiverCall {
+                            callee: method_identity.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from(receiver_root),
+                                path: receiver_path,
+                            },
+                        },
+                    ),
+                    instruction(1, callee_result.clone(), InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            method_identity,
+            Workflow {
+                path: method_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: token_type,
+                    mutable: true,
+                    receiver_mode: Some(ReceiverMode::Owned),
+                }],
+                result: callee_result,
+                effects: EffectSet::default(),
+                instructions: callee,
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("owned move program failed: {error:?}")),
+    )
+}
+
+#[cfg(feature = "durable")]
+fn token_value(value: i64) -> LogicalValue {
+    LogicalValue::structure(
+        "crate::Token",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(value)
+                    .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture value failed: {error:?}"))
+}
+
+#[cfg(feature = "durable")]
+fn token_parameter(name: &str) -> Parameter {
+    Parameter {
+        name: Arc::from(name),
+        ty: TypeDescriptor::declared(path("crate::Token")),
+        mutable: false,
+        receiver_mode: None,
+    }
+}
+
+#[cfg(feature = "durable")]
+fn int_push(site_index: u64, value: i64) -> Instruction {
+    instruction(
+        site_index,
+        TypeDescriptor::INT,
+        InstructionKind::Push(LogicalValue::integer(
+            GantryInt::new(value).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+        )),
+    )
+}
+
 #[cfg(feature = "durable")]
 #[test]
 fn place_initialization_round_trips_through_checkpoint_codec() {
-    let (program, machine) = place_initialization_fixture();
-    let mut checkpoint = machine.checkpoint();
-    assert!(checkpoint.test_add_place_initialization(
-        1,
-        "item",
-        vec![ValuePathSegment::StructField("field".to_owned())],
+    // A legitimate owned-move frame carries exactly one justified staging entry.
+    let program = owned_move_program(
+        token_parameter("token"),
+        "token",
+        Vec::new(),
+        TypeDescriptor::INT,
+        vec![
+            int_push(0, 7),
+            instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(8, 1, 1, 2, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
     ));
+    let checkpoint = machine.checkpoint();
     let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
     let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
         .unwrap_or_else(|error| panic!("place-initialization decode failed: {error:?}"));
     assert_eq!(decoded, checkpoint);
     assert_eq!(decoded.canonical_bytes(), bytes);
+
+    // A forged entry on a receiver-less call frame is rejected.
+    let (plain, machine) = place_initialization_fixture();
+    let mut forged = machine.checkpoint();
+    assert!(forged.test_add_place_initialization(
+        1,
+        "item",
+        vec![ValuePathSegment::StructField("field".to_owned())],
+    ));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&plain, &forged.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn validate_rejects_place_initialization_mismatching_caller_place() {
+    let program = owned_move_program(
+        token_parameter("token"),
+        "token",
+        Vec::new(),
+        TypeDescriptor::INT,
+        vec![
+            int_push(0, 7),
+            instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(8, 1, 1, 2, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    let mut checkpoint = machine.checkpoint();
+    assert!(checkpoint.test_set_place_initialization_path(
+        1,
+        0,
+        vec![ValuePathSegment::StructField("value".to_owned())],
+    ));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
 }
 
 #[cfg(feature = "durable")]
@@ -2201,44 +2366,51 @@ fn validate_rejects_place_initialization_with_cross_kind_segment() {
 #[cfg(feature = "durable")]
 #[test]
 fn validate_accepts_place_initialization_with_nested_declared_field_path() {
-    let program = place_initialization_program();
-    let inner = LogicalValue::structure(
-        "crate::Inner",
-        vec![(
-            "value".to_owned(),
-            LogicalValue::integer(
-                GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
-            ),
-        )],
+    // A nested struct-field receiver place justifies the entry and navigates the staged value.
+    let program = owned_move_program(
+        Parameter {
+            name: Arc::from("hub"),
+            ty: TypeDescriptor::declared(path("crate::Hub")),
+            mutable: false,
+            receiver_mode: None,
+        },
+        "hub",
+        vec![
+            ValuePathSegment::StructField("cell".to_owned()),
+            ValuePathSegment::StructField("token".to_owned()),
+        ],
+        TypeDescriptor::INT,
+        vec![
+            int_push(0, 9),
+            instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let cell = LogicalValue::structure(
+        "crate::Cell",
+        vec![("token".to_owned(), token_value(9))],
         DEFAULT_VALUE_LIMITS,
     )
-    .unwrap_or_else(|error| panic!("fixture inner struct failed: {error:?}"));
-    let item = LogicalValue::structure(
-        "crate::Item",
-        vec![("inner".to_owned(), inner)],
+    .unwrap_or_else(|error| panic!("fixture cell failed: {error:?}"));
+    let hub = LogicalValue::structure(
+        "crate::Hub",
+        vec![("cell".to_owned(), cell)],
         DEFAULT_VALUE_LIMITS,
     )
-    .unwrap_or_else(|error| panic!("fixture struct failed: {error:?}"));
+    .unwrap_or_else(|error| panic!("fixture hub failed: {error:?}"));
     let mut machine = new_machine(
         Arc::clone(&program),
         "crate::main",
-        vec![item],
+        vec![hub],
         limits(8, 1, 1, 2, 8),
     );
     assert!(matches!(
         machine.step(),
         MachineStep::Transition(MachineLabel::Deterministic { .. })
     ));
-    let mut checkpoint = machine.checkpoint();
-    assert!(checkpoint.test_add_place_initialization(
-        1,
-        "item",
-        vec![
-            ValuePathSegment::StructField("inner".to_owned()),
-            ValuePathSegment::StructField("value".to_owned()),
-        ],
-    ));
-    assert!(crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes()).is_ok());
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
+    assert!(crate::MachineCheckpointV3::decode(&program, &bytes).is_ok());
 }
 
 #[cfg(feature = "durable")]
@@ -3958,4 +4130,350 @@ fn task_body_capture_scope_recovery_accepts_top_level_local_bindings() {
                 GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
             )
     ));
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_records_place_initialization_and_recovers() {
+    let main_path = path("crate::main");
+    let method_path = path("crate::Token::consume");
+    let token_type = TypeDescriptor::declared(path("crate::Token"));
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let method_identity = CanonicalCallableIdentity::inherent(&token_type, "consume", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let mut callables = vec![
+        (
+            main_identity,
+            Workflow {
+                path: main_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("token"),
+                    ty: token_type.clone(),
+                    mutable: false,
+                    receiver_mode: None,
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::ReceiverCall {
+                            callee: method_identity.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from("token"),
+                                path: Vec::new(),
+                            },
+                        },
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            method_identity.clone(),
+            Workflow {
+                path: method_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: token_type.clone(),
+                    mutable: true,
+                    receiver_mode: Some(ReceiverMode::Owned),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Push(LogicalValue::integer(
+                            GantryInt::new(7)
+                                .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                        )),
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    let program = Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("owned move program failed: {error:?}")),
+    );
+    let token = LogicalValue::structure(
+        "crate::Token",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(5).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture value failed: {error:?}"));
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token],
+        limits(8, 1, 1, 2, 8),
+    );
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    let bytes = machine.checkpoint().canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
+    let checkpoint = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("owned move checkpoint decode failed: {error:?}"));
+    assert_eq!(checkpoint.canonical_bytes(), bytes);
+    let mut tampered = checkpoint.clone();
+    assert!(tampered.test_set_place_initialization_initialized(1, 0, true));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &tampered.canonical_bytes()),
+        Err(crate::MachineRecoveryError::InvalidCheckpoint)
+    ));
+    let mut stripped = checkpoint.clone();
+    assert!(stripped.test_clear_place_initialization());
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &stripped.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("owned move budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("owned move recovery failed: {error:?}"));
+    assert_eq!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted"))
+        ))
+    );
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_checkpoint_inside_mutating_callee_recovers() {
+    // The callee mutates its independent owned receiver, so `self` legitimately differs from the
+    // staged caller value; the checkpoint must stay decodable and recover the mutation.
+    let program = owned_move_program(
+        token_parameter("token"),
+        "token",
+        Vec::new(),
+        TypeDescriptor::INT,
+        vec![
+            int_push(0, 99),
+            instruction(
+                1,
+                TypeDescriptor::UNIT,
+                InstructionKind::Assign {
+                    name: Arc::from("self"),
+                    path: vec![ValuePathSegment::StructField("value".to_owned())],
+                    target_type: TypeDescriptor::INT,
+                },
+            ),
+            instruction(
+                2,
+                TypeDescriptor::declared(path("crate::Token")),
+                InstructionKind::Load(Arc::from("self")),
+            ),
+            instruction(
+                3,
+                TypeDescriptor::INT,
+                InstructionKind::Project(Projection::Field(Arc::from("value"))),
+            ),
+            instruction(4, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token_value(5)],
+        limits(16, 1, 1, 2, 16),
+    );
+    for _ in 0..3 {
+        assert!(matches!(
+            machine.step(),
+            MachineStep::Transition(MachineLabel::Deterministic { .. })
+        ));
+    }
+    let checkpoint = machine.checkpoint();
+    let bytes = checkpoint.canonical_bytes();
+    assert_eq!(bytes.get(..8), Some(b"GNTMCP06".as_slice()));
+    let decoded = crate::MachineCheckpointV3::decode(&program, &bytes)
+        .unwrap_or_else(|error| panic!("mutating owned callee checkpoint failed: {error:?}"));
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("owned move budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, decoded, budget)
+        .unwrap_or_else(|error| panic!("owned move recovery failed: {error:?}"));
+    assert_eq!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(99).unwrap_or_else(|| unreachable!("fixture integer is admitted"))
+        ))
+    );
+    // An owned move never writes the independent receiver back to the caller place.
+    assert_eq!(
+        machine.test_frame_binding_value(0, "token"),
+        Some(token_value(5))
+    );
+    assert_eq!(
+        recovered.test_frame_binding_value(0, "token"),
+        Some(token_value(5))
+    );
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn owned_move_unwind_discards_staged_value_without_rollback() {
+    let maximum = GantryInt::new(9_007_199_254_740_991)
+        .unwrap_or_else(|| unreachable!("maximum Int is admitted"));
+    let one = GantryInt::new(1).unwrap_or_else(|| unreachable!("one is admitted"));
+    let main_path = path("crate::main");
+    let method_path = path("crate::Token::consume");
+    let token_type = TypeDescriptor::declared(path("crate::Token"));
+    let main_identity = CanonicalCallableIdentity::free(&main_path, &[]);
+    let method_identity = CanonicalCallableIdentity::inherent(&token_type, "consume", &[])
+        .unwrap_or_else(|error| panic!("method identity failed: {error}"));
+    let mut callables = vec![
+        (
+            main_identity,
+            Workflow {
+                path: main_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("token"),
+                    ty: token_type.clone(),
+                    mutable: false,
+                    receiver_mode: None,
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::ReceiverCall {
+                            callee: method_identity.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from("token"),
+                                path: Vec::new(),
+                            },
+                        },
+                    ),
+                    instruction(
+                        1,
+                        token_type.clone(),
+                        InstructionKind::Load(Arc::from("token")),
+                    ),
+                    instruction(
+                        2,
+                        TypeDescriptor::INT,
+                        InstructionKind::Project(Projection::Field(Arc::from("value"))),
+                    ),
+                    instruction(3, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            method_identity.clone(),
+            Workflow {
+                path: method_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: token_type.clone(),
+                    mutable: true,
+                    receiver_mode: Some(ReceiverMode::Owned),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Push(LogicalValue::integer(
+                            GantryInt::new(99)
+                                .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                        )),
+                    ),
+                    instruction(
+                        1,
+                        TypeDescriptor::UNIT,
+                        InstructionKind::Assign {
+                            name: Arc::from("self"),
+                            path: vec![ValuePathSegment::StructField("value".to_owned())],
+                            target_type: TypeDescriptor::INT,
+                        },
+                    ),
+                    instruction(
+                        2,
+                        TypeDescriptor::INT,
+                        InstructionKind::Push(LogicalValue::integer(maximum)),
+                    ),
+                    instruction(
+                        3,
+                        TypeDescriptor::INT,
+                        InstructionKind::Push(LogicalValue::integer(one)),
+                    ),
+                    instruction(
+                        4,
+                        TypeDescriptor::INT,
+                        InstructionKind::Primitive(Primitive::Add),
+                    ),
+                    instruction(5, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    let program = Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("owned move unwind program failed: {error:?}")),
+    );
+    let token = LogicalValue::structure(
+        "crate::Token",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(5).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture value failed: {error:?}"));
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![token],
+        limits(16, 1, 1, 2, 16),
+    );
+    // Advance to the failing primitive with the receiver already mutated: the staging entry stays
+    // live at the cut while the independent `self` no longer equals the staged caller value.
+    for _ in 0..5 {
+        assert!(matches!(
+            machine.step(),
+            MachineStep::Transition(MachineLabel::Deterministic { .. })
+        ));
+    }
+    let cut = machine.checkpoint();
+    let cut_bytes = cut.canonical_bytes();
+    assert_eq!(cut_bytes.get(..8), Some(b"GNTMCP06".as_slice()));
+    assert!(crate::MachineCheckpointV3::decode(&program, &cut_bytes).is_ok());
+    // The failing transition and its unwind outcome are unchanged by the staged move.
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Failure(_))
+    ));
+    assert!(matches!(
+        drive(&mut machine),
+        MachineOutcome::Failed(failure)
+            if failure.code
+                == RuntimeCode::Deterministic(DeterministicEvaluationCode::IntegerOverflow)
+    ));
+    // No rollback and no caller-place write-back: the caller place keeps its original value.
+    assert_eq!(
+        machine.test_frame_binding_value(0, "token"),
+        Some(token_value(5))
+    );
 }
