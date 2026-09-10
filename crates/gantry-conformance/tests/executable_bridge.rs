@@ -3908,3 +3908,75 @@ fn main() -> Int { Counter { value: 5 }.read() + 1 }
     );
     assert_eq!(run_single_entry(&root), 6);
 }
+
+/// A receiver call whose argument is itself a receiver call types and executes as the left operand.
+///
+/// The argument's own closing parenthesis is a retained token of the argument expression, so
+/// reconstructing the outer call must not mistake it for the parenthesis that closes the outer
+/// argument list; otherwise the nested call is reported as an arity mismatch.
+#[test]
+fn receiver_call_argument_that_is_a_receiver_call_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+impl Counter { fn add(self, amount: Int) -> Int { self.value + amount } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    counter.add(counter.read()) + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 11);
+}
+
+/// The same nested receiver-call argument types and executes as the right operand of an operator.
+#[test]
+fn receiver_call_argument_that_is_a_receiver_call_on_the_right_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+impl Counter { fn add(self, amount: Int) -> Int { self.value + amount } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    1 + counter.add(counter.read())
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 11);
+}
+
+/// A plain nested receiver-call argument with no surrounding operator executes as its own result.
+#[test]
+fn receiver_call_argument_that_is_a_receiver_call_alone_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+impl Counter { fn add(self, amount: Int) -> Int { self.value + amount } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    counter.add(counter.read())
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 10);
+}
+
+/// An argument that is a chain of receiver calls types and executes as that chain's value.
+#[test]
+fn receiver_call_argument_that_is_a_receiver_call_chain_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+impl Counter { fn add(self, amount: Int) -> Int { self.value + amount } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    counter.add(counter.read() + counter.read())
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 15);
+}

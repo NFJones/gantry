@@ -2610,28 +2610,18 @@ fn postfix_method_receiver_place(
     tree: &SyntaxTree,
     expression: &gantry_frontend::SyntaxNode,
 ) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
-    let mut tokens = Vec::new();
-    let mut work = expression
-        .children()
-        .iter()
-        .rev()
-        .copied()
-        .collect::<Vec<_>>();
-    while let Some(id) = work.pop() {
-        let node = tree.node(id)?;
-        if matches!(node.form(), SyntaxForm::Token(_)) {
-            tokens.push(node);
-        } else {
-            work.extend(node.children().iter().rev().copied());
-        }
-    }
-    let method_dot = tokens.iter().rposition(|node| {
-        matches!(
-            node.form(),
-            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
-        )
+    let tokens = authored_tokens(tree, expression)?;
+    let method_dot = call_member_dot(tree, &tokens).or_else(|| {
+        tokens.iter().rposition(|id| {
+            tree.node(*id).is_some_and(|node| {
+                matches!(
+                    node.form(),
+                    SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+                )
+            })
+        })
     })?;
-    let root = match tokens.first()?.form() {
+    let root = match tree.node(*tokens.first()?)?.form() {
         SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
         SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
             Arc::from("self")
@@ -2642,18 +2632,84 @@ fn postfix_method_receiver_place(
     let mut cursor = 1;
     while cursor < method_dot {
         if !matches!(
-            tokens.get(cursor)?.form(),
+            tree.node(*tokens.get(cursor)?)?.form(),
             SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
         ) {
             return None;
         }
-        let SyntaxForm::Token(TokenKind::Identifier(field)) = tokens.get(cursor + 1)?.form() else {
+        let SyntaxForm::Token(TokenKind::Identifier(field)) =
+            tree.node(*tokens.get(cursor.saturating_add(1))?)?.form()
+        else {
             return None;
         };
         path.push(ValuePathSegment::StructField(field.to_string()));
-        cursor += 2;
+        cursor = cursor.saturating_add(2);
     }
     Some((root, path))
+}
+
+/// Returns every retained token of one expression in authored order.
+fn authored_tokens(
+    tree: &SyntaxTree,
+    expression: &gantry_frontend::SyntaxNode,
+) -> Option<Vec<NodeId>> {
+    let mut tokens = Vec::new();
+    let mut work = expression
+        .children()
+        .iter()
+        .rev()
+        .copied()
+        .collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(id);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    Some(tokens)
+}
+
+/// Returns the index of the dot naming the member of the call that ends an expression.
+///
+/// The member identifier sits immediately before the call's own opening parenthesis, and
+/// that parenthesis opens the parenthesized group ending at the expression's last token.
+/// Counting parenthesis depth backwards therefore finds this call's parenthesis even when
+/// an argument is a call of its own, where the last dot of the whole expression belongs to
+/// the argument rather than to this call.
+fn call_member_dot(tree: &SyntaxTree, tokens: &[NodeId]) -> Option<usize> {
+    let mut depth = 0_u64;
+    let mut open = None;
+    for (index, id) in tokens.iter().enumerate().rev() {
+        match tree.node(*id)?.form() {
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                depth = depth.saturating_add(1);
+            }
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+                if depth == 0 {
+                    return None;
+                }
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    open = Some(index);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let open = open?;
+    let member = tree.node(*tokens.get(open.checked_sub(1)?)?)?.form();
+    if !matches!(member, SyntaxForm::Token(TokenKind::Identifier(_))) {
+        return None;
+    }
+    let dot = open.checked_sub(2)?;
+    matches!(
+        tree.node(*tokens.get(dot)?)?.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+    )
+    .then_some(dot)
 }
 
 fn receiver_place_types(

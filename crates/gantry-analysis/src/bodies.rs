@@ -5767,14 +5767,12 @@ fn infer_member_sequence(
         .find(|(_, child)| node_contains_punctuation(tree, **child, Punctuation::LeftParenthesis))
         .map(|(index, _)| index);
     if let Some(open) = call_open {
-        let close = children
-            .iter()
-            .enumerate()
-            .skip(open.saturating_add(1))
-            .find(|(_, child)| {
-                node_contains_punctuation(tree, **child, Punctuation::RightParenthesis)
-            })
-            .map_or(children.len(), |(index, _)| index);
+        let close = split_call_close_index(tree, children, open).unwrap_or(children.len());
+        // The receiver place and the member dot precede the call parenthesis, so the
+        // argument fragments are excluded from the receiver scans: an argument that is
+        // itself a receiver call owns a dot and parentheses of its own, which must not be
+        // read as the outer member dot and call.
+        let receiver_scope = children.get(..open).unwrap_or(children);
         let arguments = children
             .get(open.saturating_add(1)..close)
             .unwrap_or_default()
@@ -5864,9 +5862,9 @@ fn infer_member_sequence(
         };
         if let Some(metadata) = inherent_source.flatten() {
             let caller_place_is_valid = if metadata.receiver_mode == ReceiverMode::ExclusivePlace {
-                postfix_exclusive_receiver_place(tree, children, context, member_node.span())?
+                postfix_exclusive_receiver_place(tree, receiver_scope, context, member_node.span())?
             } else {
-                postfix_shared_receiver_place(tree, children, context)
+                postfix_shared_receiver_place(tree, receiver_scope, context)
             };
             let requires_place = metadata.receiver_mode.requires_caller_place()
                 || (metadata.receiver_mode == ReceiverMode::Owned
@@ -5895,8 +5893,8 @@ fn infer_member_sequence(
                 )?);
             }
             if !requires_place
-                && !receiver_is_syntactic_place(tree, children)
-                && !receiver_is_constructed(tree, children)
+                && !receiver_is_syntactic_place(tree, receiver_scope)
+                && !receiver_is_constructed(tree, receiver_scope)
             {
                 diagnostics.push(body_diagnostic(
                     "receiver-value-place",
@@ -8221,6 +8219,45 @@ fn node_is_punctuation(tree: &SyntaxTree, id: NodeId, expected: Punctuation) -> 
     tree.node(id).is_some_and(|node| {
         matches!(node.form(), SyntaxForm::Token(TokenKind::Punctuation(value)) if *value == expected)
     })
+}
+
+/// Returns the fragment child holding the parenthesis token that closes a call.
+///
+/// The call's opening parenthesis is introduced by the fragment child at `open`. An
+/// argument of that call may itself be a receiver call and so owns parentheses of its
+/// own, which a shallow containment check mistakes for the call's closing parenthesis and
+/// truncates the argument list. Counting parenthesis depth over the fragment's tokens in
+/// authored order identifies the token that actually closes the call. `None` reports that
+/// the fragment holds no matching closing parenthesis.
+fn split_call_close_index(tree: &SyntaxTree, children: &[NodeId], open: usize) -> Option<usize> {
+    let mut depth = 0_u64;
+    for (index, child) in children.iter().enumerate().skip(open) {
+        let mut tokens = Vec::new();
+        let mut work = vec![*child];
+        while let Some(id) = work.pop() {
+            let node = tree.node(id)?;
+            if matches!(node.form(), SyntaxForm::Token(_)) {
+                tokens.push(node);
+            } else {
+                work.extend(node.children().iter().rev().copied());
+            }
+        }
+        for token in tokens {
+            match token.form() {
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::LeftParenthesis)) => {
+                    depth = depth.saturating_add(1);
+                }
+                SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis)) => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(index);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 fn infer_match(
