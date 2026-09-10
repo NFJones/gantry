@@ -2085,6 +2085,9 @@ impl Compiler<'_> {
         if let Some(result) = self.compile_projected_operand_place(children)? {
             return Ok(result);
         }
+        if let Some(result) = self.compile_receiver_call_operand(children)? {
+            return Ok(result);
+        }
         let mut result = TypeDescriptor::UNIT;
         let valued = children
             .iter()
@@ -2144,6 +2147,99 @@ impl Compiler<'_> {
         if types.next().is_some() {
             return Err(AnalysisError::Invariant);
         }
+        Ok(Some(result))
+    }
+
+    /// Lowers a split receiver-call operand as its receiver, arguments, and one call.
+    ///
+    /// The parser splits a leading dotted receiver call into sibling fragments, so the call
+    /// has no node of its own to compile. The analyzer still types that shape as the callee's
+    /// result, so lowering resolves the same direct target by the call-site span the fragments
+    /// reconstruct, admits the receiver per its mode, and emits the call whose result the
+    /// enclosing primitive or chain step consumes.
+    fn compile_receiver_call_operand(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        let Some((receiver, arguments)) = operand_receiver_call_split(self.tree, children) else {
+            return Ok(None);
+        };
+        let Some(source) = sequence_call_site_span(self.tree, children) else {
+            return Ok(None);
+        };
+        let Some(callee) = self
+            .direct_targets
+            .iter()
+            .find(|(candidate, callee)| *candidate == source && callee.receiver_type().is_some())
+            .map(|(_, callee)| callee.clone())
+        else {
+            return Ok(None);
+        };
+        let Some(result) = self.callable_results.get(&callee).cloned() else {
+            return Ok(None);
+        };
+        let requires_place =
+            self.shared_receivers.contains(&callee) || self.owned_move_receivers.contains(&callee);
+        match &receiver {
+            SplitOperandReceiver::Place(root, path) => {
+                let Some(receiver_types) =
+                    receiver_place_types(root, path, &self.binding_types, self.struct_fields)
+                else {
+                    return Ok(None);
+                };
+                if !requires_place {
+                    let mut receiver_types = receiver_types.into_iter();
+                    self.emit(
+                        receiver_types.next().ok_or(AnalysisError::Invariant)?,
+                        InstructionKind::Load(root.clone()),
+                    )?;
+                    for segment in path {
+                        let ValuePathSegment::StructField(field) = segment else {
+                            return Err(AnalysisError::Invariant);
+                        };
+                        self.emit(
+                            receiver_types.next().ok_or(AnalysisError::Invariant)?,
+                            InstructionKind::Project(Projection::Field(Arc::from(field.as_str()))),
+                        )?;
+                    }
+                }
+            }
+            SplitOperandReceiver::Constructed(struct_expression) => {
+                let receiver_type = callee
+                    .receiver_type()
+                    .ok_or(AnalysisError::Invariant)?
+                    .clone();
+                if requires_place {
+                    return Err(AnalysisError::Invariant);
+                }
+                self.compile_struct(
+                    children.first().copied().ok_or(AnalysisError::Invariant)?,
+                    *struct_expression,
+                    receiver_type,
+                )?;
+            }
+        }
+        for argument in &arguments {
+            self.compile_expression(*argument)?;
+        }
+        self.emit(
+            result.clone(),
+            InstructionKind::ReceiverCall {
+                callee,
+                arguments: arguments.len().saturating_add(1),
+                source: if requires_place {
+                    let SplitOperandReceiver::Place(root, path) = &receiver else {
+                        return Err(AnalysisError::Invariant);
+                    };
+                    gantry_ir::ReceiverSource::CallerPlace {
+                        root: root.clone(),
+                        path: path.clone(),
+                    }
+                } else {
+                    gantry_ir::ReceiverSource::CopiedValue
+                },
+            },
+        )?;
         Ok(Some(result))
     }
 
@@ -2685,6 +2781,138 @@ fn operand_field_place(
     (!path.is_empty()).then_some((root, path))
 }
 
+/// Receiver selection of one split receiver-call operand.
+enum SplitOperandReceiver {
+    /// A dotted place named before the call parenthesis.
+    Place(Arc<str>, Vec<ValuePathSegment>),
+    /// An aggregate constructed before the call parenthesis.
+    Constructed(NodeId),
+}
+
+/// Receiver selection and argument expressions of one split receiver-call operand.
+type SplitReceiverCall = (SplitOperandReceiver, Vec<NodeId>);
+
+/// Splits a leading receiver-call operand into its receiver selection and arguments.
+///
+/// The parser splits a leading receiver call into sibling fragments: the receiver (a root
+/// path with one member postfix plus identifier per member, or a constructed aggregate), the
+/// call-parenthesis postfix, one `Expression` per argument, and a boundary node holding the
+/// closing `)`. The analyzer types that sibling shape as the callee's result, so lowering
+/// resolves the same direct target by the call-site span these fragments reconstruct. Only
+/// that exact shape yields a receiver here; anything else falls back to the ordinary child
+/// walk.
+fn operand_receiver_call_split(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Option<SplitReceiverCall> {
+    let open = children.iter().position(|child| {
+        tree.node(*child)
+            .is_some_and(|node| node_is_call_postfix(tree, node))
+    })?;
+    let close = children.len().checked_sub(1)?;
+    if close <= open || !node_is_closing_parenthesis(tree, tree.node(*children.get(close)?)?) {
+        return None;
+    }
+    let mut arguments = Vec::new();
+    for child in children.get(open.saturating_add(1)..close)? {
+        match tree.node(*child)?.form() {
+            SyntaxForm::Expression => arguments.push(*child),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Comma)) => {}
+            _ => return None,
+        }
+    }
+    let receiver = operand_receiver_selection(tree, children.get(..open)?)?;
+    Some((receiver, arguments))
+}
+
+/// Resolves the receiver fragment before a split receiver call's parenthesis.
+///
+/// A dotted receiver roots a named place; any other receiver fragment must construct the
+/// aggregate the analyzer admitted, because a receiver that is neither a place nor a
+/// construction has no lowering here and its enclosing operand falls back to the child walk.
+fn operand_receiver_selection(
+    tree: &SyntaxTree,
+    receiver: &[NodeId],
+) -> Option<SplitOperandReceiver> {
+    if let Some((root, path)) = operand_receiver_place(tree, receiver) {
+        return Some(SplitOperandReceiver::Place(root, path));
+    }
+    receiver
+        .iter()
+        .find_map(|child| {
+            let node = tree.node(*child)?;
+            matches!(node.form(), SyntaxForm::StructExpression)
+                .then_some(*child)
+                .or_else(|| descendant_form(tree, *child, &[SyntaxForm::StructExpression]))
+        })
+        .map(SplitOperandReceiver::Constructed)
+}
+
+/// Returns the dotted place named before a split receiver call's parenthesis.
+fn operand_receiver_place(
+    tree: &SyntaxTree,
+    receiver: &[NodeId],
+) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
+    let mut tokens = Vec::new();
+    let mut work = receiver.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let method_dot = tokens.iter().rposition(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    })?;
+    let root = match tokens.first()?.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+            Arc::from("self")
+        }
+        _ => return None,
+    };
+    let mut path = Vec::new();
+    let mut cursor = 1_usize;
+    while cursor < method_dot {
+        if !matches!(
+            tokens.get(cursor)?.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        ) {
+            return None;
+        }
+        let SyntaxForm::Token(TokenKind::Identifier(field)) =
+            tokens.get(cursor.saturating_add(1))?.form()
+        else {
+            return None;
+        };
+        path.push(ValuePathSegment::StructField(field.to_string()));
+        cursor = cursor.saturating_add(2);
+    }
+    Some((root, path))
+}
+
+fn node_is_dot_postfix(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> bool {
+    matches!(node.form(), SyntaxForm::PostfixExpression)
+        && node_contains_punctuation(tree, node, Punctuation::Dot)
+}
+
+fn node_is_call_postfix(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> bool {
+    matches!(node.form(), SyntaxForm::PostfixExpression)
+        && node_contains_punctuation(tree, node, Punctuation::LeftParenthesis)
+}
+
+fn node_is_closing_parenthesis(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> bool {
+    matches!(
+        node.form(),
+        SyntaxForm::Token(TokenKind::Punctuation(Punctuation::RightParenthesis))
+    ) || node_contains_punctuation(tree, node, Punctuation::RightParenthesis)
+}
+
 fn method_receiver_type(path: &CanonicalPath) -> Result<TypeDescriptor, AnalysisError> {
     let receiver = path
         .as_str()
@@ -2919,10 +3147,8 @@ fn is_parenthesis_boundary(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode
 /// slice is compiled structurally instead of through the child walk.
 fn carries_split_projection(tree: &SyntaxTree, children: &[NodeId]) -> bool {
     children.iter().any(|child| {
-        tree.node(*child).is_some_and(|node| {
-            matches!(node.form(), SyntaxForm::PostfixExpression)
-                && node_contains_punctuation(tree, node, Punctuation::Dot)
-        })
+        tree.node(*child)
+            .is_some_and(|node| node_is_dot_postfix(tree, node))
     })
 }
 

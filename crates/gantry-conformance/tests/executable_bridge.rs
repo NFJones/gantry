@@ -3721,3 +3721,190 @@ fn main() -> Int {
     };
     assert!(matches!(value.view(), LogicalValueView::Int(value) if value.get() == 4));
 }
+
+/// A receiver call used as the left operand lowers as a call whose result feeds the operator.
+#[test]
+fn receiver_call_operand_on_the_left_executes_as_its_result_type() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+fn main() -> Int {
+    let c: Counter = Counter { value: 5 };
+    c.read() + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 6);
+}
+
+/// A receiver call used as the right operand lowers as a call whose result feeds the operator.
+#[test]
+fn receiver_call_operand_on_the_right_executes_as_its_result_type() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+fn main() -> Int {
+    let c: Counter = Counter { value: 5 };
+    1 + c.read()
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 6);
+}
+
+/// Two receiver calls in one flattened operand chain each lower once and fold left to right.
+#[test]
+fn receiver_call_operands_in_a_chain_execute_left_to_right() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+fn main() -> Int {
+    let c: Counter = Counter { value: 5 };
+    c.read() + c.read()
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 10);
+}
+
+/// A receiver call used as a call argument lowers as a call producing that argument.
+#[test]
+fn receiver_call_operand_as_call_argument_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+fn identity(value: Int) -> Int { value }
+fn main() -> Int {
+    let c: Counter = Counter { value: 5 };
+    identity(c.read())
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 5);
+}
+
+/// A receiver call with an explicit argument used as an operand lowers its argument then the call.
+#[test]
+fn receiver_call_with_argument_operand_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn add(self, other: Int) -> Int { self.value + other } }
+fn main() -> Int {
+    let c: Counter = Counter { value: 5 };
+    c.add(2) + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 8);
+}
+
+/// A receiver-call operand whose receiver is a shared caller place lowers as a place loan.
+#[test]
+fn shared_receiver_call_operand_lowers_as_a_place_loan() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(shared self) -> Int { self.value } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    counter.read() + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 6);
+}
+
+/// A receiver-call operand whose receiver is an exclusive caller place lowers as a place loan.
+#[test]
+fn exclusive_receiver_call_operand_lowers_as_a_place_loan() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn bump(exclusive self) -> Int { self.value = self.value + 1; self.value } }
+fn main() -> Int {
+    let mut counter: Counter = Counter { value: 1 };
+    counter.bump() + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 3);
+}
+
+/// An `owned self` call operand on an affine receiver moves the caller place, then adds.
+#[test]
+fn owned_receiver_call_operand_moves_caller_place() {
+    let root = TempDirectory::new(
+        r#"
+affine struct Token { value: Int }
+impl Token { fn consume(owned self) -> Int { self.value } }
+fn main() -> Int {
+    let token: Token = Token { value: 5 };
+    token.consume() + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 6);
+}
+
+/// An `owned self` call operand on a copyable receiver admits the copied value, then adds.
+#[test]
+fn copyable_owned_receiver_call_operand_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(owned self) -> Int { self.value } }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    counter.read() + 1
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 6);
+}
+
+/// A free call with explicit arguments still lowers when its result is an operand.
+#[test]
+fn free_call_with_arguments_operand_still_lowers() {
+    let root = TempDirectory::new(
+        r#"
+fn add(left: Int, right: Int) -> Int { left + right }
+fn main() -> Int { add(1, 2) + 1 }
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 4);
+}
+
+/// A receiver call with an explicit argument still lowers when its result is an operand.
+#[test]
+fn receiver_call_with_argument_as_call_argument_still_lowers() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn add(self, other: Int) -> Int { self.value + other } }
+fn identity(value: Int) -> Int { value }
+fn main() -> Int {
+    let counter: Counter = Counter { value: 5 };
+    identity(counter.add(2)) + counter.add(1)
+}
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 13);
+}
+
+/// A receiver-call operand whose receiver is a constructed aggregate lowers as a call.
+#[test]
+fn constructed_receiver_call_operand_executes() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+impl Counter { fn read(self) -> Int { self.value } }
+fn main() -> Int { Counter { value: 5 }.read() + 1 }
+"#,
+    );
+    assert_eq!(run_single_entry(&root), 6);
+}
