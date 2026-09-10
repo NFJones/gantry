@@ -1242,16 +1242,20 @@ impl Compiler<'_> {
         {
             return self.compile_match(match_expression, ty);
         }
-        if let Some(operation) = descendant_form(
-            self.tree,
-            expression,
-            &[
-                SyntaxForm::PromptExpression,
-                SyntaxForm::DecideExpression,
-                SyntaxForm::ActionExpression,
-                SyntaxForm::AttemptExpression,
-            ],
-        ) {
+        // One node that carries its own operator tokens is an operator chain whose operands may
+        // hold an operation, so the chain decides whether an operand is reached at all.
+        if binary_operators(self.tree, node.children()).is_empty()
+            && let Some(operation) = descendant_form(
+                self.tree,
+                expression,
+                &[
+                    SyntaxForm::PromptExpression,
+                    SyntaxForm::DecideExpression,
+                    SyntaxForm::ActionExpression,
+                    SyntaxForm::AttemptExpression,
+                ],
+            )
+        {
             return self.compile_operation(operation, ty);
         }
         let operators = binary_operators(self.tree, node.children());
@@ -1262,6 +1266,11 @@ impl Compiler<'_> {
             let (operator, index) = operators[0];
             let left = node.children()[..index].to_vec();
             let right = node.children()[index.saturating_add(1)..].to_vec();
+            if logical_constant(operator).is_some() {
+                self.compile_sequence(&left)?;
+                self.emit_logical_step(operator, |compiler| compiler.compile_sequence(&right))?;
+                return Ok(ty);
+            }
             self.compile_sequence(&left)?;
             self.compile_sequence(&right)?;
             let primitive = primitive_for_binary(operator).ok_or(AnalysisError::Invariant)?;
@@ -1943,41 +1952,40 @@ impl Compiler<'_> {
             .ok_or(AnalysisError::Invariant)
     }
 
-    /// Compiles a flattened operator chain left to right, one primitive per operator.
+    /// Compiles a flattened operator chain left to right, one step per operator.
     ///
     /// `10 - 2 - 3` parses as one expression node holding `[10, -, 2, -, 3]`, so folding
     /// that slice in source order emits `((10 - 2) - 3)` rather than applying one primitive
     /// to the last two operands. An operator of tighter precedence keeps its right operand
-    /// inside a nested node, which this fold compiles as a single operand.
+    /// inside a nested node, which this fold compiles as a single operand. A node can also
+    /// carry a lower-precedence `&&` or `||` after the operators it follows, so each step
+    /// chooses between one deterministic primitive and one short-circuit logical step.
     fn compile_binary_chain(
         &mut self,
         children: &[NodeId],
         ty: TypeDescriptor,
     ) -> Result<TypeDescriptor, AnalysisError> {
         let operators = binary_operators(self.tree, children);
-        let Some((final_operator, _)) = operators.last().copied() else {
+        if operators.is_empty() {
             return Err(AnalysisError::Invariant);
-        };
+        }
+        let mut operands = Vec::with_capacity(operators.len().saturating_add(1));
         let mut start = 0_usize;
-        let mut left_type = TypeDescriptor::UNIT;
-        let mut pending: Option<Punctuation> = None;
-        for (operator, index) in operators {
-            let operand = children.get(start..index).unwrap_or_default();
-            let operand_type = self.compile_operand(operand)?;
-            if let Some(previous) = pending.replace(operator) {
-                left_type = self.emit_binary_primitive(previous, &left_type)?;
-            } else {
-                left_type = operand_type;
-            }
+        for (_, index) in &operators {
+            operands.push(children.get(start..*index).unwrap_or_default());
             start = index.saturating_add(1);
         }
-        self.compile_operand(children.get(start..).unwrap_or_default())?;
-        self.emit(
-            ty.clone(),
-            InstructionKind::Primitive(
-                primitive_for_binary(final_operator).ok_or(AnalysisError::Invariant)?,
-            ),
-        )?;
+        operands.push(children.get(start..).unwrap_or_default());
+        let mut left_type = self.compile_operand(operands[0])?;
+        for ((operator, _), operand) in operators.iter().zip(operands.iter().skip(1)) {
+            if logical_constant(*operator).is_some() {
+                self.emit_logical_step(*operator, |compiler| compiler.compile_sequence(operand))?;
+                left_type = TypeDescriptor::BOOL;
+            } else {
+                self.compile_operand(operand)?;
+                left_type = self.emit_binary_primitive(*operator, &left_type)?;
+            }
+        }
         Ok(ty)
     }
 
@@ -1991,6 +1999,56 @@ impl Compiler<'_> {
         let result = primitive_result_type(&primitive, left_type);
         self.emit(result.clone(), InstructionKind::Primitive(primitive))?;
         Ok(result)
+    }
+
+    /// Emits one short-circuit logical step over the accumulated left operand.
+    ///
+    /// The caller has published the completed left operand as the stack top. `GNT-5.15` makes
+    /// `&&` and `||` accept `Bool`, evaluate left to right, short-circuit, and return `Bool`,
+    /// and requires that the right operand is not evaluated once the left operand determines
+    /// the result, so one eager primitive over completed operands cannot express either
+    /// operator. This instead reuses the deterministic branch the machine already executes for
+    /// `if`: a `Branch` on the left operand, the deciding constant in the arm that skips the
+    /// right operand, and the right operand in the arm that still needs it. Both arms leave
+    /// exactly one `Bool`, and each balances the dynamic occurrence its `Branch` records, so an
+    /// enclosing chain observes one value and no leftover branch frame. A skipped right operand
+    /// executes no instruction on that path, so it creates no operation, dispatch, task,
+    /// journal transition, or event.
+    fn emit_logical_step<F>(
+        &mut self,
+        operator: Punctuation,
+        compile: F,
+    ) -> Result<(), AnalysisError>
+    where
+        F: FnOnce(&mut Self) -> Result<(), AnalysisError>,
+    {
+        let constant = logical_constant(operator).ok_or(AnalysisError::Invariant)?;
+        let branch = self.emit(
+            TypeDescriptor::BOOL,
+            InstructionKind::Branch {
+                when_true: 0,
+                when_false: 0,
+            },
+        )?;
+        let decide = self.instructions.len();
+        compile(self)?;
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        let jump = self.emit(TypeDescriptor::UNIT, InstructionKind::Jump(0))?;
+        let decided = self.instructions.len();
+        self.emit(TypeDescriptor::UNIT, InstructionKind::LeaveOccurrence)?;
+        self.emit(
+            TypeDescriptor::BOOL,
+            InstructionKind::Push(LogicalValue::boolean(constant)),
+        )?;
+        let resume = self.instructions.len();
+        // `&&` needs its right operand exactly when the left operand is true; `||` needs it
+        // exactly when it is false, and otherwise publishes its deciding constant.
+        self.instructions[branch].kind = InstructionKind::Branch {
+            when_true: if constant { decided } else { decide },
+            when_false: if constant { decide } else { decided },
+        };
+        self.instructions[jump].kind = InstructionKind::Jump(resume);
+        Ok(())
     }
 
     /// Compiles one operand sequence, mirroring the analyzer's operand walk.
@@ -2008,12 +2066,19 @@ impl Compiler<'_> {
         if carries_split_projection(self.tree, children)
             && let Some((operator, index)) = children_binary_operator(self.tree, children)
         {
-            let left = self.compile_operand_sequence(children.get(..index).unwrap_or_default())?;
-            self.compile_operand_sequence(
-                children.get(index.saturating_add(1)..).unwrap_or_default(),
-            )?;
+            let left = children.get(..index).unwrap_or_default();
+            let right = children.get(index.saturating_add(1)..).unwrap_or_default();
+            if logical_constant(operator).is_some() {
+                self.compile_operand_sequence(left)?;
+                self.emit_logical_step(operator, |compiler| {
+                    compiler.compile_operand_sequence(right).map(|_| ())
+                })?;
+                return Ok(TypeDescriptor::BOOL);
+            }
+            let left_type = self.compile_operand_sequence(left)?;
+            self.compile_operand_sequence(right)?;
             let primitive = primitive_for_binary(operator).ok_or(AnalysisError::Invariant)?;
-            let result = primitive_result_type(&primitive, &left);
+            let result = primitive_result_type(&primitive, &left_type);
             self.emit(result.clone(), InstructionKind::Primitive(primitive))?;
             return Ok(result);
         }
@@ -2814,9 +2879,7 @@ fn binary_operators(tree: &SyntaxTree, children: &[NodeId]) -> Vec<(Punctuation,
         .iter()
         .enumerate()
         .filter_map(|(index, child)| match tree.node(*child)?.form() {
-            SyntaxForm::Token(TokenKind::Punctuation(value))
-                if primitive_for_binary(*value).is_some() =>
-            {
+            SyntaxForm::Token(TokenKind::Punctuation(value)) if is_binary_operator(*value) => {
                 Some((*value, index))
             }
             _ => None,
@@ -2878,6 +2941,26 @@ fn primitive_for_binary(value: Punctuation) -> Option<Primitive> {
         Punctuation::GreaterEqual => Primitive::Compare(Comparison::GreaterOrEqual),
         _ => return None,
     })
+}
+
+/// Returns the constant one logical operator leaves when its left operand decides.
+///
+/// `&&` decides `false` and `||` decides `true`, so the arm that skips the remaining operands
+/// needs no operand value after the branch has consumed the left one.
+fn logical_constant(value: Punctuation) -> Option<bool> {
+    match value {
+        Punctuation::AndAnd => Some(false),
+        Punctuation::OrOr => Some(true),
+        _ => None,
+    }
+}
+
+/// Reports whether one punctuation token is a binary operator of this lowering.
+///
+/// `&&` and `||` are binary operators with a dedicated short-circuit lowering, so they take
+/// part in chain detection even though `primitive_for_binary` has no eager primitive for them.
+fn is_binary_operator(value: Punctuation) -> bool {
+    primitive_for_binary(value).is_some() || logical_constant(value).is_some()
 }
 
 /// Returns the type one binary primitive publishes for its operands.

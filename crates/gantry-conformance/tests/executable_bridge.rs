@@ -15,8 +15,8 @@ use gantry::portable::IdentityKind;
 use gantry::runtime::{
     CanonicalTranscriptV1, ConcurrentTaskStateV1, ExecutionBudget, InstructionKind,
     LogicalSessionRegistryV1, Machine, MachineBuildError, MachineLabel, MachineLimits,
-    MachineOutcome, MachineStep, OperationCompletionError, SessionCreationModeV1, TaskCaptureV1,
-    TaskCreationRequestV1, root_task_identity,
+    MachineOutcome, MachineStep, OperationCompletionError, RuntimeCode, SessionCreationModeV1,
+    TaskCaptureV1, TaskCreationRequestV1, root_task_identity,
 };
 use gantry::source::SourceLimits;
 use gantry::value::{DEFAULT_VALUE_LIMITS, LogicalValue, LogicalValueView};
@@ -3357,6 +3357,126 @@ fn mixed_precedence_chains_keep_tighter_binding() {
         "arithmetic-then-comparison chain returned {:?}",
         value.view()
     );
+}
+
+/// `&&` and `||` lower to the documented short-circuit Boolean algebra.
+#[test]
+fn logical_operators_lower_boolean_values() {
+    for (source, expected) in [
+        ("fn main() -> Bool { true && false }", false),
+        ("fn main() -> Bool { false && true }", false),
+        ("fn main() -> Bool { true && true }", true),
+        ("fn main() -> Bool { true || false }", true),
+        ("fn main() -> Bool { false || false }", false),
+        ("fn main() -> Bool { false || true }", true),
+    ] {
+        let root = TempDirectory::new(source);
+        assert_eq!(boolean_entry(&root), expected, "{source} lowered wrongly");
+    }
+}
+
+/// Logical operands may be bindings, comparisons, negations, and flattened chains.
+#[test]
+fn logical_operators_accept_derived_bool_operands() {
+    for (source, expected) in [
+        (
+            "fn main() -> Bool { let flag: Bool = 1 < 2; flag && true }",
+            true,
+        ),
+        (
+            "fn main() -> Bool { let flag: Bool = 1 > 2; flag && true }",
+            false,
+        ),
+        (
+            "fn main() -> Bool { let flag: Bool = 1 > 2; flag || (1 < 2) }",
+            true,
+        ),
+        (
+            "fn main() -> Bool { let left: Bool = 1 < 2; let right: Bool = 2 < 1; left && right }",
+            false,
+        ),
+        (
+            "fn main() -> Bool { let flag: Bool = !(1 < 2); flag || true }",
+            true,
+        ),
+        ("fn main() -> Bool { true && true && false }", false),
+        ("fn main() -> Bool { false || false || true }", true),
+        (
+            "fn main() -> Bool { let flag: Bool = 1 < 2; flag && true || false }",
+            true,
+        ),
+        (
+            "fn main() -> Bool { let flag: Bool = 1 < 2; flag && (false || true) }",
+            true,
+        ),
+    ] {
+        let root = TempDirectory::new(source);
+        assert_eq!(boolean_entry(&root), expected, "{source} lowered wrongly");
+    }
+}
+
+/// A deciding left operand skips the right operand, and only a decided one skips it.
+#[test]
+fn logical_operators_short_circuit_the_right_operand() {
+    // A skipped right operand never performs the division that fails deterministically.
+    for (source, expected) in [
+        (
+            "fn main() -> Bool { let zero: Int = 0; false && (1 / zero == 0) }",
+            false,
+        ),
+        (
+            "fn main() -> Bool { let zero: Int = 0; true || (1 / zero == 0) }",
+            true,
+        ),
+    ] {
+        let root = TempDirectory::new(source);
+        assert_eq!(boolean_entry(&root), expected, "{source} skipped wrongly");
+    }
+    // The mirror forms must evaluate it, so the operator is not simply dropped.
+    for source in [
+        "fn main() -> Bool { let zero: Int = 0; true && (1 / zero == 0) }",
+        "fn main() -> Bool { let zero: Int = 0; false || (1 / zero == 0) }",
+    ] {
+        let root = TempDirectory::new(source);
+        let MachineOutcome::Failed(failure) = run_entry_outcome(&analyze(&root)) else {
+            panic!("{source} did not evaluate its right operand");
+        };
+        assert!(
+            matches!(failure.code, RuntimeCode::Deterministic(_)),
+            "{source} failed for another reason: {failure:?}"
+        );
+    }
+}
+
+/// Runs one fixture entry and reports the `Bool` value it returns.
+fn boolean_entry(root: &TempDirectory) -> bool {
+    let value = run_entry(&analyze(root));
+    match value.view() {
+        LogicalValueView::Bool(value) => value,
+        other => panic!("entry returned {other:?}"),
+    }
+}
+
+/// Runs one analyzed fixture entry and reports its outcome without requiring success.
+fn run_entry_outcome(package: &gantry::analysis::TypedPackage) -> MachineOutcome {
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5f; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("program was rejected: {error:?}"));
+    drive(&mut machine)
 }
 
 fn run_single_entry(root: &TempDirectory) -> i64 {
