@@ -3305,6 +3305,93 @@ fn entry_workflow(package: &gantry::analysis::TypedPackage) -> &gantry::ir::Work
         .unwrap_or_else(|| panic!("entry workflow was not lowered"))
 }
 
+/// Flattened same-precedence operator chains associate left to right.
+#[test]
+fn flattened_operator_chains_associate_left_to_right() {
+    for (source, expected) in [
+        ("fn main() -> Int { 10 - 2 - 3 }", 5),
+        ("fn main() -> Int { 20 - 5 - 3 - 2 }", 10),
+        ("fn main() -> Int { 100 / 5 / 2 }", 10),
+        ("fn main() -> Int { 10 - 2 + 3 }", 11),
+        ("fn main() -> Int { 1 + 2 + 3 }", 6),
+    ] {
+        let root = TempDirectory::new(source);
+        assert_eq!(
+            run_single_entry(&root),
+            expected,
+            "{source} associated wrongly"
+        );
+    }
+}
+
+/// Parentheses still override the left-to-right chain association.
+#[test]
+fn parenthesized_operands_override_chain_association() {
+    for (source, expected) in [
+        ("fn main() -> Int { 10 - (2 - 3) }", 11),
+        ("fn main() -> Int { (10 - 2) - 3 }", 5),
+    ] {
+        let root = TempDirectory::new(source);
+        assert_eq!(
+            run_single_entry(&root),
+            expected,
+            "{source} ignored its parentheses"
+        );
+    }
+}
+
+/// Mixed-precedence chains fold left to right while tighter precedence still binds first.
+#[test]
+fn mixed_precedence_chains_keep_tighter_binding() {
+    for (source, expected) in [
+        ("fn main() -> Int { 1 * 2 + 3 }", 5),
+        ("fn main() -> Int { 1 + 2 * 3 }", 7),
+    ] {
+        let root = TempDirectory::new(source);
+        assert_eq!(run_single_entry(&root), expected, "{source}");
+    }
+    let root = TempDirectory::new("fn main() -> Bool { 1 + 2 == 3 }");
+    let value = run_entry(&analyze(&root));
+    assert!(
+        matches!(value.view(), LogicalValueView::Bool(true)),
+        "arithmetic-then-comparison chain returned {:?}",
+        value.view()
+    );
+}
+
+fn run_single_entry(root: &TempDirectory) -> i64 {
+    let package = analyze(root);
+    let value = run_entry(&package);
+    match value.view() {
+        LogicalValueView::Int(value) => value.get(),
+        other => panic!("entry returned {other:?}"),
+    }
+}
+
+fn run_entry(package: &gantry::analysis::TypedPackage) -> LogicalValue {
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("valid package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5d; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("program was rejected: {error:?}"));
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("program did not succeed")
+    };
+    value
+}
+
 fn analyze(root: &TempDirectory) -> gantry::analysis::TypedPackage {
     let syntax = validate_package_syntax(
         &root.0,

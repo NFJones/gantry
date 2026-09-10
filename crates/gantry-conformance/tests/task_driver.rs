@@ -214,7 +214,10 @@ fn driver_yields_and_supervision_observes_physical_completion_after_semantic_set
     );
     let accepted = accepted(&interpreter, &root);
     let snapshot = settle_automatic_root(&executor, &interpreter, accepted);
-    assert_eq!(executor.yields(), 4);
+    // `1 + 2 + 3` lowers to `Push(1) Push(2) Add Push(3) Add Return`: one operand
+    // instruction per literal, one primitive per operator step, then the terminal return,
+    // which does not yield. With a yield quantum of one instruction that is 5 yields.
+    assert_eq!(executor.yields(), 5);
     assert!(snapshot.foreground.is_some());
     assert_eq!(
         snapshot

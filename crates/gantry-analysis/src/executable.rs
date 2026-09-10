@@ -1254,7 +1254,12 @@ impl Compiler<'_> {
         ) {
             return self.compile_operation(operation, ty);
         }
-        if let Some((operator, index)) = binary_operator(self.tree, &node) {
+        let operators = binary_operators(self.tree, node.children());
+        if !operators.is_empty() {
+            if operators.len() > 1 {
+                return self.compile_binary_chain(node.children(), ty);
+            }
+            let (operator, index) = operators[0];
             let left = node.children()[..index].to_vec();
             let right = node.children()[index.saturating_add(1)..].to_vec();
             self.compile_sequence(&left)?;
@@ -1923,6 +1928,71 @@ impl Compiler<'_> {
         Ok(())
     }
 
+    /// Compiles one operand slice and returns the type of the value it leaves.
+    ///
+    /// The last instruction an operand emits publishes the operand's own type, which the
+    /// enclosing primitive consumes. Wrapper nodes injected by the parser carry no declared
+    /// type, so the emitted instruction is the reliable source for that operand.
+    fn compile_operand(&mut self, children: &[NodeId]) -> Result<TypeDescriptor, AnalysisError> {
+        let before = self.instructions.len();
+        self.compile_sequence(children)?;
+        self.instructions
+            .get(before..)
+            .and_then(|emitted| emitted.last())
+            .map(|instruction| instruction.ty.clone())
+            .ok_or(AnalysisError::Invariant)
+    }
+
+    /// Compiles a flattened operator chain left to right, one primitive per operator.
+    ///
+    /// `10 - 2 - 3` parses as one expression node holding `[10, -, 2, -, 3]`, so folding
+    /// that slice in source order emits `((10 - 2) - 3)` rather than applying one primitive
+    /// to the last two operands. An operator of tighter precedence keeps its right operand
+    /// inside a nested node, which this fold compiles as a single operand.
+    fn compile_binary_chain(
+        &mut self,
+        children: &[NodeId],
+        ty: TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let operators = binary_operators(self.tree, children);
+        let Some((final_operator, _)) = operators.last().copied() else {
+            return Err(AnalysisError::Invariant);
+        };
+        let mut start = 0_usize;
+        let mut left_type = TypeDescriptor::UNIT;
+        let mut pending: Option<Punctuation> = None;
+        for (operator, index) in operators {
+            let operand = children.get(start..index).unwrap_or_default();
+            let operand_type = self.compile_operand(operand)?;
+            if let Some(previous) = pending.replace(operator) {
+                left_type = self.emit_binary_primitive(previous, &left_type)?;
+            } else {
+                left_type = operand_type;
+            }
+            start = index.saturating_add(1);
+        }
+        self.compile_operand(children.get(start..).unwrap_or_default())?;
+        self.emit(
+            ty.clone(),
+            InstructionKind::Primitive(
+                primitive_for_binary(final_operator).ok_or(AnalysisError::Invariant)?,
+            ),
+        )?;
+        Ok(ty)
+    }
+
+    /// Emits one binary primitive and returns the type of the value it publishes.
+    fn emit_binary_primitive(
+        &mut self,
+        operator: Punctuation,
+        left_type: &TypeDescriptor,
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        let primitive = primitive_for_binary(operator).ok_or(AnalysisError::Invariant)?;
+        let result = primitive_result_type(&primitive, left_type);
+        self.emit(result.clone(), InstructionKind::Primitive(primitive))?;
+        Ok(result)
+    }
+
     /// Compiles one operand sequence, mirroring the analyzer's operand walk.
     ///
     /// A slice carrying a split field-projection fragment also carries the inner operator
@@ -1951,9 +2021,21 @@ impl Compiler<'_> {
             return Ok(result);
         }
         let mut result = TypeDescriptor::UNIT;
+        let valued = children
+            .iter()
+            .filter(|child| {
+                self.tree.node(**child).is_some_and(|node| {
+                    !matches!(node.form(), SyntaxForm::Token(_))
+                        && !is_parenthesis_boundary(self.tree, node)
+                })
+            })
+            .count();
         for child in children {
             let node = self.node(*child)?;
             if matches!(node.form(), SyntaxForm::Token(_)) {
+                continue;
+            }
+            if valued > 0 && is_parenthesis_boundary(self.tree, node) {
                 continue;
             }
             result = self.compile_expression(*child)?;
@@ -2719,11 +2801,19 @@ fn children_binary_operator(
     tree: &SyntaxTree,
     children: &[NodeId],
 ) -> Option<(Punctuation, usize)> {
+    binary_operators(tree, children).into_iter().last()
+}
+
+/// Returns every binary operator token in one operand slice in source order.
+///
+/// The parser appends an operator and its right operand to the same expression node while
+/// the operator precedence stays at or above the chain's minimum, so one slice can hold
+/// several operators that must be folded left to right.
+fn binary_operators(tree: &SyntaxTree, children: &[NodeId]) -> Vec<(Punctuation, usize)> {
     children
         .iter()
         .enumerate()
-        .rev()
-        .find_map(|(index, child)| match tree.node(*child)?.form() {
+        .filter_map(|(index, child)| match tree.node(*child)?.form() {
             SyntaxForm::Token(TokenKind::Punctuation(value))
                 if primitive_for_binary(*value).is_some() =>
             {
@@ -2731,6 +2821,32 @@ fn children_binary_operator(
             }
             _ => None,
         })
+        .collect()
+}
+
+/// Reports whether one node holds only grouping parenthesis boundary tokens.
+///
+/// A leading parenthesized operand keeps its parentheses as sibling children of the
+/// enclosing operator chain, and the parser wraps the closing token in a node with no
+/// operand of its own. Such boundary nodes publish no value, so operand compilation skips
+/// them. A lone `()` literal stays its slice's only valued child and is still compiled.
+fn is_parenthesis_boundary(tree: &SyntaxTree, node: &gantry_frontend::SyntaxNode) -> bool {
+    let mut boundary = false;
+    for child in node.children() {
+        let Some(child) = tree.node(*child) else {
+            return false;
+        };
+        if !matches!(
+            child.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(
+                Punctuation::LeftParenthesis | Punctuation::RightParenthesis
+            ))
+        ) {
+            return false;
+        }
+        boundary = true;
+    }
+    boundary
 }
 
 /// Reports whether one operand slice carries a split field-projection fragment.
