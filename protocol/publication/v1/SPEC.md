@@ -3409,14 +3409,18 @@ defined here and in Section 7 cross the integration boundary.
 2. Methods MUST support `self` and `mut self` receivers.
 <a id="GNT-6.2a"></a>
 
-2a. A zero-argument monomorphic inherent method MAY instead declare `shared self`.
-Its call receiver MUST be an addressable binding root or a finite sequence of
-struct-field projections from one. This is the sole exception to item 4's
-deep-copy receiver rule: the caller place is admitted directly, the receiver is
-not materialized on the operand stack, the callee's `self` is immutable, and no
-write-back occurs. `shared self` is not available
-to trait methods, generic methods or implementations, constructed values, indexed
-places, enum payloads, owned receivers, or any exclusive or general loan form.
+2a. A zero-argument monomorphic inherent method MAY instead declare `shared self`
+or `exclusive self`. Its call receiver MUST be an addressable binding root or a
+finite sequence of struct-field projections from one. `shared self` is the sole
+immutable exception to item 4's deep-copy receiver rule: the caller place is
+admitted directly, the receiver is not materialized on the operand stack, the
+callee's `self` is immutable, and no write-back occurs. `exclusive self` requires
+a mutable caller root; each completed assignment through its mutable callee
+`self` MUST atomically replace the admitted caller place. A nested exclusive
+reborrow MUST select a strict struct-field subplace, while a shared reborrow may
+observe an exclusive receiver place. Both forms are unavailable to trait methods,
+generic methods or implementations, constructed values, indexed places, enum
+payloads, owned receivers, or general loan forms.
 <a id="GNT-6.3"></a>
 
 3. A method may mutate its receiver only through interpreter-executed field
@@ -3435,8 +3439,8 @@ places, enum payloads, owned receivers, or any exclusive or general loan form.
    external hook side effects and earlier successful assignments are not
    rolled back. This assignment-level atomicity is the v1 transaction
    boundary. The root binding of any assignment target MUST be declared `mut`,
-   except that receiver-field assignment is permitted through `mut self`.
-   Assigning a nested field constructs and commits one updated root value; it
+   except that receiver-field assignment is permitted through `mut self` or
+   `exclusive self`. Assigning a nested field constructs and commits one updated root value; it
    does not create aliases to intermediate structs.
 <a id="GNT-6.4"></a>
 
@@ -3444,7 +3448,7 @@ places, enum payloads, owned receivers, or any exclusive or general loan form.
    create an interpreter call frame and execute its body; the call itself MUST
    NOT invoke an operation hook.
    Arguments and receivers use deep-copy value semantics except for the narrow
-   `shared self` caller-place admission in item 2a. There are no aliases,
+   `shared self` and `exclusive self` caller-place admissions in item 2a. There are no aliases,
    references, moves, or borrowed values in v1. A `self` or `mut self` receiver
    is therefore a local receiver copy. `mut self` permits mutation of that copy
    but never changes the caller's value implicitly; callers MUST assign a

@@ -314,6 +314,10 @@ fn public_exclusive_receiver_admission_is_scoped_to_mutable_monomorphic_inherent
         "struct Counter { value: Int } trait Value { pure fn increment(self); } impl Value for Counter { pure fn increment(exclusive self) { self.value += 1; } } fn main() {}",
         "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main() { Counter { value: 1 }.increment(); }",
         "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(items: List<Counter>) { discard items[0].increment(); }",
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(items: Tuple<Counter, Int>) { discard items[0].increment(); }",
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Option<Counter>) { if let Some(counter) = state { discard counter.increment(); } }",
+        "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: Result<Counter, Int>) { if let Ok(counter) = state { discard counter.increment(); } }",
+        "struct Counter { value: Int } enum State { Ready(Counter), Empty } impl Counter { fn increment(exclusive self) { self.value += 1; } } fn main(state: State) { if let State::Ready(counter) = state { discard counter.increment(); } }",
         "struct Counter { value: Int } impl Counter { fn increment(exclusive self) { self.increment(); } } fn main() { let mut counter: Counter = Counter { value: 1 }; counter.increment(); }",
     ] {
         let rejected = analyze(source);

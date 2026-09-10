@@ -1939,6 +1939,243 @@ fn main(inputs: Inputs) -> List<Int> {
     }
 }
 
+/// Spawned exclusive receiver calls update only their copied task-local capture roots.
+#[test]
+fn spawned_exclusive_receiver_mutation_stops_at_the_copied_task_root() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Counter { fn increment(exclusive self) { self.value += 1; } }
+impl Holder {
+    fn spawn_increment(exclusive self) -> Int {
+        spawn child -> Int { self.counter.increment(); self.counter.value }
+        join(child)
+    }
+}
+fn main(mut holder: Holder) -> Int { discard holder.spawn_increment(); holder.counter.value }
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let body = program
+        .task_bodies()
+        .first()
+        .unwrap_or_else(|| panic!("exclusive spawn body was not lowered"));
+    assert!(
+        matches!(body.captures(), [capture] if capture.name() == "self" && capture.is_mutable())
+    );
+
+    let original = LogicalValue::structure(
+        "crate::Holder",
+        vec![(
+            "counter".to_owned(),
+            LogicalValue::structure(
+                "crate::Counter",
+                vec![(
+                    "value".to_owned(),
+                    LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                    ),
+                )],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let capture = TaskCaptureV1::new(
+        Arc::from("self"),
+        body.captures()[0].ty().clone(),
+        true,
+        &original,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("task capture failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6a; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let root_task = root_task_identity(execution);
+    let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x6b; 32])
+        .unwrap_or_else(|error| panic!("session identity failed: {error}"));
+    let mut sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+    let mut tasks = ConcurrentTaskStateV1::new(execution, root_task, 2)
+        .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+    let created = tasks
+        .create_child(
+            &mut sessions,
+            TaskCreationRequestV1 {
+                parent_task_id: root_task,
+                handle_name: Arc::from("child"),
+                workflow: entry_workflow(&package).path.clone(),
+                spawn_site: body.identity().spawn_site().clone(),
+                spawn_occurrence: 0,
+                result_type: body.result_type().clone(),
+                captures: vec![capture.clone()],
+                inherited_agent: None,
+                parent_session_id: root_session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("child creation failed: {error:?}"));
+    tasks
+        .resolve_submission(created.task_id, Ok(()))
+        .unwrap_or_else(|error| panic!("child submission failed: {error:?}"));
+    let task_path = Arc::from(
+        tasks
+            .task_record(created.task_id)
+            .unwrap_or_else(|| panic!("child task record is absent"))
+            .task_path(),
+    );
+    let mut child = Machine::new_concurrent_task_body_with_context(
+        Arc::new(program.clone()),
+        body.identity(),
+        &[capture],
+        execution,
+        created.task_id,
+        task_path,
+        limits(),
+        ExecutionBudget::new(execution, limits()),
+        None,
+        Some(created.base_session_id),
+    )
+    .unwrap_or_else(|error| panic!("exclusive child machine failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut child),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 8)
+    ));
+    assert!(matches!(
+        original.field("counter").and_then(|counter| counter.field("value")),
+        Some(value) if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
+/// A spawned body that directly assigns a captured exclusive self field stops at the task root.
+#[test]
+fn spawned_exclusive_receiver_direct_field_assignment_stops_at_the_copied_task_root() {
+    let root = TempDirectory::new(
+        r#"
+struct Counter { value: Int }
+struct Holder { counter: Counter }
+impl Holder {
+    fn spawn_increment(exclusive self) -> Int {
+        spawn child -> Int { self.counter.value += 1; self.counter.value }
+        join(child)
+    }
+}
+fn main(mut holder: Holder) -> Int { discard holder.spawn_increment(); holder.counter.value }
+"#,
+    );
+    let package = analyze(&root);
+    let program = executable(&package);
+    let body = program
+        .task_bodies()
+        .first()
+        .unwrap_or_else(|| panic!("exclusive spawn body was not lowered"));
+    assert!(
+        matches!(body.captures(), [capture] if capture.name() == "self" && capture.is_mutable())
+    );
+
+    let original = LogicalValue::structure(
+        "crate::Holder",
+        vec![(
+            "counter".to_owned(),
+            LogicalValue::structure(
+                "crate::Counter",
+                vec![(
+                    "value".to_owned(),
+                    LogicalValue::integer(
+                        GantryInt::new(7)
+                            .unwrap_or_else(|| unreachable!("fixture integer is valid")),
+                    ),
+                )],
+                DEFAULT_VALUE_LIMITS,
+            )
+            .unwrap_or_else(|error| panic!("counter fixture failed: {error:?}")),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("holder fixture failed: {error:?}"));
+    let capture = TaskCaptureV1::new(
+        Arc::from("self"),
+        body.captures()[0].ty().clone(),
+        true,
+        &original,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("task capture failed: {error:?}"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x6c; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let root_task = root_task_identity(execution);
+    let root_session = ProtocolIdentity::from_fresh_material(IdentityKind::Session, [0x6d; 32])
+        .unwrap_or_else(|error| panic!("session identity failed: {error}"));
+    let mut sessions = LogicalSessionRegistryV1::new(
+        execution,
+        root_session,
+        SessionCreationModeV1::GantryRoot,
+        CanonicalTranscriptV1::empty(),
+    )
+    .unwrap_or_else(|error| panic!("session registry failed: {error:?}"));
+    let mut tasks = ConcurrentTaskStateV1::new(execution, root_task, 2)
+        .unwrap_or_else(|error| panic!("task state failed: {error:?}"));
+    let created = tasks
+        .create_child(
+            &mut sessions,
+            TaskCreationRequestV1 {
+                parent_task_id: root_task,
+                handle_name: Arc::from("child"),
+                workflow: entry_workflow(&package).path.clone(),
+                spawn_site: body.identity().spawn_site().clone(),
+                spawn_occurrence: 0,
+                result_type: body.result_type().clone(),
+                captures: vec![capture.clone()],
+                inherited_agent: None,
+                parent_session_id: root_session,
+            },
+            DEFAULT_VALUE_LIMITS,
+        )
+        .unwrap_or_else(|error| panic!("child creation failed: {error:?}"));
+    tasks
+        .resolve_submission(created.task_id, Ok(()))
+        .unwrap_or_else(|error| panic!("child submission failed: {error:?}"));
+    let task_path = Arc::from(
+        tasks
+            .task_record(created.task_id)
+            .unwrap_or_else(|| panic!("child task record is absent"))
+            .task_path(),
+    );
+    let mut child = Machine::new_concurrent_task_body_with_context(
+        Arc::new(program.clone()),
+        body.identity(),
+        &[capture],
+        execution,
+        created.task_id,
+        task_path,
+        limits(),
+        ExecutionBudget::new(execution, limits()),
+        None,
+        Some(created.base_session_id),
+    )
+    .unwrap_or_else(|error| panic!("exclusive child machine failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut child),
+        MachineOutcome::Succeeded(ref value)
+            if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 8)
+    ));
+    assert!(matches!(
+        original.field("counter").and_then(|counter| counter.field("value")),
+        Some(value) if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
 /// Tuple destructuring creates an ordinary caller-place root for a shared call.
 #[test]
 fn tuple_destructured_shared_receiver_executes() {

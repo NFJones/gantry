@@ -3439,8 +3439,8 @@ payloads, owned receivers, or general loan forms.
    external hook side effects and earlier successful assignments are not
    rolled back. This assignment-level atomicity is the v1 transaction
    boundary. The root binding of any assignment target MUST be declared `mut`,
-   except that receiver-field assignment is permitted through `mut self`.
-   Assigning a nested field constructs and commits one updated root value; it
+   except that receiver-field assignment is permitted through `mut self` or
+   `exclusive self`. Assigning a nested field constructs and commits one updated root value; it
    does not create aliases to intermediate structs.
 <a id="GNT-6.4"></a>
 

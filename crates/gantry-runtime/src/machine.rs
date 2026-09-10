@@ -997,6 +997,64 @@ impl MachineCheckpointV3 {
         true
     }
 
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_receiver_admission_parent_mutable(&mut self, mutable: bool) -> bool {
+        let Some(parent) = self.frames.iter_mut().rev().nth(1) else {
+            return false;
+        };
+        let Some(binding) = parent
+            .scopes
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.values_mut().next())
+        else {
+            return false;
+        };
+        binding.mutable = mutable;
+        true
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_receiver_admission_callee_mutable(&mut self, mutable: bool) -> bool {
+        let Some(binding) = self
+            .frames
+            .last_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+            .and_then(|scope| scope.get_mut("self"))
+        else {
+            return false;
+        };
+        binding.mutable = mutable;
+        true
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_receiver_admission_path(&mut self, path: Vec<ValuePathSegment>) -> bool {
+        let Some(admission) = self
+            .frames
+            .last_mut()
+            .and_then(|frame| frame.receiver_admission.as_mut())
+        else {
+            return false;
+        };
+        admission.path = path;
+        true
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_receiver_admission_callee_value(&mut self, value: LogicalValue) -> bool {
+        let Some(binding) = self
+            .frames
+            .last_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+            .and_then(|scope| scope.get_mut("self"))
+        else {
+            return false;
+        };
+        binding.value = value;
+        true
+    }
+
     #[cfg(all(test, feature = "concurrent"))]
     pub(crate) fn test_set_pending_spawn_capture_value(
         &mut self,
@@ -1067,6 +1125,105 @@ impl MachineCheckpointV3 {
         };
         spawn.occurrence = occurrence;
         true
+    }
+
+    #[cfg(all(test, feature = "concurrent", feature = "durable"))]
+    pub(crate) fn test_rename_task_capture(&mut self, name: &str) -> bool {
+        let Some(scope) = self
+            .frames
+            .first_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+        else {
+            return false;
+        };
+        let Some((previous, binding)) = scope
+            .iter()
+            .next()
+            .map(|(name, binding)| (name.clone(), binding.clone()))
+        else {
+            return false;
+        };
+        if previous.as_ref() == name {
+            return false;
+        }
+        scope.remove(&previous);
+        scope.insert(Arc::from(name), binding);
+        true
+    }
+
+    #[cfg(all(test, feature = "concurrent", feature = "durable"))]
+    pub(crate) fn test_set_task_capture_type(&mut self, ty: TypeDescriptor) -> bool {
+        let Some(binding) = self
+            .frames
+            .first_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+            .and_then(|scope| scope.values_mut().next())
+        else {
+            return false;
+        };
+        binding.ty = ty;
+        true
+    }
+
+    #[cfg(all(test, feature = "concurrent", feature = "durable"))]
+    pub(crate) fn test_set_task_capture_mutable(&mut self, mutable: bool) -> bool {
+        let Some(binding) = self
+            .frames
+            .first_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+            .and_then(|scope| scope.values_mut().next())
+        else {
+            return false;
+        };
+        binding.mutable = mutable;
+        true
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_rename_parameter_binding(&mut self, previous: &str, name: &str) -> bool {
+        if previous == name {
+            return false;
+        }
+        let Some(scope) = self
+            .frames
+            .first_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+        else {
+            return false;
+        };
+        let Some(binding) = scope.remove(previous) else {
+            return false;
+        };
+        scope.insert(Arc::from(name), binding);
+        true
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_parameter_binding_type(
+        &mut self,
+        name: &str,
+        ty: TypeDescriptor,
+    ) -> bool {
+        self.frames
+            .first_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+            .and_then(|scope| scope.get_mut(name))
+            .is_some_and(|binding| {
+                binding.ty = ty;
+                true
+            })
+    }
+
+    #[cfg(all(test, feature = "durable"))]
+    pub(crate) fn test_set_parameter_binding_mutable(&mut self, name: &str, mutable: bool) -> bool {
+        self.frames
+            .first_mut()
+            .and_then(|frame| frame.scopes.first_mut())
+            .and_then(|scope| scope.get_mut(name))
+            .is_some_and(|binding| {
+                binding.mutable = mutable;
+                true
+            })
     }
 
     /// Encodes this checkpoint with the oldest exact machine wire representation.
@@ -1605,6 +1762,11 @@ impl Machine {
             self.values.len(),
             self.pending_operation.is_some(),
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_binding_value(&self, name: &str) -> Option<LogicalValue> {
+        self.binding(name).map(|binding| binding.value.clone())
     }
 
     #[cfg(test)]
@@ -2423,6 +2585,19 @@ impl Machine {
             let mut frame_index = self.frames.len().checked_sub(1);
             let mut updated_receiver = candidate.clone();
             while let Some(index) = frame_index {
+                let at_task_root = index == 0 && {
+                    #[cfg(feature = "concurrent")]
+                    {
+                        self.task_body.is_some()
+                    }
+                    #[cfg(not(feature = "concurrent"))]
+                    {
+                        false
+                    }
+                };
+                if at_task_root {
+                    break;
+                }
                 let frame = self
                     .frames
                     .get(index)
@@ -2475,7 +2650,17 @@ impl Machine {
                 }
                 let continues = admission.root.as_ref() == "self";
                 caller_candidates.push((parent_index, admission.root.clone(), updated.clone()));
-                if !continues {
+                let task_root = parent_index == 0 && {
+                    #[cfg(feature = "concurrent")]
+                    {
+                        self.task_body.is_some()
+                    }
+                    #[cfg(not(feature = "concurrent"))]
+                    {
+                        false
+                    }
+                };
+                if !continues || task_root {
                     break;
                 }
                 updated_receiver = updated;
@@ -3656,6 +3841,33 @@ fn validate_machine_checkpoint(
             .get(frame.workflow)
             .ok_or(MachineRecoveryError::ProgramMismatch)?;
         #[cfg(feature = "concurrent")]
+        let is_task_capture_root = task_body.is_some() && frame_index == 0;
+        #[cfg(not(feature = "concurrent"))]
+        let is_task_capture_root = false;
+        #[cfg(feature = "concurrent")]
+        if let Some(body) = task_body.filter(|_| is_task_capture_root)
+            && frame.scopes.first().is_none_or(|scope| {
+                body.captures().iter().any(|capture| {
+                    !scope.get(capture.name()).is_some_and(|binding| {
+                        binding.ty == *capture.ty() && binding.mutable == capture.is_mutable()
+                    })
+                })
+            })
+        {
+            return Err(MachineRecoveryError::ProgramMismatch);
+        }
+        if !is_task_capture_root
+            && frame.scopes.first().is_none_or(|scope| {
+                workflow.parameters.iter().any(|parameter| {
+                    !scope.get(&parameter.name).is_some_and(|binding| {
+                        binding.ty == parameter.ty && binding.mutable == parameter.mutable
+                    })
+                })
+            })
+        {
+            return Err(MachineRecoveryError::ProgramMismatch);
+        }
+        #[cfg(feature = "concurrent")]
         let instructions = if frame_index == 0 {
             task_body.map_or(workflow.instructions.as_slice(), |body| body.instructions())
         } else {
@@ -3735,16 +3947,21 @@ fn validate_machine_checkpoint(
             else {
                 return Err(MachineRecoveryError::InvalidCheckpoint);
             };
+            let Some(parameter) = workflow.parameters.first() else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
             let Some(receiver) = frame.scopes.first().and_then(|scope| scope.get("self")) else {
                 return Err(MachineRecoveryError::ProgramMismatch);
             };
-            let Some(caller_value) = parent
+            let Some(caller) = parent
                 .scopes
                 .iter()
                 .rev()
                 .find_map(|scope| scope.get(admission.root.as_ref()))
-                .and_then(|binding| value_at_path(&binding.value, &admission.path))
             else {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            };
+            let Some(caller_value) = value_at_path(&caller.value, &admission.path) else {
                 return Err(MachineRecoveryError::ProgramMismatch);
             };
             let Some(parent_instruction) = parent_instruction else {
@@ -3766,6 +3983,27 @@ fn validate_machine_checkpoint(
             if !admission_matches_call
                 || !value_matches_type(&caller_value, &receiver.ty)
                 || caller_value != receiver.value
+            {
+                return Err(MachineRecoveryError::ProgramMismatch);
+            }
+            if parameter.receiver_mode == Some(ReceiverMode::ExclusivePlace)
+                && (!caller.mutable
+                    || !parameter.mutable
+                    || receiver.ty != parameter.ty
+                    || receiver.mutable != parameter.mutable
+                    || admission
+                        .path
+                        .iter()
+                        .any(|segment| !matches!(segment, ValuePathSegment::StructField(_)))
+                    || (admission.root.as_ref() == "self"
+                        && admission.path.is_empty()
+                        && checkpoint
+                            .frames
+                            .get(frame_index - 1)
+                            .and_then(|parent| program.workflows().get(parent.workflow))
+                            .and_then(|parent| parent.parameters.first())
+                            .and_then(Parameter::receiver_mode)
+                            == Some(ReceiverMode::ExclusivePlace)))
             {
                 return Err(MachineRecoveryError::ProgramMismatch);
             }

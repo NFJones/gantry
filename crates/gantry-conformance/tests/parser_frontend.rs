@@ -229,3 +229,19 @@ fn public_parser_rejects_malformed_shared_receiver_forms() {
         }));
     }
 }
+
+/// The contextual exclusive receiver form rejects incomplete and parameter-like spellings.
+#[test]
+fn public_parser_rejects_malformed_exclusive_receiver_forms() {
+    for source in [
+        "struct Counter { value: Int } impl Counter { fn update(exclusive) { } }",
+        "struct Counter { value: Int } impl Counter { fn update(exclusive mut self) { } }",
+        "struct Counter { value: Int } impl Counter { fn update(exclusive self: Counter) { } }",
+    ] {
+        let outcome = parse(source, 256, 8);
+        assert!(!outcome.is_valid(), "unexpectedly accepted {source}");
+        assert!(outcome.diagnostics().iter().all(|diagnostic| {
+            diagnostic.code.as_str() == "unexpected-token" && diagnostic.primary.is_some()
+        }));
+    }
+}

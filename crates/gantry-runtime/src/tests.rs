@@ -967,6 +967,107 @@ fn mutable_roots_publish_atomically_without_aliasing_arguments() {
     assert!(matches!(updated_flag.view(), LogicalValueView::Bool(true)));
 }
 
+/// A failed RHS leaves its target untouched while earlier assignment commits remain visible.
+#[test]
+fn overflowing_assignment_rhs_preserves_its_target_and_prior_commits() {
+    let maximum = GantryInt::new(9_007_199_254_740_991)
+        .unwrap_or_else(|| unreachable!("maximum Int is admitted"));
+    let item_type = TypeDescriptor::declared(path("crate::Item"));
+    let original = LogicalValue::structure(
+        "crate::Item",
+        vec![
+            ("committed".to_owned(), LogicalValue::boolean(false)),
+            (
+                "unchanged".to_owned(),
+                LogicalValue::integer(
+                    GantryInt::new(7)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                ),
+            ),
+        ],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture item failed: {error:?}"));
+    let root = workflow(
+        "crate::main",
+        vec![Parameter {
+            name: Arc::from("item"),
+            ty: item_type.clone(),
+            mutable: true,
+            receiver_mode: None,
+        }],
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::BOOL,
+                InstructionKind::Push(LogicalValue::boolean(true)),
+            ),
+            instruction(
+                1,
+                TypeDescriptor::UNIT,
+                InstructionKind::Assign {
+                    name: Arc::from("item"),
+                    path: vec![ValuePathSegment::StructField("committed".to_owned())],
+                    target_type: TypeDescriptor::BOOL,
+                },
+            ),
+            instruction(
+                2,
+                TypeDescriptor::INT,
+                InstructionKind::Push(LogicalValue::integer(maximum)),
+            ),
+            instruction(
+                3,
+                TypeDescriptor::INT,
+                InstructionKind::Push(LogicalValue::integer(
+                    GantryInt::new(1).unwrap_or_else(|| unreachable!("one is admitted")),
+                )),
+            ),
+            instruction(
+                4,
+                TypeDescriptor::INT,
+                InstructionKind::Primitive(Primitive::Add),
+            ),
+            instruction(
+                5,
+                TypeDescriptor::UNIT,
+                InstructionKind::Assign {
+                    name: Arc::from("item"),
+                    path: vec![ValuePathSegment::StructField("unchanged".to_owned())],
+                    target_type: TypeDescriptor::INT,
+                },
+            ),
+        ],
+    );
+    let mut machine = new_machine(
+        program(vec![root]),
+        "crate::main",
+        vec![original],
+        limits(16, 1, 1, 1, 16),
+    );
+    for _ in 0..4 {
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    }
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Failure(ref failure))
+            if failure.code
+                == RuntimeCode::Deterministic(DeterministicEvaluationCode::IntegerOverflow)
+    ));
+    let item = machine
+        .test_binding_value("item")
+        .unwrap_or_else(|| panic!("item binding is absent after overflow"));
+    assert!(
+        matches!(item.field("committed"), Some(value) if matches!(value.view(), LogicalValueView::Bool(true)))
+    );
+    assert!(matches!(
+        item.field("unchanged"),
+        Some(value) if matches!(value.view(), LogicalValueView::Int(number) if number.get() == 7)
+    ));
+}
+
 #[test]
 fn failure_short_circuits_later_operations_and_preserves_the_exact_code() {
     let maximum = GantryInt::new(9_007_199_254_740_991)
@@ -1893,6 +1994,300 @@ fn shared_receiver_calls_resolve_nested_caller_places_and_recover() {
         drive(&mut recovered),
         MachineOutcome::Succeeded(LogicalValue::integer(
             GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted"))
+        ))
+    );
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn first_scope_parameters_coexist_with_let_locals_across_checkpoint_round_trip() {
+    let root = workflow(
+        "crate::main",
+        vec![Parameter {
+            name: Arc::from("input"),
+            ty: TypeDescriptor::INT,
+            mutable: false,
+            receiver_mode: None,
+        }],
+        TypeDescriptor::INT,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::INT,
+                InstructionKind::Push(LogicalValue::integer(
+                    GantryInt::new(1)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                )),
+            ),
+            instruction(
+                1,
+                TypeDescriptor::INT,
+                InstructionKind::Bind {
+                    name: Arc::from("local"),
+                    ty: TypeDescriptor::INT,
+                    mutable: false,
+                },
+            ),
+            instruction(
+                2,
+                TypeDescriptor::INT,
+                InstructionKind::Load(Arc::from("local")),
+            ),
+            instruction(3, TypeDescriptor::INT, InstructionKind::Return),
+        ],
+    );
+    let program = program(vec![root]);
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![LogicalValue::integer(GantryInt::new(7).unwrap_or_else(
+            || unreachable!("fixture integer is admitted"),
+        ))],
+        limits(8, 1, 1, 2, 8),
+    );
+
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+    assert!(matches!(
+        machine.step(),
+        MachineStep::Transition(MachineLabel::Deterministic { .. })
+    ));
+
+    let checkpoint =
+        crate::MachineCheckpointV3::decode(&program, &machine.checkpoint().canonical_bytes())
+            .unwrap_or_else(|error| panic!("parameter+local checkpoint decode failed: {error:?}"));
+
+    let mut renamed = checkpoint.clone();
+    assert!(renamed.test_rename_parameter_binding("input", "tampered"));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &renamed.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+
+    let mut retyped = checkpoint.clone();
+    assert!(retyped.test_set_parameter_binding_type("input", TypeDescriptor::BOOL));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &retyped.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+
+    let mut remutabled = checkpoint.clone();
+    assert!(remutabled.test_set_parameter_binding_mutable("input", true));
+    assert!(matches!(
+        crate::MachineCheckpointV3::decode(&program, &remutabled.canonical_bytes()),
+        Err(crate::MachineRecoveryError::ProgramMismatch)
+    ));
+
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("parameter+local budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("parameter+local checkpoint recovery failed: {error:?}"));
+    assert_eq!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(1).unwrap_or_else(|| unreachable!("fixture integer is admitted"))
+        ))
+    );
+}
+
+#[cfg(feature = "durable")]
+#[test]
+fn exclusive_receiver_admission_recovery_rejects_tampering_and_resumes_nested_write_through() {
+    let main_path = path("crate::main");
+    let outer_path = path("crate::Outer::increment");
+    let inner_path = path("crate::Int::increment");
+    let main = CanonicalCallableIdentity::free(&main_path, &[]);
+    let outer_type = TypeDescriptor::declared(path("crate::Outer"));
+    let outer = CanonicalCallableIdentity::inherent(&outer_type, "increment", &[])
+        .unwrap_or_else(|error| panic!("outer method identity failed: {error}"));
+    let inner = CanonicalCallableIdentity::inherent(&TypeDescriptor::INT, "increment", &[])
+        .unwrap_or_else(|error| panic!("inner method identity failed: {error}"));
+    let mut callables = vec![
+        (
+            main,
+            Workflow {
+                path: main_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("item"),
+                    ty: outer_type.clone(),
+                    mutable: true,
+                    receiver_mode: None,
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::ReceiverCall {
+                            callee: outer.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from("item"),
+                                path: Vec::new(),
+                            },
+                        },
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            outer,
+            Workflow {
+                path: outer_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: outer_type.clone(),
+                    mutable: true,
+                    receiver_mode: Some(ReceiverMode::ExclusivePlace),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::ReceiverCall {
+                            callee: inner.clone(),
+                            arguments: 1,
+                            source: ReceiverSource::CallerPlace {
+                                root: Arc::from("self"),
+                                path: vec![ValuePathSegment::StructField("value".to_owned())],
+                            },
+                        },
+                    ),
+                    instruction(1, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+        (
+            inner,
+            Workflow {
+                path: inner_path,
+                parameters: vec![Parameter {
+                    name: Arc::from("self"),
+                    ty: TypeDescriptor::INT,
+                    mutable: true,
+                    receiver_mode: Some(ReceiverMode::ExclusivePlace),
+                }],
+                result: TypeDescriptor::INT,
+                effects: EffectSet::default(),
+                instructions: vec![
+                    instruction(
+                        0,
+                        TypeDescriptor::INT,
+                        InstructionKind::Push(LogicalValue::integer(
+                            GantryInt::new(8)
+                                .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                        )),
+                    ),
+                    instruction(
+                        1,
+                        TypeDescriptor::INT,
+                        InstructionKind::Assign {
+                            name: Arc::from("self"),
+                            path: Vec::new(),
+                            target_type: TypeDescriptor::INT,
+                        },
+                    ),
+                    instruction(
+                        2,
+                        TypeDescriptor::INT,
+                        InstructionKind::Load(Arc::from("self")),
+                    ),
+                    instruction(3, TypeDescriptor::INT, InstructionKind::Return),
+                ],
+            },
+        ),
+    ];
+    callables.sort_by(|left, right| left.0.cmp(&right.0));
+    let program = Arc::new(
+        MachineProgram::with_callable_identities(callables)
+            .unwrap_or_else(|error| panic!("exclusive receiver program failed: {error:?}")),
+    );
+    let item = LogicalValue::structure(
+        "crate::Outer",
+        vec![(
+            "value".to_owned(),
+            LogicalValue::integer(
+                GantryInt::new(7).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            ),
+        )],
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture outer value failed: {error:?}"));
+    let mut machine = new_machine(
+        Arc::clone(&program),
+        "crate::main",
+        vec![item],
+        limits(16, 1, 1, 4, 16),
+    );
+    for _ in 0..2 {
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    }
+    let checkpoint = machine.checkpoint();
+    for tampered in [
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_set_receiver_admission_parent_mutable(false));
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_set_receiver_admission_callee_mutable(false));
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(
+                checkpoint.test_set_receiver_admission_path(vec![ValuePathSegment::ListItem(0),])
+            );
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(
+                checkpoint.test_set_receiver_admission_path(vec![ValuePathSegment::EnumPayload,])
+            );
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_set_receiver_admission_path(Vec::new()));
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(
+                checkpoint.test_set_receiver_admission_callee_value(LogicalValue::integer(
+                    GantryInt::new(6)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                ))
+            );
+            checkpoint
+        },
+    ] {
+        assert_eq!(
+            crate::MachineCheckpointV3::decode(&program, &tampered.canonical_bytes()),
+            Err(crate::MachineRecoveryError::ProgramMismatch)
+        );
+    }
+    for _ in 0..2 {
+        assert!(matches!(machine.step(), MachineStep::Transition(_)));
+    }
+    let committed = machine.checkpoint();
+    let budget = ExecutionBudget::recover_from_checkpoint(machine.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("exclusive budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, committed, budget)
+        .unwrap_or_else(|error| panic!("exclusive checkpoint recovery failed: {error:?}"));
+    assert_eq!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(LogicalValue::integer(
+            GantryInt::new(8).unwrap_or_else(|| unreachable!("fixture integer is admitted"))
         ))
     );
 }
@@ -2923,6 +3318,301 @@ fn spawned_body_operation_checkpoint_decodes_and_recovers() {
     assert!(matches!(
         recovered.step(),
         MachineStep::Transition(MachineLabel::TaskSettled(MachineOutcome::Succeeded(ref value)))
+            if value == &LogicalValue::integer(
+                GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            )
+    ));
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn task_body_capture_scope_recovery_validates_metadata_and_accepts_committed_writes() {
+    let root_path = path("crate::main");
+    let root = CanonicalCallableIdentity::free(&root_path, &[]);
+    let body_identity = TaskBodyIdentity::new(root.clone(), site(0));
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::INT,
+        vec![
+            ExecutableTaskCapture::new(Arc::from("count"), TypeDescriptor::INT, true)
+                .unwrap_or_else(|error| panic!("capture failed: {error:?}")),
+        ],
+        ExecutableTaskContext::v1(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::INT,
+                InstructionKind::Push(LogicalValue::integer(
+                    GantryInt::new(9)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                )),
+            ),
+            instruction(
+                1,
+                TypeDescriptor::INT,
+                InstructionKind::Assign {
+                    name: Arc::from("count"),
+                    path: Vec::new(),
+                    target_type: TypeDescriptor::INT,
+                },
+            ),
+            instruction(
+                2,
+                TypeDescriptor::INT,
+                InstructionKind::Load(Arc::from("count")),
+            ),
+            instruction(3, TypeDescriptor::INT, InstructionKind::TaskComplete),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+    let root_workflow = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::UNIT,
+                InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::INT)
+                        .unwrap_or_else(|error| panic!("handle failed: {error:?}")),
+                    body: body_identity.clone(),
+                },
+            ),
+            instruction(
+                1,
+                TypeDescriptor::UNIT,
+                InstructionKind::Push(LogicalValue::unit()),
+            ),
+            instruction(2, TypeDescriptor::UNIT, InstructionKind::Return),
+        ],
+    );
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(vec![(root, root_workflow)], vec![body])
+            .unwrap_or_else(|error| panic!("capture-scope program failed: {error:?}")),
+    );
+    let machine_limits = limits(16, 1, 1, 1, 16);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let count = LogicalValue::integer(
+        GantryInt::new(5).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    let capture = TaskCaptureV1::new(
+        Arc::from("count"),
+        TypeDescriptor::INT,
+        true,
+        &count,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture capture failed: {error:?}"));
+    let (child_task_id, child_task_path) = child_task_coordinate();
+    let mut child = Machine::new_concurrent_task_body_with_context(
+        Arc::clone(&program),
+        &body_identity,
+        &[capture],
+        execution(),
+        child_task_id,
+        child_task_path,
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("child machine construction failed: {error:?}"));
+
+    let checkpoint = child.checkpoint();
+    crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes())
+        .unwrap_or_else(|error| panic!("untampered capture checkpoint failed: {error:?}"));
+    for tampered in [
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_rename_task_capture("wrong"));
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_set_task_capture_type(TypeDescriptor::BOOL));
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_set_task_capture_mutable(false));
+            checkpoint
+        },
+    ] {
+        assert_eq!(
+            crate::MachineCheckpointV3::decode(&program, &tampered.canonical_bytes()),
+            Err(crate::MachineRecoveryError::ProgramMismatch)
+        );
+    }
+
+    assert!(matches!(child.step(), MachineStep::Transition(_)));
+    assert!(matches!(child.step(), MachineStep::Transition(_)));
+    let committed = child.checkpoint();
+    let budget = ExecutionBudget::recover_from_checkpoint(child.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("capture budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, committed, budget)
+        .unwrap_or_else(|error| panic!("capture checkpoint recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
+            if value == &LogicalValue::integer(
+                GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+            )
+    ));
+}
+
+#[cfg(all(feature = "concurrent", feature = "durable"))]
+#[test]
+fn task_body_capture_scope_recovery_accepts_top_level_local_bindings() {
+    let root_path = path("crate::main");
+    let root = CanonicalCallableIdentity::free(&root_path, &[]);
+    let body_identity = TaskBodyIdentity::new(root.clone(), site(0));
+    let body = ExecutableTaskBody::new(
+        body_identity.clone(),
+        TypeDescriptor::INT,
+        vec![
+            ExecutableTaskCapture::new(Arc::from("count"), TypeDescriptor::INT, true)
+                .unwrap_or_else(|error| panic!("capture failed: {error:?}")),
+        ],
+        ExecutableTaskContext::v1(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::INT,
+                InstructionKind::Push(LogicalValue::integer(
+                    GantryInt::new(9)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                )),
+            ),
+            instruction(
+                1,
+                TypeDescriptor::INT,
+                InstructionKind::Assign {
+                    name: Arc::from("count"),
+                    path: Vec::new(),
+                    target_type: TypeDescriptor::INT,
+                },
+            ),
+            instruction(
+                2,
+                TypeDescriptor::INT,
+                InstructionKind::Push(LogicalValue::integer(
+                    GantryInt::new(3)
+                        .unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+                )),
+            ),
+            instruction(
+                3,
+                TypeDescriptor::INT,
+                InstructionKind::Bind {
+                    name: Arc::from("local"),
+                    ty: TypeDescriptor::INT,
+                    mutable: false,
+                },
+            ),
+            instruction(
+                4,
+                TypeDescriptor::INT,
+                InstructionKind::Load(Arc::from("count")),
+            ),
+            instruction(5, TypeDescriptor::INT, InstructionKind::TaskComplete),
+        ],
+    )
+    .unwrap_or_else(|error| panic!("task body failed: {error:?}"));
+    let root_workflow = workflow(
+        "crate::main",
+        Vec::new(),
+        TypeDescriptor::UNIT,
+        EffectSet::default(),
+        vec![
+            instruction(
+                0,
+                TypeDescriptor::UNIT,
+                InstructionKind::Spawn {
+                    handle: ExecutableTaskHandle::new(Arc::from("child"), TypeDescriptor::INT)
+                        .unwrap_or_else(|error| panic!("handle failed: {error:?}")),
+                    body: body_identity.clone(),
+                },
+            ),
+            instruction(
+                1,
+                TypeDescriptor::UNIT,
+                InstructionKind::Push(LogicalValue::unit()),
+            ),
+            instruction(2, TypeDescriptor::UNIT, InstructionKind::Return),
+        ],
+    );
+    let program = Arc::new(
+        MachineProgram::with_task_bodies(vec![(root, root_workflow)], vec![body])
+            .unwrap_or_else(|error| panic!("capture-scope program failed: {error:?}")),
+    );
+    let machine_limits = limits(16, 1, 1, 1, 16);
+    let budget = ExecutionBudget::new(execution(), machine_limits);
+    let count = LogicalValue::integer(
+        GantryInt::new(5).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
+    );
+    let capture = TaskCaptureV1::new(
+        Arc::from("count"),
+        TypeDescriptor::INT,
+        true,
+        &count,
+        DEFAULT_VALUE_LIMITS,
+    )
+    .unwrap_or_else(|error| panic!("fixture capture failed: {error:?}"));
+    let (child_task_id, child_task_path) = child_task_coordinate();
+    let mut child = Machine::new_concurrent_task_body_with_context(
+        Arc::clone(&program),
+        &body_identity,
+        &[capture],
+        execution(),
+        child_task_id,
+        child_task_path,
+        machine_limits,
+        budget,
+        None,
+        None,
+    )
+    .unwrap_or_else(|error| panic!("child machine construction failed: {error:?}"));
+
+    for _ in 0..4 {
+        assert!(matches!(child.step(), MachineStep::Transition(_)));
+    }
+
+    let checkpoint = child.checkpoint();
+    let decoded = crate::MachineCheckpointV3::decode(&program, &checkpoint.canonical_bytes())
+        .unwrap_or_else(|error| panic!("untampered capture checkpoint decode failed: {error:?}"));
+    assert_eq!(decoded, checkpoint);
+    for tampered in [
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_rename_task_capture("wrong"));
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_set_task_capture_type(TypeDescriptor::BOOL));
+            checkpoint
+        },
+        {
+            let mut checkpoint = checkpoint.clone();
+            assert!(checkpoint.test_set_task_capture_mutable(false));
+            checkpoint
+        },
+    ] {
+        assert_eq!(
+            crate::MachineCheckpointV3::decode(&program, &tampered.canonical_bytes()),
+            Err(crate::MachineRecoveryError::ProgramMismatch)
+        );
+    }
+
+    let budget = ExecutionBudget::recover_from_checkpoint(child.budget_checkpoint())
+        .unwrap_or_else(|error| panic!("capture budget recovery failed: {error:?}"));
+    let mut recovered = Machine::recover_from_checkpoint(program, checkpoint, budget)
+        .unwrap_or_else(|error| panic!("capture checkpoint recovery failed: {error:?}"));
+    assert!(matches!(
+        drive(&mut recovered),
+        MachineOutcome::Succeeded(ref value)
             if value == &LogicalValue::integer(
                 GantryInt::new(9).unwrap_or_else(|| unreachable!("fixture integer is admitted")),
             )
