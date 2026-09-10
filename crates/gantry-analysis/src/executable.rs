@@ -1275,7 +1275,25 @@ impl Compiler<'_> {
             let unary_node = self.node(unary)?.clone();
             let operator =
                 direct_punctuation(self.tree, &unary_node).ok_or(AnalysisError::Invariant)?;
-            let children = unary_node.children().to_vec();
+            let operator_index = unary_node
+                .children()
+                .iter()
+                .position(|child| {
+                    self.tree.node(*child).is_some_and(|node| {
+                        matches!(
+                            node.form(),
+                            SyntaxForm::Token(TokenKind::Punctuation(
+                                Punctuation::Bang | Punctuation::Minus
+                            ))
+                        )
+                    })
+                })
+                .ok_or(AnalysisError::Invariant)?;
+            let children = unary_node
+                .children()
+                .get(operator_index.saturating_add(1)..)
+                .unwrap_or_default()
+                .to_vec();
             self.compile_sequence(&children)?;
             self.emit(
                 ty.clone(),
@@ -1901,14 +1919,85 @@ impl Compiler<'_> {
             )?;
             return Ok(());
         }
+        self.compile_operand_sequence(children)?;
+        Ok(())
+    }
+
+    /// Compiles one operand sequence, mirroring the analyzer's operand walk.
+    ///
+    /// A slice carrying a split field-projection fragment also carries the inner operator
+    /// tokens of a flattened same-precedence chain, so its enclosing operator is compiled
+    /// as left and right operand sequences followed by one primitive. The returned type is
+    /// the one that primitive publishes, which an enclosing operator reuses as its operand
+    /// type. Slices without a split fragment keep the child walk, so unrelated operand
+    /// chains lower exactly as before.
+    fn compile_operand_sequence(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<TypeDescriptor, AnalysisError> {
+        if carries_split_projection(self.tree, children)
+            && let Some((operator, index)) = children_binary_operator(self.tree, children)
+        {
+            let left = self.compile_operand_sequence(children.get(..index).unwrap_or_default())?;
+            self.compile_operand_sequence(
+                children.get(index.saturating_add(1)..).unwrap_or_default(),
+            )?;
+            let primitive = primitive_for_binary(operator).ok_or(AnalysisError::Invariant)?;
+            let result = primitive_result_type(&primitive, &left);
+            self.emit(result.clone(), InstructionKind::Primitive(primitive))?;
+            return Ok(result);
+        }
+        if let Some(result) = self.compile_projected_operand_place(children)? {
+            return Ok(result);
+        }
+        let mut result = TypeDescriptor::UNIT;
         for child in children {
             let node = self.node(*child)?;
             if matches!(node.form(), SyntaxForm::Token(_)) {
                 continue;
             }
-            self.compile_expression(*child)?;
+            result = self.compile_expression(*child)?;
         }
-        Ok(())
+        Ok(result)
+    }
+
+    /// Lowers a split dotted operand as one root load plus one projection per member.
+    ///
+    /// The analyzer types such an operand as its projected member, so the sibling
+    /// fragments are never compiled on their own; callers fall back to the child walk
+    /// when this sequence is not a dotted place.
+    fn compile_projected_operand_place(
+        &mut self,
+        children: &[NodeId],
+    ) -> Result<Option<TypeDescriptor>, AnalysisError> {
+        if children.len() < 2 {
+            return Ok(None);
+        }
+        let Some((root, path)) = operand_field_place(self.tree, children) else {
+            return Ok(None);
+        };
+        let Some(types) =
+            receiver_place_types(&root, &path, &self.binding_types, self.struct_fields)
+        else {
+            return Ok(None);
+        };
+        let mut types = types.into_iter();
+        let mut result = types.next().ok_or(AnalysisError::Invariant)?;
+        self.emit(result.clone(), InstructionKind::Load(root))?;
+        for segment in &path {
+            let ValuePathSegment::StructField(field) = segment else {
+                return Err(AnalysisError::Invariant);
+            };
+            result = types.next().ok_or(AnalysisError::Invariant)?;
+            self.emit(
+                result.clone(),
+                InstructionKind::Project(Projection::Field(Arc::from(field.as_str()))),
+            )?;
+        }
+        if types.next().is_some() {
+            return Err(AnalysisError::Invariant);
+        }
+        Ok(Some(result))
     }
 
     fn emit(&mut self, ty: TypeDescriptor, kind: InstructionKind) -> Result<usize, AnalysisError> {
@@ -2396,6 +2485,59 @@ fn postfix_field_projection(
     (!fields.is_empty()).then_some((root, fields))
 }
 
+/// Returns the dotted place of a split operand whose member tokens are sibling nodes.
+///
+/// The analyzer merges the same sibling shape into one projected operand, so lowering
+/// loads the root and projects each member instead of compiling the fragments.
+fn operand_field_place(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Option<(Arc<str>, Vec<ValuePathSegment>)> {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let node = tree.node(id)?;
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    if tokens.iter().any(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(
+                Punctuation::LeftParenthesis | Punctuation::LeftBracket
+            ))
+        )
+    }) {
+        return None;
+    }
+    let root = match tokens.first()?.form() {
+        SyntaxForm::Token(TokenKind::Identifier(value)) => value.clone(),
+        SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self" => {
+            Arc::from("self")
+        }
+        _ => return None,
+    };
+    let mut path = Vec::new();
+    let mut cursor = 1;
+    while cursor < tokens.len() {
+        if !matches!(
+            tokens.get(cursor)?.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        ) {
+            return None;
+        }
+        let SyntaxForm::Token(TokenKind::Identifier(field)) = tokens.get(cursor + 1)?.form() else {
+            return None;
+        };
+        path.push(ValuePathSegment::StructField(field.to_string()));
+        cursor += 2;
+    }
+    (!path.is_empty()).then_some((root, path))
+}
+
 fn method_receiver_type(path: &CanonicalPath) -> Result<TypeDescriptor, AnalysisError> {
     let receiver = path
         .as_str()
@@ -2570,7 +2712,14 @@ fn binary_operator(
     tree: &SyntaxTree,
     node: &gantry_frontend::SyntaxNode,
 ) -> Option<(Punctuation, usize)> {
-    node.children()
+    children_binary_operator(tree, node.children())
+}
+
+fn children_binary_operator(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+) -> Option<(Punctuation, usize)> {
+    children
         .iter()
         .enumerate()
         .rev()
@@ -2582,6 +2731,20 @@ fn binary_operator(
             }
             _ => None,
         })
+}
+
+/// Reports whether one operand slice carries a split field-projection fragment.
+///
+/// The parser emits a sibling `PostfixExpression` holding the projection dot when it
+/// splits a leading dotted operand. That fragment cannot be compiled on its own, so its
+/// slice is compiled structurally instead of through the child walk.
+fn carries_split_projection(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    children.iter().any(|child| {
+        tree.node(*child).is_some_and(|node| {
+            matches!(node.form(), SyntaxForm::PostfixExpression)
+                && node_contains_punctuation(tree, node, Punctuation::Dot)
+        })
+    })
 }
 
 fn primitive_for_binary(value: Punctuation) -> Option<Primitive> {
@@ -2599,6 +2762,17 @@ fn primitive_for_binary(value: Punctuation) -> Option<Primitive> {
         Punctuation::GreaterEqual => Primitive::Compare(Comparison::GreaterOrEqual),
         _ => return None,
     })
+}
+
+/// Returns the type one binary primitive publishes for its operands.
+///
+/// Comparison primitives publish `Bool`; every arithmetic primitive publishes the left
+/// operand type that the analyzer already proved equal to the right operand type.
+fn primitive_result_type(primitive: &Primitive, left: &TypeDescriptor) -> TypeDescriptor {
+    match primitive {
+        Primitive::Compare(_) | Primitive::Equal | Primitive::NotEqual => TypeDescriptor::BOOL,
+        _ => left.clone(),
+    }
 }
 
 fn primitive_for_assignment(value: Punctuation) -> Option<Primitive> {

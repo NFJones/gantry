@@ -2059,6 +2059,97 @@ fn syntax(source: &str) -> gantry::frontend::CompletedSyntaxPhase {
         .unwrap_or_else(|error| panic!("syntax phase failed: {error:?}"))
 }
 
+/// Field projections in operand position type as their projected member type.
+#[test]
+fn field_projection_operands_type_as_their_member_type() {
+    let package =
+        analyze("struct Token { a: Int, b: Int }\nfn main(t: Token) -> Int { t.a + t.b }");
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    assert!(package.executable_program().is_some());
+}
+
+/// A nested field projection chain in operand position types as its leaf member type.
+#[test]
+fn nested_field_projection_operands_type_as_their_member_type() {
+    let package = analyze(
+        "struct Inner { value: Int }\nstruct Outer { inner: Inner }\nfn main(o: Outer) -> Int { o.inner.value + o.inner.value }",
+    );
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    assert!(package.executable_program().is_some());
+}
+
+/// Distinct affine field reads in operand position record one projected place each.
+#[test]
+fn affine_field_projection_operands_avoid_spurious_reuse() {
+    let package =
+        analyze("affine struct Token { a: Int, b: Int }\nfn main(t: Token) -> Int { t.a + t.b }");
+    assert_eq!(
+        package.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        package.diagnostics()
+    );
+    assert!(
+        !package
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "affine-value-reuse"),
+        "{:?}",
+        package.diagnostics()
+    );
+}
+
+/// A projection read after an owned move of its root stays rejected.
+#[test]
+fn affine_projection_read_after_owned_move_stays_rejected() {
+    let rejected = analyze(
+        "affine struct Token { a: Int, b: Int }\nimpl Token { fn consume(owned self) {} }\nfn main(t: Token) -> Int { t.consume(); t.a }",
+    );
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "affine-value-reuse"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(rejected.executable_program().is_none());
+}
+
+/// Bare and mixed operands beside a field projection keep their accepted types.
+#[test]
+fn field_projection_operand_controls_stay_valid() {
+    for source in [
+        "struct Token { a: Int, b: Int } fn main(t: Token) -> Int { t.a + 1 }",
+        "struct Token { a: Int, b: Int } fn main(t: Token) -> Int { 1 + t.a }",
+        "struct Token { a: Int, b: Int } fn main(t: Token) -> Bool { t.a == t.b }",
+    ] {
+        let package = analyze(source);
+        assert_eq!(
+            package.status(),
+            AnalysisStatus::Valid,
+            "{source}: {:?}",
+            package.diagnostics()
+        );
+    }
+}
+
 fn analysis_limits(depth: u64, trait_steps: u64) -> FrontendLimits {
     FrontendLimits::new(
         4,

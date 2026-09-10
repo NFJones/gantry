@@ -4100,6 +4100,7 @@ fn infer_expression_inner(
             node.children().get(..index).unwrap_or_default(),
             facts,
             environment,
+            Some(operator),
             context,
             diagnostics,
         )?;
@@ -4110,6 +4111,7 @@ fn infer_expression_inner(
                 .unwrap_or_default(),
             facts,
             environment,
+            Some(operator),
             context,
             diagnostics,
         )?;
@@ -4435,6 +4437,7 @@ fn infer_unary_expression(
             .unwrap_or_default(),
         facts,
         environment,
+        Some(operator),
         context,
         diagnostics,
     )?;
@@ -5441,6 +5444,7 @@ fn infer_operand_sequence(
     children: &[NodeId],
     facts: &BTreeMap<NodeId, TypeFact>,
     environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    operator: Option<Punctuation>,
     context: &BodyContext,
     diagnostics: &mut Vec<StructuredDiagnostic>,
 ) -> Result<Option<TypeDescriptor>, AnalysisError> {
@@ -5450,6 +5454,7 @@ fn infer_operand_sequence(
             children.get(..index).unwrap_or_default(),
             facts,
             environment,
+            Some(operator),
             context,
             diagnostics,
         )?;
@@ -5458,6 +5463,7 @@ fn infer_operand_sequence(
             children.get(index.saturating_add(1)..).unwrap_or_default(),
             facts,
             environment,
+            Some(operator),
             context,
             diagnostics,
         )?;
@@ -5495,6 +5501,12 @@ fn infer_operand_sequence(
     )? {
         return Ok(Some(value));
     }
+    if operator.is_some_and(operand_projection_supported)
+        && let Some(value) =
+            infer_operand_projection_sequence(tree, children, environment, context, diagnostics)?
+    {
+        return Ok(Some(value));
+    }
     for child in children {
         let node = tree.node(*child).ok_or(AnalysisError::Invariant)?;
         match node.form() {
@@ -5530,6 +5542,81 @@ fn infer_operand_sequence(
     Ok(None)
 }
 
+/// Resolves a dotted operand whose root and member tokens arrived as sibling nodes.
+///
+/// The parser splits a leading field projection into sibling children (a root `Path`
+/// followed by one `PostfixExpression` and member node per dot) while a trailing one
+/// arrives as a single `Expression`. Multi-member chains are already resolved by the
+/// member-sequence path, so only the single-member split shape is resolved here, which
+/// keeps exactly one place recorded per operand read.
+fn infer_operand_projection_sequence(
+    tree: &SyntaxTree,
+    children: &[NodeId],
+    environment: &BTreeMap<Arc<str>, TypeDescriptor>,
+    context: &BodyContext,
+    diagnostics: &mut Vec<StructuredDiagnostic>,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    if children.len() < 2 {
+        return Ok(None);
+    }
+    let Some((root, fields)) = postfix_field_sequence(tree, children) else {
+        return Ok(None);
+    };
+    if fields.len() != 1 {
+        return Ok(None);
+    }
+    let Some(root_binding) = environment.get(&root).cloned() else {
+        return Ok(None);
+    };
+    let (member, member_id) = fields.into_iter().next().ok_or(AnalysisError::Invariant)?;
+    let member_node = tree.node(member_id).ok_or(AnalysisError::Invariant)?;
+    let Some(field) = projected_member_type(&root_binding, member.as_ref(), context)? else {
+        diagnostics.push(body_diagnostic(
+            "unknown-member",
+            DiagnosticCategory::Type,
+            "a receiver type has no field or inherent method with this name",
+            member_node.span().clone(),
+            [
+                ("member", member.as_ref()),
+                ("receiver", root_binding.canonical_string().as_str()),
+            ],
+        )?);
+        return Ok(None);
+    };
+    let member_span = member_node.span().clone();
+    record_affine_place(
+        AffinePlace::projected(root, vec![member]),
+        Some(&root_binding),
+        &field,
+        member_span,
+        context,
+        diagnostics,
+    )?;
+    Ok(Some(field))
+}
+
+/// Reports whether the lowering publishes a primitive for one enclosing operator.
+///
+/// Split dotted operands are merged only for operators the lowering consumes, so a
+/// merged operand type never reaches a lowering step that has no primitive for it.
+fn operand_projection_supported(operator: Punctuation) -> bool {
+    matches!(
+        operator,
+        Punctuation::Plus
+            | Punctuation::Minus
+            | Punctuation::Star
+            | Punctuation::Slash
+            | Punctuation::Percent
+            | Punctuation::EqualEqual
+            | Punctuation::NotEqual
+            | Punctuation::Less
+            | Punctuation::LessEqual
+            | Punctuation::Greater
+            | Punctuation::GreaterEqual
+            | Punctuation::Bang
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn infer_member_sequence(
     tree: &SyntaxTree,
@@ -5552,25 +5639,7 @@ fn infer_member_sequence(
         let mut path = Vec::with_capacity(fields.len());
         for (member, member_id) in fields {
             path.push(member.clone());
-            let field = if receiver == TypeDescriptor::DECISION {
-                match member.as_ref() {
-                    "decision" => Some(TypeDescriptor::BOOL),
-                    "rationale" => Some(TypeDescriptor::STRING),
-                    _ => None,
-                }
-            } else {
-                let closed = context
-                    .structs
-                    .values()
-                    .find(|shape| shape.descriptor == receiver)
-                    .and_then(|shape| shape.fields.get(&member))
-                    .map(|field| field.ty.clone());
-                if closed.is_some() {
-                    closed
-                } else {
-                    generic_field_type(&receiver, &member, context)?
-                }
-            };
+            let field = projected_member_type(&receiver, member.as_ref(), context)?;
             let Some(field) = field else {
                 let member_node = tree.node(member_id).ok_or(AnalysisError::Invariant)?;
                 diagnostics.push(body_diagnostic(
@@ -5672,6 +5741,7 @@ fn infer_member_sequence(
                 children.get(..dot).unwrap_or_default(),
                 facts,
                 environment,
+                None,
                 context,
                 diagnostics,
             )?
@@ -5906,25 +5976,7 @@ fn infer_member_sequence(
         return Ok(Some(signature.result.clone()));
     }
 
-    let field = if receiver == TypeDescriptor::DECISION {
-        match member.as_ref() {
-            "decision" => Some(TypeDescriptor::BOOL),
-            "rationale" => Some(TypeDescriptor::STRING),
-            _ => None,
-        }
-    } else {
-        let closed = context
-            .structs
-            .values()
-            .find(|shape| shape.descriptor == receiver)
-            .and_then(|shape| shape.fields.get(&member))
-            .map(|field| field.ty.clone());
-        if closed.is_some() {
-            closed
-        } else {
-            generic_field_type(&receiver, &member, context)?
-        }
-    };
+    let field = projected_member_type(&receiver, member.as_ref(), context)?;
     if let Some(field) = field {
         if let Some((root, fields)) = postfix_field_sequence(tree, children)
             && let Some(root_binding) = environment.get(&root).cloned()
@@ -6321,6 +6373,34 @@ fn generic_field_type(
             .insert(receiver.clone(), fields.clone());
     }
     Ok(fields.and_then(|fields| fields.get(member).cloned()))
+}
+
+/// Resolves one immediately declared member type on a closed or instantiated receiver.
+///
+/// Member resolution is shared between the resolved member-chain path and the split
+/// operand path so both report the same projected type for the same member.
+fn projected_member_type(
+    receiver: &TypeDescriptor,
+    member: &str,
+    context: &BodyContext,
+) -> Result<Option<TypeDescriptor>, AnalysisError> {
+    if *receiver == TypeDescriptor::DECISION {
+        return Ok(match member {
+            "decision" => Some(TypeDescriptor::BOOL),
+            "rationale" => Some(TypeDescriptor::STRING),
+            _ => None,
+        });
+    }
+    let closed = context
+        .structs
+        .values()
+        .find(|shape| shape.descriptor == *receiver)
+        .and_then(|shape| shape.fields.get(member))
+        .map(|field| field.ty.clone());
+    if closed.is_some() {
+        return Ok(closed);
+    }
+    generic_field_type(receiver, member, context)
 }
 
 #[allow(clippy::too_many_arguments)]

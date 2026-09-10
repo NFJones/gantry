@@ -3372,3 +3372,115 @@ fn assert_anchor_exists(root: &Path, evidence: &str) {
         "missing evidence anchor {evidence}"
     );
 }
+
+/// Split field projection operands execute as their member type on the shared machine.
+#[test]
+fn split_field_projection_operands_execute_as_their_member_type() {
+    let root = TempDirectory::new(
+        r#"
+struct Token { a: Int, b: Int }
+fn main() -> Int {
+    let token: Token = Token { a: 1, b: 2 };
+    token.a + token.b
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("projected operand package omitted its executable program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5a; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("projected operand program was rejected: {error:?}"));
+
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("projected operand program did not succeed")
+    };
+    assert!(matches!(value.view(), LogicalValueView::Int(value) if value.get() == 3));
+}
+
+/// A nested projection chain operand executes as its leaf member type.
+#[test]
+fn nested_field_projection_operands_execute_as_their_member_type() {
+    let root = TempDirectory::new(
+        r#"
+struct Inner { value: Int }
+struct Outer { inner: Inner }
+fn main() -> Int {
+    let outer: Outer = Outer { inner: Inner { value: 4 } };
+    outer.inner.value + outer.inner.value
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("nested projected operand package omitted its program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5b; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("nested projected operand program was rejected: {error:?}"));
+
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("nested projected operand program did not succeed")
+    };
+    assert!(matches!(value.view(), LogicalValueView::Int(value) if value.get() == 8));
+}
+
+/// A flattened projection chain operand keeps left-to-right operator order.
+#[test]
+fn chained_field_projection_operands_execute_left_to_right() {
+    let root = TempDirectory::new(
+        r#"
+struct Token { a: Int, b: Int, c: Int }
+fn main() -> Int {
+    let token: Token = Token { a: 7, b: 2, c: 1 };
+    token.a - token.b - token.c
+}
+"#,
+    );
+    let package = analyze(&root);
+    let entry = package
+        .entry()
+        .unwrap_or_else(|| panic!("valid package omitted its entry inventory"));
+    let program = package
+        .executable_program()
+        .cloned()
+        .unwrap_or_else(|| panic!("chained projected operand package omitted its program"));
+    let execution = ProtocolIdentity::from_fresh_material(IdentityKind::Execution, [0x5c; 32])
+        .unwrap_or_else(|error| panic!("execution identity failed: {error}"));
+    let mut machine = Machine::new(
+        Arc::new(program),
+        &entry.path,
+        Vec::new(),
+        execution,
+        limits(),
+    )
+    .unwrap_or_else(|error| panic!("chained projected operand program was rejected: {error:?}"));
+
+    let MachineOutcome::Succeeded(value) = drive(&mut machine) else {
+        panic!("chained projected operand program did not succeed")
+    };
+    assert!(matches!(value.view(), LogicalValueView::Int(value) if value.get() == 4));
+}
