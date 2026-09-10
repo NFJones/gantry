@@ -2398,3 +2398,41 @@ fn affine_single_use_guards_stay_valid() {
         assert_affine_accepted(source);
     }
 }
+
+/// A receiver call whose receiver is an rvalue (a call result) is rejected with a source diagnostic
+/// instead of failing in lowering or at runtime; constructed receivers stay valid.
+#[test]
+fn call_result_receiver_is_rejected_with_a_source_diagnostic() {
+    let rejected = analyze(
+        "struct Counter { value: Int }\n\
+         impl Counter { fn bump(self) -> Int { self.value } }\n\
+         fn make_counter(seed: Int) -> Counter { Counter { value: seed } }\n\
+         fn main() -> Int { make_counter(7).bump() }",
+    );
+    assert_eq!(
+        rejected.status(),
+        AnalysisStatus::Invalid,
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(
+        rejected
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "receiver-value-place"),
+        "{:?}",
+        rejected.diagnostics()
+    );
+    assert!(rejected.executable_program().is_none());
+    let accepted = analyze(
+        "struct Counter { value: Int }\n\
+         impl Counter { fn bump(owned self) -> Int { self.value } }\n\
+         fn main() -> Int { Counter { value: 1 }.bump() }",
+    );
+    assert_eq!(
+        accepted.status(),
+        AnalysisStatus::Valid,
+        "{:?}",
+        accepted.diagnostics()
+    );
+}

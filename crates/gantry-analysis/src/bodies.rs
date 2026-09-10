@@ -5824,6 +5824,18 @@ fn infer_member_sequence(
                     [] as [(&str, &str); 0],
                 )?);
             }
+            if !requires_place
+                && !receiver_is_syntactic_place(tree, children)
+                && !receiver_is_constructed(tree, children)
+            {
+                diagnostics.push(body_diagnostic(
+                    "receiver-value-place",
+                    DiagnosticCategory::Type,
+                    "a receiver call requires a binding root, a struct-field receiver place, or a constructed value",
+                    member_node.span().clone(),
+                    [] as [(&str, &str); 0],
+                )?);
+            }
             if metadata.receiver_mode == ReceiverMode::Owned {
                 check_owned_move_receiver(
                     tree,
@@ -5986,6 +5998,75 @@ fn postfix_field_sequence(tree: &SyntaxTree, children: &[NodeId]) -> Option<Post
         cursor += 2;
     }
     (!fields.is_empty()).then_some((root, fields))
+}
+
+/// Reports whether the receiver before the method dot is a root or field projection.
+fn receiver_is_syntactic_place(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    let mut tokens = Vec::new();
+    let mut work = children.iter().rev().copied().collect::<Vec<_>>();
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            return false;
+        };
+        if matches!(node.form(), SyntaxForm::Token(_)) {
+            tokens.push(node);
+        } else {
+            work.extend(node.children().iter().rev().copied());
+        }
+    }
+    let Some(dot) = tokens.iter().rposition(|node| {
+        matches!(
+            node.form(),
+            SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot))
+        )
+    }) else {
+        return false;
+    };
+    let receiver = &tokens[..dot];
+    let Some(first) = receiver.first() else {
+        return false;
+    };
+    let starts_with_root = matches!(first.form(), SyntaxForm::Token(TokenKind::Identifier(_)))
+        || matches!(
+            first.form(),
+            SyntaxForm::Token(TokenKind::ReservedWord(word)) if word.spelling() == "self"
+        );
+    starts_with_root
+        && receiver[1..].chunks(2).all(|pair| {
+            matches!(
+                pair.first().map(|node| node.form()),
+                Some(SyntaxForm::Token(TokenKind::Punctuation(Punctuation::Dot)))
+            ) && matches!(
+                pair.get(1).map(|node| node.form()),
+                Some(SyntaxForm::Token(TokenKind::Identifier(_)))
+            )
+        })
+}
+
+/// Reports whether any receiver child before the method dot constructs an aggregate.
+fn receiver_is_constructed(tree: &SyntaxTree, children: &[NodeId]) -> bool {
+    let receiver_children = children
+        .iter()
+        .rposition(|child| node_contains_punctuation(tree, *child, Punctuation::Dot))
+        .map_or_else(|| children, |dot| children.get(..dot).unwrap_or_default());
+    receiver_children
+        .iter()
+        .any(|child| subtree_constructs_aggregate(tree, *child))
+}
+
+/// Reports whether one subtree contains a struct expression.
+fn subtree_constructs_aggregate(tree: &SyntaxTree, node: NodeId) -> bool {
+    let mut work = vec![node];
+    while let Some(id) = work.pop() {
+        let Some(node) = tree.node(id) else {
+            continue;
+        };
+        if matches!(node.form(), SyntaxForm::StructExpression) {
+            return true;
+        }
+        work.extend(node.children().iter().copied());
+    }
+    false
 }
 
 fn postfix_shared_receiver_place(
